@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/app_alert_dialog.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_slider.dart';
 import '../../shared/models/task.dart';
@@ -50,10 +53,47 @@ class TaskDetailForm extends ConsumerStatefulWidget {
     super.key,
     this.task,
     required this.initialScheduledAt,
+    this.debugInitialDurationOverride,
+    this.debugAutoTriggerClose = false,
+    this.debugAutoConfirmOutcome,
+    this.debugAutoTriggerSave = false,
   });
 
   final Task? task;
   final DateTime initialScheduledAt;
+
+  /// Scaffold-only: seeds a duration different from the form's normal
+  /// starting value, so a dev entry point can reach the "has unsaved
+  /// changes" state without a tap-injection tool (unavailable in this
+  /// environment — see docs/ERROR_LOG.md). Never set outside `*_main.dart`
+  /// scaffolding.
+  @visibleForTesting
+  final int? debugInitialDurationOverride;
+
+  /// Scaffold-only: calls the real close (×) handler once the form has
+  /// settled, exercising the actual `_handleClose` path (not a re-
+  /// implementation of it) so a dev entry point can screenshot the
+  /// exit-confirmation modal without a tap-injection tool. Never set
+  /// outside `*_main.dart` scaffolding.
+  @visibleForTesting
+  final bool debugAutoTriggerClose;
+
+  /// Scaffold-only: once [debugAutoTriggerClose] has opened the
+  /// exit-confirmation modal, automatically resolves it as if the user
+  /// tapped "Schedule this" (`true`) or the destructive action (`false`) —
+  /// same effect as a real tap on either dialog button, since it just pops
+  /// the dialog's route with the chosen value. Never set outside
+  /// `*_main.dart` scaffolding.
+  @visibleForTesting
+  final bool? debugAutoConfirmOutcome;
+
+  /// Scaffold-only: calls the real Continue/save handler (`_save`) once the
+  /// form has settled, exercising the actual save path (not a
+  /// re-implementation of it) so a dev entry point can reproduce/verify
+  /// "tapping Continue" without a tap-injection tool. Never set outside
+  /// `*_main.dart` scaffolding.
+  @visibleForTesting
+  final bool debugAutoTriggerSave;
 
   @override
   ConsumerState<TaskDetailForm> createState() => _TaskDetailFormState();
@@ -66,8 +106,15 @@ class _TaskDetailFormState extends ConsumerState<TaskDetailForm> {
   late int _durationMinutes;
   late TaskCategory _category;
 
-  final _stickyButtonKey = GlobalKey();
-  double _stickyButtonReservedHeight = 96;
+  // Snapshot of the form's starting values — whatever the task already had
+  // (edit flow) or the pre-filled defaults (create flow) — so the close (×)
+  // button can tell whether there's anything worth confirming before
+  // discarding. See docs/DECISIONS.md, Phase 6.
+  late final String _initialTitle;
+  late final DateTime _initialScheduledAt;
+  late final int _initialDurationMinutes;
+  late final TaskCategory _initialCategory;
+  late final String _initialNotes;
 
   @override
   void initState() {
@@ -78,21 +125,21 @@ class _TaskDetailFormState extends ConsumerState<TaskDetailForm> {
     _scheduledAt = task?.scheduledAt ?? widget.initialScheduledAt;
     _durationMinutes = task?.durationMinutes ?? 30;
     _category = task?.category ?? TaskCategory.personal;
-    WidgetsBinding.instance.addPostFrameCallback((_) => _measureStickyButton());
-  }
 
-  // The floating Continue button's exact rendered height (including
-  // Scaffold's own FAB margin) isn't knowable in advance — measured after
-  // first layout so the scroll content can reserve exactly enough space
-  // to never sit underneath it, rather than guessing at Flutter's internal
-  // FAB margin constants.
-  void _measureStickyButton() {
-    final box =
-        _stickyButtonKey.currentContext?.findRenderObject() as RenderBox?;
-    if (box == null || !mounted) return;
-    final height = box.size.height + kFloatingActionButtonMargin * 2;
-    if (height != _stickyButtonReservedHeight) {
-      setState(() => _stickyButtonReservedHeight = height);
+    _initialTitle = _titleController.text;
+    _initialScheduledAt = _scheduledAt;
+    _initialDurationMinutes = _durationMinutes;
+    _initialCategory = _category;
+    _initialNotes = _notesController.text;
+
+    final durationOverride = widget.debugInitialDurationOverride;
+    if (durationOverride != null) _durationMinutes = durationOverride;
+
+    if (widget.debugAutoTriggerClose) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _handleClose());
+    }
+    if (widget.debugAutoTriggerSave) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _save());
     }
   }
 
@@ -129,6 +176,58 @@ class _TaskDetailFormState extends ConsumerState<TaskDetailForm> {
     }
 
     if (mounted) Navigator.of(context).pop();
+  }
+
+  /// Whether closing without an explicit save would silently lose something
+  /// worth asking about: a non-empty title with at least one field changed
+  /// from where the form started (the task's saved values on edit, or the
+  /// pre-filled defaults on create). An empty title means there's nothing a
+  /// save could ever produce, so it's not worth a prompt either way.
+  bool get _hasUnconfirmedChanges {
+    if (_titleController.text.trim().isEmpty) return false;
+    return _titleController.text != _initialTitle ||
+        _scheduledAt != _initialScheduledAt ||
+        _durationMinutes != _initialDurationMinutes ||
+        _category != _initialCategory ||
+        _notesController.text != _initialNotes;
+  }
+
+  Future<void> _handleClose() async {
+    if (!_hasUnconfirmedChanges) {
+      Navigator.of(context).pop();
+      return;
+    }
+
+    final isEditing = widget.task != null;
+    final outcomeOverride = widget.debugAutoConfirmOutcome;
+    if (outcomeOverride != null) {
+      unawaited(
+        Future.delayed(const Duration(milliseconds: 400), () {
+          if (mounted) Navigator.of(context).pop(outcomeOverride);
+        }),
+      );
+    }
+    final confirmed = await AppAlertDialog.show(
+      context: context,
+      title: 'Schedule this?',
+      message: isEditing
+          ? 'You have unsaved changes. Schedule this task with the current '
+                'time and duration, or discard the changes?'
+          : 'You have unsaved changes. Schedule this task with the current '
+                'time and duration, or delete the draft?',
+      primaryAction: const AppAlertDialogAction(label: 'Schedule this'),
+      secondaryAction: AppAlertDialogAction(
+        label: isEditing ? 'Discard changes' : 'Delete draft',
+        isDestructive: true,
+      ),
+    );
+
+    if (!mounted || confirmed == null) return;
+    if (confirmed) {
+      await _save();
+    } else {
+      Navigator.of(context).pop();
+    }
   }
 
   Future<void> _pickDate() async {
@@ -188,77 +287,81 @@ class _TaskDetailFormState extends ConsumerState<TaskDetailForm> {
                       bottom: Radius.circular(theme.radiusSheet),
                     ),
                   ),
-                  padding: EdgeInsets.fromLTRB(
-                    theme.spacingLg,
-                    theme.spacingMd,
-                    theme.spacingLg,
-                    theme.spacingLg,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Stack(
                     children: [
-                      GestureDetector(
-                        onTap: () => Navigator.of(context).pop(),
-                        child: Container(
-                          width: theme.spacingXl,
-                          height: theme.spacingXl,
-                          decoration: BoxDecoration(
-                            color: theme.colorSurfacePrimary.withValues(
-                              alpha: 0.3,
-                            ),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.close_rounded,
-                            color: theme.colorSurfacePrimary,
-                          ),
+                      Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          theme.spacingLg,
+                          theme.spacingXl + theme.spacingSm,
+                          theme.spacingXl + theme.spacingLg,
+                          theme.spacingLg,
                         ),
-                      ),
-                      SizedBox(height: theme.spacingMd),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '${_formatTime(_scheduledAt)} – '
-                            '${_formatTime(endTime)} '
-                            '($_durationMinutes min)',
-                            style: theme.textCaption.copyWith(
-                              color: theme.colorSurfacePrimary.withValues(
-                                alpha: 0.85,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${_formatTime(_scheduledAt)} – '
+                              '${_formatTime(endTime)} '
+                              '($_durationMinutes min)',
+                              style: theme.textCaption.copyWith(
+                                color: theme.colorSurfacePrimary.withValues(
+                                  alpha: 0.85,
+                                ),
                               ),
                             ),
-                          ),
-                          TextField(
-                            controller: _titleController,
-                            autofocus: widget.task == null,
-                            style: theme.textHeadline.copyWith(
-                              color: theme.colorSurfacePrimary,
-                            ),
-                            cursorColor: theme.colorSurfacePrimary,
-                            decoration: InputDecoration(
-                              isDense: true,
-                              border: InputBorder.none,
-                              enabledBorder: UnderlineInputBorder(
-                                borderSide: BorderSide(
+                            TextField(
+                              controller: _titleController,
+                              autofocus: widget.task == null,
+                              style: theme.textHeadline.copyWith(
+                                color: theme.colorSurfacePrimary,
+                              ),
+                              cursorColor: theme.colorSurfacePrimary,
+                              decoration: InputDecoration(
+                                isDense: true,
+                                border: InputBorder.none,
+                                enabledBorder: UnderlineInputBorder(
+                                  borderSide: BorderSide(
+                                    color: theme.colorSurfacePrimary.withValues(
+                                      alpha: 0.5,
+                                    ),
+                                  ),
+                                ),
+                                focusedBorder: UnderlineInputBorder(
+                                  borderSide: BorderSide(
+                                    color: theme.colorSurfacePrimary,
+                                  ),
+                                ),
+                                hintText: 'Task name',
+                                hintStyle: theme.textHeadline.copyWith(
                                   color: theme.colorSurfacePrimary.withValues(
-                                    alpha: 0.5,
+                                    alpha: 0.6,
                                   ),
                                 ),
                               ),
-                              focusedBorder: UnderlineInputBorder(
-                                borderSide: BorderSide(
-                                  color: theme.colorSurfacePrimary,
-                                ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Positioned(
+                        top: theme.spacingMd,
+                        right: theme.spacingLg,
+                        child: GestureDetector(
+                          onTap: _handleClose,
+                          child: Container(
+                            width: theme.spacingXl,
+                            height: theme.spacingXl,
+                            decoration: BoxDecoration(
+                              color: theme.colorSurfacePrimary.withValues(
+                                alpha: 0.3,
                               ),
-                              hintText: 'Task name',
-                              hintStyle: theme.textHeadline.copyWith(
-                                color: theme.colorSurfacePrimary.withValues(
-                                  alpha: 0.6,
-                                ),
-                              ),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.close_rounded,
+                              color: theme.colorSurfacePrimary,
                             ),
                           ),
-                        ],
+                        ),
                       ),
                     ],
                   ),
@@ -271,130 +374,168 @@ class _TaskDetailFormState extends ConsumerState<TaskDetailForm> {
                         SingleChildScrollView(
                           padding: EdgeInsets.all(theme.spacingLg),
                           child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          SizedBox(
-                            height: theme.spacingXl * 1.5,
-                            child: ListView.separated(
-                              scrollDirection: Axis.horizontal,
-                              itemCount: TaskCategory.values.length,
-                              separatorBuilder: (context, index) =>
-                                  SizedBox(width: theme.spacingLg),
-                              itemBuilder: (context, index) {
-                                final category = TaskCategory.values[index];
-                                return _CategoryTag(
-                                  category: category,
-                                  selected: category == _category,
-                                  onSelected: () =>
-                                      setState(() => _category = category),
-                                );
-                              },
-                            ),
-                          ),
-                          SizedBox(height: theme.spacingMd),
-                          _Panel(
-                            theme: theme,
-                            child: InkWell(
-                              onTap: _pickDate,
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.calendar_today_rounded,
-                                    color: theme.colorTextSecondary,
-                                    size: theme.spacingLg,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              SizedBox(
+                                height: theme.spacingXl * 1.5,
+                                child: ListView.separated(
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: TaskCategory.values.length,
+                                  separatorBuilder: (context, index) =>
+                                      SizedBox(width: theme.spacingLg),
+                                  itemBuilder: (context, index) {
+                                    final category = TaskCategory.values[index];
+                                    return _CategoryTag(
+                                      category: category,
+                                      selected: category == _category,
+                                      onSelected: () =>
+                                          setState(() => _category = category),
+                                    );
+                                  },
+                                ),
+                              ),
+                              SizedBox(height: theme.spacingMd),
+                              _Panel(
+                                theme: theme,
+                                child: InkWell(
+                                  onTap: _pickDate,
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.calendar_today_rounded,
+                                        color: theme.colorTextSecondary,
+                                        size: theme.spacingLg,
+                                      ),
+                                      SizedBox(width: theme.spacingSm),
+                                      Expanded(
+                                        child: Text(
+                                          _formatDate(_scheduledAt),
+                                          style: theme.textBody.copyWith(
+                                            color: theme.colorTextPrimary,
+                                          ),
+                                        ),
+                                      ),
+                                      Icon(
+                                        Icons.chevron_right_rounded,
+                                        color: theme.colorTextSecondary,
+                                      ),
+                                    ],
                                   ),
-                                  SizedBox(width: theme.spacingSm),
-                                  Expanded(
-                                    child: Text(
-                                      _formatDate(_scheduledAt),
-                                      style: theme.textBody.copyWith(
+                                ),
+                              ),
+                              SizedBox(height: theme.spacingMd),
+                              Text(
+                                'Time',
+                                style: theme.textTitle.copyWith(
+                                  color: theme.colorTextPrimary,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              SizedBox(height: theme.spacingSm),
+                              _Panel(
+                                theme: theme,
+                                padding: EdgeInsets.zero,
+                                child: _TimeScroller(
+                                  theme: theme,
+                                  value: TimeOfDay.fromDateTime(_scheduledAt),
+                                  onChanged: _setTimeOfDay,
+                                ),
+                              ),
+                              SizedBox(height: theme.spacingMd),
+                              Text(
+                                'Duration',
+                                style: theme.textTitle.copyWith(
+                                  color: theme.colorTextPrimary,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              SizedBox(height: theme.spacingSm),
+                              _Panel(
+                                theme: theme,
+                                child: Column(
+                                  children: [
+                                    Text(
+                                      '$_durationMinutes min',
+                                      style: theme.textTitle.copyWith(
                                         color: theme.colorTextPrimary,
+                                        fontWeight: FontWeight.w700,
                                       ),
                                     ),
+                                    AppSlider(
+                                      value: _durationMinutes.toDouble(),
+                                      min: _minDurationMinutes.toDouble(),
+                                      max: _maxDurationMinutes.toDouble(),
+                                      divisions:
+                                          (_maxDurationMinutes -
+                                              _minDurationMinutes) ~/
+                                          _durationStepMinutes,
+                                      onChanged: (value) => setState(
+                                        () => _durationMinutes = value.round(),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              SizedBox(height: theme.spacingMd),
+                              _Panel(
+                                theme: theme,
+                                child: TextField(
+                                  controller: _notesController,
+                                  style: theme.textBody.copyWith(
+                                    color: theme.colorTextPrimary,
                                   ),
-                                  Icon(
-                                    Icons.chevron_right_rounded,
-                                    color: theme.colorTextSecondary,
+                                  maxLines: 3,
+                                  decoration: const InputDecoration(
+                                    isDense: true,
+                                    border: InputBorder.none,
+                                    hintText: 'Notes (optional)',
+                                  ),
+                                ),
+                              ),
+                              // Reserves space so the last scrollable item
+                              // never sits under the sticky Continue
+                              // button, even when scrolled all the way to
+                              // the end.
+                              SizedBox(height: theme.spacingXl * 3),
+                            ],
+                          ),
+                        ),
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: theme.spacingLg,
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: theme.spacingLg,
+                            ),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(
+                                  theme.radiusTaskPill,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: theme.colorTextPrimary.withValues(
+                                      alpha: 0.18,
+                                    ),
+                                    blurRadius: theme.spacingMd,
+                                    offset: Offset(0, theme.spacingXs),
                                   ),
                                 ],
                               ),
-                            ),
-                          ),
-                          SizedBox(height: theme.spacingMd),
-                          Text(
-                            'Time',
-                            style: theme.textTitle.copyWith(
-                              color: theme.colorTextPrimary,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          SizedBox(height: theme.spacingSm),
-                          _Panel(
-                            theme: theme,
-                            padding: EdgeInsets.zero,
-                            child: _TimeScroller(
-                              theme: theme,
-                              value: TimeOfDay.fromDateTime(_scheduledAt),
-                              onChanged: _setTimeOfDay,
-                            ),
-                          ),
-                          SizedBox(height: theme.spacingMd),
-                          Text(
-                            'Duration',
-                            style: theme.textTitle.copyWith(
-                              color: theme.colorTextPrimary,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          SizedBox(height: theme.spacingSm),
-                          _Panel(
-                            theme: theme,
-                            child: Column(
-                              children: [
-                                Text(
-                                  '$_durationMinutes min',
-                                  style: theme.textTitle.copyWith(
-                                    color: theme.colorTextPrimary,
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: AppButton(
+                                  label: 'Continue',
+                                  size: AppButtonSize.large,
+                                  shape: AppButtonShape.pill,
+                                  onPressed: _save,
                                 ),
-                                AppSlider(
-                                  value: _durationMinutes.toDouble(),
-                                  min: _minDurationMinutes.toDouble(),
-                                  max: _maxDurationMinutes.toDouble(),
-                                  divisions:
-                                      (_maxDurationMinutes -
-                                          _minDurationMinutes) ~/
-                                      _durationStepMinutes,
-                                  onChanged: (value) => setState(
-                                    () => _durationMinutes = value.round(),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          SizedBox(height: theme.spacingMd),
-                          _Panel(
-                            theme: theme,
-                            child: TextField(
-                              controller: _notesController,
-                              style: theme.textBody.copyWith(
-                                color: theme.colorTextPrimary,
-                              ),
-                              maxLines: 3,
-                              decoration: const InputDecoration(
-                                isDense: true,
-                                border: InputBorder.none,
-                                hintText: 'Notes (optional)',
                               ),
                             ),
                           ),
-                          // Reserves exactly the sticky Continue button's
-                          // measured height (see _measureStickyButton) so
-                          // the last scrollable item never sits under it.
-                          SizedBox(height: _stickyButtonReservedHeight),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -403,22 +544,6 @@ class _TaskDetailFormState extends ConsumerState<TaskDetailForm> {
           ),
         ),
       ),
-      floatingActionButton: SafeArea(
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: theme.spacingLg),
-          child: SizedBox(
-            key: _stickyButtonKey,
-            width: double.infinity,
-            child: AppButton(
-              label: 'Continue',
-              size: AppButtonSize.large,
-              shape: AppButtonShape.pill,
-              onPressed: _save,
-            ),
-          ),
-        ),
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 }

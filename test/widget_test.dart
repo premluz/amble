@@ -4,8 +4,11 @@ import 'package:hive_ce/hive_ce.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/main.dart';
 import 'package:amble/shared/models/task.dart';
+import 'package:amble/shared/providers/notification_providers.dart';
 import 'package:amble/shared/providers/task_providers.dart';
 import 'package:amble/shared/repositories/hive_task_repository.dart';
+
+import 'support/fake_notification_service.dart';
 
 void main() {
   late Box<Task> box;
@@ -29,6 +32,9 @@ void main() {
       ProviderScope(
         overrides: [
           taskRepositoryProvider.overrideWithValue(HiveTaskRepository(box)),
+          notificationServiceProvider.overrideWithValue(
+            FakeNotificationService(),
+          ),
         ],
         child: const AmbleApp(),
       ),

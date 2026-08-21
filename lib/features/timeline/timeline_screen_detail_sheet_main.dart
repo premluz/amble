@@ -64,7 +64,6 @@ class _PreviewAppState extends State<_PreviewApp> {
     return ProviderScope(
       child: MaterialApp(
         navigatorKey: _navigatorKey,
-        debugShowCheckedModeBanner: false,
         theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
         home: const Scaffold(body: TimelineScreen()),
       ),

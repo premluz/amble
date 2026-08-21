@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -11,6 +13,7 @@ import 'day_navigation_row.dart';
 import 'hour_markers.dart';
 import 'selected_date_provider.dart';
 import 'task_capsule_block.dart';
+import 'task_overlap_layout.dart';
 import 'tasks_for_selected_day_provider.dart';
 
 const _startHour = 6;
@@ -18,12 +21,14 @@ const _endHour = 22;
 const _pixelsPerMinute = 1.5;
 const _hourGutterWidth = 56.0;
 
-/// [TaskCapsuleBlock]'s badge is `spacingXl * 1.5` per its own
-/// implementation; mirrored here (not imported — the badge size is an
-/// internal layout detail, not part of its public API) so this screen can
-/// align the badge's vertical *center*, not its top edge, with the task's
-/// scheduled-time row. See docs/DECISIONS.md.
-double _badgeSize(AmbleTheme theme) => theme.spacingXl * 1.5;
+/// [TaskCapsuleBlock]'s pill width, mirrored here (not imported — it's an
+/// internal layout detail of that component, not part of its public API)
+/// so overlapping tasks can be offset by exactly one pill per column. See
+/// docs/DECISIONS.md.
+double _pillWidth(AmbleTheme theme) => theme.spacingXl * 1.5;
+
+/// Horizontal gap between the pills of two overlapping tasks.
+double _columnGap(AmbleTheme theme) => theme.spacingXs;
 
 /// The Timeline day view — hour markers, tasks for the selected day
 /// positioned by [Task.scheduledAt]/[Task.durationMinutes], a live
@@ -128,9 +133,19 @@ class _DayTimeline extends StatefulWidget {
 class _DayTimelineState extends State<_DayTimeline> {
   final _scrollController = ScrollController();
 
+  /// Ticks once a minute so the hour labels can keep hiding whichever one
+  /// [CurrentTimeIndicator]'s bold "now" label would sit on top of. The
+  /// indicator keeps its own timer for its own position — this one exists
+  /// solely for the label-collision rule, which changes at most hourly.
+  Timer? _minuteTimer;
+  DateTime _now = DateTime.now();
+
   @override
   void initState() {
     super.initState();
+    _minuteTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() => _now = DateTime.now());
+    });
     // Open the day view scrolled to roughly the current time, not 6am,
     // so "now" is visible without the user having to scroll first.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -148,6 +163,7 @@ class _DayTimelineState extends State<_DayTimeline> {
 
   @override
   void dispose() {
+    _minuteTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
@@ -168,28 +184,35 @@ class _DayTimelineState extends State<_DayTimeline> {
         height: dayHeight,
         child: Stack(
           children: [
-            const HourMarkers(
+            HourMarkers(
               startHour: _startHour,
               endHour: _endHour,
               pixelsPerMinute: _pixelsPerMinute,
+              hideLabelNear: _now,
             ),
-            for (final task in tasks)
+            // Overlapping tasks are laid out side by side rather than
+            // stacked on top of each other — Amble never moves a task the
+            // user didn't drag (cascade replanning is out of MVP scope,
+            // see docs/SCOPE.md), so a clash stays visible instead.
+            for (final slot in layoutOverlappingTasks(tasks))
               _DraggableTaskBlock(
-                key: ValueKey(task.id),
-                task: task,
+                key: ValueKey(slot.task.id),
+                task: slot.task,
                 theme: theme,
                 baseTop:
-                    _minutesSinceStart(task.scheduledAt) * _pixelsPerMinute -
-                    _badgeSize(theme) / 2,
+                    _minutesSinceStart(slot.task.scheduledAt!) *
+                    _pixelsPerMinute,
                 left: _hourGutterWidth,
-                onTap: () => widget.onTaskTap(task),
-                onToggleComplete: () => widget.onToggleComplete(task),
+                slot: slot,
+                onTap: () => widget.onTaskTap(slot.task),
+                onToggleComplete: () => widget.onToggleComplete(slot.task),
                 onReschedule: (newScheduledAt) =>
-                    widget.onReschedule(task, newScheduledAt),
+                    widget.onReschedule(slot.task, newScheduledAt),
               ),
             const CurrentTimeIndicator(
               startHour: _startHour,
               pixelsPerMinute: _pixelsPerMinute,
+              gutterWidth: _hourGutterWidth,
             ),
           ],
         ),
@@ -213,6 +236,7 @@ class _DraggableTaskBlock extends StatefulWidget {
     required this.theme,
     required this.baseTop,
     required this.left,
+    required this.slot,
     required this.onTap,
     required this.onToggleComplete,
     required this.onReschedule,
@@ -222,6 +246,11 @@ class _DraggableTaskBlock extends StatefulWidget {
   final AmbleTheme theme;
   final double baseTop;
   final double left;
+
+  /// This task's horizontal share of the timeline — full width when it
+  /// overlaps nothing, a narrowed column when it clashes with others.
+  final TaskLayoutSlot slot;
+
   final VoidCallback onTap;
   final VoidCallback onToggleComplete;
   final ValueChanged<DateTime> onReschedule;
@@ -236,13 +265,31 @@ class _DraggableTaskBlockState extends State<_DraggableTaskBlock> {
 
   static const _snapMinutes = 5;
 
+  /// The start time this drag would commit to if released right now —
+  /// derived from the same snapped offset the drop itself uses, so the
+  /// time shown mid-drag can never disagree with the time actually saved.
+  DateTime get _previewStartsAt =>
+      widget.task.scheduledAt!.add(Duration(minutes: _snappedMinutesDelta));
+
+  int get _snappedMinutesDelta =>
+      (_dragOffset / _pixelsPerMinute / _snapMinutes).round() * _snapMinutes;
+
   @override
   Widget build(BuildContext context) {
     final top = widget.baseTop + _dragOffset;
+    final slot = widget.slot;
+
+    // Overlapping tasks are nudged right by one pill-width per column, so
+    // each stays individually visible and tappable. A fractional width
+    // wouldn't work here: the pill is a fixed-width element inside the
+    // block's Row, so narrowing the available width leaves it exactly where
+    // it was — the offset has to be a real horizontal shift.
+    final columnOffset =
+        slot.column * (_pillWidth(widget.theme) + _columnGap(widget.theme));
 
     return Positioned(
       top: top,
-      left: widget.left,
+      left: widget.left + columnOffset,
       right: 0,
       child: GestureDetector(
         onVerticalDragStart: (_) => setState(() => _isDragging = true),
@@ -250,17 +297,13 @@ class _DraggableTaskBlockState extends State<_DraggableTaskBlock> {
           setState(() => _dragOffset += details.delta.dy);
         },
         onVerticalDragEnd: (_) {
-          final minutesDelta =
-              (_dragOffset / _pixelsPerMinute / _snapMinutes).round() *
-              _snapMinutes;
+          final minutesDelta = _snappedMinutesDelta;
+          final newScheduledAt = _previewStartsAt;
           setState(() {
             _isDragging = false;
             _dragOffset = 0;
           });
           if (minutesDelta == 0) return;
-          final newScheduledAt = widget.task.scheduledAt.add(
-            Duration(minutes: minutesDelta),
-          );
           widget.onReschedule(newScheduledAt);
         },
         child: Opacity(
@@ -270,6 +313,12 @@ class _DraggableTaskBlockState extends State<_DraggableTaskBlock> {
             pixelsPerMinute: _pixelsPerMinute,
             onTap: widget.onTap,
             onToggleComplete: widget.onToggleComplete,
+            dragPreviewStartsAt: _isDragging ? _previewStartsAt : null,
+            // When a task shares its slot, its text has to stop before the
+            // next column's pill starts, or titles run under neighbours.
+            maxTextWidth: slot.column < slot.columnCount - 1
+                ? _pillWidth(widget.theme)
+                : null,
           ),
         ),
       ),

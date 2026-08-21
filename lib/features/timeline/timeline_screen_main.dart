@@ -84,7 +84,6 @@ class _PreviewApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return ProviderScope(
       child: MaterialApp(
-        debugShowCheckedModeBanner: false,
         theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
         home: const Scaffold(body: TimelineScreen()),
       ),

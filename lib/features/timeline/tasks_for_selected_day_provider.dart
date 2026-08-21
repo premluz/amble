@@ -16,11 +16,12 @@ List<Task> tasksForSelectedDay(Ref ref) {
 
   final tasksForDay = allTasks.where((task) {
     final scheduledAt = task.scheduledAt;
+    if (scheduledAt == null) return false;
     return scheduledAt.year == selectedDate.year &&
         scheduledAt.month == selectedDate.month &&
         scheduledAt.day == selectedDate.day;
   }).toList();
 
-  tasksForDay.sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
+  tasksForDay.sort((a, b) => a.scheduledAt!.compareTo(b.scheduledAt!));
   return tasksForDay;
 }

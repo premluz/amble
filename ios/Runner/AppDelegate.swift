@@ -1,5 +1,9 @@
 import Flutter
 import UIKit
+// Required for calling FlutterLocalNotificationsPlugin.setPluginRegistrantCallback,
+// so plugin channels are available if a notification action runs in the
+// background isolate.
+import flutter_local_notifications
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -11,6 +15,9 @@ import UIKit
   }
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
+    FlutterLocalNotificationsPlugin.setPluginRegistrantCallback { (registry) in
+      GeneratedPluginRegistrant.register(with: registry)
+    }
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
   }
 }

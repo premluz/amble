@@ -16,7 +16,6 @@ class _PreviewApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      debugShowCheckedModeBanner: false,
       theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
       home: const Scaffold(body: SafeArea(child: TimelineCapsulePreview())),
     );
