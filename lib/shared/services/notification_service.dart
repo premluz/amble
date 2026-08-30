@@ -160,6 +160,7 @@ class NotificationService {
   /// notification permission is denied — the app must keep working without
   /// it either way.
   Future<void> scheduleForTask(Task task) async {
+    if (!task.notificationsEnabled) return;
     final scheduledAt = task.scheduledAt;
     if (scheduledAt == null) return;
     if (!scheduledAt.isAfter(DateTime.now())) return;

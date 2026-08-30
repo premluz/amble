@@ -3,22 +3,37 @@
 // Check in to version control
 
 import 'package:hive_ce/hive_ce.dart';
+import 'package:amble/shared/models/app_theme_mode.dart';
+import 'package:amble/shared/models/behavior_target_type.dart';
+import 'package:amble/shared/models/recurrence_frequency.dart';
+import 'package:amble/shared/models/recurrence_rule.dart';
 import 'package:amble/shared/models/task.dart';
 import 'package:amble/shared/models/task_category.dart';
 import 'package:amble/shared/models/task_status.dart';
+import 'package:amble/shared/models/tracked_behavior.dart';
 
 extension HiveRegistrar on HiveInterface {
   void registerAdapters() {
+    registerAdapter(AppThemeModeAdapter());
+    registerAdapter(BehaviorTargetTypeAdapter());
+    registerAdapter(RecurrenceFrequencyAdapter());
+    registerAdapter(RecurrenceRuleAdapter());
     registerAdapter(TaskAdapter());
     registerAdapter(TaskCategoryAdapter());
     registerAdapter(TaskStatusAdapter());
+    registerAdapter(TrackedBehaviorAdapter());
   }
 }
 
 extension IsolatedHiveRegistrar on IsolatedHiveInterface {
   void registerAdapters() {
+    registerAdapter(AppThemeModeAdapter());
+    registerAdapter(BehaviorTargetTypeAdapter());
+    registerAdapter(RecurrenceFrequencyAdapter());
+    registerAdapter(RecurrenceRuleAdapter());
     registerAdapter(TaskAdapter());
     registerAdapter(TaskCategoryAdapter());
     registerAdapter(TaskStatusAdapter());
+    registerAdapter(TrackedBehaviorAdapter());
   }
 }

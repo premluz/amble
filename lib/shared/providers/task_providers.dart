@@ -1,17 +1,41 @@
 import 'package:flutter/foundation.dart';
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:uuid/uuid.dart';
 
+import '../models/recurrence_rule.dart';
 import '../models/task.dart';
 import '../models/task_category.dart';
 import '../models/task_status.dart';
 import '../repositories/hive_task_repository.dart';
 import '../repositories/task_repository.dart';
+import '../services/cascade_reschedule.dart';
+import '../services/recurrence_generator.dart';
 import 'notification_providers.dart';
 
 part 'task_providers.g.dart';
 
 const taskBoxName = 'tasks';
+
+const _uuid = Uuid();
+
+/// Finds the template task (the one row carrying [Task.recurrenceRule])
+/// for whichever series [instance] belongs to, searching [allTasks]. A
+/// plain top-level function (not a provider method) so both
+/// [TaskList._findSeriesTemplate] and Task Detail's edit-schedule UI can
+/// resolve "which row actually owns this series' rule" against a list
+/// they already have, without a second repository read.
+///
+/// Throws (via `firstWhere`'s default) if [instance] isn't recurring or
+/// its series has no template — callers only reach this after confirming
+/// `instance.isRecurring`, so that's a real invariant violation, not a
+/// normal control-flow case to swallow.
+Task findSeriesTemplate(Task instance, List<Task> allTasks) {
+  final seriesId = instance.recurrenceId;
+  return allTasks.firstWhere(
+    (task) => task.recurrenceId == seriesId && task.isRecurrenceTemplate,
+  );
+}
 
 /// Outcome of [TaskList.importTasks] — per-task counts so the caller can
 /// show a summary without needing to inspect individual tasks. See
@@ -51,12 +75,19 @@ class TaskList extends _$TaskList {
     return ref.watch(taskRepositoryProvider).getTasks();
   }
 
+  /// Creates a task. Passing [recurrenceRule] makes it the template of a
+  /// new recurring series: the template is saved, then the rest of the
+  /// rolling window is materialized immediately so the series is visible
+  /// on the Timeline right away rather than only after the next launch.
   Future<void> createTask({
     required String title,
     String? notes,
     required DateTime scheduledAt,
     required int durationMinutes,
     required TaskCategory category,
+    RecurrenceRule? recurrenceRule,
+    String? behaviorId,
+    bool notificationsEnabled = true,
   }) async {
     final task = Task.create(
       title: title,
@@ -64,10 +95,61 @@ class TaskList extends _$TaskList {
       scheduledAt: scheduledAt,
       durationMinutes: durationMinutes,
       category: category,
-    );
+      // A series is identified by its template's own id — no second
+      // identifier to keep in sync, and the template is trivially findable.
+      recurrenceId: recurrenceRule == null ? null : _uuid.v4(),
+      recurrenceRule: recurrenceRule,
+      notificationsEnabled: notificationsEnabled,
+    )..behaviorId = behaviorId;
     await ref.read(taskRepositoryProvider).saveTask(task);
     await _syncNotificationSafely(task);
+
+    if (recurrenceRule != null) {
+      await _materializeSeries(task);
+    }
     _refresh();
+  }
+
+  /// Generates and persists any missing instances for [template]'s series.
+  /// Writes go through [TaskRepository] like every other mutation — the
+  /// generator itself only computes, it never persists.
+  Future<void> _materializeSeries(Task template) async {
+    final repository = ref.read(taskRepositoryProvider);
+    final seriesId = template.recurrenceId;
+    if (seriesId == null) return;
+
+    final existing = repository
+        .getTasks()
+        .where((task) => task.recurrenceId == seriesId)
+        .toList();
+
+    final generated = generateRecurrenceInstances(
+      template: template,
+      existingInstances: existing,
+      now: DateTime.now(),
+    );
+
+    for (final instance in generated) {
+      await repository.saveTask(instance);
+      await _syncNotificationSafely(instance);
+    }
+  }
+
+  /// Tops up every recurring series' rolling window. Called once at app
+  /// launch (see main.dart) — deliberately not on every Timeline build, so
+  /// day-swiping stays a pure read. Idempotent: instances already covering
+  /// an occurrence are skipped, so repeat calls create no duplicates.
+  Future<void> materializeDueRecurrences() async {
+    final templates = ref
+        .read(taskRepositoryProvider)
+        .getTasks()
+        .where((task) => task.isRecurrenceTemplate)
+        .toList();
+
+    for (final template in templates) {
+      await _materializeSeries(template);
+    }
+    if (templates.isNotEmpty) _refresh();
   }
 
   /// Captures a title-only, unscheduled Inbox item. Per design principle 2
@@ -100,6 +182,164 @@ class TaskList extends _$TaskList {
     _refresh();
   }
 
+  /// Saves [task]'s other field changes AND turns it into a new recurring
+  /// series' template in one call — the edit-flow equivalent of
+  /// [createTask]'s own `recurrenceRule` parameter, for a task that was
+  /// plain (never recurring) when editing began. Requested directly: the
+  /// "Repeats" panel is now also reachable from Task Detail's edit-schedule
+  /// step, not just the create form.
+  ///
+  /// Deliberately a SEPARATE method from [updateTask], not an added
+  /// optional parameter there — every other [updateTask] caller (a plain
+  /// reschedule/retitle/etc.) must never accidentally materialize a
+  /// series, and a method that only sometimes does something this
+  /// consequential based on whether an argument happened to be null would
+  /// be an easy future bug to introduce by omission.
+  ///
+  /// [task] must not already be recurring (`task.isRecurring == false`) —
+  /// changing/cancelling an EXISTING series' rule is
+  /// [updateTaskWithChangedRecurrence]/[disableTaskRecurrence] instead
+  /// (a separate follow-up, since it needs a template lookup and a
+  /// future-instances policy this method never had to consider). This is
+  /// an assertion, not a runtime branch, so calling the wrong one fails
+  /// loudly in debug rather than silently doing the wrong thing.
+  Future<void> updateTaskWithNewRecurrence(
+    Task task,
+    RecurrenceRule recurrenceRule,
+  ) async {
+    assert(
+      !task.isRecurring,
+      'updateTaskWithNewRecurrence is for turning Repeats on for a '
+      'previously-plain task only — task is already part of a series.',
+    );
+    task.recurrenceId = _uuid.v4();
+    task.recurrenceRule = recurrenceRule;
+    await ref.read(taskRepositoryProvider).saveTask(task);
+    await _syncNotificationSafely(task);
+    await _materializeSeries(task);
+    _refresh();
+  }
+
+  /// See the top-level [findSeriesTemplate] — this just supplies the
+  /// current task list from the repository.
+  Task _findSeriesTemplate(Task instance) {
+    return findSeriesTemplate(
+      instance,
+      ref.read(taskRepositoryProvider).getTasks(),
+    );
+  }
+
+  /// Deletes every future instance of [template]'s series that the user
+  /// hasn't touched — confirmed via AskUserQuestion as the safe default
+  /// for both a rule change and a disable: "untouched" is still `pending`,
+  /// was never individually rescheduled (`originalScheduledAt` is null,
+  /// so it's still sitting at the slot the series itself generated it
+  /// for), and is scheduled today or later. Anything the user completed,
+  /// skipped, or moved is a real action on that specific occurrence and is
+  /// never deleted just because the series rule changed underneath it.
+  /// The template itself is never a candidate (it's the row being edited,
+  /// not one of its own generated instances).
+  Future<void> _deleteUntouchedFutureInstances(Task template) async {
+    final repository = ref.read(taskRepositoryProvider);
+    final seriesId = template.recurrenceId;
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+
+    final toDelete = repository
+        .getTasks()
+        .where(
+          (task) =>
+              task.recurrenceId == seriesId &&
+              task.id != template.id &&
+              task.status == TaskStatus.pending &&
+              task.originalScheduledAt == null &&
+              task.scheduledAt != null &&
+              !task.scheduledAt!.isBefore(todayStart),
+        )
+        .toList();
+
+    for (final task in toDelete) {
+      await repository.deleteTask(task.id);
+    }
+  }
+
+  /// Changes an EXISTING series' rule (e.g. different days) from any of
+  /// its instances — requested directly as the follow-up to
+  /// [updateTaskWithNewRecurrence]. Resolves to the series' template
+  /// (see [_findSeriesTemplate]) regardless of which instance [task] is,
+  /// saves [task]'s own other field changes first, prunes untouched
+  /// future instances under the OLD rule (see
+  /// [_deleteUntouchedFutureInstances]), then re-materializes under the
+  /// new one so the Timeline reflects the change immediately rather than
+  /// only after the next rolling-window top-up.
+  Future<void> updateTaskWithChangedRecurrence(
+    Task task,
+    RecurrenceRule recurrenceRule,
+  ) async {
+    assert(
+      task.isRecurring,
+      'updateTaskWithChangedRecurrence is for a task already part of a '
+      'series — use updateTaskWithNewRecurrence to start one.',
+    );
+    await ref.read(taskRepositoryProvider).saveTask(task);
+    await _syncNotificationSafely(task);
+
+    final template = _findSeriesTemplate(task);
+    await _deleteUntouchedFutureInstances(template);
+    template.recurrenceRule = recurrenceRule;
+    await ref.read(taskRepositoryProvider).saveTask(template);
+    await _materializeSeries(template);
+    _refresh();
+  }
+
+  /// Turns off an EXISTING series from any of its instances — requested
+  /// directly, "which would remove future instances." Saves [task]'s own
+  /// other field changes, prunes untouched future instances (see
+  /// [_deleteUntouchedFutureInstances]), then clears the TEMPLATE's own
+  /// `recurrenceId`/`recurrenceRule` — confirmed via AskUserQuestion: the
+  /// template becomes an ordinary task (same as one that never repeated),
+  /// not a "was recurring" husk that keeps `recurrenceId` for history.
+  /// Past/touched instances keep their own `recurrenceId` untouched, so
+  /// they still show as having been part of a series — only the template
+  /// detaches.
+  Future<void> disableTaskRecurrence(Task task) async {
+    assert(
+      task.isRecurring,
+      'disableTaskRecurrence is for a task already part of a series.',
+    );
+    await ref.read(taskRepositoryProvider).saveTask(task);
+    await _syncNotificationSafely(task);
+
+    final template = _findSeriesTemplate(task);
+    await _deleteUntouchedFutureInstances(template);
+    template.recurrenceId = null;
+    template.recurrenceRule = null;
+    await ref.read(taskRepositoryProvider).saveTask(template);
+    _refresh();
+  }
+
+  /// Creates a standalone copy of [source] — same title/category/notes/
+  /// schedule as the original, but a fresh UUID (via [Task.create]) and no
+  /// link to the original's recurrence series: a duplicate is a new,
+  /// independent task, not another instance of that series. Status/
+  /// completion are deliberately not copied either — a duplicate starts
+  /// fresh as `pending`, matching [Task.create]'s own defaults. Returns the
+  /// saved task so the caller can open it for review (e.g. in "Edit
+  /// details") without a second lookup.
+  Future<Task> duplicateTask(Task source) async {
+    final duplicate = Task.create(
+      title: source.title,
+      notes: source.notes,
+      scheduledAt: source.scheduledAt!,
+      durationMinutes: source.durationMinutes!,
+      category: source.category,
+    )..behaviorId = source.behaviorId;
+    await ref.read(taskRepositoryProvider).saveTask(duplicate);
+    await _syncNotificationSafely(duplicate);
+    _refresh();
+    return duplicate;
+  }
+
   /// Moves [task] to [newScheduledAt]. Per the Constitution's data model:
   /// `originalScheduledAt` is set only on the *first* reschedule and
   /// preserved afterward (never overwritten), and `status` moves to
@@ -113,19 +353,54 @@ class TaskList extends _$TaskList {
     _refresh();
   }
 
+  /// Applies every move in a cascade reschedule (see
+  /// `shared/services/cascade_reschedule.dart`) — the dragged task's own
+  /// move plus every task it pushed out of the way. Each move goes through
+  /// the exact same per-task semantics as [rescheduleTask] (looked up fresh
+  /// by id, `originalScheduledAt` preserved on first reschedule only,
+  /// `status` set to `rescheduled`), just applied to more than one task in
+  /// one call — mirrors how [_materializeSeries] loops and writes several
+  /// tasks through the repository rather than the UI layer looping over
+  /// individual mutator calls. One [_refresh] at the end, not one per move,
+  /// so the Timeline doesn't rebuild mid-cascade.
+  Future<void> rescheduleTaskWithCascade(List<TaskMove> moves) async {
+    final repository = ref.read(taskRepositoryProvider);
+    for (final move in moves) {
+      final task = repository.getTaskById(move.taskId);
+      if (task == null) continue;
+      task.originalScheduledAt ??= task.scheduledAt;
+      task.scheduledAt = move.newScheduledAt;
+      task.status = TaskStatus.rescheduled;
+      await repository.saveTask(task);
+      await _syncNotificationSafely(task);
+    }
+    _refresh();
+  }
+
   /// Toggles [task] between `completed` and `pending`, writing/clearing
   /// `completedAt` alongside `status` per the Constitution (a separate
   /// timestamp from `scheduledAt`, never conflated with it). Syncing the
   /// notification here cancels the alert when a task is marked done early
   /// (no reason to alert for something already finished) and restores it if
   /// toggled back to pending while still in the future.
-  Future<void> toggleComplete(Task task) async {
+  /// Toggles completion. [actualAmount] is the outcome recorded against a
+  /// linked [TrackedBehavior], and is only ever passed for a task that has
+  /// a `behaviorId` — an ordinary task's call site omits it entirely, so
+  /// ordinary completion is byte-for-byte the same operation it was before
+  /// tracked behaviors existed.
+  ///
+  /// Un-completing clears any recorded amount: the outcome described a
+  /// completion that no longer stands, so leaving it would misreport
+  /// history.
+  Future<void> toggleComplete(Task task, {num? actualAmount}) async {
     if (task.status == TaskStatus.completed) {
       task.status = TaskStatus.pending;
       task.completedAt = null;
+      task.actualAmount = null;
     } else {
       task.status = TaskStatus.completed;
       task.completedAt = DateTime.now();
+      if (actualAmount != null) task.actualAmount = actualAmount;
     }
     await ref.read(taskRepositoryProvider).saveTask(task);
     await _syncNotificationSafely(task);
@@ -134,12 +409,89 @@ class TaskList extends _$TaskList {
 
   Future<void> deleteTask(String id) async {
     await ref.read(taskRepositoryProvider).deleteTask(id);
+    await _cancelNotificationSafely(id);
+    _refresh();
+  }
+
+  /// Removes [instance] and every OTHER instance of its series scheduled
+  /// today or later, then clears the template's recurrence fields so no
+  /// further instances generate. Requested directly: removing a recurring
+  /// task now asks "this one or all", and this is the "all" branch.
+  ///
+  /// Past instances are deliberately kept — same reasoning as
+  /// [disableTaskRecurrence]: they're a record of work that actually
+  /// happened, and "remove this repeating task" reads as "stop it from
+  /// here on," not "erase its history." Confirmed via AskUserQuestion.
+  ///
+  /// Unlike [_deleteUntouchedFutureInstances], this does NOT spare future
+  /// instances the user has completed/skipped/rescheduled. That protection
+  /// exists so a *rule change* can't silently erase deliberate work; an
+  /// explicit delete is the opposite — leaving a rescheduled future
+  /// instance behind would look like the delete had failed. Also confirmed
+  /// via AskUserQuestion rather than assumed.
+  ///
+  /// The template row itself is deleted too when it falls today or later.
+  /// When it's in the past it survives (as history) but is stripped of its
+  /// recurrence fields, so it stops being a template and generates
+  /// nothing further.
+  Future<void> deleteTaskSeries(Task instance) async {
+    assert(
+      instance.isRecurring,
+      'deleteTaskSeries is for a task that belongs to a series — use '
+      'deleteTask for a plain one.',
+    );
+    final repository = ref.read(taskRepositoryProvider);
+    final seriesId = instance.recurrenceId;
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+
+    final seriesTasks = repository
+        .getTasks()
+        .where((task) => task.recurrenceId == seriesId)
+        .toList();
+
+    // Resolved before any deletion, since the template may itself be one
+    // of the rows about to be removed.
+    final template = seriesTasks.firstWhere(
+      (task) => task.isRecurrenceTemplate,
+      orElse: () => instance,
+    );
+
+    for (final task in seriesTasks) {
+      final isFuture =
+          task.scheduledAt != null && !task.scheduledAt!.isBefore(todayStart);
+      // The tapped instance goes regardless of when it falls — the user
+      // asked for it directly.
+      if (isFuture || task.id == instance.id) {
+        await repository.deleteTask(task.id);
+        await _cancelNotificationSafely(task.id);
+      }
+    }
+
+    // A past template survives as history, so detach it explicitly or it
+    // would keep generating new instances on the next rolling-window
+    // top-up.
+    final templateSurvived =
+        template.scheduledAt != null &&
+        template.scheduledAt!.isBefore(todayStart) &&
+        template.id != instance.id;
+    if (templateSurvived) {
+      template.recurrenceId = null;
+      template.recurrenceRule = null;
+      await repository.saveTask(template);
+    }
+
+    _refresh();
+  }
+
+  /// Cancels [id]'s notification without letting a platform failure block
+  /// the delete that prompted it — mirrors [_syncNotificationSafely].
+  Future<void> _cancelNotificationSafely(String id) async {
     try {
       await ref.read(notificationServiceProvider).cancelForTask(id);
     } catch (error) {
       debugPrint('Notification cancel failed for task $id: $error');
     }
-    _refresh();
   }
 
   /// Syncs [task]'s notification without letting a scheduling failure block

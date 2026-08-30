@@ -1,8 +1,10 @@
 // SCAFFOLDING entry point — launches TimelineScreen with one seeded task
-// and immediately opens its detail sheet (via code, not a real tap — CI/
+// and immediately opens its action sheet (via code, not a real tap — CI/
 // this environment has no tap-injection tool available for the simulator),
-// for visual review of the sheet layout. Not part of the real app. Run
-// with: flutter run -t lib/features/timeline/timeline_screen_detail_sheet_main.dart
+// for visual review of the action-sheet layout (the real result of tapping
+// a task on the Timeline — see docs/DECISIONS.md). Not part of the real
+// app. Run with:
+//   flutter run -t lib/features/timeline/timeline_screen_detail_sheet_main.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';
@@ -12,7 +14,7 @@ import '../../hive_registrar.g.dart';
 import '../../shared/models/task.dart';
 import '../../shared/models/task_category.dart';
 import '../../shared/providers/task_providers.dart';
-import '../task_detail/task_detail_sheet.dart';
+import '../task_detail/task_action_sheet.dart';
 import 'timeline_screen.dart';
 
 Future<void> main() async {
@@ -54,7 +56,7 @@ class _PreviewAppState extends State<_PreviewApp> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final context = _navigatorKey.currentContext;
       if (context != null) {
-        showTaskDetailSheet(context, task: widget.task);
+        showTaskActionSheet(context, task: widget.task);
       }
     });
   }

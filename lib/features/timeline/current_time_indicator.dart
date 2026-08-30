@@ -5,27 +5,35 @@ import 'package:flutter/material.dart';
 import '../../core/tokens/semantic_theme.dart';
 
 /// Horizontal marker at the current time, positioned on the same
-/// pixels-per-minute scale as [HourMarkers]/task blocks. Refreshes every
-/// minute via a periodic timer — simplest correct option for a clock-driven
-/// UI element; see docs/DECISIONS.md for the alternatives considered.
+/// pixels-per-minute scale as the day view's task boundary labels and task
+/// blocks. Refreshes every minute via a periodic timer — simplest correct
+/// option for a clock-driven UI element; see docs/DECISIONS.md for the
+/// alternatives considered.
 ///
 /// The current time is labelled in bold at the left, in the same gutter as
-/// [HourMarkers]' hour labels, so "now" reads as the emphasised member of
-/// that column rather than a separate element — the surrounding hour
-/// labels stay muted and secondary by contrast.
+/// the day view's task-boundary time labels (see `TaskBoundaryMarkers`),
+/// so "now" reads as the emphasised member of that column rather than a
+/// separate element — the surrounding labels stay muted and secondary by
+/// contrast.
 class CurrentTimeIndicator extends StatefulWidget {
   const CurrentTimeIndicator({
     super.key,
-    this.startHour = 6,
+    required this.rangeStart,
+    required this.rangeEnd,
     this.pixelsPerMinute = 1.5,
     this.gutterWidth = 56.0,
   });
 
-  final int startHour;
+  /// The day view's visible top/bottom edges — a dynamic, per-day computed
+  /// window (see `_DayTimelineState`), not a fixed hour range. "Now" only
+  /// renders when it actually falls inside this window; a day clamped to
+  /// its tasks' own times can easily not include the real current time.
+  final DateTime rangeStart;
+  final DateTime rangeEnd;
   final double pixelsPerMinute;
 
-  /// Width of the hour-label gutter this indicator's time label shares
-  /// with [HourMarkers], so the two align on the same left edge.
+  /// Width of the time-label gutter this indicator's time label shares
+  /// with `TaskBoundaryMarkers`, so the two align on the same left edge.
   final double gutterWidth;
 
   @override
@@ -53,10 +61,11 @@ class _CurrentTimeIndicatorState extends State<CurrentTimeIndicator> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
-    final minutesSinceStart = (_now.hour - widget.startHour) * 60 + _now.minute;
+    if (_now.isBefore(widget.rangeStart) || _now.isAfter(widget.rangeEnd)) {
+      return const SizedBox.shrink();
+    }
+    final minutesSinceStart = _now.difference(widget.rangeStart).inMinutes;
     final top = minutesSinceStart * widget.pixelsPerMinute;
-
-    if (top < 0) return const SizedBox.shrink();
 
     return Positioned(
       top: top,

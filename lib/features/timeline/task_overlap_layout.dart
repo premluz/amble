@@ -2,12 +2,16 @@ import '../../shared/models/task.dart';
 
 /// Where a task sits horizontally when it shares time with others.
 ///
-/// The Timeline never moves a task the user didn't drag (cascade
-/// replanning is explicitly out of MVP scope — see docs/SCOPE.md), so
-/// overlapping tasks are shown side by side instead: the conflict stays
-/// visible and the user decides what to do about it. This is the standard
-/// calendar treatment and matches design principle 1 (the plan is
-/// provisional, not a verdict).
+/// This layout only ever applies to tasks the user didn't just drag — an
+/// overlap left in place (created/edited via the modals, which reject
+/// overlapping saves when the "Prevent overlapping tasks" preference is on)
+/// or reached with the preference off, is shown side by side instead: the
+/// conflict stays visible and the user decides what to do about it. When
+/// the preference is on and the overlap arises from a drag specifically,
+/// `cascade_reschedule.dart`'s push logic resolves it before this layout
+/// ever sees the conflict — see docs/SCOPE.md. This is the standard
+/// calendar treatment for the remaining cases and matches design principle
+/// 1 (the plan is provisional, not a verdict).
 class TaskLayoutSlot {
   const TaskLayoutSlot({
     required this.task,

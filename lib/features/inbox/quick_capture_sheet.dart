@@ -84,7 +84,7 @@ class _QuickCaptureFormState extends ConsumerState<_QuickCaptureForm> {
                 vertical: theme.spacingMd,
               ),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(theme.radiusControl),
+                borderRadius: BorderRadius.circular(theme.radiusMd),
                 borderSide: BorderSide.none,
               ),
             ),

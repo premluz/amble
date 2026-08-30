@@ -11,28 +11,41 @@ import '../tokens/semantic_theme.dart';
 class AppSheet {
   AppSheet._();
 
+  /// [padded] wraps [builder]'s result in the sheet's standard inset.
+  /// Content that manages its own padding (a picker that needs its wheels
+  /// to reach the sheet's edges) passes false.
   static Future<T?> show<T>({
     required BuildContext context,
     required WidgetBuilder builder,
+    bool padded = true,
   }) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     final platform = Theme.of(context).platform;
     final isCupertino =
         platform == TargetPlatform.iOS || platform == TargetPlatform.macOS;
 
-    final content = Padding(
-      padding: EdgeInsets.all(theme.spacingLg),
-      child: builder(context),
-    );
+    // Builds with the SHEET ROUTE's context, not the caller's. Building
+    // eagerly with the outer context (as this used to) meant a builder
+    // that called `Navigator.of(ctx).pop(value)` popped the caller's
+    // route instead of the sheet — so the sheet never closed and
+    // `show()` never returned its value. Only surfaced once a caller
+    // actually needed a return value; every prior caller was fire-and-
+    // forget, which is why it went unnoticed.
+    Widget content(BuildContext sheetContext) => padded
+        ? Padding(
+            padding: EdgeInsets.all(theme.spacingLg),
+            child: builder(sheetContext),
+          )
+        : builder(sheetContext);
 
     if (isCupertino) {
       return showCupertinoModalPopup<T>(
         context: context,
-        builder: (context) => Container(
+        builder: (sheetContext) => Container(
           decoration: BoxDecoration(
-            color: theme.colorSurfacePrimary,
+            color: theme.colorSurfaceBase,
             borderRadius: BorderRadius.vertical(
-              top: Radius.circular(theme.radiusSheet),
+              top: Radius.circular(theme.radiusModal),
             ),
           ),
           // showCupertinoModalPopup has no Material ancestor, but sheet
@@ -42,7 +55,7 @@ class AppSheet {
           // the Cupertino background above.
           child: Material(
             type: MaterialType.transparency,
-            child: SafeArea(top: false, child: content),
+            child: SafeArea(top: false, child: content(sheetContext)),
           ),
         ),
       );
@@ -50,13 +63,15 @@ class AppSheet {
 
     return showModalBottomSheet<T>(
       context: context,
-      backgroundColor: theme.colorSurfacePrimary,
+      barrierColor: theme.colorScrim,
+      backgroundColor: theme.colorSurfaceBase,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
-          top: Radius.circular(theme.radiusSheet),
+          top: Radius.circular(theme.radiusModal),
         ),
       ),
-      builder: (context) => SafeArea(top: false, child: content),
+      builder: (sheetContext) =>
+          SafeArea(top: false, child: content(sheetContext)),
     );
   }
 }

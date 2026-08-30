@@ -33,21 +33,30 @@ class AppButton extends StatelessWidget {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     final isPrimary = variant == AppButtonVariant.primary;
     final isLarge = size == AppButtonSize.large;
-    final background = isPrimary
-        ? theme.colorAccent
-        : theme.colorSurfaceSecondary;
-    final foreground = isPrimary
-        ? theme.colorSurfacePrimary
-        : theme.colorTextPrimary;
+    final isDisabled = onPressed == null;
+
+    // Explicit disabled treatment rather than each platform's own default
+    // (`CupertinoButton`/`ElevatedButton` both fade the WHOLE button,
+    // fill included, toward transparent — which reads as blurry/washed
+    // out). A disabled control should look like a real, solid surface
+    // that merely can't be pressed: the fill goes flat grey, and only the
+    // TEXT loses opacity, so the button still has a defined edge instead
+    // of dissolving into the page behind it.
+    final background = isDisabled
+        ? theme.colorSurfaceField
+        : (isPrimary ? theme.colorAccent : theme.colorSurfaceSecondary);
+    final foreground = isDisabled
+        ? theme.colorTextSecondary
+        : (isPrimary ? theme.colorSurfacePrimary : theme.colorTextPrimary);
     final baseTextStyle = isLarge ? theme.textBody : theme.textLabel;
     final textStyle = baseTextStyle.copyWith(
-      color: foreground,
+      color: isDisabled ? foreground.withValues(alpha: 0.6) : foreground,
       fontWeight: FontWeight.w700,
     );
     final verticalPadding = isLarge ? theme.spacingMd : theme.spacingSm;
     final cornerRadius = shape == AppButtonShape.pill
         ? theme.radiusTaskPill
-        : theme.radiusControl;
+        : theme.radiusMd;
 
     final platform = Theme.of(context).platform;
     final isCupertino =
@@ -57,6 +66,11 @@ class AppButton extends StatelessWidget {
       return CupertinoButton(
         onPressed: onPressed,
         color: background,
+        // CupertinoButton ignores `color` once disabled and falls back to
+        // its own washed-out default — `disabledColor` is the parameter
+        // that actually governs the disabled fill, so it has to repeat
+        // the same `background` explicitly or the platform default wins.
+        disabledColor: background,
         borderRadius: BorderRadius.circular(cornerRadius),
         padding: EdgeInsets.symmetric(
           horizontal: theme.spacingLg,
@@ -71,6 +85,13 @@ class AppButton extends StatelessWidget {
       style: ElevatedButton.styleFrom(
         backgroundColor: background,
         foregroundColor: foreground,
+        // Same reasoning as CupertinoButton's `disabledColor` above:
+        // ElevatedButton's default disabled state is Material's own
+        // low-alpha grey, layered on top of whatever `backgroundColor`
+        // says. These two make the explicit disabled palette the actual
+        // disabled palette, not just the enabled one.
+        disabledBackgroundColor: background,
+        disabledForegroundColor: foreground,
         elevation: 0,
         padding: EdgeInsets.symmetric(
           horizontal: theme.spacingLg,

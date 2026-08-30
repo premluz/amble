@@ -27,13 +27,18 @@ class TaskAdapter extends TypeAdapter<Task> {
       completedAt: fields[7] as DateTime?,
       category: fields[8] as TaskCategory,
       schemaVersion: fields[9] == null ? 1 : (fields[9] as num).toInt(),
+      behaviorId: fields[10] as String?,
+      actualAmount: fields[11] as num?,
+      recurrenceId: fields[12] as String?,
+      recurrenceRule: fields[13] as RecurrenceRule?,
+      notificationsEnabled: fields[14] == null ? true : fields[14] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, Task obj) {
     writer
-      ..writeByte(10)
+      ..writeByte(15)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -53,7 +58,17 @@ class TaskAdapter extends TypeAdapter<Task> {
       ..writeByte(8)
       ..write(obj.category)
       ..writeByte(9)
-      ..write(obj.schemaVersion);
+      ..write(obj.schemaVersion)
+      ..writeByte(10)
+      ..write(obj.behaviorId)
+      ..writeByte(11)
+      ..write(obj.actualAmount)
+      ..writeByte(12)
+      ..write(obj.recurrenceId)
+      ..writeByte(13)
+      ..write(obj.recurrenceRule)
+      ..writeByte(14)
+      ..write(obj.notificationsEnabled);
   }
 
   @override

@@ -87,4 +87,118 @@ void main() {
     );
     expect(a.hasSameFieldsAs(b), isFalse);
   });
+
+  group('TrackedBehavior link fields (Phase 10)', () {
+    test('both factories leave the behavior link null — ordinary tasks are '
+        'entirely unaffected', () {
+      final created = Task.create(
+        title: 'Ordinary',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        category: TaskCategory.work,
+      );
+      final captured = Task.captured(title: 'Ordinary inbox item');
+
+      for (final task in [created, captured]) {
+        expect(task.behaviorId, isNull);
+        expect(task.actualAmount, isNull);
+        expect(task.isBehaviorInstance, isFalse);
+      }
+    });
+
+    test('behaviorId and actualAmount survive a JSON round-trip', () {
+      final task =
+          Task.create(
+              title: 'Exercise',
+              scheduledAt: DateTime(2026, 8, 20, 7),
+              durationMinutes: 60,
+              category: TaskCategory.health,
+            )
+            ..behaviorId = 'behavior-123'
+            ..actualAmount = 30;
+
+      final restored = Task.fromJson(task.toJson());
+
+      expect(restored.behaviorId, 'behavior-123');
+      expect(restored.actualAmount, 30);
+      expect(restored.isBehaviorInstance, isTrue);
+    });
+
+    test('a backup exported before these fields existed still imports — the '
+        'keys are simply absent', () {
+      final legacyJson =
+          Task.create(
+              title: 'Legacy task',
+              scheduledAt: DateTime(2026, 8, 20, 9),
+              durationMinutes: 30,
+              category: TaskCategory.work,
+            ).toJson()
+            ..remove('behaviorId')
+            ..remove('actualAmount');
+
+      final restored = Task.fromJson(legacyJson);
+
+      expect(restored.title, 'Legacy task');
+      expect(restored.behaviorId, isNull);
+      expect(restored.actualAmount, isNull);
+    });
+
+    test('hasSameFieldsAs distinguishes tasks differing only by their '
+        'behavior link', () {
+      final a = Task.captured(title: 'Same');
+      final b = Task(id: a.id, title: 'Same', category: TaskCategory.personal)
+        ..behaviorId = 'behavior-1';
+
+      expect(a.hasSameFieldsAs(b), isFalse);
+    });
+  });
+
+  group('notificationsEnabled', () {
+    test('survives a JSON round-trip', () {
+      final task = Task.create(
+        title: 'Silent task',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        category: TaskCategory.work,
+        notificationsEnabled: false,
+      );
+
+      final restored = Task.fromJson(task.toJson());
+
+      expect(restored.notificationsEnabled, isFalse);
+    });
+
+    test('a backup exported before this field existed imports as true — '
+        'matching the historical unconditional-notification behavior', () {
+      final legacyJson = Task.create(
+        title: 'Legacy task',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        category: TaskCategory.work,
+      ).toJson()..remove('notificationsEnabled');
+
+      final restored = Task.fromJson(legacyJson);
+
+      expect(restored.notificationsEnabled, isTrue);
+    });
+
+    test('hasSameFieldsAs distinguishes tasks differing only by '
+        'notificationsEnabled', () {
+      final a = Task.create(
+        title: 'Same',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        category: TaskCategory.work,
+      );
+      final b = Task.create(
+        title: 'Same',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        category: TaskCategory.work,
+        notificationsEnabled: false,
+      );
+
+      expect(a.hasSameFieldsAs(b), isFalse);
+    });
+  });
 }

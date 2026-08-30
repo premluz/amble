@@ -1,13 +1,21 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import '../../core/feature_flags.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
+import '../../core/widgets/app_switch.dart';
 import '../../shared/providers/backup_providers.dart';
 import '../../shared/providers/notification_providers.dart';
+import '../../shared/providers/preferences_providers.dart';
 import '../../shared/providers/task_providers.dart';
+import '../../shared/models/tracked_behavior.dart';
+import '../../shared/providers/tracked_behavior_providers.dart';
 import '../../shared/services/backup_service.dart';
+import '../tracked_behavior/tracked_behavior_form.dart';
+import 'theme_mode_selector.dart';
 
 /// The real home for export/import and notification preferences — the
 /// permanent replacement for Phase 7's temporary "Backup" bottom-nav tab.
@@ -187,6 +195,142 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
 
               SizedBox(height: theme.spacingLg),
+              Text('Appearance', style: theme.textTitle),
+              SizedBox(height: theme.spacingSm),
+              _SettingsPanel(
+                theme: theme,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'System follows your device\'s light/dark setting.',
+                      style: theme.textBody.copyWith(
+                        color: theme.colorTextSecondary,
+                      ),
+                    ),
+                    SizedBox(height: theme.spacingMd),
+                    const ThemeModeSelector(),
+                  ],
+                ),
+              ),
+
+              SizedBox(height: theme.spacingLg),
+              Text('Scheduling', style: theme.textTitle),
+              SizedBox(height: theme.spacingSm),
+              _SettingsPanel(
+                theme: theme,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Prevent overlapping tasks',
+                            style: theme.textBody.copyWith(
+                              color: theme.colorTextPrimary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          SizedBox(height: theme.spacingXs),
+                          Text(
+                            'When on, scheduling or moving a task into a '
+                            'time slot that overlaps another task is '
+                            'blocked instead of shown side by side.',
+                            style: theme.textBody.copyWith(
+                              color: theme.colorTextSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(width: theme.spacingMd),
+                    AppSwitch(
+                      value: ref.watch(preventOverlappingTasksSettingProvider),
+                      onChanged: (value) => ref
+                          .read(preventOverlappingTasksSettingProvider.notifier)
+                          .set(value),
+                    ),
+                  ],
+                ),
+              ),
+
+              SizedBox(height: theme.spacingLg),
+              Text('Timeline', style: theme.textTitle),
+              SizedBox(height: theme.spacingSm),
+              _SettingsPanel(
+                theme: theme,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Show hour labels',
+                            style: theme.textBody.copyWith(
+                              color: theme.colorTextPrimary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          SizedBox(height: theme.spacingXs),
+                          Text(
+                            'When off, the clock-hour column is hidden and '
+                            'tasks stack one after another, sized by how '
+                            'long they are. Drag-to-reschedule needs the '
+                            'hour scale, so it is only available when this '
+                            'is on.',
+                            style: theme.textBody.copyWith(
+                              color: theme.colorTextSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(width: theme.spacingMd),
+                    AppSwitch(
+                      value: ref.watch(showHourLabelsSettingProvider),
+                      onChanged: (value) => ref
+                          .read(showHourLabelsSettingProvider.notifier)
+                          .set(value),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Tracked behaviors — gated. With the flag off this subtree is
+              // const-eliminated, so Settings looks exactly as it did.
+              if (FeatureFlags.trackedBehaviorEnabled) ...[
+                SizedBox(height: theme.spacingLg),
+                Text('Tracked behaviors', style: theme.textTitle),
+                SizedBox(height: theme.spacingSm),
+                _SettingsPanel(
+                  theme: theme,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _behaviorSummary(
+                          ref.watch(trackedBehaviorListProvider),
+                        ),
+                        style: theme.textBody.copyWith(
+                          color: theme.colorTextSecondary,
+                        ),
+                      ),
+                      SizedBox(height: theme.spacingMd),
+                      AppButton(
+                        label: 'Track a behavior',
+                        variant: AppButtonVariant.secondary,
+                        onPressed: () => showTrackedBehaviorForm(context),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              SizedBox(height: theme.spacingLg),
               Text('Backup', style: theme.textTitle),
               SizedBox(height: theme.spacingSm),
               _SettingsPanel(
@@ -241,6 +385,41 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                 ),
               ),
+
+              // kDebugMode, not FeatureFlags: this isn't a product feature
+              // to gate per-build, it's a developer convenience that must
+              // never exist in a real build at all — kDebugMode is
+              // compile-time false in every release/profile build, so this
+              // whole subtree (including the button and its handler)
+              // dead-code-eliminates the same way a FeatureFlags-gated
+              // subtree does. See docs/DECISIONS.md.
+              if (kDebugMode) ...[
+                SizedBox(height: theme.spacingLg),
+                Text('Developer', style: theme.textTitle),
+                SizedBox(height: theme.spacingSm),
+                _SettingsPanel(
+                  theme: theme,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Debug build only. Re-shows the first-launch '
+                        'splash and carousel immediately.',
+                        style: theme.textBody.copyWith(
+                          color: theme.colorTextSecondary,
+                        ),
+                      ),
+                      SizedBox(height: theme.spacingMd),
+                      AppButton(
+                        label: 'Reset splash screen',
+                        variant: AppButtonVariant.secondary,
+                        onPressed: () =>
+                            ref.read(hasSeenSplashProvider.notifier).reset(),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -262,9 +441,20 @@ class _SettingsPanel extends StatelessWidget {
       padding: EdgeInsets.all(theme.spacingMd),
       decoration: BoxDecoration(
         color: theme.colorSurfaceSecondary,
-        borderRadius: BorderRadius.circular(theme.radiusCard),
+        borderRadius: BorderRadius.circular(theme.radiusXl),
       ),
       child: child,
     );
   }
+}
+
+/// One-line summary of how many behaviors exist, so the panel says
+/// something useful before any have been created.
+String _behaviorSummary(List<TrackedBehavior> behaviors) {
+  if (behaviors.isEmpty) {
+    return 'Nothing tracked yet. A tracked behavior is an intention with a '
+        'target that tasks can be linked to.';
+  }
+  final names = behaviors.map((behavior) => behavior.title).join(', ');
+  return '${behaviors.length} tracked: $names';
 }

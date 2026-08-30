@@ -98,3 +98,288 @@ Format per entry:
 **Cause:** Not a bug. Every dev-scaffold entry point (`flutter run -t lib/features/.../*_main.dart`) installs over the *same bundle ID* as the real app (`com.example.amble`), replacing it on the device. Most scaffolds deliberately render `Scaffold(body: SomeScreen())` directly, bypassing `AmbleHome` (the nav shell) entirely so a single screen can be isolated for verification — so they have no bottom nav *by design*. The last scaffold run in that session (`edit_save_repro_main.dart`, for the "Continue does nothing" investigation) was still installed. Confirmed by checking the installed bundle's mtime (`xcrun simctl get_app_container <device> <bundle-id>`), which matched the exact minute that scaffold was launched. Compounding the confusion: every scaffold set `debugShowCheckedModeBanner: false`, making a scaffold build visually **indistinguishable** from the real app.
 **Fix:** Re-ran `flutter run -t lib/main.dart` to reinstall the real app — nav returned immediately, confirming nothing was broken. Then removed `debugShowCheckedModeBanner: false` from all 16 `*_main.dart` scaffolds (leaving it in place in `lib/main.dart`), so any scaffold build now shows Flutter's DEBUG banner and is instantly identifiable on-device. The banner will appear in scaffold screenshots from now on — an accepted, deliberate trade.
 **Prevent next time:** After any dev-scaffold verification session, reinstall the real app (`flutter run -t lib/main.dart`) before leaving the device for the user, or expect "the app looks wrong" reports. When a UI-missing report comes in, check *which build is actually installed* (bundle mtime vs. when scaffolds were run) before investigating layout code — this is the second "app looks wrong but the code is fine" incident in two days (the first was a stale pre-Phase-5 build on the physical iPhone), so treat "is the user looking at the build I think they are?" as the first question, not the last.
+
+## [2026-08-21] `pkill`-ing the Android emulator leaves a stale lock that makes the next start fail with a misleading "experimental feature" error
+
+**Symptom:** After `pkill -f "qemu-system"` to stop the emulator, the next `emulator -avd Amble_Test_API34` appeared to start normally — the process stayed alive for 8+ minutes with no errors in its log — but `adb devices` never listed it and `adb ... getprop sys.boot_completed` returned `device 'emulator-5554' not found` indefinitely. Restarting the adb server (`adb kill-server && adb start-server`) changed nothing. Looked exactly like an emulator that was simply booting very slowly, or an adb daemon that had lost track of it.
+**Cause:** The emulator writes `~/.android/avd/<name>.avd/multiinstance.lock` while running and removes it on a *clean* shutdown. `pkill` terminates it without that cleanup, so the lock survives. On the next start the emulator detects the lock, assumes a second instance of the same AVD is being launched, and aborts with `FATAL | Running multiple emulators with the same AVD is an experimental feature. Please use -read-only flag to enable this feature.` — a message about a feature flag, which reads nothing like "there's a stale lock from a killed process." The abort also happens *after* the process has already printed its normal startup banner, so the log looks healthy unless read to the very end.
+**Fix:** `rm -f ~/.android/avd/<name>.avd/*.lock`, then start the emulator normally. It booted immediately afterward.
+**Prevent next time:** Delete the lock before starting, as the reliable step. Note that `adb -s <serial> emu kill` — the "clean" shutdown — is **not** sufficient on its own: verified at the end of this session that after `emu kill` reported `OK` and the qemu process had genuinely exited, `hardware-qemu.ini.lock` was removed but **`multiinstance.lock` was still present** 8+ seconds later. So the lock can outlive even a graceful stop, and `rm -f ~/.android/avd/<name>.avd/*.lock` before launching is the step that actually prevents the failure, regardless of how the previous instance was stopped. If an emulator ever appears to start but never registers with adb, read the **end** of its log for `FATAL` before assuming a slow boot. This is the same shape as the stale Hive `.lock` gotcha already in this log: a leftover lock making the *next* run fail in a way that doesn't name the real cause.
+
+## Cascade reschedule: multiple simultaneous conflicts collapsed onto the same slot
+
+**Reported directly**, with a screenshot: "Prevent overlapping tasks" on, but dragging a new task on top of a dense cluster produced a broken layout — many overlapping-column pills crushed together with Flutter's own RenderFlex overflow banner visible (rotated 90°, reading as vertical red-striped text next to the personal-category person icons).
+
+**Root cause, confirmed by reproduction before touching any code**: `computeCascadeMoves` processes one "mover" per outer-queue iteration. When MULTIPLE existing tasks overlapped that single mover simultaneously, each was pushed independently — computed only from its own distance to the mover's edges, never checked against the other tasks being pushed in the same pass. Three same-direction pushes could (and did, in the repro) land on the exact identical slot. A second, subtler layer of the same root cause: even after fixing same-mover conflicts to chain sequentially, a LATER mover's push could still collide with a slot an EARLIER mover's pass had already placed, since neither pass re-checked against tasks outside its own immediate conflict set.
+
+Reproduced standalone (a throwaway `dart run` script, not committed) with 4 tasks 15 minutes apart before touching the algorithm — confirmed 3 tasks collapsed onto one identical slot. Fixed both layers: (1) tasks overlapping the same mover are now grouped by push direction (unchanged: still decided by distance to the mover's edges) and chained against EACH OTHER in position order, each one's target computed from the previous push's edge rather than independently from the mover; (2) every computed push is additionally checked against the full table of already-`visited` (finalized) slots via a new `_firstOccupiedOverlap` helper, and walked further out if it would land on one — catching cross-mover-pass collisions the direction-grouping alone couldn't.
+
+Existing "cycle guard" test only asserted the algorithm terminates, never that a successful result was actually overlap-free — the exact property this bug violated would have passed that test. Strengthened it, and added two new regression tests (`_expectNoOverlaps` helper) reproducing both layers directly: same-mover simultaneous conflicts, and a later-pass collision with an earlier pass's placement.
+
+`flutter analyze`: clean. `flutter test` not run this session — a live `flutter run` dev session was active throughout (confirmed with the architect it was their own manual verification); running `flutter test` alongside a live `flutter run` deadlocks both on a shared incremental-compiler cache (see the previous session's Repeats-settings entry). Verified with a standalone `dart run` reproduction script instead (written, confirmed the bug, confirmed the fix, deleted — never committed).
+
+## Drop flicker: block rendered at the raw finger position, committed at the snapped one
+
+**Reported directly**: "a flicker of item appearing abruptly higher than actual drop zone, and then disappearing showing in the drop zone."
+
+**Root cause**: `_DraggableTaskBlockState.build` positioned the block at `baseTop + _dragOffset` — the RAW, unsnapped drag offset. But `onDragEnd` committed `_previewStartsAt`, which is derived from `_snappedMinutesDelta`. So the two disagreed by up to half a snap interval (5min snap at 1.5px/min = up to ~3.75px): at release the block was drawn at the finger's exact position, then jumped to the snapped slot once the async write round-tripped and `baseTop` updated. Not a rendering or timing bug — a genuine mismatch between what was drawn and what was saved.
+
+**Fix**: new `_isSettling` flag, set the instant the finger lifts and cleared after the settle animation has played. While set, the block renders at the snapped offset instead of the raw one, so the correction happens immediately at release and is *animated* rather than jumping. The block's root became `AnimatedPositioned` with a zero duration only while the finger is actually down (1:1 tracking, no lag) and `motionNormal` easing otherwise.
+
+`_endSettle()` is deliberately a separate step rather than clearing `_isSettling` alongside `_dragOffset`: the block must still be in animated mode during the frame where `baseTop` updates and the offset resets, since those two changes cancel out positionally and would otherwise expose a one-frame jump.
+
+## Drop jump, second cause: element re-creation from an unkeyed sibling + mid-animation reorder
+
+**Reported directly** after the snapped-offset fix (above) landed: the block still animated to a position HIGHER than the drop, then eased back down to the real one — a two-phase move, and happening on any task, not just the day's earliest.
+
+That ruled out the obvious suspect: `_visibleRange` is derived from task times (`rangeStart = earliest task − 30min`), so dragging the earliest task later shifts the whole coordinate space. Real, but it can only fire for the earliest/latest task — the architect confirmed the jump happens on any task, so this was NOT the cause. Recorded because it looks like a match and would otherwise be re-investigated.
+
+**Actual cause, two interacting parts:**
+1. The drag "ghost" (a faded copy at the original position, rendered as a conditional `Positioned` sibling) had **no key**. Its removal at release shifted Flutter's element matching for the keyed block right after it, so the real block's element could be re-created rather than updated — resetting its `AnimatedPositioned` to animate from the ghost's (higher) position.
+2. `_dragLastOrder` keyed its reordering off `_draggingTaskId`, which clears the instant the finger lifts. So the block ALSO jumped back to its natural Stack index mid-settle, a second reorder while its animation was still running.
+
+**Fix:** gave the ghost a `ValueKey('ghost-<taskId>')`, and split the parent's tracking into `_draggingTaskId` (ghost visibility, cleared on release) and `_settlingTaskId` (Stack ordering, cleared only via a new `onSettled` callback once the settle animation finishes). The two now have deliberately different lifetimes. `onSettled` ignores stale fires — a different task holding the pin, or the same task re-dragged before its previous drop finished.
+
+**Method note:** the first diagnosis (snapped-vs-raw offset) was correct but incomplete — it fixed one of two independent causes of the same visible symptom. Worth remembering that "the flicker is still there" after a confirmed-correct fix can mean a second cause, not a wrong one.
+
+## Popping a sheet invalidates its own BuildContext before the next sheet opens
+
+Hit while adding the remove-scope sheet. The natural shape —
+`Navigator.of(context).pop(); if (context.mounted) showNextSheet(context);` —
+looks correct but silently does nothing: `context` inside a sheet's builder
+belongs to that sheet, so popping it unmounts it and the `mounted` guard
+skips the follow-up every time. It fails *quietly*, which is what makes it
+worth recording.
+
+Fix: capture `Navigator.of(context)` BEFORE the pop and push the next sheet
+onto `navigator.context`, which outlives the sheet being closed.
+
+`task_action_sheet.dart`'s existing `_duplicate` was flagged here as
+"likely affected the same way." **That flag was wrong** — later verified by
+widget test: `_duplicate`, `_editDetails` and `_editSchedule` all work
+fine. The difference is the async gap. Those three touch `context`/`ref`
+*synchronously* in the same frame as the pop, while the element is still
+alive; only `_remove` had a real `await` (the scope sheet) before its
+`ref.read`, by which point the sheet had unmounted. Pop-then-use is safe;
+pop-then-**await**-then-use is not.
+
+## Day-of-week chips overflowed their row by 40px
+
+Caught by a widget test the first time the suite could actually run (a live
+`flutter run` had blocked `flutter test` for several sessions — see the note
+at the end of this entry).
+
+`_RecurrencePanel`'s seven `_DayChip`s were each a fixed
+`theme.spacingXl * 1.25` (~46.9px) wide inside a `Row`. Seven of those is
+~328px against ~310px of available panel width, so the row overflowed by
+about 40px — on-device this shows as the yellow/black striped overflow
+banner. Not a test artifact: the test simply rendered at a realistic phone
+width and surfaced a genuine production layout bug.
+
+Fix: each chip is now `Expanded` (with an explicit `spacingXs` gap between
+them) and `_DayChip` no longer sets its own width — height stays fixed so
+they keep their pill shape. They now share whatever width the sheet has.
+
+## Hardcoded calendar dates in tests that assert relative-to-today behaviour
+
+Same test run surfaced four failures in `edit_schedule_repeats_test.dart`
+that had nothing to do with the code under test. The tests used fixed dates
+(Aug 20 – Sep 3, 2026) and asserted series-pruning behaviour, but the
+pruning rules only touch instances scheduled **today or later**. Those dates
+were future when written and had since become past, so the "future
+instance was deleted" assertions failed for a purely calendrical reason.
+
+Fix: a `_daysFromToday(days, {hour})` helper anchored to `DateTime.now()`,
+plus deriving the expected weekday from the task's own date rather than
+hardcoding `DateTime.thursday`. Any test asserting behaviour defined
+relative to "now" must build its fixtures relative to "now" too, or it
+silently rots.
+
+A second, unrelated harness bug in the same file: `_tapAndSettle`'s
+`Duration.zero` drain was written when the save path was a single write. The
+series-editing paths await several repository round-trips in sequence
+(prune → write template → re-materialize → refresh), so a zero-duration
+drain only cleared the first hop and `tearDown` closed the Hive box
+mid-flight ("Box has already been closed"). Raised to a real 100ms delay.
+
+**Process note:** these three bugs sat undetected across several sessions
+because `flutter test` could not be run while a `flutter run` session held
+the shared incremental-compiler cache. `flutter analyze` stayed clean
+throughout and caught none of them — analyze does not render widgets or
+evaluate assertions. Worth running the suite at the first opportunity after
+any stretch of analyze-only verification.
+
+## "Remove not working": three stacked bugs, only findable by running the widget test
+
+Reported directly. Tapping Remove did nothing. Three independent causes,
+each hiding the next — worth recording because each alone would have been
+enough to break the feature, and `flutter analyze` was clean throughout.
+
+**1. `_ActionRow`'s label overflowed the row (56px).** The `Text` had no
+flex, so it sized to its natural width. The original action labels were
+short enough to fit; the remove-scope sheet's longer ones ("Remove this
+occurrence") pushed it over. A layout exception during the tap aborted the
+handler, so the delete never ran. Fixed with `Expanded` + ellipsis.
+
+**2. `AppSheet.show` built its content with the CALLER's context.**
+`builder(context)` was invoked eagerly before pushing the route, so a
+builder calling `Navigator.of(ctx).pop(value)` popped the caller's route
+instead of the sheet — the sheet never closed and `show()` never returned.
+A latent flaw in the shared primitive, invisible until a caller needed a
+return value (every previous caller was fire-and-forget). Fixed by
+deferring the build to the route builder and passing the sheet's own
+context.
+
+**3. `ref` used after the sheet unmounted.** `_remove` popped its own
+sheet, awaited the scope choice, then called `ref.read(...)` — but `ref` is
+bound to the now-unmounted sheet element, which throws
+("Using 'ref' when a widget is about to or has been unmounted is unsafe").
+The throw happened inside an async gap, so it surfaced as nothing
+happening. Fixed by capturing the notifier alongside the navigator, before
+the pop.
+
+**The rule that ties 2 and 3 together:** pop-then-use is safe; pop-then-
+**await**-then-use is not. Anything needed after an async gap —
+`BuildContext`, `ref`, a notifier — must be captured while the widget is
+still mounted. `_duplicate`/`_editDetails`/`_editSchedule` look identical
+but are fine precisely because they have no await before their use.
+
+## A hand-picked scale silently flattened the durations it was meant to distinguish
+
+While building collapsed mode I picked `_collapsedPixelsPerMinute = 0.45`
+by eye, reasoning only that it should be lower than the timeline's 1.5 so a
+2h task wouldn't dominate the screen. `flutter analyze` was clean and the
+code read correctly.
+
+Rendering the actual range showed 15m, 30m **and 60m** as an identical
+circle. `TaskCapsuleBlock` floors a pill at its badge size (~33.8px), and
+at 0.45 that floor isn't cleared until 75 minutes — so the single most
+important comparison ("is this an hour or half an hour?") was invisible,
+which defeated the entire point of proportional heights.
+
+The fix was to derive the rate from the requirement instead of guessing:
+the anchor is "30m is the circle," so the rate is exactly `badge ÷ 30`
+(≈1.125). 30m sits on the floor, 1h is 2×, 2h is 4×.
+
+**Lesson:** when a constant exists to make a visual *relationship* legible,
+the relationship is the specification — derive the constant from it and
+render the range to confirm. A plausible-looking number plus a clean
+analyze proves nothing about whether the thing is actually distinguishable.
+
+## A `TextEditingController` listener driving auto-advance-focus can misdirect typed input into the wrong field
+
+Building the new numeric Hour/Minute entry boxes (`_NumericTimeField`, replacing the old scroll-wheel/slider), the first box needed to auto-advance focus to the second once two digits were typed — a normal time-entry UX. The first attempt wired this via `_firstController.addListener(() { if (_firstController.text.length >= 2) _secondFocus.requestFocus(); })` in `initState`.
+
+Typing "02" into the Duration-hours box sometimes landed the value in the Duration-**minutes** box instead, producing a preview like `22:00 - 22:02 (2m)` instead of the expected 2-hour duration. Reproduced deterministically in an isolated minimal 2-`TextField` widget (outside the app file, since the real class is library-private) before trusting the diagnosis — a lesson from an earlier misdiagnosis this session.
+
+**Root cause**: a `TextEditingController` listener fires for *any* write to the controller — not just genuine user keystrokes, but also programmatic writes (`WidgetTester.enterText` in tests, and by extension any synthetic/external `.text =` assignment). Calling `FocusNode.requestFocus()` from inside that listener races with the underlying text-delivery/IME mechanism that's still in the middle of delivering the typed value, so the value can end up committed to whichever field the focus change lands on, not the field it was actually typed into.
+
+**Fix**: don't drive focus changes from a controller listener. Use `TextField.onChanged` instead — it fires only for genuine user-driven edits, never for external `.text =` writes — and only on the *first* box (nothing to advance to from the second). Added a `ValueChanged<String>?` parameter to the shared `_digitBox` helper so only the first box wires an advance callback.
+
+**Lesson**: `TextEditingController.addListener` answers "did this controller's value change," not "did the user type something" — those are different questions, and only `onChanged` answers the second one. Any focus-changing side effect belongs on `onChanged`, never on a controller listener.
+
+## A masked text field can't judge "was this a deletion?" by string length
+
+Building `AppSegmentedTimeField`'s formatter, the first version decided between the insert and delete paths with `newValue.text.length < oldValue.text.length`. Every typed value silently vanished — the field stayed at `00 : 00`.
+
+The cause only shows up in a MASKED field. `enterText` (and a paste, or autofill) replaces the whole string at once, so the formatter sees `new="0930"` — 4 characters — against `old="00 : 00"` — 7 characters, because the mask's separator is part of the old string but not the new one. A length comparison reads that as a deletion and throws the typed digits away.
+
+**Fix**: judge deletion on DIGIT count (`newDigits.length < oldDigits.length`), not string length. Digits are the field's actual content; the separator is presentation, and any check that counts it will be wrong whenever the two sides are formatted differently.
+
+## ...and it can't judge "was this one keystroke?" by digit count either
+
+The exact mirror of the bug above, introduced by its fix. With deletion now decided on digit count, the insert path used the same measure to tell a single keypress from a bulk replacement. Typing `1`, `4`, `3`, `0` one key at a time produced `10 : 00` — only the first digit landed.
+
+A segmented time field is always FULL (a time always shows four digits), so a keystroke doesn't lengthen the digit string, it overwrites a slot. Digit count is therefore identical before and after a keypress, and the diff-based "which digits are new" logic finds nothing — while a 5-digit intermediate gets truncated back to 4 and misread as a fresh full replacement starting at slot 0.
+
+**Fix**: the two questions need two different measures. Deletion is judged on digit count; a single insert is judged on STRING length (`newValue.text.length == oldValue.text.length + 1`), and the inserted character is read directly at the caret offset rather than diffed out of the digit string.
+
+**The shared lesson:** in a masked field there are two representations — the raw digits and the formatted string — and they disagree about length in different directions depending on the edit. Every decision in a formatter has to name which representation it is asking about. Both of these bugs were clean under `flutter analyze` and both were caught only by driving real keystrokes through the widget; the second was introduced by the fix for the first, which is exactly why the test covers the bulk path AND the one-key-at-a-time path separately.
+
+## A field that builds its input conditionally has no input to focus
+
+`AppFieldShell`'s first version only rendered `child` when the label was floated, reasoning that a resting label already reads as the placeholder so an empty input underneath would double the hint. Correct visually, wrong structurally: an empty, unfocused field then contains no `TextField` at all, so `autofocus` had nothing to attach to and the whole flow failed at the first `enterText` with "Bad state: No element".
+
+**Fix**: keep the input in the tree always and animate only its HEIGHT (`AnimatedAlign` + `heightFactor`, clipped). Same visual result — the input is invisible while the label rests over it — without removing the element that focus, the keyboard, and every finder depend on.
+
+**Lesson:** "don't show it" and "don't build it" are different instructions. Anything focusable, measurable, or findable must stay in the tree and be hidden by layout, not by a conditional in `build`.
+
+## A glyph colored from a SURFACE token inverts the wrong way in dark mode
+
+The task-detail header's back/close buttons defaulted both their circle and their icon to `colorSurfacePrimary`. That was correct while they sat on a coloured banner — a white glyph on a saturated category colour. Once the banner was removed and the buttons moved onto the sheet's own ground, dark mode rendered them near-black on a dark background: effectively invisible.
+
+`colorSurfacePrimary` is white in light mode and `ink900` (near-black) in dark. A *surface* token tracks the background and therefore inverts in the SAME direction as the thing behind it; a glyph needs to invert in the OPPOSITE direction to stay legible. They coincide only when the glyph is deliberately sitting on a third, palette-independent colour — which the coloured banner was, and the plain sheet is not.
+
+**Fix**: `colorTextPrimary` for the glyph, `colorSurfaceField` for the circle.
+
+**Lesson:** a foreground colour must come from a text/content token, never a surface one, even when a surface token happens to look right in the palette you are currently viewing. If a glyph is colored from a surface token, it is only correct by coincidence in one palette.
+
+## Capacity and display width are different numbers in a masked field
+
+`AppSegmentedTimeField` takes `firstDigits` to size its hour segment — 2 for a time of day, 3 for an uncapped duration. That single number was used for two unrelated jobs: how many digits the mask can HOLD, and how wide the value is DISPLAYED.
+
+The result was a duration of 2h30m rendering as `000 : 30`. The padding was advertising the field's maximum rather than showing the value, and it looked like a bug in the value itself.
+
+**Fix**: separate the two. Display width is derived from the value (`max(2, digitsInValue)`), so an ordinary duration reads `02 : 30` and a long one still reads `120 : 00`; `firstDigits` continues to govern only the mask's capacity and the caret arithmetic. The placeholder likewise stays `hh : mm` rather than mirroring the capacity — a hint describes what to type, and nobody types a leading zero triple.
+
+**Lesson:** when one parameter is read in two places for two different purposes, check that they actually want the same number. Here "how much can this hold" and "how wide does this look" happened to coincide for time-of-day (both 2) and only diverged for the second consumer — which is the same shape as the general rule that a heuristic derived from one dataset must be checked against a genuinely different one before it's trusted.
+
+## In a masked field, "is this a replacement?" must be judged by SHAPE, not length
+
+Adding the hour-first caret reset broke typing entirely: the field accepted no input at all. With the caret at offset 0, `enterText("093")` against `"00 : 00"` produced FEWER digits than the old value, so the digit-count deletion check classified a replacement as a delete and threw the input away.
+
+The earlier length-based check had already been replaced with a digit-count one for the opposite bug (a paste misread as a delete, because the separator lives in the old string but not the new one). Both checks share the same flaw: they assume something about WHERE the caret is.
+
+**Fix**: judge a full replacement by shape. A replacement arrives as bare digits with no separator at all; a real edit always leaves the separator in the string, because a user can only remove one character at a time from a formatted value. That test holds regardless of caret position.
+
+**Lesson:** this is the third bug in this formatter from inferring the KIND of an edit from a measurement (string length, then digit count) rather than from a structural property. Each measurement worked for the cases in front of it and broke on the next genuinely different one. A structural property — "does the text still contain the mask?" — does not depend on the caret, the length, or the direction of the change.
+
+## A caret reset scheduled post-frame fires after every keystroke, not just on focus
+
+The same caret change also dragged the caret back to position 0 mid-typing. `addPostFrameCallback` inside a focus listener sounds like "once, when focused", but the listener runs on any focus notification and the callback runs after whatever frame follows — including the frame after each keystroke.
+
+**Fix**: gate on the focus TRANSITION (`hasFocus && !_wasFocused`), and skip the reset if the caret is no longer where the platform's default put it.
+
+**Lesson:** "on focus" and "while focused" are different conditions, and a post-frame callback registered from a listener silently converts the first into the second.
+
+## A tap that "does nothing" in a widget test may be missing the target entirely
+
+Chasing a report that the wheel picker didn't write its value back, a probe showed the confirm button present, on-screen, and returning a sensible rect — yet tapping it never fired `onPressed`.
+
+The cause was the default 800px-tall test surface. The sheet renders taller than that viewport, so the button's rendered position and its hit-test position disagreed: `tester.getRect` reported y=572 while the hit test at that point resolved to a widget at y=320. The tap landed on whatever was actually there.
+
+Setting a real device viewport (`tester.view.physicalSize = Size(390, 844)`) made the same code pass first time.
+
+**Lesson:** before concluding that a handler is not wired, confirm the tap is reaching it — compare `getRect` against `hitTestOnBinding` at the same point. Anything full-height (a sheet, a scaffold, a bottom-anchored button) needs a realistic viewport in tests, or the geometry silently diverges and every interaction with it becomes unreliable. The bug reported here was in the TEST, and the product code was correct throughout.
+
+## CupertinoPicker paints its selection overlay over the values, not behind them
+
+`selectionOverlay` sounds like a backdrop for the selected row. It is drawn ON TOP of the picker's children, so giving it an opaque fill hides the exact value it exists to highlight — which is what made a chosen time invisible inside its own highlight bar.
+
+**Fix**: low alpha (0.4), so it reads as a highlight and the number shows through. Anything opaque there needs to be a background painted behind the picker instead.
+
+## "Don't overwrite a focused field" is the wrong guard when the control lives inside the field
+
+`AppSegmentedTimeField` refused external value updates while focused, to stop a resync fighting live typing. Reasonable in isolation — and wrong here, because the field's own picker button is rendered inside it. Tapping that button doesn't blur the field, so every value chosen on the wheel arrived while focused and was discarded.
+
+The symptom reported was "it doesn't update when a value is already set", which pointed at value-comparison logic. The actual variable was focus: from an empty field the user hasn't tapped in yet, so the guard isn't active and the picker appears to work.
+
+**Fix**: guard on the precise condition instead of the proxy. The thing to avoid is re-applying the user's OWN edit (which would move their caret), so compare the incoming value against what is currently displayed and skip only on a match. A genuine external change is honoured whether or not the field has focus.
+
+**Lesson:** focus is a proxy for "the user is mid-edit", and proxies break where the assumption behind them does — here, that anything changing the value from outside must also have taken focus away. When a guard uses a proxy, check every path that reaches it: an in-field control is exactly the case that violates this one. Note also that two existing tests passed against this bug because each happened to blur the field first; a test that never exercises the guarded state cannot catch a bug in the guard.
+
+## A `showModalBottomSheet` route doesn't unmount the screen behind it — a bare `find.byType(...).first` can silently target the wrong screen
+
+Writing tests for the new per-field modals (Name/Category, Start time, Duration — each a `showModalBottomSheet`-based sheet opened over the single main create screen), `find.byType(TextField).first` kept typing into the wrong field. The typed text simply never appeared anywhere.
+
+The cause: `showModalBottomSheet` pushes a route ON TOP of the current one — it does not remove the underlying screen from the widget tree. The main screen's own `TextField`s (Time, Duration) stay mounted the whole time the modal is open, and in this app's tree they come FIRST in traversal order, ahead of the modal's own fields. `find.byType(TextField).first` therefore matched the *background* screen's field, not the modal's, even though the modal was the only thing visible on screen.
+
+**Fix**: scope every finder to the modal's own subtree — `find.descendant(of: find.byType(TaskNameCategoryModal), matching: find.byType(TextField))` — rather than a bare type search across the whole tree.
+
+**Lesson:** a `find.byType(...).first` is only safe when you can be sure only one screen's worth of that type is mounted. Any modal, dialog, or overlay stacked over another screen breaks that assumption, because the tree usually keeps the covered screen alive underneath. Scope to the topmost/relevant widget's own subtree by default when a modal is involved, rather than assuming visual coverage implies tree isolation.
+
+## Diagnosing "it does nothing" bugs quickly: reproduce in the smallest isolated widget first, not the full flow
+
+Two real bugs during this session's modal work both first appeared as vague full-flow test failures ("StartTimeModal never opens", "field stays empty") that gave almost no signal about WHERE the problem was. Both resolved fast once isolated: a minimal widget test with the exact same three or four lines of interaction (tap, type, tap Done) reproduced or DISPROVED the bug in isolation before touching the real multi-screen test at all. The disproof was as useful as the reproduction — one isolated probe showed the auto-advance chain itself was fine, which correctly redirected the search to the test's OWN finder scoping instead of the app code.
+
+**Lesson:** when a full end-to-end test fails in a way that's hard to explain from the stack trace alone, don't keep patching the full test and re-running it. Write the smallest possible reproduction of just the suspected mechanism first — it either confirms the bug cheaply, or clears that mechanism and narrows the search, in either case faster than iterating on the full flow.

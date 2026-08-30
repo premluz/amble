@@ -41,7 +41,7 @@ class _DesignSystemScaffold extends StatelessWidget {
                     height: theme.spacingXl,
                     decoration: BoxDecoration(
                       color: entry.value,
-                      borderRadius: BorderRadius.circular(theme.radiusCard),
+                      borderRadius: BorderRadius.circular(theme.radiusXl),
                     ),
                   ),
               ],

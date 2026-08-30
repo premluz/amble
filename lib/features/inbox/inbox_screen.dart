@@ -128,7 +128,7 @@ class _InboxListItem extends StatelessWidget {
         padding: EdgeInsets.all(theme.spacingMd),
         decoration: BoxDecoration(
           color: theme.colorSurfaceSecondary,
-          borderRadius: BorderRadius.circular(theme.radiusCard),
+          borderRadius: BorderRadius.circular(theme.radiusXl),
         ),
         child: Row(
           children: [

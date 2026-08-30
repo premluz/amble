@@ -11,6 +11,7 @@ import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../hive_registrar.g.dart';
 import '../../shared/models/task.dart';
+import '../../shared/models/task_category.dart';
 import '../../shared/providers/task_providers.dart';
 import '../inbox/inbox_screen.dart';
 import 'task_detail_sheet.dart';
@@ -22,10 +23,19 @@ Future<void> main() async {
   final box = await Hive.openBox<Task>(taskBoxName);
   await box.clear();
 
-  final task = Task.captured(title: 'Book dentist appointment');
+  final now = DateTime.now();
+  // A scheduled task, not a captured one — see exit_confirm_modal_main.dart
+  // for why this scaffold now seeds a real Timeline task rather than an
+  // Inbox item.
+  final task = Task.create(
+    title: 'Book dentist appointment',
+    scheduledAt: DateTime(now.year, now.month, now.day, now.hour),
+    durationMinutes: 30,
+    category: TaskCategory.personal,
+  );
   await box.put(task.id, task);
-  // A second, untouched Inbox item makes the "still in Inbox" vs. "moved to
-  // Timeline" outcome visually unambiguous in a screenshot.
+  // A second, untouched Inbox item makes the "unaffected sibling" outcome
+  // visually unambiguous in a screenshot.
   final otherTask = Task.captured(title: 'Read that article Sam sent');
   await box.put(otherTask.id, otherTask);
 
@@ -50,16 +60,12 @@ class _PreviewAppState extends State<_PreviewApp> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final context = _navigatorKey.currentContext;
       if (context == null) return;
-      Navigator.of(context).push<void>(
-        MaterialPageRoute(
-          builder: (context) => TaskDetailForm(
-            task: widget.task,
-            initialScheduledAt: DateTime.now(),
-            debugInitialDurationOverride: 90,
-            debugAutoTriggerClose: true,
-            debugAutoConfirmOutcome: true,
-          ),
-        ),
+      showEditScheduleSheet(
+        context,
+        task: widget.task,
+        debugInitialDurationOverride: 90,
+        debugAutoTriggerClose: true,
+        debugAutoConfirmOutcome: true,
       );
     });
   }

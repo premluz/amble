@@ -21,6 +21,8 @@ class TaskCategoryAdapter extends TypeAdapter<TaskCategory> {
         return TaskCategory.personal;
       case 3:
         return TaskCategory.admin;
+      case 4:
+        return TaskCategory.general;
       default:
         return TaskCategory.health;
     }
@@ -37,6 +39,8 @@ class TaskCategoryAdapter extends TypeAdapter<TaskCategory> {
         writer.writeByte(2);
       case TaskCategory.admin:
         writer.writeByte(3);
+      case TaskCategory.general:
+        writer.writeByte(4);
     }
   }
 

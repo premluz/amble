@@ -84,7 +84,21 @@ class _PreviewApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return ProviderScope(
       child: MaterialApp(
-        theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
+        // Mirrors main.dart's light/dark wiring so this scaffold can be
+        // used to review either palette (it follows the simulator's
+        // appearance setting). Phase 13a.
+        theme: ThemeData(
+          useMaterial3: true,
+          brightness: Brightness.light,
+          scaffoldBackgroundColor: AmbleTheme.light.colorSurfacePrimary,
+          extensions: [AmbleTheme.light],
+        ),
+        darkTheme: ThemeData(
+          useMaterial3: true,
+          brightness: Brightness.dark,
+          scaffoldBackgroundColor: AmbleTheme.dark.colorSurfacePrimary,
+          extensions: [AmbleTheme.dark],
+        ),
         home: const Scaffold(body: TimelineScreen()),
       ),
     );

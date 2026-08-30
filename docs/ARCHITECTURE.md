@@ -59,6 +59,34 @@ A thin layer of shared components (`AppButton`, `AppSheet`, `AppSwitch`, etc.) s
 
 The rounded-capsule task blocks with icon badges overlapping the block boundary are the visual signature of the reference UI and the hardest piece to get right — not a standard widget, needs `ClipPath`/`CustomPainter` or carefully stacked `Container`s + `Positioned` icon badges. Budget real iteration time here; this is a design-taste problem as much as a code problem. Treat the reference as something to riff from, not a pixel target, if this ever moves toward public release.
 
+## Preferences and theme mode
+
+Small app-level settings live in a **generic key-value store**, not a box
+per setting: `PreferencesRepository` (interface) / `HivePreferencesRepository`
+(Hive implementation) over a single untyped `preferences` box, with keys
+owned by `PreferenceKeys` so a read and a write can't silently diverge.
+Theme mode is simply its first consumer; later preferences (default task
+duration, week start, notification lead time) belong here rather than each
+growing their own box, adapter, and repository.
+
+The box is untyped (`Box<dynamic>`) because it holds heterogeneous values.
+`getValue<T>` returns null when the stored value isn't a `T`, so a
+preference whose type changes between releases degrades to its default
+rather than throwing on a cast at launch.
+
+Theme mode itself is persisted as `AppThemeMode` (our own Hive enum), not
+Flutter's `ThemeMode` — persisting a framework enum would tie the stored
+schema to Flutter's declaration order. `toFlutterThemeMode` in
+`preferences_providers.dart` is the single translation point. The setting is
+exposed by a `keepAlive: true` Riverpod provider read by the root
+`MaterialApp`, which supplies `theme`/`darkTheme`/`themeMode` together.
+
+System bar styling is resolved from the *effective* brightness (so `system`
+mode follows the OS) and applied via a root `AnnotatedRegion`. This is
+necessary rather than incidental: the app has no `AppBar` anywhere, and an
+`AppBar` is what would normally manage status-bar icon brightness — without
+it, dark mode renders dark status-bar icons on a near-black surface.
+
 ## Data model reminders
 
 See `CONSTITUTION.md` for the non-negotiables (UUIDs, status enum, `completedAt`, `originalScheduledAt`, `schemaVersion`). Models live in `shared/models/`, repository interfaces in `shared/repositories/`.

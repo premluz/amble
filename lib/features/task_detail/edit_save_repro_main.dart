@@ -72,15 +72,11 @@ class _PreviewAppState extends State<_PreviewApp> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final context = _navigatorKey.currentContext;
       if (context == null) return;
-      Navigator.of(context).push<void>(
-        MaterialPageRoute(
-          builder: (context) => TaskDetailForm(
-            task: widget.task,
-            initialScheduledAt: DateTime.now(),
-            debugInitialDurationOverride: 90,
-            debugAutoTriggerSave: true,
-          ),
-        ),
+      showEditScheduleSheet(
+        context,
+        task: widget.task,
+        debugInitialDurationOverride: 90,
+        debugAutoTriggerSave: true,
       );
     });
   }

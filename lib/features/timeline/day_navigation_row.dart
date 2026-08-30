@@ -53,22 +53,31 @@ class DayNavigationRow extends ConsumerWidget {
             color: theme.colorTextSecondary,
           ),
           Expanded(
-            child: Column(
-              children: [
-                Text(
-                  _weekdayNames[selectedDate.weekday - 1],
-                  style: theme.textLabel.copyWith(
-                    color: theme.colorTextSecondary,
+            child: _isSameDay(selectedDate, DateTime.now())
+                ? Text(
+                    'Today',
+                    textAlign: TextAlign.center,
+                    style: theme.textTitle.copyWith(
+                      color: theme.colorTextPrimary,
+                    ),
+                  )
+                : Column(
+                    children: [
+                      Text(
+                        _weekdayNames[selectedDate.weekday - 1],
+                        style: theme.textLabel.copyWith(
+                          color: theme.colorTextSecondary,
+                        ),
+                      ),
+                      Text(
+                        '${_monthNames[selectedDate.month - 1]} '
+                        '${selectedDate.day}',
+                        style: theme.textTitle.copyWith(
+                          color: theme.colorTextPrimary,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                Text(
-                  '${_monthNames[selectedDate.month - 1]} ${selectedDate.day}',
-                  style: theme.textTitle.copyWith(
-                    color: theme.colorTextPrimary,
-                  ),
-                ),
-              ],
-            ),
           ),
           IconButton(
             onPressed: notifier.goToNextDay,

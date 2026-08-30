@@ -30,4 +30,19 @@ void main() {
     );
     await service.scheduleForTask(task);
   });
+
+  test('scheduleForTask no-ops for a task with notifications turned off, '
+      'without touching the platform channel', () async {
+    final task = Task.create(
+      title: 'Silent task',
+      scheduledAt: DateTime.now().add(const Duration(hours: 1)),
+      durationMinutes: 30,
+      category: TaskCategory.personal,
+      notificationsEnabled: false,
+    );
+    // Would throw LateInitializationError if this reached the plugin —
+    // the opt-out guard has to fire BEFORE the scheduled-time check, or a
+    // silenced-but-otherwise-schedulable task would still hit the channel.
+    await service.scheduleForTask(task);
+  });
 }

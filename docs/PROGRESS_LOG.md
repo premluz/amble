@@ -706,3 +706,648 @@ On-device screenshot caught a collision the request didn't anticipate: at 14:54 
 **Flagged, not fixed:** `CurrentTimeIndicator` renders on every day, not just today — so the now-line and its new label also appear on past/future days, where they're meaningless. Pre-existing, outside this request's scope, and the correct behaviour is a real UX call; written up in `docs/DECISIONS.md` rather than silently changed.
 
 Verified via `dart format .`/`flutter analyze`/`flutter test` — all clean, 59/59 passing.
+
+## [Phase 10] TrackedBehavior data layer — model, repository, providers, feature flag
+
+Architecture-only session: the full data layer for `TrackedBehavior` plus the `Task` fields that link to it. **No UI, nothing user-facing, and the app is visually and functionally identical** — which was the explicit success condition, not a side note.
+
+**New model** (`shared/models/tracked_behavior.dart`, Hive typeId 3) with `BehaviorTargetType` split into its own file/typeId 4, mirroring how `TaskStatus`/`TaskCategory` are already separated. Uses the same `uuid` call `Task.create` uses. Frequency is a plain `int timesPerWeek` — named for its unit so the MVP limitation is self-documenting rather than inviting someone to later overload a generic `frequency` field into the recurrence system SCOPE.md rules out. CONSTITUTION.md's "targetAmount is null only when targetType is binary" rule is enforced by a constructor assert rather than left as prose, so an invalid behavior can't reach Hive and surface later as a confusing null.
+
+**`Task` gained `behaviorId`/`actualAmount`** as Hive fields 10/11 — appended, never renumbering existing fields, since adapters key on field number and real devices already hold persisted records. Both nullable, defaulting null, declared after every existing parameter, so `Task.create`/`Task.captured` are untouched at every call site. Also wired into `toJson`/`fromJson`/`hasSameFieldsAs` so export/import doesn't silently drop a behavior link — but read as *optional* on import, because every backup file exported before this session lacks those keys and must still restore cleanly.
+
+**The riskiest step, handled as the work order specified:** captured a clean 59/59 baseline before touching `Task`, then ran the full pre-existing suite immediately after regenerating the adapter, before writing any new tests. It passed identically — 59/59, zero test files modified. Real-device evidence too: the launched app still reads task data written by the *pre-Phase-10* adapter, rendering correctly on the Timeline, which is the practical proof that appending fields was safe.
+
+**Repository + providers** mirror `TaskRepository`/`TaskList` exactly, including `keepAlive: true` per the Phase 1 decision (autoDispose caused a real mid-flight teardown bug for Task state; same reasoning). New `tracked_behaviors` Hive box opened in `main.dart` alongside the Task box.
+
+**Feature flag**: `FeatureFlags.trackedBehaviorEnabled` in `lib/core/feature_flags.dart`, a plain `const bool`, default **off**. Nothing reads it today — no UI exists to gate, which is the intended state until Phase 11+. It gates UI entry points only; the data layer is never "turned off," only dormant.
+
+**14 new tests** (73/73 total): 10 covering `HiveTrackedBehaviorRepository` CRUD to Phase 1's standard (persist/retrieve, update-not-duplicate, delete, unknown id, optional `minimumAmount` both present and null, binary behavior with null target, unique UUIDs, and the constructor invariant being rejected) plus 4 proving the `Task` additions are inert — both factories leave the link null, the fields round-trip through JSON, a pre-Phase-10 backup with those keys stripped still imports, and `hasSameFieldsAs` notices a differing behavior link.
+
+Verified via `dart format .`/`flutter analyze`/`flutter test` — all clean, 73/73 passing (59 pre-existing unchanged + 14 new), plus real-app screenshots on iOS Simulator confirming Timeline and Inbox are unchanged.
+
+## [Phase 11] Recurring tasks — materialized instances
+
+Built recurring tasks per CONSTITUTION.md's materialized-instance spec: real persisted `Task` rows, one per occurrence, rather than virtual expansion at display time.
+
+**Model.** `RecurrenceRule` (typeId 5) as a value object embedded on the originating task — no id, not a `HiveObject`, per the Constitution — plus `RecurrenceFrequency` (typeId 6, daily/weekly only). `Task` gained `recurrenceId` (12) and `recurrenceRule` (13), appended, never renumbering. Same risk discipline as Phase 10: captured a 73/73 baseline, regenerated the adapter, and re-ran the full pre-existing suite *before* writing anything new — it passed identically, 73/73, zero test files touched.
+
+**Generation.** `generateRecurrenceInstances` in `shared/services/recurrence_generator.dart` is pure and widget-free so the date maths is genuinely unit-testable; it *returns* tasks and never persists, so `TaskList` writes them through `TaskRepository` like every other mutation. Rolling window of `recurrenceWindowWeeks = 8` (named constant). Two decisions confirmed with the user rather than guessed: generation runs **at app launch only** (the Timeline stays a pure reader — no writes on day-swipe), and the recurrence UI is an **inline collapsed "Repeats" panel** in the create form. Creating a recurring task also materializes its series immediately, so it appears without waiting for the next launch.
+
+**UI.** New adaptive `AppSwitch` in `core/widgets/` (design principle 4 forbids raw `Switch` in feature code). The Repeats panel is create-only — MVP edits affect one instance, so there's no series rule to edit. Timeline indicator is a muted `repeat` icon beside the time, matching the existing "moved" indicator exactly; existing Tier 2 tokens only, no new tokens.
+
+**Instance-only editing needed no special-casing**, as the work order suspected. A materialized instance is an ordinary `Task`; the edit path mutates only its own object and `deleteTask` removes one id. Verified on-device.
+
+**A real bug the screenshots caught.** Dedup originally keyed on `scheduledAt`, and I had written up the resulting "moving an instance frees its slot, which gets refilled" as an accepted trade-off. The edit-mode screenshot showed what that actually looks like: two "Morning run" entries on one day — the user's rescheduled 08:30 one plus a regenerated 07:00 duplicate. That reads as the app undoing the user's edit. Fixed to key on `originalScheduledAt ?? scheduledAt`. **The unit tests had passed against the wrong behaviour**, because they encoded the same wrong assumption — only a real device screenshot exposed it, which is precisely why ERROR_LOG.md requires them.
+
+Also worth noting: an earlier screenshot appeared to show a task at the wrong time with a "moved" marker. That was **my own `adb` swipe dragging the task pill** — drag-to-reschedule working correctly. Re-scrolling via the hour gutter (clear of pills) confirmed 07:00 was right all along; no code was changed in response to that false alarm.
+
+**Verification.** `dart format .`/`flutter analyze`/`flutter test` clean, **88/88** (73 pre-existing + 15 new generator tests covering window size, interval, daysOfWeek, endDate boundaries, idempotency across simulated relaunches, window sliding, and instance shape). Real screenshots on the Android emulator (which supports genuine swipe/tap, unlike iOS Simulator): the Repeats form control, Friday+Saturday showing separately materialized instances with the recurrence indicator, a one-off task correctly showing no indicator, and an edited instance with its Saturday sibling provably untouched.
+
+`daysOfWeek` and `endDate` are fully implemented and tested in the model and generator but not yet exposed in the UI — the obvious next increment, flagged rather than built speculatively.
+
+## [Phase 12] Cross-platform verification — closing accumulated gaps
+
+Verification-only session. **No feature code changed**; one verification scaffold was made platform-portable, and two documentation corrections were made. `dart format`/`flutter analyze`/`flutter test` clean throughout, **88/88**.
+
+**Hardware reality, established first:** `flutter devices`, `system_profiler SPUSBDataType`, `adb devices` and `xcrun devicectl list devices` all confirmed **no physical iOS or Android device is connected**. Items 3 and 4 of the work order are therefore **not closed** — reported plainly rather than substituting another emulator pass, which is what the work order explicitly asked for.
+
+**Item 1 — recurring tasks on iOS Simulator: CLOSED.** Every element of the Android-only Phase 11 verification now reproduced on iOS, with evidence from both the UI and the persisted store:
+- *Create form*: the "Repeats" control renders correctly on iOS (switch, interval stepper visible).
+- *Materialization*: the iOS Hive box contains **57 "Morning run" rows** — exactly the 8-week window (56 days + template), against **1 "One-off meeting"** and **59 distinct UUIDs** (57 tasks + the series id). Read directly off the simulator's app container, so it proves what was *persisted*, not just what was painted.
+- *Indicator*: screenshot shows the repeat icon beside "Morning run" and **no** icon on "One-off meeting" — the same contrast verified on Android.
+- *Single-instance edit*: exactly **1** row carries the EDITED title while the series total stays **57**. That covers all 57 rows, not just the visible day — stronger than the Android screenshot check.
+- **This also closes the loose end left at the end of Phase 11**: the dedup fix (`originalScheduledAt ?? scheduledAt`) was corrected but never re-verified on-device. The iOS edit screenshot shows **one** "Morning run" where the pre-fix Android run showed two. Fix confirmed on a real device, not just in unit tests.
+
+**Item 2 — native import file picker: CLOSED on Android, still requires a human on iOS.** This is a genuine correction to a standing project assumption. Prior sessions recorded the picker as agent-unverifiable on *both* platforms; that was only ever true of iOS. `adb shell uiautomator dump` exposes the full on-screen hierarchy **including other apps**, so DocumentsUI's file rows can be located by real `bounds` and tapped precisely. Drove the whole flow with real taps: real Import button → `dumpsys` confirms foreground becomes `com.google.android.documentsui/...PickActivity` → drawer → Downloads → tap file → back to `com.example.amble/.MainActivity` → **"Imported 1 task(s). 0 already present, 0 conflict(s) skipped."**, count 0→1, and the persisted box contains the exact title from the chosen file. iOS stays blocked for a harder reason than previously recorded: `simctl` has **no tap/touch/input capability at all**, and `idb` is not installed — so even reaching the Import button is impossible without a human or a new system dependency (flagged, not installed).
+
+**Item 4 partial — Android real-app spot-check on emulator:** export now verified from the **real app** rather than a dev scaffold (real system share chooser, correctly-named backup file), plus Settings and Inbox. Still emulator, not hardware.
+
+**Environment gotcha found and logged:** `pkill`-ing the emulator leaves `~/.android/avd/<name>.avd/multiinstance.lock` behind; the next start then aborts with a misleading *"Running multiple emulators with the same AVD is an experimental feature"* FATAL **after** printing a normal-looking startup banner, so it presents as an emulator that boots forever and never registers with adb. Cost ~10 minutes. Full entry in `docs/ERROR_LOG.md`; prefer `adb emu kill` over `pkill`.
+
+## [Phase 12] TrackedBehavior — the first UI slice
+
+The smallest useful loop: create a tracked behavior, link a task to it, record an actual amount on completion. **No history view, no charts, no calibration, no reason/reflection field** — all still deferred per this session's non-goals.
+
+**Feature flag became a build-time override rather than being flipped on** (confirmed with the user, who chose it over hard-coding `true`). `trackedBehaviorEnabled` is now `bool.fromEnvironment('trackedBehavior')`, so an ordinary build — including any release build from this commit — is **unchanged**, and SCOPE.md's "default off" stays true without relying on nobody editing the constant back. Testing uses `--dart-define=trackedBehavior=true`. Since `bool.fromEnvironment` is const-evaluated, every gated subtree still dead-code-eliminates when off.
+
+**What shipped:** a `Track a behavior` entry point in a gated Settings section, opening an `AppSheet` form with exactly the model's five fields (title, type, target, optional minimum, times-per-week) — `AppSheet` rather than Phase 4's full-screen modal, since five short fields don't warrant a full-screen takeover. A `Tracked behavior` chip row in the task detail form, with **None** selected by default, available on both create and edit (unlike recurrence, which stays create-only — a link is a property of one task, so changing it later is unambiguous). An amount-only outcome prompt on completion, pre-filled to the target so the common case is one tap. A muted `track_changes` icon on the Timeline block, matching the recurring indicator exactly.
+
+**Ordinary tasks are provably unaffected** — the session's real constraint, evidenced three ways: (1) the **entire pre-existing suite passes unmodified, 88/88**, no test files touched; (2) two new explicit tests assert an ordinary task's completion records no amount and takes the identical single-argument `toggleComplete(task)` path; (3) an on-device screenshot with the **flag off** shows the task detail form with no tracked-behavior UI at all. `_completeTask` guards in order — flag off → un-completing → no `behaviorId` → each falls straight through to the original call.
+
+**Two composition details worth noting.** Recurring instances now inherit `behaviorId` (CONSTITUTION.md says the two systems compose) but deliberately **not** `actualAmount` — inheriting an outcome would fabricate evidence for days that haven't happened. And un-completing clears `actualAmount`, since an amount describing a completion that no longer stands would misreport history.
+
+`docs/SCOPE.md` updated: TrackedBehavior's history/calibration surfaces remain deferred, but the line no longer claims *no* UI exists, since that's now false.
+
+Verified via `dart format .`/`flutter analyze`/`flutter test` — clean, **97/97** (88 pre-existing + 9 new), plus real screenshots on iOS Simulator (create form, outcome prompt) and Android emulator (link picker, flag-off comparison).
+
+## [Phase 12, follow-up] Tracked-behavior Timeline indicator — verified by screenshot
+
+Verification only; **no product code changed**. Closes the gap flagged at the end of the Phase 12 session: the `track_changes` indicator was correct in code and covered by tests, but had never been *seen* rendering on a Timeline block. That distinction matters here specifically — per the Phase 3 note in `docs/DECISIONS.md`, Flutter's headless golden rendering draws icons as blank boxes, so neither `flutter test` nor a golden can prove an icon actually renders. Only a real screenshot can.
+
+Added a `timeline` mode to the existing `tracked_behavior_main.dart` scaffold (rather than a new file) seeding four contrasting tasks 30 minutes apart, so a single screenshot shows every indicator combination at once: **ordinary** (no icon), **tracked only**, **recurring only**, and **both together**.
+
+**Result: the indicator renders correctly, and both indicators coexist cleanly.** A 3× crop confirms both are real glyphs — `track_changes` as a concentric target, `repeat` as a two-arrow loop — visually distinguishable from each other despite sharing the same muted colour and `spacingSm` size, and separated by `spacingXs` with no overlap when a task carries both. The "both" case also demonstrates on a real render that a recurring series inherits its `behaviorId` onto materialized instances, which had previously only been asserted in a unit test.
+
+One scaffold detail worth recording: the first run seeded tasks at hourly offsets from "now", which at 19:00 pushed two of them to 22:00/23:00 — outside the Timeline's 06:00–22:00 window, so they simply didn't render. Re-seeded at 30-minute spacing with the base hour clamped to 07:00–19:00, so all four land inside both the day window and one screenful regardless of when the scaffold runs. Worth knowing for any future scaffold that seeds "relative to now".
+
+Verified via `dart format .`/`flutter analyze`/`flutter test` — clean, **97/97**, unchanged from the session's starting baseline (no test files touched).
+
+## [Phase 13a] Dark mode — wiring and first-pass palette (CHECKPOINT, awaiting review)
+
+Mechanism complete and working end to end; the palette is a deliberate first pass, **not** polished. Phase 13b is the visual-refinement pass — this session deliberately stopped short of one, per the work order.
+
+**Preferences layer.** New `PreferencesRepository` / `HivePreferencesRepository` over a single untyped `preferences` box — a **generic key-value store**, not a theme-mode box, so later settings land here rather than each growing their own box and adapter. Keys owned by `PreferenceKeys`. `getValue<T>` returns null on a type mismatch rather than throwing, so a changed preference schema can't make the app unlaunchable.
+
+**Theme plumbing.** Theme mode persists as our own `AppThemeMode` (Hive typeId 7), not Flutter's `ThemeMode` — persisting a framework enum would tie the stored schema to its declaration order. `toFlutterThemeMode` is the single translation point. Exposed via a `keepAlive: true` provider read by the root `MaterialApp`, which now supplies `theme`/`darkTheme`/`themeMode` together. Three-way Light/Dark/System chip row added to Settings under a new "Appearance" section.
+
+**Dark palette.** New `ink` OKLCH ramp at hue 90 (matching the `sand` neutral) so dark mode reads as the same product rather than generic grey — derived deliberately, not inverted or auto-darkened. Chroma stays tiny and *rises* with lightness; lightness steps are uneven because perceived separation compresses near black. New `sand200`/`sand400` carry dark text at a measured 15.6:1 / 7.5:1. **Category colors are unchanged** — measured at 4.9–5.2:1 against `ink900` before deciding, so a dark-specific ramp would have added a second set of values to maintain for no gain.
+
+**Two fixes that fell out of the wiring.** `main.dart` carried hardcoded hex (`0xFF5B6F52`, `0xFFF7F5F0`) for the Material seed/scaffold — a no-magic-values violation, and a real hazard here since a light scaffold could show through a dark theme. Now derived from the palette. And system bar styling needed an explicit root `AnnotatedRegion`: the app has no `AppBar` anywhere, which is normally what manages status-bar icon brightness, so without it dark mode rendered dark icons on a near-black surface.
+
+**Verified:** `dart format .`/`flutter analyze`/`flutter test` clean, **110/110** (97 pre-existing + 13 new). `widget_test.dart` needed a `preferencesRepositoryProvider` override added — `AmbleApp` now reads it at build time, same reason the task repository was already overridden there.
+
+**Flagged for 13b review** (deliberately not changed): the category-pill icon glyph uses `colorSurfacePrimary`, so it renders white in light mode but near-black in dark. Measured *higher* contrast in dark (4.9–5.2:1 vs 3.6–3.8:1 for white), so it's legible — but it's an inconsistency in how the same component reads across themes, and the right answer is a design call. Also: the accent (FAB, nav pill, primary button) is the light `sage300` and reads brighter than the surroundings in dark; and the timeline canvas separates only subtly from the base surface.
+
+## [Timeline, post-Phase 13a] Drag "lift" state
+
+Requested: a lift state on drag with a visually large drop shadow. Confirmed the treatment before building (AskUserQuestion) since it replaces existing behaviour — the block previously faded to **0.75 opacity** while dragging, which read as receding rather than being picked up.
+
+Now: fully opaque, scaled to 1.04 via `AnimatedScale` on the existing `motionFast`/`curveStandard` tokens, casting a new `shadowLift` token. The scale is deliberately small — a bigger lift looks more dramatic but makes the drop target ambiguous, because the block stops matching the size of the slot it's about to land in.
+
+`shadowLift` is a real **Tier 2 token**, not an inline `BoxShadow`: this is the app's second shadow (the sheet's Continue button is the first), so per design principle 5 it gets promoted before a third use appears. Threading it through `AmbleTheme` meant the constructor, both palettes, `copyWith` **and** `lerp` — missing either of the last two would make the token silently revert to the other palette's value mid theme-animation, a bug that only shows during a transition. Tested explicitly, including that `lerp` actually interpolates at the midpoint.
+
+**The first attempt failed on-device and the screenshot is what caught it.** A single 40px-blur shadow at 22% alpha was almost invisible against `sand50` — the alpha spread that far just washes out. Replaced with the standard two-layer approach: a tight contact shadow (12px blur) that anchors the element, plus a wide ambient layer (40px) that conveys height. Re-verified mid-drag on device in both palettes; dark uses pure black at higher alpha, since depth on a near-black surface has to come from something *darker* than the background.
+
+Worth recording: fixing this **broke one of my own tests**, correctly. The "larger than the sheet button's shadow" assertion read `.first`, which became the tight contact layer. Rewritten to check the *widest* layer, since the assertion was always about reach rather than declaration order — plus a new test asserting the two-layer structure itself, so a future "simplification" back to one shadow fails loudly rather than quietly making drag flat again.
+
+Verified via `dart format .`/`flutter analyze`/`flutter test` — clean, **118/118** (110 pre-existing + 8 new), plus mid-drag screenshots in light and dark on the Android emulator (a held `input swipe` with a concurrent screencap — iOS Simulator has no drag injection).
+
+## [Phase 13a-pastel] Light-mode palette softened (CHECKPOINT, awaiting review)
+
+Requested directly: move the light palette toward a softer, more pastel character — lower chroma, higher lightness, gentler than the existing saturated set. Explicit checkpoint: re-derive Tier 1, re-verify contrast and category distinguishability rigorously, stop for review before Phase 13b (dark mode) resumes. **Dark mode is completely untouched this session** — same discipline as the Phase 13a checkpoint before it.
+
+**What moved and what didn't.** Category accents (`clay`/`ochre`/`periwinkle`/`berry`) went from L=0.62/C=0.10 to L=0.78/C=0.075–0.095, with hues nudged (30/120/250/340 → 35/160/240/345) rather than held fixed — full L/C/H table and hex values in `docs/DECISIONS.md`. `sage500` (the light-mode accent/button/FAB workhorse) moved from L=0.517/C=0.051 to L=0.550/C=0.060, tuned specifically to hold WCAG AA rather than picked by eye. `sage100`/`sage300`/`sage900` were **deliberately left unchanged** — `sage300` is dark mode's `colorAccent` (a shared primitive), and moving it would have been an unrequested dark-mode side effect smuggled in under a light-mode work order. `coral*` (the alert ramp) wasn't touched either: it's a functional status color, not a category swatch, and softening it would work against the one job it has — reading as urgent.
+
+**Only Tier 1 (`color_primitives.dart`) changed.** `semantic_theme.dart` needed zero edits, which is the token architecture doing exactly what it's for — a palette swap propagates through Tier 2's references without touching the semantic layer.
+
+**A real, required companion fix, not scope creep:** at the new pastel lightness, a white icon glyph on any category pill drops to ~1.8–2.1:1 contrast — well under the 3:1 WCAG floor for graphics. `TaskCapsuleBlock` now computes the glyph color per-badge (dark `colorTextPrimary` only for the plain-category case, detected via `ThemeData.estimateBrightnessForColor`; `colorTaskSkipped`/`colorTaskCompleted` badges keep white, since those stay dark enough). Deliberately **not** a new Tier 2 token — considered and rejected, since the work order specified Tier 2 needing no changes and a widget-local fix achieves the same correctness without expanding the token schema mid-checkpoint.
+
+**Distinguishability was re-verified, not assumed.** The naive version of "more pastel" — lowering chroma uniformly, keeping hues fixed — actually *compressed* perceptual separation and scored worse than the old palette on 5 of 6 pairs when checked via OKLab deltaE. The hue nudges above exist specifically to fix that: the corrected palette meets or beats the old one on 5 of 6 pairs, and the closest pair under a red-green color-vision-deficiency proxy matches the old palette's worst-pair score exactly rather than falling below it. Checked with a throwaway Python script (not shipped, not a new Dart dependency) mirroring the existing hand-written OKLCH conversion.
+
+**Verified:** `dart format .`/`flutter analyze`/`flutter test` clean, **118/118** — one golden (`timeline_capsule_preview.png`) intentionally regenerated for the new category colors, everything else unchanged. Real screenshots on the Android emulator (release build, `lib/main.dart`): Timeline with all four category colors visible together, the task-detail form's category picker (each chip legible, full-bleed header color also checked), and Settings (softer sage on the toggle chips and Export button). iOS Simulator screenshots not captured this session — Android alone was sufficient to verify the actual color/contrast changes, which are platform-independent; flagged rather than silently skipped.
+
+**Flagged for 13b, not fixed here:** dark mode's `sage300`/category ramp are now the *old*, more saturated values, so light and dark currently disagree in character until 13b deliberately addresses it — expected given this session's explicit sequencing, not a bug.
+
+## [Phase 13a-pastel-v2] Category palette re-derived against a user-supplied reference — supersedes the pass above
+
+The first pastel pass (L=0.78, C≈0.08) was a genuinely softer mid-tone, but the user then supplied a real reference palette — "8 Soft Pastel Colors," pale tints at L≈0.95–0.99 — that's a different point on the scale entirely: a true tint, not a muted accent. Confirmed via AskUserQuestion (not guessed) how that should map onto a small pill: **a pale tint fill plus a separate, saturated same-hue icon glyph**, since at that lightness no single glyph color clears contrast against the fill alone. Also confirmed the category mapping: Peach→health, Mint→work, Sky→personal, Lavender→admin, out of the reference's eight swatches.
+
+**`AmbleTheme` gained a second color map, `categoryIconColors`,** threaded through the constructor/both palettes/`copyWith`/`lerp` the same way `shadowLift` was. `categoryColors` now holds the pale tint (matched to the reference's own hex values through the app's real `oklch()` pipeline, not hand-copied — verified within 1–3/255 per channel); `categoryIconColors` holds a deliberately saturated version of the same hue, which `TaskCapsuleBlock` now reads directly instead of inferring a glyph color from brightness estimation, since a real per-category value exists now.
+
+**A naming collision with dark mode was caught before it shipped, not after.** `clay500`/`ochre500`/`periwinkle500`/`berry500` — dark mode's pill-fill primitives, measured back in Phase 13a at 4.9–5.2:1 against `ink900` — got repurposed in-place as the new icon-glyph names. Left alone, that would have silently changed dark mode's rendering through a name collision rather than a value change anyone asked for, in a session explicitly scoped to light mode only. Fixed by preserving the original numbers under new, dark-exclusive names (`*Dark` suffix) and repointing dark's two category maps at those — dark mode is byte-for-byte unchanged.
+
+**Distinguishability was re-checked and a real regression was caught.** The reference's Sky and Lavender hues sit close enough together that a first attempt (hues held at the reference's raw values) scored *below* the pre-pastel palette's worst-pair floor on the same red-green-CVD proxy used in the first pastel pass — an actual step backward on the exact axis Phase 3 originally fixed, not a hypothetical risk. Widening personal/admin's hue gap fixed it, verified against the same floor rather than assumed safe because the source was a polished-looking reference.
+
+**Full before/after tables, per-category contrast numbers, and the distinguishability math are in `docs/DECISIONS.md`.** Verified: `dart format .`/`flutter analyze`/`flutter test` clean, 118/118 (one golden regenerated a second time), plus real Android emulator screenshots of Timeline (all four categories together), the category picker, and Settings, re-captured against this palette.
+
+## [Timeline, drag ghost] "Leave a faded ghost at the original slot while dragging" — real bug found and fixed via user report, not caught in-session
+
+Requested directly: while dragging a task, leave a 20% ghost copy at its original position until dropped. First implementation wrapped `_DraggableTaskBlock`'s single `Positioned` root in `Positioned.fill(child: Stack(...))`, so the widget's own `build()` could inject two `Positioned` children (ghost + live block) into the ambient day-timeline `Stack`. Structurally this worked — confirmed with a temporary magenta debug marker that the ghost's positioning math and `IgnorePointer` gating were correct — but the user reported a real interaction bug on a fresh Android install: **the first drag on any task would "arm" (shadow/lift/preview labels all appeared) but not actually move the block, and only a second drag on the same task worked.**
+
+**Root cause:** `Positioned.fill` sizes its child to the *entire* ambient Stack's bounds — meaning every dragged task's wrapper widget, while dragging, had a hit-testable footprint the height of the whole day column, not just its own badge. With several task blocks in a day, each carrying this oversized footprint, the extra Stack nesting changed gesture-arena timing enough that the first pointer-down after a fresh app launch lost arbitration and the drag recognizer never actually claimed the gesture — evidenced by `onVerticalDragStart` firing (hence the visible "armed" state) while `onVerticalDragUpdate` never delivered usable deltas.
+
+**Fix:** lifted the "which task is dragging" state up to `_DayTimelineState` (a new `_draggingTaskId` field) instead of having each `_DraggableTaskBlock` manage its own ghost internally. The parent's existing `for` loop now emits the ghost as a genuine sibling `Positioned` — conditional on `_draggingTaskId == slot.task.id`, `IgnorePointer`-wrapped, computed from the same layout math (`_minutesSinceStart`, column offset) the live block already used — right alongside the unchanged `_DraggableTaskBlock`. `_DraggableTaskBlock` itself is back to exactly its pre-ghost shape: a single `Positioned` root, no nested Stack, reporting drag start/end via a new `onDraggingChanged` callback instead of owning ghost rendering itself. No extra Stack depth, no inflated hit-test region — the drag `GestureDetector` sits at the identical nesting depth it always did.
+
+**Verified the fix, not just the theory:** re-tested the exact failure mode — force-stopped and relaunched the app fresh, then dragged a task on the very first attempt. The drag now moves and drops correctly first-try (confirmed via a real `adb input draganddrop` capturing a genuine mid-drag frame showing both the preview time labels and a visibly separate faded original-position element), with no stuck lift/shadow state surviving the drop or a subsequent app restart.
+
+Worth recording: the original architecture *looked* correct under every check available short of a real interaction — clean `flutter analyze`, clean tests, a debug marker proving the positioning math — and still shipped a real usability bug. The gap was gesture-arena behavior, which none of those checks exercise. `dart format .`/`flutter analyze`/`flutter test` clean, 118/118, unchanged from the ghost feature's own baseline (no test files touched by this fix).
+
+## [Timeline] Fixed: tasks before 6am or after 10pm were unreachable — scroll bug, not a gesture bug
+
+Reported directly, alongside a separate (deferred) request to redesign the time axis as task-driven rather than a fixed hourly grid — the two were split: this fix is the small, safe half; the axis redesign is its own future session, since it changes the timeline's core visual model and CONSTITUTION.md already flags the capsule/timeline component as the one place worth real design-review time rather than folding it into an unrelated bug fix.
+
+**Not actually a scroll-gesture bug** — the day view's rendered content genuinely didn't extend past 6am-10pm (`_startHour`/`_endHour` constants), so `SingleChildScrollView` had nothing to scroll to beyond that window. Any task scheduled at 5am or 11pm was there in the data and on the day, just unreachable on screen. Fixed by widening the constants to the full calendar day (`_startHour = 0`, `_endHour = 24`) — `_endHour = 24` sizes/positions the full 24 hours of content, but `TimeOfDay` only accepts hour values 0-23, so `HourMarkers`' label loop now stops at 23 (11:00 PM) while still using the full 24-hour height for layout — the same way a real 24-hour clock has a "00:00" tick and no separate "24:00" one.
+
+Verified past the code: `dart format .`/`flutter analyze`/`flutter test` clean, 118/118 (no test files needed changes — this scenario wasn't under test before, and adding day-boundary coverage is a reasonable follow-up but wasn't required to confirm the fix). On-device, re-tested both edges directly: scrolled to the true top of a real day and confirmed 12:00 AM renders with a previously-unreachable 4:00 AM task now visible, then scrolled to the true bottom and confirmed it reaches past 11:00 PM to the end of the day.
+
+## [Timeline] Fixed hourly grid replaced with task-boundary time labels
+
+The deferred half of the previous session's request: swap the left gutter's generic `:00` hour ticks for labels tied to what's actually scheduled that day, matching a reference design. Confirmed the scope via two AskUserQuestion decisions rather than guessing either: **(1)** keep the timeline's underlying scale linear/proportional — only which labels render changes, not how pixels map to minutes, so drag-to-reschedule, the current-time indicator, and overlap layout all stay untouched (they assume linear time); **(2)** gutter shows task start/end times only, with hour ticks removed entirely rather than falling back to them in empty gaps — matches the reference exactly, at the cost of empty stretches of a busy day having no time reference at all (a fully empty day already renders `_EmptyDayState` instead, so this only affects gaps *between* tasks, not a whole blank day).
+
+**New pure function, `taskBoundaryTimes`** (`task_boundary_markers.dart`): collects every scheduled task's start and end `DateTime`, de-duplicates by exact value in a `Map<DateTime, TaskBoundary>`, sorts chronologically. De-duplication is the load-bearing behavior here — confirmed via AskUserQuestion that back-to-back tasks (one's end equals the next one's start) should share one label, not render the same time twice, matching the reference. Overlapping tasks (rendered side-by-side by the existing `layoutOverlappingTasks`) fall out of the same de-dup logic for free, since it only cares about the `DateTime` values, not which column a task sits in — no overlap-aware special-casing needed. A zero-duration task collapses to a single boundary the same way, for the same reason (start == end).
+
+**`TaskBoundaryMarkers` replaces `HourMarkers`**, which is now deleted outright (it had exactly one real caller, and nothing else referenced it beyond doc comments — updated those in `current_time_indicator.dart` rather than leaving stale `[HourMarkers]` links). Same collision-avoidance rule as before (a boundary label near the bold current-time label is hidden, threshold derived from the caption text's own line height, not a hardcoded pixel gap) — ported over unchanged, just re-keyed on `DateTime.difference` instead of hour/minute arithmetic since boundaries are full timestamps now, not just an hour.
+
+6 new unit tests for `taskBoundaryTimes` (empty day, single task, sort-order independence, back-to-back de-dup, overlapping-task de-dup, zero-duration collapse). Verified on-device: a day with sparse tasks now shows sparse labels exactly at each task's edges and nothing else, confirmed scrolling from a task at 12:05 AM through gaps to one at 7:15 AM with zero grid lines in between, matching the reference's character. `dart format .`/`flutter analyze`/`flutter test` clean, 124/124 (118 + 6 new).
+
+## [Splash/carousel] First-launch acquisition screen — presentational only, per docs/SCOPE.md's sequencing
+
+Built the "splash/landing + carousel" half of SCOPE.md's deferred splash/onboarding pair, explicitly not the onboarding question flow (still not started, per SCOPE.md). No new data model — the entire feature is presentational plus one boolean preference.
+
+**Flow:** brief splash (the same diagonal line-and-dot mark as the Phase 9 placeholder app icon, live-drawn via `CustomPaint` rather than a new asset, "Amble" wordmark) for 1.2s, then a 4-slide `PageView` carousel with page-dot indicator, Next/Skip on slides 1-3, a single "Get started" CTA on the last slide. The CTA persists `hasSeenSplash = true` through the existing `PreferencesRepository` (Phase 13a) and the root `MaterialApp` — which **watches**, not reads, the new `hasSeenSplashProvider` — swaps straight to `AmbleHome` on the very next rebuild. No `Navigator.push`, no stub onboarding screen: exactly "skip straight to the real app," as scoped.
+
+**Draft carousel copy** (flagged for review, not final — see the widget's own doc comment): four slides pulled from principles already established across this build — CONSTITUTION.md's "the plan is provisional, not a verdict" and "capture is frictionless," plus the local-first/no-account positioning. Each slide reuses one of the four pastel category tint/icon-color token pairs purely for visual variety, no connection to the user's actual categories.
+
+**Debug-only reset**, flagged per the work order's own instruction: a "Developer" section in Settings, gated on `kDebugMode` (not `FeatureFlags` — this isn't a product feature to toggle per-build, it's a developer convenience that must categorically not exist in any real build, and `kDebugMode` is compile-time `false` in release/profile builds the same way a `FeatureFlags` gate dead-code-eliminates). One button calls `HasSeenSplash.reset()`, which — because `main.dart` watches the provider — re-shows the splash immediately, no app restart needed.
+
+**Two real, pre-existing dark-mode bugs found and fixed while verifying, not introduced by this session's own code:**
+
+1. **Category icon glyphs were invisible in dark mode** — `categoryIconColors` for dark mode mirrored `categoryColors` (both `clay500Dark`/etc.), so an icon was drawn in the exact color of its own background. This predates the splash work: it was introduced when `categoryIconColors` was added during the pastel-palette session, on the reasoning "dark mode never had a separate icon treatment" — true of the *old* code path (`TaskCapsuleBlock` read `colorSurfacePrimary`, white in light mode only by coincidence), but that session's rewrite made `iconColor` read `categoryIconColors` unconditionally in both palettes. My splash carousel's much larger category circles made the bug impossible to miss; it was equally present on every real Timeline task pill in dark mode. Fixed to pure white — the actual pre-pastel-session value, verified at 3.56-3.83:1 against all four dark category colors, matching Phase 13a's own originally-measured 3.6-3.8:1 figure.
+
+2. **The bottom NavigationBar stayed white in dark mode** despite `backgroundColor: theme.colorSurfacePrimary` being wired correctly since Phase 5. Material 3's `NavigationBar` applies its own `surfaceTintColor` overlay by default (derived from `ColorScheme.fromSeed`), which paints *over* an explicit `backgroundColor` rather than being superseded by it. Fixed with `surfaceTintColor: ColorPrimitives.transparent`. Never caught before because no prior session's dark-mode screenshots happened to include the nav bar itself in frame.
+
+Both fixes verified on a genuinely clean rebuild (`flutter clean` + fresh install, not just a hot patch over stale state) — the first attempt at verifying the nav-bar fix showed the same white bar, which turned out to be a stale build artifact, not a failed fix; a true clean rebuild resolved it.
+
+**Verified:** `dart format .`/`flutter analyze`/`flutter test` clean, 124/124 (unchanged — no test files needed changes for this session). Real Android screenshots: splash logo in both palettes, multiple carousel slides in both palettes, the CTA landing on a real empty Timeline with the bottom nav present, a second launch skipping straight past the splash, and the debug-only reset section appearing only in a debug build (confirmed absent in a `--release` build of the same commit).
+
+## [Splash/carousel, correction] Third dark-mode bug: `colorSurfacePrimary` was actually `ColorPrimitives.white`
+
+Reported directly after the previous entry shipped: Timeline, Settings, and the splash screen's page background all still stayed fixed white in dark mode — not just the nav bar. Root cause was a genuine bug in this session's own earlier edit: while restructuring the dark palette block for the `categoryIconColors` fix, `colorSurfacePrimary`'s field value stayed `ColorPrimitives.white` even though the comment directly above it correctly describes the field as "near-black `ink900`." A copy-paste slip, not a design decision — the comment and the code disagreed, and nothing in that edit's review caught it.
+
+This explains the earlier nav-bar investigation more completely than the `surfaceTintColor` fix alone did: `colorSurfacePrimary` is consumed by roughly a dozen call sites (nav bar, Settings, Inbox, splash, `AppSheet`, `AppButton`, task detail sheet), not just the one. The `surfaceTintColor` fix was still real and necessary — verified in isolation as a genuine, separate Material 3 behavior — but the first verification pass happened to land on a build/moment where the two bugs' effects were hard to tell apart, and called it fixed too early.
+
+Fixed: `colorSurfacePrimary: ColorPrimitives.ink900`. Re-verified from a genuinely fresh state — full emulator restart, fresh install, dark mode explicitly re-selected rather than carried over — confirming Timeline, Settings, and the splash screen all render a real dark background now, not just the nav bar. `dart format .`/`flutter analyze`/`flutter test` clean, 124/124, unchanged.
+
+## [Timeline] Connector line, larger icon padding, task-driven scroll range
+
+Three requests against a reference image. Two were quick; the third turned into a real refactor.
+
+**Connector line**: a continuous gray line now runs down through every consecutive task's badge, matching the reference — new `borderWidthConnector` token (3px, `colorBorder`), new `_TimelineConnectors` widget. Skips pairs that overlap in time (the side-by-side pills already show that clash) and, for the rare case where consecutive tasks land in different overlap columns, draws the segment at the later task's column rather than attempting a diagonal.
+
+**Icon padding**: the category badge's top padding went from 4px to 16px (`theme.spacingMd`) — a one-line change, but visible everywhere a task pill renders, so the golden test's screenshot needed regenerating.
+
+**Scroll range**: the Timeline no longer scrolls the full 24-hour day. It's now clamped to `[earliest task − 30min, latest task + 30min]` — genuinely reachable early/late tasks (the point of last session's 0–24h fix) without an empty pre-dawn or late-night void to scroll through to find them. This meant retiring `_startHour: int` everywhere it appeared — hour-count math doesn't generalize to a range that can start at an arbitrary minute — in favor of a real `rangeStart: DateTime` threaded through `_DayTimelineState`, `TaskBoundaryMarkers`, `_TimelineConnectors`, and `CurrentTimeIndicator` (which also gained a `rangeEnd`, since a tightly clamped day can easily not contain the actual current time at all — previously only "before the range" was handled).
+
+Verified on-device: confirmed the connector renders as one unbroken line through several tasks, and confirmed a genuine scroll limit at the top of a real day — the current-time indicator sitting pinned right at the boundary with the day's earliest task just below it, not floating in leftover empty space. `dart format .`/`flutter analyze`/`flutter test` clean, 124/124 (one golden regenerated for the padding change; nothing else needed updating since no test referenced the old hour-based APIs directly).
+
+## [Timeline, correction] Icon padding is 12px, not 16
+
+Quick follow-up: the requested value was 12px, not 16 — corrected. 12 isn't on the existing spacing scale (4/8/16), so rather than round to the nearest existing token, added a new one-purpose `spacingIconTop` token (12px) the same way `borderWidthConnector` was added earlier in this session for a value with no existing home. Verified on-device and via a regenerated golden. `dart format .`/`flutter analyze`/`flutter test` clean, 124/124.
+
+## [Timeline] Completion moved to a trailing checkbox; pill/title is now pure tap-to-edit; celebration emoji on completing
+
+Reported directly: tapping the badge toggled completion, tapping the name opened edit — same row, two different behaviors depending on where you tapped, which read as confusing. Fixed by removing the badge's toggle entirely: the whole pill+title area now always opens the edit sheet. Completion moved to a new `CompletionCheckbox` — a small hollow ring on the far right of each row, filled with a checkmark when done, matching a reference image. Removed the old completed-state corner badge on the icon pill too, so the checkbox is the single place completion status shows.
+
+**48px minimum tap target**, per the Material Design/WCAG guidance quoted directly in the request — the visible ring is only 24px, but a new `spacingMinTapTarget` token pads the actual tap area out to 48px regardless of how small the ring looks.
+
+**Celebration**: completing a task (not un-completing) fades a random emoji — 👏🏼🏆🥇🎯🥁🏁💪🏼🌟 — in over the checkbox, holds, then fades out to reveal the ticked checkbox underneath. Built with plain Unicode emoji and Flutter's own `AnimationController`/`TweenSequence`, not the animated Noto emoji library the request linked to — that's a Lottie-backed CDN asset set, which would have meant a new network dependency and a new package, flagged and declined via AskUserQuestion in favor of the zero-dependency, works-offline version.
+
+Verified on-device: the checkbox toggles independently of the pill, the celebration actually renders and fades to reveal the checked state, and the pill/title area reliably opens the real edit sheet now instead of ever toggling completion. `dart format .`/`flutter analyze`/`flutter test` clean, 124/124 — one golden regenerated for the layout change.
+
+## [Timeline, follow-up] Real animated Noto emoji, not static Unicode — dependency explicitly authorized
+
+User overrode the earlier decision directly: "Use noto > override dependence allowed." Added the `lottie` package and downloaded the 8 real animated Lottie files from Google's Noto emoji CDN (the exact codepoints from the original request), bundled locally under `assets/celebrations/` — confirmed via AskUserQuestion that bundling (not a live CDN fetch each time) was the right call, since it keeps the celebration working offline.
+
+`CompletionCheckbox` now plays a real animated graphic (e.g. a moving gold trophy) over the checkbox instead of a static emoji character — the existing fade-in/hold/fade-out timing is unchanged, it's just fading in/out something that's animating on its own underneath now. Verified on-device: triggered a completion and confirmed the actual Lottie animation renders, not a fallback box — the asset path and package wiring are genuinely correct. `dart format .`/`flutter analyze`/`flutter test` clean, 124/124.
+
+## [Task detail UI restructuring] Create split into a 2-step wizard; edit split into single-purpose modals; new task action sheet
+
+Rebuilt `task_detail_sheet.dart` around a shared per-field state pattern instead of one form serving both create and edit. `showTaskDetailSheet` is now create-only: a 2-step wizard (`_TaskDetailFlow`, one state object owning every field across both steps plus a `_Step` enum) — step 1 (details: title/category/tracked-behavior link/notes) has a "Continue" button, step 2 (schedule: date/time/duration/repeats) has a back arrow and "Schedule" (the actual persist, via `TaskList.createTask`); nothing writes until step 2's save. `showEditDetailsSheet`/`showEditScheduleSheet` are new, single-step, single-purpose modals for editing an already-scheduled task — no step navigation, no "Continue," and the schedule modal never shows the Repeats panel (recurrence stays create-only per CONSTITUTION.md — editing a materialized instance never touches the series rule). All three share the same header/body/sticky-button chrome (`_StepScaffold`) and every sub-widget from the old single form (`_Panel`, `_CategoryTag`, `_TimeScroller`/`_Wheel`, `_RecurrencePanel`/`_DayChip`, `_BehaviorPickerPanel`/`_BehaviorChip`, date/time formatters) verbatim.
+
+New `lib/features/task_detail/task_action_sheet.dart`: `showTaskActionSheet` — a 4-row bottom sheet (Edit details / Edit time and duration / Duplicate / Remove) opened by tapping a task on the Timeline, replacing the old direct-to-full-form tap. Built on the existing `AppSheet` primitive (its `builder` already supports arbitrary content, no new adaptive-widget gap). Destructive "Remove" row reuses the existing `colorTaskAlert` token (already used by `AppAlertDialog` for destructive actions) — no new color token needed. `TaskList.duplicateTask` (new) builds a standalone copy via `Task.create` (fresh UUID, no `recurrenceId`/`recurrenceRule`, no `status`/`completedAt`/`actualAmount` carried over — starts `pending`) and returns it so the caller opens it straight into "Edit details" for review.
+
+`timeline_screen.dart`'s `onTaskTap` now calls `showTaskActionSheet` instead of `showTaskDetailSheet`; the FAB's create call and `inbox_screen.dart`'s own `showTaskDetailSheet(context, task: task)` call site are both unchanged, per direct instruction. The Inbox case needed one extra affordance on `showTaskDetailSheet`: an optional `task` param that pre-fills the create wizard from an existing *unscheduled* (captured) task and, on save, fills in that same task's schedule via `updateTask` rather than creating a second one — kept it create-*style* (2-step, "Continue"/"Schedule") since an Inbox item genuinely has no time yet, distinct from editing an already-scheduled task.
+
+Updated every `*_main.dart` scaffold that referenced the old `TaskDetailForm` class or the old single-form edit call, to use `showEditDetailsSheet`/`showEditScheduleSheet`/`showTaskActionSheet` instead (`exit_confirm_modal_main.dart`, `exit_confirm_schedule_main.dart`, `exit_confirm_discard_main.dart`, `edit_save_repro_main.dart`, `timeline_screen_detail_sheet_main.dart` — the first three now seed a real scheduled task rather than a captured one, since the edit-schedule modal only ever opens on an already-scheduled task). `recurrence_verification_main.dart`, `tracked_behavior_main.dart`, and `inbox_move_to_timeline_main.dart` needed no changes — their existing calls already match the new/preserved signatures. Rewrote `test/features/task_detail/exit_confirmation_test.dart` to pump through the public `showTaskDetailSheet`/`showEditDetailsSheet` functions instead of the now-deleted `TaskDetailForm` class directly; same coverage, split cleanly into create-flow and edit-details-flow sections.
+
+Judgment calls made, not explicitly specified in the work order: (1) no separate confirmation dialog on "Remove" — it calls `TaskList.deleteTask` directly, matching how deletion is invoked elsewhere in the app without a confirmation step; (2) action-sheet file placed under `features/task_detail/` (not `features/timeline/`) for consistency with the rest of the task-editing UI, even though its only call site is `timeline_screen.dart`; (3) destructive color reused `colorTaskAlert` rather than adding a token, since it was already the exact semantic ("destructive action") the design called for.
+
+`flutter analyze`: clean. `flutter test`: 124/124 passed. No goldens needed regeneration — the timeline capsule-block golden is unrelated to this change and passed unchanged. On-device/simulator verification not done, per the work order's own instruction (not available in this environment for this task).
+
+## [Post-Phase 9] "Prevent overlapping tasks" opt-out toggle — deliberate reversal of the side-by-side-overlap default
+A new Settings preference (`PreferenceKeys.preventOverlappingTasks`, `PreventOverlappingTasksSetting`, default **true**) that, when on, blocks creating/scheduling/dragging a task into a slot that overlaps another scheduled task — reject-and-snap-back, no cascade, no auto-adjustment. This is a confirmed, deliberate opt-out layered on top of the post-Phase 9 "overlaps allowed, shown side by side" default recorded in docs/DECISIONS.md, not a reopening of that decision — the old behavior remains the default when the switch is off, and is exactly what happens today when it's on but no conflict exists.
+
+Added: `lib/shared/services/overlap_checker.dart` (`overlapsExistingTask`, pure/widget-free, half-open interval semantics mirroring `task_overlap_layout.dart`'s `_layoutGroup`/`_endOf`), a new "Scheduling" section in `settings_screen.dart` with an `AppSwitch` toggle, and the preference notifier in `preferences_providers.dart` following `ThemeModeSetting`'s exact pattern (only difference: default `true`, flagged in its doc comment).
+
+Wired into the three interactive flows only — create wizard's Save/Schedule button and edit-schedule modal's Save button in `task_detail_sheet.dart` (inline error text in `colorTaskAlert` above the primary button, sheet stays open, nothing persisted), and `timeline_screen.dart`'s drag-to-reschedule (`_DraggableTaskBlock` became `ConsumerStatefulWidget` so `onDragEnd` can read the preference and task list; a blocked drop snaps back exactly like the existing `minutesDelta == 0` no-op branch, no separate error UI). `TaskList`'s mutators (`createTask`/`updateTask`/`scheduleTask`/`rescheduleTask`) are untouched — the check happens in the UI layer before calling them, per CONSTITUTION.md's one-directional layering (this is a UI validation concern, not a data-integrity one). Confirmed `importTasks`/`_materializeSeries`/recurrence generation are unaffected, as instructed — a bulk restore or recurring series materializing weeks out should never silently reject entries, and there's no UI there to show an error anyway.
+
+Completed tasks still count as blocking (judgment call, flagged per the work order): the point of the preference is a realistic view of what's occupying the day, and a completed task occupied its slot just as much as a pending one.
+
+`test/shared/services/overlap_checker_test.dart` added (8 tests: no overlap, exact overlap, partial overlap, back-to-back half-open boundary both directions, self-exclusion, completed-still-blocks, different-days-never-overlap, unscheduled-tasks-ignored). `task_providers_test.dart` needed no changes (confirmed — `TaskList` never learned about this preference). `exit_confirmation_test.dart` needed one override (`preventOverlappingTasksSettingProvider` fixed to `false`) since its `_pumpHost` doesn't open a real `preferences` Hive box and one of its scenarios does reach the create wizard's `_save()` via the "Schedule this" exit-confirmation path — the fixtures themselves never overlap, but the provider's `build()` would otherwise throw on the missing box before ever reaching the overlap check.
+
+`flutter analyze`: clean. `flutter test`: 132/132 passed.
+
+## [Cascade replanning] Push-based cascade reschedule for drag-to-reschedule — reverses SCOPE.md's MVP deferral, deliberately
+
+Confirmed directly by the user as its own phase: SCOPE.md previously listed "Cascade replanning logic (automatic reflow when a task runs over)" as explicitly out of MVP scope. That line is now replaced with a description of the implemented behavior, and the immediately-preceding session's decision (drag rejects an overlapping drop, snap-back, no auto-adjust) is reversed for the drag path only — the create wizard's Save/Schedule and the edit-schedule modal's Save keep the exact reject-with-inline-error behavior unchanged, since neither has a drag gesture to compute a push direction from.
+
+**Algorithm** (`lib/shared/services/cascade_reschedule.dart`, `computeCascadeMoves`): worked out by hand from two examples the user gave before any code was written, per direct instruction not to skip to UI wiring with an unverified algorithm. Direction is decided by comparing the dragged task's *new start* against the overlapped task's own start and end — whichever is nearer wins. Nearer-to-end pushes the existing task earlier, its end landing exactly on the dragged task's new start; nearer-to-start pushes it later, its start landing on the dragged task's new *end* (not start) — a deliberate asymmetry, since pushing later means the existing task must clear the mover's entire span, not just where it begins. Verified exactly against the user's own worked numbers once one of their restated numbers (flagged in the work order itself as a likely typo) was corrected by re-deriving from the stated rule rather than copied: existing 11:00–12:00 dropped-against at 11:45 becomes 10:45–11:45; dropped-against at 10:15 becomes 11:15–12:15. Chains via a queue + visited-id set (BFS-style, not recursion), capped at the day's task count as a cycle guard. A day-boundary check (any move landing before 00:00 or after 24:00 of the viewed day) runs per-move as the cascade builds; failing it returns `null`, and the caller snaps the whole drag back untouched — nothing partially applies.
+
+**Wiring** (`lib/features/timeline/timeline_screen.dart`, `_DraggableTaskBlock.onDragEnd`): the existing reject branch (when "Prevent overlapping tasks" is on and the drop overlaps) now computes a cascade instead of snapping back outright; a `null` result still snaps back exactly as before. A new `TaskList.rescheduleTaskWithCascade(List<TaskMove>)` (`shared/providers/task_providers.dart`) applies every move — dragged task and every pushed task alike — through the same per-task semantics `rescheduleTask` already has (`originalScheduledAt` set once, `status` → `rescheduled`), looked up fresh by id, with a single `_refresh()` at the end so the Timeline rebuilds once, atomically, rather than mid-cascade. Chose this provider-layer loop over a UI-layer loop calling the existing single-task `rescheduleTask` repeatedly — the latter would rebuild the Timeline once per pushed task, visibly moving them one at a time rather than all at once, which the work order's "applied atomically" requirement ruled out. Mirrors the `_materializeSeries` precedent (loop + write through the repository, one refresh at the end) rather than inventing a new pattern.
+
+New `TaskMove` (paired `taskId` + `newScheduledAt`, not a live `Task` reference) keeps the cascade function pure/widget-free and avoids holding a `Task` object that could go stale between computation and write — both the UI (computing the cascade) and `rescheduleTaskWithCascade` (applying it) re-read fresh from `taskListProvider`/`TaskRepository` right before they need the data, same as every other mutator in this codebase.
+
+Reviewed CONSTITUTION.md before starting: no data-model non-negotiable needed changing — a pushed task is an ordinary `Task` row going through ordinary reschedule semantics, same enum, same `originalScheduledAt` rule, no new fields.
+
+New tests: `test/shared/services/cascade_reschedule_test.dart` (8 cases) — both worked examples reproduced exactly, a 3-task chain, the day-boundary-guard abort (both "existing task pushed past midnight" and "dragged task's own new start before 00:00"), no-overlap-at-all (returns just the dragged task's own move), back-to-back-is-not-an-overlap, and a tightly-packed 5-task cycle-guard smoke test (asserts only that it terminates, not a specific outcome). Grepped `test/` for `onDragEnd`/`_DraggableTaskBlock`/`rescheduleTask` — no existing widget test exercises the drag gesture directly (the only other hit was `recurrence_generator_test.dart`'s unrelated use of `originalScheduledAt`), so nothing needed updating there.
+
+`flutter analyze`: clean. `flutter test`: 140/140 passed (132 previous + 8 new).
+
+## [Timeline] Left-gutter labels reverted from task-boundary times back to a fixed hourly grid — configurable interval seam added
+
+Requested directly: the boundary-derived labels (task start/end times only, from the previous session's confirmed redesign — see docs/DECISIONS.md) should go back to a fixed grid — "every hour interval, 11:00 12:00" — with the interval itself made configurable later (e.g. every 2 hours).
+
+The scroll range is no longer the fixed 6–22h/0–24h window the *original* `HourMarkers` was built against — a later session made `_visibleRange` dynamic per day (earliest task start − 30min to latest task end + 30min, see docs/DECISIONS.md), so this isn't a plain revert of the deleted file. Confirmed via AskUserQuestion where ticks should land given a `rangeStart` that rarely falls on a whole hour: clean clock hours (11:00, 12:00...), not values offset from `rangeStart` itself (6:47, 7:47...) — matches the "11:00 12:00" example given and reads as a normal clock face rather than an arbitrary grid.
+
+**`task_boundary_markers.dart` rewritten** (kept the filename/widget name — `TaskBoundaryMarkers` — since it's still the left-gutter markers widget, just grid-based again): `taskBoundaryTimes(List<Task>)` replaced with `hourlyGridTimes(DateTime rangeStart, DateTime rangeEnd, {int intervalHours = 1})`, a pure function that finds the first whole hour at or after `rangeStart`, then steps by `intervalHours` (not `Duration(hours:)` on a running total, so the "every 2 hours" follow-up is a call-site default change, not a new code path) through to `rangeEnd`. The widget lost its `tasks` param (no longer needed) and gained `rangeEnd` and `intervalHours` (default 1). The current-time-label collision guard (`hideLabelNear`, threshold = caption line height) is unchanged — it operates on `DateTime`s either way, indifferent to how the tick list was produced.
+
+**`timeline_screen.dart`**: the one call site updated — `tasks:` dropped, `rangeEnd: rangeEnd` added (already computed there for `dayHeight`, just not previously passed through).
+
+**Tests rewritten** (`task_boundary_markers_test.dart`, 6 cases, all pure-function — no widget pump needed since `hourlyGridTimes` takes plain `DateTime`s): non-hour-aligned `rangeStart` snaps up to the next whole hour; an already-aligned `rangeStart` is included as-is; the last tick never exceeds `rangeEnd`; a sub-hour range with no whole hour inside produces zero ticks; `intervalHours: 2` still anchors to whole hours; a range crossing midnight ticks correctly across the day boundary.
+
+`flutter analyze`: clean. `flutter test`: 140/140 (full suite, no regressions — the capsule-preview golden and every other timeline test were unaffected since only the gutter-label source changed).
+
+## [Timeline] Task capsule pill (and its icon) shrunk 40%
+
+Requested directly: "make icons inside smaller and also task coloured pane smaller by 40%". The coloured pane is `TaskCapsuleBlock`'s left-rail badge/pill (`badgeSize`); the icon inside it is already sized relative to the pill (`badgeSize * 0.55`), so shrinking the pill shrinks the icon proportionally too — confirmed via AskUserQuestion that proportional shrinking (not an additional, disproportionate icon reduction) was what was meant, rather than assuming.
+
+`badgeSize = theme.spacingXl * 1.5` → `theme.spacingXl * 0.9` (0.9 = 1.5 × 0.6, i.e. 40% smaller) in `task_capsule_block.dart`. `timeline_screen.dart`'s `_pillWidth` — an intentional mirror of the same value, documented in its own comment as needing to stay in sync since overlapping-task column offsets are computed from it — updated identically. Nothing else referenced the old `spacingXl * 1.5` pill size (the timeline's separate empty-day icon at that same literal expression is an unrelated widget, left untouched).
+
+Golden regenerated (`test/features/timeline/timeline_capsule_preview.png`, `--update-goldens`) and reviewed directly — pills visibly smaller, icons scaled with them, no clipping or overlap in the 5-task/4-category preview. `flutter analyze`: clean. `flutter test`: 140/140 after the golden update (the one pre-update failure was exactly this expected pixel diff, not a layout break).
+
+## [Timeline] Notification + repeat icons moved to their own row below time/duration, enlarged 2x
+
+Requested directly: "make repeat and notif icons larger by 2x and under the time and duration". Both previously sat in the same trailing row as the time/duration text, alongside two other status indicators ("moved"/rescheduled, tracked-behavior). Confirmed via AskUserQuestion which of the four to touch — only notification + repeat relocate and enlarge; "moved" and tracked-behavior stay on the time/duration line at their existing size, since only two icons were named.
+
+`task_capsule_block.dart`: notification (`notifications_active_rounded`) and repeat (`repeat_rounded`) icons split out of the shared trailing `Row` into a new row directly below it, gated the same way as before (`!isCompleted` for notification, `task.isRecurring` for repeat — a task can show one, both, or neither) at `theme.spacingSm * 2`. "Moved" and tracked-behavior icons stay in the original row, unchanged, at `theme.spacingSm`.
+
+Visually verified two ways: the existing capsule-preview golden (regenerated, reviewed directly) confirms the notification icon's new position/size against every non-completed seeded task, correctly absent on the one completed task. The preview fixture has no recurring task, so a scratch widget test (not committed — written, run, screenshot reviewed, then deleted) confirmed the repeat icon renders correctly alongside notification on their shared new row, both at the enlarged size.
+
+`flutter analyze`: clean. `flutter test`: 140/140 after the golden regeneration (same expected pixel-diff-then-regenerate pattern as the pill-size change above).
+
+## [Settings/Timeline] New "Show hour labels" toggle — hides the left-side hour gutter, collapsing its width
+
+Requested directly, plus one AskUserQuestion to settle "off" semantics (see docs/DECISIONS.md): the gutter's 56px width collapses to 0 when off, so tasks/connectors/the current-time indicator reclaim the space rather than leaving a blank margin.
+
+**Data layer**: `PreferenceKeys.showHourLabels` added to `preferences_repository.dart`. `ShowHourLabelsSetting` (`preferences_providers.dart`) mirrors `PreventOverlappingTasksSetting` exactly — `keepAlive: true`, defaults to `true` when unset. `.g.dart` regenerated via `flutter pub run build_runner build`.
+
+**Settings UI**: new "Timeline" section in `settings_screen.dart`, between "Scheduling" and the (gated) "Tracked behaviors" section — its own section since gutter display is a different concern from overlap-scheduling behavior. One `_SettingsPanel` + `AppSwitch`, same title/description/switch layout every other toggle on the screen uses.
+
+**Wiring** (`timeline_screen.dart`): `TimelineScreen` (already a `ConsumerWidget`) reads `showHourLabelsSettingProvider` and passes it into `_DayTimeline` as a plain `bool` field — `_DayTimeline` itself stays a non-Riverpod `StatefulWidget`, same pattern as `theme`/`tasks` being threaded down rather than read internally. Inside `_DayTimeline.build`, a local `hourGutterWidth` resolves to the existing `56.0` constant when on or `0.0` when off, and every one of the four call sites that previously referenced the module-level `_hourGutterWidth` constant directly (`_TimelineConnectors`, the drag-ghost's `left` offset, `_DraggableTaskBlock`'s `left`, `CurrentTimeIndicator`'s `gutterWidth`) now reads this local instead — grepped for `_hourGutterWidth` afterward to confirm no stray reference was missed. `TaskBoundaryMarkers` itself is conditionally not rendered at all when off, rather than rendered with nothing to show.
+
+**Tests**: new `test/shared/providers/show_hour_labels_provider_test.dart` (3 cases, modeled directly on the existing `theme_mode_provider_test.dart` Hive+ProviderContainer pattern) — defaults to true, set persists through the repository, and survives a simulated relaunch (new container over the same box). Visually verified the actual collapse behavior with a scratch widget test (not committed — written, run, screenshot reviewed side-by-side for gutter-on vs. gutter-off, then deleted): confirmed the hour labels disappear and the task pill shifts left to occupy the freed space, rather than leaving a blank margin.
+
+`flutter analyze`: clean. `flutter test`: 143/143 (140 previous + 3 new) — no golden regeneration needed, since the default (on) renders byte-identical to before.
+
+## [Timeline] Completed-task badge and checkbox both turn the same grey as completed-task text
+
+Requested directly: "Checked task color (pane containining icon) sohuld turn grey as the text of completed task... We should also have checkbox variant... with color of checked of the same grey... and use that variant on the timeline with completed task". Two scope questions confirmed via AskUserQuestion first — see docs/DECISIONS.md for both.
+
+**Badge** (`task_capsule_block.dart`): the completed branch of `badgeColor` now reads `theme.colorTextSecondary` directly instead of `theme.colorTaskCompleted` (which was sage green, `sage500`/`sage300`, and had exactly one consumer — this call site). `colorTaskCompleted` is now unused; left defined in `semantic_theme.dart` rather than removed, flagged in a comment.
+
+**Checkbox** (`completion_checkbox.dart`): new `useMutedCompletedColor` bool param, default `false`. When true and the task is completed, the checked ring's fill color becomes `theme.colorTextSecondary` instead of `ringColor` (the category color); the unchecked border is unaffected regardless of the flag — it's always `ringColor`. `task_capsule_block.dart` passes `useMutedCompletedColor: true` at its one call site; no other caller exists yet, so every future default caller keeps the original always-category-colored ring unless it opts in.
+
+Verified: golden preview regenerated and reviewed directly — the one completed seed task ("Pay rent") shows a grey badge and a grey filled checkmark, matching its own already-grey title text; the four non-completed tasks are unaffected, keeping their category colors on both badge and checkbox. `flutter analyze`: clean. `flutter test`: 143/143 after the golden update (the one pre-update failure was the expected pixel diff from the completed task's new colors, not a layout break).
+
+## [Timeline] All four capsule status icons unified onto one row, same size
+
+Requested directly, follow-up to the notification/repeat relocation above: the two icons still left on the time/duration line ("moved"/rescheduled `update_rounded`, tracked-behavior `track_changes_rounded`) move down to join notification/repeat on the row below, at the same 2x size. Confirmed via AskUserQuestion that both were meant, not just one.
+
+`task_capsule_block.dart`: new private `_capsuleIcons({isRescheduled, isBehaviorInstance, isCompleted, isRecurring})` returns the applicable `IconData` list in the icons' original left-to-right order (moved, tracked-behavior, notification, repeat) — computed once per build and reused for both the empty-row check and the render loop, rather than the previous four independent conditional `Icon`/`SizedBox` pairs (two different tiers of `if` blocks, at two different sizes, in two different Rows). The time/duration line is now a single bare `Text` (its enclosing `Row`+`Flexible` wrapper removed — unneeded once nothing trails it, and consistent with the sibling title `Text` two lines above, which was already bare). The icon row renders only when the list is non-empty, with a spacer between icons via `.indexed` rather than per-icon conditional spacers.
+
+Visually verified two ways: existing capsule-preview golden unaffected (none of its seed tasks are rescheduled or behavior-linked, so this was a no-diff change for that fixture — confirmed by `flutter test` needing no golden update). A scratch widget test (not committed — written, run, screenshot reviewed, then deleted) with all four conditions true at once confirmed all four icons render together at the same enlarged size, correctly spaced, with a clean icon-free time/duration line above.
+
+`flutter analyze`: clean. `flutter test`: 143/143, no golden regeneration needed.
+
+## [Timeline] Category icon nudged up 4px, time/duration text nudged up 3px (requested 6px, reduced after a visual collision)
+
+Requested directly: icon inside the pill 4px up, time/duration text 6px up.
+
+**Icon**: the badge's top padding (`theme.spacingIconTop`, 12px) reduced by 4px, landing exactly on `theme.spacingSm` (8px) — an existing token, so no new one needed. `spacingIconTop` is now unused; left defined in `semantic_theme.dart`, flagged in a comment (same posture as `colorTaskCompleted` a few sessions back).
+
+**Text**: no existing gap sits between the title and the time/duration line to shrink (`Column` default spacing is zero), so this is a `Transform.translate(Offset(0, -N))` visual shift rather than a padding change — confirmed via AskUserQuestion. **The requested 6px was tried first and visually verified to collide with the title's own line above it** (screenshotted at 2x zoom, not assumed from reading the code) — `textCaption` is 12px/1.3 line-height ≈ 15.6px tall, and 6px is ~40% of that. Sent the collision screenshot, then compared -3px and -4px side by side; the architect chose -3px as the largest shift that clears the title cleanly.
+
+Golden regenerated and reviewed directly across all 5 seeded tasks — icon sits visibly higher in every badge, time/duration line sits closer to the title with no overlap anywhere. `flutter analyze`: clean. `flutter test`: 143/143 after the golden update.
+
+## [Timeline] Repeats settings editable on already-recurring tasks — change days, or disable (removing future instances)
+
+Requested directly: "we sohuld be able to edit repeat settings on set items also and disable (which would remove future instances)". Follow-up to the read-only staging from the previous session — see docs/DECISIONS.md for the four AskUserQuestion rounds that settled which task row edits, what happens to already-materialized future instances, the precise "untouched" definition, and disable semantics.
+
+**`task_providers.dart`**: new top-level `findSeriesTemplate(instance, allTasks)` (any instance resolves to its series' template, which is the only row carrying the rule). New `TaskList._deleteUntouchedFutureInstances(template)` — deletes future, still-`pending`, never-individually-rescheduled instances only; anything completed/skipped/moved survives regardless of the rule change. New `updateTaskWithChangedRecurrence` (saves the edited task, prunes, writes the new rule to the template, re-materializes) and `disableTaskRecurrence` (saves, prunes, clears the template's `recurrenceId`+`recurrenceRule` entirely).
+
+**`task_detail_sheet.dart`**: `_EditScheduleFormState` now seeds `_selectedDays` from the series' real rule (via `findSeriesTemplate` + new `_selectedDaysFromRecurrenceRule`, the inverse of the existing day→rule conversion) rather than just the task's own weekday, so an already-recurring task's panel reflects its actual days on open. `_wasRecurring` captures the opened-with state so `_save` can branch correctly even after `existing` is mutated. Four-way save branch: plain→recurring (existing `updateTaskWithNewRecurrence`), recurring→off (`disableTaskRecurrence`), recurring→recurring-with-possibly-different-days (`updateTaskWithChangedRecurrence`), plain→plain (`updateTask`). `_hasUnconfirmedChanges` extended to catch a real day-set change (`setEquals` against the initial selection) without false-firing on a same-days no-op save.
+
+`_RecurrencePanel`'s `enabled` parameter (added last session specifically to render the switch on-but-disabled) removed — `flutter analyze` correctly flagged it as unused once every caller relies on the new default-editable behavior; kept as dead code "for a future seam" would have violated the project's own no-dead-code rule, so it came back out rather than being left in.
+
+**Tests** (`edit_schedule_repeats_test.dart`): the old "shows disabled" test rewritten to assert the switch is on AND editable with real days pre-selected (verified via the day chips' own selected-vs-unselected text color, since selection state isn't otherwise exposed to a widget test). Three new cases: changing days from the template instance prunes an untouched future instance while a rescheduled one survives, editing from a NON-template instance still updates the shared template, and disabling detaches the template while a completed future instance keeps its own `recurrenceId` (proving only the template — not history — detaches).
+
+`flutter analyze`: clean (checked repeatedly through the session). `flutter test` intentionally NOT run — a live `flutter run` dev session was active throughout (confirmed with the architect this was their own manual verification), and the previous session's post-mortem found running `flutter test` alongside a live `flutter run` deadlocks both on the shared incremental-compiler cache. Handed back for the architect to run the suite themselves rather than risk repeating that.
+
+## [Timeline] Two z-order fixes: dragged block always on top, header no longer overlapped by the scrolling day
+
+Reported directly, two separate stacking problems.
+
+**1. A dragged block slid under some of its neighbours.** `Stack` paints in child order and has no z-index, so a block's stacking was decided purely by its position in `layoutOverlappingTasks`' output — any task later in that list painted over the one being dragged. Fixed with a new `_DayTimelineState._dragLastOrder(slots)` that moves the currently-dragged slot to the end of the list (and only that slot — every other block keeps its existing relative order, so nothing else's stacking changes). Returns the list untouched when nothing is being dragged, and copies before reordering rather than mutating the caller's list.
+
+**2. The scrolling timeline painted over the header** (day-nav arrows, date, Today button). Root cause: `SingleChildScrollView` had `clipBehavior: Clip.none`, added in an earlier session so a dragged block's lift shadow wouldn't be trimmed at the viewport edge. With clipping off, scrolled content isn't contained by anything, so it rode straight over its `Column` sibling above. Restored the framework-default clipping on the scroll view; the **inner** `Stack` keeps its own `Clip.none`, which is what actually preserves the shadow spilling across neighbouring blocks — the case that motivated the original change. The only behaviour genuinely given up is the shadow of a block dragged hard against the very top/bottom of the scroll viewport, which is ordinary scrollable-surface edge behaviour.
+
+`flutter analyze`: clean. `flutter test` not run — a live `flutter run` dev session was active (same constraint as the previous two sessions; running both deadlocks on the shared incremental-compiler cache). Both changes are pure paint-order/clipping with no logic or data change, and no existing test asserts stacking order or clip behaviour — but they do want a real on-device look, which is the architect's own session anyway.
+
+## [Timeline] Cascade reschedule: bidirectional fallback so a drop is never rejected
+
+Reported directly: dropping into a condensed zone sometimes snapped back instead of moving the other tasks aside. Diagnosed the three existing rejection paths (day boundary, chain-length cycle cap, dragged task itself out of range) and confirmed the day-boundary one was the culprit in practice — a late-evening cluster where every conflicting task preferred to shift later and ran out of room before midnight.
+
+**`cascade_reschedule.dart`**: extracted the collision-walking loop into a new `_findFreeSlot(...)` helper (walks away from an edge in one direction, skipping past already-placed tasks, returning null if it runs off the day). Both the earlier- and later-push blocks now call it with their preferred direction and fall back to the opposite direction before giving up. Net effect: pushes can now split across both directions within a single cascade — some tasks up, some down — which is exactly what the dense cases need.
+
+Verified with a standalone `dart run` script (written, run, deleted — not committed) covering: the previously-rejected evening cluster near midnight, the previously-rejected 6-task dense cluster (now placed with one task pushed earlier and four later), the earlier overlap-bug repro, and a drop at 23:30 onto an occupied slot. All four now accepted with zero residual overlaps. Separately re-ran the two confirmed worked examples and the 3-task chain to prove the proximity/direction rule itself is unchanged — all three byte-identical to before.
+
+**Tests**: the "day-boundary guard aborts" test rewritten to assert the fallback (existing task pushed earlier to 22:30, no overlaps) since it encoded the now-obsolete reject behaviour; new test for a dense late-evening cluster splitting pushes across both directions; cycle-guard test tightened from `anyOf(isNull, isNotNull)` to `isNotNull` — the permissive version would have hidden this very bug.
+
+`flutter analyze`: clean. `flutter test` not run — live `flutter run` session active throughout (same shared-compiler-cache deadlock constraint as the previous sessions).
+
+## [Timeline] Drop flicker fixed, plus eased drag/drop/cascade motion and lift fades
+
+Reported directly, one bug and three animation asks.
+
+**Flicker (real bug)** — see docs/ERROR_LOG.md for the full root cause: the block was drawn at the unsnapped finger offset but saved the snapped time, so it visibly jumped at release. Fixed via a new `_isSettling` state that switches the rendered offset to the snapped value the moment the finger lifts.
+
+**Eased drop**: `_DraggableTaskBlock`'s root `Positioned` → `AnimatedPositioned`, `Curves.easeOut` at `motionNormal` (250ms). Duration is `Duration.zero` ONLY while this block is under the finger, so dragging still tracks 1:1 with no lag.
+
+**Cascade neighbours slide**: the same `AnimatedPositioned` change means a task the cascade pushes out of the way now eases to its new time instead of teleporting — it was already rebuilding at a new `baseTop`, it just had no animation. Confirmed via AskUserQuestion that dragging should follow the finger continuously (rather than snapping every 5 minutes mid-drag), with the correction eased on release.
+
+**Icon + checkbox fade during lift**: both wrapped in `AnimatedOpacity` (`motionFast`, 150ms) driven by the existing `isLifted` flag, which was already plumbed into `TaskCapsuleBlock`. The checkbox additionally gets `IgnorePointer` while faded, so a stray tap can't hit an invisible control mid-reposition.
+
+All durations/curves come from existing motion tokens — no new values introduced.
+
+`flutter analyze`: clean. `flutter test` not run — live `flutter run` session active throughout (same shared-compiler-cache deadlock constraint as prior sessions). These are animation/paint changes with no logic or data change; no existing test asserts drag positioning or opacity. They do want a real on-device look, which is the architect's own running session.
+
+## [Timeline] Drop jump, second cause: ghost key + settle-aware Stack ordering
+
+Follow-up to the snapped-offset fix in the previous entry — the block still jumped to a higher position first, then eased down. See docs/ERROR_LOG.md for the full diagnosis, including the `_visibleRange` drift theory that was ruled out by asking whether the jump was specific to the day's earliest task (it wasn't).
+
+Two independent causes, both fixed: the unkeyed drag-ghost `Positioned` disturbing element matching for the keyed block beside it on removal (now `ValueKey('ghost-<taskId>')`), and `_dragLastOrder` releasing the block back to its natural Stack index mid-animation because it keyed off `_draggingTaskId`, which clears the moment the finger lifts.
+
+Split the parent's state: `_draggingTaskId` still drives ghost visibility and clears on release; new `_settlingTaskId` drives Stack ordering and clears only when the block reports its settle finished, via a new required `onSettled` callback on `_DraggableTaskBlock`. `onSettled` guards against stale fires — a different task holding the pin, or the same task picked up again mid-settle.
+
+`flutter analyze`: clean. `flutter test` not run — live `flutter run` session still active (same constraint as prior sessions). Paint/animation only; no logic or data change.
+
+## [Task detail] Removing a recurring task now asks: this occurrence, or all
+
+Requested directly. Remove previously deleted one instance with no confirmation, even for a repeating task.
+
+**`task_providers.dart`**: new `deleteTaskSeries(instance)` — deletes the tapped instance plus every other occurrence today or later, cancels their notifications, and detaches a surviving past template from its series so it stops generating. Also factored the notification-cancel out of `deleteTask` into a shared `_cancelNotificationSafely(id)`, mirroring the existing `_syncNotificationSafely`.
+
+**`task_action_sheet.dart`**: `_remove` now branches on `task.isRecurring` — a plain task deletes immediately as before, a recurring one opens a scope sheet first. New private `_RemoveScope` enum and `_askRemoveScope`, built on the existing `AppSheet` + `_ActionRow` + `colorTaskAlert`; no new widgets or tokens.
+
+Two scope decisions confirmed via AskUserQuestion (both in docs/DECISIONS.md): past occurrences are always kept, and an explicit "all" does not spare touched future occurrences the way an incidental rule change does.
+
+Also hit and fixed a quiet BuildContext bug along the way — see docs/ERROR_LOG.md. The existing `_duplicate` method appears to share it; flagged there rather than changed, since it's outside this request.
+
+`flutter analyze`: clean. `flutter test` not run — live `flutter run` session active (same constraint as prior sessions). No existing test covers the delete flow; the new provider method deserves coverage once the suite is runnable.
+
+## [Timeline] Lift-fade corrections, time-line typography, and the first full test run in several sessions
+
+Four corrections, requested directly after reviewing the previous animation pass:
+
+1. **Category glyph in the coloured pill no longer fades** while lifted — reverted; it's the pill's identity and stays visible throughout the drag.
+2. **The indicator icons under the title now fade instead** (moved/tracked-behavior/notification/repeat) — secondary detail that isn't useful mid-drag. The checkbox fade is unchanged.
+3. **Real gap between title and time line** — `spacingXs`, replacing the earlier `-3px` Transform nudge that pulled them *closer* (it was solving the opposite problem and is now removed entirely).
+4. **Time line matches the task name's size** — `textBody` instead of the smaller `textCaption`, staying regular weight (the title's `w700` is an explicit override; `textBody` is regular by default, so no override needed).
+
+**The dev session ended, so the full suite ran for the first time in several sessions — and found three real bugs.** See docs/ERROR_LOG.md for each: the day-of-week chips overflowing their row by 40px (a genuine production layout bug, now `Expanded`), hardcoded calendar dates in `edit_schedule_repeats_test.dart` that had rotted from future to past and broke its pruning assertions (now anchored to `DateTime.now()`), and that file's `Duration.zero` drain being too short for the multi-write series-editing paths (now 100ms).
+
+Golden regenerated and reviewed directly — the time line now visibly matches the title's size at regular weight with a clear gap.
+
+`flutter analyze`: clean. `flutter test`: **152/152 passing** — this covers everything accumulated across the recent unverified sessions (repeats editing, series delete, cascade fixes, drag/drop animation), all now confirmed green rather than analyze-only.
+
+## [Task detail] Fixed "Remove not working" — three stacked bugs, plus first-ever tests for the action sheet
+
+Reported directly: Remove did nothing. Reproduced with a new widget test rather than diagnosed by reading, which turned out to matter — there were three independent causes, each masking the next, and `flutter analyze` was clean through all of them. Full detail in docs/ERROR_LOG.md.
+
+1. **`_ActionRow` label overflow (56px)** — the row's `Text` had no flex, and the new scope-sheet labels were longer than the originals. The layout exception aborted the tap handler before the delete ran. Now `Expanded` + ellipsis, which also hardens every other action row against a long label.
+2. **`AppSheet.show` built with the caller's context** — a latent flaw in the shared primitive: `builder(context)` ran eagerly before the route was pushed, so a builder that popped with a value popped the wrong route and `show()` never returned. Only surfaced now because this is the first caller that needs a return value. Fixed inside `AppSheet` so every future caller gets the correct behaviour.
+3. **`ref` used after unmount** — `_remove` awaited the scope sheet, then read `ref`, which by then belonged to an unmounted element. Threw inside the async gap, so it looked like nothing happened. Notifier now captured before the pop, alongside the navigator.
+
+**Corrected an earlier mistake**: last session I flagged `_duplicate` as "likely affected the same way" as the BuildContext bug. Tests now prove that was wrong — `_duplicate`, `_editDetails` and `_editSchedule` all work, because they touch `context`/`ref` synchronously in the same frame as the pop. The distinction is the await, not the pop. The ERROR_LOG flag has been corrected rather than left standing.
+
+**New `task_action_sheet_remove_test.dart`** (6 cases): plain-task remove, scope sheet appearing for a recurring task, each scope branch end-to-end (including past instances surviving "all occurrences"), plus Duplicate and Edit details — the action sheet had no test coverage at all before this.
+
+`flutter analyze`: clean. `flutter test`: **158/158 passing**.
+
+## [Timeline] Collapsed mode: hiding hour labels now removes the gaps and sizes pills by duration
+
+Requested directly, from a screenshot showing two tasks separated by a screenful of empty space with the hour gutter turned off. See docs/DECISIONS.md for the three AskUserQuestion decisions (one switch vs. two, proportional vs. stepped heights, and what drag should do without a time axis).
+
+**`timeline_screen.dart`**: new `_blockTops(slots, rangeStart, theme)` computes every block's vertical offset once, so both modes share one rendering path instead of branching at each of the half-dozen places a `top` was needed. Timeline mode maps elapsed time to pixels as before; collapsed mode stacks each block after the previous one (its own height plus a fixed gap), with overlap groups sharing a row so only column 0 advances the cursor. Day height, the ghost, the real block, and the pill scale all read from that one source.
+
+Suppressed in collapsed mode, each because it encodes elapsed time that the mode deliberately doesn't represent: the connector thread, the current-time indicator, the open-scrolled-to-now behaviour, and drag-to-reschedule (via a new `isDraggable` flag — the pill stays tappable, just not draggable).
+
+**A guessed constant that didn't work** — see docs/ERROR_LOG.md. The first scale (0.45) put the badge-size floor at 75 minutes, so 15m, 30m and 60m all rendered as the same circle, flattening exactly the distinction the feature exists to show. Caught by rendering the duration range and measuring it, not by reading the code. Replaced with a derived `pillWidth / 30`, and re-rendered to confirm 30m = circle, 1h = 2×, 2h = 4×.
+
+Settings copy updated — the toggle now does more than its old description said, including the drag caveat.
+
+`flutter analyze`: clean. `flutter test`: **158/158 passing**.
+
+## [Task detail] Create-flow redesign — reordered step 1, live preview + typed numeric time entry on step 2
+
+Requested directly from a wireframe mockup plus a voice-transcribed walkthrough; user corrected an early misread ("the new mockup is also 2 steps, step 1 (name, notes, icon), step 2 (preview, start time, duration, date, repeats)"). Five AskUserQuestion rounds settled scope: typed numeric boxes replace the scroll-wheel/slider, a new 5th "General" category is added (grey, first, default-selected), the Repeats toggle keeps its existing day-chip panel, duration has no upper cap, and the redesign applies to both the create wizard and the standalone "Edit time and duration" modal (they share `_ScheduleStepScaffold`).
+
+**Step 1**: reordered to name → notes → category. The old coloured name banner is gone — the name field is now `_Panel`-wrapped and styled identically to Notes, just single-line. `_StepScaffold.headerContent`/`onPrimaryPressed` are now nullable so step 1 can render with no banner and a Continue button that starts disabled, enabling only once the first character of the name is typed (`ListenableBuilder` on the title controller, not new state).
+
+**Step 2**: new `_SchedulePreviewCard` at the top mirrors `TaskCapsuleBlock`'s own badge/title/time styling exactly (same badge size, same category color lookups) and updates live as start time/duration are edited; a pencil icon (reusing `_HeaderCircleButton` on a plain background) jumps back to step 1. The scroll-wheel time picker and duration slider are gone, replaced by `_NumericTimeField` — typed Hour:Minute / Hours:Minutes digit boxes, with the numeric keyboard staying up for the whole step instead of dismissing between fields. Date defaults to today, reads "Today" (no calendar icon) when it matches, and the whole row is the tap target for the native date-picker sheet.
+
+New `TaskCategory.general` (`@HiveField(4)`, appended — never renumbering the existing four) is the new default category for new tasks, with its own grey token pair in `color_primitives.dart`/`semantic_theme.dart` and a `TaskCategoryPickerOrder.orderedForPicker` extension so display order (`general` first) stays independent of the enum's Hive-index declaration order.
+
+Deleted the now-fully-dead `_TimeScroller`/`_Wheel` widgets (161 lines) and `_Panel`'s unused `padding` parameter.
+
+Found and fixed a real bug during verification, not just a test artifact — see docs/ERROR_LOG.md: a `TextEditingController.addListener`-driven auto-advance-focus mechanism could deliver typed digits to the wrong box. Fixed by switching to `TextField.onChanged`-driven advance.
+
+`flutter analyze`: clean. `flutter test`: **158/158 passing**.
+
+## [Design system] Surface scale, reusable form-field components, and a masked hh : mm input
+
+A restyle, but a structural one: the create flow's fields were assembled inline inside `task_detail_sheet.dart`, so "make the forms look like this" had nowhere to land without first extracting real components. Four AskUserQuestion rounds settled the shape (see docs/DECISIONS.md).
+
+**Surface scale.** New `colorSurfaceBase` (level 0, #F7F7F7), `colorSurfaceField` (level 2, #E8E8E8) and `colorSurfaceFieldActive` (level 2 focused, #DCDCDC) join the existing pane token as one explicit 0/1/2 elevation scale. The light values are DERIVED, not hand-copied: each lightness was solved back through `oklch()` so the specified hex reproduces exactly through the existing pipeline. Dark mode gets its own counterparts, inverted in direction (a field on a near-black panel gets *lighter*, not darker) and kept on the ink ramp's warm hue rather than the light scale's zero chroma.
+
+**Four new components in `core/widgets/`**, so screens stop assembling field chrome themselves:
+- `AppFieldShell` — the shared fill/radius/focus-tone/floating-label chrome. Holds no text; the input is passed in, so a typed field, a masked field and a tappable date row all present identically.
+- `AppTextField` — single/multi-line text on that shell.
+- `AppSegmentedTimeField` — the masked `hh : mm` input, serving BOTH Time and Duration.
+- `AppPane` — a level-1 card whose section title renders above and outside it, per the mockup.
+
+**The time field is one `TextField` with a baked-in separator, not two boxes.** That's what makes the caret behave like a date/expiry field: typing the last hour digit rolls past the separator on its own, and backspacing at the start of the minutes crosses back over it to clear the last hour digit. A `TextInputFormatter` owns all of it in digit space, so the separator can never be half-deleted and the whole value can be cleared and retyped without tapping between parts. Duration reuses the same component with `firstMax: null` and a 3-digit hour segment, since duration is uncapped.
+
+Two real bugs found by testing rather than reading, both documented in docs/ERROR_LOG.md: a length-based "is this a deletion" check that silently swallowed pasted/bulk input, and a digit-count-based "is this one keystroke" check that broke sequential typing. The formatter now has 8 tests covering both paths, the cross-separator backspace, and the uncapped case.
+
+Category chips are emoji on a tint-filled pill (mockup), wrapping onto a second line instead of scrolling; selection is carried by an outline, since the fill already encodes which category it is. `Repeats` → `Repeat`, and the panel no longer draws its own card now that it sits inside the Date pane.
+
+`flutter analyze`: clean. `flutter test`: **166/166 passing** (158 + 8 new).
+
+## [Design system] Seven follow-up corrections to the form restyle
+
+Direct feedback after reviewing the restyle on device. All seven fixed, verified in BOTH palettes by rendering (light and dark, both steps).
+
+1. **`hh : mm` placeholder when cleared.** The mask previously always rendered zeros, so a cleared field was indistinguishable from a real `00 : 00`. The formatter now emits an empty string once the first slot is deleted, letting a hint show through; the hint is built from the same separator and segment widths as the mask (`hhh : mm` for duration), so it lines up with a filled value. Blurring an emptied field restores its previous value rather than committing 00:00 — clearing is the start of retyping, not an instruction to set midnight.
+2. **Duration hour is 3 digits** — already shipped in the restyle (`firstDigits: 3`); the hint now reflects it.
+3. **Contained panes have no border.** Removed; see the surfacing fix below for why it was there.
+4. **Dark-mode back/close icons were invisible.** They defaulted to `colorSurfacePrimary` for BOTH circle and glyph — correct only for the old coloured banner, but that token is white in light mode and near-black `ink900` in dark. Now a level-2 circle with a `colorTextPrimary` glyph. Text and surface tokens invert in opposite directions between palettes, so a glyph must come from a text token, never a surface one.
+5. **Minimum field height 60px** — new `sizeMinFieldHeight` Tier 2 token (a floor, not a fixed height, so multi-line fields still grow). Content is centred within it, so a resting label sits mid-field rather than pinned to the top.
+6. **Light-mode surfacing.** Background deepened #F7F7F7 → #EFEFEF, field #E8E8E8 → #E4E4E4, active #DCDCDC → #D1D1D1. At F7 the 0→1 step was ~3% lightness and read as no boundary at all — which is why the pane had needed a border. Deepening the GROUND (rather than tinting the pane, which stays pure white) lets the pane lift on its own, so fix 3 and fix 6 are the same fix.
+7. **Modal header no longer has its own background.** The body was painting `colorSurfaceTimeline` while the scaffold used the base ground, leaving the top strip reading as a separate bar — a leftover from the coloured-header design. The sheet is now one continuous level-0 surface.
+
+Four new tests cover the placeholder behaviour (empty state, duration's 3-digit hint, typing into a cleared field, and blur-restores-previous-value).
+
+`flutter analyze`: clean. `flutter test`: **170/170 passing** (166 + 4 new).
+
+## [Design system] Brand accent, radius scale by size, modal presentation, and a safe exit dialog
+
+Ten changes from direct feedback. Two settled by AskUserQuestion (see docs/DECISIONS.md): the exit dialog's third option, and how far the accent swap should reach.
+
+**Radius scale renamed by SIZE, not by component.** `radiusControl`/`radiusCard`/`radiusSheet` → `radiusSm`(4)/`radiusMd`(8)/`radiusLg`(12)/`radiusXl`(16), plus `radiusModal`(40) held deliberately off the scale so ordinary cards can't reach for it. Panes are `radiusXl`, form fields / category pills / day chips are `radiusMd`. Naming rungs by size rather than by component stops two controls that should match from drifting apart via two differently-named tokens holding the same number. The rename surfaced all 12 call sites, which is the point.
+
+**Brand accent #3B63DB** replaces sage in the accent ROLE only. Solved back through the `oklch()` pipeline (lands #3B62DB, 1/255 on green — the tolerance the category tints already use). Measured: white-on-brand 5.31:1, brand on background 4.96:1, both past AA; dark mode needs its own lighter anchor (`brand300`) because the light value measures only ~2.4:1 on `ink900`. `colorTaskCompleted` deliberately stays sage — green means "done" independently of branding.
+
+**Background restored to the specified #F7F7F7.** Last session I deepened it to #EFEFEF to make panes visible; that traded away your spec to solve an edge problem. The edge is now carried by `shadowPane` (2px y / 4px blur / -2 spread / 8% black, exactly as specified) instead, so the pane lifts without either darkening the ground or drawing a border. Dark mode uses the same geometry at 40% alpha — 8% is invisible on near-black.
+
+**Modal presentation**: 40px corners, inset 8px from every edge with a transparent scaffold behind it so the rounding actually reads, and a "Create task" title in the header (with the header growing to fit it).
+
+**Exit confirmation is now three-way** — Keep editing / Discard / Save — via a new `AppAlertDialog.showThreeWay` returning an `AppAlertDialogChoice` enum. Dismissing resolves to `cancel`, never null, so the safe branch and the default branch are the same one and a stray tap outside can't discard work. Wording also fixed: the old dialog was titled "Schedule this?" with "Discard changes" beneath it, which read as a scheduling prompt rather than a data-loss warning. Now "Discard this task?" (create) / "Discard changes?" (edit).
+
+Pane titles moved one rung up (`textLabel` → `textBody` at bold) since they sit outside the pane as section headings.
+
+`flutter analyze`: clean. `flutter test`: **171/171 passing** (170 + 1 new cancel-path test).
+
+## [Design system] Modal geometry corrections and the duration-padding bug
+
+Four direct corrections after review.
+
+1. **Sheet no longer carries its own shadow.** Depth inside the sheet is the panes' job (`shadowPane`); a shadow on the sheet as well stacked two elevations for one surface.
+2. **Full width, almost full height.** The sheet is now edge-to-edge horizontally and offset only from the top, with rounding on the top corners only — it reads as a panel pulled up over the screen rather than a floating card. The 8px all-round inset from the previous pass is gone.
+3. **Title centred and one scale up** (`textTitle` → `textHeadline`), flanked by the back arrow (left) and close (right). Both header buttons are now vertically centred rather than pinned to a fixed top offset — the header's height varies with whether it carries a title, so the fixed offset left them sitting high in the taller variant. Verified by measurement: the title's centre lands at 195.0 on a 390px screen.
+4. **Duration rendered `000 : 30` instead of `02 : 30`.** `firstDigits: 3` was being used as BOTH the mask's capacity and the display width, so every duration was zero-padded out to the field's maximum. Display width now sizes to the value (minimum two digits), while the mask keeps its 3-digit headroom — `02 : 30` for an ordinary duration, `120 : 00` for a long one. The hint stays two-digit `hh : mm`, since it describes what to type rather than the field's capacity.
+
+Two tests updated/added around the duration fix, including a case for durations past 99 hours.
+
+`flutter analyze`: clean. `flutter test`: **172/172 passing**.
+
+## [Task detail] Unset time/duration, hour-first caret, and wheel/calendar alternative entry
+
+Five changes. Two settled by AskUserQuestion (docs/DECISIONS.md): whether Save may proceed with an unset schedule, and the duration wheel's range.
+
+**Time and duration now start UNSET.** Both are nullable through the whole create flow (`TimeOfDay?` and `int?`), so their fields show the `hh : mm` placeholder rather than seeding the tapped slot and a 30-minute default. Confirm is disabled until both are entered — same gate as Continue needing a name. The date is deliberately NOT nullable: it defaults to today and reads "Today" from the start, which is a real default rather than a guess. The preview card shows "Set a time and duration" until both exist rather than rendering a range nobody chose.
+
+**The 3-digit hour bug is genuinely fixed this time.** The previous pass fixed the widget's display but left the FORMATTER padding to capacity, so `000 : 30` still appeared while typing. Capacity now lives only in the formatter (`_maxHourDigits`, a mask concept) and never leaks into a display width — the hour renders two digits until a value actually needs a third.
+
+**Focus lands on the hour, not the minutes.** Tapping a `hh : mm` field put the caret at the end of the text, dropping the user into minutes and making them reach backwards. The caret now resets to offset 0 on GAINING focus only, guarded so it can't fire mid-typing.
+
+**Alternative entry on all three fields**: a clock on Time and a stopwatch on Duration open a new `AppWheelTimePicker` (two wheels, hours/minutes, both defaulting to 00); a calendar icon on Date opens the existing native picker. All three use a new `AppFieldActionButton` — ghost styling (the field's fill already defines the control) with the tap target padded out to `spacingMinTapTarget`, since the visible glyph is well under the accessibility floor.
+
+Typing stays the primary path; the pickers are for browsing to a value. Both write the same underlying value, so neither is a mode.
+
+`flutter analyze`: clean. `flutter test`: **173/173 passing**.
+
+## [Design system] Scrim token, sheet surface alignment, and a readable wheel selection
+
+Four corrections to the picker sheets.
+
+1. **New `colorScrim` token** (40% black), applied to the task-detail route (which had `barrierColor: Colors.transparent` — no dim at all) and to `AppSheet`'s Material path. One token for every modal layer, so a sheet opened over another sheet dims it by the same amount the first dimmed the page. Deliberately the SAME value in both palettes: a scrim's job is to push the layer behind it back, and lightening it for dark mode would stop it reading as depth.
+2. **`AppSheet` now uses `colorSurfaceBase`**, matching the task-detail modal, so stacked modals share one ground instead of the sheet arriving as a lighter pane-coloured surface.
+3. **The wheel's selection overlay no longer hides the selected value.** `CupertinoPicker` paints `selectionOverlay` ON TOP of its children, so the opaque fill was covering the number it was meant to highlight. Now 40% alpha — a highlight rather than a lid.
+4. **`AppSheet.show` gained `padded`** so the picker (which applies its own inset) isn't padded twice.
+
+**The "doesn't update the form field" report turned out to be sound wiring.** Reproduced it, then found the failure was my probe's default 800px test surface: the sheet renders taller than that viewport, which puts the confirm button's hit-test position out of step with where it draws, so the tap silently missed. At a real 390x844 viewport the round trip works. Kept as two permanent tests (`app_wheel_time_picker_test.dart`) covering confirm-writes-back and dismiss-leaves-untouched, since that round trip had no coverage.
+
+`flutter analyze`: clean. `flutter test`: **175/175 passing** (173 + 2 new).
+
+## [Task detail] Wheel picker discarded its value whenever the field was already set
+
+Reported directly: choosing a time or duration on the wheels did nothing if the field already held a value. Reproduced, then found the real trigger — it wasn't "already set", it was **focus**.
+
+`AppSegmentedTimeField.didUpdateWidget` skipped its resync whenever the field had focus, on the reasoning that overwriting a focused field would fight live typing. But the picker button sits INSIDE the field, so tapping it leaves the field focused — which meant every value confirmed on the wheel hit that guard and was silently dropped. It only looked like an "already set" problem because from an empty field the user hasn't focused it yet.
+
+**Fix**: replace the focus check with a precise one — skip only when the incoming value already matches what is displayed (an echo of the user's own edit coming back through the caller), and otherwise honour it. That is what the focus guard was reaching for; focus was a proxy that happened to also block genuine external writes.
+
+Two earlier tests passed against this bug because both unfocused the field first — one explicitly, one by never focusing it. The new regression test focuses the field first, exactly as typing a value would leave it.
+
+`flutter analyze`: clean. `flutter test`: **177/177 passing** (175 + 2 new).
+
+## [Task detail] Live preview added to step 1, without the edit pencil
+
+Requested directly: the same live preview shown on step 2 should also appear on step 1, but without the edit button (step 1 already IS the step the pencil would navigate to).
+
+`_DetailsStepScaffold` gained nullable `startTime`/`endTime`/`durationMinutes` params, rendering the existing `_SchedulePreviewCard` with `onEdit: null` — reusing the component's already-nullable pencil rather than adding a new flag. Both call sites wired:
+- **Create wizard**: uses the flow's own `_resolvedScheduledAt`/`_durationMinutes`, both null until step 2 has been visited — the preview shows "Set a time and duration" until then, matching step 2's own empty-state text exactly.
+- **Standalone "Edit details" modal**: always has a real scheduled task, so the preview always shows a real time range from the moment it opens.
+
+Verified across three states by rendering: empty (placeholder title, no schedule, Confirm disabled), filled title with no schedule yet, and — the case worth checking specifically — that a schedule set on step 2 persists in step 1's preview when navigating back, since the create flow's state lives one level up from both scaffolds.
+
+One test updated: the exit-confirmation "Keep editing" test asserted `findsOneWidget` for a typed title, which the preview now legitimately duplicates (`findsNWidgets(2)`).
+
+`flutter analyze`: clean. `flutter test`: **177/177 passing**.
+
+## [Design system] Time/duration field rewritten to shrink; disabled buttons no longer fade
+
+Two follow-ups from device testing.
+
+**`AppSegmentedTimeField`'s deletion model changed fundamentally**, per direct confirmation: backspace now shrinks whichever segment the caret is in — "05" backspaces to "0", then to empty — rather than the old model of re-zeroing a fixed 4-digit slot array. Crossing the separator only happens once the current segment is already empty. This required replacing the formatter's internal representation: it previously worked on one flat, always-4-digit array; it now tracks the hour and minute segments as two independent, genuinely variable-length strings, split on the separator itself rather than by digit position.
+
+Also fixed as part of the same rewrite: the caret previously stalled right after the second hour digit (`"09| : 00"`) instead of advancing past the separator (`"09 : |00"`) — an off-by-one in the digit-index-to-caret-offset mapping (`<=` where it needed `<`).
+
+Sequential single-key typing past two hour digits still rolls into minutes (matching the existing "typing the last hour digit slides into minutes" behaviour), and a duration can still reach a genuine 3-digit hour by typing three digits in a row from empty before the 2-digit cap applies. Both paths, and the multi-character case (`enterText`/autofill delivering 2+ digits in one edit), are covered by tests.
+
+**`AppButton`'s disabled state is now explicit**, not the platform default. `CupertinoButton`/`ElevatedButton` both fade the WHOLE control (fill included) toward transparent when `onPressed` is null, which read as blurry/washed-out. Both platforms' `disabled*` parameters are now set explicitly to a flat grey fill (`colorSurfaceField`) with only the TEXT losing opacity — the button keeps a defined, solid edge instead of dissolving into the page.
+
+`flutter analyze`: clean. `flutter test`: **180/180 passing** (177 + 3 new, one existing test rewritten for the new deletion behaviour).
+
+## [Task detail] Create flow collapsed to one screen; per-field modals; a real notifications toggle
+
+Major restructure requested from a full mockup flow. The 2-step wizard (name/category, then schedule) is now ONE screen — what used to be step 2 — with name/category, start time, and duration each edited in their own compact modal, opened from that screen. Step 1 as a full page is gone from the live tap-through (per direct confirmation: `_DetailsStepScaffold`/`_EditDetailsForm`/`showEditDetailsSheet` are kept, unreferenced by the new flow, as an explicit backup rather than deleted).
+
+**Three new modal widgets**, each a compact `AppSheet`-based bottom sheet:
+- `TaskNameCategoryModal` — name, description, category chips. Edits the SAME controllers/category the caller already owns, live, so the screen behind it (visible through the scrim) updates the moment the sheet closes.
+- `TaskStartTimeModal` / `TaskDurationModal` — a typed `AppSegmentedTimeField` plus an inline wheel (`AppWheelPicker`, a new bare-wheel-pair widget extracted from `AppWheelTimePicker` so it can sit alongside a typed field instead of only inside its own titled sheet). Duration's wheel steps by 5 minutes (00, 05…55 — 12 rows, confirmed directly: the typed field already offers exact-minute precision, so the wheel's job here is fast rough browsing); Start time's wheel stays every-minute, since browsing to an exact time is a real, common need.
+
+**Guided first-run sequence**: creating a genuinely new task (never `showTaskDetailSheet(task: ...)` with an existing task) auto-advances Name → Start time → Duration on each modal's Done, via a one-shot `_autoAdvanceEligible` flag that turns itself off the moment the user backs out of a modal without confirming, or once Duration (the last step) is reached — confirmed directly: this sequence runs ONLY for a from-scratch create, never when editing an already-scheduled task or the Inbox "give it a schedule" case.
+
+**`_StepScaffold` gained `titleAlignment`** (default centre, unchanged for every other caller) — the single screen's title now reads left, since there's no back arrow to balance a centred title against any more (`onBack: null` everywhere in the new flow).
+
+**A real, persisted `Task.notificationsEnabled`** (new `@HiveField(14)`, default `true` — matching `NotificationService`'s previous unconditional-scheduling behaviour, confirmed directly rather than shipped as a UI-only placeholder). Wired through `Task.toJson`/`fromJson`/`hasSameFieldsAs` (old backups without the key import as `true`), `TaskList.createTask`, and a new early-return guard in `NotificationService.scheduleForTask`. Shown as its own bare `AppPane` (no title, per direct request — "just pane with label and switch inside"), distinct from Repeats which nests inside the Date pane.
+
+Two real bugs found and fixed while wiring end-to-end tests for this, both now permanent regression coverage:
+- The new modals didn't scroll — a `RenderFlex` overflow under a real on-screen keyboard, since Name+Description+Category+Done (or the segmented field+wheel+Done) can exceed the remaining height once the keyboard opens. All three now wrap their content in `SingleChildScrollView`.
+- `find.byType(TextField).first` is unreliable whenever a modal sheet is open: the main screen's own fields stay mounted underneath a `showModalBottomSheet` route and are found FIRST in traversal order, ahead of the modal's own fields — a bare `.first` silently typed into the wrong screen entirely. Every test finder here is scoped via `find.descendant(of: find.byType(<ModalType>), ...)`.
+
+`flutter analyze`: clean (one pre-existing-pattern warning: `_DetailsStepScaffold`'s `modalTitle` param has no caller now that step 1 is unreferenced by the live flow — left as-is since the whole class is the "keep as backup" scaffold, not new code). `flutter test`: **184/184 passing** (180 + several rewritten for the new flow, others unaffected).
+
+**Flagged, not fixed**: `task_detail_sheet.dart` is now 2230 lines and `app_wheel_time_picker.dart` is 293 — both over the 200-line guardrail. The former predates this session (~2070 lines already); this session's additions made both worse without addressing the split, given the scope already in flight. Splitting `task_detail_sheet.dart` (by scaffold/step, or by create-vs-edit flow) is real follow-up work, not done here.
