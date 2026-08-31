@@ -383,3 +383,21 @@ The cause: `showModalBottomSheet` pushes a route ON TOP of the current one — i
 Two real bugs during this session's modal work both first appeared as vague full-flow test failures ("StartTimeModal never opens", "field stays empty") that gave almost no signal about WHERE the problem was. Both resolved fast once isolated: a minimal widget test with the exact same three or four lines of interaction (tap, type, tap Done) reproduced or DISPROVED the bug in isolation before touching the real multi-screen test at all. The disproof was as useful as the reproduction — one isolated probe showed the auto-advance chain itself was fine, which correctly redirected the search to the test's OWN finder scoping instead of the app code.
 
 **Lesson:** when a full end-to-end test fails in a way that's hard to explain from the stack trace alone, don't keep patching the full test and re-running it. Write the smallest possible reproduction of just the suspected mechanism first — it either confirms the bug cheaply, or clears that mechanism and narrows the search, in either case faster than iterating on the full flow.
+
+## Overriding `TextField.onEditingComplete` silently drops Flutter's own keyboard-dismiss behavior
+
+`AppSegmentedTimeField` wired `onEditingComplete: _commit` — the keyboard's "Done"/complete action committed the typed value correctly (visible in the field's own state and the caller's `onChanged`), but the on-screen keyboard never closed. Reported directly: "keyboard 'complete' is pressed should close keyboard with that value set."
+
+The cause: `TextField`'s default `onEditingComplete` implementation calls `_focusNode.unfocus()` internally as part of what it does. Supplying a custom `onEditingComplete` callback REPLACES that default entirely rather than running alongside it — so a callback that only commits a value (and never explicitly unfocuses) silently loses the dismiss behavior, even though nothing about the commit logic itself was wrong.
+
+**Fix**: any custom `onEditingComplete` must explicitly call `unfocus()` itself if it wants the keyboard to close — `_commit()` then `_focusNode.unfocus()`, in that order.
+
+**Lesson:** overriding a Flutter callback with a "no-args side effect" default (`onEditingComplete`, similarly `onTap` on some widgets) means auditing what the DEFAULT implementation did before assuming a narrower custom callback is a safe drop-in replacement. A callback that appears to only need to do the domain thing (commit a value) can silently owe the framework a housekeeping call the default was doing for free.
+
+## Forcing a field's caret to a fixed position on every focus-gain also fires on a genuine tap, overriding where the user actually tapped
+
+`AppSegmentedTimeField`'s `_handleFocusChange` forced the caret to offset 0 (the hour segment) whenever focus was gained and the caret was at the text's end — intended to fix the case where opening the field via something OTHER than a direct tap (opening the sheet, tabbing in) dropped the caret into the minutes by Flutter's own end-of-text default. But the same `atEnd` condition is also true when the user taps directly into (or near) the minutes segment on purpose: Flutter resolves that tap to the correct offset first, and this widget's post-frame callback then unconditionally stomped it back to 0. Reported directly: tapping into minutes visibly snapped the caret to the start, requiring a second tap to actually land where intended.
+
+**Fix**: added a `_pendingTextTap` flag set by the `TextField`'s own `onTap` (which fires before the resulting focus-gain is processed) and consumed by `_handleFocusChange` — the forced reset now only runs when focus arrived WITHOUT a preceding direct tap on the text, leaving Flutter's own tap-resolved caret position alone otherwise.
+
+**Lesson:** "caret landed at the end of the text" is not a reliable signal for "the user didn't choose this position" — a genuine tap at or near the end produces the identical signal. When a focus-gain heuristic needs to distinguish "the platform's own default" from "the user's actual input," that distinction has to be tracked explicitly (a flag set by the input event itself), not inferred from the resulting state alone.

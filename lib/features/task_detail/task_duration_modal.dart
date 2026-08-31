@@ -10,9 +10,14 @@ import '../../core/widgets/app_wheel_time_picker.dart';
 /// Common durations offered as one-tap presets, in minutes. 5 is the
 /// modal's own default (requested directly), so it's deliberately first
 /// in this list even though the others read as ascending afterward.
-const _presetMinutes = [5, 15, 30, 45, 60, 120];
+///
+/// Not private: the create flow's schedule pane (task_detail_sheet.dart)
+/// renders these same presets inline rather than behind this modal, per
+/// direct request, so both share this one list rather than keeping two
+/// copies in sync by hand.
+const presetMinutes = [5, 15, 30, 45, 60, 120];
 
-String _presetLabel(int minutes) =>
+String presetLabel(int minutes) =>
     minutes < 60 ? '${minutes}m' : '${minutes ~/ 60}h';
 
 /// The compact "Duration" modal — the third of the three per-field modals,
@@ -76,7 +81,7 @@ class _TaskDurationModalState extends State<TaskDurationModal> {
     // becomes the task's real duration only if the user taps Done: a
     // dismiss without confirming still discards it, same as every other
     // per-field modal's contract.
-    final minutes = widget.initialMinutes ?? _presetMinutes.first;
+    final minutes = widget.initialMinutes ?? presetMinutes.first;
     _hour = minutes ~/ 60;
     _minute = minutes % 60;
   }
@@ -159,11 +164,11 @@ class _TaskDurationModalState extends State<TaskDurationModal> {
         // than wrapping, matching _RecurrencePanel's own day-chip row.
         Row(
           children: [
-            for (final (index, preset) in _presetMinutes.indexed) ...[
+            for (final (index, preset) in presetMinutes.indexed) ...[
               if (index > 0) SizedBox(width: theme.spacingXs),
               Expanded(
                 child: AppSelectableChip(
-                  label: _presetLabel(preset),
+                  label: presetLabel(preset),
                   selected: _totalMinutes == preset,
                   onTap: () => _selectPreset(preset),
                 ),

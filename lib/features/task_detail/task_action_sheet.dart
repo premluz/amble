@@ -26,24 +26,27 @@ class _TaskActionSheetContent extends ConsumerWidget {
 
   final Task task;
 
-  Future<void> _editDetails(BuildContext context) async {
+  /// Opens the same screen "Create task" uses, pre-populated — requested
+  /// directly, replacing the old two-entry "Edit details"/"Edit time and
+  /// duration" split with a single "Edit task" that shows every field at
+  /// once. `showTaskDetailSheet(task: ...)` already skips stage 1 (the
+  /// Name-only step) for any non-null task and lands directly on the full
+  /// form.
+  Future<void> _editTask(BuildContext context) async {
     Navigator.of(context).pop();
-    await showEditDetailsSheet(context, task: task);
+    await showTaskDetailSheet(context, task: task);
   }
 
-  Future<void> _editSchedule(BuildContext context) async {
+  /// Opens the create screen pre-filled from [task], WITHOUT persisting
+  /// anything yet — fixed directly: the previous version called
+  /// `duplicateTask` (a real repository write) immediately on tap, before
+  /// the follow-up screen even opened, so closing/discarding it still
+  /// left an unwanted duplicate behind. Now nothing is saved until the
+  /// user actually confirms on the (pre-filled) create screen, same as
+  /// every other create path in this app.
+  Future<void> _duplicate(BuildContext context) async {
     Navigator.of(context).pop();
-    await showEditScheduleSheet(context, task: task);
-  }
-
-  Future<void> _duplicate(BuildContext context, WidgetRef ref) async {
-    Navigator.of(context).pop();
-    final duplicate = await ref
-        .read(taskListProvider.notifier)
-        .duplicateTask(task);
-    if (context.mounted) {
-      await showEditDetailsSheet(context, task: duplicate);
-    }
+    await showTaskDetailSheet(context, duplicateFrom: task);
   }
 
   Future<void> _remove(BuildContext context, WidgetRef ref) async {
@@ -143,20 +146,14 @@ class _TaskActionSheetContent extends ConsumerWidget {
         _ActionRow(
           theme: theme,
           icon: Icons.edit_outlined,
-          label: 'Edit details',
-          onTap: () => _editDetails(context),
-        ),
-        _ActionRow(
-          theme: theme,
-          icon: Icons.schedule_outlined,
-          label: 'Edit time and duration',
-          onTap: () => _editSchedule(context),
+          label: 'Edit task',
+          onTap: () => _editTask(context),
         ),
         _ActionRow(
           theme: theme,
           icon: Icons.content_copy_outlined,
           label: 'Duplicate',
-          onTap: () => _duplicate(context, ref),
+          onTap: () => _duplicate(context),
         ),
         _ActionRow(
           theme: theme,

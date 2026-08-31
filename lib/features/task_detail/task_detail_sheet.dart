@@ -15,6 +15,7 @@ import '../../core/widgets/app_selectable_chip.dart';
 import '../../core/widgets/app_segmented_time_field.dart';
 import '../../core/widgets/app_switch.dart';
 import '../../core/widgets/app_text_field.dart';
+import '../../core/widgets/app_wheel_time_picker.dart';
 import '../../shared/models/recurrence_frequency.dart';
 import '../../shared/models/recurrence_rule.dart';
 import '../../shared/models/task.dart';
@@ -24,6 +25,7 @@ import '../../shared/providers/preferences_providers.dart';
 import '../../shared/providers/task_providers.dart';
 import '../../shared/providers/tracked_behavior_providers.dart';
 import '../../shared/services/overlap_checker.dart';
+import 'task_category_modal.dart';
 import 'task_duration_modal.dart';
 import 'task_name_category_modal.dart';
 import 'task_start_time_modal.dart';
@@ -60,31 +62,46 @@ Future<T?> _pushDetailRoute<T>(BuildContext context, WidgetBuilder builder) {
   );
 }
 
-/// Opens the 2-step task **creation** wizard: step 1 (details — title,
-/// category, tracked-behavior link, notes) then step 2 (schedule — date,
-/// time, duration, repeats), seeded at [initialScheduledAt]. Nothing is
-/// persisted until step 2's Save. All writes go through [taskListProvider]
-/// — this UI never touches the repository or Hive directly.
+/// Opens the task detail sheet — a genuinely new task starts on the
+/// Name-only stage 1 before advancing into the full form (stage 2: title,
+/// category, date, time, duration, repeats, notifications); an existing
+/// [task] skips straight to stage 2, already populated. Nothing is
+/// persisted until stage 2's primary button. All writes go through
+/// [taskListProvider] — this UI never touches the repository or Hive
+/// directly.
 ///
-/// [task] is for the Inbox's "give it a schedule" case only: an existing,
-/// unscheduled (captured) task pre-fills the wizard's fields, and step 2's
-/// Save fills in that same task's schedule via [TaskList.updateTask]
-/// (rather than creating a second task) — moving it onto the Timeline. An
-/// Inbox item has no time yet, so this is still the create-style flow, not
-/// an edit of an already-scheduled task (see [showEditDetailsSheet] /
-/// [showEditScheduleSheet] for that).
+/// [task] covers two distinct cases, both landing directly on stage 2:
+/// - The Inbox's "give it a schedule" case — an unscheduled (captured)
+///   task with no time yet. Save fills in that same task's schedule via
+///   [TaskList.updateTask] (rather than creating a second task), moving it
+///   onto the Timeline.
+/// - "Edit task" from an already-scheduled task's action sheet — requested
+///   directly as the single edit entry point, replacing the old separate
+///   "Edit details"/"Edit time and duration" split (see
+///   [showEditDetailsSheet]/[showEditScheduleSheet], both still kept as an
+///   unreferenced backup rather than deleted). Every field is editable in
+///   one place, and Save writes back through the same [TaskList.updateTask]
+///   path.
 Future<void> showTaskDetailSheet(
   BuildContext context, {
   Task? task,
+  // Seeds a from-scratch create with another task's field values —
+  // "Duplicate", which must NOT write anything to the repository until
+  // the user actually confirms. See _TaskDetailFlow.duplicateFrom's doc
+  // comment. Mutually exclusive with [task]: only one of the two is ever
+  // passed by either call site.
+  Task? duplicateFrom,
   DateTime? initialScheduledAt,
   // Scaffold-only — see _TaskDetailFlowState.debugStartWithRepeatsOn.
   bool debugStartWithRepeatsOn = false,
 }) {
+  final seed = task ?? duplicateFrom;
   return _pushDetailRoute<void>(
     context,
     (context) => _TaskDetailFlow(
       task: task,
-      initialScheduledAt: initialScheduledAt ?? task?.scheduledAt ?? DateTime.now(),
+      duplicateFrom: duplicateFrom,
+      initialScheduledAt: initialScheduledAt ?? seed?.scheduledAt ?? DateTime.now(),
       debugStartWithRepeatsOn: debugStartWithRepeatsOn,
     ),
   );
@@ -154,13 +171,28 @@ Future<void> showEditScheduleSheet(
 class _TaskDetailFlow extends ConsumerStatefulWidget {
   const _TaskDetailFlow({
     this.task,
+    this.duplicateFrom,
     required this.initialScheduledAt,
     this.debugStartWithRepeatsOn = false,
   });
 
-  /// Set only for the Inbox "give it a schedule" case — see
-  /// [showTaskDetailSheet]'s doc comment. Null for an ordinary create.
+  /// Set only for the Inbox "give it a schedule" case, or "Edit task" —
+  /// see [showTaskDetailSheet]'s doc comment. Null for an ordinary create
+  /// OR a duplicate (see [duplicateFrom]) — both cases where Save must
+  /// create a genuinely NEW task rather than write back to an existing id.
   final Task? task;
+
+  /// Set only for "Duplicate" — seeds every field from the source task
+  /// (same as [task] would), but Save still creates a brand-new task
+  /// (since [task] itself stays null), and stage 1 is skipped (the
+  /// duplicate already has a name). Distinct from [task] specifically so
+  /// nothing is written to the repository until the user actually
+  /// confirms — the previous "Duplicate" implementation persisted the
+  /// copy immediately, before this screen even opened, so closing/
+  /// discarding it still left an unwanted duplicate behind. Reported
+  /// directly: "if close > discard then no duplicate... atm it creates as
+  /// soon as click."
+  final Task? duplicateFrom;
 
   final DateTime initialScheduledAt;
 
@@ -198,13 +230,22 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
   /// default, so a fresh create is unaffected unless the user turns it off.
   bool _notificationsEnabled = true;
 
-  /// Whether opening a field's modal should auto-advance to the NEXT one
-  /// on Done — the guided first-run sequence (Name → Start time →
-  /// Duration) — per direct confirmation: this happens ONLY when creating
-  /// a genuinely new, never-scheduled task, and only through ONE pass.
-  /// Once the sequence completes (or the user backs out of it by closing
-  /// a modal without confirming, or this is actually an edit/give-a-
-  /// schedule case), every later tap on a field just opens that one modal.
+  /// Whether the form is still on the Name-only first stage — per direct
+  /// request: "just first stage when clicked Add only Name visible and
+  /// after done or confirm in keyboard keyboard slides down and stagger
+  /// animation of other panes > screen 2 but all same modal." Starts true
+  /// only for a genuinely new, never-scheduled task; an Inbox "give it a
+  /// schedule" task already has a name, so it skips straight to the full
+  /// form (see [_autoAdvanceEligible] below, which this reuses as the same
+  /// "is this a from-scratch create" gate the rest of the flow already
+  /// relies on).
+  bool _isNameStage = false;
+
+  /// Whether this is a genuinely blank, from-scratch create — gates both
+  /// [_isNameStage]'s starting value and, historically, the old guided
+  /// modal chain this replaced. An Inbox item already has a title (and
+  /// possibly a time/duration), so "give it a schedule" is closer to an
+  /// edit than a from-scratch create.
   late bool _autoAdvanceEligible;
 
   // Snapshot of the form's starting (pre-filled default) values, so closing
@@ -233,31 +274,37 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
   void initState() {
     super.initState();
     final task = widget.task;
-    _titleController = TextEditingController(text: task?.title ?? '');
-    _notesController = TextEditingController(text: task?.notes ?? '');
+    // Seeds from whichever of the two is present — a real task to edit,
+    // or a duplicate's source. Never both: showTaskDetailSheet's two call
+    // sites only ever pass one.
+    final seed = task ?? widget.duplicateFrom;
+    _titleController = TextEditingController(text: seed?.title ?? '');
+    _notesController = TextEditingController(text: seed?.notes ?? '');
     _scheduledAt = widget.initialScheduledAt;
-    // Only an existing (Inbox) task arrives with a real time/duration; a
-    // fresh create starts with both unset so the fields read as empty.
-    _timeOfDay = task?.scheduledAt == null
+    // Only an existing (Inbox) task or a duplicate arrives with a real
+    // time/duration; a fresh create starts with both unset so the fields
+    // read as empty.
+    _timeOfDay = seed?.scheduledAt == null
         ? null
-        : TimeOfDay.fromDateTime(task!.scheduledAt!);
-    _durationMinutes = task?.durationMinutes;
+        : TimeOfDay.fromDateTime(seed!.scheduledAt!);
+    _durationMinutes = seed?.durationMinutes;
     // General, not Personal — requested directly: a new task starts
     // uncategorised (the neutral grey) rather than silently pre-assigned
     // to one specific real category.
-    _category = task?.category ?? TaskCategory.general;
-    _behaviorId = task?.behaviorId;
-    _notificationsEnabled = task?.notificationsEnabled ?? true;
+    _category = seed?.category ?? TaskCategory.general;
+    _behaviorId = seed?.behaviorId;
+    _notificationsEnabled = seed?.notificationsEnabled ?? true;
     // Defaults to the task's own start weekday, so enabling Repeats with no
     // further taps produces "repeats on the day it's scheduled" rather than
     // an empty/arbitrary selection.
     _selectedDays = {_scheduledAt.weekday};
-    // Eligible only for a genuinely blank task — an Inbox item already
-    // has a title (and possibly a time/duration), so "give it a
-    // schedule" is closer to an edit than a from-scratch create, and
-    // shouldn't force the user through a guided sequence for fields it
+    // Eligible only for a genuinely blank task — an Inbox item or a
+    // duplicate already has a title (and possibly a time/duration), so
+    // both are closer to an edit than a from-scratch create, and
+    // shouldn't force the user through a guided sequence for fields they
     // may already have opinions about.
-    _autoAdvanceEligible = task == null;
+    _autoAdvanceEligible = seed == null;
+    _isNameStage = _autoAdvanceEligible;
 
     _initialTitle = _titleController.text;
     _initialScheduledAt = _scheduledAt;
@@ -268,20 +315,6 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
     _initialNotificationsEnabled = _notificationsEnabled;
 
     if (widget.debugStartWithRepeatsOn) _repeats = true;
-
-    // Opens the Name/Category modal automatically on a genuinely new
-    // task — requested directly: the first thing a fresh create shows
-    // should be name entry, not the bare schedule screen waiting for the
-    // pencil to be tapped. Scheduled post-frame (this screen's own route
-    // needs to finish pushing/settling before another route can be
-    // pushed on top of it) and gated on the same `_autoAdvanceEligible`
-    // check the rest of the guided sequence uses, so an Inbox "give it a
-    // schedule" task — which already has a name — does NOT auto-open it.
-    if (_autoAdvanceEligible) {
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _openNameCategoryModal(),
-      );
-    }
   }
 
   @override
@@ -423,122 +456,659 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
     }
   }
 
-  /// Opens the Name/Category modal — the preview card's pencil. On the
-  /// guided first-run sequence, confirming here (Done, not a bare
-  /// dismiss) chains straight into the Start-time modal; every other time
-  /// it's a normal open-one-modal-and-return.
-  Future<void> _openNameCategoryModal() async {
-    // Captured before the modal opens: this is what distinguishes the
-    // very FIRST auto-opened modal (the guided first-run entry point)
-    // from a later re-open via the pencil — only the former should be
-    // able to abandon the whole flow below. Confirmed directly: reopening
-    // the pencil after other fields are already filled in must NOT nuke
-    // that progress just because the name is empty at that moment.
-    final isFirstAutoOpenedModal = _autoAdvanceEligible;
-    await TaskNameCategoryModal.show(
+  /// Confirms stage 1 (Name) and advances to the full form — fired by
+  /// stage 1's own Done / keyboard-complete action. Per direct request:
+  /// "if in the creation new task flow not entered any letter in name and
+  /// pressed done, that closes both modals (effectively reverses) abandon
+  /// flow" — an empty name at this point abandons the whole sheet instead
+  /// of advancing, routed through [_handleClose] so an untouched draft
+  /// closes silently (no confirmation dialog) rather than asking to
+  /// discard something the user never actually started.
+  void _confirmNameStage() {
+    // The pill "Done" button can fire this while the name field still
+    // holds focus (the keyboard's own complete action already unfocuses
+    // itself before calling this, but a button tap doesn't) — unfocus
+    // unconditionally so the keyboard is always gone before the stagger
+    // transition into stage 2 starts, matching "keyboard slides down and
+    // stagger animation of other panes."
+    FocusManager.instance.primaryFocus?.unfocus();
+    if (_titleController.text.trim().isEmpty) {
+      _handleClose();
+      return;
+    }
+    setState(() {
+      _isNameStage = false;
+      // Time and Duration default the moment stage 2 opens (requested
+      // directly: "so actually after entering task name we default time
+      // to current and duration to 5m, so schedule would be active") —
+      // Schedule is enabled immediately rather than waiting for the user
+      // to touch either field. Time defaults to 12:00 noon specifically
+      // (requested directly), not the current time — a fixed, predictable
+      // default rather than one that varies by when the sheet happened to
+      // open. Only seeded if still unset: an Inbox "give it a schedule"
+      // task skips stage 1 entirely and may already carry its own
+      // time/duration, which this must not overwrite.
+      _timeOfDay ??= const TimeOfDay(hour: 12, minute: 0);
+      _durationMinutes ??= presetMinutes.first;
+    });
+  }
+
+  /// Opens the standalone Category modal — the schedule pane's own
+  /// "Category" row, now that Name/Category no longer share one modal
+  /// (Name moved to stage 1; requested directly).
+  Future<void> _openCategoryModal() async {
+    final result = await TaskCategoryModal.show(
       context: context,
-      titleController: _titleController,
-      notesController: _notesController,
       category: _category,
-      onCategoryChanged: (value) => setState(() => _category = value),
     );
-    if (!mounted) return;
-
-    if (isFirstAutoOpenedModal && _titleController.text.trim().isEmpty) {
-      // Done tapped with no name entered, on the very first modal of a
-      // fresh create — requested directly: "that closes both modals
-      // (effectively reverses) abandon flow." Routed through the SAME
-      // close path the header's × button uses rather than a bare
-      // Navigator.pop: an empty title means _hasUnconfirmedChanges is
-      // already false (nothing else could have been touched yet, since
-      // this is the very first step), so _handleClose pops silently with
-      // no confirmation dialog — exactly "abandon", not "ask to discard".
-      await _handleClose();
-      return;
-    }
-
-    // The preview card reads the title controller directly (not via a
-    // ListenableBuilder), so closing the modal needs an explicit rebuild
-    // to pick up whatever was typed — without this, a name entered here
-    // wouldn't show in the preview until some UNRELATED state change
-    // happened to trigger the next rebuild.
-    setState(() {});
-    if (!isFirstAutoOpenedModal) return;
-    // A name was actually entered — proceed to the next step in the
-    // guided sequence.
-    await _openStartTimeModal();
-  }
-
-  Future<void> _openStartTimeModal() async {
-    final wasChaining = _autoAdvanceEligible;
-    final result = await TaskStartTimeModal.show(
-      context: context,
-      initialHour: _timeOfDay?.hour,
-      initialMinute: _timeOfDay?.minute,
-    );
-    if (!mounted) return;
-    if (result == null) {
-      // Dismissed without confirming — ends the guided sequence here
-      // rather than forcing Duration open next; the user gets to decide
-      // what to fill in next themselves.
-      if (wasChaining) setState(() => _autoAdvanceEligible = false);
-      return;
-    }
-    setState(
-      () => _timeOfDay = TimeOfDay(hour: result.$1, minute: result.$2),
-    );
-    if (!wasChaining) return;
-    await _openDurationModal();
-  }
-
-  Future<void> _openDurationModal() async {
-    final result = await TaskDurationModal.show(
-      context: context,
-      initialMinutes: _durationMinutes,
-    );
-    if (!mounted) return;
-    if (result != null) setState(() => _durationMinutes = result);
-    // Duration is the LAST step in the guided sequence — whether
-    // confirmed or dismissed, the one-shot chain is done either way.
-    if (_autoAdvanceEligible) setState(() => _autoAdvanceEligible = false);
+    if (!mounted || result == null) return;
+    setState(() => _category = result);
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
 
-    return _ScheduleStepScaffold(
-      modalTitle: 'Create task',
+    // One modal, two internal stages — requested directly: "one modal
+    // just first stage when clicked Add only Name visible and after done
+    // or confirm in keyboard keyboard slides down and stagger animation
+    // of other panes > screen 2 but all same modal." The header (title,
+    // close button) stays identical across both; only the body and the
+    // primary button's label/action change.
+    // "Edit task" (the action sheet's single edit entry) reuses this same
+    // screen via widget.task != null — requested directly: it "takes the
+    // user to the same screen as add (already populated second part with
+    // all fields visible)". Title/primary label read as an edit in that
+    // case rather than always saying "Create"/"Schedule".
+    final isEditing = widget.task != null;
+
+    return _StepScaffold(
       theme: theme,
-      title: _titleController.text.trim(),
-      category: _category,
-      date: _scheduledAt,
-      timeOfDay: _timeOfDay,
-      durationMinutes: _durationMinutes,
-      onDateChanged: (value) => setState(() => _scheduledAt = value),
-      onTimeOfDayChanged: (value) => setState(() => _timeOfDay = value),
-      onDurationChanged: (value) => setState(() => _durationMinutes = value),
-      notificationsEnabled: _notificationsEnabled,
-      onNotificationsEnabledChanged: (value) =>
-          setState(() => _notificationsEnabled = value),
-      onNameCategoryTap: _openNameCategoryModal,
-      showRepeats: true,
-      repeats: _repeats,
-      selectedDays: _selectedDays,
-      onRepeatsChanged: (value) => setState(() => _repeats = value),
-      onDayToggled: (day) => setState(() {
-        if (_selectedDays.contains(day)) {
-          if (_selectedDays.length > 1) _selectedDays.remove(day);
-        } else {
-          _selectedDays.add(day);
-        }
-      }),
+      modalTitle: isEditing ? 'Edit task' : 'Create task',
+      titleAlignment: TextAlign.left,
+      headerColor: theme.categoryColors[_category.token]!,
+      headerContent: null,
       onClose: _handleClose,
-      primaryLabel: 'Schedule',
-      // Disabled until time AND duration are set — an empty field is
-      // a real unset state, not a zero to fill in silently.
-      onPrimaryPressed: _canSave ? _save : null,
-      errorMessage: _overlapError,
+      onBack: null,
+      primaryLabel: _isNameStage ? 'Done' : (isEditing ? 'Save' : 'Schedule'),
+      onPrimaryPressed: _isNameStage
+          ? _confirmNameStage
+          : (_canSave ? _save : null),
+      errorMessage: _isNameStage ? null : _overlapError,
+      // A SINGLE body, not a stage swap — requested directly: "task name
+      // section should persist on tapping done or confirm keyboard,
+      // meaning it's not animating and is the same instance, not another
+      // instance, it's the same object remaining." _NameDescriptionPane is
+      // built exactly once, unconditionally, so its Element (and the
+      // AppTextField/keyboard state inside it) survives the stage
+      // transition untouched — only the sections BELOW it (Category
+      // onward) mount and stagger in once stage 1 confirms.
+      body: _ScheduleFieldsStage(
+        theme: theme,
+        titleController: _titleController,
+        notesController: _notesController,
+        showScheduleFields: !_isNameStage,
+        onNameSubmitted: _confirmNameStage,
+        category: _category,
+        date: _scheduledAt,
+        timeOfDay: _timeOfDay,
+        durationMinutes: _durationMinutes,
+        onDateChanged: (value) => setState(() => _scheduledAt = value),
+        onTimeChanged: (value) => setState(() => _timeOfDay = value),
+        onDurationChanged: (value) =>
+            setState(() => _durationMinutes = value),
+        notificationsEnabled: _notificationsEnabled,
+        onNotificationsEnabledChanged: (value) =>
+            setState(() => _notificationsEnabled = value),
+        onCategoryTap: _openCategoryModal,
+        onDateTap: () => _pickDate(context),
+        showRepeats: true,
+        repeats: _repeats,
+        selectedDays: _selectedDays,
+        onRepeatsChanged: (value) => setState(() => _repeats = value),
+        onDayToggled: (day) => setState(() {
+          if (_selectedDays.contains(day)) {
+            if (_selectedDays.length > 1) _selectedDays.remove(day);
+          } else {
+            _selectedDays.add(day);
+          }
+        }),
+      ),
+    );
+  }
+
+  Future<void> _pickDate(BuildContext context) async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _scheduledAt,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+    if (picked == null) return;
+    setState(
+      () => _scheduledAt = DateTime(picked.year, picked.month, picked.day),
+    );
+  }
+}
+
+/// Stage 2 of the create flow — everything after the name: the live
+/// preview, Category, Date, Time, Duration (with its presets and wheel now
+/// inline rather than behind their own modal), Repeat, and Notifications.
+/// Requested directly, matching the mockup's three-screenshot sequence.
+///
+/// Each top-level pane runs its own staggered fade+slide entrance on first
+/// build (not on every rebuild — see [_StaggeredEntrance]), which is the
+/// second half of "keyboard slides down and stagger animation of other
+/// panes."
+class _ScheduleFieldsStage extends StatelessWidget {
+  const _ScheduleFieldsStage({
+    required this.theme,
+    required this.titleController,
+    required this.notesController,
+    required this.showScheduleFields,
+    required this.onNameSubmitted,
+    required this.category,
+    required this.date,
+    required this.timeOfDay,
+    required this.durationMinutes,
+    required this.onDateChanged,
+    required this.onTimeChanged,
+    required this.onDurationChanged,
+    required this.notificationsEnabled,
+    required this.onNotificationsEnabledChanged,
+    required this.onCategoryTap,
+    required this.onDateTap,
+    required this.showRepeats,
+    required this.repeats,
+    required this.selectedDays,
+    required this.onRepeatsChanged,
+    required this.onDayToggled,
+  });
+
+  final AmbleTheme theme;
+  final TextEditingController titleController;
+  final TextEditingController notesController;
+
+  /// False while stage 1 (Name only) is still active — Category onward
+  /// stay out of the tree entirely rather than just invisible, so the
+  /// stagger in [_StaggeredEntrance] runs fresh the moment they first
+  /// mount. The Name/Description pane above them is NOT gated by this —
+  /// it always builds, unconditionally, so it's the exact same widget
+  /// instance across the stage transition. Requested directly: "task name
+  /// section should persist on tapping done or confirm keyboard... it's
+  /// not another instance, it's the same object remaining."
+  final bool showScheduleFields;
+
+  /// Passed straight through to [_NameDescriptionPane] — see its own
+  /// `onNameSubmitted` doc comment.
+  final VoidCallback onNameSubmitted;
+
+  final TaskCategory category;
+  final DateTime date;
+  final TimeOfDay? timeOfDay;
+  final int? durationMinutes;
+  final ValueChanged<DateTime> onDateChanged;
+  final ValueChanged<TimeOfDay> onTimeChanged;
+  final ValueChanged<int> onDurationChanged;
+  final bool notificationsEnabled;
+  final ValueChanged<bool> onNotificationsEnabledChanged;
+  final VoidCallback onCategoryTap;
+  final VoidCallback onDateTap;
+  final bool showRepeats;
+  final bool repeats;
+  final Set<int> selectedDays;
+  final ValueChanged<bool> onRepeatsChanged;
+  final ValueChanged<int> onDayToggled;
+
+  @override
+  Widget build(BuildContext context) {
+    final time = timeOfDay;
+    final duration = durationMinutes;
+    final startTime = time == null
+        ? null
+        : DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    final endTime = (startTime == null || duration == null)
+        ? null
+        : startTime.add(Duration(minutes: duration));
+
+    final staggeredPanes = <Widget>[
+      // Category is its own standalone pane — requested directly
+      // ("Category should be its own section"), separate from both
+      // Name/Description above and Date/Time/Duration below.
+      AppPane(
+        child: _CategoryFieldRow(
+          theme: theme,
+          category: category,
+          onTap: onCategoryTap,
+        ),
+      ),
+      AppPane(
+        child: Column(
+          children: [
+            _LinkFieldRow(
+              theme: theme,
+              label: 'Date',
+              value: _formatDate(date),
+              onTap: onDateTap,
+            ),
+            SizedBox(height: theme.spacingMd),
+            // The resolved range, live: end = start + duration. No tap
+            // target — the wheel below is what sets the start time now
+            // (requested directly: "the wheeler is actually for time"),
+            // so this row is a read-out rather than a button.
+            _PlainFieldRow(
+              theme: theme,
+              label: 'Time',
+              value: (startTime == null || endTime == null)
+                  ? '--:-- - --:--'
+                  : '${_formatTime(startTime)} - ${_formatTime(endTime)}',
+              onTap: null,
+            ),
+            SizedBox(height: theme.spacingMd),
+            SizedBox(
+              height: theme.spacingXl * 5,
+              child: AppWheelPicker(
+                hourCount: 24,
+                minuteStep: 5,
+                initialHour: time?.hour ?? 0,
+                initialMinute: time?.minute ?? 0,
+                onChanged: (hour, minute) =>
+                    onTimeChanged(TimeOfDay(hour: hour, minute: minute)),
+              ),
+            ),
+            SizedBox(height: theme.spacingMd),
+            _LinkFieldRow(
+              theme: theme,
+              label: 'Duration',
+              value: duration == null
+                  ? 'Custom'
+                  : (presetMinutes.contains(duration)
+                        ? presetLabel(duration)
+                        : _formatDuration(duration)),
+              // No tap target: presets are the only way to change
+              // duration now — requested directly ("Duration no have
+              // wheeler but presets only").
+              onTap: null,
+            ),
+            SizedBox(height: theme.spacingMd),
+            Row(
+              children: [
+                for (final (index, preset) in presetMinutes.indexed) ...[
+                  if (index > 0) SizedBox(width: theme.spacingXs),
+                  Expanded(
+                    child: AppSelectableChip(
+                      label: presetLabel(preset),
+                      selected: duration == preset,
+                      onTap: () => onDurationChanged(preset),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+      if (showRepeats)
+        AppPane(
+          child: _RecurrencePanel(
+            theme: theme,
+            repeats: repeats,
+            selectedDays: selectedDays,
+            onRepeatsChanged: onRepeatsChanged,
+            onDayToggled: onDayToggled,
+          ),
+        ),
+      AppPane(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Notifications',
+              style: theme.textBody.copyWith(color: theme.colorTextPrimary),
+            ),
+            AppSwitch(
+              value: notificationsEnabled,
+              onChanged: onNotificationsEnabledChanged,
+            ),
+          ],
+        ),
+      ),
+    ];
+
+    return SingleChildScrollView(
+      padding: EdgeInsets.all(theme.spacingLg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Always in the tree, never rebuilt as a different instance —
+          // see showScheduleFields' doc comment above.
+          _NameDescriptionPane(
+            theme: theme,
+            titleController: titleController,
+            notesController: notesController,
+            autofocusName: !showScheduleFields,
+            onNameSubmitted: onNameSubmitted,
+          ),
+          if (showScheduleFields) ...[
+            SizedBox(height: theme.spacingLg),
+            for (final (index, pane) in staggeredPanes.indexed) ...[
+              _StaggeredEntrance(index: index, child: pane),
+              SizedBox(height: theme.spacingLg),
+            ],
+          ],
+          SizedBox(height: theme.spacingXl * 2),
+        ],
+      ),
+    );
+  }
+}
+
+/// Stage 2's Name pane — the Name field is always visible and editable,
+/// but Description starts collapsed behind an "Add description" link
+/// rather than shown as an empty field. Requested directly: "description
+/// note in the design is not shown as default as field, only we have add
+/// description blue link which reveals that field and puts cursor in
+/// focus on the field and keyboard already ready to write."
+///
+/// One-way reveal: once tapped, the link is gone for the rest of this
+/// modal session and the field just stays visible — there's no need to
+/// re-collapse it, and the mockup doesn't show any state beyond "revealed
+/// and focused."
+class _NameDescriptionPane extends StatefulWidget {
+  const _NameDescriptionPane({
+    required this.theme,
+    required this.titleController,
+    required this.notesController,
+    required this.autofocusName,
+    required this.onNameSubmitted,
+  });
+
+  final AmbleTheme theme;
+  final TextEditingController titleController;
+  final TextEditingController notesController;
+
+  /// Whether the Name field should grab focus/keyboard the moment this
+  /// pane first mounts — true for a genuine stage-1 entry (a from-scratch
+  /// create), false for "Edit task" or the Inbox "give it a schedule"
+  /// case, both of which skip stage 1 entirely and shouldn't summon the
+  /// keyboard on open. Only matters on this Element's first build, since
+  /// this pane is never torn down and rebuilt across the stage
+  /// transition (Flutter's `autofocus` doesn't re-fire on rebuild).
+  final bool autofocusName;
+
+  /// Fired by the Name field's own keyboard-complete action — confirms
+  /// stage 1, same as the header's "Done" button. Harmless to keep firing
+  /// after stage 1 has already been confirmed once (the caller's
+  /// `_confirmNameStage` is idempotent past that point — it just leaves
+  /// `_isNameStage` false), so this isn't gated on stage here.
+  final VoidCallback onNameSubmitted;
+
+  @override
+  State<_NameDescriptionPane> createState() => _NameDescriptionPaneState();
+}
+
+class _NameDescriptionPaneState extends State<_NameDescriptionPane> {
+  // Starts revealed if the task already carries notes (e.g. an "Edit
+  // task" open, which skips stage 1 with notes already set) — the link
+  // exists to avoid showing an EMPTY field by default, not to hide notes
+  // that already exist.
+  late bool _showDescription = widget.notesController.text.isNotEmpty;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = widget.theme;
+
+    return AppPane(
+      child: Column(
+        children: [
+          AppTextField(
+            controller: widget.titleController,
+            label: 'Task name',
+            autofocus: widget.autofocusName,
+            onSubmitted: (_) => widget.onNameSubmitted(),
+          ),
+          if (_showDescription) ...[
+            SizedBox(height: theme.spacingSm),
+            AppTextField(
+              controller: widget.notesController,
+              label: 'Description',
+              maxLines: 3,
+              // AppTextField owns its own internal FocusNode rather than
+              // accepting an external one, so `autofocus` is the only way
+              // to land the keyboard here the instant this field mounts —
+              // which is exactly this case, since the field doesn't exist
+              // in the tree until the link below is tapped.
+              autofocus: true,
+            ),
+          ] else ...[
+            // Explicitly spacingMd — matching the pane's own outer bottom
+            // padding rhythm, so the gap above the link reads as the SAME
+            // deliberate spacing unit as the gap below it, rather than an
+            // accidental leftover from stacking the field's own internal
+            // padding with a second, smaller SizedBox. Reported directly.
+            SizedBox(height: theme.spacingMd),
+            Align(
+              alignment: Alignment.centerRight,
+              child: GestureDetector(
+                onTap: () => setState(() => _showDescription = true),
+                behavior: HitTestBehavior.opaque,
+                child: Text(
+                  'Add description',
+                  style: theme.textBody.copyWith(
+                    color: theme.colorAccent,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Fades and slides [child] up into place once, staggered by [index] —
+/// each pane starts its entrance slightly after the one before it, rather
+/// than every pane appearing in lockstep. Runs only on the widget's first
+/// build: this animates the initial reveal of stage 2, not every later
+/// rebuild (a duration change re-rendering the Duration pane shouldn't
+/// replay its entrance).
+class _StaggeredEntrance extends StatefulWidget {
+  const _StaggeredEntrance({required this.index, required this.child});
+
+  final int index;
+  final Widget child;
+
+  @override
+  State<_StaggeredEntrance> createState() => _StaggeredEntranceState();
+}
+
+class _StaggeredEntranceState extends State<_StaggeredEntrance>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _fade;
+  late final Animation<Offset> _slide;
+
+  static const _stagger = Duration(milliseconds: 40);
+  static const _duration = Duration(milliseconds: 220);
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: _duration);
+    _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+    _slide = Tween<Offset>(
+      begin: const Offset(0, 0.08),
+      end: Offset.zero,
+    ).animate(_fade);
+    Future.delayed(_stagger * widget.index, () {
+      if (mounted) _controller.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _fade,
+      child: SlideTransition(position: _slide, child: widget.child),
+    );
+  }
+}
+
+/// The Category row — "Add" as a plain accent-coloured link when nothing
+/// is chosen yet, or a filled colour tag (the category's own bg colour,
+/// emoji + label) once one is. Requested directly: "selected category is
+/// actually a 'tag' in full form with bg color instead as currently blue
+/// link" — only the SELECTED state gets tag styling; the unselected "Add"
+/// stays plain link text since there's no category colour to show yet.
+class _CategoryFieldRow extends StatelessWidget {
+  const _CategoryFieldRow({
+    required this.theme,
+    required this.category,
+    required this.onTap,
+  });
+
+  final AmbleTheme theme;
+  final TaskCategory category;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasCategory = category != TaskCategory.general;
+
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            'Category',
+            style: theme.textBody.copyWith(color: theme.colorTextPrimary),
+          ),
+          if (hasCategory)
+            Container(
+              padding: EdgeInsets.symmetric(
+                horizontal: theme.spacingSm,
+                vertical: theme.spacingXs,
+              ),
+              decoration: BoxDecoration(
+                color: theme.categoryColors[category.token]!,
+                borderRadius: BorderRadius.circular(theme.radiusMd),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(category.emoji, style: theme.textBody),
+                  SizedBox(width: theme.spacingXs),
+                  Text(
+                    category.label,
+                    style: theme.textBody.copyWith(
+                      color: theme.colorTextPrimary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            Text(
+              'Add',
+              style: theme.textBody.copyWith(
+                color: theme.colorAccent,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A field-shell row whose value is styled as a tappable LINK (accent
+/// colour) — Date's "Today", Duration's "Custom"/resolved label.
+class _LinkFieldRow extends StatelessWidget {
+  const _LinkFieldRow({
+    required this.theme,
+    required this.label,
+    required this.value,
+    required this.onTap,
+  });
+
+  final AmbleTheme theme;
+  final String label;
+  final String value;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: theme.textBody.copyWith(color: theme.colorTextPrimary),
+          ),
+          Text(
+            value,
+            style: theme.textBody.copyWith(
+              color: theme.colorAccent,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Same row shape as [_LinkFieldRow], but the value reads as plain body
+/// text rather than a link — the Time row, which is tap-to-open but
+/// resolves to a value the mockup shows in the ordinary text colour.
+class _PlainFieldRow extends StatelessWidget {
+  const _PlainFieldRow({
+    required this.theme,
+    required this.label,
+    required this.value,
+    required this.onTap,
+  });
+
+  final AmbleTheme theme;
+  final String label;
+  final String value;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: theme.textBody.copyWith(color: theme.colorTextPrimary),
+          ),
+          Text(
+            value,
+            style: theme.textBody.copyWith(
+              color: theme.colorTextPrimary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -329,34 +329,55 @@ class TaskCapsuleBlock extends StatelessWidget {
       ),
     );
 
-    if (!isLifted) return card;
-
-    // While lifted, the whole card sits inside its own frosted pane —
-    // requested directly, matching the create-task screen's own panes:
-    // colorSurfaceBlurOverlay (the pane fill at 36% opacity) over a
-    // BackdropFilter blur, plus shadowPane for the elevation the icon
-    // pill used to carry on its own. ClipRRect is required for the blur:
-    // BackdropFilter samples everything behind it in a rectangle unless
-    // clipped to the pane's own rounded shape.
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(theme.radiusXl),
-        boxShadow: theme.shadowPane,
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(theme.radiusXl),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(
-            sigmaX: theme.blurOverlaySigma,
-            sigmaY: theme.blurOverlaySigma,
+    // The frosted wrapper is ALWAYS present, not conditionally built —
+    // regression fixed directly: swapping between `card` bare and `card`
+    // wrapped in Container/ClipRRect/BackdropFilter (only while lifted)
+    // inserted new ancestor render objects mid-gesture the moment
+    // `onDragStart`'s setState flipped `isLifted` to true. That broke the
+    // active drag recognizer's hit-test routing — the first touch only
+    // ever lifted the pill (the rebuild happened) but never tracked the
+    // finger, and dragging only started working AFTER a release-and-
+    // re-press, because the second press began cleanly against the now-
+    // already-wrapped tree. Keeping the exact same widget shape at every
+    // isLifted value, and animating the frosted LOOK instead (blur sigma,
+    // fill opacity, shadow — all via AnimatedContainer/TweenAnimationBuilder
+    // rather than presence/absence of the wrapper), keeps the gesture's
+    // render object ancestry stable across the whole drag.
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: isLifted ? 1 : 0),
+      duration: theme.motionFast,
+      curve: theme.curveStandard,
+      builder: (context, t, child) {
+        return Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(theme.radiusXl),
+            boxShadow: t == 0
+                ? const []
+                : theme.shadowPane
+                      .map(
+                        (shadow) => shadow.scale(t),
+                      )
+                      .toList(),
           ),
-          child: Container(
-            padding: EdgeInsets.all(theme.spacingSm),
-            color: theme.colorSurfaceBlurOverlay,
-            child: card,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(theme.radiusXl),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(
+                sigmaX: theme.blurOverlaySigma * t,
+                sigmaY: theme.blurOverlaySigma * t,
+              ),
+              child: Container(
+                padding: EdgeInsets.all(theme.spacingSm * t),
+                color: theme.colorSurfaceBlurOverlay.withValues(
+                  alpha: theme.colorSurfaceBlurOverlay.a * t,
+                ),
+                child: child,
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
+      child: card,
     );
   }
 }
