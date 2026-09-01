@@ -78,9 +78,7 @@ void main() {
     ) async {
       useMobileViewport(tester);
       int? committedHour;
-      await tester.pumpWidget(
-        _host(onValue: (h, _) => committedHour = h),
-      );
+      await tester.pumpWidget(_host(onValue: (h, _) => committedHour = h));
 
       // Starts unset — the field shows its placeholder, not a value.
       expect(_fieldText(tester), isEmpty);
@@ -164,9 +162,7 @@ void main() {
     ) async {
       useMobileViewport(tester);
       var committed = false;
-      await tester.pumpWidget(
-        _host(onValue: (_, _) => committed = true),
-      );
+      await tester.pumpWidget(_host(onValue: (_, _) => committed = true));
 
       await tester.tap(find.bySemanticsLabel('Choose duration'));
       await tester.pumpAndSettle();

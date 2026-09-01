@@ -3,15 +3,31 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive_ce.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
+import 'package:amble/core/widgets/app_text_field.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/task_detail/task_detail_sheet.dart';
+import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/models/task.dart';
+import 'package:amble/shared/providers/category_providers.dart';
 import 'package:amble/shared/providers/notification_providers.dart';
 import 'package:amble/shared/providers/preferences_providers.dart';
 import 'package:amble/shared/providers/task_providers.dart';
+import 'package:amble/shared/repositories/hive_category_repository.dart';
 import 'package:amble/shared/repositories/hive_task_repository.dart';
 
 import '../../support/fake_notification_service.dart';
+import '../../support/seeded_category_box.dart';
+
+/// The real, typeable `TextField` inside the "Task name" `AppTextField` —
+/// NOT `find.widgetWithText(TextField, 'Task name')`, which looks for the
+/// label text as a DESCENDANT of the TextField itself. `AppFieldShell`
+/// renders the floating label and the TextField as SIBLINGS, so that
+/// finder never matches anything; `AppTextField`'s own subtree does
+/// contain both, so descending through IT is what actually works.
+Finder _nameField() => find.descendant(
+  of: find.widgetWithText(AppTextField, 'Task name'),
+  matching: find.byType(TextField),
+);
 
 class _NoopPreventOverlappingTasksSetting
     extends PreventOverlappingTasksSetting {
@@ -22,6 +38,7 @@ class _NoopPreventOverlappingTasksSetting
 Future<GlobalKey<NavigatorState>> _pumpHost(
   WidgetTester tester, {
   required Box<Task> box,
+  required Box<Category> categoryBox,
 }) async {
   tester.view.physicalSize = const Size(390, 844);
   tester.view.devicePixelRatio = 1.0;
@@ -32,6 +49,9 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
     ProviderScope(
       overrides: [
         taskRepositoryProvider.overrideWithValue(HiveTaskRepository(box)),
+        categoryRepositoryProvider.overrideWithValue(
+          HiveCategoryRepository(categoryBox),
+        ),
         notificationServiceProvider.overrideWithValue(
           FakeNotificationService(),
         ),
@@ -51,6 +71,7 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
 
 void main() {
   late Box<Task> box;
+  late Box<Category> categoryBox;
 
   setUp(() async {
     Hive.init('./.dart_tool/test_hive_create_flow_initial_modal');
@@ -60,17 +81,25 @@ void main() {
     box = await Hive.openBox<Task>(
       'test_tasks_${DateTime.now().microsecondsSinceEpoch}',
     );
+    categoryBox = await openSeededCategoryBox(
+      'test_categories_${DateTime.now().microsecondsSinceEpoch}',
+    );
   });
 
   tearDown(() async {
     await box.close();
+    await categoryBox.close();
   });
 
   testWidgets(
     'a genuinely new task opens on the Name-only first stage, with no '
     'Category/Date/Time/Duration visible yet',
     (tester) async {
-      final navigatorKey = await _pumpHost(tester, box: box);
+      final navigatorKey = await _pumpHost(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+      );
       showTaskDetailSheet(
         navigatorKey.currentContext!,
         initialScheduledAt: DateTime(2026, 8, 20, 9),
@@ -78,7 +107,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Create task'), findsOneWidget);
-      expect(find.widgetWithText(TextField, 'Task name'), findsOneWidget);
+      expect(_nameField(), findsOneWidget);
       expect(find.text('Category'), findsNothing);
       expect(find.text('Duration'), findsNothing);
     },
@@ -91,7 +120,11 @@ void main() {
       final task = Task.captured(title: 'Already named from Inbox');
       await tester.runAsync(() => box.put(task.id, task));
 
-      final navigatorKey = await _pumpHost(tester, box: box);
+      final navigatorKey = await _pumpHost(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+      );
       showTaskDetailSheet(
         navigatorKey.currentContext!,
         task: task,
@@ -108,15 +141,18 @@ void main() {
   testWidgets(
     'confirming the Name-only stage (Done) advances into the full form',
     (tester) async {
-      final navigatorKey = await _pumpHost(tester, box: box);
+      final navigatorKey = await _pumpHost(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+      );
       showTaskDetailSheet(
         navigatorKey.currentContext!,
         initialScheduledAt: DateTime(2026, 8, 20, 9),
       );
       await tester.pumpAndSettle();
 
-      final nameField = find.widgetWithText(TextField, 'Task name');
-      await tester.enterText(nameField, 'Read a book');
+      await tester.enterText(_nameField(), 'Read a book');
       await tester.pumpAndSettle();
 
       final doneButton = find.text('Done');
@@ -137,7 +173,11 @@ void main() {
     'tapping Done on the Name-only stage with NO name typed abandons the '
     'whole create flow',
     (tester) async {
-      final navigatorKey = await _pumpHost(tester, box: box);
+      final navigatorKey = await _pumpHost(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+      );
       showTaskDetailSheet(
         navigatorKey.currentContext!,
         initialScheduledAt: DateTime(2026, 8, 20, 9),
@@ -165,7 +205,11 @@ void main() {
     'closing via the header X on the Name-only stage with no name typed '
     'closes silently too',
     (tester) async {
-      final navigatorKey = await _pumpHost(tester, box: box);
+      final navigatorKey = await _pumpHost(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+      );
       showTaskDetailSheet(
         navigatorKey.currentContext!,
         initialScheduledAt: DateTime(2026, 8, 20, 9),

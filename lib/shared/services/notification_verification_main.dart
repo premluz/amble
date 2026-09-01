@@ -14,7 +14,7 @@ import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../hive_registrar.g.dart';
 import '../models/task.dart';
-import '../models/task_category.dart';
+import '../models/category.dart';
 import '../providers/notification_providers.dart';
 import '../providers/task_providers.dart';
 
@@ -71,7 +71,7 @@ class _VerificationAppState extends ConsumerState<_VerificationApp> {
           title: 'Notification test',
           scheduledAt: fireAt,
           durationMinutes: 5,
-          category: TaskCategory.personal,
+          categoryId: BuiltInCategoryIds.personal,
         );
     setState(
       () => _status =

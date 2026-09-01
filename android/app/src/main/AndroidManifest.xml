@@ -55,6 +55,10 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- speech_to_text: RECORD_AUDIO for Quick Capture's voice dictation
+         mic button. Requested at runtime, lazily on first tap — see
+         quick_capture_sheet.dart. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
          https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.

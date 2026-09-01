@@ -31,10 +31,8 @@ Future<void> _openModal(WidgetTester tester, {int? initialMinutes}) async {
   await tester.pumpAndSettle();
 }
 
-String _fieldText(WidgetTester tester) => tester
-    .widget<TextField>(find.byType(TextField))
-    .controller!
-    .text;
+String _fieldText(WidgetTester tester) =>
+    tester.widget<TextField>(find.byType(TextField)).controller!.text;
 
 /// Tap a preset chip by its label ("5m", "1h", ...).
 Future<void> _tapPreset(WidgetTester tester, String label) async {
@@ -49,9 +47,7 @@ Future<void> _tapPreset(WidgetTester tester, String label) async {
 bool _isPresetSelected(WidgetTester tester, String label) {
   final theme = AmbleTheme.light;
   final container = tester.widget<Container>(
-    find
-        .ancestor(of: find.text(label), matching: find.byType(Container))
-        .first,
+    find.ancestor(of: find.text(label), matching: find.byType(Container)).first,
   );
   final decoration = container.decoration! as BoxDecoration;
   return decoration.color == theme.colorAccent;
@@ -131,6 +127,16 @@ void main() {
 
     testWidgets('confirming with the default 5-minute value saves 5 '
         'minutes, not an unset/empty duration', (tester) async {
+      // The view size MUST be set before pumpWidget, matching every other
+      // test in this file (see _openModal) — fixed directly: setting it
+      // after the first pump left the sheet laid out at the default
+      // 800x600 test surface, so "Done" ended up positioned outside the
+      // viewport once the size was corrected afterward, and the tap
+      // missed it entirely.
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
       late int? result;
       await tester.pumpWidget(
         MaterialApp(
@@ -150,13 +156,17 @@ void main() {
           ),
         ),
       );
-      tester.view.physicalSize = const Size(390, 844);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.reset);
 
       await tester.tap(find.text('Open'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Done'));
+      // ensureVisible first — the sheet's own bottom inset/safe-area
+      // handling can leave Done positioned such that a bare tap()
+      // misses it entirely (caught directly: the offset landed on
+      // RenderIgnorePointer/RenderOffstage instead of the button).
+      final doneButton = find.text('Done');
+      await tester.ensureVisible(doneButton);
+      await tester.pumpAndSettle();
+      await tester.tap(doneButton);
       await tester.pumpAndSettle();
 
       expect(result, 5);

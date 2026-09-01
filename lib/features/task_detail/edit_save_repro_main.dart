@@ -13,7 +13,7 @@ import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../hive_registrar.g.dart';
 import '../../shared/models/task.dart';
-import '../../shared/models/task_category.dart';
+import '../../shared/models/category.dart';
 import '../../shared/providers/notification_providers.dart';
 import '../../shared/providers/task_providers.dart';
 import '../timeline/timeline_screen.dart';
@@ -31,7 +31,7 @@ Future<void> main() async {
     title: 'Deep work',
     scheduledAt: DateTime(now.year, now.month, now.day, 10, 0),
     durationMinutes: 60,
-    category: TaskCategory.work,
+    categoryId: BuiltInCategoryIds.work,
   );
   await box.put(task.id, task);
 

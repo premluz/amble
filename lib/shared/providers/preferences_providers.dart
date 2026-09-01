@@ -134,6 +134,34 @@ class ShowHourLabelsSetting extends _$ShowHourLabelsSetting {
   }
 }
 
+/// Whether 2–3 mutually-overlapping tasks stay individual capsule blocks
+/// (naive spatial overlap) instead of being replaced by one aggregate
+/// `OverlapClusterBlock`.
+///
+/// `keepAlive: true` for the same reason as the other settings above — read
+/// by the Timeline screen, not screen-scoped state. Defaults to **false**
+/// when nothing is stored, i.e. clustering is ON for a fresh install —
+/// matches how [PreventOverlappingTasksSetting] defaults to the newer,
+/// more-structured behavior rather than requiring an opt-in.
+@Riverpod(keepAlive: true)
+class DisableOverlapClusteringSetting
+    extends _$DisableOverlapClusteringSetting {
+  @override
+  bool build() {
+    return ref
+            .read(preferencesRepositoryProvider)
+            .getValue<bool>(PreferenceKeys.disableOverlapClustering) ??
+        false;
+  }
+
+  Future<void> set(bool value) async {
+    await ref
+        .read(preferencesRepositoryProvider)
+        .setValue(PreferenceKeys.disableOverlapClustering, value);
+    state = value;
+  }
+}
+
 /// Maps the persisted [AppThemeMode] onto Flutter's own [ThemeMode].
 ///
 /// Kept as the single translation point between our stored enum and the

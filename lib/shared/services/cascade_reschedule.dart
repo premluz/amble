@@ -65,8 +65,7 @@ List<TaskMove>? computeCascadeMoves({
   // its proposed new slot. The dragged task is looked up by id below so a
   // cascade can never re-push it.
   final slots = <String, (DateTime start, DateTime end)>{
-    for (final task in sameDayTasks)
-      task.id: (task.scheduledAt!, _endOf(task)),
+    for (final task in sameDayTasks) task.id: (task.scheduledAt!, _endOf(task)),
   };
   slots[draggedTask.id] = (newStart, draggedEnd);
 
@@ -121,9 +120,7 @@ List<TaskMove>? computeCascadeMoves({
     // mover lands immediately before it, and each one further out lands
     // immediately before THAT one, so the whole group shifts earlier as a
     // contiguous, non-overlapping block.
-    earlierPushes.sort(
-      (a, b) => slots[b.id]!.$2.compareTo(slots[a.id]!.$2),
-    );
+    earlierPushes.sort((a, b) => slots[b.id]!.$2.compareTo(slots[a.id]!.$2));
     var earlierEdge = moverStart;
     for (final task in earlierPushes) {
       // Preferred direction first (earlier, per this task's own proximity
@@ -169,9 +166,7 @@ List<TaskMove>? computeCascadeMoves({
 
     // Same idea forward: later-pushed tasks chain from the mover's new
     // end, nearest-original-start first.
-    laterPushes.sort(
-      (a, b) => slots[a.id]!.$1.compareTo(slots[b.id]!.$1),
-    );
+    laterPushes.sort((a, b) => slots[a.id]!.$1.compareTo(slots[b.id]!.$1));
     var laterEdge = moverEnd;
     for (final task in laterPushes) {
       // Mirror of the earlier-direction block above, same fallback.

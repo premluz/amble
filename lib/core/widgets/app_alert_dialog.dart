@@ -145,9 +145,9 @@ class AppAlertDialog {
                 ),
                 CupertinoDialogAction(
                   isDestructiveAction: true,
-                  onPressed: () => Navigator.of(
-                    context,
-                  ).pop(AppAlertDialogChoice.destructive),
+                  onPressed: () =>
+                      Navigator.of(context)
+                          .pop(AppAlertDialogChoice.destructive),
                   child: Text(destructiveAction.label),
                 ),
                 CupertinoDialogAction(
@@ -170,24 +170,22 @@ class AppAlertDialog {
                 content: Text(message),
                 actions: [
                   TextButton(
-                    onPressed: () => Navigator.of(
-                      context,
-                    ).pop(AppAlertDialogChoice.cancel),
+                    onPressed: () =>
+                        Navigator.of(context).pop(AppAlertDialogChoice.cancel),
                     child: Text(cancelAction.label),
                   ),
                   TextButton(
-                    onPressed: () => Navigator.of(
-                      context,
-                    ).pop(AppAlertDialogChoice.destructive),
+                    onPressed: () =>
+                        Navigator.of(context)
+                            .pop(AppAlertDialogChoice.destructive),
                     child: Text(
                       destructiveAction.label,
                       style: TextStyle(color: theme.colorTaskAlert),
                     ),
                   ),
                   TextButton(
-                    onPressed: () => Navigator.of(
-                      context,
-                    ).pop(AppAlertDialogChoice.primary),
+                    onPressed: () =>
+                        Navigator.of(context).pop(AppAlertDialogChoice.primary),
                     child: Text(primaryAction.label),
                   ),
                 ],

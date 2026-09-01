@@ -4,8 +4,8 @@ import 'package:hive_ce/hive_ce.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/tracked_behavior/behavior_outcome_prompt.dart';
 import 'package:amble/shared/models/behavior_target_type.dart';
+import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/models/task.dart';
-import 'package:amble/shared/models/task_category.dart';
 import 'package:amble/shared/models/task_status.dart';
 import 'package:amble/shared/models/tracked_behavior.dart';
 import 'package:amble/shared/providers/notification_providers.dart';
@@ -57,7 +57,7 @@ void main() {
             title: 'Ordinary task',
             scheduledAt: DateTime(2026, 8, 21, 9),
             durationMinutes: 30,
-            category: TaskCategory.work,
+            categoryId: BuiltInCategoryIds.work,
           );
 
       final task = container.read(taskListProvider).single;
@@ -73,7 +73,7 @@ void main() {
         title: 'Ordinary task',
         scheduledAt: DateTime(2026, 8, 21, 9),
         durationMinutes: 30,
-        category: TaskCategory.work,
+        categoryId: BuiltInCategoryIds.work,
       );
 
       await notifier.toggleComplete(container.read(taskListProvider).single);
@@ -103,7 +103,7 @@ void main() {
             title: 'Morning run',
             scheduledAt: DateTime(2026, 8, 21, 7),
             durationMinutes: 60,
-            category: TaskCategory.health,
+            categoryId: BuiltInCategoryIds.health,
             behaviorId: behavior.id,
           );
 
@@ -118,7 +118,7 @@ void main() {
         title: 'Morning run',
         scheduledAt: DateTime(2026, 8, 21, 7),
         durationMinutes: 60,
-        category: TaskCategory.health,
+        categoryId: BuiltInCategoryIds.health,
         behaviorId: 'behavior-1',
       );
 
@@ -139,7 +139,7 @@ void main() {
         title: 'Morning run',
         scheduledAt: DateTime(2026, 8, 21, 7),
         durationMinutes: 60,
-        category: TaskCategory.health,
+        categoryId: BuiltInCategoryIds.health,
         behaviorId: 'behavior-1',
       );
 
@@ -156,7 +156,7 @@ void main() {
         title: 'Morning run',
         scheduledAt: DateTime(2026, 8, 21, 7),
         durationMinutes: 60,
-        category: TaskCategory.health,
+        categoryId: BuiltInCategoryIds.health,
         behaviorId: 'behavior-1',
       );
       await notifier.toggleComplete(
@@ -217,7 +217,7 @@ void main() {
       title: 'Morning run',
       scheduledAt: DateTime(2026, 8, 21, 7),
       durationMinutes: 60,
-      category: TaskCategory.health,
+      categoryId: BuiltInCategoryIds.health,
       recurrenceId: 'series-1',
     )..behaviorId = 'behavior-1';
 

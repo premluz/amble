@@ -20,16 +20,24 @@ class Task extends HiveObject {
     this.originalScheduledAt,
     this.status = TaskStatus.pending,
     this.completedAt,
-    required this.category,
+    this.category = TaskCategory.general,
     this.schemaVersion = 1,
     this.behaviorId,
     this.actualAmount,
     this.recurrenceId,
     this.recurrenceRule,
     this.notificationsEnabled = true,
+    this.categoryId,
+    this.zoneId,
   });
 
   /// Creates a new scheduled task with a client-generated UUID.
+  ///
+  /// [categoryId] is required — every NEW task must reference a real
+  /// persisted [Category] row (see `shared/models/category.dart`); the old
+  /// [category] enum parameter is no longer accepted here. [category]
+  /// itself stays at its default (`TaskCategory.general`) for disk-compat
+  /// only — see its own field doc comment.
   ///
   /// [recurrenceId]/[recurrenceRule] are how a recurring series is built:
   /// the template instance carries both, and every materialized instance
@@ -40,7 +48,7 @@ class Task extends HiveObject {
     String? notes,
     required DateTime scheduledAt,
     required int durationMinutes,
-    required TaskCategory category,
+    required String categoryId,
     String? recurrenceId,
     RecurrenceRule? recurrenceRule,
     bool notificationsEnabled = true,
@@ -50,23 +58,18 @@ class Task extends HiveObject {
          notes: notes,
          scheduledAt: scheduledAt,
          durationMinutes: durationMinutes,
-         category: category,
          recurrenceId: recurrenceId,
          recurrenceRule: recurrenceRule,
          notificationsEnabled: notificationsEnabled,
+         categoryId: categoryId,
        );
 
   /// Creates a new unscheduled (Inbox) task with a client-generated UUID.
   /// Per design principle 2 (capture is frictionless), only a title is
-  /// required — category defaults to [TaskCategory.personal] and can be
-  /// changed later, when/if the task is scheduled.
+  /// required — [categoryId] stays null (uncategorised) and can be set
+  /// later, when/if the task is scheduled.
   Task.captured({required String title, String? notes})
-    : this(
-        id: _uuid.v4(),
-        title: title,
-        notes: notes,
-        category: TaskCategory.personal,
-      );
+    : this(id: _uuid.v4(), title: title, notes: notes);
 
   @HiveField(0)
   final String id;
@@ -94,6 +97,24 @@ class Task extends HiveObject {
   @HiveField(7)
   DateTime? completedAt;
 
+  /// The old fixed-taxonomy category. Superseded by [categoryId], which
+  /// references a real, user-extensible [Category] row instead.
+  ///
+  /// Deliberately NOT removed, renumbered, or repurposed — Hive adapters
+  /// key on field number, so retiring or reusing `@HiveField(8)` would
+  /// silently corrupt/misread already-installed users' persisted data (see
+  /// docs/ERROR_LOG.md and docs/DECISIONS.md's established rule on this,
+  /// most recently exercised by the `notificationsEnabled` addition). Kept
+  /// on the model for disk-compat only: still populated on old rows, still
+  /// serialized in [toJson]/[fromJson] for backward-compatible export, but
+  /// no longer read by any real UI — [categoryId] is authoritative for
+  /// every current task. See docs/DECISIONS.md for the seed/backfill
+  /// migration that resolves old [category] values to a [categoryId] once,
+  /// at launch.
+  @Deprecated(
+    'Superseded by categoryId. Kept only for Hive field-index stability '
+    'and old-export JSON compat — do not read this for new UI.',
+  )
   @HiveField(8)
   TaskCategory category;
 
@@ -136,6 +157,25 @@ class Task extends HiveObject {
   @HiveField(14)
   bool notificationsEnabled;
 
+  /// References a persisted [Category] row (`shared/models/category.dart`)
+  /// — the replacement for the deprecated [category] enum field. Null only
+  /// for an unscheduled Inbox task that hasn't been categorised yet (see
+  /// [Task.captured]) or a pre-migration row not yet backfilled; every
+  /// task created via [Task.create] has one. Resolved through
+  /// `categoryListProvider`/[CategoryRepository], never read directly off
+  /// this id — the id is just the link.
+  @HiveField(15)
+  String? categoryId;
+
+  /// Links this task to a [Zone] it's assigned into. Null for an ordinary
+  /// task — the unchanged default, same pattern as [behaviorId]. A real
+  /// reference (`taskId` → `zoneId`), never derived from checking whether
+  /// [scheduledAt] falls inside a zone's window: a task can be assigned to a
+  /// zone with no [scheduledAt] at all. See CONSTITUTION.md's "Zone"
+  /// section.
+  @HiveField(16)
+  String? zoneId;
+
   /// True when this task is an instance of a [TrackedBehavior] rather than
   /// a standalone task.
   bool get isBehaviorInstance => behaviorId != null;
@@ -165,6 +205,7 @@ class Task extends HiveObject {
     'originalScheduledAt': originalScheduledAt?.toIso8601String(),
     'status': status.name,
     'completedAt': completedAt?.toIso8601String(),
+    // ignore: deprecated_member_use_from_same_package
     'category': category.name,
     'schemaVersion': schemaVersion,
     'behaviorId': behaviorId,
@@ -172,6 +213,8 @@ class Task extends HiveObject {
     'recurrenceId': recurrenceId,
     'recurrenceRule': recurrenceRule?.toJson(),
     'notificationsEnabled': notificationsEnabled,
+    'categoryId': categoryId,
+    'zoneId': zoneId,
   };
 
   /// Reconstructs a [Task] from [toJson]'s output, for import. Throws
@@ -226,6 +269,7 @@ class Task extends HiveObject {
       originalScheduledAt: _parseNullableDateTime(json['originalScheduledAt']),
       status: status,
       completedAt: _parseNullableDateTime(json['completedAt']),
+      // ignore: deprecated_member_use_from_same_package
       category: category,
       schemaVersion: schemaVersion,
       // Deliberately not validated as required: backup files exported
@@ -233,6 +277,11 @@ class Task extends HiveObject {
       // import cleanly. A wrong *type* still fails loudly via the cast,
       // consistent with how every other optional field here behaves.
       behaviorId: json['behaviorId'] as String?,
+      // Also deliberately optional/nullable, not required — a backup
+      // exported before Category existed has no categoryId at all, and
+      // must still import cleanly per the same "old exports still import"
+      // contract as every other field added after Task's initial shape.
+      categoryId: json['categoryId'] as String?,
       actualAmount: json['actualAmount'] as num?,
       recurrenceId: json['recurrenceId'] as String?,
       recurrenceRule: _parseNullableRule(json['recurrenceRule']),
@@ -241,6 +290,10 @@ class Task extends HiveObject {
       // import is what `?? true` gives, the same default the constructor
       // and the Hive adapter both use for old data.
       notificationsEnabled: json['notificationsEnabled'] as bool? ?? true,
+      // Deliberately optional, not required — a backup exported before
+      // Zone existed has no zoneId at all, and must still import cleanly,
+      // same "old exports still import" contract as categoryId/behaviorId.
+      zoneId: json['zoneId'] as String?,
     );
   }
 
@@ -258,13 +311,16 @@ class Task extends HiveObject {
         originalScheduledAt == other.originalScheduledAt &&
         status == other.status &&
         completedAt == other.completedAt &&
+        // ignore: deprecated_member_use_from_same_package
         category == other.category &&
         schemaVersion == other.schemaVersion &&
         behaviorId == other.behaviorId &&
         actualAmount == other.actualAmount &&
         recurrenceId == other.recurrenceId &&
         _sameRule(recurrenceRule, other.recurrenceRule) &&
-        notificationsEnabled == other.notificationsEnabled;
+        notificationsEnabled == other.notificationsEnabled &&
+        categoryId == other.categoryId &&
+        zoneId == other.zoneId;
   }
 }
 

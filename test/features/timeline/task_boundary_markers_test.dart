@@ -16,19 +16,22 @@ void main() {
     ]);
   });
 
-  test('a rangeStart already on a whole hour is included as the first tick', () {
-    final ticks = hourlyGridTimes(
-      DateTime(2026, 8, 21, 11, 0),
-      DateTime(2026, 8, 21, 13, 0),
-    );
+  test(
+    'a rangeStart already on a whole hour is included as the first tick',
+    () {
+      final ticks = hourlyGridTimes(
+        DateTime(2026, 8, 21, 11, 0),
+        DateTime(2026, 8, 21, 13, 0),
+      );
 
-    final times = ticks.map((t) => t.time).toList();
-    expect(times, [
-      DateTime(2026, 8, 21, 11, 0),
-      DateTime(2026, 8, 21, 12, 0),
-      DateTime(2026, 8, 21, 13, 0),
-    ]);
-  });
+      final times = ticks.map((t) => t.time).toList();
+      expect(times, [
+        DateTime(2026, 8, 21, 11, 0),
+        DateTime(2026, 8, 21, 12, 0),
+        DateTime(2026, 8, 21, 13, 0),
+      ]);
+    },
+  );
 
   test('the last tick is at or before rangeEnd, never after', () {
     final ticks = hourlyGridTimes(
@@ -37,33 +40,43 @@ void main() {
     );
 
     final times = ticks.map((t) => t.time).toList();
-    expect(times, [DateTime(2026, 8, 21, 6, 0), DateTime(2026, 8, 21, 7, 0), DateTime(2026, 8, 21, 8, 0)]);
-  });
-
-  test('a range shorter than one hour with no whole hour inside produces no ticks', () {
-    final ticks = hourlyGridTimes(
-      DateTime(2026, 8, 21, 6, 10),
-      DateTime(2026, 8, 21, 6, 40),
-    );
-
-    expect(ticks, isEmpty);
-  });
-
-  test('intervalHours spaces ticks further apart, still anchored to whole hours', () {
-    final ticks = hourlyGridTimes(
-      DateTime(2026, 8, 21, 6, 0),
-      DateTime(2026, 8, 21, 12, 0),
-      intervalHours: 2,
-    );
-
-    final times = ticks.map((t) => t.time).toList();
     expect(times, [
       DateTime(2026, 8, 21, 6, 0),
+      DateTime(2026, 8, 21, 7, 0),
       DateTime(2026, 8, 21, 8, 0),
-      DateTime(2026, 8, 21, 10, 0),
-      DateTime(2026, 8, 21, 12, 0),
     ]);
   });
+
+  test(
+    'a range shorter than one hour with no whole hour inside produces no ticks',
+    () {
+      final ticks = hourlyGridTimes(
+        DateTime(2026, 8, 21, 6, 10),
+        DateTime(2026, 8, 21, 6, 40),
+      );
+
+      expect(ticks, isEmpty);
+    },
+  );
+
+  test(
+    'intervalHours spaces ticks further apart, still anchored to whole hours',
+    () {
+      final ticks = hourlyGridTimes(
+        DateTime(2026, 8, 21, 6, 0),
+        DateTime(2026, 8, 21, 12, 0),
+        intervalHours: 2,
+      );
+
+      final times = ticks.map((t) => t.time).toList();
+      expect(times, [
+        DateTime(2026, 8, 21, 6, 0),
+        DateTime(2026, 8, 21, 8, 0),
+        DateTime(2026, 8, 21, 10, 0),
+        DateTime(2026, 8, 21, 12, 0),
+      ]);
+    },
+  );
 
   test('a range crossing midnight into the next day still ticks correctly', () {
     final ticks = hourlyGridTimes(
@@ -72,9 +85,6 @@ void main() {
     );
 
     final times = ticks.map((t) => t.time).toList();
-    expect(times, [
-      DateTime(2026, 8, 22, 0, 0),
-      DateTime(2026, 8, 22, 1, 0),
-    ]);
+    expect(times, [DateTime(2026, 8, 22, 0, 0), DateTime(2026, 8, 22, 1, 0)]);
   });
 }

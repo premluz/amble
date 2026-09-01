@@ -54,8 +54,8 @@ class _ImportVerificationAppState
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final jsonString = await File(_importFilePath).readAsString();
       final backupService = ref.read(backupServiceProvider);
-      final tasks = backupService.parseImportFile(jsonString);
-      await ref.read(taskListProvider.notifier).importTasks(tasks);
+      final parsed = backupService.parseImportFile(jsonString);
+      await ref.read(taskListProvider.notifier).importTasks(parsed.tasks);
     });
   }
 

@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import '../../core/dev_config.dart';
 import '../../core/feature_flags.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_switch.dart';
 import '../../shared/providers/backup_providers.dart';
+import '../../shared/providers/category_providers.dart';
 import '../../shared/providers/notification_providers.dart';
 import '../../shared/providers/preferences_providers.dart';
 import '../../shared/providers/task_providers.dart';
@@ -92,7 +94,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     });
     try {
       final tasks = ref.read(taskListProvider);
-      await ref.read(backupServiceProvider).exportTasks(tasks);
+      final categories = ref.read(categoryListProvider);
+      await ref.read(backupServiceProvider).exportTasks(tasks, categories);
       if (!mounted) return;
       setState(() {
         _statusMessage = 'Exported ${tasks.length} task(s).';
@@ -116,20 +119,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     });
     try {
       final backupService = ref.read(backupServiceProvider);
-      final tasks = await backupService.pickAndParseImportFile();
-      if (tasks == null) {
+      final parsed = await backupService.pickAndParseImportFile();
+      if (parsed == null) {
         if (mounted) setState(() => _busy = false);
         return;
       }
+      // Categories first — a task's categoryId should resolve against the
+      // full restored category set by the time tasks are merged in,
+      // though nothing in TaskList.importTasks actually depends on
+      // ordering today (it stores the id, doesn't validate it resolves).
+      final categoryResult = await ref
+          .read(categoryListProvider.notifier)
+          .importCategories(parsed.categories);
       final result = await ref
           .read(taskListProvider.notifier)
-          .importTasks(tasks);
+          .importTasks(parsed.tasks);
       if (!mounted) return;
       setState(() {
         _statusMessage =
             'Imported ${result.imported} task(s). '
             '${result.alreadyPresent} already present, '
-            '${result.conflicts} conflict(s) skipped.';
+            '${result.conflicts} conflict(s) skipped. '
+            '${categoryResult.imported} categor${categoryResult.imported == 1 ? 'y' : 'ies'} imported.';
         _statusIsError = false;
       });
     } on BackupImportException catch (error) {
@@ -300,6 +311,48 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               ),
 
+              SizedBox(height: theme.spacingSm),
+              _SettingsPanel(
+                theme: theme,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Disable overlap clustering',
+                            style: theme.textBody.copyWith(
+                              color: theme.colorTextPrimary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          SizedBox(height: theme.spacingXs),
+                          Text(
+                            'When on, 2-3 tasks that overlap in time are '
+                            'shown as individual, spatially-overlapping '
+                            'capsules instead of one combined block.',
+                            style: theme.textBody.copyWith(
+                              color: theme.colorTextSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(width: theme.spacingMd),
+                    AppSwitch(
+                      value: ref.watch(disableOverlapClusteringSettingProvider),
+                      onChanged: (value) => ref
+                          .read(
+                            disableOverlapClusteringSettingProvider.notifier,
+                          )
+                          .set(value),
+                    ),
+                  ],
+                ),
+              ),
+
               // Tracked behaviors — gated. With the flag off this subtree is
               // const-eliminated, so Settings looks exactly as it did.
               if (FeatureFlags.trackedBehaviorEnabled) ...[
@@ -419,6 +472,111 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ],
                   ),
                 ),
+                SizedBox(height: theme.spacingSm),
+                // Runtime-toggleable, in-memory only (see
+                // core/dev_config.dart) — for comparing timeline task
+                // layouts live without a rebuild. Resets every app
+                // restart; never persisted via PreferencesRepository,
+                // since this isn't a real user setting.
+                _SettingsPanel(
+                  theme: theme,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Timeline task layout (debug build only, resets on '
+                        'restart)',
+                        style: theme.textBody.copyWith(
+                          color: theme.colorTextSecondary,
+                        ),
+                      ),
+                      SizedBox(height: theme.spacingMd),
+                      Text(
+                        'Text layout',
+                        style: theme.textBody.copyWith(
+                          color: theme.colorTextPrimary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      SizedBox(height: theme.spacingSm),
+                      Row(
+                        children: [
+                          for (final layout
+                              in TimelineTaskTextLayout.values) ...[
+                            _DevChip(
+                              theme: theme,
+                              label: switch (layout) {
+                                TimelineTaskTextLayout.stacked => 'Stacked',
+                                TimelineTaskTextLayout.inline => 'Inline',
+                              },
+                              selected:
+                                  layout ==
+                                  ref.watch(devTimelineTaskTextLayoutProvider),
+                              onTap: () => ref
+                                  .read(
+                                    devTimelineTaskTextLayoutProvider.notifier,
+                                  )
+                                  .set(layout),
+                            ),
+                            if (layout != TimelineTaskTextLayout.values.last)
+                              SizedBox(width: theme.spacingSm),
+                          ],
+                        ],
+                      ),
+                      SizedBox(height: theme.spacingMd),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Show status icons (bell/repeat/etc.)',
+                              style: theme.textBody.copyWith(
+                                color: theme.colorTextPrimary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          SizedBox(width: theme.spacingMd),
+                          AppSwitch(
+                            value: ref.watch(
+                              devTimelineTaskIconsVisibleProvider,
+                            ),
+                            onChanged: (value) => ref
+                                .read(
+                                  devTimelineTaskIconsVisibleProvider.notifier,
+                                )
+                                .set(value),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: theme.spacingMd),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Show duration',
+                              style: theme.textBody.copyWith(
+                                color: theme.colorTextPrimary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          SizedBox(width: theme.spacingMd),
+                          AppSwitch(
+                            value: ref.watch(
+                              devTimelineTaskDurationVisibleProvider,
+                            ),
+                            onChanged: (value) => ref
+                                .read(
+                                  devTimelineTaskDurationVisibleProvider
+                                      .notifier,
+                                )
+                                .set(value),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ],
           ),
@@ -444,6 +602,51 @@ class _SettingsPanel extends StatelessWidget {
         borderRadius: BorderRadius.circular(theme.radiusXl),
       ),
       child: child,
+    );
+  }
+}
+
+/// A selectable chip for the Developer section's dev-config pickers — same
+/// visual shape as `ThemeModeSelector`'s own `_ModeChip`, duplicated
+/// rather than shared since that one is private to its own file and this
+/// is the only other place a segmented chip choice is needed.
+class _DevChip extends StatelessWidget {
+  const _DevChip({
+    required this.theme,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final AmbleTheme theme;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: theme.spacingMd,
+          vertical: theme.spacingSm,
+        ),
+        decoration: BoxDecoration(
+          color: selected ? theme.colorAccent : theme.colorSurfaceTimeline,
+          borderRadius: BorderRadius.circular(theme.radiusTaskPill),
+        ),
+        child: Text(
+          label,
+          style: theme.textBody.copyWith(
+            color: selected
+                ? theme.colorSurfacePrimary
+                : theme.colorTextSecondary,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
     );
   }
 }

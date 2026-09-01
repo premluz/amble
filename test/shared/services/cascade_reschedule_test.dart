@@ -1,17 +1,14 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:amble/shared/models/task.dart';
-import 'package:amble/shared/models/task_category.dart';
+import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/services/cascade_reschedule.dart';
 
-Task _task({
-  required DateTime scheduledAt,
-  required int durationMinutes,
-}) {
+Task _task({required DateTime scheduledAt, required int durationMinutes}) {
   return Task.create(
     title: 'Task',
     scheduledAt: scheduledAt,
     durationMinutes: durationMinutes,
-    category: TaskCategory.personal,
+    categoryId: BuiltInCategoryIds.personal,
   );
 }
 
@@ -55,8 +52,7 @@ void _expectNoOverlaps(List<TaskMove> moves, List<Task> allTasks) {
       expect(
         overlaps,
         isFalse,
-        reason:
-            '${ids[i]} ($aStart-$aEnd) overlaps ${ids[j]} ($bStart-$bEnd)',
+        reason: '${ids[i]} ($aStart-$aEnd) overlaps ${ids[j]} ($bStart-$bEnd)',
       );
     }
   }
@@ -90,14 +86,8 @@ void main() {
 
         expect(moves, isNotNull);
         expect(moves!.length, 2);
-        expect(
-          _moveFor(moves, dragged.id),
-          DateTime(2026, 8, 24, 11, 45),
-        );
-        expect(
-          _moveFor(moves, existing.id),
-          DateTime(2026, 8, 24, 10, 45),
-        );
+        expect(_moveFor(moves, dragged.id), DateTime(2026, 8, 24, 11, 45));
+        expect(_moveFor(moves, existing.id), DateTime(2026, 8, 24, 10, 45));
       },
     );
 
@@ -127,14 +117,8 @@ void main() {
 
         expect(moves, isNotNull);
         expect(moves!.length, 2);
-        expect(
-          _moveFor(moves, dragged.id),
-          DateTime(2026, 8, 24, 10, 15),
-        );
-        expect(
-          _moveFor(moves, existing.id),
-          DateTime(2026, 8, 24, 11, 15),
-        );
+        expect(_moveFor(moves, dragged.id), DateTime(2026, 8, 24, 10, 15));
+        expect(_moveFor(moves, existing.id), DateTime(2026, 8, 24, 11, 15));
       },
     );
 
@@ -220,94 +204,85 @@ void main() {
       expect(_moveFor(moves, b.id), DateTime(2026, 8, 24, 12, 15));
     });
 
-    test(
-      'a push that would cross midnight falls back to the opposite '
-      'direction instead of rejecting the drop',
-      () {
-        // This case USED to be rejected outright (the cascade returned
-        // null and the drag snapped back). Requested directly that a drop
-        // onto a busy zone should always be allowed — "it'd just move
-        // other items up down or some up some down" — so the preferred
-        // push direction running out of day now falls back to the other
-        // direction rather than failing.
-        final dragged = _task(
-          scheduledAt: DateTime(2026, 8, 24, 8),
-          durationMinutes: 60,
-        );
-        // Existing task sits right at the end of the day; pushing it
-        // LATER would run past 24:00, so it must go earlier instead.
-        final existing = _task(
-          scheduledAt: DateTime(2026, 8, 24, 23, 30),
-          durationMinutes: 30,
-        );
+    test('a push that would cross midnight falls back to the opposite '
+        'direction instead of rejecting the drop', () {
+      // This case USED to be rejected outright (the cascade returned
+      // null and the drag snapped back). Requested directly that a drop
+      // onto a busy zone should always be allowed — "it'd just move
+      // other items up down or some up some down" — so the preferred
+      // push direction running out of day now falls back to the other
+      // direction rather than failing.
+      final dragged = _task(
+        scheduledAt: DateTime(2026, 8, 24, 8),
+        durationMinutes: 60,
+      );
+      // Existing task sits right at the end of the day; pushing it
+      // LATER would run past 24:00, so it must go earlier instead.
+      final existing = _task(
+        scheduledAt: DateTime(2026, 8, 24, 23, 30),
+        durationMinutes: 30,
+      );
 
-        final moves = computeCascadeMoves(
-          draggedTask: dragged,
-          newStart: DateTime(2026, 8, 24, 23),
-          sameDayTasks: [existing],
-        );
+      final moves = computeCascadeMoves(
+        draggedTask: dragged,
+        newStart: DateTime(2026, 8, 24, 23),
+        sameDayTasks: [existing],
+      );
 
-        expect(moves, isNotNull);
-        // Pushed earlier, ending exactly where the dragged task now starts.
-        expect(_moveFor(moves!, existing.id), DateTime(2026, 8, 24, 22, 30));
-        _expectNoOverlaps(moves, [existing, dragged]);
-      },
-    );
+      expect(moves, isNotNull);
+      // Pushed earlier, ending exactly where the dragged task now starts.
+      expect(_moveFor(moves!, existing.id), DateTime(2026, 8, 24, 22, 30));
+      _expectNoOverlaps(moves, [existing, dragged]);
+    });
 
-    test(
-      'a dense late-evening cluster is accepted, splitting pushes across '
-      'both directions rather than rejecting the drop',
-      () {
-        // Regression test for the reported behaviour: dropping into a
-        // condensed zone late in the day used to snap back, because every
-        // conflicting task preferred to shift later and ran out of room
-        // before midnight. Some now shift earlier instead.
-        final dragged = _task(
-          scheduledAt: DateTime(2026, 8, 24, 22, 20),
-          durationMinutes: 40,
-        );
-        final a = _task(
-          scheduledAt: DateTime(2026, 8, 24, 22),
-          durationMinutes: 40,
-        );
-        final b = _task(
-          scheduledAt: DateTime(2026, 8, 24, 22, 40),
-          durationMinutes: 40,
-        );
-        final c = _task(
-          scheduledAt: DateTime(2026, 8, 24, 23, 20),
-          durationMinutes: 40,
-        );
+    test('a dense late-evening cluster is accepted, splitting pushes across '
+        'both directions rather than rejecting the drop', () {
+      // Regression test for the reported behaviour: dropping into a
+      // condensed zone late in the day used to snap back, because every
+      // conflicting task preferred to shift later and ran out of room
+      // before midnight. Some now shift earlier instead.
+      final dragged = _task(
+        scheduledAt: DateTime(2026, 8, 24, 22, 20),
+        durationMinutes: 40,
+      );
+      final a = _task(
+        scheduledAt: DateTime(2026, 8, 24, 22),
+        durationMinutes: 40,
+      );
+      final b = _task(
+        scheduledAt: DateTime(2026, 8, 24, 22, 40),
+        durationMinutes: 40,
+      );
+      final c = _task(
+        scheduledAt: DateTime(2026, 8, 24, 23, 20),
+        durationMinutes: 40,
+      );
 
-        final moves = computeCascadeMoves(
-          draggedTask: dragged,
-          newStart: dragged.scheduledAt!,
-          sameDayTasks: [a, b, c],
-        );
+      final moves = computeCascadeMoves(
+        draggedTask: dragged,
+        newStart: dragged.scheduledAt!,
+        sameDayTasks: [a, b, c],
+      );
 
-        expect(moves, isNotNull);
-        _expectNoOverlaps(moves!, [a, b, c, dragged]);
-      },
-    );
+      expect(moves, isNotNull);
+      _expectNoOverlaps(moves!, [a, b, c, dragged]);
+    });
 
-    test(
-      'day-boundary guard also aborts when the dragged task itself would '
-      'start before 00:00',
-      () {
-        final dragged = _task(
-          scheduledAt: DateTime(2026, 8, 24, 8),
-          durationMinutes: 60,
-        );
+    test('day-boundary guard also aborts when the dragged task itself would '
+        'start before 00:00', () {
+      final dragged = _task(
+        scheduledAt: DateTime(2026, 8, 24, 8),
+        durationMinutes: 60,
+      );
 
-        final moves = computeCascadeMoves(
-          draggedTask: dragged,
-          newStart: DateTime(2026, 8, 23, 23, 30),
-          sameDayTasks: const [],
-        );
+      final moves = computeCascadeMoves(
+        draggedTask: dragged,
+        newStart: DateTime(2026, 8, 23, 23, 30),
+        sameDayTasks: const [],
+      );
 
-        expect(moves, isNull);
-      },
-    );
+      expect(moves, isNull);
+    });
 
     test('cycle guard: many tasks packed tightly does not loop forever, '
         'and if it succeeds the result is genuinely overlap-free', () {
@@ -319,9 +294,12 @@ void main() {
       final tasks = [
         for (var i = 0; i < 5; i++)
           _task(
-            scheduledAt: DateTime(2026, 8, 24, 9).add(
-              Duration(minutes: 30 * i),
-            ),
+            scheduledAt: DateTime(
+              2026,
+              8,
+              24,
+              9,
+            ).add(Duration(minutes: 30 * i)),
             durationMinutes: 30,
           ),
       ];
@@ -343,92 +321,86 @@ void main() {
       _expectNoOverlaps(moves!, [...tasks, dragged]);
     });
 
-    test(
-      'multiple tasks overlapping the SAME mover simultaneously all end '
-      'up non-overlapping, not collapsed onto the same slot',
-      () {
-        // Regression test for a real reported bug: dropping a task into a
-        // dense cluster where 3+ existing tasks all overlap the drop
-        // simultaneously used to push every one of them independently
-        // from the dragged task's own edges, with no check against each
-        // other — so same-direction pushes landed on the exact same slot
-        // (confirmed via a standalone reproduction before this fix).
-        final dragged = _task(
-          scheduledAt: DateTime(2026, 8, 20, 20, 20),
-          durationMinutes: 40,
-        );
-        final a = _task(
-          scheduledAt: DateTime(2026, 8, 20, 20, 15),
-          durationMinutes: 40,
-        );
-        final b = _task(
-          scheduledAt: DateTime(2026, 8, 20, 20, 30),
-          durationMinutes: 40,
-        );
-        final c = _task(
-          scheduledAt: DateTime(2026, 8, 20, 20, 45),
-          durationMinutes: 40,
-        );
-        final d = _task(
-          scheduledAt: DateTime(2026, 8, 20, 21),
-          durationMinutes: 40,
-        );
+    test('multiple tasks overlapping the SAME mover simultaneously all end '
+        'up non-overlapping, not collapsed onto the same slot', () {
+      // Regression test for a real reported bug: dropping a task into a
+      // dense cluster where 3+ existing tasks all overlap the drop
+      // simultaneously used to push every one of them independently
+      // from the dragged task's own edges, with no check against each
+      // other — so same-direction pushes landed on the exact same slot
+      // (confirmed via a standalone reproduction before this fix).
+      final dragged = _task(
+        scheduledAt: DateTime(2026, 8, 20, 20, 20),
+        durationMinutes: 40,
+      );
+      final a = _task(
+        scheduledAt: DateTime(2026, 8, 20, 20, 15),
+        durationMinutes: 40,
+      );
+      final b = _task(
+        scheduledAt: DateTime(2026, 8, 20, 20, 30),
+        durationMinutes: 40,
+      );
+      final c = _task(
+        scheduledAt: DateTime(2026, 8, 20, 20, 45),
+        durationMinutes: 40,
+      );
+      final d = _task(
+        scheduledAt: DateTime(2026, 8, 20, 21),
+        durationMinutes: 40,
+      );
 
-        final moves = computeCascadeMoves(
-          draggedTask: dragged,
-          newStart: dragged.scheduledAt!,
-          sameDayTasks: [a, b, c, d],
-        );
+      final moves = computeCascadeMoves(
+        draggedTask: dragged,
+        newStart: dragged.scheduledAt!,
+        sameDayTasks: [a, b, c, d],
+      );
 
-        expect(moves, isNotNull);
-        _expectNoOverlaps(moves!, [a, b, c, d, dragged]);
-      },
-    );
+      expect(moves, isNotNull);
+      _expectNoOverlaps(moves!, [a, b, c, d, dragged]);
+    });
 
-    test(
-      'a push that would land on a task already placed by an earlier '
-      'branch of the same cascade walks further instead of colliding',
-      () {
-        // Chosen so B is pushed BEFORE D in one mover's pass, and a later
-        // mover pass (A, now occupying B's old territory) tries to push D
-        // into exactly where B already landed — the second layer of the
-        // same bug: not just simultaneous conflicts on one mover, but a
-        // later mover's push colliding with an earlier mover's result.
-        final dragged = _task(
-          scheduledAt: DateTime(2026, 8, 20, 20, 20),
-          durationMinutes: 40,
-        );
-        final a = _task(
-          scheduledAt: DateTime(2026, 8, 20, 20, 15),
-          durationMinutes: 40,
-        );
-        final b = _task(
-          scheduledAt: DateTime(2026, 8, 20, 20, 30),
-          durationMinutes: 40,
-        );
-        final c = _task(
-          scheduledAt: DateTime(2026, 8, 20, 20, 45),
-          durationMinutes: 40,
-        );
-        final d = _task(
-          scheduledAt: DateTime(2026, 8, 20, 21),
-          durationMinutes: 40,
-        );
+    test('a push that would land on a task already placed by an earlier '
+        'branch of the same cascade walks further instead of colliding', () {
+      // Chosen so B is pushed BEFORE D in one mover's pass, and a later
+      // mover pass (A, now occupying B's old territory) tries to push D
+      // into exactly where B already landed — the second layer of the
+      // same bug: not just simultaneous conflicts on one mover, but a
+      // later mover's push colliding with an earlier mover's result.
+      final dragged = _task(
+        scheduledAt: DateTime(2026, 8, 20, 20, 20),
+        durationMinutes: 40,
+      );
+      final a = _task(
+        scheduledAt: DateTime(2026, 8, 20, 20, 15),
+        durationMinutes: 40,
+      );
+      final b = _task(
+        scheduledAt: DateTime(2026, 8, 20, 20, 30),
+        durationMinutes: 40,
+      );
+      final c = _task(
+        scheduledAt: DateTime(2026, 8, 20, 20, 45),
+        durationMinutes: 40,
+      );
+      final d = _task(
+        scheduledAt: DateTime(2026, 8, 20, 21),
+        durationMinutes: 40,
+      );
 
-        final moves = computeCascadeMoves(
-          draggedTask: dragged,
-          newStart: dragged.scheduledAt!,
-          sameDayTasks: [a, b, c, d],
-        );
+      final moves = computeCascadeMoves(
+        draggedTask: dragged,
+        newStart: dragged.scheduledAt!,
+        sameDayTasks: [a, b, c, d],
+      );
 
-        expect(moves, isNotNull);
-        // d's own explicit position, not just "no overlaps" — d does not
-        // directly overlap the dragged task at all; it's only reached
-        // once a's own push (a later mover pass) collides with it, which
-        // is exactly the second-layer case this test targets.
-        expect(_moveFor(moves!, d.id), isNot(d.scheduledAt));
-        _expectNoOverlaps(moves, [a, b, c, d, dragged]);
-      },
-    );
+      expect(moves, isNotNull);
+      // d's own explicit position, not just "no overlaps" — d does not
+      // directly overlap the dragged task at all; it's only reached
+      // once a's own push (a later mover pass) collides with it, which
+      // is exactly the second-layer case this test targets.
+      expect(_moveFor(moves!, d.id), isNot(d.scheduledAt));
+      _expectNoOverlaps(moves, [a, b, c, d, dragged]);
+    });
   });
 }

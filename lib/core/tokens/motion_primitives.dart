@@ -8,6 +8,14 @@ abstract final class MotionPrimitives {
   static const durationNormalMs = 250;
   static const durationSlowMs = 400;
 
+  /// Flutter's own default `PageRoute` transition is 300ms. This clears it
+  /// with real headroom rather than a hair's margin — at 350ms the reveal
+  /// began the instant the modal finished, which still read as "already
+  /// done" because the eye hadn't settled on the timeline yet (reported
+  /// directly). The extra beat is what makes the animation register as
+  /// something that happened rather than something already finished.
+  static const durationRouteSettleMs = 500;
+
   // Cubic-bezier control points (x1, y1, x2, y2).
   static const curveStandard = (0.4, 0.0, 0.2, 1.0);
   static const curveDecelerate = (0.0, 0.0, 0.2, 1.0);

@@ -3,16 +3,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive_ce.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
+import 'package:amble/core/widgets/app_text_field.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/task_detail/task_detail_sheet.dart';
+import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/models/task.dart';
-import 'package:amble/shared/models/task_category.dart';
+import 'package:amble/shared/providers/category_providers.dart';
 import 'package:amble/shared/providers/notification_providers.dart';
 import 'package:amble/shared/providers/preferences_providers.dart';
 import 'package:amble/shared/providers/task_providers.dart';
+import 'package:amble/shared/repositories/hive_category_repository.dart';
 import 'package:amble/shared/repositories/hive_task_repository.dart';
 
 import '../../support/fake_notification_service.dart';
+import '../../support/seeded_category_box.dart';
 
 // Hive's real disk I/O hangs under flutter_test's synchronous pump-based
 // zone unless routed through WidgetTester.runAsync — see docs/ERROR_LOG.md.
@@ -22,7 +26,12 @@ import '../../support/fake_notification_service.dart';
 Future<void> _tapAndSettle(WidgetTester tester, Finder finder) async {
   await tester.runAsync(() async {
     await tester.tap(finder);
-    await tester.pumpAndSettle();
+    // Not pumpAndSettle here: a tap that triggers _save() flips
+    // _isSaving, and the Save button's spinner (AppButton.isLoading)
+    // animates continuously while a save is in flight — pumpAndSettle
+    // would time out waiting for an animation that never settles. A
+    // single pump just drains the tap's own frame.
+    await tester.pump();
     // pumpAndSettle only waits for frames, not real-zone I/O — a mutator's
     // continuation after `await saveTask(...)` (TaskList._refresh) can
     // still be queued on the real event loop here. Drain it explicitly
@@ -30,6 +39,10 @@ Future<void> _tapAndSettle(WidgetTester tester, Finder finder) async {
     // later against an already-disposed ProviderContainer. See
     // docs/ERROR_LOG.md.
     await Future<void>.delayed(Duration.zero);
+    // Drains the pop's route-transition animation and the post-pop
+    // `setState(() => _isSaving = false)`, both of which settle once the
+    // save itself has completed above.
+    await tester.pumpAndSettle();
   });
 }
 
@@ -44,6 +57,7 @@ class _NoopPreventOverlappingTasksSetting
 Future<GlobalKey<NavigatorState>> _pumpHost(
   WidgetTester tester, {
   required Box<Task> box,
+  required Box<Category> categoryBox,
 }) async {
   // The create flow now opens per-field modal sheets ON TOP of the main
   // screen — at the default 800x600 (LOGICAL) test surface, a full-height
@@ -60,6 +74,9 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
     ProviderScope(
       overrides: [
         taskRepositoryProvider.overrideWithValue(HiveTaskRepository(box)),
+        categoryRepositoryProvider.overrideWithValue(
+          HiveCategoryRepository(categoryBox),
+        ),
         notificationServiceProvider.overrideWithValue(
           FakeNotificationService(),
         ),
@@ -87,8 +104,16 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
 /// Pumps the **create** wizard's first (details) step — title typing and
 /// the close (×) button both live here, matching every test below that
 /// only ever touches the title.
-Future<void> _pumpCreateForm(WidgetTester tester, {required Box<Task> box}) async {
-  final navigatorKey = await _pumpHost(tester, box: box);
+Future<void> _pumpCreateForm(
+  WidgetTester tester, {
+  required Box<Task> box,
+  required Box<Category> categoryBox,
+}) async {
+  final navigatorKey = await _pumpHost(
+    tester,
+    box: box,
+    categoryBox: categoryBox,
+  );
   showTaskDetailSheet(
     navigatorKey.currentContext!,
     initialScheduledAt: DateTime(2026, 8, 20, 9),
@@ -100,9 +125,14 @@ Future<void> _pumpCreateForm(WidgetTester tester, {required Box<Task> box}) asyn
 Future<void> _pumpEditDetailsForm(
   WidgetTester tester, {
   required Box<Task> box,
+  required Box<Category> categoryBox,
   required Task task,
 }) async {
-  final navigatorKey = await _pumpHost(tester, box: box);
+  final navigatorKey = await _pumpHost(
+    tester,
+    box: box,
+    categoryBox: categoryBox,
+  );
   showEditDetailsSheet(navigatorKey.currentContext!, task: task);
   await tester.pumpAndSettle();
 }
@@ -112,7 +142,15 @@ Future<void> _pumpEditDetailsForm(
 /// — this helper types [title] into it and confirms with Done, advancing
 /// into stage 2's full form.
 Future<void> _nameTaskViaModal(WidgetTester tester, String title) async {
-  final nameField = find.widgetWithText(TextField, 'Task name');
+  // NOT find.widgetWithText(TextField, 'Task name') — that finder needs
+  // the label text as a DESCENDANT of the TextField, but AppFieldShell
+  // renders the floating label and the TextField as siblings. Descending
+  // through the AppTextField itself (whose subtree contains both) is what
+  // actually locates the real field.
+  final nameField = find.descendant(
+    of: find.widgetWithText(AppTextField, 'Task name'),
+    matching: find.byType(TextField),
+  );
   await tester.enterText(nameField, title);
   await tester.pumpAndSettle();
   final doneButton = find.text('Done');
@@ -123,6 +161,7 @@ Future<void> _nameTaskViaModal(WidgetTester tester, String title) async {
 
 void main() {
   late Box<Task> box;
+  late Box<Category> categoryBox;
 
   setUp(() async {
     Hive.init('./.dart_tool/test_hive_exit_confirmation');
@@ -132,17 +171,21 @@ void main() {
     box = await Hive.openBox<Task>(
       'test_tasks_${DateTime.now().microsecondsSinceEpoch}',
     );
+    categoryBox = await openSeededCategoryBox(
+      'test_categories_${DateTime.now().microsecondsSinceEpoch}',
+    );
   });
 
   tearDown(() async {
     await box.close();
+    await categoryBox.close();
   });
 
   testWidgets(
     'create flow: closing with an untouched, unnamed task closes silently, '
     'no dialog',
     (tester) async {
-      await _pumpCreateForm(tester, box: box);
+      await _pumpCreateForm(tester, box: box, categoryBox: categoryBox);
 
       await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
 
@@ -156,7 +199,7 @@ void main() {
     'create flow: naming the task via stage 1 then closing still prompts, '
     'since a title is itself a real change from the empty default',
     (tester) async {
-      await _pumpCreateForm(tester, box: box);
+      await _pumpCreateForm(tester, box: box, categoryBox: categoryBox);
 
       await _nameTaskViaModal(tester, 'Buy milk');
       // No modal chaining any more — confirming stage 1's name lands
@@ -172,29 +215,28 @@ void main() {
     },
   );
 
-  testWidgets(
-    'create flow: "Save task" saves via the same path as Confirm',
-    (tester) async {
-      await _pumpCreateForm(tester, box: box);
+  testWidgets('create flow: "Save task" saves via the same path as Confirm', (
+    tester,
+  ) async {
+    await _pumpCreateForm(tester, box: box, categoryBox: categoryBox);
 
-      // Naming advances stage 1 -> stage 2, where Time and Duration both
-      // default immediately (Time to "now" rounded to 5 minutes, Duration
-      // to the 5-minute preset) — no further taps needed to give the task
-      // a real, savable schedule.
-      await _nameTaskViaModal(tester, 'Buy milk');
+    // Naming advances stage 1 -> stage 2, where Time and Duration both
+    // default immediately (Time to "now" rounded to 5 minutes, Duration
+    // to the 5-minute preset) — no further taps needed to give the task
+    // a real, savable schedule.
+    await _nameTaskViaModal(tester, 'Buy milk');
 
-      await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
-      await _tapAndSettle(tester, find.text('Save task'));
+    await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
+    await _tapAndSettle(tester, find.text('Save task'));
 
-      expect(box.values.single.title, 'Buy milk');
-      expect(box.values.single.isScheduled, isTrue);
-    },
-  );
+    expect(box.values.single.title, 'Buy milk');
+    expect(box.values.single.isScheduled, isTrue);
+  });
 
   testWidgets(
     'create flow: "Discard draft" closes without persisting anything',
     (tester) async {
-      await _pumpCreateForm(tester, box: box);
+      await _pumpCreateForm(tester, box: box, categoryBox: categoryBox);
 
       await _nameTaskViaModal(tester, 'Buy milk');
 
@@ -209,7 +251,7 @@ void main() {
     'create flow: "Keep editing" returns to the form, saving nothing and '
     'discarding nothing',
     (tester) async {
-      await _pumpCreateForm(tester, box: box);
+      await _pumpCreateForm(tester, box: box, categoryBox: categoryBox);
 
       await _nameTaskViaModal(tester, 'Buy milk');
       await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
@@ -233,11 +275,16 @@ void main() {
         title: 'Existing task',
         scheduledAt: DateTime(2026, 8, 20, 9),
         durationMinutes: 30,
-        category: TaskCategory.personal,
+        categoryId: BuiltInCategoryIds.personal,
       );
       await tester.runAsync(() => box.put(task.id, task));
 
-      await _pumpEditDetailsForm(tester, box: box, task: task);
+      await _pumpEditDetailsForm(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+        task: task,
+      );
 
       await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
 
@@ -253,11 +300,16 @@ void main() {
         title: 'Existing task',
         scheduledAt: DateTime(2026, 8, 20, 9),
         durationMinutes: 30,
-        category: TaskCategory.personal,
+        categoryId: BuiltInCategoryIds.personal,
       );
       await tester.runAsync(() => box.put(task.id, task));
 
-      await _pumpEditDetailsForm(tester, box: box, task: task);
+      await _pumpEditDetailsForm(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+        task: task,
+      );
 
       await tester.enterText(find.byType(TextField).first, 'Renamed task');
       await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
@@ -277,11 +329,16 @@ void main() {
         title: 'Existing task',
         scheduledAt: DateTime(2026, 8, 20, 9),
         durationMinutes: 30,
-        category: TaskCategory.personal,
+        categoryId: BuiltInCategoryIds.personal,
       );
       await tester.runAsync(() => box.put(task.id, task));
 
-      await _pumpEditDetailsForm(tester, box: box, task: task);
+      await _pumpEditDetailsForm(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+        task: task,
+      );
 
       await tester.enterText(find.byType(TextField).first, 'Renamed task');
       await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
@@ -292,25 +349,29 @@ void main() {
     },
   );
 
-  testWidgets(
-    'edit details flow: "Save changes" saves the changed field',
-    (tester) async {
-      final task = Task.create(
-        title: 'Existing task',
-        scheduledAt: DateTime(2026, 8, 20, 9),
-        durationMinutes: 30,
-        category: TaskCategory.personal,
-      );
-      await tester.runAsync(() => box.put(task.id, task));
+  testWidgets('edit details flow: "Save changes" saves the changed field', (
+    tester,
+  ) async {
+    final task = Task.create(
+      title: 'Existing task',
+      scheduledAt: DateTime(2026, 8, 20, 9),
+      durationMinutes: 30,
+      categoryId: BuiltInCategoryIds.personal,
+    );
+    await tester.runAsync(() => box.put(task.id, task));
 
-      await _pumpEditDetailsForm(tester, box: box, task: task);
+    await _pumpEditDetailsForm(
+      tester,
+      box: box,
+      categoryBox: categoryBox,
+      task: task,
+    );
 
-      await tester.enterText(find.byType(TextField).first, 'Renamed task');
-      await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
+    await tester.enterText(find.byType(TextField).first, 'Renamed task');
+    await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
 
-      await _tapAndSettle(tester, find.text('Save changes'));
+    await _tapAndSettle(tester, find.text('Save changes'));
 
-      expect(box.values.single.title, 'Renamed task');
-    },
-  );
+    expect(box.values.single.title, 'Renamed task');
+  });
 }

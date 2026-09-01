@@ -1,11 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:uuid/uuid.dart';
 
+import '../models/category.dart';
 import '../models/recurrence_rule.dart';
 import '../models/task.dart';
-import '../models/task_category.dart';
 import '../models/task_status.dart';
 import '../repositories/hive_task_repository.dart';
 import '../repositories/task_repository.dart';
@@ -79,12 +81,16 @@ class TaskList extends _$TaskList {
   /// new recurring series: the template is saved, then the rest of the
   /// rolling window is materialized immediately so the series is visible
   /// on the Timeline right away rather than only after the next launch.
-  Future<void> createTask({
+  /// Returns the saved task, so a caller can refer to it afterwards
+  /// without a second lookup — the Timeline uses this to know which block
+  /// to animate in (see `recently_saved_task_provider.dart`). Callers with
+  /// no such need simply ignore the value.
+  Future<Task> createTask({
     required String title,
     String? notes,
     required DateTime scheduledAt,
     required int durationMinutes,
-    required TaskCategory category,
+    required String categoryId,
     RecurrenceRule? recurrenceRule,
     String? behaviorId,
     bool notificationsEnabled = true,
@@ -94,7 +100,7 @@ class TaskList extends _$TaskList {
       notes: notes,
       scheduledAt: scheduledAt,
       durationMinutes: durationMinutes,
-      category: category,
+      categoryId: categoryId,
       // A series is identified by its template's own id — no second
       // identifier to keep in sync, and the template is trivially findable.
       recurrenceId: recurrenceRule == null ? null : _uuid.v4(),
@@ -102,12 +108,13 @@ class TaskList extends _$TaskList {
       notificationsEnabled: notificationsEnabled,
     )..behaviorId = behaviorId;
     await ref.read(taskRepositoryProvider).saveTask(task);
-    await _syncNotificationSafely(task);
+    _syncNotificationInBackground(task);
 
     if (recurrenceRule != null) {
       await _materializeSeries(task);
     }
     _refresh();
+    return task;
   }
 
   /// Generates and persists any missing instances for [template]'s series.
@@ -131,7 +138,13 @@ class TaskList extends _$TaskList {
 
     for (final instance in generated) {
       await repository.saveTask(instance);
-      await _syncNotificationSafely(instance);
+      // Deliberately NOT synced per instance. Materialization writes up to
+      // 8 weeks of rows at once, and scheduling an OS alarm for each one is
+      // what drove this app past Android's 500-alarm cap (see
+      // docs/ERROR_LOG.md). Instances inside the notification horizon get
+      // their alarm from `refreshScheduled` at launch instead — which is
+      // also where an instance that later moves *into* the horizon picks
+      // one up.
     }
   }
 
@@ -150,6 +163,33 @@ class TaskList extends _$TaskList {
       await _materializeSeries(template);
     }
     if (templates.isNotEmpty) _refresh();
+  }
+
+  /// Registers OS alarms for every task now inside the notification
+  /// horizon. Called once at launch, after [materializeDueRecurrences], so
+  /// freshly-materialized instances are included.
+  ///
+  /// This is the counterpart to *not* scheduling per instance during
+  /// materialization: rather than registering an alarm for all 8 weeks of a
+  /// series up front (which blows Android's 500-alarm cap), only the near
+  /// window is registered, and each launch rolls that window forward. See
+  /// [NotificationService.refreshScheduled] and docs/ERROR_LOG.md.
+  Future<void> refreshScheduledNotifications() async {
+    final service = ref.read(notificationServiceProvider);
+    final withinHorizon = ref
+        .read(taskRepositoryProvider)
+        .getTasks()
+        .where(
+          (task) =>
+              task.scheduledAt != null &&
+              // A finished task has nothing left to alert about — the same
+              // rule syncForTask applies on every ordinary write path.
+              task.status != TaskStatus.completed &&
+              service.isWithinSchedulingHorizon(task.scheduledAt!),
+        )
+        .toList();
+
+    await service.refreshScheduled(withinHorizon);
   }
 
   /// Captures a title-only, unscheduled Inbox item. Per design principle 2
@@ -172,13 +212,13 @@ class TaskList extends _$TaskList {
     task.scheduledAt = scheduledAt;
     task.durationMinutes = durationMinutes;
     await ref.read(taskRepositoryProvider).saveTask(task);
-    await _syncNotificationSafely(task);
+    _syncNotificationInBackground(task);
     _refresh();
   }
 
   Future<void> updateTask(Task task) async {
     await ref.read(taskRepositoryProvider).saveTask(task);
-    await _syncNotificationSafely(task);
+    _syncNotificationInBackground(task);
     _refresh();
   }
 
@@ -215,7 +255,7 @@ class TaskList extends _$TaskList {
     task.recurrenceId = _uuid.v4();
     task.recurrenceRule = recurrenceRule;
     await ref.read(taskRepositoryProvider).saveTask(task);
-    await _syncNotificationSafely(task);
+    _syncNotificationInBackground(task);
     await _materializeSeries(task);
     _refresh();
   }
@@ -282,7 +322,7 @@ class TaskList extends _$TaskList {
       'series — use updateTaskWithNewRecurrence to start one.',
     );
     await ref.read(taskRepositoryProvider).saveTask(task);
-    await _syncNotificationSafely(task);
+    _syncNotificationInBackground(task);
 
     final template = _findSeriesTemplate(task);
     await _deleteUntouchedFutureInstances(template);
@@ -308,7 +348,7 @@ class TaskList extends _$TaskList {
       'disableTaskRecurrence is for a task already part of a series.',
     );
     await ref.read(taskRepositoryProvider).saveTask(task);
-    await _syncNotificationSafely(task);
+    _syncNotificationInBackground(task);
 
     final template = _findSeriesTemplate(task);
     await _deleteUntouchedFutureInstances(template);
@@ -332,10 +372,13 @@ class TaskList extends _$TaskList {
       notes: source.notes,
       scheduledAt: source.scheduledAt!,
       durationMinutes: source.durationMinutes!,
-      category: source.category,
+      // Defensive fallback for a not-yet-backfilled source task — every
+      // task post-migration has a real categoryId, but this must not
+      // crash if one somehow doesn't.
+      categoryId: source.categoryId ?? BuiltInCategoryIds.general,
     )..behaviorId = source.behaviorId;
     await ref.read(taskRepositoryProvider).saveTask(duplicate);
-    await _syncNotificationSafely(duplicate);
+    _syncNotificationInBackground(duplicate);
     _refresh();
     return duplicate;
   }
@@ -349,7 +392,7 @@ class TaskList extends _$TaskList {
     task.scheduledAt = newScheduledAt;
     task.status = TaskStatus.rescheduled;
     await ref.read(taskRepositoryProvider).saveTask(task);
-    await _syncNotificationSafely(task);
+    _syncNotificationInBackground(task);
     _refresh();
   }
 
@@ -372,7 +415,7 @@ class TaskList extends _$TaskList {
       task.scheduledAt = move.newScheduledAt;
       task.status = TaskStatus.rescheduled;
       await repository.saveTask(task);
-      await _syncNotificationSafely(task);
+      _syncNotificationInBackground(task);
     }
     _refresh();
   }
@@ -403,7 +446,7 @@ class TaskList extends _$TaskList {
       if (actualAmount != null) task.actualAmount = actualAmount;
     }
     await ref.read(taskRepositoryProvider).saveTask(task);
-    await _syncNotificationSafely(task);
+    _syncNotificationInBackground(task);
     _refresh();
   }
 
@@ -510,6 +553,27 @@ class TaskList extends _$TaskList {
     } catch (error) {
       debugPrint('Notification sync failed for task ${task.id}: $error');
     }
+  }
+
+  /// Fire-and-forget [_syncNotificationSafely] — deliberately NOT awaited by
+  /// its callers.
+  ///
+  /// The task is already persisted by the time this runs, so scheduling an
+  /// OS alert is a side effect, not part of the save. Awaiting it put a
+  /// native platform-channel round-trip on the critical path of every write:
+  /// the task detail modal only pops once its `updateTask` future resolves,
+  /// so a slow — or failing — `zonedSchedule` was felt directly as a stuck
+  /// spinner. Real case that motivated this: once Android's 500-concurrent-
+  /// alarm cap is hit, every `zonedSchedule` throws a deeply-nested
+  /// PlatformException that takes 3-4 seconds to surface, making every save
+  /// feel broken even though the write itself took 18ms. See
+  /// docs/ERROR_LOG.md.
+  ///
+  /// Errors are still reported (the callee catches and [debugPrint]s them);
+  /// dropping the future only means nobody waits for it, not that failure
+  /// goes unseen.
+  void _syncNotificationInBackground(Task task) {
+    unawaited(_syncNotificationSafely(task));
   }
 
   /// Merges [tasks] (already parsed and schema-validated by the caller —

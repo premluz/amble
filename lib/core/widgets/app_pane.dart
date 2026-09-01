@@ -12,12 +12,7 @@ import '../tokens/semantic_theme.dart';
 /// edge. Panes without a title (a preview card, a single-control row)
 /// simply omit it and render as a bare card.
 class AppPane extends StatelessWidget {
-  const AppPane({
-    super.key,
-    required this.child,
-    this.title,
-    this.padding,
-  });
+  const AppPane({super.key, required this.child, this.title, this.padding});
 
   /// Section heading shown above the pane. Omit for an unlabelled card.
   final String? title;

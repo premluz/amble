@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_pane.dart';
 import '../../core/widgets/app_sheet.dart';
-import '../../shared/models/task_category.dart';
-import '../timeline/task_category_token_mapping.dart';
+import '../../shared/models/category.dart';
+import '../../shared/providers/category_providers.dart';
+import 'add_category_modal.dart';
+import 'category_visual.dart';
 
 /// The compact "Category" modal — split out from the old combined
 /// Name+Category modal once Name moved to the create flow's own stage 1
@@ -15,40 +18,75 @@ import '../timeline/task_category_token_mapping.dart';
 /// A tap on a chip commits immediately and closes the modal — no separate
 /// "Done" confirmation. Requested directly: "tapping on the tag is
 /// already selecting, no need [to hit] done again." There's no local
-/// selection state to mirror any more; [widget.category] is only read
+/// selection state to mirror any more; [widget.categoryId] is only read
 /// once, to mark the currently-selected chip.
-class TaskCategoryModal extends StatelessWidget {
-  const TaskCategoryModal({super.key, required this.category});
+///
+/// Iterates live [categoryListProvider] data rather than the old fixed
+/// `TaskCategory` enum, and adds a right-aligned "+ Add new" link on the
+/// title row that opens [AddCategoryModal] — the newly created category
+/// becomes this sheet's own selection, per the same "resolves to the
+/// chosen category" `show()` contract.
+class TaskCategoryModal extends ConsumerWidget {
+  const TaskCategoryModal({super.key, required this.categoryId});
 
-  final TaskCategory category;
+  final String? categoryId;
 
-  /// Opens the modal as a sheet. Resolves to the chosen category, or null
-  /// if dismissed without choosing one.
-  static Future<TaskCategory?> show({
+  /// Opens the modal as a sheet. Resolves to the chosen category's id, or
+  /// null if dismissed without choosing one.
+  static Future<String?> show({
     required BuildContext context,
-    required TaskCategory category,
+    required String? categoryId,
   }) {
-    return AppSheet.show<TaskCategory>(
+    return AppSheet.show<String>(
       context: context,
-      builder: (context) => TaskCategoryModal(category: category),
+      builder: (context) => TaskCategoryModal(categoryId: categoryId),
     );
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
+    final categories = ref.watch(categoryListProvider);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'Category',
-          textAlign: TextAlign.center,
-          style: theme.textTitle.copyWith(
-            color: theme.colorTextPrimary,
-            fontWeight: FontWeight.w700,
-          ),
+        Row(
+          children: [
+            // Balances the trailing link so the title stays visually
+            // centered — same fixed-width-spacer trick used wherever a
+            // title row needs a symmetric third element.
+            const SizedBox(width: 72),
+            Expanded(
+              child: Text(
+                'Category',
+                textAlign: TextAlign.center,
+                style: theme.textTitle.copyWith(
+                  color: theme.colorTextPrimary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            SizedBox(
+              width: 72,
+              child: TextButton(
+                onPressed: () async {
+                  final created = await AddCategoryModal.show(context: context);
+                  if (created != null && context.mounted) {
+                    Navigator.of(context).pop(created.id);
+                  }
+                },
+                child: Text(
+                  '+ Add new',
+                  style: theme.textBody.copyWith(
+                    color: theme.colorAccent,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
         SizedBox(height: theme.spacingLg),
         AppPane(
@@ -56,11 +94,11 @@ class TaskCategoryModal extends StatelessWidget {
             spacing: theme.spacingSm,
             runSpacing: theme.spacingSm,
             children: [
-              for (final option in TaskCategoryPickerOrder.orderedForPicker)
+              for (final option in categories)
                 _CategoryChip(
                   category: option,
-                  selected: option == category,
-                  onSelected: () => Navigator.of(context).pop(option),
+                  selected: option.id == categoryId,
+                  onSelected: () => Navigator.of(context).pop(option.id),
                 ),
             ],
           ),
@@ -70,7 +108,10 @@ class TaskCategoryModal extends StatelessWidget {
   }
 }
 
-/// Tint-filled category pill — same styling the old combined modal used.
+/// Swatch-filled category pill — same styling the old combined modal used,
+/// now reading its color/emoji from a live [Category] row via
+/// [resolveCategoryVisual] instead of the old fixed enum's extension
+/// getters.
 class _CategoryChip extends StatelessWidget {
   const _CategoryChip({
     required this.category,
@@ -78,14 +119,14 @@ class _CategoryChip extends StatelessWidget {
     required this.onSelected,
   });
 
-  final TaskCategory category;
+  final Category category;
   final bool selected;
   final VoidCallback onSelected;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
-    final categoryColor = theme.categoryColors[category.token]!;
+    final visual = resolveCategoryVisual(theme: theme, category: category);
 
     return GestureDetector(
       onTap: onSelected,
@@ -97,7 +138,7 @@ class _CategoryChip extends StatelessWidget {
           vertical: theme.spacingSm,
         ),
         decoration: BoxDecoration(
-          color: categoryColor,
+          color: visual.pillColor,
           borderRadius: BorderRadius.circular(theme.radiusMd),
           border: Border.all(
             color: selected ? theme.colorTextPrimary : Colors.transparent,
@@ -110,7 +151,7 @@ class _CategoryChip extends StatelessWidget {
             Text(category.emoji, style: theme.textBody),
             SizedBox(width: theme.spacingSm),
             Text(
-              category.label,
+              category.name,
               style: theme.textBody.copyWith(
                 color: theme.colorTextPrimary,
                 fontWeight: selected ? FontWeight.w700 : FontWeight.w500,

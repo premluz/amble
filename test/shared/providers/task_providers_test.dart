@@ -2,8 +2,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce/hive_ce.dart';
 import 'package:amble/hive_registrar.g.dart';
+import 'package:amble/shared/models/recurrence_frequency.dart';
+import 'package:amble/shared/models/recurrence_rule.dart';
 import 'package:amble/shared/models/task.dart';
-import 'package:amble/shared/models/task_category.dart';
+import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/models/task_status.dart';
 import 'package:amble/shared/providers/notification_providers.dart';
 import 'package:amble/shared/providers/task_providers.dart';
@@ -53,7 +55,7 @@ void main() {
             title: 'Walk',
             scheduledAt: DateTime(2026, 8, 20, 9),
             durationMinutes: 30,
-            category: TaskCategory.health,
+            categoryId: BuiltInCategoryIds.health,
           );
 
       final tasks = container.read(taskListProvider);
@@ -72,7 +74,7 @@ void main() {
         title: 'Original title',
         scheduledAt: DateTime(2026, 8, 20, 9),
         durationMinutes: 30,
-        category: TaskCategory.work,
+        categoryId: BuiltInCategoryIds.work,
       );
 
       final created = container.read(taskListProvider).single;
@@ -97,7 +99,7 @@ void main() {
       title: 'Ephemeral',
       scheduledAt: DateTime(2026, 8, 20),
       durationMinutes: 10,
-      category: TaskCategory.admin,
+      categoryId: BuiltInCategoryIds.admin,
     );
     final id = container.read(taskListProvider).single.id;
 
@@ -114,7 +116,7 @@ void main() {
       title: 'Findable',
       scheduledAt: DateTime(2026, 8, 20),
       durationMinutes: 20,
-      category: TaskCategory.personal,
+      categoryId: BuiltInCategoryIds.personal,
     );
     final id = container.read(taskListProvider).single.id;
 
@@ -140,7 +142,7 @@ void main() {
       title: 'Watched',
       scheduledAt: DateTime(2026, 8, 20),
       durationMinutes: 5,
-      category: TaskCategory.health,
+      categoryId: BuiltInCategoryIds.health,
     );
     final id = container.read(taskListProvider).single.id;
 
@@ -166,7 +168,7 @@ void main() {
           title: 'Imported A',
           scheduledAt: DateTime(2026, 8, 20, 9),
           durationMinutes: 30,
-          category: TaskCategory.work,
+          categoryId: BuiltInCategoryIds.work,
         ),
         Task.captured(title: 'Imported B'),
       ];
@@ -186,7 +188,7 @@ void main() {
         title: 'Existing',
         scheduledAt: DateTime(2026, 8, 20, 9),
         durationMinutes: 30,
-        category: TaskCategory.personal,
+        categoryId: BuiltInCategoryIds.personal,
       );
       final existing = container.read(taskListProvider).single;
       final identicalCopy = Task(
@@ -198,7 +200,7 @@ void main() {
         originalScheduledAt: existing.originalScheduledAt,
         status: existing.status,
         completedAt: existing.completedAt,
-        category: existing.category,
+        categoryId: existing.categoryId,
         schemaVersion: existing.schemaVersion,
       );
 
@@ -218,13 +220,13 @@ void main() {
         title: 'Local version',
         scheduledAt: DateTime(2026, 8, 20, 9),
         durationMinutes: 30,
-        category: TaskCategory.personal,
+        categoryId: BuiltInCategoryIds.personal,
       );
       final existing = container.read(taskListProvider).single;
       final conflicting = Task(
         id: existing.id,
         title: 'Imported version — different title',
-        category: TaskCategory.work,
+        categoryId: BuiltInCategoryIds.work,
       );
 
       final result = await notifier.importTasks([conflicting]);
@@ -234,7 +236,7 @@ void main() {
       expect(result.conflicts, 1);
       final stillLocal = container.read(taskListProvider).single;
       expect(stillLocal.title, 'Local version');
-      expect(stillLocal.category, TaskCategory.personal);
+      expect(stillLocal.categoryId, BuiltInCategoryIds.personal);
     });
 
     test('a mixed batch reports each outcome correctly', () async {
@@ -243,7 +245,7 @@ void main() {
         title: 'Unchanged locally',
         scheduledAt: DateTime(2026, 8, 20, 9),
         durationMinutes: 30,
-        category: TaskCategory.admin,
+        categoryId: BuiltInCategoryIds.admin,
       );
       final unchanged = container.read(taskListProvider).single;
       final identicalCopy = Task(
@@ -255,7 +257,7 @@ void main() {
         originalScheduledAt: unchanged.originalScheduledAt,
         status: unchanged.status,
         completedAt: unchanged.completedAt,
-        category: unchanged.category,
+        categoryId: unchanged.categoryId,
         schemaVersion: unchanged.schemaVersion,
       );
       final brandNew = Task.captured(title: 'Brand new import');
@@ -271,7 +273,7 @@ void main() {
       final differentContentSameId = Task(
         id: unchanged.id,
         title: 'Edited elsewhere',
-        category: TaskCategory.health,
+        categoryId: BuiltInCategoryIds.health,
       );
       final secondResult = await notifier.importTasks([differentContentSameId]);
       expect(secondResult.conflicts, 1);
@@ -307,7 +309,7 @@ void main() {
             title: 'New task',
             scheduledAt: DateTime(2026, 8, 20, 9),
             durationMinutes: 30,
-            category: TaskCategory.work,
+            categoryId: BuiltInCategoryIds.work,
           );
 
       final tasks = throwingContainer.read(taskListProvider);
@@ -321,7 +323,7 @@ void main() {
         title: 'Original',
         scheduledAt: DateTime(2026, 8, 20, 9),
         durationMinutes: 30,
-        category: TaskCategory.work,
+        categoryId: BuiltInCategoryIds.work,
       );
 
       final task = throwingContainer.read(taskListProvider).single;
@@ -337,13 +339,144 @@ void main() {
         title: 'To delete',
         scheduledAt: DateTime(2026, 8, 20, 9),
         durationMinutes: 30,
-        category: TaskCategory.work,
+        categoryId: BuiltInCategoryIds.work,
       );
       final id = throwingContainer.read(taskListProvider).single.id;
 
       await notifier.deleteTask(id);
 
       expect(throwingContainer.read(taskListProvider), isEmpty);
+    });
+  });
+
+  group('editing recurrence from Task Detail', () {
+    test('updateTaskWithNewRecurrence on a previously-plain task materializes '
+        'future instances immediately', () async {
+      final notifier = container.read(taskListProvider.notifier);
+      final task = await notifier.createTask(
+        title: 'Stretch',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 15,
+        categoryId: BuiltInCategoryIds.health,
+      );
+      expect(task.isRecurring, isFalse);
+
+      await notifier.updateTaskWithNewRecurrence(
+        task,
+        RecurrenceRule(frequency: RecurrenceFrequency.daily),
+      );
+
+      final tasks = container.read(taskListProvider);
+      expect(task.isRecurring, isTrue);
+      expect(task.isRecurrenceTemplate, isTrue);
+      // The template itself plus real materialized future instances —
+      // more than just the one row that existed before this call.
+      expect(tasks.length, greaterThan(1));
+      expect(
+        tasks.where((t) => t.recurrenceId == task.recurrenceId).length,
+        greaterThan(1),
+      );
+    });
+
+    test('updateTaskWithChangedRecurrence narrowing daily down to 5 weekdays '
+        'removes the now-excluded untouched future instances', () async {
+      final notifier = container.read(taskListProvider.notifier);
+      // Anchored to the REAL current day, not a fixed past date —
+      // _deleteUntouchedFutureInstances filters on real DateTime.now(),
+      // not an injected reference time (unlike the pure generator), so
+      // a hardcoded past anchor would make every instance "already in
+      // the past" and never a deletion candidate, masking the exact
+      // bug this test exists to catch.
+      final today = DateTime.now();
+      final anchor = DateTime(today.year, today.month, today.day, 8);
+      final template = await notifier.createTask(
+        title: 'Journal',
+        scheduledAt: anchor,
+        durationMinutes: 10,
+        categoryId: BuiltInCategoryIds.personal,
+        recurrenceRule: RecurrenceRule(frequency: RecurrenceFrequency.daily),
+      );
+
+      final beforeChange = container.read(taskListProvider);
+      final weekendInstancesBefore = beforeChange.where(
+        (t) =>
+            t.recurrenceId == template.recurrenceId &&
+            (t.scheduledAt!.weekday == DateTime.saturday ||
+                t.scheduledAt!.weekday == DateTime.sunday),
+      );
+      expect(
+        weekendInstancesBefore,
+        isNotEmpty,
+        reason:
+            'sanity check: the daily series really did generate '
+            'weekend instances before the change',
+      );
+
+      await notifier.updateTaskWithChangedRecurrence(
+        template,
+        RecurrenceRule(
+          frequency: RecurrenceFrequency.weekly,
+          daysOfWeek: [1, 2, 3, 4, 5],
+        ),
+      );
+
+      final afterChange = container.read(taskListProvider);
+      final weekendInstancesAfter = afterChange.where(
+        (t) =>
+            t.recurrenceId == template.recurrenceId &&
+            (t.scheduledAt!.weekday == DateTime.saturday ||
+                t.scheduledAt!.weekday == DateTime.sunday),
+      );
+      expect(weekendInstancesAfter, isEmpty);
+
+      // Weekday instances should still exist (regenerated under the new
+      // rule), so the series isn't just empty.
+      final weekdayInstancesAfter = afterChange.where(
+        (t) =>
+            t.recurrenceId == template.recurrenceId &&
+            t.scheduledAt!.weekday >= DateTime.monday &&
+            t.scheduledAt!.weekday <= DateTime.friday,
+      );
+      expect(weekdayInstancesAfter, isNotEmpty);
+    });
+
+    test('updateTaskWithChangedRecurrence updates the TEMPLATE\'s own rule, '
+        'not just the edited instance\'s row', () async {
+      final notifier = container.read(taskListProvider.notifier);
+      final template = await notifier.createTask(
+        title: 'Journal',
+        scheduledAt: DateTime(2026, 8, 20, 8),
+        durationMinutes: 10,
+        categoryId: BuiltInCategoryIds.personal,
+        recurrenceRule: RecurrenceRule(frequency: RecurrenceFrequency.daily),
+      );
+
+      // Edit from a materialized INSTANCE, not the template itself —
+      // this is the common real path (opening a later occurrence from
+      // the Timeline, not necessarily the first one).
+      final anInstance = container
+          .read(taskListProvider)
+          .firstWhere(
+            (t) =>
+                t.recurrenceId == template.recurrenceId && t.id != template.id,
+          );
+
+      await notifier.updateTaskWithChangedRecurrence(
+        anInstance,
+        RecurrenceRule(
+          frequency: RecurrenceFrequency.weekly,
+          daysOfWeek: [1, 3, 5],
+        ),
+      );
+
+      final refreshedTemplate = container
+          .read(taskListProvider)
+          .firstWhere((t) => t.id == template.id);
+      expect(
+        refreshedTemplate.recurrenceRule?.frequency,
+        RecurrenceFrequency.weekly,
+      );
+      expect(refreshedTemplate.recurrenceRule?.daysOfWeek, [1, 3, 5]);
     });
   });
 }

@@ -12,7 +12,7 @@ import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../hive_registrar.g.dart';
 import '../../shared/models/task.dart';
-import '../../shared/models/task_category.dart';
+import '../../shared/models/category.dart';
 import '../../shared/providers/task_providers.dart';
 import '../inbox/inbox_screen.dart';
 import 'task_detail_sheet.dart';
@@ -32,7 +32,7 @@ Future<void> main() async {
     title: 'Book dentist appointment',
     scheduledAt: DateTime(now.year, now.month, now.day, now.hour),
     durationMinutes: 30,
-    category: TaskCategory.personal,
+    categoryId: BuiltInCategoryIds.personal,
   );
   await box.put(task.id, task);
   // A second, untouched Inbox item makes the discard outcome visually

@@ -143,6 +143,48 @@ abstract final class ColorPrimitives {
   // dark-mode pill.
   static final neutral500Dark = oklch(0.62, 0.0, 0);
 
+  // User-defined Category palette (Phase — new Category entity). Per the
+  // confirmed decision (docs/DECISIONS.md): a single saturated swatch per
+  // color, not a tint+icon-color pair like the 4 built-in categories above
+  // — simpler, and this palette needs to read the same in both a light and
+  // a dark picker sheet without a second dark-specific set.
+  //
+  // L=0.62/C=0.15 held fixed across all 12, only hue varies — the same
+  // "equal lightness/chroma, vary hue" approach Phase 3 used for the
+  // original 4-category spacing. L=0.62 is the SAME lightness already
+  // measured safe for dark mode by the Phase 13a-pastel-v2 entry (the
+  // built-in categories' dark icon-glyph lightness) — reused deliberately
+  // rather than picked fresh, since it's already known to clear ~5:1
+  // against `ink900`. C=0.15 is a conservative mid-high chroma: enough to
+  // read as clearly "saturated swatch" rather than washed out, but below
+  // the ~0.19 `brand500` accent chroma so none of the 12 competes with the
+  // accent color for visual weight. Hues are 12 EVEN 30° steps starting at
+  // 15° (15/45/75/.../345) — offset from 0° specifically so no swatch
+  // lands on the four existing built-in category hues (32/153/216/300),
+  // avoiding a false "this looks like Health" read. Minimum pairwise hue
+  // gap is a uniform 30°, comfortably clear of the ~50-55° floor Phase 3
+  // set for the smaller 4/5-hue case — 12 evenly-spaced hues can't match
+  // that floor at this count, so distinguishability here leans on the
+  // 30°-uniform spacing itself (no two adjacent swatches share a hue
+  // family) rather than a CVD-deltaE minimum-pair check; a future revision
+  // that hand-tunes chroma per hue (the way `brand500`'s lightness deviates
+  // from `brand300`) is real future work if any specific pair reads as too
+  // close in practice, not assumed to be needed here.
+  static final categoryPalette12 = [
+    oklch(0.62, 0.15, 15), // 0  red
+    oklch(0.62, 0.15, 45), // 1  orange
+    oklch(0.62, 0.15, 75), // 2  amber
+    oklch(0.62, 0.15, 105), // 3  yellow-green
+    oklch(0.62, 0.15, 135), // 4  green
+    oklch(0.62, 0.15, 165), // 5  teal
+    oklch(0.62, 0.15, 195), // 6  cyan
+    oklch(0.62, 0.15, 225), // 7  sky blue
+    oklch(0.62, 0.15, 255), // 8  blue
+    oklch(0.62, 0.15, 285), // 9  violet
+    oklch(0.62, 0.15, 315), // 10 magenta
+    oklch(0.62, 0.15, 345), // 11 pink/rose
+  ];
+
   // Ink — dark-mode surface ramp. Derived the same way as every other ramp
   // here (deliberate OKLCH triples, not an inversion or auto-darken of the
   // light values), per docs/DECISIONS.md's Pre-Phase 3 entry.

@@ -11,7 +11,7 @@ import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../hive_registrar.g.dart';
 import '../../shared/models/task.dart';
-import '../../shared/models/task_category.dart';
+import '../../shared/models/category.dart';
 import '../../shared/models/task_status.dart';
 import '../../shared/providers/task_providers.dart';
 import 'settings_screen.dart';
@@ -29,13 +29,13 @@ Future<void> main() async {
       title: 'Morning run',
       scheduledAt: DateTime(now.year, now.month, now.day, 7, 0),
       durationMinutes: 30,
-      category: TaskCategory.health,
+      categoryId: BuiltInCategoryIds.health,
     ),
     Task.create(
       title: 'Deep work',
       scheduledAt: DateTime(now.year, now.month, now.day, 10, 0),
       durationMinutes: 120,
-      category: TaskCategory.work,
+      categoryId: BuiltInCategoryIds.work,
     )..status = TaskStatus.completed,
     Task.captured(title: 'Read that article'),
   ];

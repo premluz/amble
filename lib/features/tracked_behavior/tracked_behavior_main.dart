@@ -24,7 +24,7 @@ import '../../shared/models/behavior_target_type.dart';
 import '../../shared/models/recurrence_frequency.dart';
 import '../../shared/models/recurrence_rule.dart';
 import '../../shared/models/task.dart';
-import '../../shared/models/task_category.dart';
+import '../../shared/models/category.dart';
 import '../../shared/models/tracked_behavior.dart';
 import '../../shared/providers/notification_providers.dart';
 import '../../shared/providers/task_providers.dart';
@@ -105,7 +105,7 @@ Future<void> _seedTimeline(ProviderContainer container) async {
     title: 'Ordinary task',
     scheduledAt: at(0),
     durationMinutes: 30,
-    category: TaskCategory.work,
+    categoryId: BuiltInCategoryIds.work,
   );
 
   // 2. Linked to a tracked behavior only — the track_changes icon.
@@ -113,7 +113,7 @@ Future<void> _seedTimeline(ProviderContainer container) async {
     title: 'Tracked only',
     scheduledAt: at(1),
     durationMinutes: 30,
-    category: TaskCategory.health,
+    categoryId: BuiltInCategoryIds.health,
     behaviorId: behavior.id,
   );
 
@@ -122,7 +122,7 @@ Future<void> _seedTimeline(ProviderContainer container) async {
     title: 'Recurring only',
     scheduledAt: at(2),
     durationMinutes: 30,
-    category: TaskCategory.personal,
+    categoryId: BuiltInCategoryIds.personal,
     recurrenceRule: RecurrenceRule(frequency: RecurrenceFrequency.daily),
   );
 
@@ -133,7 +133,7 @@ Future<void> _seedTimeline(ProviderContainer container) async {
     title: 'Recurring and tracked',
     scheduledAt: at(3),
     durationMinutes: 30,
-    category: TaskCategory.admin,
+    categoryId: BuiltInCategoryIds.admin,
     recurrenceRule: RecurrenceRule(frequency: RecurrenceFrequency.daily),
     behaviorId: behavior.id,
   );

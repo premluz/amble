@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../models/category.dart';
 import '../models/task.dart';
 
 /// The current export-file schema version. Independent of [Task.schemaVersion]
@@ -14,6 +15,18 @@ import '../models/task.dart';
 /// kept as its own constant rather than reusing the model's default so a
 /// future file-format change doesn't have to touch the model.
 const backupSchemaVersion = 1;
+
+/// The parsed, validated contents of an import file — tasks plus the
+/// user's custom [Category] rows, so a fresh install's export/restore
+/// carries a user's own categories forward, not just the built-in 5 (which
+/// re-seed on their own at launch regardless — see
+/// `CategoryList.seedBuiltInsAndBackfillIfNeeded`).
+class ParsedImportFile {
+  const ParsedImportFile({required this.tasks, required this.categories});
+
+  final List<Task> tasks;
+  final List<Category> categories;
+}
 
 /// Thrown when an import file is malformed or its schema version isn't
 /// recognized. Callers should show [message] directly — it's already
@@ -33,14 +46,17 @@ class BackupImportException implements Exception {
 /// (via the caller) and every write goes through [TaskList.importTasks],
 /// per the "no bypassing the normal write path for bulk operations" rule.
 class BackupService {
-  /// Writes [tasks] to a temp JSON file and opens the platform share sheet
-  /// for it. The file includes the full dataset (not just current/future)
-  /// since export doubles as backup — see docs/SCOPE.md.
-  Future<void> exportTasks(List<Task> tasks) async {
+  /// Writes [tasks] (and [categories], so a user's custom categories
+  /// survive export/restore on a fresh install) to a temp JSON file and
+  /// opens the platform share sheet for it. The file includes the full
+  /// dataset (not just current/future) since export doubles as backup —
+  /// see docs/SCOPE.md.
+  Future<void> exportTasks(List<Task> tasks, List<Category> categories) async {
     final payload = {
       'schemaVersion': backupSchemaVersion,
       'exportedAt': DateTime.now().toIso8601String(),
       'tasks': tasks.map((task) => task.toJson()).toList(),
+      'categories': categories.map((category) => category.toJson()).toList(),
     };
     final json = const JsonEncoder.withIndent('  ').convert(payload);
 
@@ -58,15 +74,15 @@ class BackupService {
   }
 
   /// Opens the file picker for a JSON file, parses and validates it, and
-  /// returns the tasks it contains — ready to hand to
-  /// `TaskList.importTasks`. Returns `null` if the user cancelled the
-  /// picker (not an error). Throws [BackupImportException] for anything
-  /// that makes the file unsafe to import: unreadable, invalid JSON,
-  /// missing/unrecognized `schemaVersion`, or any task record that fails
-  /// [Task.fromJson]'s validation — the whole file is rejected in that
-  /// case, never a partial import of only the records that happened to
-  /// parse.
-  Future<List<Task>?> pickAndParseImportFile() async {
+  /// returns the tasks/categories it contains — ready to hand to
+  /// `TaskList.importTasks`/`CategoryList.createCategory`-style saves.
+  /// Returns `null` if the user cancelled the picker (not an error). Throws
+  /// [BackupImportException] for anything that makes the file unsafe to
+  /// import: unreadable, invalid JSON, missing/unrecognized
+  /// `schemaVersion`, or any task record that fails [Task.fromJson]'s
+  /// validation — the whole file is rejected in that case, never a partial
+  /// import of only the records that happened to parse.
+  Future<ParsedImportFile?> pickAndParseImportFile() async {
     final file = await FilePicker.pickFile(
       type: FileType.custom,
       allowedExtensions: ['json'],
@@ -88,7 +104,7 @@ class BackupService {
   /// out so it's directly unit-testable without a file picker platform
   /// channel. Same contract: throws [BackupImportException] for anything
   /// that makes [jsonString] unsafe to import.
-  List<Task> parseImportFile(String jsonString) {
+  ParsedImportFile parseImportFile(String jsonString) {
     final Map<String, dynamic> payload;
     try {
       final decoded = jsonDecode(jsonString);
@@ -121,8 +137,9 @@ class BackupService {
       );
     }
 
+    final List<Task> tasks;
     try {
-      return tasksJson.map((entry) {
+      tasks = tasksJson.map((entry) {
         if (entry is! Map<String, dynamic>) {
           throw const FormatException('task record is not a JSON object');
         }
@@ -134,5 +151,35 @@ class BackupService {
         'imported: ${error.message}',
       );
     }
+
+    // Deliberately not required — a backup exported before Category
+    // existed simply has no "categories" key at all, and must still
+    // import cleanly (its tasks' categoryId values, if any, just won't
+    // resolve to anything until the standard built-in seed runs).
+    final categoriesJson = payload['categories'];
+    final List<Category> categories;
+    if (categoriesJson == null) {
+      categories = const [];
+    } else if (categoriesJson is! List) {
+      throw BackupImportException(
+        'This file has an invalid category list and cannot be imported.',
+      );
+    } else {
+      try {
+        categories = categoriesJson.map((entry) {
+          if (entry is! Map<String, dynamic>) {
+            throw const FormatException('category record is not a JSON object');
+          }
+          return Category.fromJson(entry);
+        }).toList();
+      } on FormatException catch (error) {
+        throw BackupImportException(
+          'This file contains an invalid category record and cannot be '
+          'imported: ${error.message}',
+        );
+      }
+    }
+
+    return ParsedImportFile(tasks: tasks, categories: categories);
   }
 }

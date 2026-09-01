@@ -73,61 +73,60 @@ class _TaskStartTimeModalState extends State<TaskStartTimeModal> {
     // fixed the same way) in TaskNameCategoryModal.
     return SingleChildScrollView(
       child: Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          'Start time',
-          textAlign: TextAlign.center,
-          style: theme.textTitle.copyWith(
-            color: theme.colorTextPrimary,
-            fontWeight: FontWeight.w700,
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Start time',
+            textAlign: TextAlign.center,
+            style: theme.textTitle.copyWith(
+              color: theme.colorTextPrimary,
+              fontWeight: FontWeight.w700,
+            ),
           ),
-        ),
-        SizedBox(height: theme.spacingLg),
-        AppSegmentedTimeField(
-          label: 'Time',
-          first: _hour,
-          second: _minute,
-          firstMax: 23,
-          onChanged: (hour, minute) => setState(() {
-            _hour = hour;
-            _minute = minute;
-          }),
-        ),
-        SizedBox(height: theme.spacingLg),
-        SizedBox(
-          height: theme.spacingXl * 5,
-          child: AppWheelPicker(
-            hourCount: 24,
-            // A time of day keeps full every-minute precision on its
-            // wheel — unlike duration, browsing to an exact minute for a
-            // start time is a real, common need (matching a calendar
-            // invite, a meeting time), so coarsening it to steps of 5
-            // would remove precision the field otherwise offers by typing.
-            minuteStep: 1,
-            initialHour: _hour ?? 0,
-            initialMinute: _minute ?? 0,
+          SizedBox(height: theme.spacingLg),
+          AppSegmentedTimeField(
+            label: 'Time',
+            first: _hour,
+            second: _minute,
+            firstMax: 23,
             onChanged: (hour, minute) => setState(() {
               _hour = hour;
               _minute = minute;
             }),
           ),
-        ),
-        SizedBox(height: theme.spacingLg),
-        AppButton(
-          label: 'Done',
-          size: AppButtonSize.large,
-          shape: AppButtonShape.pill,
-          onPressed: () {
-            final hour = _hour;
-            final minute = _minute;
-            Navigator.of(context).pop(
-              hour == null || minute == null ? null : (hour, minute),
-            );
-          },
-        ),
-      ],
+          SizedBox(height: theme.spacingLg),
+          SizedBox(
+            height: theme.spacingXl * 5,
+            child: AppWheelPicker(
+              hourCount: 24,
+              // A time of day keeps full every-minute precision on its
+              // wheel — unlike duration, browsing to an exact minute for a
+              // start time is a real, common need (matching a calendar
+              // invite, a meeting time), so coarsening it to steps of 5
+              // would remove precision the field otherwise offers by typing.
+              minuteStep: 1,
+              initialHour: _hour ?? 0,
+              initialMinute: _minute ?? 0,
+              onChanged: (hour, minute) => setState(() {
+                _hour = hour;
+                _minute = minute;
+              }),
+            ),
+          ),
+          SizedBox(height: theme.spacingLg),
+          AppButton(
+            label: 'Done',
+            size: AppButtonSize.large,
+            shape: AppButtonShape.pill,
+            onPressed: () {
+              final hour = _hour;
+              final minute = _minute;
+              Navigator.of(context)
+                  .pop(hour == null || minute == null ? null : (hour, minute));
+            },
+          ),
+        ],
       ),
     );
   }

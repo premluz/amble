@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:amble/shared/models/task.dart';
-import 'package:amble/shared/models/task_category.dart';
+import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/models/task_status.dart';
 import 'package:amble/shared/services/overlap_checker.dart';
 
@@ -13,7 +13,7 @@ Task _task({
     title: 'Task',
     scheduledAt: scheduledAt,
     durationMinutes: durationMinutes,
-    category: TaskCategory.personal,
+    categoryId: BuiltInCategoryIds.personal,
   );
   task.status = status;
   return task;
@@ -66,34 +66,31 @@ void main() {
       );
     });
 
-    test(
-      'back-to-back tasks do not overlap — half-open interval',
-      () {
-        final existing = [
-          _task(scheduledAt: DateTime(2026, 8, 24, 9), durationMinutes: 30),
-        ];
+    test('back-to-back tasks do not overlap — half-open interval', () {
+      final existing = [
+        _task(scheduledAt: DateTime(2026, 8, 24, 9), durationMinutes: 30),
+      ];
 
-        // Starts exactly when the existing task ends.
-        expect(
-          overlapsExistingTask(
-            scheduledAt: DateTime(2026, 8, 24, 9, 30),
-            durationMinutes: 30,
-            existingTasks: existing,
-          ),
-          isFalse,
-        );
+      // Starts exactly when the existing task ends.
+      expect(
+        overlapsExistingTask(
+          scheduledAt: DateTime(2026, 8, 24, 9, 30),
+          durationMinutes: 30,
+          existingTasks: existing,
+        ),
+        isFalse,
+      );
 
-        // Ends exactly when the existing task starts.
-        expect(
-          overlapsExistingTask(
-            scheduledAt: DateTime(2026, 8, 24, 8, 30),
-            durationMinutes: 30,
-            existingTasks: existing,
-          ),
-          isFalse,
-        );
-      },
-    );
+      // Ends exactly when the existing task starts.
+      expect(
+        overlapsExistingTask(
+          scheduledAt: DateTime(2026, 8, 24, 8, 30),
+          durationMinutes: 30,
+          existingTasks: existing,
+        ),
+        isFalse,
+      );
+    });
 
     test('excludes the task with excludeTaskId from comparison', () {
       final self = _task(

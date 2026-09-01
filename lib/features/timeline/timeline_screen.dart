@@ -4,20 +4,28 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/dev_config.dart';
 import '../../core/feature_flags.dart';
 import '../../core/tokens/semantic_theme.dart';
+import '../../shared/models/category.dart';
 import '../../shared/models/task.dart';
 import '../../shared/models/task_status.dart';
+import '../../shared/providers/category_providers.dart';
 import '../../shared/providers/preferences_providers.dart';
 import '../../shared/providers/task_providers.dart';
 import '../../shared/providers/tracked_behavior_providers.dart';
 import '../../shared/services/cascade_reschedule.dart';
 import '../../shared/services/overlap_checker.dart';
+import '../../shared/services/overlap_cluster.dart';
 import '../tracked_behavior/behavior_outcome_prompt.dart';
 import '../task_detail/task_action_sheet.dart';
 import '../task_detail/task_detail_sheet.dart';
 import 'current_time_indicator.dart';
 import 'day_strip.dart';
+import 'free_window_block.dart';
+import 'overlap_cluster_block.dart';
+import 'place_task_line.dart';
+import 'recently_saved_task_provider.dart';
 import 'selected_date_provider.dart';
 import 'task_boundary_markers.dart';
 import 'task_capsule_block.dart';
@@ -87,6 +95,14 @@ class TimelineScreen extends ConsumerWidget {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     final tasks = ref.watch(tasksForSelectedDayProvider);
     final selectedDate = ref.watch(selectedDateProvider);
+    // Resolved once here (the ConsumerWidget root) and threaded down as a
+    // plain field, same pattern as showHourLabels/disableClustering below
+    // — TaskCapsuleBlock and its StatefulWidget ancestors aren't
+    // Riverpod-aware.
+    final categoryById = {
+      for (final category in ref.watch(categoryListProvider))
+        category.id: category,
+    };
     // Only used by the whole-screen swipe-to-change-day gesture, commented
     // out below per direct request — uncomment alongside it if that
     // gesture is reinstated.
@@ -128,15 +144,25 @@ class TimelineScreen extends ConsumerWidget {
                   : _DayTimeline(
                       tasks: tasks,
                       theme: theme,
-                      showHourLabels: ref.watch(
-                        showHourLabelsSettingProvider,
-                      ),
+                      categoryById: categoryById,
+                      showHourLabels: ref.watch(showHourLabelsSettingProvider),
                       onTaskTap: (task) =>
                           showTaskActionSheet(context, task: task),
                       onToggleComplete: (task) =>
                           _completeTask(context, ref, task),
                       onReschedule: (task, newScheduledAt) =>
                           taskNotifier.rescheduleTask(task, newScheduledAt),
+                      onCreateAt: (startAt) => showTaskDetailSheet(
+                        context,
+                        initialScheduledAt: startAt,
+                        initialTimeOfDay: TimeOfDay.fromDateTime(startAt),
+                      ),
+                      recentlySaved: ref.watch(recentlySavedTaskProvider),
+                      onSavedTaskConsumed: () =>
+                          ref.read(recentlySavedTaskProvider.notifier).clear(),
+                      disableClustering: ref.watch(
+                        disableOverlapClusteringSettingProvider,
+                      ),
                     ),
             ),
             DayStrip(
@@ -209,14 +235,24 @@ class _DayTimeline extends StatefulWidget {
   const _DayTimeline({
     required this.tasks,
     required this.theme,
+    required this.categoryById,
     required this.showHourLabels,
     required this.onTaskTap,
     required this.onToggleComplete,
     required this.onReschedule,
+    required this.onCreateAt,
+    required this.recentlySaved,
+    required this.onSavedTaskConsumed,
+    required this.disableClustering,
   });
 
   final List<Task> tasks;
   final AmbleTheme theme;
+
+  /// Live `Category` rows keyed by id, resolved once by [TimelineScreen]
+  /// (the `ConsumerWidget` root) and threaded down — same reasoning as
+  /// [showHourLabels]/[disableClustering] below.
+  final Map<String, Category> categoryById;
 
   /// Whether the left-side hour gutter renders at all — the Settings
   /// toggle (`ShowHourLabelsSetting`), read once by [TimelineScreen] (the
@@ -228,12 +264,39 @@ class _DayTimeline extends StatefulWidget {
   final _TaskCallback onToggleComplete;
   final _RescheduleCallback onReschedule;
 
+  /// The task the create/edit modal just saved, if any — the Timeline
+  /// scrolls it into view and animates it in, then calls
+  /// [onSavedTaskConsumed] so the same animation can't replay. Threaded
+  /// down as a plain field (like [showHourLabels]) rather than making this
+  /// StatefulWidget itself Riverpod-aware.
+  final RecentlySavedTask? recentlySaved;
+  final VoidCallback onSavedTaskConsumed;
+
+  /// Opens the create-task flow seeded to start at the given instant —
+  /// used by a free window's block (start of that gap) and, coming next,
+  /// the hold-and-drag placement line (wherever it's released).
+  final ValueChanged<DateTime> onCreateAt;
+
+  /// The Settings opt-out (`DisableOverlapClusteringSetting`) — when true,
+  /// 2–3 overlapping tasks stay individual capsules (naive spatial
+  /// overlap) instead of collapsing into one `OverlapClusterBlock`.
+  /// Threaded down as a plain field for the same reason as
+  /// [showHourLabels].
+  final bool disableClustering;
+
   @override
   State<_DayTimeline> createState() => _DayTimelineState();
 }
 
 class _DayTimelineState extends State<_DayTimeline> {
   final _scrollController = ScrollController();
+
+  /// Shared between the placement gesture's press surface (the Stack's
+  /// FIRST child, so task pills win presses over it) and the line it
+  /// draws (the LAST child, so the line paints above every task) — see
+  /// PlaceTaskLineLayer's own doc comment for why those can't be the same
+  /// widget.
+  final _placeLineController = PlaceTaskLineController(null);
 
   /// Ticks once a minute so the hour labels can keep hiding whichever one
   /// [CurrentTimeIndicator]'s bold "now" label would sit on top of. The
@@ -298,6 +361,15 @@ class _DayTimelineState extends State<_DayTimeline> {
     _minuteTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       if (mounted) setState(() => _now = DateTime.now());
     });
+    // The day's FIRST task doesn't reach didUpdateWidget: the screen was
+    // showing _EmptyDayState until a moment ago, so this widget mounts
+    // fresh rather than updating. Handled here so saving the first task
+    // of a day scrolls to it and clears the flag exactly like every
+    // subsequent one does.
+    if (widget.recentlySaved != null) {
+      _revealSavedTask(widget.recentlySaved!);
+      return;
+    }
     // Open the day view scrolled to roughly the current time, so "now" is
     // visible without the user having to scroll first — falls back to the
     // top of the range when "now" isn't inside it at all (e.g. viewing a
@@ -323,9 +395,77 @@ class _DayTimelineState extends State<_DayTimeline> {
   }
 
   @override
+  void didUpdateWidget(_DayTimeline oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final saved = widget.recentlySaved;
+    if (saved == null || saved.taskId == oldWidget.recentlySaved?.taskId) {
+      return;
+    }
+    _revealSavedTask(saved);
+  }
+
+  /// Scrolls the just-saved task into view, then releases the flag once
+  /// its entrance has had time to play — requested directly: "should also
+  /// upon closing scroll to the timeline point of start hour so the new
+  /// created task or updated is in view."
+  void _revealSavedTask(RecentlySavedTask saved) {
+    // Post-frame because the task may only have just been added to this
+    // build's task list, so its position isn't laid out yet.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // Deliberately NOT delayed like the block's own entrance is: the
+      // scroll has to be FINISHED by the time the entrance starts, or the
+      // task animates in off-screen. It runs for motionNormal (250ms)
+      // inside the entrance's own motionRouteSettle (500ms) wait, so it
+      // lands with room to spare — keep that ordering if either changes.
+      _scrollToSavedTask(saved.taskId);
+      // Cleared only AFTER the entrance has had time to play — the block
+      // reads `recentlySaved` on its first build to decide whether to
+      // fade, so clearing it any earlier would rebuild the block without
+      // the flag before it ever animated. The wait covers the modal's own
+      // dismissal (motionRouteSettle, which the block waits out before
+      // starting) PLUS the animation itself.
+      Future<void>.delayed(
+        widget.theme.motionRouteSettle + widget.theme.motionSlow,
+        () {
+          if (mounted) widget.onSavedTaskConsumed();
+        },
+      );
+    });
+  }
+
+  void _scrollToSavedTask(String taskId) {
+    if (!widget.showHourLabels) return;
+    if (!_scrollController.hasClients) return;
+    final task = widget.tasks
+        .where((candidate) => candidate.id == taskId)
+        .firstOrNull;
+    // Saved onto a different day than the one on screen — nothing to
+    // scroll to here, and the animation simply won't play either.
+    if (task == null) return;
+
+    final (rangeStart, _) = _visibleRange(widget.tasks);
+    final minutesSinceStart = task.scheduledAt!
+        .difference(rangeStart)
+        .inMinutes;
+    // Centred rather than pinned to the top, matching how the view already
+    // opens on "now" — a task flush against the viewport edge reads as
+    // cut off rather than as the thing being shown.
+    final target =
+        (minutesSinceStart * _pixelsPerMinute) -
+        (_scrollController.position.viewportDimension / 2);
+    _scrollController.animateTo(
+      target.clamp(0.0, _scrollController.position.maxScrollExtent),
+      duration: widget.theme.motionNormal,
+      curve: Curves.easeOut,
+    );
+  }
+
+  @override
   void dispose() {
     _minuteTimer?.cancel();
     _scrollController.dispose();
+    _placeLineController.dispose();
     super.dispose();
   }
 
@@ -336,18 +476,57 @@ class _DayTimelineState extends State<_DayTimeline> {
     // tasks is never empty here — the parent (TimelineScreen) renders
     // _EmptyDayState instead of _DayTimeline when there are no tasks.
     final (rangeStart, rangeEnd) = _visibleRange(tasks);
-    final slots = _dragLastOrder(layoutOverlappingTasks(tasks));
+    // Timeline mode only — clustering answers "how does this render on the
+    // real time axis," which collapsed mode's stacking layout has no
+    // meaningful version of. Detection re-runs from the CURRENT task list
+    // on every build, so a drop that creates/dissolves a cluster (task 5/6
+    // of the work order) is picked up automatically on the very next
+    // rebuild after the reschedule write lands — no separate "recompute
+    // clusters" step is needed.
+    //
+    // The task actively being dragged is excluded from the tasks clusters
+    // are computed FROM: per direct requirement, a dragged task renders
+    // completely normally — its own full capsule — regardless of what's
+    // underneath it, and the tasks it would otherwise cluster with must
+    // likewise stay as their own ordinary capsules while it's away, not
+    // silently form a smaller cluster among themselves mid-drag.
+    final clusters = (widget.showHourLabels && !widget.disableClustering)
+        ? detectOverlapClusters(
+            _draggingTaskId == null
+                ? tasks
+                : tasks.where((task) => task.id != _draggingTaskId).toList(),
+          )
+        : const <OverlapCluster>[];
+    final clusteredIds = clusteredTaskIds(clusters);
+    // The dragged block's ghost (left behind at its ORIGINAL slot, see the
+    // loop below) needs the lane it held as a resting cluster member, not
+    // an ordinary layoutOverlappingTasks column — those two schemes don't
+    // agree, and mixing them made the ghost land in a lane that visually
+    // collided with the remaining members' now-recomputed fixed lanes,
+    // reported directly as "items go in 2 lanes and a transparent one."
+    // Computed WITHOUT the drag exclusion above, purely for this purpose.
+    final restingClusters = (widget.showHourLabels && !widget.disableClustering)
+        ? detectOverlapClusters(tasks)
+        : const <OverlapCluster>[];
+    final slots = _dragLastOrder(
+      _withClusterLanes(layoutOverlappingTasks(tasks), clusters),
+    );
+    final ghostSlots = _withClusterLanes(
+      layoutOverlappingTasks(tasks),
+      restingClusters,
+    );
     final blockTops = _blockTops(slots, rangeStart, theme);
     // Timeline mode's height is the real elapsed span. Collapsed mode has
     // no span — its height is just however far the stack reached, plus
     // the last block's own height.
-    final dayHeight = widget.showHourLabels
+    final contentHeight = widget.showHourLabels
         ? rangeEnd.difference(rangeStart).inMinutes * _pixelsPerMinute
         : slots.fold<double>(
             0,
             (tallest, slot) => math.max(
               tallest,
-              blockTops[slot.task.id]! + _collapsedBlockHeight(slot.task, theme),
+              blockTops[slot.task.id]! +
+                  _collapsedBlockHeight(slot.task, theme),
             ),
           );
     final pixelsPerMinute = widget.showHourLabels
@@ -359,160 +538,373 @@ class _DayTimelineState extends State<_DayTimeline> {
     // reserved but empty).
     final hourGutterWidth = widget.showHourLabels ? _hourGutterWidth : 0.0;
 
-    return SingleChildScrollView(
-      controller: _scrollController,
-      // Deliberately CLIPPED (the framework default) — reported directly:
-      // with Clip.none the scrolled day painted straight over the header
-      // (day nav arrows, date, Today button) as it moved past, since a
-      // Column sibling that paints outside its own bounds isn't contained
-      // by anything. Clipping here is what keeps the header visually on
-      // top.
-      //
-      // This was briefly Clip.none to stop the drag lift shadow being
-      // trimmed at the viewport edge. That trade isn't needed: the inner
-      // Stack below stays unclipped, so a lifted block's shadow still
-      // spills freely over its neighbours (the case that actually
-      // mattered) — only the shadow of a block dragged hard against the
-      // very top/bottom of the scroll viewport gets cut, which is the
-      // same edge behaviour every scrollable surface has.
-      padding: EdgeInsets.symmetric(
-        horizontal: theme.spacingScreenPadding,
-        vertical: theme.spacingMd,
-      ),
-      child: SizedBox(
-        height: dayHeight,
-        child: Stack(
-          // A dragged block's lift shadow extends well beyond the block's
-          // own bounds, and a Stack clips to its bounds by default — which
-          // silently cut the shadow off. Reported as "can't see it on
-          // iPhone": clipping and shadow rasterisation differ between
-          // Impeller (iOS) and the Android renderer, so the same clip made
-          // the shadow invisible on one platform and merely trimmed on the
-          // other.
-          clipBehavior: Clip.none,
-          children: [
-            if (widget.showHourLabels)
-              TaskBoundaryMarkers(
-                rangeStart: rangeStart,
-                rangeEnd: rangeEnd,
-                pixelsPerMinute: _pixelsPerMinute,
-                hideLabelNear: _now,
-              ),
-            // A visible gray thread connecting every consecutive pair of
-            // tasks, matching a reference design — requested directly.
-            // Painted before the task blocks so the blocks sit on top.
-            // Timeline mode only: the connector's whole job is to show
-            // the run of real time between two tasks, which collapsed
-            // mode deliberately doesn't represent.
-            if (widget.showHourLabels)
-              _TimelineConnectors(
-                tasks: tasks,
-                theme: theme,
-                rangeStart: rangeStart,
-                pixelsPerMinute: _pixelsPerMinute,
-                hourGutterWidth: hourGutterWidth,
-              ),
-            // Overlapping tasks are laid out side by side rather than
-            // stacked on top of each other — Amble never moves a task the
-            // user didn't drag (cascade replanning is out of MVP scope,
-            // see docs/SCOPE.md), so a clash stays visible instead.
-            //
-            // The dragged block is emitted LAST so it paints above every
-            // other block — reported directly: a block being dragged past
-            // its neighbours slid underneath the ones that happened to
-            // come later in layout order. A Stack paints in child order
-            // and has no z-index, so "always on top" has to be an
-            // ordering change, not a property. Only the dragged block
-            // moves in the list; everything else keeps its existing
-            // relative order, so nothing else's stacking changes.
-            for (final slot in slots) ...[
-              // The dragged block's faded "ghost", left behind at its
-              // original slot for the duration of the drag — a direct
-              // sibling here (not nested inside _DraggableTaskBlock's own
-              // Stack) so it can't inflate that block's hit-test region.
-              // Non-interactive (IgnorePointer) so it never intercepts the
-              // drag/tap gestures meant for the real block on top of it.
-              if (_draggingTaskId == slot.task.id)
-                Positioned(
-                  // Keyed so its insertion/removal can't disturb element
-                  // matching for the keyed sibling block right after it.
-                  // Without this, releasing a drag (which removes the
-                  // ghost) could make Flutter re-create the real block's
-                  // element instead of updating it, resetting its
-                  // AnimatedPositioned to animate from the GHOST's
-                  // position — reported as the block jumping to a higher
-                  // spot and then easing back down to the actual drop.
-                  key: ValueKey('ghost-${slot.task.id}'),
-                  top: blockTops[slot.task.id]!,
-                  left:
-                      hourGutterWidth +
-                      slot.column * (_pillWidth(theme) + _columnGap(theme)),
-                  right: 0,
-                  child: IgnorePointer(
-                    child: Opacity(
-                      opacity: 0.2,
-                      child: TaskCapsuleBlock(
-                        task: slot.task,
-                        pixelsPerMinute: pixelsPerMinute,
-                        maxTextWidth: slot.column < slot.columnCount - 1
-                            ? _pillWidth(theme)
-                            : null,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // `_visibleRange` is deliberately dynamic (earliest task - 30min to
+        // latest task + 30min, not a fixed calendar-day window — see the
+        // comment above), so a day with few tasks produces a short
+        // `contentHeight`. Without a floor, the SizedBox below (and the
+        // timeline surface/gutter/markers painted inside it) stopped short
+        // of the actual screen, reading as a "cut off" container that grew
+        // only with task count — reported directly, confirmed via
+        // AskUserQuestion to floor at the viewport height rather than
+        // reverting to a fixed range. The vertical padding this
+        // SingleChildScrollView applies below counts as part of the
+        // viewport's consumed space, so it's subtracted from
+        // constraints.maxHeight before comparing.
+        final dayHeight = math.max(
+          contentHeight,
+          constraints.maxHeight - theme.spacingMd * 2,
+        );
+
+        return SingleChildScrollView(
+          controller: _scrollController,
+          // Deliberately CLIPPED (the framework default) — reported directly:
+          // with Clip.none the scrolled day painted straight over the header
+          // (day nav arrows, date, Today button) as it moved past, since a
+          // Column sibling that paints outside its own bounds isn't contained
+          // by anything. Clipping here is what keeps the header visually on
+          // top.
+          //
+          // This was briefly Clip.none to stop the drag lift shadow being
+          // trimmed at the viewport edge. That trade isn't needed: the inner
+          // Stack below stays unclipped, so a lifted block's shadow still
+          // spills freely over its neighbours (the case that actually
+          // mattered) — only the shadow of a block dragged hard against the
+          // very top/bottom of the scroll viewport gets cut, which is the
+          // same edge behaviour every scrollable surface has.
+          padding: EdgeInsets.symmetric(
+            horizontal: theme.spacingScreenPadding,
+            vertical: theme.spacingMd,
+          ),
+          child: SizedBox(
+            height: dayHeight,
+            child: Stack(
+              // A dragged block's lift shadow extends well beyond the block's
+              // own bounds, and a Stack clips to its bounds by default — which
+              // silently cut the shadow off. Reported as "can't see it on
+              // iPhone": clipping and shadow rasterisation differ between
+              // Impeller (iOS) and the Android renderer, so the same clip made
+              // the shadow invisible on one platform and merely trimmed on the
+              // other.
+              clipBehavior: Clip.none,
+              children: [
+                // FIRST child, deliberately — see PlaceTaskLineLayer's own doc
+                // comment for why its position in this list (not just its
+                // hit-test behaviour) is what keeps it from intercepting
+                // presses meant for a task pill or a free-window block.
+                // Timeline mode only: the placement line's whole job is
+                // converting a Y position into a real time, which collapsed
+                // mode's stacking layout has no meaningful mapping for.
+                if (widget.showHourLabels)
+                  PlaceTaskLineLayer(
+                    theme: theme,
+                    rangeStart: rangeStart,
+                    rangeEnd: rangeEnd,
+                    pixelsPerMinute: _pixelsPerMinute,
+                    controller: _placeLineController,
+                    onPlaced: widget.onCreateAt,
+                  ),
+                if (widget.showHourLabels)
+                  TaskBoundaryMarkers(
+                    rangeStart: rangeStart,
+                    rangeEnd: rangeEnd,
+                    pixelsPerMinute: _pixelsPerMinute,
+                    hideLabelNear: _now,
+                  ),
+                // A visible gray thread connecting every consecutive pair of
+                // tasks, matching a reference design — requested directly.
+                // Painted before the task blocks so the blocks sit on top.
+                // Timeline mode only: the connector's whole job is to show
+                // the run of real time between two tasks, which collapsed
+                // mode deliberately doesn't represent.
+                if (widget.showHourLabels)
+                  _TimelineConnectors(
+                    tasks: tasks,
+                    theme: theme,
+                    rangeStart: rangeStart,
+                    pixelsPerMinute: _pixelsPerMinute,
+                    hourGutterWidth: hourGutterWidth,
+                  ),
+                // A subtle labeled block for any gap of freeWindowThreshold or
+                // longer between two tasks — requested directly: "no indicator
+                // for small/normal gaps... a labeled, size-appropriate compact
+                // block only for large gaps." Timeline mode only, same
+                // reasoning as the connectors above: collapsed mode has no
+                // time axis for a gap's size to mean anything against.
+                if (widget.showHourLabels)
+                  for (final window in findFreeWindows(
+                    tasks,
+                    // Mirrors the pill-height floor TaskCapsuleBlock applies
+                    // (see _pillHeight above) — without this, a free window
+                    // computed from raw scheduled times could start before a
+                    // short task's actual RENDERED pill has finished, and the
+                    // two visually overlapped. Reported directly.
+                    minPillMinutes: _pillWidth(theme) / _pixelsPerMinute,
+                  ))
+                    FreeWindowBlock(
+                      theme: theme,
+                      window: window,
+                      // Inset top/bottom by spacingSm so the block never
+                      // touches the task immediately before/after it —
+                      // reported directly: "should have gap from top and
+                      // bottom so not fully adjacent [to the] tasks between
+                      // which it indicates the gap." Symmetric: shrinking the
+                      // window by the inset on BOTH ends, not just padding
+                      // visually inside a full-height box, is what actually
+                      // creates real empty space above and below.
+                      top:
+                          _minutesSinceStart(rangeStart, window.start) *
+                              _pixelsPerMinute +
+                          theme.spacingSm,
+                      height:
+                          window.duration.inMinutes * _pixelsPerMinute -
+                          theme.spacingSm * 2,
+                      // Aligned with task NAMES, not the icon-pill column —
+                      // corrected directly: "left indent[should be] of size
+                      // of the pill of tasks + padding/gap between pill and
+                      // description... the window container is [a]ligned up
+                      // with names of tasks." pillWidth + spacingSm mirrors
+                      // exactly the SizedBox TaskCapsuleBlock puts between
+                      // its icon pill and its title/time column.
+                      left:
+                          hourGutterWidth + _pillWidth(theme) + theme.spacingSm,
+                      onTap: () => widget.onCreateAt(window.start),
+                    ),
+                // Overlapping tasks are laid out side by side rather than
+                // stacked on top of each other — Amble never moves a task the
+                // user didn't drag (cascade replanning is out of MVP scope,
+                // see docs/SCOPE.md), so a clash stays visible instead.
+                //
+                // The dragged block is emitted LAST so it paints above every
+                // other block — reported directly: a block being dragged past
+                // its neighbours slid underneath the ones that happened to
+                // come later in layout order. A Stack paints in child order
+                // and has no z-index, so "always on top" has to be an
+                // ordering change, not a property. Only the dragged block
+                // moves in the list; everything else keeps its existing
+                // relative order, so nothing else's stacking changes.
+                //
+                // Clustered tasks now render THROUGH this same loop, not a
+                // separate one — requested directly ("should be able to still
+                // drag and move around the clustered items"). Each clustered
+                // slot already carries its fixed cluster lane (see
+                // _withClusterLanes) and renders with `contentHidden: true`
+                // while resting (icon/title/time hidden, checkbox and drag
+                // still live — see TaskCapsuleBlock.contentHidden), falling
+                // back to full content automatically the moment it's the one
+                // being dragged (_DraggableTaskBlock forces contentHidden off
+                // while _isDragging is true). The cluster's own flat list
+                // (rendered separately, below) is what still shows title/time
+                // for a resting member.
+                for (final slot in slots) ...[
+                  // The dragged block's faded "ghost", left behind at its
+                  // original slot for the duration of the drag — a direct
+                  // sibling here (not nested inside _DraggableTaskBlock's own
+                  // Stack) so it can't inflate that block's hit-test region.
+                  // Non-interactive (IgnorePointer) so it never intercepts the
+                  // drag/tap gestures meant for the real block on top of it.
+                  if (_draggingTaskId == slot.task.id)
+                    Positioned(
+                      // Keyed so its insertion/removal can't disturb element
+                      // matching for the keyed sibling block right after it.
+                      // Without this, releasing a drag (which removes the
+                      // ghost) could make Flutter re-create the real block's
+                      // element instead of updating it, resetting its
+                      // AnimatedPositioned to animate from the GHOST's
+                      // position — reported as the block jumping to a higher
+                      // spot and then easing back down to the actual drop.
+                      key: ValueKey('ghost-${slot.task.id}'),
+                      top: blockTops[slot.task.id]!,
+                      left:
+                          hourGutterWidth +
+                          _ghostSlotFor(ghostSlots, slot.task.id).column *
+                              (_pillWidth(theme) + _columnGap(theme)),
+                      right: 0,
+                      child: IgnorePointer(
+                        child: Opacity(
+                          opacity: 0.2,
+                          child: TaskCapsuleBlock(
+                            task: slot.task,
+                            category: widget.categoryById[slot.task.categoryId],
+                            pixelsPerMinute: pixelsPerMinute,
+                            maxTextWidth:
+                                _ghostSlotFor(ghostSlots, slot.task.id).column <
+                                    _ghostSlotFor(
+                                          ghostSlots,
+                                          slot.task.id,
+                                        ).columnCount -
+                                        1
+                                ? _pillWidth(theme)
+                                : null,
+                          ),
+                        ),
+                      ),
+                    ),
+                  _DraggableTaskBlock(
+                    key: ValueKey(slot.task.id),
+                    task: slot.task,
+                    theme: theme,
+                    baseTop: blockTops[slot.task.id]!,
+                    left: hourGutterWidth,
+                    slot: slot,
+                    pixelsPerMinute: pixelsPerMinute,
+                    contentHidden: clusteredIds.contains(slot.task.id),
+                    // Drag-to-reschedule needs a pixel->minute mapping, which
+                    // collapsed mode doesn't have: vertical position there is
+                    // stacking order, not time. Disabled rather than given a
+                    // second, inconsistent meaning — confirmed via
+                    // AskUserQuestion. "Edit time and duration" still works,
+                    // and dragging returns as soon as hour labels are back on.
+                    isDraggable: widget.showHourLabels,
+                    // Only the block for the task the modal just CREATED
+                    // fades in. A duration change animates via the pill's own
+                    // AnimatedContainer instead (see TaskCapsuleBlock) — that
+                    // block is already on screen, so fading it would read as
+                    // it disappearing and coming back rather than growing.
+                    fadeInOnFirstBuild:
+                        widget.recentlySaved?.taskId == slot.task.id &&
+                        widget.recentlySaved?.change == SavedTaskChange.created,
+                    growFromMinutes:
+                        widget.recentlySaved?.taskId == slot.task.id &&
+                            widget.recentlySaved?.change ==
+                                SavedTaskChange.durationChanged
+                        ? widget.recentlySaved?.previousDurationMinutes
+                        : null,
+                    onTap: () => widget.onTaskTap(slot.task),
+                    onToggleComplete: () => widget.onToggleComplete(slot.task),
+                    onReschedule: (newScheduledAt) =>
+                        widget.onReschedule(slot.task, newScheduledAt),
+                    onDraggingChanged: (isDragging) {
+                      setState(() {
+                        _draggingTaskId = isDragging ? slot.task.id : null;
+                        // Ordering starts with the drag and is only released
+                        // by onSettled below, deliberately outliving the
+                        // ghost.
+                        if (isDragging) _settlingTaskId = slot.task.id;
+                      });
+                    },
+                    onSettled: () {
+                      // Ignore a stale settle: either a different task now
+                      // holds the pin, or this same task has been picked up
+                      // again before its previous drop finished animating.
+                      if (_settlingTaskId != slot.task.id) return;
+                      if (_draggingTaskId != null) return;
+                      setState(() => _settlingTaskId = null);
+                    },
+                  ),
+                ],
+                // The cluster's own flat title+time list — the member pills
+                // themselves now render through the ordinary slot loop above
+                // (each carrying its fixed cluster lane, see _withClusterLanes)
+                // rather than a separate non-interactive layer, since a
+                // clustered task must stay draggable (requested directly).
+                // This list is top-anchored at the cluster's start and
+                // positioned beside the fixed lane group — `cluster.tasks
+                // .length` IS the lane count now (one lane per task, always),
+                // so no separate layout call is needed to find where the pills
+                // end. Row order (earliest first) matches lane order
+                // (leftmost = earliest) exactly, per direct instruction — this
+                // is a real positional guarantee now, not just an incidental
+                // one, since _withClusterLanes assigns both from the same
+                // chronological index.
+                //
+                // AnimatedSwitcher gives the crossfade the work order asked
+                // for: each cluster's Positioned is keyed by its member ids,
+                // so a drop that changes cluster MEMBERSHIP (not just
+                // position) is a genuinely different widget to Flutter, and
+                // AnimatedSwitcher fades between old and new automatically. A
+                // cluster DISSOLVING back to individual capsules is the same
+                // mechanism from the other side: clusteredIds stops containing
+                // those tasks, so their pills (above) regain full content
+                // while this switcher fades its old list out.
+                //
+                // Rendered from `restingClusters` (NOT the drag-excluded
+                // `clusters`), so the list keeps showing every member —
+                // structure held — for the whole duration of a drag, with
+                // only the actively-dragged member's own row fading (via
+                // `fadedTaskId` on OverlapClusterBlock, same "still there,
+                // just lifted" treatment TaskCapsuleBlock already gives a
+                // dragged task's own name/time/checkbox). Requested directly:
+                // the list used to crossfade to a shorter version the INSTANT
+                // a drag started (since `clusters` already excludes the
+                // dragged task), which read as the row vanishing rather than
+                // the task being lifted. The crossfade to a genuinely
+                // different list (drop creates/dissolves a cluster) still
+                // happens — the key is derived from `clusters` (the settled,
+                // post-drop membership), which only changes once the drag
+                // actually commits.
+                for (final cluster in restingClusters)
+                  Positioned(
+                    key: ValueKey(
+                      'cluster-list-${cluster.tasks.map((task) => task.id).join('-')}',
+                    ),
+                    top: blockTops[cluster.tasks.first.id]!,
+                    // Clears every lane's pill column — the pills themselves
+                    // carry no checkbox any more (see
+                    // TaskCapsuleBlock.contentHidden), so only the pill width
+                    // needs clearing, not a trailing checkbox column too.
+                    left:
+                        hourGutterWidth +
+                        cluster.tasks.length *
+                            (_pillWidth(theme) + _columnGap(theme)),
+                    right: 0,
+                    child: AnimatedSwitcher(
+                      duration: theme.motionNormal,
+                      child: OverlapClusterBlock(
+                        // Keyed off `restingClusters`' own membership — which
+                        // stays fixed for the whole duration of a drag (it's
+                        // computed WITHOUT excluding the dragged task) and
+                        // only changes once the drop actually commits a new
+                        // schedule and `restingClusters` is recomputed from
+                        // the updated task list. So this key does NOT change
+                        // mid-drag, and the crossfade only fires on a genuine
+                        // membership change, not a drag in progress.
+                        key: ValueKey(
+                          cluster.tasks.map((task) => task.id).join('-'),
+                        ),
+                        cluster: cluster,
+                        onTaskTap: widget.onTaskTap,
+                        onToggleComplete: widget.onToggleComplete,
+                        fadedTaskId: _draggingTaskId,
                       ),
                     ),
                   ),
-                ),
-              _DraggableTaskBlock(
-                key: ValueKey(slot.task.id),
-                task: slot.task,
-                theme: theme,
-                baseTop: blockTops[slot.task.id]!,
-                left: hourGutterWidth,
-                slot: slot,
-                pixelsPerMinute: pixelsPerMinute,
-                // Drag-to-reschedule needs a pixel->minute mapping, which
-                // collapsed mode doesn't have: vertical position there is
-                // stacking order, not time. Disabled rather than given a
-                // second, inconsistent meaning — confirmed via
-                // AskUserQuestion. "Edit time and duration" still works,
-                // and dragging returns as soon as hour labels are back on.
-                isDraggable: widget.showHourLabels,
-                onTap: () => widget.onTaskTap(slot.task),
-                onToggleComplete: () => widget.onToggleComplete(slot.task),
-                onReschedule: (newScheduledAt) =>
-                    widget.onReschedule(slot.task, newScheduledAt),
-                onDraggingChanged: (isDragging) {
-                  setState(() {
-                    _draggingTaskId = isDragging ? slot.task.id : null;
-                    // Ordering starts with the drag and is only released
-                    // by onSettled below, deliberately outliving the
-                    // ghost.
-                    if (isDragging) _settlingTaskId = slot.task.id;
-                  });
-                },
-                onSettled: () {
-                  // Ignore a stale settle: either a different task now
-                  // holds the pin, or this same task has been picked up
-                  // again before its previous drop finished animating.
-                  if (_settlingTaskId != slot.task.id) return;
-                  if (_draggingTaskId != null) return;
-                  setState(() => _settlingTaskId = null);
-                },
-              ),
-            ],
-            // Timeline mode only: the now-line's position is meaningless
-            // without a time axis to place it against — in collapsed mode
-            // it would sit at an arbitrary point between two stacked
-            // blocks and imply a scale that isn't there.
-            if (widget.showHourLabels)
-              CurrentTimeIndicator(
-                rangeStart: rangeStart,
-                rangeEnd: rangeEnd,
-                pixelsPerMinute: _pixelsPerMinute,
-                gutterWidth: hourGutterWidth,
-              ),
-          ],
-        ),
-      ),
+                if (widget.showHourLabels)
+                  for (final cluster in clusters)
+                    OverlapClusterBoundaryLabels(
+                      theme: theme,
+                      cluster: cluster,
+                      rangeStart: rangeStart,
+                      pixelsPerMinute: _pixelsPerMinute,
+                    ),
+                // Timeline mode only: the now-line's position is meaningless
+                // without a time axis to place it against — in collapsed mode
+                // it would sit at an arbitrary point between two stacked
+                // blocks and imply a scale that isn't there.
+                if (widget.showHourLabels)
+                  CurrentTimeIndicator(
+                    rangeStart: rangeStart,
+                    rangeEnd: rangeEnd,
+                    pixelsPerMinute: _pixelsPerMinute,
+                    gutterWidth: hourGutterWidth,
+                  ),
+                // LAST, deliberately — the placement line has to paint above
+                // every task (reported directly: it was rendering underneath
+                // them). Its press surface stays first in this list; see
+                // PlaceTaskLineLayer's doc comment for why they're split.
+                if (widget.showHourLabels)
+                  PlaceTaskLineOverlay(
+                    theme: theme,
+                    rangeStart: rangeStart,
+                    pixelsPerMinute: _pixelsPerMinute,
+                    controller: _placeLineController,
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -586,6 +978,59 @@ class _DayTimelineState extends State<_DayTimeline> {
   /// Keyed off [_settlingTaskId] rather than [_draggingTaskId] so the
   /// order survives until the drop animation completes — see that field's
   /// own comment for the jump this prevents.
+  /// Overrides [slots]' column assignment for every clustered task with a
+  /// fixed, one-lane-per-task layout: lane index equals chronological
+  /// position within the cluster (earliest = column 0 = leftmost), and
+  /// `columnCount` is always the cluster's own task count. Requested
+  /// directly ("leftmost pill to topmost task") — `layoutOverlappingTasks`'
+  /// own packed-column algorithm reuses a column once its previous
+  /// occupant has finished, which does NOT guarantee a stable per-task lane
+  /// (e.g. two tasks that don't directly overlap each other, both inside a
+  /// 3-task cluster, could otherwise share a column) — the cluster's flat
+  /// list needs that guarantee to keep its row order matching pill
+  /// position. Non-clustered tasks are returned unchanged.
+  /// The slot a task held in [ghostSlots] — used only for the drag ghost,
+  /// which needs its ORIGINAL (pre-drag) lane, not the current one
+  /// (`slots`), since the two schemes disagree the instant a drag starts
+  /// excluding this task from cluster detection. Falls back to a single,
+  /// full-width slot if the task isn't found (shouldn't happen — the
+  /// ghost only ever renders for a task that was on today's list a moment
+  /// ago — but this keeps the lookup total rather than partial).
+  TaskLayoutSlot _ghostSlotFor(List<TaskLayoutSlot> ghostSlots, String taskId) {
+    return ghostSlots.firstWhere(
+      (slot) => slot.task.id == taskId,
+      orElse: () => ghostSlots.first,
+    );
+  }
+
+  List<TaskLayoutSlot> _withClusterLanes(
+    List<TaskLayoutSlot> slots,
+    List<OverlapCluster> clusters,
+  ) {
+    if (clusters.isEmpty) return slots;
+
+    final laneByTaskId = <String, int>{};
+    final countByTaskId = <String, int>{};
+    for (final cluster in clusters) {
+      for (final (index, task) in cluster.tasks.indexed) {
+        laneByTaskId[task.id] = index;
+        countByTaskId[task.id] = cluster.tasks.length;
+      }
+    }
+
+    return [
+      for (final slot in slots)
+        if (laneByTaskId.containsKey(slot.task.id))
+          TaskLayoutSlot(
+            task: slot.task,
+            column: laneByTaskId[slot.task.id]!,
+            columnCount: countByTaskId[slot.task.id]!,
+          )
+        else
+          slot,
+    ];
+  }
+
   List<TaskLayoutSlot> _dragLastOrder(List<TaskLayoutSlot> slots) {
     final draggingId = _settlingTaskId;
     if (draggingId == null) return slots;
@@ -620,6 +1065,9 @@ class _DraggableTaskBlock extends ConsumerStatefulWidget {
     required this.onSettled,
     required this.pixelsPerMinute,
     required this.isDraggable,
+    this.fadeInOnFirstBuild = false,
+    this.growFromMinutes,
+    this.contentHidden = false,
   });
 
   final Task task;
@@ -656,6 +1104,30 @@ class _DraggableTaskBlock extends ConsumerStatefulWidget {
   /// meaning and a drag has nothing meaningful to convert into.
   final bool isDraggable;
 
+  /// Fades this block in on its first build — set only for a task the
+  /// create/edit modal just saved, so the user sees it arrive rather than
+  /// finding it already there when the modal closes. Requested directly.
+  final bool fadeInOnFirstBuild;
+
+  /// The duration this block should RENDER at until the create/edit modal
+  /// has finished closing, after which it animates to the task's real
+  /// (already-saved) duration. Null except for a task whose duration the
+  /// modal just changed.
+  ///
+  /// Needed because the save is written before the modal pops, so without
+  /// this the pill reaches its new height while still hidden behind the
+  /// modal and there is nothing left to watch — reported directly ("no se
+  /// already placed or extended").
+  final int? growFromMinutes;
+
+  /// True for a resting cluster member — see [TaskCapsuleBlock.contentHidden].
+  /// Ignored (treated as false) while this block is actively being
+  /// dragged: a dragged task always renders its full content, per the
+  /// settled clustering design (docs/DECISIONS.md) — the drag handler
+  /// itself passes `contentHidden: false` down for that reason, this flag
+  /// only ever reflects the RESTING state.
+  final bool contentHidden;
+
   @override
   ConsumerState<_DraggableTaskBlock> createState() =>
       _DraggableTaskBlockState();
@@ -664,6 +1136,56 @@ class _DraggableTaskBlock extends ConsumerStatefulWidget {
 class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
   double _dragOffset = 0;
   bool _isDragging = false;
+
+  /// Drives the just-saved entrance stagger (see
+  /// [TaskCapsuleBlock.entranceProgress], which spreads this single value
+  /// across the block's five parts). Starts at 0 only when this block is
+  /// the one that was just created; every other block starts — and stays
+  /// — at 1, so nothing animates on an ordinary rebuild or day change.
+  late double _entranceProgress = widget.fadeInOnFirstBuild ? 0 : 1;
+
+  /// The duration to render at while the modal is still closing — see
+  /// [_DraggableTaskBlock.growFromMinutes]. Cleared once the modal has
+  /// gone, which is what lets the pill animate into its real height.
+  late int? _heldDurationMinutes = widget.growFromMinutes;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!widget.fadeInOnFirstBuild && widget.growFromMinutes == null) return;
+    _scheduleReveal();
+  }
+
+  @override
+  void didUpdateWidget(_DraggableTaskBlock oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A duration change does NOT remount this block — same task id, same
+    // key, so the element is updated rather than recreated and initState
+    // never runs again. Without this the held pre-save height would never
+    // be picked up (or never released), which is exactly why the resize
+    // wasn't visible. A newly CREATED task does mount fresh, so that case
+    // is still handled by initState above.
+    if (widget.growFromMinutes == oldWidget.growFromMinutes) return;
+    if (widget.growFromMinutes == null) return;
+    setState(() => _heldDurationMinutes = widget.growFromMinutes);
+    _scheduleReveal();
+  }
+
+  /// Holds the block at its pre-save appearance until the create/edit
+  /// modal has finished sliding away, then releases it so the entrance
+  /// (or the pill's resize) plays where the user can actually see it —
+  /// reported directly: starting at save time meant the whole animation
+  /// ran behind the closing modal and was over before the timeline was
+  /// visible.
+  void _scheduleReveal() {
+    Future<void>.delayed(widget.theme.motionRouteSettle, () {
+      if (!mounted) return;
+      setState(() {
+        _entranceProgress = 1;
+        _heldDurationMinutes = null;
+      });
+    });
+  }
 
   /// True from the moment the finger lifts until the reschedule write has
   /// landed and `baseTop` has caught up. While set, the block renders at
@@ -711,6 +1233,16 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
     final top = widget.baseTop + effectiveOffset;
     final slot = widget.slot;
 
+    // Dev-only layout experiment (see core/dev_config.dart) — always the
+    // shipped default outside kDebugMode, since the providers themselves
+    // default to `stacked`/true/true and nothing outside the Settings
+    // screen's "Developer" section ever calls their `set()`.
+    final devTextLayout = ref.watch(devTimelineTaskTextLayoutProvider);
+    final devIconsVisible = ref.watch(devTimelineTaskIconsVisibleProvider);
+    final devDurationVisible = ref.watch(
+      devTimelineTaskDurationVisibleProvider,
+    );
+
     // Overlapping tasks are nudged right by one pill-width per column, so
     // each stays individually visible and tappable. A fractional width
     // wouldn't work here: the pill is a fixed-width element inside the
@@ -744,128 +1276,164 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
       // 0.75 opacity fade, which read as the block receding — the opposite
       // of being picked up. Animated so lift and settle are both visible
       // rather than snapping.
-      child: AnimatedScale(
-        scale: _isDragging ? _liftScale : 1.0,
-        duration: widget.theme.motionFast,
-        curve: widget.theme.curveStandard,
-        // Drag handlers now live on TaskCapsuleBlock's own icon-pill
-        // GestureDetector (scoped to just the pill, not the whole row) —
-        // requested directly, since dragging from the title/time text
-        // fought the timeline's own vertical scroll gesture.
-        child: TaskCapsuleBlock(
-          task: widget.task,
-          pixelsPerMinute: widget.pixelsPerMinute,
-          onTap: widget.onTap,
-          onToggleComplete: widget.onToggleComplete,
-          dragPreviewStartsAt: _isDragging ? _previewStartsAt : null,
-          isLifted: _isDragging,
-          // When a task shares its slot, its text has to stop
-          // before the next column's pill starts, or titles run
-          // under neighbours.
-          maxTextWidth: slot.column < slot.columnCount - 1
-              ? _pillWidth(widget.theme)
-              : null,
-          // Null handlers in collapsed mode leave the pill tappable but
-          // not draggable — see _DraggableTaskBlock.isDraggable.
-          onDragStart: !widget.isDraggable ? null : (_) {
-            setState(() => _isDragging = true);
-            widget.onDraggingChanged(true);
-          },
-          onDragUpdate: !widget.isDraggable ? null : (details) {
-            setState(() => _dragOffset += details.delta.dy);
-          },
-          onDragEnd: !widget.isDraggable ? null : (_) async {
-            final minutesDelta = _snappedMinutesDelta;
-            final newScheduledAt = _previewStartsAt;
+      // Drives the entrance stagger — TaskCapsuleBlock spreads this one
+      // 0→1 value across its five parts (pill, name, time, icons,
+      // checkbox), so the whole sequence runs off a single animation.
+      // Slower than the lift/settle motions around it: this is a "here is
+      // the thing you just made" beat, not a response to a gesture, so it
+      // wants to be seen rather than to get out of the way.
+      child: TweenAnimationBuilder<double>(
+        // Only `end` matters on rebuild — TweenAnimationBuilder animates
+        // from wherever it currently is toward the new end value, so
+        // flipping _entranceProgress 0 -> 1 is what plays the sequence.
+        tween: Tween(begin: 0, end: _entranceProgress),
+        duration: widget.theme.motionSlow,
+        curve: Curves.easeOut,
+        builder: (context, entranceProgress, child) => AnimatedScale(
+          scale: _isDragging ? _liftScale : 1.0,
+          duration: widget.theme.motionFast,
+          curve: widget.theme.curveStandard,
+          // Drag handlers now live on TaskCapsuleBlock's own icon-pill
+          // GestureDetector (scoped to just the pill, not the whole row) —
+          // requested directly, since dragging from the title/time text
+          // fought the timeline's own vertical scroll gesture.
+          child: TaskCapsuleBlock(
+            task: widget.task,
+            // ConsumerStatefulWidget, so read directly rather than
+            // threading a categoryById map through another field — the
+            // parent _DayTimeline already does that for the ghost preview,
+            // which isn't Riverpod-aware.
+            category: ref
+                .watch(categoryListProvider)
+                .where((c) => c.id == widget.task.categoryId)
+                .firstOrNull,
+            pixelsPerMinute: widget.pixelsPerMinute,
+            onTap: widget.onTap,
+            onToggleComplete: widget.onToggleComplete,
+            dragPreviewStartsAt: _isDragging ? _previewStartsAt : null,
+            durationMinutesOverride: _heldDurationMinutes,
+            entranceProgress: entranceProgress,
+            isLifted: _isDragging,
+            // A dragged cluster member always shows full content — only
+            // the resting state stays blanked.
+            contentHidden: widget.contentHidden && !_isDragging,
+            textLayout: devTextLayout,
+            iconsVisible: devIconsVisible,
+            durationVisible: devDurationVisible,
+            // When a task shares its slot, its text has to stop
+            // before the next column's pill starts, or titles run
+            // under neighbours.
+            maxTextWidth: slot.column < slot.columnCount - 1
+                ? _pillWidth(widget.theme)
+                : null,
+            // Null handlers in collapsed mode leave the pill tappable but
+            // not draggable — see _DraggableTaskBlock.isDraggable.
+            onDragStart: !widget.isDraggable
+                ? null
+                : (_) {
+                    setState(() => _isDragging = true);
+                    widget.onDraggingChanged(true);
+                  },
+            onDragUpdate: !widget.isDraggable
+                ? null
+                : (details) {
+                    setState(() => _dragOffset += details.delta.dy);
+                  },
+            onDragEnd: !widget.isDraggable
+                ? null
+                : (_) async {
+                    final minutesDelta = _snappedMinutesDelta;
+                    final newScheduledAt = _previewStartsAt;
 
-            // Drop the lift (shadow/scale) immediately — that's the
-            // tactile "released" feedback and shouldn't wait on I/O. This
-            // also clears the ghost (via onDraggingChanged), since the
-            // parent only shows it while this task's id is the dragging
-            // one. `_isSettling` turns on in the same frame so the block
-            // eases from the raw finger position into its snapped slot
-            // rather than jumping there.
-            setState(() {
-              _isDragging = false;
-              _isSettling = true;
-            });
-            widget.onDraggingChanged(false);
+                    // Drop the lift (shadow/scale) immediately — that's the
+                    // tactile "released" feedback and shouldn't wait on I/O. This
+                    // also clears the ghost (via onDraggingChanged), since the
+                    // parent only shows it while this task's id is the dragging
+                    // one. `_isSettling` turns on in the same frame so the block
+                    // eases from the raw finger position into its snapped slot
+                    // rather than jumping there.
+                    setState(() {
+                      _isDragging = false;
+                      _isSettling = true;
+                    });
+                    widget.onDraggingChanged(false);
 
-            if (minutesDelta == 0) {
-              // Released within the snap threshold of where it started —
-              // ease back to the original slot rather than cutting.
-              setState(() => _dragOffset = 0);
-              await _endSettle();
-              return;
-            }
+                    if (minutesDelta == 0) {
+                      // Released within the snap threshold of where it started —
+                      // ease back to the original slot rather than cutting.
+                      setState(() => _dragOffset = 0);
+                      await _endSettle();
+                      return;
+                    }
 
-            // With the preference on and the drop overlapping another task,
-            // the drag path pushes the conflicting task(s) out of the way
-            // (a cascade) instead of rejecting the drop — a deliberate,
-            // confirmed reversal of the reject-and-snap-back behavior for
-            // this one path only (the create wizard and edit-schedule modal
-            // keep reject-with-inline-error, unchanged, since neither has a
-            // drag context to compute a push from). See docs/DECISIONS.md.
-            if (ref.read(preventOverlappingTasksSettingProvider) &&
-                overlapsExistingTask(
-                  scheduledAt: newScheduledAt,
-                  durationMinutes: widget.task.durationMinutes!,
-                  existingTasks: ref.read(taskListProvider),
-                  excludeTaskId: widget.task.id,
-                )) {
-              final sameDayTasks = ref
-                  .read(taskListProvider)
-                  .where(
-                    (other) =>
-                        other.id != widget.task.id &&
-                        other.isScheduled &&
-                        _isSameDay(other.scheduledAt!, newScheduledAt),
-                  )
-                  .toList();
+                    // With the preference on and the drop overlapping another task,
+                    // the drag path pushes the conflicting task(s) out of the way
+                    // (a cascade) instead of rejecting the drop — a deliberate,
+                    // confirmed reversal of the reject-and-snap-back behavior for
+                    // this one path only (the create wizard and edit-schedule modal
+                    // keep reject-with-inline-error, unchanged, since neither has a
+                    // drag context to compute a push from). See docs/DECISIONS.md.
+                    if (ref.read(preventOverlappingTasksSettingProvider) &&
+                        overlapsExistingTask(
+                          scheduledAt: newScheduledAt,
+                          durationMinutes: widget.task.durationMinutes!,
+                          existingTasks: ref.read(taskListProvider),
+                          excludeTaskId: widget.task.id,
+                        )) {
+                      final sameDayTasks = ref
+                          .read(taskListProvider)
+                          .where(
+                            (other) =>
+                                other.id != widget.task.id &&
+                                other.isScheduled &&
+                                _isSameDay(other.scheduledAt!, newScheduledAt),
+                          )
+                          .toList();
 
-              final moves = computeCascadeMoves(
-                draggedTask: widget.task,
-                newStart: newScheduledAt,
-                sameDayTasks: sameDayTasks,
-              );
+                      final moves = computeCascadeMoves(
+                        draggedTask: widget.task,
+                        newStart: newScheduledAt,
+                        sameDayTasks: sameDayTasks,
+                      );
 
-              // Day-boundary guard failed (or some other reason the
-              // cascade can't be satisfied) — abort the whole cascade and
-              // snap back exactly as the previous reject behavior did,
-              // as if the drop never happened. Nothing partially applies.
-              if (moves == null) {
-                setState(() => _dragOffset = 0);
-                await _endSettle();
-                return;
-              }
+                      // Day-boundary guard failed (or some other reason the
+                      // cascade can't be satisfied) — abort the whole cascade and
+                      // snap back exactly as the previous reject behavior did,
+                      // as if the drop never happened. Nothing partially applies.
+                      if (moves == null) {
+                        setState(() => _dragOffset = 0);
+                        await _endSettle();
+                        return;
+                      }
 
-              // Deliberately do NOT clear `_dragOffset` yet — see the
-              // comment below on the non-cascade path for why.
-              await ref
-                  .read(taskListProvider.notifier)
-                  .rescheduleTaskWithCascade(moves);
+                      // Deliberately do NOT clear `_dragOffset` yet — see the
+                      // comment below on the non-cascade path for why.
+                      await ref
+                          .read(taskListProvider.notifier)
+                          .rescheduleTaskWithCascade(moves);
 
-              if (mounted) setState(() => _dragOffset = 0);
-              await _endSettle();
-              return;
-            }
+                      if (mounted) setState(() => _dragOffset = 0);
+                      await _endSettle();
+                      return;
+                    }
 
-            // Deliberately do NOT clear `_dragOffset` yet. The write is
-            // async (repository save + notification sync + provider
-            // refresh), and clearing it here snapped the block back to
-            // its old position for the frame or two before the new
-            // data arrived — a visible blink of the task at its
-            // original time. Holding the offset keeps the block
-            // exactly where the user dropped it until the rebuilt
-            // widget takes over at the new `baseTop`.
-            await widget.onReschedule(newScheduledAt);
+                    // Deliberately do NOT clear `_dragOffset` yet. The write is
+                    // async (repository save + notification sync + provider
+                    // refresh), and clearing it here snapped the block back to
+                    // its old position for the frame or two before the new
+                    // data arrived — a visible blink of the task at its
+                    // original time. Holding the offset keeps the block
+                    // exactly where the user dropped it until the rebuilt
+                    // widget takes over at the new `baseTop`.
+                    await widget.onReschedule(newScheduledAt);
 
-            // Snap the offset back to zero only once the task itself
-            // has moved, so the two changes cancel out and the block
-            // never visibly jumps.
-            if (mounted) setState(() => _dragOffset = 0);
-            await _endSettle();
-          },
+                    // Snap the offset back to zero only once the task itself
+                    // has moved, so the two changes cancel out and the block
+                    // never visibly jumps.
+                    if (mounted) setState(() => _dragOffset = 0);
+                    await _endSettle();
+                  },
+          ),
         ),
       ),
     );

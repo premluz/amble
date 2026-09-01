@@ -5,15 +5,7 @@ import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_icon_button.dart';
 import 'selected_date_provider.dart';
 
-const _weekdayAbbreviations = [
-  'MON',
-  'TUE',
-  'WED',
-  'THU',
-  'FRI',
-  'SAT',
-  'SUN',
-];
+const _weekdayAbbreviations = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 
 bool _isSameDay(DateTime a, DateTime b) =>
     a.year == b.year && a.month == b.month && a.day == b.day;
@@ -227,13 +219,18 @@ class _DayChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Grey background marks the CURRENT day specifically (per the
-    // mockup — "grey bg is for the current day"), independent of which
-    // day is selected. A selected-but-not-today day is distinguished by
-    // its outline instead, so both states can be shown at once without
-    // one hiding the other (e.g. viewing tomorrow while today is still
-    // visibly today in the strip).
-    final background = isToday ? theme.colorSurfaceField : Colors.transparent;
+    // REVISED, per direct feedback: background fill now marks the
+    // SELECTED day (any day, not just today) — this supersedes the
+    // earlier mockup-driven "grey bg is for the current day" design. The
+    // current day is instead marked by a small accent-colored dot below
+    // the day number, shown independently of selection, so both states
+    // remain visible at once (e.g. viewing tomorrow while today is still
+    // visibly today via its own dot). The outline previously used for
+    // "selected but not today" is gone — background alone now signals
+    // selection, for every day.
+    final background = isSelected
+        ? theme.colorSurfaceField
+        : Colors.transparent;
 
     return SizedBox(
       width: width,
@@ -246,12 +243,6 @@ class _DayChip extends StatelessWidget {
             decoration: BoxDecoration(
               color: background,
               borderRadius: BorderRadius.circular(theme.radiusMd),
-              border: isSelected && !isToday
-                  ? Border.all(
-                      color: theme.colorTextSecondary,
-                      width: theme.borderWidthHairline,
-                    )
-                  : null,
             ),
             padding: EdgeInsets.symmetric(vertical: theme.spacingXs),
             child: Column(
@@ -268,10 +259,27 @@ class _DayChip extends StatelessWidget {
                   '${date.day}',
                   style: theme.textBody.copyWith(
                     color: theme.colorTextPrimary,
-                    fontWeight: isSelected
-                        ? FontWeight.w700
-                        : FontWeight.w500,
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                   ),
+                ),
+                SizedBox(height: theme.spacingXs / 2),
+                // Fixed-height slot regardless of isToday, so a non-today
+                // chip's text doesn't shift vertically depending on
+                // whether its neighbour is showing a dot.
+                SizedBox(
+                  height: theme.spacingXs,
+                  child: isToday
+                      ? Center(
+                          child: Container(
+                            width: theme.spacingXs,
+                            height: theme.spacingXs,
+                            decoration: BoxDecoration(
+                              color: theme.colorAccent,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        )
+                      : null,
                 ),
               ],
             ),

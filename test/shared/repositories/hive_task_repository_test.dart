@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive_ce.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/shared/models/task.dart';
-import 'package:amble/shared/models/task_category.dart';
+import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/models/task_status.dart';
 import 'package:amble/shared/repositories/hive_task_repository.dart';
 
@@ -31,7 +31,7 @@ void main() {
       title: 'Walk',
       scheduledAt: DateTime(2026, 8, 20, 9),
       durationMinutes: 30,
-      category: TaskCategory.health,
+      categoryId: BuiltInCategoryIds.health,
     );
 
     await repository.saveTask(task);
@@ -50,7 +50,7 @@ void main() {
         title: 'A',
         scheduledAt: DateTime(2026, 8, 20),
         durationMinutes: 15,
-        category: TaskCategory.work,
+        categoryId: BuiltInCategoryIds.work,
       ),
     );
     await repository.saveTask(
@@ -59,7 +59,7 @@ void main() {
         title: 'B',
         scheduledAt: DateTime(2026, 8, 20),
         durationMinutes: 15,
-        category: TaskCategory.admin,
+        categoryId: BuiltInCategoryIds.admin,
       ),
     );
 
@@ -73,7 +73,7 @@ void main() {
         title: 'Gone soon',
         scheduledAt: DateTime(2026, 8, 20),
         durationMinutes: 10,
-        category: TaskCategory.personal,
+        categoryId: BuiltInCategoryIds.personal,
       ),
     );
 
@@ -87,13 +87,13 @@ void main() {
       title: 'A',
       scheduledAt: DateTime(2026, 8, 20),
       durationMinutes: 10,
-      category: TaskCategory.personal,
+      categoryId: BuiltInCategoryIds.personal,
     );
     final b = Task.create(
       title: 'B',
       scheduledAt: DateTime(2026, 8, 20),
       durationMinutes: 10,
-      category: TaskCategory.personal,
+      categoryId: BuiltInCategoryIds.personal,
     );
 
     expect(a.id, isNotEmpty);

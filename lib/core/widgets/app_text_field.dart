@@ -20,6 +20,7 @@ class AppTextField extends StatefulWidget {
     this.autofocus = false,
     this.textInputAction,
     this.onSubmitted,
+    this.onFocusChanged,
   });
 
   final TextEditingController controller;
@@ -35,6 +36,11 @@ class AppTextField extends StatefulWidget {
   final bool autofocus;
   final TextInputAction? textInputAction;
   final ValueChanged<String>? onSubmitted;
+
+  /// Fired whenever this field gains or loses focus — e.g. a caller that
+  /// wants to collapse itself back to a summary/link once the field is
+  /// blurred (see the create flow's "Add description" reveal).
+  final ValueChanged<bool>? onFocusChanged;
 
   @override
   State<AppTextField> createState() => _AppTextFieldState();
@@ -61,6 +67,7 @@ class _AppTextFieldState extends State<AppTextField> {
   void _handleFocusChange() {
     if (_focusNode.hasFocus == _isFocused) return;
     setState(() => _isFocused = _focusNode.hasFocus);
+    widget.onFocusChanged?.call(_focusNode.hasFocus);
   }
 
   @override

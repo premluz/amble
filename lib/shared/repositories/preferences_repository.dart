@@ -47,4 +47,18 @@ abstract final class PreferenceKeys {
   /// Whether the day view's left-side hour gutter (grid ticks) is shown.
   /// Absent (null) defaults to true — see [ShowHourLabelsSetting].
   static const String showHourLabels = 'showHourLabels';
+
+  /// Whether 2–3 mutually-overlapping tasks render as individual capsules
+  /// (naive spatial overlap) instead of one aggregate
+  /// `OverlapClusterBlock`. Absent (null) defaults to false — clustering is
+  /// ON by default. See [DisableOverlapClusteringSetting].
+  static const String disableOverlapClustering = 'disableOverlapClustering';
+
+  /// Whether the 5 built-in [Category] rows have been seeded into the
+  /// `categories` Hive box and every existing [Task]'s deprecated
+  /// `category` enum value has been backfilled onto its new `categoryId`.
+  /// Absent (null) defaults to false — a fresh install or an existing
+  /// install upgrading to this version both run the one-time seed/backfill
+  /// exactly once, gated by this flag (see `main.dart`).
+  static const String categoriesSeeded = 'categoriesSeeded';
 }

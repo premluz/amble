@@ -26,6 +26,10 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Amble uses the microphone so you can add tasks by voice.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Amble uses speech recognition to turn what you say into a task.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

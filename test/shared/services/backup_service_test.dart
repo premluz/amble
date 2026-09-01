@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:amble/shared/models/task.dart';
-import 'package:amble/shared/models/task_category.dart';
+import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/services/backup_service.dart';
 
 void main() {
@@ -25,20 +25,20 @@ void main() {
       title: 'Deep work',
       scheduledAt: DateTime(2026, 8, 20, 9),
       durationMinutes: 30,
-      category: TaskCategory.work,
+      categoryId: BuiltInCategoryIds.work,
     );
     final json = buildBackupJson(tasks: [task.toJson()]);
 
     final parsed = service.parseImportFile(json);
 
-    expect(parsed, hasLength(1));
-    expect(parsed.single.id, task.id);
-    expect(parsed.single.title, 'Deep work');
+    expect(parsed.tasks, hasLength(1));
+    expect(parsed.tasks.single.id, task.id);
+    expect(parsed.tasks.single.title, 'Deep work');
   });
 
   test('parses a well-formed backup with an empty task list', () {
     final parsed = service.parseImportFile(buildBackupJson());
-    expect(parsed, isEmpty);
+    expect(parsed.tasks, isEmpty);
   });
 
   test('rejects malformed (non-JSON) content', () {

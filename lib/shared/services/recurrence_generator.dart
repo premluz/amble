@@ -1,3 +1,4 @@
+import '../models/category.dart';
 import '../models/recurrence_frequency.dart';
 import '../models/recurrence_rule.dart';
 import '../models/task.dart';
@@ -63,7 +64,7 @@ List<Task> generateRecurrenceInstances({
           notes: template.notes,
           scheduledAt: occurrence,
           durationMinutes: template.durationMinutes ?? _fallbackDurationMinutes,
-          category: template.category,
+          categoryId: template.categoryId ?? BuiltInCategoryIds.general,
           recurrenceId: seriesId,
           // Deliberately null: only the template carries the rule.
         )

@@ -16,8 +16,9 @@ This is the authoritative feature list. If a work order or a session's output do
 
 ## Nice-to-have (still v1 if time allows, not a separate phase)
 
-- Simple categories/colors as a lightweight tagging system
+- **User-extensible categories (implemented)** — categories are no longer a fixed 5-value enum; a real "Add new category" modal (name, one of 12 colors, an emoji) creates a persisted `Category` row via `CategoryList.createCategory`. v1 is create + list only — no edit or delete. See `docs/CONSTITUTION.md`'s "Category" section for the full model shape and the migration off the old `TaskCategory` enum.
 - Basic "today's plan" summary view (in-app only, not an OS widget)
+- **Voice dictation for Quick Capture** — a tap-to-talk mic button using on-device speech-to-text (`speech_to_text` package, wrapping `SFSpeechRecognizer`/Android `SpeechRecognizer`). Not a new parsing path: dictated text lands in the same `_titleController` and goes through the exact same `parseQuickCapture` → `taskListProvider` pipeline as typed input. Highlighting is applied only once the full transcript lands (no progressive/partial-result highlighting for the first pass).
 
 ## Scoped for later: splash/landing, carousel, and onboarding
 
@@ -35,6 +36,12 @@ Architecturally: onboarding completion state and goal selections belong in `Pref
 
 - "Edit all future occurrences" for recurring tasks (MVP only supports editing a single materialized instance)
 - Monthly/yearly recurrence, or complex recurrence patterns beyond daily/weekly + interval + days-of-week
+
+## Deferred, flagged feature: Zone (time-boxed task containers) — design-only spike
+
+A separate architectural layer, same "model exists, UI/build comes later" treatment as `TrackedBehavior` below: a `Zone` is a named time window (e.g. "Morning ritual," 07:00–08:00) that tasks can optionally be assigned into via a new nullable `Task.zoneId`, independent of whether the task also has its own `scheduledAt`. See `docs/CONSTITUTION.md`'s "Zone" section for the full draft model shape, agreed 2026-09-01.
+
+**Not started — design pass only, no model/repository/UI built yet.** Three real forks were identified and deliberately left open rather than resolved on the spot: (1) what happens when a zone's assigned-task durations exceed its own capacity — hard block, warning, or silent overflow; (2) zone recurrence needs per-occurrence-adjustable start/end times (a Monday zone and a Wednesday zone in the same series can differ), which the existing `RecurrenceRule` shape doesn't support and likely needs its own per-instance model rather than one shared rule; (3) dragging a zone with its contained tasks, and cascading zones, are structurally similar to the existing task-level cascade-push but not the same code, and are explicitly deferred past the first build. Each of these needs its own confirm-first pass before implementation.
 
 ## Deferred, flagged feature: TrackedBehavior (persistent tracked objects)
 

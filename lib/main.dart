@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,13 +14,17 @@ import 'features/timeline/selected_date_provider.dart';
 import 'features/timeline/timeline_screen.dart';
 import 'hive_registrar.g.dart';
 import 'shared/models/app_theme_mode.dart';
+import 'shared/models/category.dart';
 import 'shared/models/task.dart';
 import 'shared/models/tracked_behavior.dart';
+import 'shared/models/zone.dart';
+import 'shared/providers/category_providers.dart';
 import 'shared/providers/notification_providers.dart';
 import 'shared/providers/notification_tap_provider.dart';
 import 'shared/providers/task_providers.dart';
 import 'shared/providers/preferences_providers.dart';
 import 'shared/providers/tracked_behavior_providers.dart';
+import 'shared/providers/zone_providers.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,6 +35,13 @@ void main() async {
   // FeatureFlags.trackedBehaviorEnabled) — the box must be open for
   // trackedBehaviorRepositoryProvider to resolve if anything ever reads it.
   await Hive.openBox<TrackedBehavior>(trackedBehaviorBoxName);
+  // Opened but unused until a Zone UI exists (gated behind
+  // FeatureFlags.zoneEnabled) — same "additive, inert data layer" pattern
+  // as trackedBehaviorBoxName above.
+  await Hive.openBox<Zone>(zoneBoxName);
+  // The user-extensible category entity — seeded with 5 built-in rows and
+  // backfilled onto existing tasks below, once, at launch.
+  await Hive.openBox<Category>(categoryBoxName);
   // Small key-value store for app preferences (theme mode today, more
   // later). Untyped box: it holds heterogeneous primitive/adapter values by
   // design — see PreferencesRepository.
@@ -45,11 +58,32 @@ void main() async {
         container.read(notificationTapProvider.notifier).set(taskId),
   );
 
+  // Seed the 5 built-in categories and backfill every pre-existing task's
+  // deprecated `category` enum onto the new `categoryId`. Launch-only,
+  // gated by PreferenceKeys.categoriesSeeded so it only actually runs
+  // once per install — see docs/DECISIONS.md.
+  await container
+      .read(categoryListProvider.notifier)
+      .seedBuiltInsAndBackfillIfNeeded();
+
   // Top up each recurring series' rolling window. Launch-only by design
   // (see docs/DECISIONS.md) — the Timeline stays a pure reader, and the
   // 8-week window means a session would have to stay open for weeks before
   // running dry. Idempotent, so this never duplicates existing instances.
   await container.read(taskListProvider.notifier).materializeDueRecurrences();
+
+  // Roll the notification window forward. Materialization above writes rows
+  // 8 weeks out but deliberately schedules no alarms; this registers them
+  // for the near window only, keeping the app well under Android's
+  // 500-concurrent-alarm cap. See docs/ERROR_LOG.md.
+  //
+  // Deliberately NOT awaited: this is a batch of native platform calls, and
+  // blocking `runApp` on it would trade a slow save for a slow cold start.
+  // Alerts are a side effect of data that is already persisted, so they can
+  // finish registering after the first frame.
+  unawaited(
+    container.read(taskListProvider.notifier).refreshScheduledNotifications(),
+  );
 
   runApp(
     UncontrolledProviderScope(container: container, child: const AmbleApp()),

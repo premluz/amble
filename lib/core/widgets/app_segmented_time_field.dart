@@ -190,8 +190,7 @@ class _AppSegmentedTimeFieldState extends State<AppSegmentedTimeField> {
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_focusNode.hasFocus) return;
-      final atEnd =
-          _controller.selection.baseOffset >= _controller.text.length;
+      final atEnd = _controller.selection.baseOffset >= _controller.text.length;
       if (!atEnd) return;
       _controller.selection = const TextSelection.collapsed(offset: 0);
     });
@@ -492,8 +491,7 @@ class _SegmentedTimeFormatter extends TextInputFormatter {
       // call, as autofill or a fast typist's IME batching would) — both
       // read as "the hour is done", so both roll into minutes the same
       // way rather than only the first being handled.
-      final reachesTwoInOneEdit =
-          oldHour.isEmpty && digitsInserted.length >= 2;
+      final reachesTwoInOneEdit = oldHour.isEmpty && digitsInserted.length >= 2;
       if (wasTypingAtEnd && (oldHour.length >= 2 || reachesTwoInOneEdit)) {
         final hourPortion = reachesTwoInOneEdit
             ? digitsInserted.substring(0, 2)
@@ -511,15 +509,15 @@ class _SegmentedTimeFormatter extends TextInputFormatter {
             ? remainder.substring(0, _maxMinuteDigits)
             : remainder;
         final text = _render(hourPortion, toMinutes);
-        final offset =
-            hourPortion.length + separator.length + toMinutes.length;
+        final offset = hourPortion.length + separator.length + toMinutes.length;
         return TextEditingValue(
           text: text,
           selection: TextSelection.collapsed(offset: offset),
         );
       }
 
-      var newHour = oldHour.substring(0, posInSegment) +
+      var newHour =
+          oldHour.substring(0, posInSegment) +
           digitsInserted +
           oldHour.substring(posInSegment);
       var caretInHour = posInSegment + digitsInserted.length;
@@ -558,7 +556,9 @@ class _SegmentedTimeFormatter extends TextInputFormatter {
     final separatorEndNow = oldHour.length + separator.length;
     return TextEditingValue(
       text: text,
-      selection: TextSelection.collapsed(offset: separatorEndNow + caretInMinute),
+      selection: TextSelection.collapsed(
+        offset: separatorEndNow + caretInMinute,
+      ),
     );
   }
 }

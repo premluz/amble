@@ -7,15 +7,18 @@ import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/task_detail/task_detail_sheet.dart';
 import 'package:amble/shared/models/recurrence_frequency.dart';
 import 'package:amble/shared/models/recurrence_rule.dart';
+import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/models/task.dart';
-import 'package:amble/shared/models/task_category.dart';
 import 'package:amble/shared/models/task_status.dart';
+import 'package:amble/shared/providers/category_providers.dart';
 import 'package:amble/shared/providers/notification_providers.dart';
 import 'package:amble/shared/providers/preferences_providers.dart';
 import 'package:amble/shared/providers/task_providers.dart';
+import 'package:amble/shared/repositories/hive_category_repository.dart';
 import 'package:amble/shared/repositories/hive_task_repository.dart';
 
 import '../../support/fake_notification_service.dart';
+import '../../support/seeded_category_box.dart';
 
 /// A time [days] from today at [hour], anchored to the real current date.
 ///
@@ -39,9 +42,21 @@ Finder _repeatsSwitch() => find.byType(Switch).first;
 // Same real-time-I/O-vs-pump-loop race as exit_confirmation_test.dart's own
 // helper — see its comment and docs/ERROR_LOG.md.
 Future<void> _tapAndSettle(WidgetTester tester, Finder finder) async {
+  // The live schedule stage (unlike the retired _EditScheduleForm this
+  // file used to test) is a real SingleChildScrollView, and the default
+  // test viewport isn't tall enough to fit every field — a bare tap()
+  // can miss its target as "off-screen", same fix pattern already used in
+  // task_duration_modal_test.dart. ensureVisible is a pure widget-tree
+  // operation, not real I/O, so it stays outside runAsync below.
+  await tester.ensureVisible(finder);
+  await tester.pumpAndSettle();
   await tester.runAsync(() async {
     await tester.tap(finder);
-    await tester.pumpAndSettle();
+    // Not pumpAndSettle: the Save button now shows a spinner
+    // (AppButton.isLoading) for the duration of the in-flight save, and a
+    // spinner's animation never settles — pumpAndSettle would time out
+    // waiting for it. A single pump just drains the tap's own frame.
+    await tester.pump();
     // A real (not zero) delay: the series-editing save path awaits
     // several repository round-trips in sequence — prune future
     // instances, write the template, re-materialize, then refresh — and a
@@ -49,6 +64,10 @@ Future<void> _tapAndSettle(WidgetTester tester, Finder finder) async {
     // this the box is closed in tearDown while `_refresh()` is still
     // reading from it ("Box has already been closed").
     await Future<void>.delayed(const Duration(milliseconds: 100));
+    // Drains the pop's route-transition animation and the post-pop
+    // `setState(() => _isSaving = false)` — both settled, unlike the
+    // spinner's own perpetual animation while the save was in flight.
+    await tester.pumpAndSettle();
   });
 }
 
@@ -61,6 +80,7 @@ class _NoopPreventOverlappingTasksSetting
 Future<GlobalKey<NavigatorState>> _pumpHost(
   WidgetTester tester, {
   required Box<Task> box,
+  required Box<Category> categoryBox,
 }) async {
   // The default flutter_test surface (800x600 LOGICAL, i.e. quite short)
   // is enough for exit_confirmation_test.dart's forms, but the schedule
@@ -78,6 +98,9 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
     ProviderScope(
       overrides: [
         taskRepositoryProvider.overrideWithValue(HiveTaskRepository(box)),
+        categoryRepositoryProvider.overrideWithValue(
+          HiveCategoryRepository(categoryBox),
+        ),
         notificationServiceProvider.overrideWithValue(
           FakeNotificationService(),
         ),
@@ -95,19 +118,33 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
   return navigatorKey;
 }
 
+/// Opens the REAL, live edit entry point — `showTaskDetailSheet(task:
+/// ...)`, the same call `task_action_sheet.dart`'s "Edit task" makes —
+/// not the retired `showEditScheduleSheet`/`_EditScheduleForm` this file
+/// used to exercise. That form is never called from any real UI (only
+/// from dev scaffolds), so a passing suite against it gave no real
+/// coverage: the live `_TaskDetailFlow`/`_TaskDetailFlowState` had its
+/// own, separate (and, until fixed, buggy) recurrence-editing logic that
+/// this suite never touched at all. See docs/ERROR_LOG.md.
 Future<GlobalKey<NavigatorState>> _pumpEditScheduleForm(
   WidgetTester tester, {
   required Box<Task> box,
+  required Box<Category> categoryBox,
   required Task task,
 }) async {
-  final navigatorKey = await _pumpHost(tester, box: box);
-  showEditScheduleSheet(navigatorKey.currentContext!, task: task);
+  final navigatorKey = await _pumpHost(
+    tester,
+    box: box,
+    categoryBox: categoryBox,
+  );
+  showTaskDetailSheet(navigatorKey.currentContext!, task: task);
   await tester.pumpAndSettle();
   return navigatorKey;
 }
 
 void main() {
   late Box<Task> box;
+  late Box<Category> categoryBox;
 
   setUp(() async {
     Hive.init('./.dart_tool/test_hive_edit_schedule_repeats');
@@ -117,31 +154,39 @@ void main() {
     box = await Hive.openBox<Task>(
       'test_tasks_${DateTime.now().microsecondsSinceEpoch}',
     );
+    categoryBox = await openSeededCategoryBox(
+      'test_categories_${DateTime.now().microsecondsSinceEpoch}',
+    );
   });
 
   tearDown(() async {
     await box.close();
+    await categoryBox.close();
   });
 
-  testWidgets(
-    'a plain (non-recurring) task shows the Repeats panel, enabled',
-    (tester) async {
-      final task = Task.create(
-        title: 'Standup',
-        scheduledAt: _daysFromToday(0),
-        durationMinutes: 15,
-        category: TaskCategory.work,
-      );
-      await tester.runAsync(() => box.put(task.id, task));
+  testWidgets('a plain (non-recurring) task shows the Repeats panel, enabled', (
+    tester,
+  ) async {
+    final task = Task.create(
+      title: 'Standup',
+      scheduledAt: _daysFromToday(0),
+      durationMinutes: 15,
+      categoryId: BuiltInCategoryIds.work,
+    );
+    await tester.runAsync(() => box.put(task.id, task));
 
-      await _pumpEditScheduleForm(tester, box: box, task: task);
+    await _pumpEditScheduleForm(
+      tester,
+      box: box,
+      categoryBox: categoryBox,
+      task: task,
+    );
 
-      expect(find.text('Repeat'), findsOneWidget);
-      final switchWidget = tester.widget<Switch>(_repeatsSwitch());
-      expect(switchWidget.onChanged, isNotNull);
-      expect(switchWidget.value, isFalse);
-    },
-  );
+    expect(find.text('Repeat'), findsOneWidget);
+    final switchWidget = tester.widget<Switch>(_repeatsSwitch());
+    expect(switchWidget.onChanged, isNotNull);
+    expect(switchWidget.value, isFalse);
+  });
 
   testWidgets(
     'turning Repeats on and saving materializes a new series from this '
@@ -152,11 +197,16 @@ void main() {
         title: 'Standup',
         scheduledAt: scheduledAt,
         durationMinutes: 15,
-        category: TaskCategory.work,
+        categoryId: BuiltInCategoryIds.work,
       );
       await tester.runAsync(() => box.put(task.id, task));
 
-      await _pumpEditScheduleForm(tester, box: box, task: task);
+      await _pumpEditScheduleForm(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+        task: task,
+      );
 
       await _tapAndSettle(tester, _repeatsSwitch());
       // The task's own weekday is pre-selected, so enabling Repeats with
@@ -164,10 +214,7 @@ void main() {
       // the task's date rather than hardcoded, since the date is now
       // relative to today.
       const abbreviations = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
-      expect(
-        find.text(abbreviations[scheduledAt.weekday - 1]),
-        findsOneWidget,
-      );
+      expect(find.text(abbreviations[scheduledAt.weekday - 1]), findsOneWidget);
 
       await _tapAndSettle(tester, find.text('Save'));
 
@@ -199,7 +246,7 @@ void main() {
         title: 'Standup',
         scheduledAt: _daysFromToday(0),
         durationMinutes: 15,
-        category: TaskCategory.work,
+        categoryId: BuiltInCategoryIds.work,
         recurrenceId: 'series-1',
         recurrenceRule: RecurrenceRule(
           frequency: RecurrenceFrequency.weekly,
@@ -208,7 +255,12 @@ void main() {
       );
       await tester.runAsync(() => box.put(template.id, template));
 
-      await _pumpEditScheduleForm(tester, box: box, task: template);
+      await _pumpEditScheduleForm(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+        task: template,
+      );
 
       final switchWidget = tester.widget<Switch>(_repeatsSwitch());
       expect(switchWidget.value, isTrue);
@@ -233,7 +285,7 @@ void main() {
         title: 'Standup',
         scheduledAt: _daysFromToday(0), // a Thursday
         durationMinutes: 15,
-        category: TaskCategory.work,
+        categoryId: BuiltInCategoryIds.work,
         recurrenceId: 'series-1',
         recurrenceRule: RecurrenceRule(
           frequency: RecurrenceFrequency.weekly,
@@ -246,7 +298,7 @@ void main() {
         title: 'Standup',
         scheduledAt: _daysFromToday(7),
         durationMinutes: 15,
-        category: TaskCategory.work,
+        categoryId: BuiltInCategoryIds.work,
         recurrenceId: 'series-1',
       );
       // A future instance the user already rescheduled — must survive the
@@ -255,7 +307,7 @@ void main() {
         title: 'Standup (moved)',
         scheduledAt: _daysFromToday(14, hour: 10),
         durationMinutes: 15,
-        category: TaskCategory.work,
+        categoryId: BuiltInCategoryIds.work,
         recurrenceId: 'series-1',
       )..originalScheduledAt = _daysFromToday(14);
       await tester.runAsync(() async {
@@ -266,7 +318,12 @@ void main() {
 
       // Edited from the TEMPLATE instance itself here — the other test
       // below exercises editing from a non-template instance.
-      await _pumpEditScheduleForm(tester, box: box, task: template);
+      await _pumpEditScheduleForm(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+        task: template,
+      );
 
       // Add Monday alongside the existing Thursday.
       await _tapAndSettle(tester, find.text('MON'));
@@ -301,7 +358,7 @@ void main() {
         title: 'Standup',
         scheduledAt: _daysFromToday(0),
         durationMinutes: 15,
-        category: TaskCategory.work,
+        categoryId: BuiltInCategoryIds.work,
         recurrenceId: 'series-1',
         recurrenceRule: RecurrenceRule(
           frequency: RecurrenceFrequency.weekly,
@@ -312,7 +369,7 @@ void main() {
         title: 'Standup',
         scheduledAt: _daysFromToday(7),
         durationMinutes: 15,
-        category: TaskCategory.work,
+        categoryId: BuiltInCategoryIds.work,
         recurrenceId: 'series-1',
       );
       await tester.runAsync(() async {
@@ -320,7 +377,12 @@ void main() {
         await box.put(instance.id, instance);
       });
 
-      await _pumpEditScheduleForm(tester, box: box, task: instance);
+      await _pumpEditScheduleForm(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+        task: instance,
+      );
       await _tapAndSettle(tester, find.text('MON'));
       await _tapAndSettle(tester, find.text('Save'));
 
@@ -340,7 +402,7 @@ void main() {
         title: 'Standup',
         scheduledAt: _daysFromToday(0),
         durationMinutes: 15,
-        category: TaskCategory.work,
+        categoryId: BuiltInCategoryIds.work,
         recurrenceId: 'series-1',
         recurrenceRule: RecurrenceRule(
           frequency: RecurrenceFrequency.weekly,
@@ -351,14 +413,14 @@ void main() {
         title: 'Standup',
         scheduledAt: _daysFromToday(7),
         durationMinutes: 15,
-        category: TaskCategory.work,
+        categoryId: BuiltInCategoryIds.work,
         recurrenceId: 'series-1',
       );
       final futureCompleted = Task.create(
         title: 'Standup',
         scheduledAt: _daysFromToday(14),
         durationMinutes: 15,
-        category: TaskCategory.work,
+        categoryId: BuiltInCategoryIds.work,
         recurrenceId: 'series-1',
       )..status = TaskStatus.completed;
       await tester.runAsync(() async {
@@ -367,7 +429,12 @@ void main() {
         await box.put(futureCompleted.id, futureCompleted);
       });
 
-      await _pumpEditScheduleForm(tester, box: box, task: template);
+      await _pumpEditScheduleForm(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+        task: template,
+      );
       await _tapAndSettle(tester, _repeatsSwitch());
       await _tapAndSettle(tester, find.text('Save'));
 

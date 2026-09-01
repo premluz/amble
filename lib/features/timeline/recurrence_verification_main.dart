@@ -20,7 +20,7 @@ import '../../hive_registrar.g.dart';
 import '../../shared/models/recurrence_frequency.dart';
 import '../../shared/models/recurrence_rule.dart';
 import '../../shared/models/task.dart';
-import '../../shared/models/task_category.dart';
+import '../../shared/models/category.dart';
 import '../../shared/models/tracked_behavior.dart';
 import '../../shared/providers/notification_providers.dart';
 import '../../shared/providers/task_providers.dart';
@@ -63,7 +63,7 @@ Future<void> main() async {
       title: 'Morning run',
       scheduledAt: DateTime(now.year, now.month, now.day, seriesHour, 0),
       durationMinutes: 30,
-      category: TaskCategory.health,
+      categoryId: BuiltInCategoryIds.health,
       recurrenceRule: RecurrenceRule(frequency: RecurrenceFrequency.daily),
     );
 
@@ -73,7 +73,7 @@ Future<void> main() async {
       title: 'One-off meeting',
       scheduledAt: DateTime(now.year, now.month, now.day, oneOffHour, 0),
       durationMinutes: 60,
-      category: TaskCategory.work,
+      categoryId: BuiltInCategoryIds.work,
     );
 
     if (_mode == 'edit') {

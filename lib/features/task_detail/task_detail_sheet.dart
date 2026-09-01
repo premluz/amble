@@ -16,21 +16,22 @@ import '../../core/widgets/app_segmented_time_field.dart';
 import '../../core/widgets/app_switch.dart';
 import '../../core/widgets/app_text_field.dart';
 import '../../core/widgets/app_wheel_time_picker.dart';
+import '../../shared/models/category.dart';
 import '../../shared/models/recurrence_frequency.dart';
 import '../../shared/models/recurrence_rule.dart';
 import '../../shared/models/task.dart';
 import '../../shared/models/tracked_behavior.dart';
-import '../../shared/models/task_category.dart';
+import '../../shared/providers/category_providers.dart';
 import '../../shared/providers/preferences_providers.dart';
 import '../../shared/providers/task_providers.dart';
 import '../../shared/providers/tracked_behavior_providers.dart';
 import '../../shared/services/overlap_checker.dart';
+import 'category_visual.dart';
 import 'task_category_modal.dart';
 import 'task_duration_modal.dart';
 import 'task_name_category_modal.dart';
 import 'task_start_time_modal.dart';
-import '../timeline/task_category_token_mapping.dart';
-
+import '../timeline/recently_saved_task_provider.dart';
 
 /// Pushes [child] using the same slide-up, near-full-screen presentation
 /// used by every task-detail-family modal (create wizard, edit-details,
@@ -56,8 +57,7 @@ Future<T?> _pushDetailRoute<T>(BuildContext context, WidgetBuilder builder) {
           child: child,
         );
       },
-      pageBuilder: (context, animation, secondaryAnimation) =>
-          builder(context),
+      pageBuilder: (context, animation, secondaryAnimation) => builder(context),
     ),
   );
 }
@@ -92,6 +92,12 @@ Future<void> showTaskDetailSheet(
   // passed by either call site.
   Task? duplicateFrom,
   DateTime? initialScheduledAt,
+  // Seeds a real start time directly, bypassing stage 1's own noon
+  // default entirely — used by a free window's block (the window's own
+  // start hour) and the hold-and-drag placement line (wherever it's
+  // released). Nothing else sets this: the ordinary "+" button and every
+  // other call site still get the deliberate noon default.
+  TimeOfDay? initialTimeOfDay,
   // Scaffold-only — see _TaskDetailFlowState.debugStartWithRepeatsOn.
   bool debugStartWithRepeatsOn = false,
 }) {
@@ -101,7 +107,9 @@ Future<void> showTaskDetailSheet(
     (context) => _TaskDetailFlow(
       task: task,
       duplicateFrom: duplicateFrom,
-      initialScheduledAt: initialScheduledAt ?? seed?.scheduledAt ?? DateTime.now(),
+      initialScheduledAt:
+          initialScheduledAt ?? seed?.scheduledAt ?? DateTime.now(),
+      initialTimeOfDay: initialTimeOfDay,
       debugStartWithRepeatsOn: debugStartWithRepeatsOn,
     ),
   );
@@ -173,6 +181,7 @@ class _TaskDetailFlow extends ConsumerStatefulWidget {
     this.task,
     this.duplicateFrom,
     required this.initialScheduledAt,
+    this.initialTimeOfDay,
     this.debugStartWithRepeatsOn = false,
   });
 
@@ -196,6 +205,10 @@ class _TaskDetailFlow extends ConsumerStatefulWidget {
 
   final DateTime initialScheduledAt;
 
+  /// Seeds [_TaskDetailFlowState._timeOfDay] directly, bypassing stage 1's
+  /// noon default entirely — see [showTaskDetailSheet]'s own doc comment.
+  final TimeOfDay? initialTimeOfDay;
+
   /// Scaffold-only: opens the form with the Repeats switch already on, so
   /// the expanded recurrence options can be screenshotted without a
   /// tap-injection tool. Never set outside `*_main.dart` scaffolding.
@@ -209,6 +222,7 @@ class _TaskDetailFlow extends ConsumerStatefulWidget {
 class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
   late final TextEditingController _titleController;
   late final TextEditingController _notesController;
+
   /// The DATE the task lands on. Always set — it defaults to today, and
   /// the date field shows "Today" from the start.
   late DateTime _scheduledAt;
@@ -220,11 +234,21 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
   TimeOfDay? _timeOfDay;
   int? _durationMinutes;
 
-  late TaskCategory _category;
+  late String _categoryId;
 
   bool _repeats = false;
   late Set<int> _selectedDays;
   String? _behaviorId;
+
+  /// Whether [widget.task] was ALREADY part of a recurring series when
+  /// this form opened — captured once, before [_repeats] can change, so
+  /// [_save] can tell which of the three recurrence-provider methods
+  /// applies (start / change / disable) without re-deriving it from
+  /// [widget.task] after [_save] has already mutated it. Null for a
+  /// from-scratch create or a duplicate — there is no "was" state for a
+  /// task that doesn't exist yet, so the create-only branch in [_save]
+  /// never consults this.
+  late final bool? _wasRecurring;
 
   /// Defaults to `true` — matching the persisted [Task.notificationsEnabled]
   /// default, so a fresh create is unaffected unless the user turns it off.
@@ -260,15 +284,25 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
   /// like an edit.
   late final int? _initialDurationMinutes;
   late final TimeOfDay? _initialTimeOfDay;
-  late final TaskCategory _initialCategory;
+  late final String _initialCategoryId;
   late final String _initialNotes;
   late final bool _initialNotificationsEnabled;
+  late final Set<int> _initialSelectedDays;
 
   /// Set when Save was blocked by the "Prevent overlapping tasks"
   /// preference — shown inline near the Save button per the confirmed
   /// design (sheet stays open, nothing persisted, no popup). Cleared on
   /// every fresh save attempt.
   String? _overlapError;
+
+  /// True for the duration of an in-flight [_save] — drives the primary
+  /// button's spinner (see [AppButton.isLoading]) AND is the actual
+  /// re-entrancy guard: [_save] returns immediately if this is already
+  /// true, so a second tap that lands before the button visually updates
+  /// still can't start a second save. Requested directly: without this, a
+  /// slow save (or one that overlaps a schedule check) could be tapped
+  /// twice and create/edit the same task twice.
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -283,21 +317,49 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
     _scheduledAt = widget.initialScheduledAt;
     // Only an existing (Inbox) task or a duplicate arrives with a real
     // time/duration; a fresh create starts with both unset so the fields
-    // read as empty.
-    _timeOfDay = seed?.scheduledAt == null
-        ? null
-        : TimeOfDay.fromDateTime(seed!.scheduledAt!);
+    // read as empty — UNLESS the caller explicitly seeded a time (a free
+    // window's block, or the hold-and-drag placement line), which takes
+    // priority over both the seed and stage 1's own noon default.
+    _timeOfDay =
+        widget.initialTimeOfDay ??
+        (seed?.scheduledAt == null
+            ? null
+            : TimeOfDay.fromDateTime(seed!.scheduledAt!));
     _durationMinutes = seed?.durationMinutes;
     // General, not Personal — requested directly: a new task starts
     // uncategorised (the neutral grey) rather than silently pre-assigned
-    // to one specific real category.
-    _category = seed?.category ?? TaskCategory.general;
+    // to one specific real category. seed?.categoryId is null for a
+    // pre-migration task that hasn't been backfilled yet (see
+    // docs/DECISIONS.md) — General is the correct fallback there too.
+    _categoryId = seed?.categoryId ?? BuiltInCategoryIds.general;
     _behaviorId = seed?.behaviorId;
     _notificationsEnabled = seed?.notificationsEnabled ?? true;
-    // Defaults to the task's own start weekday, so enabling Repeats with no
-    // further taps produces "repeats on the day it's scheduled" rather than
-    // an empty/arbitrary selection.
-    _selectedDays = {_scheduledAt.weekday};
+    // Real bug, reported directly: editing an already-recurring task's
+    // Repeats panel silently did nothing on Save — `_repeats`/
+    // `_selectedDays` always started as if the task were plain, and
+    // `_save`'s `existing != null` branch called plain `updateTask`
+    // unconditionally, never touching the series at all. Keyed strictly
+    // off `task` (not `seed`, which duplicateFrom also feeds) —
+    // duplicating a recurring task deliberately produces a plain task
+    // (see TaskList.duplicateTask, which never copies recurrence fields),
+    // so a duplicate's own Repeats panel correctly starts fresh/off.
+    _wasRecurring = task?.isRecurring;
+    _repeats = task?.isRecurring ?? false;
+    // An already-recurring task seeds its REAL days from the series'
+    // template (any instance edits the whole series — same reasoning
+    // _EditScheduleFormState already established for its own, unreferenced
+    // copy of this same panel). A plain task (or no task at all) defaults
+    // to its own scheduled weekday, so enabling Repeats with no further
+    // taps produces "repeats on the day it's scheduled" rather than an
+    // empty/arbitrary selection.
+    _selectedDays = (task != null && task.isRecurring)
+        ? _selectedDaysFromRecurrenceRule(
+            findSeriesTemplate(
+              task,
+              ref.read(taskListProvider),
+            ).recurrenceRule!,
+          )
+        : {_scheduledAt.weekday};
     // Eligible only for a genuinely blank task — an Inbox item or a
     // duplicate already has a title (and possibly a time/duration), so
     // both are closer to an edit than a from-scratch create, and
@@ -310,9 +372,10 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
     _initialScheduledAt = _scheduledAt;
     _initialDurationMinutes = _durationMinutes;
     _initialTimeOfDay = _timeOfDay;
-    _initialCategory = _category;
+    _initialCategoryId = _categoryId;
     _initialNotes = _notesController.text;
     _initialNotificationsEnabled = _notificationsEnabled;
+    _initialSelectedDays = Set.of(_selectedDays);
 
     if (widget.debugStartWithRepeatsOn) _repeats = true;
   }
@@ -347,6 +410,12 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
       _durationMinutes != null;
 
   Future<void> _save() async {
+    // The actual re-entrancy guard, not just the button's visual state —
+    // a second call while one is already in flight (a tap that lands
+    // before the button re-renders as disabled) returns immediately
+    // rather than starting a second save.
+    if (_isSaving) return;
+
     final title = _titleController.text.trim();
     if (title.isEmpty) return;
     // Resolved once, up front: the button that reaches here is disabled
@@ -371,41 +440,98 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
       return;
     }
 
-    final notes = _notesController.text.trim();
-    final notifier = ref.read(taskListProvider.notifier);
-    final existing = widget.task;
+    setState(() => _isSaving = true);
 
-    if (existing == null) {
-      await notifier.createTask(
-        title: title,
-        notes: notes.isEmpty ? null : notes,
-        scheduledAt: scheduledAt,
-        durationMinutes: durationMinutes,
-        category: _category,
-        recurrenceRule: _repeats ? _buildRecurrenceRule() : null,
-        behaviorId: _behaviorId,
-        notificationsEnabled: _notificationsEnabled,
-      );
-    } else {
-      // Moving an Inbox item onto the Timeline: fill in the same task's
-      // schedule rather than creating a second one. Recurrence is not
-      // offered here in practice (an Inbox item's "Repeats" panel would be
-      // reachable, but this path is for giving an existing capture its
-      // first schedule, not spinning up a new series from it) — the field
-      // still exists on the shared state, so this mirrors the create path
-      // exactly rather than special-casing it away.
-      existing.title = title;
-      existing.notes = notes.isEmpty ? null : notes;
-      existing.scheduledAt = _scheduledAt;
-      existing.durationMinutes = _durationMinutes;
-      existing.category = _category;
-      existing.notificationsEnabled = _notificationsEnabled;
-      if (_behaviorId == null) existing.actualAmount = null;
-      existing.behaviorId = _behaviorId;
-      await notifier.updateTask(existing);
+    // try/finally, not to swallow an error (nothing here catches one —
+    // an exception still propagates after the button's loading state is
+    // reset) but so a write that throws doesn't leave the button stuck
+    // showing a spinner forever with no way to retry.
+    try {
+      final notes = _notesController.text.trim();
+      final notifier = ref.read(taskListProvider.notifier);
+      final existing = widget.task;
+
+      // Recorded just before the pop so the Timeline can play the change
+      // rather than having it appear fully-formed — requested directly.
+      final savedNotifier = ref.read(recentlySavedTaskProvider.notifier);
+
+      if (existing == null) {
+        final created = await notifier.createTask(
+          title: title,
+          notes: notes.isEmpty ? null : notes,
+          scheduledAt: scheduledAt,
+          durationMinutes: durationMinutes,
+          categoryId: _categoryId,
+          recurrenceRule: _repeats ? _buildRecurrenceRule() : null,
+          behaviorId: _behaviorId,
+          notificationsEnabled: _notificationsEnabled,
+        );
+        savedNotifier.record(created.id, SavedTaskChange.created);
+      } else {
+        // Editing an existing task, OR moving an Inbox item onto the
+        // Timeline for the first time (same branch — an Inbox item just
+        // happens to have scheduledAt/durationMinutes null beforehand).
+        // Captured BEFORE the mutation below overwrites it — this is what
+        // decides whether the Timeline animates the pill's height or just
+        // fades the (unchanged-size) block in.
+        final previousDuration = existing.durationMinutes;
+
+        existing.title = title;
+        existing.notes = notes.isEmpty ? null : notes;
+        existing.scheduledAt = _scheduledAt;
+        existing.durationMinutes = _durationMinutes;
+        existing.categoryId = _categoryId;
+        existing.notificationsEnabled = _notificationsEnabled;
+        if (_behaviorId == null) existing.actualAmount = null;
+        existing.behaviorId = _behaviorId;
+
+        // Three-way branch on [_wasRecurring]/[_repeats], read BEFORE any
+        // of the three provider calls below mutate `existing` further —
+        // real bug fixed here, reported directly: this branch used to
+        // call plain `updateTask` unconditionally, so changing/adding/
+        // removing Repeats on an already-scheduled task silently did
+        // nothing to the series. Mirrors `_EditScheduleFormState._save`'s
+        // own (otherwise unreferenced) copy of this exact logic.
+        if (!(_wasRecurring ?? false) && _repeats) {
+          // Plain -> recurring: materializes a new series starting from it.
+          await notifier.updateTaskWithNewRecurrence(
+            existing,
+            _buildRecurrenceRule(),
+          );
+        } else if ((_wasRecurring ?? false) && !_repeats) {
+          // Recurring -> off: detaches the series' template and prunes
+          // untouched future instances.
+          await notifier.disableTaskRecurrence(existing);
+        } else if ((_wasRecurring ?? false) && _repeats) {
+          // Recurring -> recurring, days possibly changed: resolves to
+          // the series' template regardless of which instance `existing`
+          // is.
+          await notifier.updateTaskWithChangedRecurrence(
+            existing,
+            _buildRecurrenceRule(),
+          );
+        } else {
+          // Plain -> plain: no recurrence involvement at all.
+          await notifier.updateTask(existing);
+        }
+
+        final durationChanged = previousDuration != existing.durationMinutes;
+        savedNotifier.record(
+          existing.id,
+          // An Inbox item being scheduled for the first time has no
+          // prior on-timeline presence, so it reads as new here even
+          // though the underlying task already existed.
+          durationChanged
+              ? SavedTaskChange.durationChanged
+              : SavedTaskChange.created,
+          previousDurationMinutes: durationChanged ? previousDuration : null,
+        );
+      }
+
+      if (mounted) Navigator.of(context).pop();
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
-
-    if (mounted) Navigator.of(context).pop();
   }
 
   RecurrenceRule _buildRecurrenceRule() {
@@ -420,9 +546,17 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
         _scheduledAt != _initialScheduledAt ||
         _timeOfDay != _initialTimeOfDay ||
         _durationMinutes != _initialDurationMinutes ||
-        _category != _initialCategory ||
+        _categoryId != _initialCategoryId ||
         _notesController.text != _initialNotes ||
-        _notificationsEnabled != _initialNotificationsEnabled;
+        _notificationsEnabled != _initialNotificationsEnabled ||
+        _repeats != (_wasRecurring ?? false) ||
+        // A same-days no-op toggle doesn't count as a real edit, but a
+        // genuine day-set change while already recurring does — mirrors
+        // _EditScheduleFormState's own (otherwise unreferenced) copy of
+        // this same check.
+        (_repeats &&
+            (_wasRecurring ?? false) &&
+            !setEquals(_selectedDays, _initialSelectedDays));
   }
 
   Future<void> _handleClose() async {
@@ -434,7 +568,8 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
     final choice = await AppAlertDialog.showThreeWay(
       context: context,
       title: 'Discard this task?',
-      message: "You haven't saved this task yet. Save it with the current "
+      message:
+          "You haven't saved this task yet. Save it with the current "
           'time and duration, or discard the draft?',
       primaryAction: const AppAlertDialogAction(label: 'Save task'),
       destructiveAction: const AppAlertDialogAction(
@@ -499,10 +634,10 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
   Future<void> _openCategoryModal() async {
     final result = await TaskCategoryModal.show(
       context: context,
-      category: _category,
+      categoryId: _categoryId,
     );
     if (!mounted || result == null) return;
-    setState(() => _category = result);
+    setState(() => _categoryId = result);
   }
 
   @override
@@ -521,12 +656,19 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
     // all fields visible)". Title/primary label read as an edit in that
     // case rather than always saying "Create"/"Schedule".
     final isEditing = widget.task != null;
+    final category = ref
+        .watch(categoryListProvider)
+        .where((c) => c.id == _categoryId)
+        .firstOrNull;
+    final headerColor = category == null
+        ? theme.categoryColors[TaskCategoryToken.general]!
+        : resolveCategoryVisual(theme: theme, category: category).pillColor;
 
     return _StepScaffold(
       theme: theme,
       modalTitle: isEditing ? 'Edit task' : 'Create task',
       titleAlignment: TextAlign.left,
-      headerColor: theme.categoryColors[_category.token]!,
+      headerColor: headerColor,
       headerContent: null,
       onClose: _handleClose,
       onBack: null,
@@ -535,6 +677,7 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
           ? _confirmNameStage
           : (_canSave ? _save : null),
       errorMessage: _isNameStage ? null : _overlapError,
+      isPrimaryLoading: !_isNameStage && _isSaving,
       // A SINGLE body, not a stage swap — requested directly: "task name
       // section should persist on tapping done or confirm keyboard,
       // meaning it's not animating and is the same instance, not another
@@ -549,14 +692,13 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
         notesController: _notesController,
         showScheduleFields: !_isNameStage,
         onNameSubmitted: _confirmNameStage,
-        category: _category,
+        category: category,
         date: _scheduledAt,
         timeOfDay: _timeOfDay,
         durationMinutes: _durationMinutes,
         onDateChanged: (value) => setState(() => _scheduledAt = value),
         onTimeChanged: (value) => setState(() => _timeOfDay = value),
-        onDurationChanged: (value) =>
-            setState(() => _durationMinutes = value),
+        onDurationChanged: (value) => setState(() => _durationMinutes = value),
         notificationsEnabled: _notificationsEnabled,
         onNotificationsEnabledChanged: (value) =>
             setState(() => _notificationsEnabled = value),
@@ -643,7 +785,7 @@ class _ScheduleFieldsStage extends StatelessWidget {
   /// `onNameSubmitted` doc comment.
   final VoidCallback onNameSubmitted;
 
-  final TaskCategory category;
+  final Category? category;
   final DateTime date;
   final TimeOfDay? timeOfDay;
   final int? durationMinutes;
@@ -879,6 +1021,20 @@ class _NameDescriptionPaneState extends State<_NameDescriptionPane> {
               // which is exactly this case, since the field doesn't exist
               // in the tree until the link below is tapped.
               autofocus: true,
+              // Collapses back to the "Add description" link once the
+              // keyboard closes on an EMPTY field — requested directly:
+              // reveal it, decide not to write anything (or type
+              // something then delete it all) and close the keyboard, and
+              // it should return to link form rather than sit there as a
+              // permanently-revealed empty field. Only fires the collapse
+              // on the LOSING-focus edge (`!hasFocus`), never on gaining
+              // it, so this can't fight the reveal itself.
+              onFocusChanged: (hasFocus) {
+                if (hasFocus) return;
+                if (widget.notesController.text.trim().isEmpty) {
+                  setState(() => _showDescription = false);
+                }
+              },
             ),
           ] else ...[
             // Explicitly spacingMd — matching the pane's own outer bottom
@@ -976,12 +1132,14 @@ class _CategoryFieldRow extends StatelessWidget {
   });
 
   final AmbleTheme theme;
-  final TaskCategory category;
+  final Category? category;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final hasCategory = category != TaskCategory.general;
+    final category = this.category;
+    final hasCategory =
+        category != null && category.id != BuiltInCategoryIds.general;
 
     return GestureDetector(
       onTap: onTap,
@@ -1000,7 +1158,10 @@ class _CategoryFieldRow extends StatelessWidget {
                 vertical: theme.spacingXs,
               ),
               decoration: BoxDecoration(
-                color: theme.categoryColors[category.token]!,
+                color: resolveCategoryVisual(
+                  theme: theme,
+                  category: category,
+                ).pillColor,
                 borderRadius: BorderRadius.circular(theme.radiusMd),
               ),
               child: Row(
@@ -1009,7 +1170,7 @@ class _CategoryFieldRow extends StatelessWidget {
                   Text(category.emoji, style: theme.textBody),
                   SizedBox(width: theme.spacingXs),
                   Text(
-                    category.label,
+                    category.name,
                     style: theme.textBody.copyWith(
                       color: theme.colorTextPrimary,
                       fontWeight: FontWeight.w700,
@@ -1059,11 +1220,21 @@ class _LinkFieldRow extends StatelessWidget {
             label,
             style: theme.textBody.copyWith(color: theme.colorTextPrimary),
           ),
-          Text(
-            value,
-            style: theme.textBody.copyWith(
-              color: theme.colorAccent,
-              fontWeight: FontWeight.w700,
+          // Flexible + ellipsis: caught as a real RenderFlex overflow — a
+          // non-"Today" date (`_formatDate`'s long form, e.g. "Thu Aug 20,
+          // 2026") is long enough to overflow this row's fixed-width Text
+          // at ordinary phone widths, and neither Text here had any way to
+          // give ground before this fix.
+          Flexible(
+            child: Text(
+              value,
+              style: theme.textBody.copyWith(
+                color: theme.colorAccent,
+                fontWeight: FontWeight.w700,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
             ),
           ),
         ],
@@ -1100,11 +1271,21 @@ class _PlainFieldRow extends StatelessWidget {
             label,
             style: theme.textBody.copyWith(color: theme.colorTextPrimary),
           ),
-          Text(
-            value,
-            style: theme.textBody.copyWith(
-              color: theme.colorTextPrimary,
-              fontWeight: FontWeight.w700,
+          // Same defensive Flexible/ellipsis as _LinkFieldRow — this
+          // value (a time range) is normally short and bounded, but
+          // nothing stops it from growing (a locale with a longer time
+          // format, for instance), so it gets the same protection rather
+          // than relying on the content always staying short.
+          Flexible(
+            child: Text(
+              value,
+              style: theme.textBody.copyWith(
+                color: theme.colorTextPrimary,
+                fontWeight: FontWeight.w700,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
             ),
           ),
         ],
@@ -1151,11 +1332,11 @@ class _EditDetailsForm extends ConsumerStatefulWidget {
 class _EditDetailsFormState extends ConsumerState<_EditDetailsForm> {
   late final TextEditingController _titleController;
   late final TextEditingController _notesController;
-  late TaskCategory _category;
+  late String _categoryId;
   String? _behaviorId;
 
   late final String _initialTitle;
-  late final TaskCategory _initialCategory;
+  late final String _initialCategoryId;
   late final String _initialNotes;
   late final String? _initialBehaviorId;
 
@@ -1165,11 +1346,11 @@ class _EditDetailsFormState extends ConsumerState<_EditDetailsForm> {
     final task = widget.task;
     _titleController = TextEditingController(text: task.title);
     _notesController = TextEditingController(text: task.notes ?? '');
-    _category = task.category;
+    _categoryId = task.categoryId ?? BuiltInCategoryIds.general;
     _behaviorId = task.behaviorId;
 
     _initialTitle = _titleController.text;
-    _initialCategory = _category;
+    _initialCategoryId = _categoryId;
     _initialNotes = _notesController.text;
     _initialBehaviorId = _behaviorId;
 
@@ -1191,7 +1372,7 @@ class _EditDetailsFormState extends ConsumerState<_EditDetailsForm> {
   bool get _hasUnconfirmedChanges {
     if (_titleController.text.trim().isEmpty) return false;
     return _titleController.text != _initialTitle ||
-        _category != _initialCategory ||
+        _categoryId != _initialCategoryId ||
         _notesController.text != _initialNotes ||
         _behaviorId != _initialBehaviorId;
   }
@@ -1204,7 +1385,7 @@ class _EditDetailsFormState extends ConsumerState<_EditDetailsForm> {
     final existing = widget.task;
     existing.title = title;
     existing.notes = notes.isEmpty ? null : notes;
-    existing.category = _category;
+    existing.categoryId = _categoryId;
     // Unlinking clears any recorded outcome — an amount measured against a
     // behavior this task no longer belongs to would be orphaned data.
     if (_behaviorId == null) existing.actualAmount = null;
@@ -1231,7 +1412,8 @@ class _EditDetailsFormState extends ConsumerState<_EditDetailsForm> {
     final choice = await AppAlertDialog.showThreeWay(
       context: context,
       title: 'Discard changes?',
-      message: 'You have unsaved changes to this task. Save them, or '
+      message:
+          'You have unsaved changes to this task. Save them, or '
           'discard them?',
       primaryAction: const AppAlertDialogAction(label: 'Save changes'),
       destructiveAction: const AppAlertDialogAction(
@@ -1265,8 +1447,8 @@ class _EditDetailsFormState extends ConsumerState<_EditDetailsForm> {
       theme: theme,
       titleController: _titleController,
       notesController: _notesController,
-      category: _category,
-      onCategoryChanged: (category) => setState(() => _category = category),
+      categoryId: _categoryId,
+      onCategoryChanged: (id) => setState(() => _categoryId = id),
       behaviorId: _behaviorId,
       onBehaviorChanged: (id) => setState(() => _behaviorId = id),
       startTime: start,
@@ -1331,7 +1513,7 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
   /// too, not just view them.
   late final TextEditingController _titleController;
   late final TextEditingController _notesController;
-  late TaskCategory _category;
+  late String _categoryId;
   String? _behaviorId;
   late bool _notificationsEnabled;
 
@@ -1340,7 +1522,7 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
   late final Set<int> _initialSelectedDays;
   late final String _initialTitle;
   late final String _initialNotes;
-  late final TaskCategory _initialCategory;
+  late final String _initialCategoryId;
   late final bool _initialNotificationsEnabled;
 
   /// See _TaskDetailFlowState's matching field — same inline-error contract
@@ -1369,12 +1551,12 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
         widget.debugInitialDurationOverride ?? task.durationMinutes!;
     _titleController = TextEditingController(text: task.title);
     _notesController = TextEditingController(text: task.notes ?? '');
-    _category = task.category;
+    _categoryId = task.categoryId ?? BuiltInCategoryIds.general;
     _behaviorId = task.behaviorId;
     _notificationsEnabled = task.notificationsEnabled;
     _initialTitle = task.title;
     _initialNotes = task.notes ?? '';
-    _initialCategory = task.category;
+    _initialCategoryId = _categoryId;
     _initialNotificationsEnabled = task.notificationsEnabled;
     _wasRecurring = task.isRecurring;
     _repeats = task.isRecurring;
@@ -1418,12 +1600,14 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
         _durationMinutes != _initialDurationMinutes ||
         _titleController.text != _initialTitle ||
         _notesController.text != _initialNotes ||
-        _category != _initialCategory ||
+        _categoryId != _initialCategoryId ||
         _notificationsEnabled != _initialNotificationsEnabled ||
         _repeats != _wasRecurring ||
         // A same-days no-op toggle doesn't count as a real edit, but a
         // genuine day-set change while already recurring does.
-        (_repeats && _wasRecurring && !setEquals(_selectedDays, _initialSelectedDays));
+        (_repeats &&
+            _wasRecurring &&
+            !setEquals(_selectedDays, _initialSelectedDays));
   }
 
   Future<void> _save() async {
@@ -1448,7 +1632,7 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
     existing.title = _titleController.text.trim();
     final notes = _notesController.text.trim();
     existing.notes = notes.isEmpty ? null : notes;
-    existing.category = _category;
+    existing.categoryId = _categoryId;
     existing.notificationsEnabled = _notificationsEnabled;
     if (_behaviorId == null) existing.actualAmount = null;
     existing.behaviorId = _behaviorId;
@@ -1505,7 +1689,8 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
     final choice = await AppAlertDialog.showThreeWay(
       context: context,
       title: 'Discard changes?',
-      message: 'You have unsaved changes to this task. Save them, or '
+      message:
+          'You have unsaved changes to this task. Save them, or '
           'discard them?',
       primaryAction: const AppAlertDialogAction(label: 'Save changes'),
       destructiveAction: const AppAlertDialogAction(
@@ -1529,13 +1714,17 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
+    final category = ref
+        .watch(categoryListProvider)
+        .where((c) => c.id == _categoryId)
+        .firstOrNull;
     return _ScheduleStepScaffold(
       theme: theme,
       // The task's LIVE title/category now — this form can edit them via
       // the pencil, so the preview must track the controllers rather than
       // the original widget.task snapshot.
       title: _titleController.text.trim(),
-      category: _category,
+      category: category,
       // An existing task always HAS a time and duration, so this modal
       // never shows the empty state — it splits the stored instant into
       // date + time to match the scaffold's contract, then reassembles it.
@@ -1569,8 +1758,8 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
           context: context,
           titleController: _titleController,
           notesController: _notesController,
-          category: _category,
-          onCategoryChanged: (value) => setState(() => _category = value),
+          categoryId: _categoryId,
+          onCategoryChanged: (value) => setState(() => _categoryId = value),
         );
         // The title feeds this scaffold's `title` param above, which is
         // only read on rebuild — an explicit setState makes sure editing
@@ -1618,10 +1807,12 @@ class _StepScaffold extends StatelessWidget {
     required this.primaryLabel,
     this.onPrimaryPressed,
     this.errorMessage,
+    this.isPrimaryLoading = false,
   });
 
   final AmbleTheme theme;
   final Color headerColor;
+
   /// Null renders no coloured header banner at all — the create wizard's
   /// step 1 (mockup: name/notes/category live as ordinary body fields,
   /// no coloured wrapper). Every other caller still passes a real header.
@@ -1629,6 +1820,7 @@ class _StepScaffold extends StatelessWidget {
   final VoidCallback onClose;
   final VoidCallback? onBack;
   final Widget body;
+
   /// The modal's own title ("Create task"), shown in the header beside
   /// the close button. Null on the single-step edit modals, which are
   /// reached from a task that already names itself.
@@ -1652,6 +1844,11 @@ class _StepScaffold extends StatelessWidget {
   /// the "Prevent overlapping tasks" rejection message. Null when there's
   /// nothing to report.
   final String? errorMessage;
+
+  /// Shows a spinner on the primary button and disables it for the
+  /// duration of an in-flight save — see [AppButton.isLoading]. False by
+  /// default; only the actual Save/Schedule callers set this.
+  final bool isPrimaryLoading;
 
   @override
   Widget build(BuildContext context) {
@@ -1686,114 +1883,116 @@ class _StepScaffold extends StatelessWidget {
               top: false,
               child: Column(
                 children: [
-                Container(
-                  width: double.infinity,
-                  // No coloured banner at all when headerContent is null
-                  // (mockup's step 1) — just the close/back buttons on the
-                  // page's own background, at a fixed height matched to
-                  // what the buttons themselves need rather than the
-                  // header's usual content padding.
-                  // Tall enough for the close/back buttons, plus room for
-                  // the modal title when there is one — a title in a
-                  // button-height strip sits cramped against the sheet's
-                  // top edge.
-                  height: headerContent == null
-                      ? theme.spacingXl +
-                            (modalTitle == null
-                                ? theme.spacingLg
-                                : theme.spacingXl + theme.spacingMd)
-                      : null,
-                  decoration: headerContent == null
-                      ? null
-                      : BoxDecoration(
-                          color: headerColor,
-                          borderRadius: BorderRadius.vertical(
-                            bottom: Radius.circular(theme.radiusModal),
-                          ),
-                        ),
-                  child: Stack(
-                    children: [
-                      if (modalTitle != null)
-                        Positioned.fill(
-                          child: Padding(
-                            // Clears the close button on the right always;
-                            // clears the back arrow on the left only when
-                            // there is one — a left-aligned title with no
-                            // back arrow can start from the sheet's own
-                            // edge instead of leaving a phantom gap.
-                            padding: EdgeInsets.only(
-                              left: onBack != null || titleAlignment == TextAlign.center
-                                  ? theme.spacingXl + theme.spacingLg
-                                  : theme.spacingLg,
-                              right: theme.spacingXl + theme.spacingLg,
+                  Container(
+                    width: double.infinity,
+                    // No coloured banner at all when headerContent is null
+                    // (mockup's step 1) — just the close/back buttons on the
+                    // page's own background, at a fixed height matched to
+                    // what the buttons themselves need rather than the
+                    // header's usual content padding.
+                    // Tall enough for the close/back buttons, plus room for
+                    // the modal title when there is one — a title in a
+                    // button-height strip sits cramped against the sheet's
+                    // top edge.
+                    height: headerContent == null
+                        ? theme.spacingXl +
+                              (modalTitle == null
+                                  ? theme.spacingLg
+                                  : theme.spacingXl + theme.spacingMd)
+                        : null,
+                    decoration: headerContent == null
+                        ? null
+                        : BoxDecoration(
+                            color: headerColor,
+                            borderRadius: BorderRadius.vertical(
+                              bottom: Radius.circular(theme.radiusModal),
                             ),
-                            child: Align(
-                              alignment: titleAlignment == TextAlign.center
-                                  ? Alignment.center
-                                  : Alignment.centerLeft,
-                              child: Text(
-                                modalTitle!,
-                                textAlign: titleAlignment,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textHeadline.copyWith(
-                                  color: theme.colorTextPrimary,
+                          ),
+                    child: Stack(
+                      children: [
+                        if (modalTitle != null)
+                          Positioned.fill(
+                            child: Padding(
+                              // Clears the close button on the right always;
+                              // clears the back arrow on the left only when
+                              // there is one — a left-aligned title with no
+                              // back arrow can start from the sheet's own
+                              // edge instead of leaving a phantom gap.
+                              padding: EdgeInsets.only(
+                                left:
+                                    onBack != null ||
+                                        titleAlignment == TextAlign.center
+                                    ? theme.spacingXl + theme.spacingLg
+                                    : theme.spacingLg,
+                                right: theme.spacingXl + theme.spacingLg,
+                              ),
+                              child: Align(
+                                alignment: titleAlignment == TextAlign.center
+                                    ? Alignment.center
+                                    : Alignment.centerLeft,
+                                child: Text(
+                                  modalTitle!,
+                                  textAlign: titleAlignment,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textHeadline.copyWith(
+                                    color: theme.colorTextPrimary,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      if (headerContent != null)
-                        Padding(
-                          padding: EdgeInsets.fromLTRB(
-                            onBack != null
-                                ? theme.spacingXl + theme.spacingLg
-                                : theme.spacingLg,
-                            theme.spacingXl + theme.spacingSm,
-                            theme.spacingXl + theme.spacingLg,
-                            theme.spacingLg,
+                        if (headerContent != null)
+                          Padding(
+                            padding: EdgeInsets.fromLTRB(
+                              onBack != null
+                                  ? theme.spacingXl + theme.spacingLg
+                                  : theme.spacingLg,
+                              theme.spacingXl + theme.spacingSm,
+                              theme.spacingXl + theme.spacingLg,
+                              theme.spacingLg,
+                            ),
+                            child: headerContent,
                           ),
-                          child: headerContent,
-                        ),
-                      // Both buttons are vertically centred rather than
-                      // pinned to a fixed top offset: the header's height
-                      // now depends on whether it carries a title, so a
-                      // fixed offset would leave them sitting high in the
-                      // taller variant instead of level with the title.
-                      if (onBack != null)
+                        // Both buttons are vertically centred rather than
+                        // pinned to a fixed top offset: the header's height
+                        // now depends on whether it carries a title, so a
+                        // fixed offset would leave them sitting high in the
+                        // taller variant instead of level with the title.
+                        if (onBack != null)
+                          Positioned(
+                            top: 0,
+                            bottom: 0,
+                            left: theme.spacingLg,
+                            child: Center(
+                              child: _HeaderCircleButton(
+                                theme: theme,
+                                icon: Icons.arrow_back_rounded,
+                                onTap: onBack!,
+                              ),
+                            ),
+                          ),
                         Positioned(
                           top: 0,
                           bottom: 0,
-                          left: theme.spacingLg,
+                          right: theme.spacingLg,
                           child: Center(
                             child: _HeaderCircleButton(
                               theme: theme,
-                              icon: Icons.arrow_back_rounded,
-                              onTap: onBack!,
+                              icon: Icons.close_rounded,
+                              onTap: onClose,
                             ),
                           ),
                         ),
-                      Positioned(
-                        top: 0,
-                        bottom: 0,
-                        right: theme.spacingLg,
-                        child: Center(
-                          child: _HeaderCircleButton(
-                            theme: theme,
-                            icon: Icons.close_rounded,
-                            onTap: onClose,
-                          ),
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                Expanded(
-                  // No surface of its own: the header strip and the body
-                  // are one continuous level-0 ground. Painting the body
-                  // separately was a leftover from the coloured-header
-                  // design and made the top strip read as a distinct bar.
-                  child: Stack(
+                  Expanded(
+                    // No surface of its own: the header strip and the body
+                    // are one continuous level-0 ground. Painting the body
+                    // separately was a leftover from the coloured-header
+                    // design and made the top strip read as a distinct bar.
+                    child: Stack(
                       children: [
                         body,
                         Positioned(
@@ -1838,6 +2037,7 @@ class _StepScaffold extends StatelessWidget {
                                       size: AppButtonSize.large,
                                       shape: AppButtonShape.pill,
                                       onPressed: onPrimaryPressed,
+                                      isLoading: isPrimaryLoading,
                                     ),
                                   ),
                                 ),
@@ -1845,7 +2045,7 @@ class _StepScaffold extends StatelessWidget {
                             ),
                           ),
                         ),
-                        ],
+                      ],
                     ),
                   ),
                 ],
@@ -1909,7 +2109,7 @@ class _DetailsStepScaffold extends ConsumerWidget {
     this.modalTitle,
     required this.titleController,
     required this.notesController,
-    required this.category,
+    required this.categoryId,
     required this.onCategoryChanged,
     required this.behaviorId,
     required this.onBehaviorChanged,
@@ -1929,8 +2129,8 @@ class _DetailsStepScaffold extends ConsumerWidget {
 
   final TextEditingController titleController;
   final TextEditingController notesController;
-  final TaskCategory category;
-  final ValueChanged<TaskCategory> onCategoryChanged;
+  final String categoryId;
+  final ValueChanged<String> onCategoryChanged;
   final String? behaviorId;
   final ValueChanged<String?> onBehaviorChanged;
 
@@ -1951,7 +2151,11 @@ class _DetailsStepScaffold extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final categoryColor = theme.categoryColors[category.token]!;
+    final categories = ref.watch(categoryListProvider);
+    final category = categories.where((c) => c.id == categoryId).firstOrNull;
+    final categoryColor = category == null
+        ? theme.categoryColors[TaskCategoryToken.general]!
+        : resolveCategoryVisual(theme: theme, category: category).pillColor;
 
     // Continue stays disabled until the name has at least one real
     // character — per the mockup, and it removes the old failure mode
@@ -1971,102 +2175,102 @@ class _DetailsStepScaffold extends ConsumerWidget {
         onPrimaryPressed: titleController.text.trim().isEmpty
             ? null
             : onPrimaryPressed,
-      // No coloured header block on this step any more (mockup): the name
-      // is now an ordinary field in the body, styled like Notes, so the
-      // form reads as one consistent stack rather than a coloured banner
-      // plus a form.
-      headerContent: null,
-      // Order per the mockup: name, then notes, then category — the name
-      // used to live in the coloured header and jump straight to
-      // category; now it's the first ordinary field in the body.
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(theme.spacingLg),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Same live preview step 2 shows — requested directly, so the
-            // task's eventual Timeline appearance is visible from the very
-            // first step rather than only appearing once schedule fields
-            // exist. No edit pencil here: this widget already IS step 1,
-            // so a button that navigates to step 1 makes no sense on it.
-            _SchedulePreviewCard(
-              theme: theme,
-              title: titleController.text.trim(),
-              category: category,
-              startTime: startTime,
-              endTime: endTime,
-              durationMinutes: durationMinutes,
-              onEdit: null,
-            ),
-            SizedBox(height: theme.spacingLg),
-            // Name and Notes share one pane with the section title
-            // outside it, so the two fields read as a single "Name" group
-            // rather than two stacked cards. autofocus only on the true
-            // first entry into the wizard (onBack null means this is the
-            // very first step shown, not a back-navigation into it).
-            AppPane(
-              title: 'Name',
-              child: Column(
-                children: [
-                  AppTextField(
-                    controller: titleController,
-                    label: 'Task name',
-                    autofocus: onBack == null,
-                  ),
-                  SizedBox(height: theme.spacingSm),
-                  AppTextField(
-                    controller: notesController,
-                    label: 'Description',
-                    maxLines: 3,
-                  ),
-                ],
-              ),
-            ),
-            SizedBox(height: theme.spacingLg),
-            AppPane(
-              title: 'Category',
-              child: Wrap(
-                spacing: theme.spacingSm,
-                runSpacing: theme.spacingSm,
-                // Neutral "General" first and preselected — requested
-                // directly — then the four meaningful categories in their
-                // existing order. TaskCategory.values would put General
-                // last (it's HiveField 4, appended so persisted data for
-                // existing tasks is untouched); orderedForPicker is the
-                // display-only reordering.
-                //
-                // Wrap rather than a horizontal ListView: the chips now
-                // flow onto a second line (as in the mockup) instead of
-                // scrolling off-screen, so every category is visible
-                // without discovery.
-                children: [
-                  for (final option in TaskCategoryPickerOrder.orderedForPicker)
-                    _CategoryTag(
-                      category: option,
-                      selected: option == category,
-                      onSelected: () => onCategoryChanged(option),
-                    ),
-                ],
-              ),
-            ),
-            // Tracked-behavior link. Gated: with the flag off this whole
-            // subtree is const-eliminated, so an ordinary build's form is
-            // unchanged.
-            if (FeatureFlags.trackedBehaviorEnabled) ...[
-              SizedBox(height: theme.spacingLg),
-              _BehaviorPickerPanel(
+        // No coloured header block on this step any more (mockup): the name
+        // is now an ordinary field in the body, styled like Notes, so the
+        // form reads as one consistent stack rather than a coloured banner
+        // plus a form.
+        headerContent: null,
+        // Order per the mockup: name, then notes, then category — the name
+        // used to live in the coloured header and jump straight to
+        // category; now it's the first ordinary field in the body.
+        body: SingleChildScrollView(
+          padding: EdgeInsets.all(theme.spacingLg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Same live preview step 2 shows — requested directly, so the
+              // task's eventual Timeline appearance is visible from the very
+              // first step rather than only appearing once schedule fields
+              // exist. No edit pencil here: this widget already IS step 1,
+              // so a button that navigates to step 1 makes no sense on it.
+              _SchedulePreviewCard(
                 theme: theme,
-                behaviors: ref.watch(trackedBehaviorListProvider),
-                selectedId: behaviorId,
-                onChanged: onBehaviorChanged,
+                title: titleController.text.trim(),
+                category: category,
+                startTime: startTime,
+                endTime: endTime,
+                durationMinutes: durationMinutes,
+                onEdit: null,
               ),
+              SizedBox(height: theme.spacingLg),
+              // Name and Notes share one pane with the section title
+              // outside it, so the two fields read as a single "Name" group
+              // rather than two stacked cards. autofocus only on the true
+              // first entry into the wizard (onBack null means this is the
+              // very first step shown, not a back-navigation into it).
+              AppPane(
+                title: 'Name',
+                child: Column(
+                  children: [
+                    AppTextField(
+                      controller: titleController,
+                      label: 'Task name',
+                      autofocus: onBack == null,
+                    ),
+                    SizedBox(height: theme.spacingSm),
+                    AppTextField(
+                      controller: notesController,
+                      label: 'Description',
+                      maxLines: 3,
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(height: theme.spacingLg),
+              AppPane(
+                title: 'Category',
+                child: Wrap(
+                  spacing: theme.spacingSm,
+                  runSpacing: theme.spacingSm,
+                  // Live category list (categoryListProvider), not the old
+                  // fixed enum — the 5 built-ins are seeded in the same
+                  // General-first display order the old
+                  // TaskCategoryPickerOrder used, plus any user-created
+                  // categories after them (creation order — Category has no
+                  // separate display-order concept of its own).
+                  //
+                  // Wrap rather than a horizontal ListView: the chips now
+                  // flow onto a second line (as in the mockup) instead of
+                  // scrolling off-screen, so every category is visible
+                  // without discovery.
+                  children: [
+                    for (final option in categories)
+                      _CategoryTag(
+                        category: option,
+                        selected: option.id == categoryId,
+                        onSelected: () => onCategoryChanged(option.id),
+                      ),
+                  ],
+                ),
+              ),
+              // Tracked-behavior link. Gated: with the flag off this whole
+              // subtree is const-eliminated, so an ordinary build's form is
+              // unchanged.
+              if (FeatureFlags.trackedBehaviorEnabled) ...[
+                SizedBox(height: theme.spacingLg),
+                _BehaviorPickerPanel(
+                  theme: theme,
+                  behaviors: ref.watch(trackedBehaviorListProvider),
+                  selectedId: behaviorId,
+                  onChanged: onBehaviorChanged,
+                ),
+              ],
+              // Reserves space so the last scrollable item never sits under
+              // the sticky primary button, even when scrolled all the way.
+              SizedBox(height: theme.spacingXl * 3),
             ],
-            // Reserves space so the last scrollable item never sits under
-            // the sticky primary button, even when scrolled all the way.
-            SizedBox(height: theme.spacingXl * 3),
-          ],
+          ),
         ),
-      ),
       ),
     );
   }
@@ -2111,7 +2315,7 @@ class _ScheduleStepScaffold extends StatelessWidget {
   /// The task's own name, shown in the live preview header exactly as it
   /// will read on the Timeline — requested directly.
   final String title;
-  final TaskCategory category;
+  final Category? category;
 
   /// The DAY the task lands on — always set (defaults to today). The time
   /// of day is tracked separately because it, unlike the date, starts
@@ -2206,7 +2410,9 @@ class _ScheduleStepScaffold extends StatelessWidget {
       // headerColor is still required by _StepScaffold's contract (every
       // OTHER step still uses the coloured-banner path), but this step no
       // longer renders one — see headerContent below.
-      headerColor: theme.categoryColors[category.token]!,
+      headerColor: category == null
+          ? theme.categoryColors[TaskCategoryToken.general]!
+          : resolveCategoryVisual(theme: theme, category: category!).pillColor,
       onClose: onClose,
       // No back arrow: this is the only screen in the flow now, so there
       // is nowhere "back" to go to — the header shows only Close.
@@ -2261,8 +2467,9 @@ class _ScheduleStepScaffold extends StatelessWidget {
                       semanticLabel: 'Choose start time',
                       onPressed: () => _openStartTimeModal(context),
                     ),
-                    onChanged: (hour, minute) =>
-                        onTimeOfDayChanged(TimeOfDay(hour: hour, minute: minute)),
+                    onChanged: (hour, minute) => onTimeOfDayChanged(
+                      TimeOfDay(hour: hour, minute: minute),
+                    ),
                   ),
                   SizedBox(height: theme.spacingSm),
                   AppSegmentedTimeField(
@@ -2387,7 +2594,8 @@ class _SchedulePreviewCard extends StatelessWidget {
 
   final AmbleTheme theme;
   final String title;
-  final TaskCategory category;
+  final Category? category;
+
   /// All three are null until the user has entered both a time and a
   /// duration — the preview then shows the task WITHOUT a time range
   /// rather than displaying a start or length nobody chose.
@@ -2404,9 +2612,17 @@ class _SchedulePreviewCard extends StatelessWidget {
   Widget build(BuildContext context) {
     // Same badge construction as TaskCapsuleBlock's own plain-category
     // case (no skipped/completed status exists yet at creation time, so
-    // this never needs those branches).
-    final badgeColor = theme.categoryColors[category.token]!;
-    final iconColor = theme.categoryIconColors[category.token]!;
+    // this never needs those branches). category null means nothing has
+    // been chosen yet (or seeding hasn't run) — falls back to the General
+    // token's own color rather than crashing.
+    final category = this.category;
+    final visual = category == null
+        ? CategoryVisual(
+            pillColor: theme.categoryColors[TaskCategoryToken.general]!,
+            iconColor: theme.categoryIconColors[TaskCategoryToken.general]!,
+          )
+        : resolveCategoryVisual(theme: theme, category: category);
+    final badgeColor = visual.pillColor;
     final badgeSize = theme.spacingXl * 0.9;
 
     return AppPane(
@@ -2421,10 +2637,9 @@ class _SchedulePreviewCard extends StatelessWidget {
               color: badgeColor,
               borderRadius: BorderRadius.circular(theme.radiusTaskPill),
             ),
-            child: Icon(
-              category.icon,
-              size: badgeSize * 0.55,
-              color: iconColor,
+            child: Text(
+              category?.emoji ?? '⚪',
+              style: TextStyle(fontSize: badgeSize * 0.55),
             ),
           ),
           SizedBox(width: theme.spacingSm),
@@ -2493,14 +2708,17 @@ class _CategoryTag extends StatelessWidget {
     required this.onSelected,
   });
 
-  final TaskCategory category;
+  final Category category;
   final bool selected;
   final VoidCallback onSelected;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
-    final categoryColor = theme.categoryColors[category.token]!;
+    final categoryColor = resolveCategoryVisual(
+      theme: theme,
+      category: category,
+    ).pillColor;
 
     // One tint-filled pill holding emoji + label (mockup), rather than a
     // separate circular icon beside loose text. Selection is carried by
@@ -2530,7 +2748,7 @@ class _CategoryTag extends StatelessWidget {
             Text(category.emoji, style: theme.textBody),
             SizedBox(width: theme.spacingSm),
             Text(
-              category.label,
+              category.name,
               style: theme.textBody.copyWith(
                 color: theme.colorTextPrimary,
                 fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
@@ -2542,7 +2760,6 @@ class _CategoryTag extends StatelessWidget {
     );
   }
 }
-
 
 String _formatDate(DateTime dateTime) {
   // "Today" when the date is today — requested directly for the date
@@ -2635,7 +2852,11 @@ class _RecurrencePanel extends StatelessWidget {
           // shrink to fit whatever width the sheet actually has.
           Row(
             children: [
-              for (var day = DateTime.monday; day <= DateTime.sunday; day++) ...[
+              for (
+                var day = DateTime.monday;
+                day <= DateTime.sunday;
+                day++
+              ) ...[
                 if (day > DateTime.monday) SizedBox(width: theme.spacingXs),
                 Expanded(
                   child: AppSelectableChip(
@@ -2653,15 +2874,7 @@ class _RecurrencePanel extends StatelessWidget {
   }
 }
 
-const _weekdayAbbreviations = [
-  'MON',
-  'TUE',
-  'WED',
-  'THU',
-  'FRI',
-  'SAT',
-  'SUN',
-];
+const _weekdayAbbreviations = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 
 /// All 7 days selected maps to [RecurrenceFrequency.daily] — matching the
 /// model's existing "daily" concept exactly. Any smaller selection maps to

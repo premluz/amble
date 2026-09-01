@@ -415,3 +415,95 @@ abstract class _$ShowHourLabelsSetting extends $Notifier<bool> {
     return element.handleCreate(ref, build);
   }
 }
+
+/// Whether 2–3 mutually-overlapping tasks stay individual capsule blocks
+/// (naive spatial overlap) instead of being replaced by one aggregate
+/// `OverlapClusterBlock`.
+///
+/// `keepAlive: true` for the same reason as the other settings above — read
+/// by the Timeline screen, not screen-scoped state. Defaults to **false**
+/// when nothing is stored, i.e. clustering is ON for a fresh install —
+/// matches how [PreventOverlappingTasksSetting] defaults to the newer,
+/// more-structured behavior rather than requiring an opt-in.
+
+@ProviderFor(DisableOverlapClusteringSetting)
+final disableOverlapClusteringSettingProvider =
+    DisableOverlapClusteringSettingProvider._();
+
+/// Whether 2–3 mutually-overlapping tasks stay individual capsule blocks
+/// (naive spatial overlap) instead of being replaced by one aggregate
+/// `OverlapClusterBlock`.
+///
+/// `keepAlive: true` for the same reason as the other settings above — read
+/// by the Timeline screen, not screen-scoped state. Defaults to **false**
+/// when nothing is stored, i.e. clustering is ON for a fresh install —
+/// matches how [PreventOverlappingTasksSetting] defaults to the newer,
+/// more-structured behavior rather than requiring an opt-in.
+final class DisableOverlapClusteringSettingProvider
+    extends $NotifierProvider<DisableOverlapClusteringSetting, bool> {
+  /// Whether 2–3 mutually-overlapping tasks stay individual capsule blocks
+  /// (naive spatial overlap) instead of being replaced by one aggregate
+  /// `OverlapClusterBlock`.
+  ///
+  /// `keepAlive: true` for the same reason as the other settings above — read
+  /// by the Timeline screen, not screen-scoped state. Defaults to **false**
+  /// when nothing is stored, i.e. clustering is ON for a fresh install —
+  /// matches how [PreventOverlappingTasksSetting] defaults to the newer,
+  /// more-structured behavior rather than requiring an opt-in.
+  DisableOverlapClusteringSettingProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'disableOverlapClusteringSettingProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$disableOverlapClusteringSettingHash();
+
+  @$internal
+  @override
+  DisableOverlapClusteringSetting create() => DisableOverlapClusteringSetting();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(bool value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<bool>(value),
+    );
+  }
+}
+
+String _$disableOverlapClusteringSettingHash() =>
+    r'd184876ffadfea6851e6bfe01535f34ee4a223c4';
+
+/// Whether 2–3 mutually-overlapping tasks stay individual capsule blocks
+/// (naive spatial overlap) instead of being replaced by one aggregate
+/// `OverlapClusterBlock`.
+///
+/// `keepAlive: true` for the same reason as the other settings above — read
+/// by the Timeline screen, not screen-scoped state. Defaults to **false**
+/// when nothing is stored, i.e. clustering is ON for a fresh install —
+/// matches how [PreventOverlappingTasksSetting] defaults to the newer,
+/// more-structured behavior rather than requiring an opt-in.
+
+abstract class _$DisableOverlapClusteringSetting extends $Notifier<bool> {
+  bool build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<bool, bool>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<bool, bool>,
+              bool,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}

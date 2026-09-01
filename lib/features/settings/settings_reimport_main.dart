@@ -51,11 +51,11 @@ class _ReimportVerificationAppState
       final backupService = ref.read(backupServiceProvider);
       final notifier = ref.read(taskListProvider.notifier);
 
-      final firstTasks = backupService.parseImportFile(jsonString);
-      final first = await notifier.importTasks(firstTasks);
+      final firstParsed = backupService.parseImportFile(jsonString);
+      final first = await notifier.importTasks(firstParsed.tasks);
 
-      final secondTasks = backupService.parseImportFile(jsonString);
-      final second = await notifier.importTasks(secondTasks);
+      final secondParsed = backupService.parseImportFile(jsonString);
+      final second = await notifier.importTasks(secondParsed.tasks);
 
       setState(() {
         _status =

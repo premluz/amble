@@ -1,14 +1,14 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:amble/features/timeline/task_overlap_layout.dart';
+import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/models/task.dart';
-import 'package:amble/shared/models/task_category.dart';
 
 Task _task(String title, int hour, int minute, int durationMinutes) {
   return Task.create(
     title: title,
     scheduledAt: DateTime(2026, 8, 21, hour, minute),
     durationMinutes: durationMinutes,
-    category: TaskCategory.work,
+    categoryId: BuiltInCategoryIds.work,
   );
 }
 

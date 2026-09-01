@@ -1,0 +1,81 @@
+import 'package:hive_ce/hive_ce.dart';
+import 'package:uuid/uuid.dart';
+
+part 'zone.g.dart';
+
+const _uuid = Uuid();
+
+/// A named, time-boxed container a [Task] can optionally be assigned into
+/// (e.g. "Morning ritual," 07:00–08:00) — a separate, persistent entity,
+/// same "own model, own Hive box, own repository" shape as
+/// [TrackedBehavior]. See CONSTITUTION.md's "Zone" section for the full
+/// design.
+///
+/// Non-recurring only for this pass: [startMinutes]/[endMinutes] describe
+/// one time-of-day window, not a specific date, and there is no
+/// series/recurrence concept here yet — see CONSTITUTION.md, which flags
+/// zone recurrence as a genuine open fork needing its own design pass.
+///
+/// Additive and inert until a Zone UI exists — see `core/feature_flags.dart`.
+@HiveType(typeId: 9)
+class Zone extends HiveObject {
+  Zone({
+    required this.id,
+    required this.title,
+    required this.startMinutes,
+    required this.endMinutes,
+    this.schemaVersion = 1,
+  }) : assert(
+         startMinutes >= 0 && startMinutes < _minutesPerDay,
+         'startMinutes must be within a single day (0-1439)',
+       ),
+       assert(
+         endMinutes > startMinutes && endMinutes <= _minutesPerDay,
+         'endMinutes must be after startMinutes and within the day',
+       );
+
+  /// Creates a new zone with a client-generated UUID — same `uuid` call
+  /// [Task.create] and [TrackedBehavior.create] use, per the Constitution's
+  /// "IDs are client-generated UUIDs from day one" rule.
+  Zone.create({
+    required String title,
+    required int startMinutes,
+    required int endMinutes,
+  }) : this(
+         id: _uuid.v4(),
+         title: title,
+         startMinutes: startMinutes,
+         endMinutes: endMinutes,
+       );
+
+  @HiveField(0)
+  final String id;
+
+  @HiveField(1)
+  String title;
+
+  /// Start of the window, in minutes since midnight (0-1439). Time-of-day,
+  /// not a specific date — see the class doc comment.
+  ///
+  /// Stored as a plain minutes-since-midnight [int] rather than Flutter's
+  /// `TimeOfDay` — `TimeOfDay` has no Hive adapter, and the codebase already
+  /// treats "hours * 60 + minutes" as the boundary representation for time
+  /// of day (see `AppSegmentedTimeField`'s doc comment). Flagged here as the
+  /// chosen representation, not assumed.
+  @HiveField(2)
+  int startMinutes;
+
+  /// End of the window, in minutes since midnight (1-1440). Always greater
+  /// than [startMinutes] — enforced by the constructor's assert.
+  @HiveField(3)
+  int endMinutes;
+
+  @HiveField(4)
+  int schemaVersion;
+
+  /// Derived, never stored — so duration can never drift from the two times
+  /// that define it, per CONSTITUTION.md.
+  int get durationMinutes => endMinutes - startMinutes;
+
+  static const _minutesPerDay = 24 * 60;
+}

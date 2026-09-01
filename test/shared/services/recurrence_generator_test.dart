@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:amble/shared/models/recurrence_frequency.dart';
 import 'package:amble/shared/models/recurrence_rule.dart';
 import 'package:amble/shared/models/task.dart';
-import 'package:amble/shared/models/task_category.dart';
+import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/services/recurrence_generator.dart';
 
 /// A template anchored at a known instant, so window maths is deterministic
@@ -17,7 +17,7 @@ Task _template({
     title: title,
     scheduledAt: scheduledAt,
     durationMinutes: 30,
-    category: TaskCategory.health,
+    categoryId: BuiltInCategoryIds.health,
     recurrenceId: seriesId,
     recurrenceRule: rule,
   );
@@ -396,7 +396,7 @@ void main() {
         title: 'Ordinary',
         scheduledAt: anchor,
         durationMinutes: 30,
-        category: TaskCategory.work,
+        categoryId: BuiltInCategoryIds.work,
       );
 
       expect(

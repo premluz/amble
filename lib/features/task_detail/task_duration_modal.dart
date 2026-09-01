@@ -40,10 +40,7 @@ String presetLabel(int minutes) =>
 /// value clears the highlight entirely — the presets are a reflection of
 /// the current value, not a separate mode alongside it.
 class TaskDurationModal extends StatefulWidget {
-  const TaskDurationModal({
-    super.key,
-    required this.initialMinutes,
-  });
+  const TaskDurationModal({super.key, required this.initialMinutes});
 
   /// Total minutes, or null when unset. Split into hour/minute for both
   /// the typed field and the wheel, and reassembled on Done.
@@ -57,8 +54,7 @@ class TaskDurationModal extends StatefulWidget {
   }) {
     return AppSheet.show<int>(
       context: context,
-      builder: (context) =>
-          TaskDurationModal(initialMinutes: initialMinutes),
+      builder: (context) => TaskDurationModal(initialMinutes: initialMinutes),
     );
   }
 
@@ -119,90 +115,90 @@ class _TaskDurationModalState extends State<TaskDurationModal> {
     // overflow otherwise.
     return SingleChildScrollView(
       child: Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          'Duration',
-          textAlign: TextAlign.center,
-          style: theme.textTitle.copyWith(
-            color: theme.colorTextPrimary,
-            fontWeight: FontWeight.w700,
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Duration',
+            textAlign: TextAlign.center,
+            style: theme.textTitle.copyWith(
+              color: theme.colorTextPrimary,
+              fontWeight: FontWeight.w700,
+            ),
           ),
-        ),
-        SizedBox(height: theme.spacingLg),
-        AppSegmentedTimeField(
-          label: 'Duration',
-          first: _hour,
-          second: _minute,
-          // No upper bound (requested directly — "no cap, any positive
-          // duration") — same contract the main screen's own duration
-          // field already has.
-          firstMax: null,
-          // Typing a value that happens to match a preset highlights it
-          // right back, same as scrolling to a match would (requested
-          // directly: "likewise if any other input type matched preset
-          // preset gets selected") — the Wrap below re-derives selection
-          // from _totalMinutes on every rebuild, so no separate wiring is
-          // needed here. No wheel animation on typing: the user is
-          // actively typing, so jumping the wheel under their thumb would
-          // fight the keyboard rather than help.
-          onChanged: _setValue,
-        ),
-        SizedBox(height: theme.spacingMd),
-        // Preset chips — same AppSelectableChip the Repeats day-of-week
-        // row uses (requested directly). Highlighting is DERIVED from the
-        // current value every rebuild, never tracked as its own selected
-        // index — so typing or scrolling to 30 minutes highlights "30m"
-        // exactly as tapping it would, and any non-preset value clears
-        // every chip at once.
-        //
-        // One ROW, not a Wrap — requested directly: "same as days of the
-        // week in repeat." A Wrap let all 6 chips overflow onto a second
-        // line on a narrow screen; each chip is Expanded instead, so all
-        // 6 always share the row's real width and shrink together rather
-        // than wrapping, matching _RecurrencePanel's own day-chip row.
-        Row(
-          children: [
-            for (final (index, preset) in presetMinutes.indexed) ...[
-              if (index > 0) SizedBox(width: theme.spacingXs),
-              Expanded(
-                child: AppSelectableChip(
-                  label: presetLabel(preset),
-                  selected: _totalMinutes == preset,
-                  onTap: () => _selectPreset(preset),
-                ),
-              ),
-            ],
-          ],
-        ),
-        SizedBox(height: theme.spacingLg),
-        SizedBox(
-          height: theme.spacingXl * 5,
-          child: AppWheelPicker(
-            // Matches AppWheelTimePicker's own existing duration range
-            // (0–23h on the wheel; a longer duration stays reachable by
-            // typing, which is what keeps the wheel scrollable).
-            hourCount: 24,
-            minuteStep: 5,
-            initialHour: _hour,
-            initialMinute: _minute,
-            controller: _wheelController,
+          SizedBox(height: theme.spacingLg),
+          AppSegmentedTimeField(
+            label: 'Duration',
+            first: _hour,
+            second: _minute,
+            // No upper bound (requested directly — "no cap, any positive
+            // duration") — same contract the main screen's own duration
+            // field already has.
+            firstMax: null,
+            // Typing a value that happens to match a preset highlights it
+            // right back, same as scrolling to a match would (requested
+            // directly: "likewise if any other input type matched preset
+            // preset gets selected") — the Wrap below re-derives selection
+            // from _totalMinutes on every rebuild, so no separate wiring is
+            // needed here. No wheel animation on typing: the user is
+            // actively typing, so jumping the wheel under their thumb would
+            // fight the keyboard rather than help.
             onChanged: _setValue,
           ),
-        ),
-        SizedBox(height: theme.spacingLg),
-        AppButton(
-          label: 'Done',
-          size: AppButtonSize.large,
-          shape: AppButtonShape.pill,
-          onPressed: () {
-            // A task must have SOME duration — floor at 1 minute rather
-            // than allowing 0h 0m, matching the main screen's own field.
-            Navigator.of(context).pop(_totalMinutes < 1 ? 1 : _totalMinutes);
-          },
-        ),
-      ],
+          SizedBox(height: theme.spacingMd),
+          // Preset chips — same AppSelectableChip the Repeats day-of-week
+          // row uses (requested directly). Highlighting is DERIVED from the
+          // current value every rebuild, never tracked as its own selected
+          // index — so typing or scrolling to 30 minutes highlights "30m"
+          // exactly as tapping it would, and any non-preset value clears
+          // every chip at once.
+          //
+          // One ROW, not a Wrap — requested directly: "same as days of the
+          // week in repeat." A Wrap let all 6 chips overflow onto a second
+          // line on a narrow screen; each chip is Expanded instead, so all
+          // 6 always share the row's real width and shrink together rather
+          // than wrapping, matching _RecurrencePanel's own day-chip row.
+          Row(
+            children: [
+              for (final (index, preset) in presetMinutes.indexed) ...[
+                if (index > 0) SizedBox(width: theme.spacingXs),
+                Expanded(
+                  child: AppSelectableChip(
+                    label: presetLabel(preset),
+                    selected: _totalMinutes == preset,
+                    onTap: () => _selectPreset(preset),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          SizedBox(height: theme.spacingLg),
+          SizedBox(
+            height: theme.spacingXl * 5,
+            child: AppWheelPicker(
+              // Matches AppWheelTimePicker's own existing duration range
+              // (0–23h on the wheel; a longer duration stays reachable by
+              // typing, which is what keeps the wheel scrollable).
+              hourCount: 24,
+              minuteStep: 5,
+              initialHour: _hour,
+              initialMinute: _minute,
+              controller: _wheelController,
+              onChanged: _setValue,
+            ),
+          ),
+          SizedBox(height: theme.spacingLg),
+          AppButton(
+            label: 'Done',
+            size: AppButtonSize.large,
+            shape: AppButtonShape.pill,
+            onPressed: () {
+              // A task must have SOME duration — floor at 1 minute rather
+              // than allowing 0h 0m, matching the main screen's own field.
+              Navigator.of(context).pop(_totalMinutes < 1 ? 1 : _totalMinutes);
+            },
+          ),
+        ],
       ),
     );
   }

@@ -37,7 +37,9 @@ Widget _host({
 void main() {
   group('AppSegmentedTimeField masking', () {
     testWidgets('renders the initial value in hh : mm shape', (tester) async {
-      await tester.pumpWidget(_host(first: 14, second: 0, onChanged: (_, _) {}));
+      await tester.pumpWidget(
+        _host(first: 14, second: 0, onChanged: (_, _) {}),
+      );
       expect(_state(tester).text, '14 : 00');
     });
 
@@ -77,8 +79,7 @@ void main() {
       );
     });
 
-    testWidgets(
-        'backspace at the minutes boundary crosses into the hours and '
+    testWidgets('backspace at the minutes boundary crosses into the hours and '
         'SHRINKS it, rather than re-zeroing a fixed slot', (tester) async {
       await tester.pumpWidget(_host(first: 9, second: 0, onChanged: (_, _) {}));
       await tester.tap(find.byType(TextField));
@@ -180,12 +181,7 @@ void main() {
     testWidgets('duration renders its hour at natural width, not padded '
         'out to the 3-digit capacity', (tester) async {
       await tester.pumpWidget(
-        _host(
-          first: 2,
-          second: 30,
-          firstMax: null,
-          onChanged: (_, _) {},
-        ),
+        _host(first: 2, second: 30, firstMax: null, onChanged: (_, _) {}),
       );
 
       // 2h30m reads "02 : 30" — NOT "002 : 30". The 3-digit capacity is
@@ -202,12 +198,7 @@ void main() {
       tester,
     ) async {
       await tester.pumpWidget(
-        _host(
-          first: 120,
-          second: 0,
-          firstMax: null,
-          onChanged: (_, _) {},
-        ),
+        _host(first: 120, second: 0, firstMax: null, onChanged: (_, _) {}),
       );
       // The hour segment grows to fit rather than truncating.
       expect(_state(tester).text, '120 : 00');
@@ -313,11 +304,7 @@ void main() {
     testWidgets('clamps an out-of-range hour on blur', (tester) async {
       var committedFirst = -1;
       await tester.pumpWidget(
-        _host(
-          first: 0,
-          second: 0,
-          onChanged: (f, _) => committedFirst = f,
-        ),
+        _host(first: 0, second: 0, onChanged: (f, _) => committedFirst = f),
       );
       await tester.tap(find.byType(TextField));
       await tester.pump();
@@ -359,11 +346,7 @@ void main() {
     testWidgets('minutes are clamped to 59', (tester) async {
       var committedSecond = -1;
       await tester.pumpWidget(
-        _host(
-          first: 0,
-          second: 0,
-          onChanged: (_, s) => committedSecond = s,
-        ),
+        _host(first: 0, second: 0, onChanged: (_, s) => committedSecond = s),
       );
       await tester.tap(find.byType(TextField));
       await tester.pump();
@@ -377,29 +360,36 @@ void main() {
     });
 
     testWidgets(
-        'caret lands in front of the minutes, not right after the hour, '
-        'once two hour digits are entered', (tester) async {
-      await tester.pumpWidget(_host(first: null, second: null, onChanged: (_, _) {}));
-      await tester.tap(find.byType(TextField));
-      await tester.pump();
+      'caret lands in front of the minutes, not right after the hour, '
+      'once two hour digits are entered',
+      (tester) async {
+        await tester.pumpWidget(
+          _host(first: null, second: null, onChanged: (_, _) {}),
+        );
+        await tester.tap(find.byType(TextField));
+        await tester.pump();
 
-      await tester.enterText(find.byType(TextField), '09');
-      await tester.pump();
+        await tester.enterText(find.byType(TextField), '09');
+        await tester.pump();
 
-      final state = _state(tester);
-      final separatorEnd = state.text.indexOf(':') + 2;
-      // Not merely past the separator START — past the space after it,
-      // i.e. sitting directly in front of the minutes' own first digit.
-      // Landing one character short of this (right after the separator's
-      // colon but before its trailing space) reads as the caret stalling
-      // at the boundary instead of moving into minutes.
-      expect(state.caret, separatorEnd);
-    });
+        final state = _state(tester);
+        final separatorEnd = state.text.indexOf(':') + 2;
+        // Not merely past the separator START — past the space after it,
+        // i.e. sitting directly in front of the minutes' own first digit.
+        // Landing one character short of this (right after the separator's
+        // colon but before its trailing space) reads as the caret stalling
+        // at the boundary instead of moving into minutes.
+        expect(state.caret, separatorEnd);
+      },
+    );
 
     testWidgets('backspace removes ONE digit from a two-digit minutes '
-        'segment, leaving the other digit rather than re-zeroing to "00"',
-        (tester) async {
-      await tester.pumpWidget(_host(first: 9, second: 15, onChanged: (_, _) {}));
+        'segment, leaving the other digit rather than re-zeroing to "00"', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(first: 9, second: 15, onChanged: (_, _) {}),
+      );
       await tester.tap(find.byType(TextField));
       await tester.pump();
 
@@ -424,9 +414,10 @@ void main() {
     });
 
     testWidgets('backspacing the LAST remaining digit of a segment clears '
-        'the whole field to the placeholder, not to "00 : 00"',
-        (tester) async {
-      await tester.pumpWidget(_host(first: 9, second: null, onChanged: (_, _) {}));
+        'the whole field to the placeholder, not to "00 : 00"', (tester) async {
+      await tester.pumpWidget(
+        _host(first: 9, second: null, onChanged: (_, _) {}),
+      );
       await tester.tap(find.byType(TextField));
       await tester.pump();
 

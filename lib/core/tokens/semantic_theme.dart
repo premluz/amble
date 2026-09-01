@@ -25,6 +25,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     required this.colorScrim,
     required this.colorSurfaceBlurOverlay,
     required this.blurOverlaySigma,
+    required this.colorFreeWindow,
     required this.colorTextPrimary,
     required this.colorTextSecondary,
     required this.colorBorder,
@@ -34,6 +35,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     required this.colorTaskAlert,
     required this.categoryColors,
     required this.categoryIconColors,
+    required this.categorySwatches,
     required this.spacingXs,
     required this.spacingSm,
     required this.spacingIconTop,
@@ -62,6 +64,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     required this.motionFast,
     required this.motionNormal,
     required this.motionSlow,
+    required this.motionRouteSettle,
     required this.curveStandard,
   });
 
@@ -112,6 +115,15 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   /// frosted-glass surface in the app blurs by the same amount.
   final double blurOverlaySigma;
 
+  /// [colorBorder] at low opacity — the subtle wash for a large free-time
+  /// window's block on the Timeline (see `free_window_block.dart`).
+  /// Derived from the border/hairline color rather than a new primitive:
+  /// the intent is "a faint structural hint, not a surface," matching how
+  /// the block itself is meant to read as quiet scaffolding rather than a
+  /// competing task-like element. Requested directly: "a subtle block...
+  /// some transparent light grey color."
+  final Color colorFreeWindow;
+
   // Text
   final Color colorTextPrimary;
   final Color colorTextSecondary;
@@ -136,6 +148,16 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   /// same-hue color chosen to read clearly against its own pale fill — see
   /// docs/DECISIONS.md for the contrast numbers per category.
   final Map<TaskCategoryToken, Color> categoryIconColors;
+
+  /// The 12-swatch palette a user picks from when creating a new
+  /// [Category] (the persisted, user-extensible entity — distinct from the
+  /// fixed [TaskCategoryToken] taxonomy above). Single saturated swatch per
+  /// color, not a tint+icon pair, per the confirmed decision in
+  /// docs/DECISIONS.md — [Category.colorToken] is a plain index into this
+  /// list. Same list in both [light] and [dark] — its lightness/chroma
+  /// were chosen to already be dark-mode-safe, so there's no separate dark
+  /// ramp to maintain.
+  final List<Color> categorySwatches;
 
   // Spacing
   final double spacingXs;
@@ -171,7 +193,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   /// minimum, and it is deliberately the larger of the two.
   final double sizeMinFieldHeight;
 
-  // Radii
+  // Radii`
   // Corner radii, named by SIZE rather than by component. A component
   // picks the rung that matches its visual weight, so two unrelated
   // controls that should look alike can't drift apart by being pointed at
@@ -247,6 +269,17 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   final Duration motionFast;
   final Duration motionNormal;
   final Duration motionSlow;
+
+  /// How long to wait for a dismissed full-screen route to finish sliding
+  /// away before starting an animation on the screen it uncovers.
+  ///
+  /// Exists because an animation triggered at save time plays entirely
+  /// BEHIND the closing modal and is over before the user can see the
+  /// timeline at all — reported directly ("no se already placed or
+  /// extended"). Slightly longer than Flutter's own 300ms default
+  /// `PageRoute` transition, so the reveal starts on a clear screen
+  /// rather than racing the last frames of the dismissal.
+  final Duration motionRouteSettle;
   final Curve curveStandard;
 
   static final light = AmbleTheme(
@@ -262,6 +295,11 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     // ever changes.
     colorSurfaceBlurOverlay: ColorPrimitives.surface1.withValues(alpha: 0.36),
     blurOverlaySigma: 12.0,
+    // Same primitive as colorBorder below (sand300), at low alpha — kept
+    // as a literal primitive reference rather than colorBorder.withValues
+    // since these are compile-time const field initializers and colorBorder
+    // isn't assigned yet at this point in the constructor call.
+    colorFreeWindow: ColorPrimitives.sand300.withValues(alpha: 0.5),
     colorTextPrimary: ColorPrimitives.slate900,
     colorTextSecondary: ColorPrimitives.slate500,
     colorBorder: ColorPrimitives.sand300,
@@ -285,6 +323,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       TaskCategoryToken.personal: ColorPrimitives.periwinkle500,
       TaskCategoryToken.admin: ColorPrimitives.berry500,
     },
+    categorySwatches: ColorPrimitives.categoryPalette12,
     spacingXs: SpacingPrimitives.space2,
     spacingSm: SpacingPrimitives.space3,
     spacingIconTop: SpacingPrimitives.space4,
@@ -367,6 +406,9 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       milliseconds: MotionPrimitives.durationNormalMs,
     ),
     motionSlow: const Duration(milliseconds: MotionPrimitives.durationSlowMs),
+    motionRouteSettle: const Duration(
+      milliseconds: MotionPrimitives.durationRouteSettleMs,
+    ),
     curveStandard: const Cubic(0.4, 0.0, 0.2, 1.0),
   );
 
@@ -393,6 +435,9 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     // Same reasoning as light — 36% of dark mode's own pane fill (ink900).
     colorSurfaceBlurOverlay: ColorPrimitives.ink900.withValues(alpha: 0.36),
     blurOverlaySigma: 12.0,
+    // Same primitive as colorBorder below (ink600), at low alpha — same
+    // reasoning as the light palette above.
+    colorFreeWindow: ColorPrimitives.ink600.withValues(alpha: 0.5),
     colorTextPrimary: ColorPrimitives.sand200,
     colorTextSecondary: ColorPrimitives.sand400,
     colorBorder: ColorPrimitives.ink600,
@@ -436,6 +481,9 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       TaskCategoryToken.personal: ColorPrimitives.white,
       TaskCategoryToken.admin: ColorPrimitives.white,
     },
+    // Same 12-swatch list as the light palette — deliberately not a
+    // separate dark-mode set, see the field's own doc comment above.
+    categorySwatches: ColorPrimitives.categoryPalette12,
     spacingXs: SpacingPrimitives.space2,
     spacingSm: SpacingPrimitives.space3,
     spacingIconTop: SpacingPrimitives.space4,
@@ -518,6 +566,9 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       milliseconds: MotionPrimitives.durationNormalMs,
     ),
     motionSlow: const Duration(milliseconds: MotionPrimitives.durationSlowMs),
+    motionRouteSettle: const Duration(
+      milliseconds: MotionPrimitives.durationRouteSettleMs,
+    ),
     curveStandard: const Cubic(0.4, 0.0, 0.2, 1.0),
   );
 
@@ -532,6 +583,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     Color? colorScrim,
     Color? colorSurfaceBlurOverlay,
     double? blurOverlaySigma,
+    Color? colorFreeWindow,
     Color? colorTextPrimary,
     Color? colorTextSecondary,
     Color? colorBorder,
@@ -541,6 +593,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     Color? colorTaskAlert,
     Map<TaskCategoryToken, Color>? categoryColors,
     Map<TaskCategoryToken, Color>? categoryIconColors,
+    List<Color>? categorySwatches,
     double? spacingXs,
     double? spacingSm,
     double? spacingIconTop,
@@ -569,6 +622,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     Duration? motionFast,
     Duration? motionNormal,
     Duration? motionSlow,
+    Duration? motionRouteSettle,
     Curve? curveStandard,
   }) {
     return AmbleTheme(
@@ -584,6 +638,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       colorSurfaceBlurOverlay:
           colorSurfaceBlurOverlay ?? this.colorSurfaceBlurOverlay,
       blurOverlaySigma: blurOverlaySigma ?? this.blurOverlaySigma,
+      colorFreeWindow: colorFreeWindow ?? this.colorFreeWindow,
       colorTextPrimary: colorTextPrimary ?? this.colorTextPrimary,
       colorTextSecondary: colorTextSecondary ?? this.colorTextSecondary,
       colorBorder: colorBorder ?? this.colorBorder,
@@ -593,6 +648,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       colorTaskAlert: colorTaskAlert ?? this.colorTaskAlert,
       categoryColors: categoryColors ?? this.categoryColors,
       categoryIconColors: categoryIconColors ?? this.categoryIconColors,
+      categorySwatches: categorySwatches ?? this.categorySwatches,
       spacingXs: spacingXs ?? this.spacingXs,
       spacingSm: spacingSm ?? this.spacingSm,
       spacingIconTop: spacingIconTop ?? this.spacingIconTop,
@@ -621,6 +677,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       motionFast: motionFast ?? this.motionFast,
       motionNormal: motionNormal ?? this.motionNormal,
       motionSlow: motionSlow ?? this.motionSlow,
+      motionRouteSettle: motionRouteSettle ?? this.motionRouteSettle,
       curveStandard: curveStandard ?? this.curveStandard,
     );
   }
@@ -670,6 +727,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
         other.blurOverlaySigma,
         t,
       ),
+      colorFreeWindow: Color.lerp(colorFreeWindow, other.colorFreeWindow, t)!,
       colorTextPrimary: Color.lerp(
         colorTextPrimary,
         other.colorTextPrimary,
@@ -697,6 +755,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       categoryIconColors: t < 0.5
           ? categoryIconColors
           : other.categoryIconColors,
+      categorySwatches: t < 0.5 ? categorySwatches : other.categorySwatches,
       spacingXs: _lerpDouble(spacingXs, other.spacingXs, t),
       spacingSm: _lerpDouble(spacingSm, other.spacingSm, t),
       spacingIconTop: _lerpDouble(spacingIconTop, other.spacingIconTop, t),
@@ -745,6 +804,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       motionFast: t < 0.5 ? motionFast : other.motionFast,
       motionNormal: t < 0.5 ? motionNormal : other.motionNormal,
       motionSlow: t < 0.5 ? motionSlow : other.motionSlow,
+      motionRouteSettle: t < 0.5 ? motionRouteSettle : other.motionRouteSettle,
       curveStandard: t < 0.5 ? curveStandard : other.curveStandard,
     );
   }

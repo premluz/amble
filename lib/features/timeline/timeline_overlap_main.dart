@@ -10,7 +10,7 @@ import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../hive_registrar.g.dart';
 import '../../shared/models/task.dart';
-import '../../shared/models/task_category.dart';
+import '../../shared/models/category.dart';
 import '../../shared/providers/task_providers.dart';
 import 'timeline_screen.dart';
 
@@ -31,20 +31,20 @@ Future<void> main() async {
       title: 'Morning run',
       scheduledAt: at(7, 0),
       durationMinutes: 30,
-      category: TaskCategory.health,
+      categoryId: BuiltInCategoryIds.health,
     ),
     // Two-way clash — should render side by side, half width each.
     Task.create(
       title: 'Deep work',
       scheduledAt: at(9, 0),
       durationMinutes: 90,
-      category: TaskCategory.work,
+      categoryId: BuiltInCategoryIds.work,
     ),
     Task.create(
       title: 'Standup',
       scheduledAt: at(9, 30),
       durationMinutes: 30,
-      category: TaskCategory.admin,
+      categoryId: BuiltInCategoryIds.admin,
     ),
     // Chained group — 'Last' can reuse the first column once 'Overlap A'
     // has finished, so this needs two columns, not three.
@@ -52,19 +52,19 @@ Future<void> main() async {
       title: 'Overlap A',
       scheduledAt: at(13, 0),
       durationMinutes: 60,
-      category: TaskCategory.personal,
+      categoryId: BuiltInCategoryIds.personal,
     ),
     Task.create(
       title: 'Overlap B',
       scheduledAt: at(13, 30),
       durationMinutes: 60,
-      category: TaskCategory.health,
+      categoryId: BuiltInCategoryIds.health,
     ),
     Task.create(
       title: 'Overlap C',
       scheduledAt: at(14, 0),
       durationMinutes: 60,
-      category: TaskCategory.work,
+      categoryId: BuiltInCategoryIds.work,
     ),
   ];
   await box.putAll({for (final task in seedTasks) task.id: task});

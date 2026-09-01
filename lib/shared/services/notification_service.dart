@@ -12,6 +12,24 @@ const _androidChannelName = 'Task alerts';
 const _androidChannelDescription =
     'Alerts you when a scheduled task is starting.';
 
+/// How far ahead a task-start alert is actually registered with the OS.
+///
+/// Android caps an app at **500 concurrent alarms** and throws
+/// `IllegalStateException: Maximum limit of concurrent alarms 500 reached`
+/// past that — and, critically, keeps throwing for every subsequent
+/// schedule attempt. Recurring series materialize an 8-week rolling window
+/// (`recurrenceWindowWeeks`, see `recurrence_generator.dart`), so a handful
+/// of daily series is enough to blow the cap: one daily series alone is ~56
+/// alarms. See docs/ERROR_LOG.md for the incident this constant exists to
+/// prevent.
+///
+/// 14 days is deliberately shorter than the 8-week materialization window:
+/// tasks are *stored* 8 weeks out (so the Timeline can show them), but only
+/// the near ones hold an OS alarm. [NotificationService.refreshScheduled]
+/// tops the window up at launch, which is what keeps a task scheduled 3
+/// weeks out from being silently forgotten.
+const notificationHorizonDays = 14;
+
 /// Wraps `flutter_local_notifications` for task-start alerts. All scheduling
 /// decisions (whether a given task write should schedule/cancel/reschedule a
 /// notification) live in [TaskList] — this service only knows how to
@@ -156,14 +174,14 @@ class NotificationService {
   }
 
   /// Schedules a start-time alert for [task]. No-ops silently if [task]
-  /// isn't scheduled, its scheduled time has already passed, or
-  /// notification permission is denied — the app must keep working without
-  /// it either way.
+  /// isn't scheduled, its scheduled time has already passed, it falls
+  /// beyond [notificationHorizonDays], or notification permission is denied
+  /// — the app must keep working without it either way.
   Future<void> scheduleForTask(Task task) async {
     if (!task.notificationsEnabled) return;
     final scheduledAt = task.scheduledAt;
     if (scheduledAt == null) return;
-    if (!scheduledAt.isAfter(DateTime.now())) return;
+    if (!isWithinSchedulingHorizon(scheduledAt)) return;
 
     final granted = await requestPermissionIfNeeded();
     if (!granted) return;
@@ -188,8 +206,60 @@ class NotificationService {
     );
   }
 
+  /// Whether [scheduledAt] is near enough to hold an OS alarm right now:
+  /// still in the future, and no further out than [notificationHorizonDays].
+  ///
+  /// Pure and separated from [scheduleForTask] so the horizon rule is
+  /// testable without a platform channel, and so [refreshScheduled] can
+  /// apply exactly the same rule when topping the window up.
+  bool isWithinSchedulingHorizon(DateTime scheduledAt, {DateTime? now}) {
+    final from = now ?? DateTime.now();
+    if (!scheduledAt.isAfter(from)) return false;
+    return scheduledAt.isBefore(
+      from.add(const Duration(days: notificationHorizonDays)),
+    );
+  }
+
   Future<void> cancelForTask(String taskId) =>
       _plugin.cancel(id: _notificationId(taskId));
+
+  /// Rebuilds the whole set of registered alarms from scratch: cancels
+  /// every pending one, then schedules [tasks] (the caller passes only
+  /// those inside the horizon). Called once at launch (see `main.dart`),
+  /// which is what makes [notificationHorizonDays] safe — a task further
+  /// out than the horizon picks up its alarm on a later launch rather than
+  /// never getting one.
+  ///
+  /// The blanket [cancelAll] first is deliberate, and does two jobs. It
+  /// drops alarms for tasks that have since moved out of the horizon (or
+  /// been deleted while the app wasn't running), and — the reason it
+  /// exists — it reclaims the slots of installs that already blew past
+  /// Android's 500-alarm cap under the previous schedule-everything
+  /// behavior. Without it those installs stay wedged: the cap is already
+  /// hit at launch, so every new schedule keeps throwing. See
+  /// docs/ERROR_LOG.md.
+  ///
+  /// Each task is then scheduled independently with failures contained per
+  /// task — one task's scheduling failure must not stop the rest of the
+  /// window from being registered.
+  Future<void> refreshScheduled(List<Task> tasks) async {
+    try {
+      await cancelAll();
+    } catch (error) {
+      debugPrint('Notification cancelAll failed during refresh: $error');
+    }
+
+    for (final task in tasks) {
+      try {
+        await scheduleForTask(task);
+      } catch (error) {
+        debugPrint('Notification refresh failed for task ${task.id}: $error');
+      }
+    }
+  }
+
+  /// Cancels every pending notification this app has registered.
+  Future<void> cancelAll() => _plugin.cancelAll();
 
   /// Cancels any existing alert for [task], then schedules a fresh one if
   /// still appropriate. Correct for every write path (create, update,

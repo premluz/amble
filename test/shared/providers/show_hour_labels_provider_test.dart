@@ -48,19 +48,22 @@ void main() {
     );
   });
 
-  test('persists across a simulated relaunch (new container, same box)', () async {
-    await container.read(showHourLabelsSettingProvider.notifier).set(false);
-    container.dispose();
+  test(
+    'persists across a simulated relaunch (new container, same box)',
+    () async {
+      await container.read(showHourLabelsSettingProvider.notifier).set(false);
+      container.dispose();
 
-    final relaunched = ProviderContainer(
-      overrides: [
-        preferencesRepositoryProvider.overrideWithValue(
-          HivePreferencesRepository(box),
-        ),
-      ],
-    );
-    addTearDown(relaunched.dispose);
+      final relaunched = ProviderContainer(
+        overrides: [
+          preferencesRepositoryProvider.overrideWithValue(
+            HivePreferencesRepository(box),
+          ),
+        ],
+      );
+      addTearDown(relaunched.dispose);
 
-    expect(relaunched.read(showHourLabelsSettingProvider), isFalse);
-  });
+      expect(relaunched.read(showHourLabelsSettingProvider), isFalse);
+    },
+  );
 }

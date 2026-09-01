@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/models/task.dart';
 import 'package:amble/shared/models/task_category.dart';
 import 'package:amble/shared/models/task_status.dart';
@@ -14,7 +15,7 @@ void main() {
       originalScheduledAt: DateTime(2026, 8, 20, 8, 0),
       status: TaskStatus.rescheduled,
       completedAt: DateTime(2026, 8, 20, 10, 0),
-      category: TaskCategory.work,
+      categoryId: BuiltInCategoryIds.work,
       schemaVersion: 1,
     );
 
@@ -73,7 +74,7 @@ void main() {
       title: 'x',
       scheduledAt: DateTime(2026, 8, 20),
       durationMinutes: 30,
-      category: TaskCategory.personal,
+      categoryId: BuiltInCategoryIds.personal,
     ).toJson()..['scheduledAt'] = 'not-a-date';
     expect(() => Task.fromJson(json), throwsFormatException);
   });
@@ -83,7 +84,7 @@ void main() {
     final b = Task(
       id: a.id,
       title: 'Different title',
-      category: TaskCategory.personal,
+      categoryId: BuiltInCategoryIds.personal,
     );
     expect(a.hasSameFieldsAs(b), isFalse);
   });
@@ -95,7 +96,7 @@ void main() {
         title: 'Ordinary',
         scheduledAt: DateTime(2026, 8, 20, 9),
         durationMinutes: 30,
-        category: TaskCategory.work,
+        categoryId: BuiltInCategoryIds.work,
       );
       final captured = Task.captured(title: 'Ordinary inbox item');
 
@@ -112,7 +113,7 @@ void main() {
               title: 'Exercise',
               scheduledAt: DateTime(2026, 8, 20, 7),
               durationMinutes: 60,
-              category: TaskCategory.health,
+              categoryId: BuiltInCategoryIds.health,
             )
             ..behaviorId = 'behavior-123'
             ..actualAmount = 30;
@@ -131,7 +132,7 @@ void main() {
               title: 'Legacy task',
               scheduledAt: DateTime(2026, 8, 20, 9),
               durationMinutes: 30,
-              category: TaskCategory.work,
+              categoryId: BuiltInCategoryIds.work,
             ).toJson()
             ..remove('behaviorId')
             ..remove('actualAmount');
@@ -159,7 +160,7 @@ void main() {
         title: 'Silent task',
         scheduledAt: DateTime(2026, 8, 20, 9),
         durationMinutes: 30,
-        category: TaskCategory.work,
+        categoryId: BuiltInCategoryIds.work,
         notificationsEnabled: false,
       );
 
@@ -174,7 +175,7 @@ void main() {
         title: 'Legacy task',
         scheduledAt: DateTime(2026, 8, 20, 9),
         durationMinutes: 30,
-        category: TaskCategory.work,
+        categoryId: BuiltInCategoryIds.work,
       ).toJson()..remove('notificationsEnabled');
 
       final restored = Task.fromJson(legacyJson);
@@ -188,13 +189,13 @@ void main() {
         title: 'Same',
         scheduledAt: DateTime(2026, 8, 20, 9),
         durationMinutes: 30,
-        category: TaskCategory.work,
+        categoryId: BuiltInCategoryIds.work,
       );
       final b = Task.create(
         title: 'Same',
         scheduledAt: DateTime(2026, 8, 20, 9),
         durationMinutes: 30,
-        category: TaskCategory.work,
+        categoryId: BuiltInCategoryIds.work,
         notificationsEnabled: false,
       );
 
