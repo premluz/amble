@@ -1,26 +1,33 @@
 import 'package:flutter/material.dart';
 
+import '../../core/dev_config.dart' show TimelineTaskTextLayout;
 import '../../core/tokens/semantic_theme.dart';
 import '../../shared/models/task.dart';
 import '../../shared/models/task_status.dart';
 import '../../shared/services/overlap_cluster.dart';
 import 'completion_checkbox.dart';
-import 'task_category_token_mapping.dart';
+import 'duration_label.dart';
 
-/// The cluster's flat list of member tasks — title + time only, no per-row
-/// card/icon/color/indentation, in chronological order (earliest first) —
-/// plus a trailing completion checkbox per row, right-aligned within this
-/// list panel exactly like an ordinary capsule's own checkbox is
-/// right-aligned within its row. Positioned beside the cluster's member
-/// pills, which render through the ordinary timeline slot loop in
-/// `timeline_screen.dart` (each pinned to a fixed one-lane-per-task column
-/// — see `_withClusterLanes` — so lane order always matches this list's
-/// row order: leftmost pill, topmost row). The pills themselves carry no
-/// checkbox of their own — confirmed directly, over an earlier pass that
-/// put a checkbox next to each pill instead, since that read as if the
-/// pill were its own separate task card rather than a plain positional
-/// marker for the row here. See docs/DECISIONS.md for the full revision
-/// history (this replaced an earlier stacked-icon-badge design).
+/// The cluster's flat list of member tasks — title + time only, no icon,
+/// no per-row card/color/indentation, per the settled design (a category
+/// emoji was tried here directly, then reverted: it overflowed the row's
+/// fixed height and, per direct feedback, belongs on the cluster's own
+/// PILL markers instead — see [TaskCapsuleBlock]'s own `contentHidden`
+/// handling for where that now happens) — plus a trailing completion
+/// checkbox per row, in a fixed color no longer tied to the task's own
+/// category (see `CompletionCheckbox`'s own doc comment), right-aligned
+/// within this list panel exactly like an ordinary capsule's own checkbox
+/// is right-aligned within its row. Positioned beside the cluster's
+/// member pills, which render through the ordinary timeline slot loop in
+/// `timeline_screen.dart` (each pinned to a fixed one-lane-per-task
+/// column — see `_withClusterLanes` — so lane order always matches this
+/// list's row order: leftmost pill, topmost row). The pills themselves
+/// carry no checkbox of their own — confirmed directly, over an earlier
+/// pass that put a checkbox next to each pill instead, since that read as
+/// if the pill were its own separate task card rather than a plain
+/// positional marker for the row here. See docs/DECISIONS.md for the
+/// full revision history (this replaced an earlier stacked-icon-badge
+/// design).
 class OverlapClusterBlock extends StatelessWidget {
   const OverlapClusterBlock({
     super.key,
@@ -28,6 +35,11 @@ class OverlapClusterBlock extends StatelessWidget {
     this.onTaskTap,
     this.onToggleComplete,
     this.fadedTaskId,
+    this.compactText = false,
+    this.durationVisible = true,
+    this.alwaysShowTime = false,
+    this.textLayout = TimelineTaskTextLayout.stacked,
+    this.showCompletionCheckbox = true,
   });
 
   final OverlapCluster cluster;
@@ -49,9 +61,57 @@ class OverlapClusterBlock extends StatelessWidget {
   /// (every original row) now holds for the whole drag.
   final String? fadedTaskId;
 
+  /// True in List (collapsed) mode — matches [TaskCapsuleBlock.compactText]
+  /// exactly: no longer affects font size (List view tracks the same
+  /// global "Task size" setting as Task/Zone view), only forces the
+  /// inline (time+title, one line) row layout. Defaults to false.
+  final bool compactText;
+
+  /// Dev-only toggle (`DevTimelineTaskDurationVisibleProvider`) — matches
+  /// [TaskCapsuleBlock.durationVisible] exactly. A real parity gap fixed
+  /// here, reported directly: a clustered task's row showed only its time
+  /// range, never the `(45m)`-style duration suffix an ordinary
+  /// (non-clustered) capsule already shows in the same mode. Defaults to
+  /// true (current shipped behavior for a caller that doesn't wire this
+  /// up).
+  final bool durationVisible;
+
+  /// List mode's own override: forces the time range visible regardless
+  /// of [durationVisible], since List mode has no timeline axis at all and
+  /// the time is the only place a task's schedule reads — same rule and
+  /// same reasoning as [TaskCapsuleTextRow.alwaysShowTime] (the
+  /// non-clustered row's equivalent), applied here since a clustered
+  /// task's row is a fully separate rendering path that doesn't reuse that
+  /// widget. Requested directly, reported as time missing "on list mode."
+  /// Defaults to false, so [durationVisible]'s existing Task-view meaning
+  /// (hide time entirely) is unchanged for a caller that doesn't wire this
+  /// up.
+  final bool alwaysShowTime;
+
+  /// Dev-only layout toggle (`DevTimelineTaskTextLayout`) — matches
+  /// [TaskCapsuleBlock.textLayout] exactly. Real gap, reported directly:
+  /// with `inline` set, an ordinary capsule put time+title on one line
+  /// while a clustered row beside it stayed stacked, because this block
+  /// never received the setting at all. [compactText] (List mode) still
+  /// forces inline regardless of this, exactly as `TaskCapsuleBlock` does.
+  final TimelineTaskTextLayout textLayout;
+
+  /// Whether each row's trailing [CompletionCheckbox] renders at all
+  /// (`ShowCompletionCheckboxSetting`) — see
+  /// [TaskCapsuleBlock.showCompletionCheckbox]. Defaults to true.
+  final bool showCompletionCheckbox;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
+    // List mode previously read a separate, smaller textTaskTitleCompact
+    // style here — confirmed directly that List view should track the
+    // same global "Task size" setting Task/Zone view do instead, with no
+    // relative step.
+    final titleTextStyle = theme.textTaskTitle;
+    // List mode forces inline; otherwise the dev toggle decides — the same
+    // `effectiveTextLayout` rule TaskCapsuleBlock applies to itself.
+    final isInline = compactText || textLayout == TimelineTaskTextLayout.inline;
 
     // No card/rounded-background wrapper, per direct feedback — the
     // rows sit directly on the timeline as plain text, not inside a
@@ -65,6 +125,11 @@ class OverlapClusterBlock extends StatelessWidget {
             if (index > 0) SizedBox(height: theme.spacingXs),
             _ClusterTaskRow(
               theme: theme,
+              titleTextStyle: titleTextStyle,
+              isInline: isInline,
+              durationVisible: durationVisible,
+              alwaysShowTime: alwaysShowTime,
+              showCompletionCheckbox: showCompletionCheckbox,
               task: task,
               onTap: onTaskTap == null ? null : () => onTaskTap!(task),
               onToggleComplete: onToggleComplete == null
@@ -79,82 +144,49 @@ class OverlapClusterBlock extends StatelessWidget {
   }
 }
 
-/// The cluster's own boundary label — `min(start)` at the top,
-/// `max(end)` at the bottom, styled exactly like [TaskBoundaryMarkers]'s
-/// ordinary hour ticks (`textCaption`/`colorTextSecondary`) so it reads as
-/// belonging to the same left gutter rather than a new label family. NOT
-/// per-task times — the cluster's actual start/end span, per the settled
-/// design. Unaffected by this session's visual revision.
-class OverlapClusterBoundaryLabels extends StatelessWidget {
-  const OverlapClusterBoundaryLabels({
-    super.key,
-    required this.theme,
-    required this.cluster,
-    required this.rangeStart,
-    required this.pixelsPerMinute,
-  });
-
-  final AmbleTheme theme;
-  final OverlapCluster cluster;
-
-  /// The day view's own top edge — same coordinate space every other
-  /// Positioned timeline element uses.
-  final DateTime rangeStart;
-  final double pixelsPerMinute;
-
-  double _minutesSinceStart(DateTime time) =>
-      time.difference(rangeStart).inMinutes.toDouble();
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Positioned(
-          top: _minutesSinceStart(cluster.start) * pixelsPerMinute,
-          left: 0,
-          child: FractionalTranslation(
-            translation: const Offset(0, -0.5),
-            child: Text(
-              TimeOfDay.fromDateTime(cluster.start).format(context),
-              style: theme.textCaption.copyWith(
-                color: theme.colorTextSecondary,
-              ),
-            ),
-          ),
-        ),
-        Positioned(
-          top: _minutesSinceStart(cluster.end) * pixelsPerMinute,
-          left: 0,
-          child: FractionalTranslation(
-            translation: const Offset(0, -0.5),
-            child: Text(
-              TimeOfDay.fromDateTime(cluster.end).format(context),
-              style: theme.textCaption.copyWith(
-                color: theme.colorTextSecondary,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 /// One row inside the cluster's flat list — title + time range, plain
 /// text only. No icon, no card, no color background, no proportional
-/// height, no indentation, per the settled design; recurring/tracked-
-/// behavior indicators are the one exception, shown inline after the
-/// text when relevant.
+/// height, no indentation, per the settled design (see
+/// `OverlapClusterBlock`'s own doc comment for the emoji-tried-then-
+/// reverted history); recurring/tracked-behavior indicators are the one
+/// exception, shown inline after the title when relevant.
 class _ClusterTaskRow extends StatelessWidget {
   const _ClusterTaskRow({
     required this.theme,
+    required this.titleTextStyle,
     required this.task,
     required this.onTap,
     required this.onToggleComplete,
     required this.isFaded,
+    this.isInline = false,
+    this.durationVisible = true,
+    this.alwaysShowTime = false,
+    this.showCompletionCheckbox = true,
   });
 
   final AmbleTheme theme;
+
+  /// [OverlapClusterBlock]'s own resolved base/compact title style — see
+  /// its `compactText` doc comment.
+  final TextStyle titleTextStyle;
+
+  /// Whether this row puts time+title on ONE line rather than
+  /// title-then-time-below (2 lines) — true in List mode
+  /// ([OverlapClusterBlock.compactText]) and whenever the dev layout
+  /// toggle ([OverlapClusterBlock.textLayout]) is `inline`, matching
+  /// [TaskCapsuleBlock]'s own `effectiveTextLayout` rule. Requested
+  /// directly: "still need to make time and name sit in one line atm it
+  /// sits in 2 lines."
+  final bool isInline;
+
+  /// See [OverlapClusterBlock.durationVisible].
+  final bool durationVisible;
+
+  /// See [OverlapClusterBlock.alwaysShowTime].
+  final bool alwaysShowTime;
+
+  /// See [OverlapClusterBlock.showCompletionCheckbox].
+  final bool showCompletionCheckbox;
   final Task task;
   final VoidCallback? onTap;
   final VoidCallback? onToggleComplete;
@@ -183,6 +215,113 @@ class _ClusterTaskRow extends StatelessWidget {
   }
 
   Widget _rowContent(BuildContext context, TimeOfDay start, TimeOfDay end) {
+    // `durationVisible: false` drops the time ENTIRELY here, not just the
+    // `(45m)` suffix — corrected directly ("cluster mode time from-to
+    // should also react to setting so not showing if disabled"). Matches
+    // the Task view's own split-layout row, which hides its whole
+    // time+duration columns under the same setting; leaving the range
+    // behind meant a clustered task still showed "04:00 - 05:00" beside
+    // an ordinary capsule showing no time at all.
+    //
+    // `alwaysShowTime` (List mode only — see its own doc comment) forces
+    // the time range back on regardless, WITHOUT the `(45m)` suffix, which
+    // still depends on `durationVisible` alone — matching
+    // `TaskCapsuleTextRow.alwaysShowTime`'s identical split.
+    final timeRange = '${start.format(context)} - ${end.format(context)}';
+    final withSuffix =
+        '$timeRange (${formatDurationLabel(task.durationMinutes!)})';
+    final timeLabel = !alwaysShowTime && !durationVisible
+        ? null
+        : durationVisible
+        ? withSuffix
+        : timeRange;
+    final indicatorIcons = [
+      if (task.isRecurring) ...[
+        SizedBox(width: theme.spacingXs),
+        Icon(
+          Icons.repeat_rounded,
+          size: theme.spacingSm * 2,
+          color: theme.colorTextSecondary,
+        ),
+      ],
+      if (task.isBehaviorInstance) ...[
+        SizedBox(width: theme.spacingXs),
+        Icon(
+          Icons.track_changes_rounded,
+          size: theme.spacingSm * 2,
+          color: theme.colorTextSecondary,
+        ),
+      ],
+    ];
+
+    // Time+title on ONE line — in List (collapsed) mode always, and in
+    // Task/Zone view whenever the dev layout toggle is `inline`, matching
+    // TaskCapsuleBlock's own rule. Requested directly: "still need to make
+    // time and name sit in one line atm it sits in 2 lines", then again
+    // for the Task view specifically ("clustered tasks ... in task view
+    // render in 2 lines"). Otherwise the stacked (title, then time below)
+    // 2-line layout below.
+    final content = isInline
+        ? Row(
+            children: [
+              Flexible(
+                child: Text.rich(
+                  TextSpan(
+                    children: [
+                      if (timeLabel != null)
+                        TextSpan(
+                          text: '$timeLabel  ',
+                          style: titleTextStyle.copyWith(
+                            color: theme.colorTextSecondary,
+                          ),
+                        ),
+                      TextSpan(
+                        text: task.title,
+                        style: titleTextStyle.copyWith(
+                          color: theme.colorTextPrimary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              ...indicatorIcons,
+            ],
+          )
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      task.title,
+                      style: titleTextStyle.copyWith(
+                        color: theme.colorTextPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  ...indicatorIcons,
+                ],
+              ),
+              if (timeLabel != null)
+                Text(
+                  timeLabel,
+                  style: titleTextStyle.copyWith(
+                    color: theme.colorTextSecondary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+            ],
+          );
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -190,64 +329,29 @@ class _ClusterTaskRow extends StatelessWidget {
           child: GestureDetector(
             onTap: onTap,
             behavior: HitTestBehavior.opaque,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        task.title,
-                        style: theme.textBody.copyWith(
-                          color: theme.colorTextPrimary,
-                          fontWeight: FontWeight.w700,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (task.isRecurring) ...[
-                      SizedBox(width: theme.spacingXs),
-                      Icon(
-                        Icons.repeat_rounded,
-                        size: theme.spacingSm * 2,
-                        color: theme.colorTextSecondary,
-                      ),
-                    ],
-                    if (task.isBehaviorInstance) ...[
-                      SizedBox(width: theme.spacingXs),
-                      Icon(
-                        Icons.track_changes_rounded,
-                        size: theme.spacingSm * 2,
-                        color: theme.colorTextSecondary,
-                      ),
-                    ],
-                  ],
-                ),
-                Text(
-                  '${start.format(context)} - ${end.format(context)}',
-                  style: theme.textBody.copyWith(
-                    color: theme.colorTextSecondary,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
+            child: content,
           ),
         ),
-        SizedBox(width: theme.spacingSm),
         // Right-aligned, matching where an ordinary capsule's own
         // checkbox sits within its row — the pill itself carries no
         // checkbox any more (see docs/DECISIONS.md), so this is the
         // task's only completion control while it's clustered.
-        CompletionCheckbox(
-          theme: theme,
-          ringColor: theme.categoryIconColors[task.category.token]!,
-          isCompleted: task.status == TaskStatus.completed,
-          useMutedCompletedColor: true,
-          onToggle: onToggleComplete,
-        ),
+        //
+        // Dropped from the Row entirely (not just faded, unlike
+        // TaskCapsuleBlock's own copy) when hidden — these rows own no
+        // drag gesture, so there's no in-flight hit-testing to preserve,
+        // and reclaiming the space keeps the row's text full-width.
+        if (showCompletionCheckbox) ...[
+          SizedBox(width: theme.spacingSm),
+          CompletionCheckbox(
+            theme: theme,
+            // Fixed color (CompletionCheckbox's own default), not the
+            // category's — see task_capsule_block.dart's own copy of this
+            // reasoning.
+            isCompleted: task.status == TaskStatus.completed,
+            onToggle: onToggleComplete,
+          ),
+        ],
       ],
     );
   }

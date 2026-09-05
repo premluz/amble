@@ -41,14 +41,25 @@ List<Task> generateRecurrenceInstances({
   final windowEnd = now.add(Duration(days: windowWeeks * 7));
 
   // An occurrence is "already materialized" if some instance claims that
-  // slot. Crucially this checks `originalScheduledAt` first: when the user
-  // reschedules an instance, that field preserves the slot the series
-  // originally generated it for (see CONSTITUTION.md), so the vacated time
-  // is not mistaken for an unfilled occurrence and refilled with a
-  // duplicate. Falls back to `scheduledAt` for instances never moved.
+  // slot. A moved instance claims BOTH slots:
+  //
+  //  - `originalScheduledAt`, the slot the series generated it for, so the
+  //    time it VACATED is not mistaken for an unfilled occurrence and
+  //    refilled with a duplicate (see CONSTITUTION.md);
+  //  - `scheduledAt`, the slot it now actually occupies.
+  //
+  // Claiming only the first is a real bug, reported directly as a task
+  // duplicating at the SAME time after an edit: move a daily instance onto
+  // the following day's own occurrence slot and that slot still read as
+  // empty, so a fresh instance was generated straight on top of the task
+  // the user had just moved there. An unmoved instance has
+  // `originalScheduledAt == null` and simply claims its own `scheduledAt`
+  // twice over, which the Set collapses.
   final takenStarts = <DateTime>{
-    for (final task in existingInstances)
-      ?(task.originalScheduledAt ?? task.scheduledAt),
+    for (final task in existingInstances) ...[
+      ?task.originalScheduledAt,
+      ?task.scheduledAt,
+    ],
   };
 
   final generated = <Task>[];

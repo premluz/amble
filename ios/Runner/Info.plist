@@ -30,6 +30,27 @@
 	<string>Amble uses the microphone so you can add tasks by voice.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Amble uses speech recognition to turn what you say into a task.</string>
+	<!-- device_calendar: read/write access to the device's own calendars —
+	     see CONSTITUTION.md's "Calendar" section. Taken directly from the
+	     plugin's own README, not guessed. -->
+	<key>NSCalendarsUsageDescription</key>
+	<string>Amble uses your calendars to show external events on the Timeline and to sync your tasks to a calendar of your choice.</string>
+	<!-- Slack morning-summary background task (workmanager, BGTaskScheduler).
+	     registerPeriodicTask maps to BGAppRefreshTaskRequest, which needs
+	     UIBackgroundModes to include "fetch" (only "fetch" — this app uses
+	     no BGProcessingTask, so "processing" isn't declared). The exact
+	     task identifier registered in Dart (morningSummaryTaskName,
+	     core/background/background_tasks.dart) must appear verbatim here
+	     — iOS validates BGTaskScheduler registrations against this list
+	     and silently refuses any identifier not present. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.amble.morningSummary</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

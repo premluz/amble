@@ -25,7 +25,7 @@ import 'category_visual.dart';
 ///
 /// Iterates live [categoryListProvider] data rather than the old fixed
 /// `TaskCategory` enum, and adds a right-aligned "+ Add new" link on the
-/// title row that opens [AddCategoryModal] — the newly created category
+/// title row that opens [showAddCategoryModal] — the newly created category
 /// becomes this sheet's own selection immediately, via
 /// [onCategoryChanged], same as tapping an existing chip.
 class TaskNameCategoryModal extends ConsumerStatefulWidget {
@@ -101,35 +101,33 @@ class _TaskNameCategoryModalState extends ConsumerState<TaskNameCategoryModal> {
         children: [
           Row(
             children: [
-              const SizedBox(width: 72),
+              // Left-aligned, not centered — corrected directly (same fix
+              // as task_category_modal.dart): a centered title with a
+              // fixed-width balancing spacer left too little room for "+
+              // Add new" and wrapped it onto two lines, worse here since
+              // this title ("Name and category") is longer.
               Expanded(
                 child: Text(
                   'Name and category',
-                  textAlign: TextAlign.center,
                   style: theme.textTitle.copyWith(
                     color: theme.colorTextPrimary,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
-              SizedBox(
-                width: 72,
-                child: TextButton(
-                  onPressed: () async {
-                    final created = await AddCategoryModal.show(
-                      context: context,
-                    );
-                    if (created != null && mounted) {
-                      setState(() => _categoryId = created.id);
-                      widget.onCategoryChanged(created.id);
-                    }
-                  },
-                  child: Text(
-                    '+ Add new',
-                    style: theme.textBody.copyWith(
-                      color: theme.colorAccent,
-                      fontWeight: FontWeight.w600,
-                    ),
+              TextButton(
+                onPressed: () async {
+                  final created = await showAddCategoryModal(context);
+                  if (created != null && mounted) {
+                    setState(() => _categoryId = created.id);
+                    widget.onCategoryChanged(created.id);
+                  }
+                },
+                child: Text(
+                  '+ Add new',
+                  style: theme.textBody.copyWith(
+                    color: theme.colorAccent,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),

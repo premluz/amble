@@ -49,6 +49,9 @@ dependencies:
   package_info_plus: ^10.2.1
   lottie: ^3.5.1
   speech_to_text: ^7.4.0
+  workmanager: ^0.10.9
+  http: ^1.6.0
+  device_calendar: ^4.3.3
 
 dev_dependencies:
   flutter_test:
@@ -66,6 +69,26 @@ dev_dependencies:
 
 dependency_overrides:
   analyzer: ^13.0.0
+  # device_calendar 3.9.0 (this project's original pin) turned out to be
+  # fundamentally incompatible with this Flutter version — not just its
+  # Gradle config (jcenter(), old compileSdkVersion), but its actual
+  # Android Kotlin source still targets the pre-V2 plugin embedding API
+  # (PluginRegistry.Registrar), which no longer exists at all. A local
+  # Gradle-file-only patch got past the build-config errors but hit real
+  # Kotlin compile errors — confirmed by attempting it directly, not
+  # guessed — so the package was upgraded to 4.3.3 instead (modern
+  # embedding, actively fixed as recently as 2024) rather than maintaining
+  # what would effectively be a source-level fork.
+  #
+  # 4.3.3 itself declares timezone ^0.9.0, which conflicts with this
+  # project's existing timezone ^0.11.1 (flutter_local_notifications
+  # requires ^0.11.0, used for Task/Zone alerts). Forcing timezone to stay
+  # on our existing, already-tested ^0.11.1 here — timezone is pure Dart
+  # with no native/platform surface, so overriding a package's *declared*
+  # constraint (not its actual runtime compatibility) is safe in a way the
+  # device_calendar situation above was not. Confirmed with the user
+  # before making either change, per CLAUDE.md's dependency-change rule.
+  timezone: ^0.11.1
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

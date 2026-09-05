@@ -8,9 +8,12 @@ import 'package:amble/shared/models/behavior_target_type.dart';
 import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/models/recurrence_frequency.dart';
 import 'package:amble/shared/models/recurrence_rule.dart';
+import 'package:amble/shared/models/synced_calendar_event.dart';
 import 'package:amble/shared/models/task.dart';
 import 'package:amble/shared/models/task_category.dart';
+import 'package:amble/shared/models/task_size.dart';
 import 'package:amble/shared/models/task_status.dart';
+import 'package:amble/shared/models/task_template.dart';
 import 'package:amble/shared/models/tracked_behavior.dart';
 import 'package:amble/shared/models/zone.dart';
 
@@ -21,9 +24,12 @@ extension HiveRegistrar on HiveInterface {
     registerAdapter(CategoryAdapter());
     registerAdapter(RecurrenceFrequencyAdapter());
     registerAdapter(RecurrenceRuleAdapter());
+    registerAdapter(SyncedCalendarEventAdapter());
     registerAdapter(TaskAdapter());
     registerAdapter(TaskCategoryAdapter());
+    registerAdapter(TaskSizeAdapter());
     registerAdapter(TaskStatusAdapter());
+    registerAdapter(TaskTemplateAdapter());
     registerAdapter(TrackedBehaviorAdapter());
     registerAdapter(ZoneAdapter());
   }
@@ -36,9 +42,12 @@ extension IsolatedHiveRegistrar on IsolatedHiveInterface {
     registerAdapter(CategoryAdapter());
     registerAdapter(RecurrenceFrequencyAdapter());
     registerAdapter(RecurrenceRuleAdapter());
+    registerAdapter(SyncedCalendarEventAdapter());
     registerAdapter(TaskAdapter());
     registerAdapter(TaskCategoryAdapter());
+    registerAdapter(TaskSizeAdapter());
     registerAdapter(TaskStatusAdapter());
+    registerAdapter(TaskTemplateAdapter());
     registerAdapter(TrackedBehaviorAdapter());
     registerAdapter(ZoneAdapter());
   }

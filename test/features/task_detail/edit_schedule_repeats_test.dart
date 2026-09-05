@@ -453,4 +453,171 @@ void main() {
       expect(survivingCompleted.recurrenceId, 'series-1');
     },
   );
+
+  // Regression test for a real bug, reported directly: "had task that just
+  // category time and it created double and both were repeated across all
+  // days, saw 2 tasks everyday.. just by saving". Same time, no schedule
+  // change, already recurring on every day — just opening and saving.
+  testWidgets(
+    'saving an ALREADY all-days-recurring task without changing anything '
+    'does not mint a second parallel series — one row per day, not two',
+    (tester) async {
+      final template = Task.create(
+        title: 'Standup',
+        scheduledAt: _daysFromToday(0),
+        durationMinutes: 15,
+        categoryId: BuiltInCategoryIds.work,
+        recurrenceId: 'series-1',
+        recurrenceRule: RecurrenceRule(
+          frequency: RecurrenceFrequency.weekly,
+          daysOfWeek: const [1, 2, 3, 4, 5, 6, 7],
+        ),
+      );
+      await tester.runAsync(() => box.put(template.id, template));
+
+      await _pumpEditScheduleForm(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+        task: template,
+      );
+      await _tapAndSettle(tester, find.text('Save'));
+
+      final saved = box.values.toList();
+      expect(
+        saved.map((t) => t.recurrenceId).toSet(),
+        {'series-1'},
+        reason:
+            'a second recurrenceId means a whole parallel series was '
+            'minted alongside the original',
+      );
+
+      final perDay = <String, int>{};
+      for (final t in saved) {
+        final d = t.scheduledAt!;
+        perDay['${d.year}-${d.month}-${d.day}'] =
+            (perDay['${d.year}-${d.month}-${d.day}'] ?? 0) + 1;
+      }
+      final doubled = perDay.entries.where((e) => e.value > 1).toList();
+      expect(
+        doubled,
+        isEmpty,
+        reason: 'these days ended up with more than one row: $doubled',
+      );
+    },
+  );
+
+  // The CREATE counterpart of the same report — `createTask` is the only
+  // path that mints a fresh recurrenceId here, so a second run of it is
+  // what would produce two full parallel series at the same time on every
+  // day ("saw 2 tasks everyday").
+  testWidgets(
+    'creating a task with Repeats on writes exactly ONE series, not two',
+    (tester) async {
+      final navigatorKey = await _pumpHost(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+      );
+      showTaskDetailSheet(
+        navigatorKey.currentContext!,
+        initialScheduledAt: _daysFromToday(0),
+        initialTimeOfDay: const TimeOfDay(hour: 9, minute: 0),
+        debugStartWithRepeatsOn: true,
+      );
+      await tester.pumpAndSettle();
+
+      // Stage 1 (name only) — type a title, then confirm to reach the
+      // full form.
+      await tester.enterText(find.byType(TextField).first, 'Standup');
+      await tester.pumpAndSettle();
+      await _tapAndSettle(tester, find.text('Done'));
+
+      await _tapAndSettle(tester, find.text('Schedule'));
+
+      final saved = box.values.toList();
+      final seriesIds = saved
+          .map((t) => t.recurrenceId)
+          .whereType<String>()
+          .toSet();
+      expect(
+        seriesIds.length,
+        lessThanOrEqualTo(1),
+        reason:
+            'more than one recurrenceId means a second parallel series '
+            'was created by a single Save',
+      );
+
+      final perDay = <String, int>{};
+      for (final t in saved) {
+        final d = t.scheduledAt!;
+        perDay['${d.year}-${d.month}-${d.day}'] =
+            (perDay['${d.year}-${d.month}-${d.day}'] ?? 0) + 1;
+      }
+      final doubled = perDay.entries.where((e) => e.value > 1).toList();
+      expect(
+        doubled,
+        isEmpty,
+        reason: 'these days ended up with more than one row: $doubled',
+      );
+    },
+  );
+
+  // Double-tap prevention, requested directly ("we need apply prevention
+  // of double tap"). Two taps in the same frame are stopped by `_isSaving`
+  // (verified: this test still passes with `_hasSaved` removed, so it
+  // covers the in-flight guard, not the post-commit one — see the
+  // dialog-path test below for that).
+  testWidgets('two Save taps in the same frame write the task only once', (
+    tester,
+  ) async {
+    final navigatorKey = await _pumpHost(
+      tester,
+      box: box,
+      categoryBox: categoryBox,
+    );
+    showTaskDetailSheet(
+      navigatorKey.currentContext!,
+      initialScheduledAt: _daysFromToday(0),
+      initialTimeOfDay: const TimeOfDay(hour: 9, minute: 0),
+      debugStartWithRepeatsOn: true,
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).first, 'Standup');
+    await tester.pumpAndSettle();
+    await _tapAndSettle(tester, find.text('Done'));
+
+    // Two Save taps in the SAME frame — the second lands before the
+    // button can re-render as disabled, which is exactly the shape a
+    // real double-tap takes.
+    final saveButton = find.text('Schedule');
+    await tester.ensureVisible(saveButton);
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await tester.tap(saveButton, warnIfMissed: false);
+      await tester.tap(saveButton, warnIfMissed: false);
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await tester.pumpAndSettle();
+    });
+
+    expect(
+      box.values.map((t) => t.recurrenceId).whereType<String>().toSet().length,
+      lessThanOrEqualTo(1),
+      reason: 'a second committed save minted a second parallel series',
+    );
+    final perDay = <String, int>{};
+    for (final t in box.values) {
+      final d = t.scheduledAt!;
+      perDay['${d.year}-${d.month}-${d.day}'] =
+          (perDay['${d.year}-${d.month}-${d.day}'] ?? 0) + 1;
+    }
+    final doubled = perDay.entries.where((e) => e.value > 1).toList();
+    expect(
+      doubled,
+      isEmpty,
+      reason: 'these days ended up with more than one row: $doubled',
+    );
+  });
 }

@@ -45,7 +45,7 @@ class CompletionCheckbox extends StatefulWidget {
   const CompletionCheckbox({
     super.key,
     required this.theme,
-    required this.ringColor,
+    this.ringColor,
     required this.isCompleted,
     required this.onToggle,
     this.useMutedCompletedColor = false,
@@ -55,20 +55,27 @@ class CompletionCheckbox extends StatefulWidget {
 
   /// The ring's border color while unchecked, and its fill color while
   /// checked — unless [useMutedCompletedColor] overrides the checked case.
-  final Color ringColor;
+  /// Null (the default for every real caller) uses
+  /// [AmbleTheme.colorTextSecondary] — a fixed, category-independent
+  /// color. Reversed directly from an earlier "always the category color"
+  /// design: the checkbox reported as reading like a second category
+  /// indicator when it changed color per task; completion status should
+  /// look the same regardless of what's being completed. Still overridable
+  /// per call site (kept, not removed) in case a future caller genuinely
+  /// needs a different fixed color — just no call site passes a
+  /// category-derived one any more.
+  final Color? ringColor;
   final bool isCompleted;
   final VoidCallback? onToggle;
 
   /// When true AND [isCompleted], the checked ring fills with
   /// [AmbleTheme.colorTextSecondary] (the same grey a completed task's own
-  /// title text uses) instead of [ringColor] — a separate variant from the
-  /// default "always the category color" ring, requested directly for the
-  /// Timeline's completed-task case specifically. Unchecked still uses
-  /// [ringColor] regardless of this flag: only the *completed* fill
-  /// changes, matching the badge-color change alongside this one. Defaults
-  /// to false so every other caller (currently none besides Timeline, but
-  /// the flag exists precisely so a future one can opt in or not) keeps
-  /// the original category-colored ring.
+  /// title text uses) instead of [ringColor] — now the same color
+  /// [ringColor]'s own default already resolves to, so this flag is a
+  /// no-op for every current caller (all of which now rely on that
+  /// default) but is kept for a caller that explicitly overrides
+  /// [ringColor] to something else and still wants the completed fill to
+  /// go muted-grey specifically.
   final bool useMutedCompletedColor;
 
   @override
@@ -140,9 +147,10 @@ class _CompletionCheckboxState extends State<CompletionCheckbox>
   Widget build(BuildContext context) {
     final theme = widget.theme;
     final ringDiameter = theme.spacingLg;
+    final ringColor = widget.ringColor ?? theme.colorTextSecondary;
     final checkedFillColor = widget.useMutedCompletedColor
         ? theme.colorTextSecondary
-        : widget.ringColor;
+        : ringColor;
 
     return GestureDetector(
       onTap: widget.onToggle == null ? null : _handleTap,
@@ -172,7 +180,7 @@ class _CompletionCheckboxState extends State<CompletionCheckbox>
                   border: widget.isCompleted
                       ? null
                       : Border.all(
-                          color: widget.ringColor,
+                          color: ringColor,
                           width: theme.borderWidthHairline,
                         ),
                 ),

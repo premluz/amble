@@ -59,6 +59,22 @@
          mic button. Requested at runtime, lazily on first tap — see
          quick_capture_sheet.dart. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Slack morning-summary background task: the direct device-to-Slack
+         HTTP POST (`http` package, `slack_summary_service.dart`) needs
+         real network access. `http`/`workmanager` are pure-Dart/self-
+         merging plugins that don't declare this themselves — unlike
+         RECEIVE_BOOT_COMPLETED/SCHEDULE_EXACT_ALARM above, a plain
+         package-level Internet permission isn't runtime-requested; it's
+         install-time only. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- device_calendar: read/write access to the device's own calendars —
+         see CONSTITUTION.md's "Calendar" section. Requested at runtime,
+         lazily on first use of either Calendar feature (READ + WRITE
+         requested together via requestPermissions(), even though Feature 1
+         only reads — the plugin's own permission API doesn't separate the
+         two). Taken directly from the plugin's own README, not guessed. -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
          https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.

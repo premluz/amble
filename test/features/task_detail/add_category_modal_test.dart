@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive_ce.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
+import 'package:amble/core/widgets/app_pane.dart';
 import 'package:amble/core/widgets/app_text_field.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/task_detail/add_category_modal.dart';
@@ -63,43 +64,91 @@ void main() {
     await box.close();
   });
 
-  testWidgets('Save is disabled until name, color, and emoji are all set', (
+  testWidgets(
+    'opens on the Name-only stage 1, matching the task/zone creation flows '
+    '— color and emoji are not in the tree yet',
+    (tester) async {
+      // Requested directly: "this would be a pattern of progressive
+      // disclosure that applies to task, zone, category."
+      final navigatorKey = await _pumpHost(tester, box: box);
+      unawaited(showAddCategoryModal(navigatorKey.currentContext!));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Done'), findsOneWidget);
+      expect(find.widgetWithText(ElevatedButton, 'Save'), findsNothing);
+      expect(find.text('Color'), findsNothing);
+      expect(find.text('Emoji'), findsNothing);
+
+      // Done is always enabled at stage 1 (matching the task/zone flows'
+      // own _confirmNameStage) — an empty name closes the whole screen
+      // rather than the button being disabled.
+      await tester.enterText(_nameField(), 'Gardening');
+      await tester.pump();
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Done'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Color'), findsOneWidget);
+      expect(find.text('Emoji'), findsOneWidget);
+      expect(find.widgetWithText(ElevatedButton, 'Save'), findsOneWidget);
+    },
+  );
+
+  testWidgets('tapping Done with no name typed closes the whole screen', (
     tester,
   ) async {
     final navigatorKey = await _pumpHost(tester, box: box);
-    unawaited(AddCategoryModal.show(context: navigatorKey.currentContext!));
+    unawaited(showAddCategoryModal(navigatorKey.currentContext!));
     await tester.pumpAndSettle();
 
-    ElevatedButton saveButton() => tester.widget<ElevatedButton>(
-      find.widgetWithText(ElevatedButton, 'Save'),
-    );
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
 
-    // Nothing set yet.
-    expect(saveButton().onPressed, isNull);
-
-    // Name only.
-    await tester.enterText(_nameField(), 'Gardening');
-    await tester.pump();
-    expect(saveButton().onPressed, isNull);
-
-    // Name + color, still no emoji.
-    await tester.tap(find.text('Gardening')); // no-op safety tap, ignored
-    final colorSwatch = find.byType(GestureDetector).at(1);
-    await tester.tap(colorSwatch);
-    await tester.pump();
-    expect(saveButton().onPressed, isNull);
-
-    // Name + color + emoji — now enabled. ensureVisible first: the emoji
-    // grid scrolls, and the default test viewport doesn't fit every emoji
-    // without scrolling to it — same fix as edit_schedule_repeats_test.dart
-    // needed for its own scrollable schedule stage (see docs/ERROR_LOG.md).
-    final emoji = find.text('🌱');
-    await tester.ensureVisible(emoji);
-    await tester.pump();
-    await tester.tap(emoji);
-    await tester.pump();
-    expect(saveButton().onPressed, isNotNull);
+    expect(find.text('Color'), findsNothing);
+    expect(find.text('New category'), findsNothing);
   });
+
+  testWidgets(
+    'Save is disabled until color and emoji are both set, once past stage 1',
+    (tester) async {
+      final navigatorKey = await _pumpHost(tester, box: box);
+      unawaited(showAddCategoryModal(navigatorKey.currentContext!));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(_nameField(), 'Gardening');
+      await tester.pump();
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Done'));
+      await tester.pumpAndSettle();
+
+      ElevatedButton saveButton() => tester.widget<ElevatedButton>(
+        find.widgetWithText(ElevatedButton, 'Save'),
+      );
+
+      // Nothing set yet.
+      expect(saveButton().onPressed, isNull);
+
+      // Color, still no emoji.
+      final colorSwatch = find
+          .descendant(
+            of: find.widgetWithText(AppPane, 'Color'),
+            matching: find.byType(GestureDetector),
+          )
+          .first;
+      await tester.tap(colorSwatch);
+      await tester.pump();
+      expect(saveButton().onPressed, isNull);
+
+      // Color + emoji — now enabled. ensureVisible first: the emoji grid
+      // scrolls, and the default test viewport doesn't fit every emoji
+      // without scrolling to it — same fix as edit_schedule_repeats_test.dart
+      // needed for its own scrollable schedule stage (see docs/ERROR_LOG.md).
+      final emoji = find.text('🌱');
+      await tester.ensureVisible(emoji);
+      await tester.pump();
+      await tester.tap(emoji);
+      await tester.pump();
+      expect(saveButton().onPressed, isNotNull);
+    },
+  );
 
   testWidgets(
     'creating a category saves it and resolves it back to the caller, '
@@ -108,16 +157,23 @@ void main() {
       final navigatorKey = await _pumpHost(tester, box: box);
       Category? result;
       unawaited(
-        AddCategoryModal.show(context: navigatorKey.currentContext!)
+        showAddCategoryModal(navigatorKey.currentContext!)
             .then((value) => result = value),
       );
       await tester.pumpAndSettle();
 
       await tester.enterText(_nameField(), 'Gardening');
       await tester.pump();
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Done'));
+      await tester.pumpAndSettle();
 
       // Tap the first color swatch.
-      final colorSwatch = find.byType(GestureDetector).at(1);
+      final colorSwatch = find
+          .descendant(
+            of: find.widgetWithText(AppPane, 'Color'),
+            matching: find.byType(GestureDetector),
+          )
+          .first;
       await tester.tap(colorSwatch);
       await tester.pump();
 
@@ -165,6 +221,6 @@ void main() {
 }
 
 /// Fires an async future without awaiting it inline — used for
-/// `AddCategoryModal.show`'s Future, which only resolves once the sheet is
+/// `showAddCategoryModal`'s Future, which only resolves once the screen is
 /// popped by user interaction later in the same test.
 void unawaited(Future<void> future) {}

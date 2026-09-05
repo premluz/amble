@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../models/category.dart';
 import '../models/task.dart';
+import '../models/zone.dart';
 
 /// The current export-file schema version. Independent of [Task.schemaVersion]
 /// in spirit (both start at 1 and would only diverge if the file's own
@@ -20,12 +21,19 @@ const backupSchemaVersion = 1;
 /// user's custom [Category] rows, so a fresh install's export/restore
 /// carries a user's own categories forward, not just the built-in 5 (which
 /// re-seed on their own at launch regardless — see
-/// `CategoryList.seedBuiltInsAndBackfillIfNeeded`).
+/// `CategoryList.seedBuiltInsAndBackfillIfNeeded`) — and the user's [Zone]
+/// rows, which have no equivalent seed/backfill and would otherwise be
+/// silently lost on restore.
 class ParsedImportFile {
-  const ParsedImportFile({required this.tasks, required this.categories});
+  const ParsedImportFile({
+    required this.tasks,
+    required this.categories,
+    required this.zones,
+  });
 
   final List<Task> tasks;
   final List<Category> categories;
+  final List<Zone> zones;
 }
 
 /// Thrown when an import file is malformed or its schema version isn't
@@ -46,17 +54,22 @@ class BackupImportException implements Exception {
 /// (via the caller) and every write goes through [TaskList.importTasks],
 /// per the "no bypassing the normal write path for bulk operations" rule.
 class BackupService {
-  /// Writes [tasks] (and [categories], so a user's custom categories
-  /// survive export/restore on a fresh install) to a temp JSON file and
-  /// opens the platform share sheet for it. The file includes the full
-  /// dataset (not just current/future) since export doubles as backup —
-  /// see docs/SCOPE.md.
-  Future<void> exportTasks(List<Task> tasks, List<Category> categories) async {
+  /// Writes [tasks], [categories], and [zones] (so a user's custom
+  /// categories and zones survive export/restore on a fresh install) to a
+  /// temp JSON file and opens the platform share sheet for it. The file
+  /// includes the full dataset (not just current/future) since export
+  /// doubles as backup — see docs/SCOPE.md.
+  Future<void> exportTasks(
+    List<Task> tasks,
+    List<Category> categories,
+    List<Zone> zones,
+  ) async {
     final payload = {
       'schemaVersion': backupSchemaVersion,
       'exportedAt': DateTime.now().toIso8601String(),
       'tasks': tasks.map((task) => task.toJson()).toList(),
       'categories': categories.map((category) => category.toJson()).toList(),
+      'zones': zones.map((zone) => zone.toJson()).toList(),
     };
     final json = const JsonEncoder.withIndent('  ').convert(payload);
 
@@ -180,6 +193,33 @@ class BackupService {
       }
     }
 
-    return ParsedImportFile(tasks: tasks, categories: categories);
+    // Deliberately not required — a backup exported before Zone existed
+    // simply has no "zones" key at all, and must still import cleanly,
+    // same "old exports still import" contract as categories above.
+    final zonesJson = payload['zones'];
+    final List<Zone> zones;
+    if (zonesJson == null) {
+      zones = const [];
+    } else if (zonesJson is! List) {
+      throw BackupImportException(
+        'This file has an invalid zone list and cannot be imported.',
+      );
+    } else {
+      try {
+        zones = zonesJson.map((entry) {
+          if (entry is! Map<String, dynamic>) {
+            throw const FormatException('zone record is not a JSON object');
+          }
+          return Zone.fromJson(entry);
+        }).toList();
+      } on FormatException catch (error) {
+        throw BackupImportException(
+          'This file contains an invalid zone record and cannot be '
+          'imported: ${error.message}',
+        );
+      }
+    }
+
+    return ParsedImportFile(tasks: tasks, categories: categories, zones: zones);
   }
 }

@@ -16,9 +16,9 @@ This is the authoritative feature list. If a work order or a session's output do
 
 ## Nice-to-have (still v1 if time allows, not a separate phase)
 
-- **User-extensible categories (implemented)** — categories are no longer a fixed 5-value enum; a real "Add new category" modal (name, one of 12 colors, an emoji) creates a persisted `Category` row via `CategoryList.createCategory`. v1 is create + list only — no edit or delete. See `docs/CONSTITUTION.md`'s "Category" section for the full model shape and the migration off the old `TaskCategory` enum.
-- Basic "today's plan" summary view (in-app only, not an OS widget)
+- **User-extensible categories (implemented, v2 this round)** — categories are a persisted `Category` row via `CategoryList.createCategory`, not a fixed enum. v1 was create + list only; **this round adds rename, recolor (constrained to the existing 12-swatch palette, no free picker), and reorder**, via Settings → Categories → list → edit, mirroring the existing Settings → Zones pattern. Delete remains deferred — orphaned-`categoryId` question still unresolved. See `docs/CONSTITUTION.md`'s "Category" section for the full model shape.
 - **Voice dictation for Quick Capture** — a tap-to-talk mic button using on-device speech-to-text (`speech_to_text` package, wrapping `SFSpeechRecognizer`/Android `SpeechRecognizer`). Not a new parsing path: dictated text lands in the same `_titleController` and goes through the exact same `parseQuickCapture` → `taskListProvider` pipeline as typed input. Highlighting is applied only once the full transcript lands (no progressive/partial-result highlighting for the first pass).
+- **Automatic morning summary to a user-configured Slack Incoming Webhook (implemented, 2026-09-03)** — a separate, opt-in delivery path for the "today's plan" summary above, distinct from the in-app view: once enabled in Settings, a background task (Android WorkManager / iOS BGTaskScheduler, via the `workmanager` package) posts a plain-text summary of the day's tasks directly from the device to a Slack Incoming Webhook URL the user pastes in themselves. Fully local-only in spirit even though it's the first feature where data leaves the device: no backend, no Amble-managed Slack connection/OAuth, and nothing is sent anywhere except the literal webhook URL the user provided. A "Send test message now" button triggers the same send path on demand, since background timing is best-effort (especially on iOS — a real, accepted platform constraint, not a bug). See `docs/CONSTITUTION.md`'s locked stack ("no cloud sync") for why this was confirmed as an explicit scope addition before building, and `docs/DECISIONS.md` for the background-task/isolate-Hive-initialization approach and observed iOS reliability.
 
 ## Scoped for later: splash/landing, carousel, and onboarding
 
@@ -37,17 +37,50 @@ Architecturally: onboarding completion state and goal selections belong in `Pref
 - "Edit all future occurrences" for recurring tasks (MVP only supports editing a single materialized instance)
 - Monthly/yearly recurrence, or complex recurrence patterns beyond daily/weekly + interval + days-of-week
 
-## Deferred, flagged feature: Zone (time-boxed task containers) — design-only spike
+## Zone (time-boxed task containers) — implemented, ungated
 
-A separate architectural layer, same "model exists, UI/build comes later" treatment as `TrackedBehavior` below: a `Zone` is a named time window (e.g. "Morning ritual," 07:00–08:00) that tasks can optionally be assigned into via a new nullable `Task.zoneId`, independent of whether the task also has its own `scheduledAt`. See `docs/CONSTITUTION.md`'s "Zone" section for the full draft model shape, agreed 2026-09-01.
+A `Zone` is a named time window (e.g. "Morning ritual," 07:00–08:00) that tasks can optionally be assigned into via a nullable `Task.zoneId`, independent of whether the task also has its own `scheduledAt`. See `docs/CONSTITUTION.md`'s "Zone" section for the full model shape.
 
-**Not started — design pass only, no model/repository/UI built yet.** Three real forks were identified and deliberately left open rather than resolved on the spot: (1) what happens when a zone's assigned-task durations exceed its own capacity — hard block, warning, or silent overflow; (2) zone recurrence needs per-occurrence-adjustable start/end times (a Monday zone and a Wednesday zone in the same series can differ), which the existing `RecurrenceRule` shape doesn't support and likely needs its own per-instance model rather than one shared rule; (3) dragging a zone with its contained tasks, and cascading zones, are structurally similar to the existing task-level cascade-push but not the same code, and are explicitly deferred past the first build. Each of these needs its own confirm-first pass before implementation.
+**Live in every build, including release** — Settings → Zones → list → add/edit (near-full-screen, matching the real task-creation modal's visual language). `FeatureFlags.zoneEnabled` defaults `true`, confirmed directly; still overridable off for testing (`--dart-define=zone=false`). Zone-to-zone overlap is enforced in the add/edit form. Capacity-exceeded behavior is calculated (`calculateZoneCapacity`) but not enforced by any UI.
 
-## Deferred, flagged feature: TrackedBehavior (persistent tracked objects)
+**Simple recurrence + notifications implemented (2026-09-02)**: a Zone can optionally repeat via the same `RecurrenceRule` shape `Task` uses (one rule, same start/end time on every occurrence — no per-occurrence override), and can optionally fire a start-time alert (`notificationsEnabled`, default on) via `NotificationService.scheduleForZone`, a one-shot next-occurrence alert re-resolved on every save rather than a true recurring OS alarm. See CONSTITUTION.md's Zone section and docs/DECISIONS.md for the full shape and judgment calls.
 
-A separate architectural layer — persistent objects with a target that accumulates evidence across many scheduled `Task` instances over time (e.g. "Exercise, 60 min, 3x/week," logged as Done/Partial/Skipped with an actual amount). See `CONSTITUTION.md` for the data-model shape (`TrackedBehavior` entity, `Task.behaviorId`/`Task.actualAmount`).
+Three real forks remain open, deliberately not resolved yet: (1) what happens when a zone's assigned-task durations exceed its own capacity — hard block, warning, or silent overflow; (2) zone recurrence needs per-occurrence-adjustable start/end times (a Monday zone and a Wednesday zone in the same series can differ) — the simple, uniform-rule version above is implemented, but this harder per-occurrence version is still deferred and likely needs its own per-instance model rather than the one shared `RecurrenceRule`; (3) dragging a zone with its contained tasks, and cascading zones, are structurally similar to the existing task-level cascade-push but not the same code, and are explicitly deferred. Each of these needs its own confirm-first pass before implementation. There is also currently no UI for *assigning* a task to a zone (setting `Task.zoneId`) — only creating/editing zones themselves.
 
-This is explicitly **not** part of the initial MVP build-out, but the data model is included now (Phase 10) because retrofitting the `Task.behaviorId` link after tasks already exist without it is far more disruptive than including a nullable field today. The feature is additive and inert when unused — no existing behavior changes if it's never surfaced in the UI. Treat it as feature-flagged: build the model/repository layer now, gate any UI entry points (creating a tracked behavior, a history/calibration view) behind a flag, default off. This avoids forking the app into a second product while still being honest that Amble may grow in this direction later — see the two research documents this decision is based on for the full future-state thinking (persistent behavior objects, target-vs-actual calibration, habit-formation science) — none of which is MVP scope yet.
+## TaskTemplate (reusable task blueprints) — new, ungated
+
+A `TaskTemplate` is a reusable blueprint for tasks created repeatedly (e.g.
+"Take a walk") — title, category, optional default duration, optional link to
+a `TrackedBehavior`. Never itself schedulable or completable; exists only to
+be copied into a real `Task` via `Task.create()`. See `docs/CONSTITUTION.md`'s
+"TaskTemplate" section for the full model shape.
+
+**v1 scope: create, list, edit, delete** — unlike `Category`/`Zone`, templates
+are freely deletable since nothing depends on a template's continued existence
+once it has spawned a task (no orphaned-reference problem). Surfaced via a
+second Inbox tab ("Templates") and a frequency-ranked quick-drop chip row
+below the task-creation title field, alongside `TrackedBehavior` chips.
+
+Ungated — free functionality, same tier as `Category`, not behind
+`FeatureFlags.trackedBehaviorEnabled`.
+
+## TrackedBehavior (persistent tracked objects) — model implemented, UI scoped this round
+
+A separate architectural layer — persistent objects with a target that
+accumulates evidence across many scheduled `Task` instances over time (e.g.
+"Exercise, 60 min, 3x/week"). See `CONSTITUTION.md` for the data-model shape
+(`TrackedBehavior` entity, `Task.behaviorId`/`Task.actualAmount`).
+
+**This round adds real UI**: a dedicated 4th bottom-nav tab ("Tracked") for
+create/list/edit of `TrackedBehavior` rows directly, plus the same quick-drop
+chip surfacing `TaskTemplate` gets. `FeatureFlags.trackedBehaviorEnabled`
+remains the gating seam and is the intended future pro/paid-tier boundary —
+`Category` and `TaskTemplate` are explicitly NOT gated behind it.
+
+**Still explicitly deferred**: history view, calibration suggestions, weekly
+review screen. This round is container + basic create/list/attach only — no
+rollup/analytics UI yet, unchanged from the original MVP posture.
+
 
 ## Cascade replanning — drag-to-reschedule push (implemented)
 
@@ -65,4 +98,6 @@ When "Prevent overlapping tasks" (Settings) is on and a task is dragged onto a s
 
 ## Navigation structure
 
-Bottom nav: **Inbox / Timeline / Settings**. (No separate "Places," "Saved," or "Notes" sections — if these appear anywhere in the codebase or a work order, they're a scaffold mismatch, not a planned Amble feature.)
+## Navigation structure
+
+Bottom nav: **Inbox / Timeline / Tracked / Settings** (4 tabs, updated this round from the original 3 — "Tracked" is the new TrackedBehavior nav destination; see CONSTITUTION.md). No separate "Places," "Saved," or "Notes" sections — if these appear anywhere in the codebase or a work order, they're a scaffold mismatch, not a planned Amble feature.

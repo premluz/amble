@@ -3,20 +3,30 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import '../../core/background/background_tasks.dart';
 import '../../core/dev_config.dart';
 import '../../core/feature_flags.dart';
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/app_alert_dialog.dart';
 import '../../core/widgets/app_button.dart';
+import '../../core/widgets/app_selectable_chip.dart';
 import '../../core/widgets/app_switch.dart';
+import '../../core/widgets/app_text_field.dart';
 import '../../shared/providers/backup_providers.dart';
+import '../../shared/providers/calendar_providers.dart';
 import '../../shared/providers/category_providers.dart';
 import '../../shared/providers/notification_providers.dart';
 import '../../shared/providers/preferences_providers.dart';
 import '../../shared/providers/task_providers.dart';
+import '../../shared/models/task_size.dart';
 import '../../shared/models/tracked_behavior.dart';
+import '../../shared/models/zone.dart';
 import '../../shared/providers/tracked_behavior_providers.dart';
+import '../../shared/providers/zone_providers.dart';
 import '../../shared/services/backup_service.dart';
+import '../../shared/services/slack_summary_service.dart';
 import '../tracked_behavior/tracked_behavior_form.dart';
+import '../zones/zone_list_screen.dart';
 import 'theme_mode_selector.dart';
 
 /// The real home for export/import and notification preferences — the
@@ -55,6 +65,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool? _notificationsGranted;
   String? _appVersion;
 
+  // Slack morning-summary fields — plain TextEditingControllers (like every
+  // other AppTextField user in the app) rather than reading the provider
+  // value on every keystroke, so typing doesn't fight a rebuild. Committed
+  // to PreferencesRepository on blur/submit, not per-keystroke — same
+  // reasoning as every other free-text field in Settings/task-detail.
+  late final TextEditingController _slackWebhookController;
+  late final TextEditingController _slackDisplayNameController;
+  late final TextEditingController _slackIconEmojiController;
+  String? _slackStatusMessage;
+  bool _slackStatusIsError = false;
+  bool _slackTestBusy = false;
+
+  // Dev-only data-clearing tools — see _clearAllTasks/_clearBadStateTasks/
+  // _clearAllZones/_clearEverything below.
+  String? _devClearStatusMessage;
+  bool _devClearBusy = false;
+
+  // Calendar sync-out (Feature 2) — see _syncToCalendar below. Same
+  // busy/status shape as the Slack test-send fields above.
+  String? _calendarSyncStatusMessage;
+  bool _calendarSyncIsError = false;
+  bool _calendarSyncBusy = false;
+
   @override
   void initState() {
     super.initState();
@@ -66,7 +99,221 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (widget.debugAutoTriggerImport) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _import());
     }
+    _slackWebhookController = TextEditingController(
+      text: ref.read(slackWebhookUrlSettingProvider) ?? '',
+    );
+    _slackDisplayNameController = TextEditingController(
+      text: ref.read(slackDisplayNameSettingProvider) ?? '',
+    );
+    _slackIconEmojiController = TextEditingController(
+      text: ref.read(slackIconEmojiSettingProvider) ?? '',
+    );
   }
+
+  @override
+  void dispose() {
+    _slackWebhookController.dispose();
+    _slackDisplayNameController.dispose();
+    _slackIconEmojiController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveSlackWebhookUrl() async {
+    await ref
+        .read(slackWebhookUrlSettingProvider.notifier)
+        .set(_slackWebhookController.text);
+  }
+
+  Future<void> _saveSlackDisplayName() async {
+    await ref
+        .read(slackDisplayNameSettingProvider.notifier)
+        .set(_slackDisplayNameController.text);
+  }
+
+  Future<void> _saveSlackIconEmoji() async {
+    await ref
+        .read(slackIconEmojiSettingProvider.notifier)
+        .set(_slackIconEmojiController.text);
+  }
+
+  /// "Send test message now" — the important manual trigger the work order
+  /// calls out explicitly, since it lets the feature be verified without
+  /// depending on unreliable background timing, and gives immediate
+  /// feedback on a bad webhook URL. Sends today's REAL summary (not a
+  /// placeholder "hello world"), through the exact same
+  /// `buildMorningSummaryText`/`buildSlackPayload`/`postToSlackWebhook`
+  /// path the background task uses — so a successful test send is a
+  /// genuine end-to-end proof the automatic one would also work, not a
+  /// separate code path that could silently drift from it.
+  Future<void> _sendSlackTestMessage() async {
+    setState(() {
+      _slackTestBusy = true;
+      _slackStatusMessage = null;
+    });
+    try {
+      final webhookUrl = _slackWebhookController.text;
+      final today = DateTime.now();
+      final todaysTasks = ref.read(taskListProvider).where((task) {
+        final scheduledAt = task.scheduledAt;
+        if (scheduledAt == null) return false;
+        return scheduledAt.year == today.year &&
+            scheduledAt.month == today.month &&
+            scheduledAt.day == today.day;
+      }).toList();
+      final text = buildMorningSummaryText(todaysTasks);
+      final payload = buildSlackPayload(
+        text: text,
+        displayName: _slackDisplayNameController.text,
+        iconEmoji: _slackIconEmojiController.text,
+      );
+      await postToSlackWebhook(webhookUrl: webhookUrl, payload: payload);
+      if (!mounted) return;
+      setState(() {
+        _slackStatusMessage = 'Test message sent — check Slack.';
+        _slackStatusIsError = false;
+      });
+    } on SlackWebhookException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _slackStatusMessage = e.message;
+        _slackStatusIsError = true;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _slackStatusMessage = 'Could not send test message: $e';
+        _slackStatusIsError = true;
+      });
+    } finally {
+      if (mounted) setState(() => _slackTestBusy = false);
+    }
+  }
+
+  /// Manual, one-directional sync of every scheduled task OUT to the
+  /// chosen target calendar — Feature 2 of CONSTITUTION.md's "Calendar"
+  /// section. No automatic/background trigger exists; this button is the
+  /// only entry point, per the explicit non-goal.
+  Future<void> _syncToCalendar() async {
+    final targetId = ref.read(calendarSyncTargetIdSettingProvider);
+    if (targetId == null) return; // Button is disabled with no target chosen.
+
+    setState(() {
+      _calendarSyncBusy = true;
+      _calendarSyncStatusMessage = null;
+    });
+    try {
+      final result = await ref
+          .read(calendarSyncServiceProvider)
+          .sync(targetCalendarId: targetId);
+      if (!mounted) return;
+      setState(() {
+        _calendarSyncStatusMessage =
+            '${result.created} synced, ${result.updated} updated, '
+            '${result.removed} removed';
+        _calendarSyncIsError = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _calendarSyncStatusMessage = 'Could not sync to calendar: $e';
+        _calendarSyncIsError = true;
+      });
+    } finally {
+      if (mounted) setState(() => _calendarSyncBusy = false);
+    }
+  }
+
+  /// Confirms via [AppAlertDialog] before running [action] — every dev
+  /// clear button goes through this, since these are irreversible bulk
+  /// deletes and a mis-tap on a debug-only screen shouldn't be able to
+  /// silently wipe real dev data. [action] returns the status text to
+  /// show on success.
+  Future<void> _confirmAndClear({
+    required String title,
+    required String message,
+    required Future<String> Function() action,
+  }) async {
+    final confirmed = await AppAlertDialog.show(
+      context: context,
+      title: title,
+      message: message,
+      primaryAction: const AppAlertDialogAction(
+        label: 'Clear',
+        isDestructive: true,
+      ),
+      secondaryAction: const AppAlertDialogAction(label: 'Cancel'),
+    );
+    if (confirmed != true) return;
+
+    setState(() {
+      _devClearBusy = true;
+      _devClearStatusMessage = null;
+    });
+    try {
+      final result = await action();
+      if (!mounted) return;
+      setState(() => _devClearStatusMessage = result);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _devClearStatusMessage = 'Failed: $e');
+    } finally {
+      if (mounted) setState(() => _devClearBusy = false);
+    }
+  }
+
+  Future<void> _clearAllTasks() => _confirmAndClear(
+    title: 'Clear all tasks?',
+    message: 'Deletes every task, including the Inbox. This cannot be undone.',
+    action: () async {
+      final before = ref.read(taskListProvider).length;
+      await ref.read(taskListProvider.notifier).clearAllTasks();
+      return 'Cleared $before task(s).';
+    },
+  );
+
+  /// The recurring-series "bad state" bug: deleting a series' template as
+  /// a single occurrence could orphan every other instance (no row left
+  /// carrying the rule), which then throws `Bad state: No element` on
+  /// open — see `TaskList.deleteTask`'s own doc comment for the fix that
+  /// now prevents this going forward, and `findOrphanedRecurringTaskIds`
+  /// for what this button actually targets. Pre-existing data from before
+  /// that fix can still have rows in this state, permanently unopenable
+  /// until removed — this is the repair tool for that, requested directly.
+  Future<void> _clearBadStateTasks() => _confirmAndClear(
+    title: 'Clear bad-state tasks?',
+    message:
+        'Deletes recurring tasks whose series lost its template row — '
+        'the ones that throw "Bad state: No element" when opened. '
+        'Unaffected tasks are left untouched.',
+    action: () async {
+      final count = await ref
+          .read(taskListProvider.notifier)
+          .clearBadStateTasks();
+      return 'Cleared $count bad-state task(s).';
+    },
+  );
+
+  Future<void> _clearAllZones() => _confirmAndClear(
+    title: 'Clear all zones?',
+    message: 'Deletes every zone. This cannot be undone.',
+    action: () async {
+      final before = ref.read(zoneListProvider).length;
+      await ref.read(zoneListProvider.notifier).clearAllZones();
+      return 'Cleared $before zone(s).';
+    },
+  );
+
+  Future<void> _clearEverything() => _confirmAndClear(
+    title: 'Clear everything?',
+    message: 'Deletes every task and every zone. This cannot be undone.',
+    action: () async {
+      final taskCount = ref.read(taskListProvider).length;
+      final zoneCount = ref.read(zoneListProvider).length;
+      await ref.read(taskListProvider.notifier).clearAllTasks();
+      await ref.read(zoneListProvider.notifier).clearAllZones();
+      return 'Cleared $taskCount task(s) and $zoneCount zone(s).';
+    },
+  );
 
   Future<void> _loadNotificationStatus() async {
     final granted = await ref.read(notificationServiceProvider).hasPermission();
@@ -95,10 +342,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     try {
       final tasks = ref.read(taskListProvider);
       final categories = ref.read(categoryListProvider);
-      await ref.read(backupServiceProvider).exportTasks(tasks, categories);
+      final zones = ref.read(zoneListProvider);
+      await ref
+          .read(backupServiceProvider)
+          .exportTasks(tasks, categories, zones);
       if (!mounted) return;
       setState(() {
-        _statusMessage = 'Exported ${tasks.length} task(s).';
+        // Reports every entity actually written to the file — previously
+        // only reported the task count even though categories/zones were
+        // silently included too, reported directly as misleading ("says
+        // exported 2 tasks, zones also exporting?").
+        _statusMessage =
+            'Exported ${tasks.length} task(s), '
+            '${categories.length} categor${categories.length == 1 ? 'y' : 'ies'}, '
+            '${zones.length} zone(s).';
         _statusIsError = false;
       });
     } catch (error) {
@@ -124,13 +381,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         if (mounted) setState(() => _busy = false);
         return;
       }
-      // Categories first — a task's categoryId should resolve against the
-      // full restored category set by the time tasks are merged in,
-      // though nothing in TaskList.importTasks actually depends on
-      // ordering today (it stores the id, doesn't validate it resolves).
+      // Categories and zones first — a task's categoryId/zoneId should
+      // resolve against the full restored sets by the time tasks are
+      // merged in, though nothing in TaskList.importTasks actually
+      // depends on ordering today (it stores the id, doesn't validate it
+      // resolves).
       final categoryResult = await ref
           .read(categoryListProvider.notifier)
           .importCategories(parsed.categories);
+      final zoneResult = await ref
+          .read(zoneListProvider.notifier)
+          .importZones(parsed.zones);
       final result = await ref
           .read(taskListProvider.notifier)
           .importTasks(parsed.tasks);
@@ -140,7 +401,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             'Imported ${result.imported} task(s). '
             '${result.alreadyPresent} already present, '
             '${result.conflicts} conflict(s) skipped. '
-            '${categoryResult.imported} categor${categoryResult.imported == 1 ? 'y' : 'ies'} imported.';
+            '${categoryResult.imported} categor${categoryResult.imported == 1 ? 'y' : 'ies'} imported. '
+            '${zoneResult.imported} zone(s) imported, '
+            '${zoneResult.alreadyPresent} already present, '
+            '${zoneResult.conflicts} conflict(s) skipped.';
         _statusIsError = false;
       });
     } on BackupImportException catch (error) {
@@ -322,6 +586,132 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
+                            'Show timeline connectors',
+                            style: theme.textBody.copyWith(
+                              color: theme.colorTextPrimary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          SizedBox(height: theme.spacingXs),
+                          Text(
+                            'When off, the gray thread connecting '
+                            'consecutive tasks is hidden. Task view only.',
+                            style: theme.textBody.copyWith(
+                              color: theme.colorTextSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(width: theme.spacingMd),
+                    AppSwitch(
+                      value: ref.watch(showTimelineConnectorsSettingProvider),
+                      onChanged: (value) => ref
+                          .read(showTimelineConnectorsSettingProvider.notifier)
+                          .set(value),
+                    ),
+                  ],
+                ),
+              ),
+
+              SizedBox(height: theme.spacingSm),
+              _SettingsPanel(
+                theme: theme,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Show completion checkbox',
+                            style: theme.textBody.copyWith(
+                              color: theme.colorTextPrimary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          SizedBox(height: theme.spacingXs),
+                          Text(
+                            'When off, the circular checkbox on each task is '
+                            'hidden across all three views — scheduled tasks '
+                            'then have no way to be marked complete.',
+                            style: theme.textBody.copyWith(
+                              color: theme.colorTextSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(width: theme.spacingMd),
+                    AppSwitch(
+                      value: ref.watch(showCompletionCheckboxSettingProvider),
+                      onChanged: (value) => ref
+                          .read(showCompletionCheckboxSettingProvider.notifier)
+                          .set(value),
+                    ),
+                  ],
+                ),
+              ),
+
+              SizedBox(height: theme.spacingSm),
+              _SettingsPanel(
+                theme: theme,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Task size',
+                      style: theme.textBody.copyWith(
+                        color: theme.colorTextPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    SizedBox(height: theme.spacingXs),
+                    Text(
+                      'The size of a task\'s badge/icon and its name/time '
+                      'text — applies everywhere: Task view, List view, '
+                      'and Zone view.',
+                      style: theme.textBody.copyWith(
+                        color: theme.colorTextSecondary,
+                      ),
+                    ),
+                    SizedBox(height: theme.spacingSm),
+                    Row(
+                      children: [
+                        for (final size in TaskSize.values) ...[
+                          if (size != TaskSize.values.first)
+                            SizedBox(width: theme.spacingSm),
+                          AppSelectableChip(
+                            label: switch (size) {
+                              TaskSize.sm => 'Small',
+                              TaskSize.md => 'Medium',
+                              TaskSize.lg => 'Large',
+                            },
+                            selected:
+                                ref.watch(taskSizeSettingProvider) == size,
+                            onTap: () => ref
+                                .read(taskSizeSettingProvider.notifier)
+                                .set(size),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              SizedBox(height: theme.spacingSm),
+              _SettingsPanel(
+                theme: theme,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
                             'Disable overlap clustering',
                             style: theme.textBody.copyWith(
                               color: theme.colorTextPrimary,
@@ -383,6 +773,76 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               ],
 
+              // Zones — gated, same pattern as Tracked behaviors above. With
+              // the flag off this subtree is const-eliminated, so Settings
+              // looks exactly as it did. Unlike Tracked behaviors' inline
+              // create-form button, this opens a real page (the list) —
+              // requested directly: Zones is a place to browse/manage a
+              // list, not a single focused action.
+              if (FeatureFlags.zoneEnabled) ...[
+                SizedBox(height: theme.spacingLg),
+                Text('Zones', style: theme.textTitle),
+                SizedBox(height: theme.spacingSm),
+                _SettingsPanel(
+                  theme: theme,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _zoneSummary(ref.watch(zoneListProvider)),
+                        style: theme.textBody.copyWith(
+                          color: theme.colorTextSecondary,
+                        ),
+                      ),
+                      SizedBox(height: theme.spacingMd),
+                      AppButton(
+                        label: 'Manage zones',
+                        variant: AppButtonVariant.secondary,
+                        onPressed: () => showZoneListScreen(context),
+                      ),
+                      SizedBox(height: theme.spacingMd),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Zone view',
+                                  style: theme.textBody.copyWith(
+                                    color: theme.colorTextPrimary,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                SizedBox(height: theme.spacingXs),
+                                Text(
+                                  'When on, the Timeline shows zones as '
+                                  'containers that hold their own tasks, '
+                                  'instead of the default view where zones '
+                                  'are just a background behind the '
+                                  'timeline.',
+                                  style: theme.textBody.copyWith(
+                                    color: theme.colorTextSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          SizedBox(width: theme.spacingMd),
+                          AppSwitch(
+                            value: ref.watch(zoneViewEnabledSettingProvider),
+                            onChanged: (value) => ref
+                                .read(zoneViewEnabledSettingProvider.notifier)
+                                .set(value),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
               SizedBox(height: theme.spacingLg),
               Text('Backup', style: theme.textTitle),
               SizedBox(height: theme.spacingSm),
@@ -424,6 +884,146 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ],
                   ],
                 ),
+              ),
+
+              SizedBox(height: theme.spacingLg),
+              Text('Morning summary (Slack)', style: theme.textTitle),
+              SizedBox(height: theme.spacingSm),
+              _SettingsPanel(
+                theme: theme,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Sends a plain-text summary of today\'s tasks to a '
+                      'Slack channel every morning. This is a Slack '
+                      'Incoming Webhook URL — create one in Slack '
+                      '(Slack app settings → Incoming Webhooks) and paste '
+                      'it below. It is not an Amble-managed Slack '
+                      'connection; Amble never sees anything beyond the '
+                      'URL you paste here, and the message is sent '
+                      'directly from this device to that URL.',
+                      style: theme.textBody.copyWith(
+                        color: theme.colorTextSecondary,
+                      ),
+                    ),
+                    SizedBox(height: theme.spacingMd),
+                    AppTextField(
+                      controller: _slackWebhookController,
+                      label: 'Slack webhook URL',
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => _saveSlackWebhookUrl(),
+                      onFocusChanged: (focused) {
+                        if (!focused) _saveSlackWebhookUrl();
+                      },
+                    ),
+                    SizedBox(height: theme.spacingMd),
+                    AppTextField(
+                      controller: _slackDisplayNameController,
+                      label: 'Display name (optional)',
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => _saveSlackDisplayName(),
+                      onFocusChanged: (focused) {
+                        if (!focused) _saveSlackDisplayName();
+                      },
+                    ),
+                    SizedBox(height: theme.spacingSm),
+                    AppTextField(
+                      controller: _slackIconEmojiController,
+                      label: 'Icon emoji (optional, e.g. :sunrise:)',
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => _saveSlackIconEmoji(),
+                      onFocusChanged: (focused) {
+                        if (!focused) _saveSlackIconEmoji();
+                      },
+                    ),
+                    Padding(
+                      padding: EdgeInsets.only(top: theme.spacingXs),
+                      child: Text(
+                        'Left blank, Slack uses the webhook\'s own default '
+                        'name/icon.',
+                        style: theme.textCaption.copyWith(
+                          color: theme.colorTextSecondary,
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: theme.spacingMd),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Send automatically each morning',
+                                style: theme.textBody.copyWith(
+                                  color: theme.colorTextPrimary,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              SizedBox(height: theme.spacingXs),
+                              Text(
+                                'Targets around ${morningSummaryTargetHour}am '
+                                'local time. Delivery time isn\'t '
+                                'guaranteed, especially on iOS — the '
+                                'operating system decides exactly when '
+                                'background tasks actually run, and may '
+                                'delay or skip a day entirely. Use "Send '
+                                'test message now" below any time you want '
+                                'it right away.',
+                                style: theme.textBody.copyWith(
+                                  color: theme.colorTextSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        SizedBox(width: theme.spacingMd),
+                        AppSwitch(
+                          value: ref.watch(slackSummaryEnabledSettingProvider),
+                          onChanged: (value) async {
+                            await ref
+                                .read(
+                                  slackSummaryEnabledSettingProvider.notifier,
+                                )
+                                .set(value);
+                            await registerMorningSummaryTask(enabled: value);
+                          },
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: theme.spacingMd),
+                    AppButton(
+                      label: 'Send test message now',
+                      variant: AppButtonVariant.secondary,
+                      isLoading: _slackTestBusy,
+                      onPressed: _slackTestBusy ? null : _sendSlackTestMessage,
+                    ),
+                    if (_slackStatusMessage != null) ...[
+                      SizedBox(height: theme.spacingMd),
+                      Text(
+                        _slackStatusMessage!,
+                        style: theme.textBody.copyWith(
+                          color: _slackStatusIsError
+                              ? theme.colorTaskAlert
+                              : theme.colorTextPrimary,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+
+              SizedBox(height: theme.spacingLg),
+              Text('Calendar', style: theme.textTitle),
+              SizedBox(height: theme.spacingSm),
+              _CalendarSettingsPanel(
+                theme: theme,
+                syncStatusMessage: _calendarSyncStatusMessage,
+                syncStatusIsError: _calendarSyncIsError,
+                syncBusy: _calendarSyncBusy,
+                onSync: _syncToCalendar,
               ),
 
               SizedBox(height: theme.spacingLg),
@@ -574,6 +1174,169 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           ),
                         ],
                       ),
+                      SizedBox(height: theme.spacingMd),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Show free-window prompt',
+                              style: theme.textBody.copyWith(
+                                color: theme.colorTextPrimary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          SizedBox(width: theme.spacingMd),
+                          AppSwitch(
+                            value: ref.watch(devShowFreeWindowPromptProvider),
+                            onChanged: (value) => ref
+                                .read(devShowFreeWindowPromptProvider.notifier)
+                                .set(value),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: theme.spacingMd),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Zone view',
+                                  style: theme.textBody.copyWith(
+                                    color: theme.colorTextPrimary,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                SizedBox(height: theme.spacingXs),
+                                Text(
+                                  'When off, the Timeline\'s view button '
+                                  'cycles Task and List view only.',
+                                  style: theme.textBody.copyWith(
+                                    color: theme.colorTextSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          SizedBox(width: theme.spacingMd),
+                          AppSwitch(
+                            value: ref.watch(devZoneViewInCycleProvider),
+                            onChanged: (value) => ref
+                                .read(devZoneViewInCycleProvider.notifier)
+                                .set(value),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: theme.spacingSm),
+                // Vertical timeline scale — independently configurable per
+                // view, requested directly. The Zone view starts at double
+                // the Task view's own 1.5, since a short zone container
+                // barely fit its header at the shared old scale (see
+                // DevZoneViewPixelsPerMinute's own doc comment).
+                _SettingsPanel(
+                  theme: theme,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Timeline scale (debug build only, resets on '
+                        'restart)',
+                        style: theme.textBody.copyWith(
+                          color: theme.colorTextSecondary,
+                        ),
+                      ),
+                      SizedBox(height: theme.spacingMd),
+                      Text(
+                        'Task view (pixels/minute)',
+                        style: theme.textBody.copyWith(
+                          color: theme.colorTextPrimary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      SizedBox(height: theme.spacingSm),
+                      _PixelsPerMinuteChipRow(
+                        theme: theme,
+                        value: ref.watch(devTaskViewPixelsPerMinuteProvider),
+                        onChanged: (value) => ref
+                            .read(devTaskViewPixelsPerMinuteProvider.notifier)
+                            .set(value),
+                      ),
+                      SizedBox(height: theme.spacingMd),
+                      Text(
+                        'Zone view (pixels/minute)',
+                        style: theme.textBody.copyWith(
+                          color: theme.colorTextPrimary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      SizedBox(height: theme.spacingSm),
+                      _PixelsPerMinuteChipRow(
+                        theme: theme,
+                        value: ref.watch(devZoneViewPixelsPerMinuteProvider),
+                        onChanged: (value) => ref
+                            .read(devZoneViewPixelsPerMinuteProvider.notifier)
+                            .set(value),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: theme.spacingSm),
+                // Destructive bulk-delete tools — requested directly, as a
+                // way to clear real local data (or repair the recurring-
+                // series "bad state" orphan bug — see
+                // TaskList.clearBadStateTasks' own doc comment) without a
+                // fresh install. Every button confirms first
+                // (_confirmAndClear -> AppAlertDialog); debug-build-only,
+                // same as every other control in this section.
+                _SettingsPanel(
+                  theme: theme,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Clear data (debug build only, irreversible)',
+                        style: theme.textBody.copyWith(
+                          color: theme.colorTextSecondary,
+                        ),
+                      ),
+                      SizedBox(height: theme.spacingMd),
+                      AppButton(
+                        label: 'Clear all tasks',
+                        variant: AppButtonVariant.secondary,
+                        onPressed: _devClearBusy ? null : _clearAllTasks,
+                      ),
+                      SizedBox(height: theme.spacingSm),
+                      AppButton(
+                        label: 'Clear bad-state tasks',
+                        variant: AppButtonVariant.secondary,
+                        onPressed: _devClearBusy ? null : _clearBadStateTasks,
+                      ),
+                      SizedBox(height: theme.spacingSm),
+                      AppButton(
+                        label: 'Clear all zones',
+                        variant: AppButtonVariant.secondary,
+                        onPressed: _devClearBusy ? null : _clearAllZones,
+                      ),
+                      SizedBox(height: theme.spacingSm),
+                      AppButton(
+                        label: 'Clear everything',
+                        onPressed: _devClearBusy ? null : _clearEverything,
+                        isLoading: _devClearBusy,
+                      ),
+                      if (_devClearStatusMessage != null) ...[
+                        SizedBox(height: theme.spacingMd),
+                        Text(
+                          _devClearStatusMessage!,
+                          style: theme.textBody.copyWith(
+                            color: theme.colorTextPrimary,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -582,6 +1345,45 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Preset chip row for a pixels-per-minute dev value — no numeric text
+/// entry exists elsewhere in this Settings screen, so a fixed set of
+/// presets (matching the shipped 1.5 plus round multiples) keeps this
+/// consistent with `TimelineTaskTextLayout`'s own chip-picker shape rather
+/// than introducing a new text-field/stepper pattern for one scratch
+/// value.
+class _PixelsPerMinuteChipRow extends StatelessWidget {
+  const _PixelsPerMinuteChipRow({
+    required this.theme,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final AmbleTheme theme;
+  final double value;
+  final ValueChanged<double> onChanged;
+
+  static const _presets = [1.0, 1.5, 2.0, 3.0, 4.0];
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: theme.spacingSm,
+      runSpacing: theme.spacingSm,
+      children: [
+        for (final preset in _presets)
+          _DevChip(
+            theme: theme,
+            label: preset == preset.roundToDouble()
+                ? preset.toStringAsFixed(0)
+                : preset.toStringAsFixed(1),
+            selected: preset == value,
+            onTap: () => onChanged(preset),
+          ),
+      ],
     );
   }
 }
@@ -651,6 +1453,190 @@ class _DevChip extends StatelessWidget {
   }
 }
 
+/// Settings' "Calendar" section — houses both Calendar features side by
+/// side but keeps them visually distinct, per the work order's explicit
+/// instruction: a multi-select list of DISPLAY calendars (Feature 1,
+/// `AppSwitch` per row — "any number of these can be on") above a
+/// single-select SYNC TARGET (Feature 2, `AppSelectableChip` row — "pick
+/// exactly one," the same chip shape already used for single-choice
+/// pickers elsewhere in Settings/task-detail) plus its own "Sync to
+/// Calendar" button. Both read from [availableDeviceCalendarsProvider] —
+/// one shared device-calendar list, two independent selections over it.
+class _CalendarSettingsPanel extends ConsumerWidget {
+  const _CalendarSettingsPanel({
+    required this.theme,
+    required this.syncStatusMessage,
+    required this.syncStatusIsError,
+    required this.syncBusy,
+    required this.onSync,
+  });
+
+  final AmbleTheme theme;
+  final String? syncStatusMessage;
+  final bool syncStatusIsError;
+  final bool syncBusy;
+  final VoidCallback onSync;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final calendarsAsync = ref.watch(availableDeviceCalendarsProvider);
+
+    return _SettingsPanel(
+      theme: theme,
+      child: calendarsAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, stackTrace) => Text(
+          'Could not load device calendars: $error',
+          style: theme.textBody.copyWith(color: theme.colorTaskAlert),
+        ),
+        data: (calendars) {
+          if (calendars.isEmpty) {
+            return Text(
+              'No calendars found on this device, or calendar permission '
+              'was denied. Neither Calendar feature can activate without '
+              'at least one device calendar.',
+              style: theme.textBody.copyWith(color: theme.colorTextSecondary),
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Show on Timeline',
+                style: theme.textBody.copyWith(
+                  color: theme.colorTextPrimary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              SizedBox(height: theme.spacingXs),
+              Text(
+                'Events from these calendars display read-only on the '
+                'Timeline. Amble never edits or removes anything on these '
+                'calendars.',
+                style: theme.textBody.copyWith(color: theme.colorTextSecondary),
+              ),
+              SizedBox(height: theme.spacingSm),
+              Consumer(
+                builder: (context, ref, _) {
+                  final displayIds = ref.watch(
+                    calendarDisplayIdsSettingProvider,
+                  );
+                  return Column(
+                    children: [
+                      for (final calendar in calendars)
+                        if (calendar.id != null)
+                          Padding(
+                            padding: EdgeInsets.symmetric(
+                              vertical: theme.spacingXs,
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    calendar.name ?? calendar.id!,
+                                    style: theme.textBody.copyWith(
+                                      color: theme.colorTextPrimary,
+                                    ),
+                                  ),
+                                ),
+                                AppSwitch(
+                                  value: displayIds.contains(calendar.id),
+                                  onChanged: (value) {
+                                    final updated = [...displayIds];
+                                    if (value) {
+                                      updated.add(calendar.id!);
+                                    } else {
+                                      updated.remove(calendar.id);
+                                    }
+                                    ref
+                                        .read(
+                                          calendarDisplayIdsSettingProvider
+                                              .notifier,
+                                        )
+                                        .set(updated);
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                    ],
+                  );
+                },
+              ),
+              SizedBox(height: theme.spacingLg),
+              Divider(color: theme.colorZoneBackground),
+              SizedBox(height: theme.spacingMd),
+              Text(
+                'Sync to calendar',
+                style: theme.textBody.copyWith(
+                  color: theme.colorTextPrimary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              SizedBox(height: theme.spacingXs),
+              Text(
+                'Pushes every scheduled task to the chosen calendar. '
+                'One-directional — calendar-side edits are overwritten on '
+                'the next sync. Manual only; nothing syncs automatically.',
+                style: theme.textBody.copyWith(color: theme.colorTextSecondary),
+              ),
+              SizedBox(height: theme.spacingSm),
+              Consumer(
+                builder: (context, ref, _) {
+                  final targetId = ref.watch(
+                    calendarSyncTargetIdSettingProvider,
+                  );
+                  return Wrap(
+                    spacing: theme.spacingSm,
+                    runSpacing: theme.spacingSm,
+                    children: [
+                      for (final calendar in calendars)
+                        if (calendar.id != null)
+                          AppSelectableChip(
+                            label: calendar.name ?? calendar.id!,
+                            selected: targetId == calendar.id,
+                            onTap: () => ref
+                                .read(
+                                  calendarSyncTargetIdSettingProvider.notifier,
+                                )
+                                .set(calendar.id),
+                          ),
+                    ],
+                  );
+                },
+              ),
+              SizedBox(height: theme.spacingMd),
+              Consumer(
+                builder: (context, ref, _) {
+                  final targetId = ref.watch(
+                    calendarSyncTargetIdSettingProvider,
+                  );
+                  return AppButton(
+                    label: 'Sync to Calendar',
+                    isLoading: syncBusy,
+                    onPressed: (syncBusy || targetId == null) ? null : onSync,
+                  );
+                },
+              ),
+              if (syncStatusMessage != null) ...[
+                SizedBox(height: theme.spacingMd),
+                Text(
+                  syncStatusMessage!,
+                  style: theme.textBody.copyWith(
+                    color: syncStatusIsError
+                        ? theme.colorTaskAlert
+                        : theme.colorTextPrimary,
+                  ),
+                ),
+              ],
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
 /// One-line summary of how many behaviors exist, so the panel says
 /// something useful before any have been created.
 String _behaviorSummary(List<TrackedBehavior> behaviors) {
@@ -660,4 +1646,14 @@ String _behaviorSummary(List<TrackedBehavior> behaviors) {
   }
   final names = behaviors.map((behavior) => behavior.title).join(', ');
   return '${behaviors.length} tracked: $names';
+}
+
+/// One-line summary of how many zones exist, mirroring [_behaviorSummary].
+String _zoneSummary(List<Zone> zones) {
+  if (zones.isEmpty) {
+    return 'No zones yet. A zone is a named time window tasks can be '
+        'assigned into.';
+  }
+  return '${zones.length} zone${zones.length == 1 ? '' : 's'}: '
+      '${zones.map((zone) => zone.title).join(', ')}';
 }

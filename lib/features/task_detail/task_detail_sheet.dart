@@ -13,6 +13,8 @@ import '../../core/widgets/app_field_shell.dart';
 import '../../core/widgets/app_pane.dart';
 import '../../core/widgets/app_selectable_chip.dart';
 import '../../core/widgets/app_segmented_time_field.dart';
+import '../../core/widgets/app_staggered_entrance.dart';
+import '../../core/widgets/app_step_scaffold.dart';
 import '../../core/widgets/app_switch.dart';
 import '../../core/widgets/app_text_field.dart';
 import '../../core/widgets/app_wheel_time_picker.dart';
@@ -30,6 +32,7 @@ import 'category_visual.dart';
 import 'task_category_modal.dart';
 import 'task_duration_modal.dart';
 import 'task_name_category_modal.dart';
+import 'task_remove.dart';
 import 'task_start_time_modal.dart';
 import '../timeline/recently_saved_task_provider.dart';
 
@@ -91,6 +94,13 @@ Future<void> showTaskDetailSheet(
   // comment. Mutually exclusive with [task]: only one of the two is ever
   // passed by either call site.
   Task? duplicateFrom,
+  // Set only by the Inbox's Templates tab "Use" action — recorded on the
+  // task this form creates (see Task.templateId), so a future quick-drop
+  // drawer can frequency-rank templates. Passed alongside [duplicateFrom],
+  // which carries the template's actual field values; this is only the
+  // provenance id. Ignored entirely on the edit path ([task] non-null),
+  // which never creates a new task.
+  String? templateId,
   DateTime? initialScheduledAt,
   // Seeds a real start time directly, bypassing stage 1's own noon
   // default entirely — used by a free window's block (the window's own
@@ -107,6 +117,7 @@ Future<void> showTaskDetailSheet(
     (context) => _TaskDetailFlow(
       task: task,
       duplicateFrom: duplicateFrom,
+      templateId: templateId,
       initialScheduledAt:
           initialScheduledAt ?? seed?.scheduledAt ?? DateTime.now(),
       initialTimeOfDay: initialTimeOfDay,
@@ -180,6 +191,7 @@ class _TaskDetailFlow extends ConsumerStatefulWidget {
   const _TaskDetailFlow({
     this.task,
     this.duplicateFrom,
+    this.templateId,
     required this.initialScheduledAt,
     this.initialTimeOfDay,
     this.debugStartWithRepeatsOn = false,
@@ -202,6 +214,10 @@ class _TaskDetailFlow extends ConsumerStatefulWidget {
   /// directly: "if close > discard then no duplicate... atm it creates as
   /// soon as click."
   final Task? duplicateFrom;
+
+  /// Provenance of a template-spawned create — see [showTaskDetailSheet]'s
+  /// own doc comment. Null everywhere else.
+  final String? templateId;
 
   final DateTime initialScheduledAt;
 
@@ -303,6 +319,21 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
   /// slow save (or one that overlaps a schedule check) could be tapped
   /// twice and create/edit the same task twice.
   bool _isSaving = false;
+
+  /// True once a [_save] has actually committed a write.
+  ///
+  /// [_isSaving] guards only against two saves OVERLAPPING; it is already
+  /// back to false once a save finishes. This guards the other shape: a
+  /// close arriving AFTER a completed save. [_hasUnconfirmedChanges]
+  /// compares the live fields against the `_initial*` snapshot, which is
+  /// deliberately never refreshed on save (it describes the form's opening
+  /// state), so without this a just-saved edit still reads as pending —
+  /// [_handleClose] would raise "Discard this task?" and its "Save task"
+  /// action would write the task a SECOND time. Defensive: the ordinary
+  /// Save path pops imperatively and is not re-routed through
+  /// [_handleClose] (an imperative `Navigator.pop` bypasses `PopScope`),
+  /// but any close reaching this screen post-save must not re-save.
+  bool _hasSaved = false;
 
   @override
   void initState() {
@@ -415,6 +446,13 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
     // before the button re-renders as disabled) returns immediately
     // rather than starting a second save.
     if (_isSaving) return;
+    // A save that already COMMITTED never runs again from this form. The
+    // guard above only covers two saves overlapping; this covers a second
+    // save arriving after the first finished (it has already reset
+    // `_isSaving`), which for the create branch would mean a second
+    // `createTask` — a whole duplicate task, and with Repeats on, a whole
+    // second parallel series. See [_hasSaved].
+    if (_hasSaved) return;
 
     final title = _titleController.text.trim();
     if (title.isEmpty) return;
@@ -465,6 +503,7 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
           recurrenceRule: _repeats ? _buildRecurrenceRule() : null,
           behaviorId: _behaviorId,
           notificationsEnabled: _notificationsEnabled,
+          templateId: widget.templateId,
         );
         savedNotifier.record(created.id, SavedTaskChange.created);
       } else {
@@ -478,8 +517,30 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
 
         existing.title = title;
         existing.notes = notes.isEmpty ? null : notes;
-        existing.scheduledAt = _scheduledAt;
-        existing.durationMinutes = _durationMinutes;
+        // Real bug, reported directly: editing a recurring instance's own
+        // time here (not via drag-reschedule, the only other path that
+        // already did this) left `originalScheduledAt` null, so
+        // generateRecurrenceInstances' dedup check — keyed on
+        // originalScheduledAt ?? scheduledAt — never saw the vacated slot
+        // as accounted for, and the next materialization pass regenerated
+        // a fresh duplicate row at the OLD hour for the same day. Mirrors
+        // `TaskList.rescheduleTask`'s own `??=` exactly, minus its
+        // drag-specific `status = rescheduled` side effect, which doesn't
+        // apply to a plain form edit. Must happen HERE, before the
+        // overwrite below, since the old value is unrecoverable afterward.
+        if (existing.isRecurring && existing.scheduledAt != scheduledAt) {
+          existing.originalScheduledAt ??= existing.scheduledAt;
+        }
+        // `scheduledAt` (resolved above from _scheduledAt's date +
+        // _timeOfDay's time, and already validated non-null) — NOT the
+        // bare `_scheduledAt` field, which only ever holds the DATE
+        // (midnight): the date picker's onDateChanged strips time back to
+        // midnight, and _timeOfDay is tracked separately. Assigning
+        // `_scheduledAt` directly here silently discarded any hour/minute
+        // change made via the time wheel on save — real bug, reported
+        // directly ("changing hour, saving, nothing happens").
+        existing.scheduledAt = scheduledAt;
+        existing.durationMinutes = durationMinutes;
         existing.categoryId = _categoryId;
         existing.notificationsEnabled = _notificationsEnabled;
         if (_behaviorId == null) existing.actualAmount = null;
@@ -528,6 +589,9 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
         );
       }
 
+      // Before the pop, so any close path that runs afterwards already
+      // sees the write as committed — see [_hasSaved].
+      _hasSaved = true;
       if (mounted) Navigator.of(context).pop();
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -541,6 +605,11 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
   /// Whether closing without an explicit save would silently lose something
   /// worth asking about, spanning both steps' combined state.
   bool get _hasUnconfirmedChanges {
+    // Nothing is unconfirmed once it's been written — see [_hasSaved]. The
+    // `_initial*` snapshot is deliberately NOT refreshed on save (it exists
+    // to describe the form's opening state), so without this the
+    // just-saved edits still read as pending changes.
+    if (_hasSaved) return false;
     if (_titleController.text.trim().isEmpty) return false;
     return _titleController.text != _initialTitle ||
         _scheduledAt != _initialScheduledAt ||
@@ -589,6 +658,25 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
         // Stay exactly where the user was — no navigation, no save.
         break;
     }
+  }
+
+  /// Deletes the task being edited — the circular button leading Save on
+  /// this screen, requested directly ("remove task icon button next to
+  /// save on the left"), gated to the edit path only (`widget.task !=
+  /// null`); the create flow has no task yet to delete. No confirmation
+  /// dialog — confirmed directly: matches the action sheet's own
+  /// "Remove" row exactly, which deletes a plain task immediately with no
+  /// extra step. Defers to the shared [removeTask] flow
+  /// (`task_remove.dart`) — the exact same recurring-scope
+  /// disambiguation that row triggers, not a second copy of that logic.
+  Future<void> _delete() async {
+    final task = widget.task;
+    if (task == null) return;
+
+    final navigator = Navigator.of(context);
+    final notifier = ref.read(taskListProvider.notifier);
+    navigator.pop();
+    await removeTask(navigator.context, notifier, task);
   }
 
   /// Confirms stage 1 (Name) and advances to the full form — fired by
@@ -664,57 +752,83 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
         ? theme.categoryColors[TaskCategoryToken.general]!
         : resolveCategoryVisual(theme: theme, category: category).pillColor;
 
-    return _StepScaffold(
-      theme: theme,
-      modalTitle: isEditing ? 'Edit task' : 'Create task',
-      titleAlignment: TextAlign.left,
-      headerColor: headerColor,
-      headerContent: null,
-      onClose: _handleClose,
-      onBack: null,
-      primaryLabel: _isNameStage ? 'Done' : (isEditing ? 'Save' : 'Schedule'),
-      onPrimaryPressed: _isNameStage
-          ? _confirmNameStage
-          : (_canSave ? _save : null),
-      errorMessage: _isNameStage ? null : _overlapError,
-      isPrimaryLoading: !_isNameStage && _isSaving,
-      // A SINGLE body, not a stage swap — requested directly: "task name
-      // section should persist on tapping done or confirm keyboard,
-      // meaning it's not animating and is the same instance, not another
-      // instance, it's the same object remaining." _NameDescriptionPane is
-      // built exactly once, unconditionally, so its Element (and the
-      // AppTextField/keyboard state inside it) survives the stage
-      // transition untouched — only the sections BELOW it (Category
-      // onward) mount and stagger in once stage 1 confirms.
-      body: _ScheduleFieldsStage(
+    // The Android system back gesture (edge swipe) reaches this route's
+    // own Navigator.pop by default, which bypasses _handleClose entirely
+    // — so it skipped the "discard draft?" confirmation, and on stage 1
+    // with an empty name it just closed the keyboard (the platform's own
+    // first-back-dismisses-IME behavior swallowing the gesture) instead of
+    // also closing the sheet the way "Done" already does for that exact
+    // case. Reported directly: "Done closes entire flow [when no letter in
+    // input]... swipe... closes keyboard only but should actually close
+    // both keyboard and modal, same as Done does." canPop: false plus
+    // onPopInvokedWithResult routes every back attempt — gesture, button,
+    // OS predictive-back — through the identical _handleClose the header's
+    // own close (X) button already uses, so all three ways to leave this
+    // screen agree.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _handleClose();
+      },
+      child: StepScaffold(
         theme: theme,
-        titleController: _titleController,
-        notesController: _notesController,
-        showScheduleFields: !_isNameStage,
-        onNameSubmitted: _confirmNameStage,
-        category: category,
-        date: _scheduledAt,
-        timeOfDay: _timeOfDay,
-        durationMinutes: _durationMinutes,
-        onDateChanged: (value) => setState(() => _scheduledAt = value),
-        onTimeChanged: (value) => setState(() => _timeOfDay = value),
-        onDurationChanged: (value) => setState(() => _durationMinutes = value),
-        notificationsEnabled: _notificationsEnabled,
-        onNotificationsEnabledChanged: (value) =>
-            setState(() => _notificationsEnabled = value),
-        onCategoryTap: _openCategoryModal,
-        onDateTap: () => _pickDate(context),
-        showRepeats: true,
-        repeats: _repeats,
-        selectedDays: _selectedDays,
-        onRepeatsChanged: (value) => setState(() => _repeats = value),
-        onDayToggled: (day) => setState(() {
-          if (_selectedDays.contains(day)) {
-            if (_selectedDays.length > 1) _selectedDays.remove(day);
-          } else {
-            _selectedDays.add(day);
-          }
-        }),
+        modalTitle: isEditing ? 'Edit task' : 'Create task',
+        titleAlignment: TextAlign.left,
+        headerColor: headerColor,
+        headerContent: null,
+        onClose: _handleClose,
+        onBack: null,
+        primaryLabel: _isNameStage ? 'Done' : (isEditing ? 'Save' : 'Schedule'),
+        onPrimaryPressed: _isNameStage
+            ? _confirmNameStage
+            : (_canSave ? _save : null),
+        errorMessage: _isNameStage ? null : _overlapError,
+        isPrimaryLoading: !_isNameStage && _isSaving,
+        // Edit only, requested directly — the create flow has no task yet
+        // to delete, and the name stage (stage 1) shows no schedule/delete
+        // affordance either way.
+        onSecondaryAction: isEditing && !_isNameStage ? _delete : null,
+        secondaryActionIcon: Icons.delete_outline_rounded,
+        // A SINGLE body, not a stage swap — requested directly: "task name
+        // section should persist on tapping done or confirm keyboard,
+        // meaning it's not animating and is the same instance, not another
+        // instance, it's the same object remaining." _NameDescriptionPane is
+        // built exactly once, unconditionally, so its Element (and the
+        // AppTextField/keyboard state inside it) survives the stage
+        // transition untouched — only the sections BELOW it (Category
+        // onward) mount and stagger in once stage 1 confirms.
+        body: _ScheduleFieldsStage(
+          theme: theme,
+          titleController: _titleController,
+          notesController: _notesController,
+          showScheduleFields: !_isNameStage,
+          onNameSubmitted: _confirmNameStage,
+          category: category,
+          date: _scheduledAt,
+          timeOfDay: _timeOfDay,
+          durationMinutes: _durationMinutes,
+          onDateChanged: (value) => setState(() => _scheduledAt = value),
+          onTimeChanged: (value) => setState(() => _timeOfDay = value),
+          onDurationChanged: (value) =>
+              setState(() => _durationMinutes = value),
+          notificationsEnabled: _notificationsEnabled,
+          onNotificationsEnabledChanged: (value) =>
+              setState(() => _notificationsEnabled = value),
+          onCategoryTap: _openCategoryModal,
+          onDateTap: () => _pickDate(context),
+          showRepeats: true,
+          repeats: _repeats,
+          selectedDays: _selectedDays,
+          onRepeatsChanged: (value) => setState(() => _repeats = value),
+          onDayToggled: (day) => setState(() {
+            if (_selectedDays.contains(day)) {
+              if (_selectedDays.length > 1) _selectedDays.remove(day);
+            } else {
+              _selectedDays.add(day);
+            }
+          }),
+        ),
       ),
     );
   }
@@ -934,7 +1048,7 @@ class _ScheduleFieldsStage extends StatelessWidget {
           if (showScheduleFields) ...[
             SizedBox(height: theme.spacingLg),
             for (final (index, pane) in staggeredPanes.indexed) ...[
-              _StaggeredEntrance(index: index, child: pane),
+              AppStaggeredEntrance(index: index, child: pane),
               SizedBox(height: theme.spacingLg),
             ],
           ],
@@ -1064,59 +1178,14 @@ class _NameDescriptionPaneState extends State<_NameDescriptionPane> {
   }
 }
 
-/// Fades and slides [child] up into place once, staggered by [index] —
-/// each pane starts its entrance slightly after the one before it, rather
-/// than every pane appearing in lockstep. Runs only on the widget's first
-/// build: this animates the initial reveal of stage 2, not every later
-/// rebuild (a duration change re-rendering the Duration pane shouldn't
-/// replay its entrance).
-class _StaggeredEntrance extends StatefulWidget {
-  const _StaggeredEntrance({required this.index, required this.child});
-
-  final int index;
-  final Widget child;
-
-  @override
-  State<_StaggeredEntrance> createState() => _StaggeredEntranceState();
-}
-
-class _StaggeredEntranceState extends State<_StaggeredEntrance>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _fade;
-  late final Animation<Offset> _slide;
-
-  static const _stagger = Duration(milliseconds: 40);
-  static const _duration = Duration(milliseconds: 220);
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(vsync: this, duration: _duration);
-    _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
-    _slide = Tween<Offset>(
-      begin: const Offset(0, 0.08),
-      end: Offset.zero,
-    ).animate(_fade);
-    Future.delayed(_stagger * widget.index, () {
-      if (mounted) _controller.forward();
-    });
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: _fade,
-      child: SlideTransition(position: _slide, child: widget.child),
-    );
-  }
-}
+// AppStaggeredEntrance (core/widgets/app_staggered_entrance.dart) fades and
+// slides each stage-2 pane up into place, staggered by its index — each
+// pane starts its entrance slightly after the one before it, rather than
+// every pane appearing in lockstep. Runs only on first build: this animates
+// the initial reveal of stage 2, not every later rebuild (a duration change
+// re-rendering the Duration pane shouldn't replay its entrance). Promoted
+// out of this file (it used to be a private `_StaggeredEntrance` here) so
+// the zone-creation flow could reuse the exact same reveal.
 
 /// The Category row — "Add" as a plain accent-coloured link when nothing
 /// is chosen yet, or a filled colour tag (the category's own bg colour,
@@ -1789,318 +1858,6 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
   }
 }
 
-/// Shared chrome for both steps: colored header (category color) with a
-/// close (×) button and an optional back arrow, a scrollable body, and a
-/// sticky primary button. [titleController] is only present on the details
-/// step's header per its own screen (see [_DetailsStepScaffold] vs.
-/// [_ScheduleStepScaffold], which show a static time summary instead).
-class _StepScaffold extends StatelessWidget {
-  const _StepScaffold({
-    required this.theme,
-    required this.headerColor,
-    this.modalTitle,
-    this.titleAlignment = TextAlign.center,
-    this.headerContent,
-    required this.onClose,
-    required this.onBack,
-    required this.body,
-    required this.primaryLabel,
-    this.onPrimaryPressed,
-    this.errorMessage,
-    this.isPrimaryLoading = false,
-  });
-
-  final AmbleTheme theme;
-  final Color headerColor;
-
-  /// Null renders no coloured header banner at all — the create wizard's
-  /// step 1 (mockup: name/notes/category live as ordinary body fields,
-  /// no coloured wrapper). Every other caller still passes a real header.
-  final Widget? headerContent;
-  final VoidCallback onClose;
-  final VoidCallback? onBack;
-  final Widget body;
-
-  /// The modal's own title ("Create task"), shown in the header beside
-  /// the close button. Null on the single-step edit modals, which are
-  /// reached from a task that already names itself.
-  final String? modalTitle;
-
-  /// [TextAlign.center] (matching every prior caller) or
-  /// [TextAlign.left]. The single-screen schedule flow's title reads left
-  /// as a page heading, not centred as a dialog title — the header no
-  /// longer has a back arrow to balance against, so a centred title would
-  /// sit in dead space rather than mirroring anything.
-  final TextAlign titleAlignment;
-
-  final String primaryLabel;
-
-  /// Null disables the primary button (matches [AppButton.onPressed]'s own
-  /// nullable-means-disabled contract) — used for "Continue" before a name
-  /// has been entered.
-  final VoidCallback? onPrimaryPressed;
-
-  /// Shown inline just above the primary button — currently only used by
-  /// the "Prevent overlapping tasks" rejection message. Null when there's
-  /// nothing to report.
-  final String? errorMessage;
-
-  /// Shows a spinner on the primary button and disables it for the
-  /// duration of an in-flight save — see [AppButton.isLoading]. False by
-  /// default; only the actual Save/Schedule callers set this.
-  final bool isPrimaryLoading;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      // Transparent, NOT the level-0 ground: the sheet is inset from the
-      // screen edges so its 40px corners are actually visible, which only
-      // reads if whatever is behind it shows through. Painting the
-      // scaffold would fill those edges and flatten the sheet back into a
-      // full-page surface.
-      backgroundColor: Colors.transparent,
-      // Edge to edge horizontally and offset only from the top, so the
-      // sheet reads as a panel pulled up over the screen: full width,
-      // almost full height, with the rounding visible along its top edge.
-      // No shadow of its own — depth inside the sheet is carried by the
-      // panes (`shadowPane`); a shadow on the sheet as well would stack
-      // two elevations for one surface.
-      body: Padding(
-        padding: EdgeInsets.only(top: theme.spacingXl),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: theme.colorSurfaceBase,
-            borderRadius: BorderRadius.vertical(
-              top: Radius.circular(theme.radiusModal),
-            ),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.vertical(
-              top: Radius.circular(theme.radiusModal),
-            ),
-            child: SafeArea(
-              // Top handled by the offset above; the sheet owns that edge.
-              top: false,
-              child: Column(
-                children: [
-                  Container(
-                    width: double.infinity,
-                    // No coloured banner at all when headerContent is null
-                    // (mockup's step 1) — just the close/back buttons on the
-                    // page's own background, at a fixed height matched to
-                    // what the buttons themselves need rather than the
-                    // header's usual content padding.
-                    // Tall enough for the close/back buttons, plus room for
-                    // the modal title when there is one — a title in a
-                    // button-height strip sits cramped against the sheet's
-                    // top edge.
-                    height: headerContent == null
-                        ? theme.spacingXl +
-                              (modalTitle == null
-                                  ? theme.spacingLg
-                                  : theme.spacingXl + theme.spacingMd)
-                        : null,
-                    decoration: headerContent == null
-                        ? null
-                        : BoxDecoration(
-                            color: headerColor,
-                            borderRadius: BorderRadius.vertical(
-                              bottom: Radius.circular(theme.radiusModal),
-                            ),
-                          ),
-                    child: Stack(
-                      children: [
-                        if (modalTitle != null)
-                          Positioned.fill(
-                            child: Padding(
-                              // Clears the close button on the right always;
-                              // clears the back arrow on the left only when
-                              // there is one — a left-aligned title with no
-                              // back arrow can start from the sheet's own
-                              // edge instead of leaving a phantom gap.
-                              padding: EdgeInsets.only(
-                                left:
-                                    onBack != null ||
-                                        titleAlignment == TextAlign.center
-                                    ? theme.spacingXl + theme.spacingLg
-                                    : theme.spacingLg,
-                                right: theme.spacingXl + theme.spacingLg,
-                              ),
-                              child: Align(
-                                alignment: titleAlignment == TextAlign.center
-                                    ? Alignment.center
-                                    : Alignment.centerLeft,
-                                child: Text(
-                                  modalTitle!,
-                                  textAlign: titleAlignment,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textHeadline.copyWith(
-                                    color: theme.colorTextPrimary,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        if (headerContent != null)
-                          Padding(
-                            padding: EdgeInsets.fromLTRB(
-                              onBack != null
-                                  ? theme.spacingXl + theme.spacingLg
-                                  : theme.spacingLg,
-                              theme.spacingXl + theme.spacingSm,
-                              theme.spacingXl + theme.spacingLg,
-                              theme.spacingLg,
-                            ),
-                            child: headerContent,
-                          ),
-                        // Both buttons are vertically centred rather than
-                        // pinned to a fixed top offset: the header's height
-                        // now depends on whether it carries a title, so a
-                        // fixed offset would leave them sitting high in the
-                        // taller variant instead of level with the title.
-                        if (onBack != null)
-                          Positioned(
-                            top: 0,
-                            bottom: 0,
-                            left: theme.spacingLg,
-                            child: Center(
-                              child: _HeaderCircleButton(
-                                theme: theme,
-                                icon: Icons.arrow_back_rounded,
-                                onTap: onBack!,
-                              ),
-                            ),
-                          ),
-                        Positioned(
-                          top: 0,
-                          bottom: 0,
-                          right: theme.spacingLg,
-                          child: Center(
-                            child: _HeaderCircleButton(
-                              theme: theme,
-                              icon: Icons.close_rounded,
-                              onTap: onClose,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    // No surface of its own: the header strip and the body
-                    // are one continuous level-0 ground. Painting the body
-                    // separately was a leftover from the coloured-header
-                    // design and made the top strip read as a distinct bar.
-                    child: Stack(
-                      children: [
-                        body,
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: theme.spacingLg,
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: theme.spacingLg,
-                            ),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (errorMessage != null) ...[
-                                  Text(
-                                    errorMessage!,
-                                    style: theme.textBody.copyWith(
-                                      color: theme.colorTaskAlert,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                  SizedBox(height: theme.spacingSm),
-                                ],
-                                DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(
-                                      theme.radiusTaskPill,
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: theme.colorTextPrimary
-                                            .withValues(alpha: 0.18),
-                                        blurRadius: theme.spacingMd,
-                                        offset: Offset(0, theme.spacingXs),
-                                      ),
-                                    ],
-                                  ),
-                                  child: SizedBox(
-                                    width: double.infinity,
-                                    child: AppButton(
-                                      label: primaryLabel,
-                                      size: AppButtonSize.large,
-                                      shape: AppButtonShape.pill,
-                                      onPressed: onPrimaryPressed,
-                                      isLoading: isPrimaryLoading,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _HeaderCircleButton extends StatelessWidget {
-  const _HeaderCircleButton({
-    required this.theme,
-    required this.icon,
-    required this.onTap,
-    this.backgroundColor,
-    this.iconColor,
-  });
-
-  final AmbleTheme theme;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  /// Both default to a treatment that works on the sheet's own level-0
-  /// ground in EITHER palette: a level-2 circle with a primary-text glyph.
-  ///
-  /// These used to default to [AmbleTheme.colorSurfacePrimary] for both,
-  /// which was correct only for the old coloured header — that token is
-  /// white in light mode but near-black `ink900` in dark mode, so once the
-  /// banner went away the dark-mode back/close glyphs became black on a
-  /// dark ground and effectively vanished. Text and surface colors invert
-  /// in opposite directions between palettes, so a glyph must come from a
-  /// TEXT token, never a surface one.
-  final Color? backgroundColor;
-  final Color? iconColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: theme.spacingXl,
-        height: theme.spacingXl,
-        decoration: BoxDecoration(
-          color: backgroundColor ?? theme.colorSurfaceField,
-          shape: BoxShape.circle,
-        ),
-        child: Icon(icon, color: iconColor ?? theme.colorTextPrimary),
-      ),
-    );
-  }
-}
-
 /// Step 1 — title, category, tracked-behavior link, notes. Used by both the
 /// create wizard's first step and the standalone "Edit details" modal.
 class _DetailsStepScaffold extends ConsumerWidget {
@@ -2124,7 +1881,7 @@ class _DetailsStepScaffold extends ConsumerWidget {
 
   final AmbleTheme theme;
 
-  /// Passed straight through to [_StepScaffold] — see its own field.
+  /// Passed straight through to [StepScaffold] — see its own field.
   final String? modalTitle;
 
   final TextEditingController titleController;
@@ -2165,7 +1922,7 @@ class _DetailsStepScaffold extends ConsumerWidget {
     // the tree that needs to react per keystroke, so only it rebuilds.
     return ListenableBuilder(
       listenable: titleController,
-      builder: (context, _) => _StepScaffold(
+      builder: (context, _) => StepScaffold(
         theme: theme,
         modalTitle: modalTitle,
         headerColor: categoryColor,
@@ -2305,7 +2062,7 @@ class _ScheduleStepScaffold extends StatelessWidget {
 
   final AmbleTheme theme;
 
-  /// Passed straight through to [_StepScaffold] — see its own field. Now
+  /// Passed straight through to [StepScaffold] — see its own field. Now
   /// always left-aligned here: this is the ONLY screen in the flow (the
   /// old step 1 no longer exists as a separate page), so its title reads
   /// as a page heading rather than a dialog title balanced against a back
@@ -2403,11 +2160,11 @@ class _ScheduleStepScaffold extends StatelessWidget {
         ? null
         : startTime.add(Duration(minutes: duration));
 
-    return _StepScaffold(
+    return StepScaffold(
       theme: theme,
       modalTitle: modalTitle,
       titleAlignment: TextAlign.left,
-      // headerColor is still required by _StepScaffold's contract (every
+      // headerColor is still required by StepScaffold's contract (every
       // OTHER step still uses the coloured-banner path), but this step no
       // longer renders one — see headerContent below.
       headerColor: category == null
@@ -2675,11 +2432,11 @@ class _SchedulePreviewCard extends StatelessWidget {
             ),
           ),
           if (onEdit != null)
-            _HeaderCircleButton(
+            HeaderCircleButton(
               theme: theme,
               icon: Icons.edit_outlined,
               onTap: onEdit!,
-              // The other _HeaderCircleButton uses always sit on a
+              // The other HeaderCircleButton uses always sit on a
               // coloured banner (colorSurfacePrimary glyph on a tinted
               // background); this one sits on the ordinary card
               // background, so it needs the opposite contrast direction.

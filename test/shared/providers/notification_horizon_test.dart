@@ -55,7 +55,7 @@ void main() {
           scheduledAt: DateTime.now().add(const Duration(hours: 1)),
           durationMinutes: 30,
           categoryId: BuiltInCategoryIds.health,
-          recurrenceRule: const RecurrenceRule(
+          recurrenceRule: RecurrenceRule(
             frequency: RecurrenceFrequency.daily,
             interval: 1,
           ),

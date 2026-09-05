@@ -30,8 +30,9 @@ enum TimelineTaskTextLayout {
 
 @Riverpod(keepAlive: true)
 class DevTimelineTaskTextLayout extends _$DevTimelineTaskTextLayout {
+  // Default changed to `inline` — requested directly.
   @override
-  TimelineTaskTextLayout build() => TimelineTaskTextLayout.stacked;
+  TimelineTaskTextLayout build() => TimelineTaskTextLayout.inline;
 
   void set(TimelineTaskTextLayout value) => state = value;
 }
@@ -40,8 +41,9 @@ class DevTimelineTaskTextLayout extends _$DevTimelineTaskTextLayout {
 /// time/duration line (see `_capsuleIcons` in task_capsule_block.dart).
 @Riverpod(keepAlive: true)
 class DevTimelineTaskIconsVisible extends _$DevTimelineTaskIconsVisible {
+  // Default changed to false (no status icon row) — requested directly.
   @override
-  bool build() => true;
+  bool build() => false;
 
   void set(bool value) => state = value;
 }
@@ -49,8 +51,72 @@ class DevTimelineTaskIconsVisible extends _$DevTimelineTaskIconsVisible {
 /// The `(45m)`-style duration suffix on a task's time line.
 @Riverpod(keepAlive: true)
 class DevTimelineTaskDurationVisible extends _$DevTimelineTaskDurationVisible {
+  // Default changed to false (no duration shown) — requested directly.
   @override
-  bool build() => true;
+  bool build() => false;
+
+  void set(bool value) => state = value;
+}
+
+/// Vertical timeline scale — pixels per minute — for the Spatial Task
+/// View. Requested directly as a scratch config so the right value can be
+/// dialed in live, separate from the Zone view's own scale below: at the
+/// Task view's original fixed 1.5, a short (e.g. 30-minute) Zone-view
+/// container barely fit its own header, let alone a task row, which is
+/// what caused the reported "missing gap between adjacent zones" (the
+/// container was forced to grow past its gap-shrunk floor on nearly every
+/// zone, not just unusually packed ones).
+@Riverpod(keepAlive: true)
+class DevTaskViewPixelsPerMinute extends _$DevTaskViewPixelsPerMinute {
+  @override
+  double build() => 1.5;
+
+  void set(double value) => state = value;
+}
+
+/// Same as [DevTaskViewPixelsPerMinute], for the Spatial Zone View —
+/// independently adjustable, not derived from the Task view's own value.
+///
+/// Previously defaulted to double the Task view's (3.0) — a short (e.g.
+/// 30-minute) Zone-view container barely fit its own header, let alone a
+/// task row, at 1.5. Default changed to 1.5 anyway (matching the Task
+/// view's own) per direct request; the two remain independently
+/// adjustable at runtime if that constraint bites again.
+@Riverpod(keepAlive: true)
+class DevZoneViewPixelsPerMinute extends _$DevZoneViewPixelsPerMinute {
+  @override
+  double build() => 1.5;
+
+  void set(double value) => state = value;
+}
+
+/// Whether `FreeWindowBlock` (the "1h 40m window, add a task" prompt
+/// shown for large gaps between tasks on the Task view) renders at all.
+/// Requested directly as a scratch on/off toggle.
+@Riverpod(keepAlive: true)
+class DevShowFreeWindowPrompt extends _$DevShowFreeWindowPrompt {
+  // Default changed to false (no free-window prompt) — requested directly.
+  @override
+  bool build() => false;
+
+  void set(bool value) => state = value;
+}
+
+/// Whether Zone view is reachable at all from the Timeline's own
+/// view-cycle button. Requested directly as a scratch toggle, default OFF:
+/// "that means that switch in timeline goes through task and list view
+/// only."
+///
+/// ANDs into the existing `FeatureFlags.zoneEnabled` gate rather than
+/// replacing it (see `day_strip.dart`), so it can only ever REMOVE Zone
+/// view from the cycle, never force it on where the feature flag itself
+/// says no. Turning it off while Zone view happens to be the active mode
+/// also falls back to Task view, rather than stranding the user in a mode
+/// the button can no longer cycle out of.
+@Riverpod(keepAlive: true)
+class DevZoneViewInCycle extends _$DevZoneViewInCycle {
+  @override
+  bool build() => false;
 
   void set(bool value) => state = value;
 }

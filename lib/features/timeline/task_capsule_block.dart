@@ -11,6 +11,7 @@ import '../../shared/models/task_category.dart';
 import '../../shared/models/task_status.dart';
 import '../task_detail/category_visual.dart';
 import 'completion_checkbox.dart';
+import 'duration_label.dart';
 import 'task_category_token_mapping.dart';
 
 /// The capsule-shaped timeline task block — the product's signature visual
@@ -61,7 +62,15 @@ class TaskCapsuleBlock extends StatelessWidget {
     this.textLayout = TimelineTaskTextLayout.stacked,
     this.iconsVisible = true,
     this.durationVisible = true,
+    this.durationIndicatedBySize = true,
     this.category,
+    this.compactText = false,
+    this.showCompletionCheckbox = true,
+    this.splitLayout = false,
+    this.glyphHidden = false,
+    this.liftedTextInline = false,
+    this.bottomTrim = 0,
+    this.maxPillHeight,
   });
 
   final Task task;
@@ -153,9 +162,136 @@ class TaskCapsuleBlock extends StatelessWidget {
   /// shipped behavior).
   final bool durationVisible;
 
+  /// True in List (collapsed) mode. Previously also switched the title/
+  /// time text down to a separate, smaller `textTaskTitleCompact` style —
+  /// confirmed directly that List view should track the same global "Task
+  /// size" setting Task/Zone view do instead, with no relative step, so
+  /// this flag no longer affects font size at all; it still forces the
+  /// INLINE (time+title, one line) layout `textLayout`'s own `stacked`
+  /// option would otherwise pick, per "still need to make time and name
+  /// sit in one line atm it sits in 2 lines." Defaults to false so a
+  /// caller that doesn't wire this up (a dev scaffold, a test) keeps the
+  /// dev-config layout toggle's own choice.
+  final bool compactText;
+
+  /// Whether the trailing [CompletionCheckbox] renders at all
+  /// (`ShowCompletionCheckboxSetting`). Requested directly as one setting
+  /// spanning all three views. Defaults to true (current shipped
+  /// behavior). See the provider's own doc comment: hiding this currently
+  /// removes the only way to complete a scheduled task.
+  final bool showCompletionCheckbox;
+
+  /// Renders ONLY the pill — the caller positions the time/title/checkbox
+  /// itself, as a separate Stack sibling ([TaskCapsuleTextRow]).
+  ///
+  /// The Spatial Task View's own mode, so every task's NAME starts at the
+  /// same x regardless of which overlap lane its pill sits in (requested
+  /// directly: "all task names are lined up even those not stacked").
+  /// Text laid out as this widget's own `Row` sibling can only ever flow
+  /// from its OWN pill, so a lane-2 task's title sat further right than a
+  /// lane-0 task's — the two have to be positioned independently to share
+  /// one column.
+  ///
+  /// Deliberately a fade of the text region rather than a different widget
+  /// tree: this widget's pill owns the drag `GestureDetector`, and
+  /// changing the tree shape around it mid-gesture has broken drag
+  /// hit-testing twice before (see the `contentHidden`/`isLifted` comments
+  /// below and on the frosted wrapper). Everything stays present and
+  /// identically nested; only opacity and hit-testing change.
+  ///
+  /// Zone view, the drag-preview card, and the dev previews leave this
+  /// false — they keep the combined pill+text row.
+  final bool splitLayout;
+
+  /// Also hides the pill's category emoji, which [contentHidden] alone
+  /// deliberately keeps visible (see the glyph's own comment below: a
+  /// resting cluster member's pill is the ONLY place its category reads).
+  ///
+  /// Set only by the drag GHOST — requested directly, "in ghost state we
+  /// shouldn't have title and time and not icon when moving": the ghost is
+  /// a plain shape marking where the task came from, and its category
+  /// already reads off the lifted pill travelling under the finger.
+  final bool glyphHidden;
+
+  /// Renders the time/title INSIDE this widget even in [splitLayout],
+  /// where the caller normally positions that text itself.
+  ///
+  /// Set only while a split-layout pill is LIFTED — requested directly:
+  /// "lifted state should have its inner title and time underneath name
+  /// showing ... and pane containing (bg blur one) should be extended to
+  /// that name." The shared text column stays anchored at its own x, so a
+  /// pill dragged away from it would otherwise carry no label at all; this
+  /// puts the task's own name and time back inside the frosted pane that
+  /// travels with the finger.
+  final bool liftedTextInline;
+
+  /// Shrinks the pill's rendered height by this many pixels, floored at 0
+  /// (a very short task can't be trimmed below nothing) — the bottom-edge
+  /// counterpart to the top gap `_zoneTaskTopInset` already creates in
+  /// `timeline_screen.dart`.
+  ///
+  /// Requested directly, from a screenshot showing a task's pill flush
+  /// against its own zone's bottom edge with no visible margin: "the task
+  /// that's matching the timing duration of a zone needs to have a bottom
+  /// padding from the zone, same as the top padding (same principle)."
+  /// Applies only when the caller determines this task's own END lands
+  /// exactly on a zone's end — see `_zoneTaskBottomTrim` in
+  /// `timeline_screen.dart`, which is the one place that decides when this
+  /// is non-zero. Zero for every other task, matching every other
+  /// new-parameter default in this widget.
+  final double bottomTrim;
+
+  /// Shrinks this pill BELOW its normal `badgeSize` floor when there isn't
+  /// enough real time-to-pixel room before the next same-column task's own
+  /// top to fit that floor and still leave a visible gap.
+  ///
+  /// Requested directly, from a screenshot of two close-but-non-overlapping
+  /// short tasks (5- and 15-minute examples given) whose floored pills
+  /// touched: "the smaller one gets below the minimum size in order to
+  /// always create some small 2-pixel gap between tasks that don't
+  /// effectively overlap but are too close to show." The caller (see
+  /// `_maxPillHeight` in `timeline_screen.dart`) is the one place that
+  /// computes this from the next same-column task's real top; null (the
+  /// default) means no such neighbour exists close enough to matter, so
+  /// the badgeSize floor applies exactly as before.
+  ///
+  /// Applied AFTER both the badgeSize floor and [bottomTrim] — the two
+  /// gaps stack rather than compete, since they solve different edges
+  /// (this widget's own zone boundary vs. the next task down).
+  final double? maxPillHeight;
+
+  /// Whether the pill's HEIGHT scales with the task's duration. Defaults
+  /// to true, matching the Task view's own signature look. The Spatial
+  /// Zone View passes false — confirmed directly: that view's own
+  /// in-container rows already show duration as text at a fixed row
+  /// height (`ZoneContainerBlock`'s own "no proportional sizing" rule),
+  /// so a task rendered by this block while being dragged there (the
+  /// floating drag visual, or an outer-axis capsule) must match that same
+  /// fixed-size convention rather than suddenly growing/shrinking by
+  /// duration mid-drag. When false, the pill renders at [badgeSize] —
+  /// the same floor every capsule already uses for a short task.
+  final bool durationIndicatedBySize;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
+    // List view previously read a separate, always-one-step-smaller
+    // textTaskTitleCompact style here regardless of Task view's own size.
+    // Confirmed directly that List view should track the SAME global
+    // "Task size" setting Task/Zone view do, with no relative step, so
+    // this now always reads the one active textTaskTitle.
+    final titleTextStyle = theme.textTaskTitle;
+    // List (collapsed) mode always renders inline (time+duration then
+    // title, one line) regardless of the dev-config layout toggle —
+    // requested directly: "still need to make time and name sit in one
+    // line atm it sits in 2 lines." `textLayout`'s `stacked` (2-line)
+    // option is a real, deliberate choice for Task/Zone view's own wider
+    // rows, but List mode's rows are compact by design and were
+    // unconditionally inheriting whatever the dev toggle happened to be
+    // set to, including `stacked`.
+    final effectiveTextLayout = compactText
+        ? TimelineTaskTextLayout.inline
+        : textLayout;
     final categoryVisual = _CapsuleCategoryVisual.resolve(
       theme: theme,
       // ignore: deprecated_member_use_from_same_package
@@ -186,14 +322,29 @@ class TaskCapsuleBlock extends StatelessWidget {
         ? theme.colorTextSecondary
         : categoryColor;
 
-    // 40% smaller than the original 1.5x (spacingXl * 0.9) — requested
-    // directly. Mirrored in timeline_screen.dart's _pillWidth; the two
-    // must stay in sync (see that function's own doc comment).
-    final badgeSize = theme.spacingXl * 0.9;
-    final pillHeight = math.max(
-      (durationMinutesOverride ?? task.durationMinutes!) * pixelsPerMinute,
-      badgeSize,
-    );
+    // theme.sizeTaskBadge (20px) — requested directly ("pill size and icon
+    // same as on zone view so smaller"), matching ZoneContainerBlock's own
+    // row badge exactly rather than this widget's own, larger 36px ad hoc
+    // `spacingXl * 0.9`. Mirrored in timeline_screen.dart's _pillWidth;
+    // the two must stay in sync (see that function's own doc comment).
+    final badgeSize = theme.sizeTaskBadge;
+    final rawPillHeight = durationIndicatedBySize
+        ? math.max(
+            (durationMinutesOverride ?? task.durationMinutes!) *
+                pixelsPerMinute,
+            badgeSize,
+          )
+        : badgeSize;
+    // Trimmed AFTER the badgeSize floor, and floored again at 0 — a task
+    // too short to trim (already at the badge-size floor) simply keeps its
+    // full height rather than going negative. See [bottomTrim]'s own doc
+    // comment for why this exists.
+    final trimmedPillHeight = math.max(rawPillHeight - bottomTrim, 0.0);
+    // maxPillHeight can go below badgeSize — that's the whole point (see
+    // its own doc comment) — but never below 0.
+    final pillHeight = maxPillHeight == null
+        ? trimmedPillHeight
+        : math.max(math.min(trimmedPillHeight, maxPillHeight!), 0.0);
 
     // While dragging, the time/duration line reflects the DROP TARGET,
     // not the task's currently-saved schedule — replacing the earlier
@@ -207,7 +358,7 @@ class TaskCapsuleBlock extends StatelessWidget {
     final endTime = TimeOfDay.fromDateTime(
       effectiveStart.add(Duration(minutes: task.durationMinutes!)),
     );
-    final durationLabel = _formatDuration(task.durationMinutes!);
+    final durationLabel = formatDurationLabel(task.durationMinutes!);
 
     // The cluster-member case: only the pill's real category-colored shape
     // (color, height, position) reads visually — no icon, no title/time
@@ -232,6 +383,17 @@ class TaskCapsuleBlock extends StatelessWidget {
     // within the SAME always-present tree, like every other conditional
     // look on this widget, keeps the gesture's render object ancestry
     // stable across the whole drag.
+    // `splitLayout` hides this widget's own text/checkbox region for the
+    // same reason (and by the same mechanism) as `contentHidden` — the
+    // caller renders that content itself, positioned independently. Every
+    // site that hid content for a cluster member hides it here too, so the
+    // two cases can't drift apart.
+    // `liftedTextInline` reopens the text region that `splitLayout`
+    // normally collapses — while lifted, the pill carries its own name and
+    // time inside the frosted pane (see that field's doc comment).
+    final textCollapsed = splitLayout && !liftedTextInline;
+    final textRegionHidden = contentHidden || textCollapsed;
+
     final card = IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -266,13 +428,23 @@ class TaskCapsuleBlock extends StatelessWidget {
                 width: badgeSize,
                 height: pillHeight,
                 alignment: Alignment.topCenter,
-                // 4px above spacingIconTop's original 12px — requested
-                // directly. Lands exactly on spacingSm (8px), an
-                // existing token, so no new one was needed.
-                padding: EdgeInsets.only(top: theme.spacingSm),
+                // Flush with the pill's own top edge — nudged up a
+                // further 2px per direct feedback (second alignment
+                // pass): spacingXs/2 (2px) still read as slightly low
+                // next to the title.
+                padding: EdgeInsets.zero,
                 decoration: BoxDecoration(
                   color: badgeColor,
-                  borderRadius: BorderRadius.circular(theme.radiusTaskPill),
+                  // radiusSm (4px), not radiusTaskPill (fully round) —
+                  // requested directly. Kept scoped to this one rail rather
+                  // than repointing radiusTaskPill itself, which every
+                  // pill-SHAPED button across the app (AppButton, the theme
+                  // selector, the tracked-behavior form) also reads —
+                  // changing that token's value would have flattened all of
+                  // those too, confirmed via AskUserQuestion as the wrong
+                  // scope. radiusSm already equals 4 and is a real Tier 2
+                  // token, so this reuses it rather than adding a duplicate.
+                  borderRadius: BorderRadius.circular(theme.radiusSm),
                   // No shadow here any more while lifted — the shadow now
                   // belongs to the outer frosted card (see the wrapping
                   // below), matching how every other pane in the app
@@ -284,10 +456,16 @@ class TaskCapsuleBlock extends StatelessWidget {
                 // Deliberately NOT faded while lifted — corrected
                 // directly after a first pass hid it: this glyph is the
                 // pill's identity and stays visible the whole time,
-                // including mid-drag. Only the indicator icons under
-                // the title fade (see the row further down). It DOES fade
-                // for `contentHidden` (a resting cluster member), whose
-                // pill is meant to read as a plain colored shape.
+                // including mid-drag. Also stays visible for
+                // `contentHidden` (a resting cluster member) — reversing
+                // an earlier decision that faded it there too, per direct
+                // feedback: the cluster's own row list has no icon of its
+                // own (see `OverlapClusterBlock`'s doc comment), so the
+                // pill is the only place a clustered task's category
+                // reads at all. Only the title/time text and checkbox
+                // still fade for `contentHidden` (see the row further
+                // down) — those genuinely duplicate the cluster's own row
+                // list, but the emoji does not.
                 //
                 // Emoji, not `Icon(task.category.icon)` — matches the
                 // emoji already shown on the category picker's chips
@@ -298,8 +476,10 @@ class TaskCapsuleBlock extends StatelessWidget {
                 // (`iconColor`) for contrast against the pale category
                 // fill — an emoji carries its own fixed color, so no
                 // tinting is applied or needed here any more.
+                // `glyphHidden` (the drag ghost) is the ONE case that also
+                // drops the emoji — see its own doc comment.
                 child: Opacity(
-                  opacity: contentHidden ? 0 : 1,
+                  opacity: glyphHidden ? 0 : 1,
                   child: Text(
                     categoryVisual.emoji,
                     style: TextStyle(fontSize: badgeSize * 0.55),
@@ -308,7 +488,10 @@ class TaskCapsuleBlock extends StatelessWidget {
               ),
             ),
           ),
-          SizedBox(width: theme.spacingSm),
+          // Zero-width in split layout, where the whole row is exactly one
+          // pill wide and every pixel past the pill overflows — unless the
+          // pill is lifted and carrying its own text (liftedTextInline).
+          SizedBox(width: textCollapsed ? 0 : theme.spacingSm),
           // Expanded, not Flexible: Flexible let this column shrink to its
           // own content width, so the trailing checkbox sat wherever that
           // row's title happened to end — every row at a different x, and
@@ -316,7 +499,21 @@ class TaskCapsuleBlock extends StatelessWidget {
           // width (strikethrough). Expanded makes the column always claim
           // the remaining width, which pins the checkbox to a fixed
           // right-hand column. Reported directly.
-          Expanded(
+          // `flex: 0` when collapsed rather than an `if` that swaps this
+          // child out: `liftedTextInline` flips mid-drag, and changing the
+          // tree SHAPE around the pill's gesture detector is the exact bug
+          // class this widget has already hit twice (see the tree-shape
+          // comments above). A Flexible with flex 0 and a zero-width child
+          // takes no space while keeping every render object in place.
+          //
+          // Flexible, not Expanded, for the collapsed case specifically:
+          // Expanded forces a TIGHT width, which the inner ConstrainedBox's
+          // `maxWidth: 0` cannot shrink below — so the collapse used to
+          // work only because the split-layout caller happens to size the
+          // row to one pill.
+          Flexible(
+            flex: textCollapsed ? 0 : 1,
+            fit: textCollapsed ? FlexFit.loose : FlexFit.tight,
             child: GestureDetector(
               onTap: onTap,
               behavior: HitTestBehavior.opaque,
@@ -333,8 +530,18 @@ class TaskCapsuleBlock extends StatelessWidget {
               child: ClipRect(
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
-                    maxWidth: maxTextWidth ?? double.infinity,
-                    maxHeight: contentHidden ? pillHeight : double.infinity,
+                    // `splitLayout` caps this at ZERO, not just fades it:
+                    // the caller lays the pill out at exactly one pill
+                    // width there, and a text column still claiming its
+                    // intrinsic width overflowed that box by the width of
+                    // the text — the same RenderFlex overflow this
+                    // ClipRect's own comment describes, on the other axis.
+                    // Reported directly, from a screenshot showing "RIGHT
+                    // OVERFLOWED BY 56 PIXELS" on stacked pills.
+                    maxWidth: textCollapsed
+                        ? 0
+                        : (maxTextWidth ?? double.infinity),
+                    maxHeight: textRegionHidden ? pillHeight : double.infinity,
                   ),
                   child: Padding(
                     padding: EdgeInsets.only(top: theme.spacingXs),
@@ -347,15 +554,16 @@ class TaskCapsuleBlock extends StatelessWidget {
                         // of the entrance stagger, unchanged); `inline`
                         // puts the time+duration first, then the name,
                         // both in one Text.rich so they share a line.
-                        if (textLayout == TimelineTaskTextLayout.stacked) ...[
+                        if (effectiveTextLayout ==
+                            TimelineTaskTextLayout.stacked) ...[
                           // Step 1 of the entrance stagger — the name.
                           Opacity(
-                            opacity: contentHidden
+                            opacity: textRegionHidden
                                 ? 0
                                 : _staggeredOpacity(entranceProgress, 1),
                             child: Text(
                               task.title,
-                              style: theme.textBody.copyWith(
+                              style: titleTextStyle.copyWith(
                                 color: isCompleted
                                     ? theme.colorTextSecondary
                                     : theme.colorTextPrimary,
@@ -379,7 +587,7 @@ class TaskCapsuleBlock extends StatelessWidget {
                           SizedBox(height: theme.spacingXs),
                           // Step 2 of the entrance stagger — the time line.
                           Opacity(
-                            opacity: contentHidden
+                            opacity: textRegionHidden
                                 ? 0
                                 : _staggeredOpacity(entranceProgress, 2),
                             child: Text(
@@ -389,7 +597,7 @@ class TaskCapsuleBlock extends StatelessWidget {
                                         '($durationLabel)'
                                   : '${startTime.format(context)} - '
                                         '${endTime.format(context)}',
-                              style: theme.textBody.copyWith(
+                              style: titleTextStyle.copyWith(
                                 color: theme.colorTextSecondary,
                               ),
                               maxLines: 1,
@@ -404,7 +612,7 @@ class TaskCapsuleBlock extends StatelessWidget {
                           // entrance stagger still reads the same, just on
                           // one Text.rich instead of two Text widgets.
                           Opacity(
-                            opacity: contentHidden
+                            opacity: textRegionHidden
                                 ? 0
                                 : math.min(
                                     _staggeredOpacity(entranceProgress, 1),
@@ -420,13 +628,13 @@ class TaskCapsuleBlock extends StatelessWidget {
                                               '($durationLabel)  '
                                         : '${startTime.format(context)} - '
                                               '${endTime.format(context)}  ',
-                                    style: theme.textBody.copyWith(
+                                    style: titleTextStyle.copyWith(
                                       color: theme.colorTextSecondary,
                                     ),
                                   ),
                                   TextSpan(
                                     text: task.title,
-                                    style: theme.textBody.copyWith(
+                                    style: titleTextStyle.copyWith(
                                       color: isCompleted
                                           ? theme.colorTextSecondary
                                           : theme.colorTextPrimary,
@@ -468,7 +676,7 @@ class TaskCapsuleBlock extends StatelessWidget {
                             // the product keeps whichever is more hiding.
                             // Also hidden for `contentHidden` — redundant
                             // with the cluster list's own indicator icons.
-                            opacity: contentHidden
+                            opacity: textRegionHidden
                                 ? 0.0
                                 : (isLifted ? 0.0 : 1.0) *
                                       _staggeredOpacity(entranceProgress, 3),
@@ -508,36 +716,61 @@ class TaskCapsuleBlock extends StatelessWidget {
           // fades out (and stops accepting taps) for `contentHidden` — a
           // resting cluster member's completion control lives on its list
           // row instead (see OverlapClusterBlock).
-          AnimatedOpacity(
-            // Step 4 — the last of the entrance stagger. Multiplied into
-            // the lift fade for the same reason as the icon row above.
-            opacity: contentHidden
-                ? 0.0
-                : (isLifted ? 0.0 : 1.0) *
-                      _staggeredOpacity(entranceProgress, 4),
-            duration: theme.motionFast,
-            curve: Curves.easeOut,
-            child: IgnorePointer(
-              ignoring: isLifted || contentHidden,
-              child: CompletionCheckbox(
-                theme: theme,
-                // The category's own saturated color while unchecked (or
-                // for any other status) — this ring needs to stay
-                // recognizably "this task's category" at all times,
-                // matching the reference design, unlike the badge above
-                // (now an emoji, which carries its own fixed color and
-                // needs no per-status tint).
-                ringColor: categoryVisual.iconColor,
-                isCompleted: isCompleted,
-                // Requested directly, alongside the completed badge
-                // turning the same grey: the checked ring on the Timeline
-                // should read "done, muted" rather than staying
-                // category-colored once completed. Only the checked FILL
-                // changes (see useMutedCompletedColor's own doc comment) —
-                // the ring is still the category color for every
-                // non-completed status.
-                useMutedCompletedColor: true,
-                onToggle: onToggleComplete,
+          // `showCompletionCheckbox: false` hides it via the SAME opacity
+          // path `contentHidden` already uses, rather than dropping it
+          // from the Row — this widget's always-present-tree rule (see the
+          // `contentHidden`/`isLifted` comments above and on the pill)
+          // exists because changing the tree shape mid-gesture broke drag
+          // hit-testing, and a settings toggle can flip mid-drag just as
+          // `isLifted` can. `Visibility`/`Offstage` would reclaim the
+          // layout space but reintroduce exactly that shape change.
+          // Split layout collapses this to zero WIDTH as well as zero
+          // opacity — the caller's own TaskCapsuleTextRow renders the real
+          // checkbox there, and anything claiming width here overflows a
+          // row sized to exactly one pill. ClipRect + a 0-width SizedBox
+          // rather than dropping the widget: the always-present-tree rule
+          // below still applies.
+          ClipRect(
+            child: SizedBox(
+              width: splitLayout ? 0 : null,
+              child: AnimatedOpacity(
+                // Step 4 — the last of the entrance stagger. Multiplied into
+                // the lift fade for the same reason as the icon row above.
+                opacity: (textRegionHidden || !showCompletionCheckbox)
+                    ? 0.0
+                    : (isLifted ? 0.0 : 1.0) *
+                          _staggeredOpacity(entranceProgress, 4),
+                duration: theme.motionFast,
+                curve: Curves.easeOut,
+                child: IgnorePointer(
+                  ignoring:
+                      isLifted || textRegionHidden || !showCompletionCheckbox,
+                  // Nudged up 9px total (4px, then a further 5px per direct
+                  // feedback on a second pass) — CompletionCheckbox centers
+                  // its own 24px ring inside a 48px tap target
+                  // (spacingMinTapTarget), which reads as slightly low next
+                  // to the title/badge above once those were re-aligned to
+                  // the title's own top inset. No existing token lands on
+                  // 9px, so this is a plain literal rather than a forced
+                  // token combination. A Transform here, not a change to
+                  // CompletionCheckbox itself: the same widget is used
+                  // unchanged (and correctly aligned) by the Zone view's own
+                  // row.
+                  child: Transform.translate(
+                    offset: const Offset(0, -9),
+                    child: CompletionCheckbox(
+                      theme: theme,
+                      // Fixed color (CompletionCheckbox's own default), not
+                      // the category's — reversed directly from the earlier
+                      // category-tinted ring: completion status should look
+                      // the same regardless of what's being completed. The
+                      // badge above still carries the category's own
+                      // emoji/color.
+                      isCompleted: isCompleted,
+                      onToggle: onToggleComplete,
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
@@ -564,15 +797,39 @@ class TaskCapsuleBlock extends StatelessWidget {
       duration: theme.motionFast,
       curve: theme.curveStandard,
       builder: (context, t, child) {
+        // Real bug, reported directly: "all corners on elevated drag drop
+        // is ok but not on [resting] view top left and bottom left still
+        // older rounding." This wrapper's own `ClipRRect` is ALWAYS
+        // present (see the comment above on why it can't be conditional),
+        // and was always clipped at the LIFTED radius (radiusXl, 16) even
+        // while resting — the pill's own rail sits flush against this
+        // wrapper's left edge with zero padding at t=0, so that outer
+        // clip landed right on top of the pill's own corner and overrode
+        // its real shape. Its right corners never showed the same problem
+        // only because the row's text content sits between the pill's
+        // right edge and the wrapper's own right edge, so the outer clip
+        // has nothing to visibly cut into there.
+        //
+        // Animating the radius itself (pill's own resting radius up to
+        // radiusXl once fully lifted) is what makes REST correct without
+        // undoing the lift treatment, which already looked right. Anchored
+        // to radiusSm, not radiusMd — the pill's own rail reads radiusSm
+        // (see its own doc comment above); this wrapper has to start from
+        // the SAME value or it re-creates the identical mismatch this bug
+        // report was about, just shifted between two different tokens
+        // instead of two different corners.
+        final wrapperRadius = BorderRadius.circular(
+          theme.radiusSm + (theme.radiusXl - theme.radiusSm) * t,
+        );
         return Container(
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(theme.radiusXl),
+            borderRadius: wrapperRadius,
             boxShadow: t == 0
                 ? const []
                 : theme.shadowPane.map((shadow) => shadow.scale(t)).toList(),
           ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(theme.radiusXl),
+            borderRadius: wrapperRadius,
             child: BackdropFilter(
               filter: ImageFilter.blur(
                 sigmaX: theme.blurOverlaySigma * t,
@@ -618,11 +875,6 @@ double _staggeredOpacity(double progress, int index) {
   return local.clamp(0.0, 1.0);
 }
 
-String _formatDuration(int minutes) {
-  if (minutes % 60 == 0) return '${minutes ~/ 60}h';
-  return '${minutes}m';
-}
-
 /// Which status/indicator icons apply to this task, in the order they've
 /// always rendered in ("moved", tracked-behavior, notification, repeat) —
 /// unchanged by the icons' move onto a shared row, since reordering them
@@ -651,6 +903,161 @@ List<IconData> _capsuleIcons({
 /// backfilled, or a dev-scaffold caller with no live category list wired
 /// up): the deprecated [Task.category] enum's own token mapping —
 /// byte-for-byte the pre-Category rendering.
+/// The time/duration + title + checkbox half of a capsule, as a standalone
+/// widget the Spatial Task View positions itself — the counterpart to
+/// [TaskCapsuleBlock.splitLayout].
+///
+/// Exists so every task's NAME can start at the same x regardless of which
+/// overlap lane its pill occupies (requested directly: "all task names are
+/// lined up even those not stacked"). Laid out as three columns — time,
+/// duration, then the title — so the titles align with each other even
+/// when the time strings differ in width, matching the mock. The time and
+/// duration columns disappear together when [durationVisible] is false,
+/// and the title then takes the full width (the mock's left-hand screen).
+///
+/// Deliberately NOT a second copy of [TaskCapsuleBlock]'s own text: that
+/// widget still owns the combined pill+text row every other view uses, and
+/// hides only its text region in split mode. This renders the same three
+/// pieces with the same tokens and the same status treatment.
+class TaskCapsuleTextRow extends StatelessWidget {
+  const TaskCapsuleTextRow({
+    super.key,
+    required this.task,
+    required this.timeColumnWidth,
+    required this.durationColumnWidth,
+    this.dragPreviewStartsAt,
+    this.onTap,
+    this.onToggleComplete,
+    this.durationVisible = true,
+    this.alwaysShowTime = false,
+    this.showCompletionCheckbox = true,
+    this.isFaded = false,
+  });
+
+  final Task task;
+
+  /// Fixed widths for the leading time and duration columns, so titles
+  /// share one x across every row — see [taskTimeColumnWidth]/
+  /// [taskDurationColumnWidth], which the caller uses to compute the same
+  /// values it positions this row's own left edge from.
+  final double timeColumnWidth;
+  final double durationColumnWidth;
+
+  /// Mirrors [TaskCapsuleBlock.dragPreviewStartsAt] — the time text tracks
+  /// the drop target live while its pill is being dragged.
+  final DateTime? dragPreviewStartsAt;
+
+  final VoidCallback? onTap;
+  final VoidCallback? onToggleComplete;
+
+  /// Historically hid the ENTIRE time column alongside the duration
+  /// suffix when off (see this class's own doc comment: "the time and
+  /// duration columns disappear together"), matching an old Task-view-only
+  /// mock — deliberately left as-is for Task view's split layout.
+  final bool durationVisible;
+
+  /// List mode's own override: forces the time column visible regardless
+  /// of [durationVisible], since List mode never shows a real timeline
+  /// axis and the time is the only place a task's schedule reads at all —
+  /// requested directly. Scoped to this flag rather than changing
+  /// [durationVisible]'s existing Task-view meaning, per direct
+  /// confirmation that Task view's split layout should keep its current
+  /// (dev-toggle-driven) behavior unchanged.
+  final bool alwaysShowTime;
+  final bool showCompletionCheckbox;
+
+  /// Fades this row out while its own pill is lifted, matching how the
+  /// combined layout fades its text region mid-drag.
+  final bool isFaded;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context).extension<AmbleTheme>()!;
+    final isCompleted = task.status == TaskStatus.completed;
+    final effectiveStart = dragPreviewStartsAt ?? task.scheduledAt!;
+    final start = TimeOfDay.fromDateTime(effectiveStart);
+    final end = TimeOfDay.fromDateTime(
+      effectiveStart.add(Duration(minutes: task.durationMinutes!)),
+    );
+
+    return AnimatedOpacity(
+      opacity: isFaded ? 0.0 : 1.0,
+      duration: theme.motionFast,
+      curve: Curves.easeOut,
+      child: IgnorePointer(
+        ignoring: isFaded,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (alwaysShowTime || durationVisible) ...[
+              SizedBox(
+                width: timeColumnWidth,
+                child: Text(
+                  '${start.format(context)}-${end.format(context)}',
+                  style: theme.textTaskTitle.copyWith(
+                    color: theme.colorTextSecondary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (durationVisible)
+                SizedBox(
+                  width: durationColumnWidth,
+                  child: Text(
+                    formatDurationLabel(task.durationMinutes!),
+                    style: theme.textTaskTitle.copyWith(
+                      color: theme.colorTextSecondary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+            Expanded(
+              child: GestureDetector(
+                onTap: onTap,
+                behavior: HitTestBehavior.opaque,
+                child: Text(
+                  task.title,
+                  style: theme.textTaskTitle.copyWith(
+                    color: isCompleted
+                        ? theme.colorTextSecondary
+                        : theme.colorTextPrimary,
+                    fontWeight: FontWeight.w700,
+                    decoration: isCompleted
+                        ? TextDecoration.lineThrough
+                        : TextDecoration.none,
+                    decorationColor: theme.colorTextSecondary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+            if (showCompletionCheckbox) ...[
+              SizedBox(width: theme.spacingSm),
+              CompletionCheckbox(
+                theme: theme,
+                isCompleted: isCompleted,
+                onToggle: onToggleComplete,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Width reserved for the leading "04:00-05:00" time column in
+/// [TaskCapsuleTextRow]. A fixed width (not intrinsic) is the whole point —
+/// it is what makes every row's title start at the same x.
+double taskTimeColumnWidth(AmbleTheme theme) => theme.spacingXl * 3;
+
+/// Width reserved for the "1h" duration column that follows the time.
+double taskDurationColumnWidth(AmbleTheme theme) => theme.spacingXl;
+
 class _CapsuleCategoryVisual {
   const _CapsuleCategoryVisual({
     required this.pillColor,

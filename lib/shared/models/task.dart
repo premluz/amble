@@ -29,6 +29,8 @@ class Task extends HiveObject {
     this.notificationsEnabled = true,
     this.categoryId,
     this.zoneId,
+    this.externalEventId,
+    this.templateId,
   });
 
   /// Creates a new scheduled task with a client-generated UUID.
@@ -52,6 +54,7 @@ class Task extends HiveObject {
     String? recurrenceId,
     RecurrenceRule? recurrenceRule,
     bool notificationsEnabled = true,
+    String? templateId,
   }) : this(
          id: _uuid.v4(),
          title: title,
@@ -62,6 +65,7 @@ class Task extends HiveObject {
          recurrenceRule: recurrenceRule,
          notificationsEnabled: notificationsEnabled,
          categoryId: categoryId,
+         templateId: templateId,
        );
 
   /// Creates a new unscheduled (Inbox) task with a client-generated UUID.
@@ -176,6 +180,30 @@ class Task extends HiveObject {
   @HiveField(16)
   String? zoneId;
 
+  /// The id of the device calendar event this task was pushed to via manual
+  /// "Sync to Calendar" (see CONSTITUTION.md's "Calendar" section, Feature
+  /// 2). Null for a task that has never been synced — the unchanged
+  /// default, same pattern as [zoneId]/[behaviorId]. Set the first time
+  /// `CalendarSyncService` creates a device event for this task, then
+  /// reused on every later sync to update that same event rather than
+  /// creating a duplicate. Strictly one-directional (Amble -> device
+  /// calendar) — never read back to detect calendar-side edits.
+  @HiveField(17)
+  String? externalEventId;
+
+  /// The id of the [TaskTemplate] this task was spawned from. Null for an
+  /// ordinary task — the unchanged default, same additive/inert pattern as
+  /// [zoneId]/[behaviorId].
+  ///
+  /// **Informational only.** Recorded purely so a future quick-drop drawer
+  /// can frequency-rank templates by how often each has been used. It is
+  /// never consulted for cascade, delete, or validation logic: spawning is
+  /// a COPY, not a reference (see CONSTITUTION.md's "TaskTemplate"
+  /// section), so deleting the template this points at is a no-op for this
+  /// task, and a dangling id here is expected rather than an error.
+  @HiveField(18)
+  String? templateId;
+
   /// True when this task is an instance of a [TrackedBehavior] rather than
   /// a standalone task.
   bool get isBehaviorInstance => behaviorId != null;
@@ -215,6 +243,8 @@ class Task extends HiveObject {
     'notificationsEnabled': notificationsEnabled,
     'categoryId': categoryId,
     'zoneId': zoneId,
+    'externalEventId': externalEventId,
+    'templateId': templateId,
   };
 
   /// Reconstructs a [Task] from [toJson]'s output, for import. Throws
@@ -294,6 +324,12 @@ class Task extends HiveObject {
       // Zone existed has no zoneId at all, and must still import cleanly,
       // same "old exports still import" contract as categoryId/behaviorId.
       zoneId: json['zoneId'] as String?,
+      // Same "old exports still import" contract — a backup exported
+      // before Calendar sync existed has no externalEventId at all.
+      externalEventId: json['externalEventId'] as String?,
+      // Same "old exports still import" contract — a backup exported
+      // before TaskTemplate existed has no templateId at all.
+      templateId: json['templateId'] as String?,
     );
   }
 
@@ -320,7 +356,9 @@ class Task extends HiveObject {
         _sameRule(recurrenceRule, other.recurrenceRule) &&
         notificationsEnabled == other.notificationsEnabled &&
         categoryId == other.categoryId &&
-        zoneId == other.zoneId;
+        zoneId == other.zoneId &&
+        externalEventId == other.externalEventId &&
+        templateId == other.templateId;
   }
 }
 

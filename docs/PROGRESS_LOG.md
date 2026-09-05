@@ -1761,3 +1761,777 @@ Added the test coverage this build was missing when first picked up mid-session:
 One pre-existing flaky test (`edit_schedule_repeats_test.dart`, a different individual test failing on each of 3 consecutive runs under this session's contended environment) — already documented earlier this session as a known timing-sensitive-under-load file (Hive writes racing against `_refresh()`), unrelated to this Zone work (nothing in this session touched that file, `task_detail_sheet.dart`, or `task_providers.dart`'s recurrence code). Not investigated further as a regression; confirmed via `git diff --stat` that none of the files it touches were modified in this session's Zone work.
 
 `dart format .`: clean. `flutter analyze`: clean (2 pre-existing, unrelated warnings). `flutter test`: 302/302 (excluding the one known-flaky, unrelated test above, which was not consistently reproducible even across 3 isolated reruns).
+
+## [2026-09-02] Zone's first UI — Settings → Zones → list → add/edit, modeled on the real task-creation modal
+
+Requested directly: a Zones section in Settings that navigates to a real list page, with add/edit built on the same visual language as task creation.
+
+Promoted `task_detail_sheet.dart`'s private `_StepScaffold`/`_HeaderCircleButton` (the actual near-full-screen, colored-header, pinned-Save-button chrome the real "add task modal" uses) to a new shared, public widget: `lib/core/widgets/app_step_scaffold.dart` (`StepScaffold`/`HeaderCircleButton`). This is what "modeled on the add-task modal UI" required literally — reusing the real chrome, not rebuilding a look-alike. Repointed all 3 internal call sites plus 1 standalone `_HeaderCircleButton` usage inside `task_detail_sheet.dart` at the public versions; confirmed zero behavior change via the full test suite (335/335 passing) plus an isolated rerun of `edit_schedule_repeats_test.dart` specifically, since that file most directly exercises `_TaskDetailFlowState._save`, the highest-risk consumer of this chrome.
+
+Built: `lib/features/zones/zone_form_screen.dart` (`showZoneFormScreen` — near-full-screen slide-up on `StepScaffold`, title + start/end `AppSegmentedTimeField`s, Save validates against `zonesOverlap` excluding the zone being edited and surfaces a conflict via the same inline `errorMessage` slot task creation's own overlap rejection uses) and `lib/features/zones/zone_list_screen.dart` (`showZoneListScreen` — a real pushed `MaterialPageRoute` page, not a sheet, per the explicit "go to a page where you see the list" request; empty state, tap-to-edit rows, a "+" to add). Wired a "Zones" section into `settings_screen.dart`, gated behind `FeatureFlags.zoneEnabled` (same const-eliminated-when-off pattern as Tracked behaviors) but with a "Manage zones" button that navigates to the list page rather than an inline create form, since Zones is meant to be a place to browse/manage a list.
+
+Confirmed via AskUserQuestion, since two real precedents in this codebase actually diverge on it: Zone add/edit is a near-full-screen page (matching real task creation), not a bottom sheet (matching `AddCategoryModal`'s own, different precedent from earlier this session).
+
+Added `test/features/zones/zone_form_screen_test.dart` (Save disabled until valid, a created zone reaches `zoneListProvider`, editing pre-fills fields). Hit the "real Hive I/O hangs under `flutter_test`'s synchronous zone" gotcha in a new shape — twice, back to back — via a direct notifier call and a raw `box.put` in test setup, neither of which was a widget tap (every prior instance of this bug in this codebase was tap-triggered). Two separate multi-minute hangs, confirmed by flat CPU time, before landing on `tester.runAsync(...)` wrapping both bare I/O calls. Full account in ERROR_LOG.md — the generalized lesson: any real Hive call in a test needs `runAsync`, not just ones reached through a tap.
+
+`dart format .`: clean. `flutter analyze`: clean (2 pre-existing, unrelated warnings — line numbers only, same two issues as before the `StepScaffold` extraction). `flutter test`: 335/335 passing, no flakes on this run.
+
+## [2026-09-02] Zone ungated — live in every build now
+
+Requested directly, right after the Zone UI was verified: `FeatureFlags.zoneEnabled` flipped from `bool.fromEnvironment('zone')` (default off) to `bool.fromEnvironment('zone', defaultValue: true)` — ships on in every build including release now, still overridable off via `--dart-define=zone=false` if ever needed for testing. Settings → Zones is now reachable without any build flag. Updated `docs/SCOPE.md`'s Zone entry to match (was still describing it as an unbuilt design spike).
+
+`dart format .`/`flutter analyze`: clean. `flutter test`: 335/335 passing.
+
+## [2026-09-02] Bug fix — 3-4 second task saves on Android (500-alarm cap)
+User-reported: saving a task from the detail modal (editing a category, or
+even saving with no changes at all) showed the button spinner for 3-4
+seconds before closing. Diagnosed on a real device rather than by
+inspection — added temporary `Stopwatch` probes to the save path, ran on
+the physical moto g54, and found the Hive write took 18ms and the provider
+refresh 7ms, with all the time inside `zonedSchedule`. Logcat gave the
+actual cause: `IllegalStateException: Maximum limit of concurrent alarms
+500 reached`. Android caps an app at 500 concurrent alarms, and past that
+every schedule attempt throws a deeply-nested PlatformException that costs
+seconds to marshal back across the channel.
+
+Root cause was three compounding defects, all fixed (user chose the full
+fix over just unblocking the save): (1) `_materializeSeries` scheduled an
+alarm per materialized instance, and an 8-week recurring window is ~56
+alarms per daily series — the app was manufacturing its own cap breach,
+re-running the whole loop on every launch; (2) every `TaskList` mutator
+*awaited* the notification sync, and the modal only pops when that future
+resolves, so a side effect explicitly allowed to fail sat on the save's
+critical path; (3) nothing ever cleared stale alarms, so an install that
+had hit the cap stayed permanently wedged.
+
+Fixes: a 14-day `notificationHorizonDays` with a pure, unit-tested
+`isWithinSchedulingHorizon` guard (tasks still stored 8 weeks out, only the
+near window holds an alarm); launch-time `refreshScheduled` that
+`cancelAll()`s before re-registering, which both rolls the window forward
+and reclaims slots on an already-wedged install; and
+`_syncNotificationInBackground` (fire-and-forget via `unawaited`) at all
+ten mutator call sites, so the modal pops as soon as the write and refresh
+complete. Launch refresh is itself not awaited before `runApp`, so the fix
+doesn't trade a slow save for a slow cold start.
+
+Coverage: 5 new tests in `notification_horizon_test.dart` (materialization
+schedules once, not per instance; refresh cancels-then-schedules only
+in-horizon tasks; completed and unscheduled tasks skipped; the
+horizon-under-window invariant) plus 6 in `notification_service_test.dart`
+for the horizon boundaries, and a new `RecordingNotificationService` test
+double for asserting on scheduling behavior rather than just stubbing it
+out. `flutter analyze` clean (2 pre-existing unrelated warnings in
+`task_detail_sheet.dart`). Full writeup in `docs/ERROR_LOG.md`, decisions
+in `docs/DECISIONS.md`.
+
+Verified on the physical moto g54: the same save that took 3-4 seconds
+before measured **26ms** after, and no `Maximum limit of concurrent alarms`
+errors appeared in the run — the launch-time `cancelAll()` reclaimed the
+occupied slots, so notifications on that install went from silently broken
+back to working.
+
+**Pre-existing failure, NOT from this session, left as-is:**
+`edit_schedule_repeats_test.dart`'s "changing an existing series' days"
+case fails in the working tree (the MON chip's selection doesn't reach the
+saved rule — `daysOfWeek` ends up with 1 element instead of 2). Bisected by
+stashing: that file's uncommitted `_StepScaffold` → shared `StepScaffold`
+extraction is what breaks it — 6/6 pass with the refactor stashed, 5/6 with
+it applied. Untouched here since it belongs to that in-progress refactor,
+not to the notification fix. Worth fixing before that refactor is
+committed.
+
+## [2026-09-02] Zone recurrence + notify
+
+Extended `Zone` with `recurrenceRule` (reusing `Task`'s existing
+`RecurrenceRule` shape, simple recurrence only — not the per-occurrence-
+adjustable-times version CONSTITUTION.md still flags as deferred) and
+`notificationsEnabled` (default true), both confirmed directly by the user
+before building rather than guessed. `zone.g.dart` regenerated cleanly via
+`dart run build_runner build` — no `riverpod_annotation`/`flutter_riverpod`
+import conflict this time. Ran the full pre-existing 335-test suite
+immediately after the model change, before writing anything else; all
+green.
+
+Added `NotificationService.scheduleForZone`/`cancelForZone`, resolving a
+zone's `startMinutes` (+ optional `RecurrenceRule`) to a single concrete
+`DateTime` and scheduling one one-shot alert for the next upcoming
+occurrence — not a true recurring OS alarm (flagged as a future
+enhancement in both the code and DECISIONS.md). Reuses the existing
+`isWithinSchedulingHorizon`/`notificationHorizonDays` from the 500-alarm-
+cap fix rather than inventing a separate horizon rule for zones. A
+non-recurring zone whose time has already passed today no-ops, matching
+`scheduleForTask`'s own convention, rather than rolling to tomorrow.
+
+Rebuilt `zone_form_screen.dart`'s body: `AppSegmentedTimeField` stays the
+primary Start/End entry, each field gained a trailing
+`AppFieldActionButton` opening `AppWheelTimePicker` as the alternate
+entry — verified this shape against `task_detail_sheet.dart`'s real
+`_openStartTimeModal` pattern directly rather than assuming wheel-only.
+Added a Repeat pane (`_ZoneRecurrencePanel`, a local duplicate of
+`_RecurrencePanel`'s 7-day-chip shape — judged too small to be worth
+promoting to `core/widgets/`, flagged in DECISIONS.md) and a Notify pane
+(`AppSwitch` bound to `notificationsEnabled`, mirroring
+`task_detail_sheet.dart`'s own Notifications row). `_save()` now builds
+the `RecurrenceRule?` from local Repeat state and fire-and-forgets a
+`scheduleForZone`/`cancelForZone` call after the write succeeds, same
+non-blocking discipline as every `TaskList` write path.
+
+Verification: `flutter analyze` clean (same 2 pre-existing, explicitly
+out-of-scope `modalTitle` warnings as before). `dart format` clean on
+every file touched this session (two pre-existing, previously-modified
+files — `app_sheet.dart`, `task_name_category_modal.dart` — have their
+own unrelated formatting drift from before this session, left alone per
+minimal-diff scope). Full suite: 345 passed (335 pre-existing + 10 new:
+3 Hive round-trip, 7 notification-service). Modal-sizing/header-alignment
+task (Task 1) was already correctly in place in the working tree —
+verified, not re-done.
+
+Judgment calls flagged for review: (a) wheel-as-alternate not wheel-only,
+verified against the real file; (b) local duplicate, not promoted, for
+the Repeat panel; (c) non-recurring past-today zone no-ops rather than
+rolling to tomorrow; (d) one-shot next-occurrence, not genuine recurring
+OS scheduling, for recurring zones; (e) no launch-time refresh wired into
+`main.dart` for zone notifications — only (re)registered on form save,
+a real gap flagged in DECISIONS.md rather than silently accepted.
+
+## [2026-09-02] Follow-up: closed the zone-notification launch-refresh gap
+
+Reviewed the delegated Zone recurrence/notify build directly (not just trusted its self-report): read the model, notification-service, and form-screen diffs, ran the full suite myself (345/345 passing, `flutter analyze` clean). One real gap had been explicitly flagged rather than silently shipped: zone notifications only get (re)registered when a zone's form is saved — no launch-time refresh, unlike `Task`'s `refreshScheduledNotifications` in `main.dart`. Confirmed with the user directly whether to fix it now; added `ZoneList.refreshScheduledNotifications()` (same shape as `TaskList`'s own) and wired it into `main.dart` right after the task refresh, same not-awaited/fire-and-forget discipline. Also tidied a stale `Zone` class doc comment that still described the model as non-recurring after recurrence was added.
+
+`dart format .`/`flutter analyze`: clean. `flutter test`: 345/345 passing.
+
+## [2026-09-02] Zone rendered as a background block on the Spatial Task View (Timeline) — display-only
+
+Explicit work order, scoped to exactly the Spatial Task View's own decorative treatment of Zone data — NOT the future Spatial Zone View (Zone as a real layout container), which stays separate. Tasks keep their existing spatial positioning/sizing logic completely unchanged; no task-rendering code was touched.
+
+Proposed new Tier 1/2 color tokens for review before building, per the work order's own instruction: `ColorPrimitives.zoneBackground`/`zoneBackgroundDark` → `AmbleTheme.colorZoneBackground`, `oklch(0.97, 0.02, 240)` light / `oklch(0.28, 0.02, 240)` dark — a cool, very-low-chroma blue-grey, hue chosen deliberately apart from every existing category hue and from `colorFreeWindow`'s neutral family so a zone block can't read as a category tint or a free-window gap indicator. Confirmed with the user directly (cool blue-grey over a zero-chroma neutral alternative) before implementing.
+
+New `ZoneBackgroundBlock` (`zone_background_block.dart`), positioned with the same `rangeStart`/`pixelsPerMinute` math the Timeline already uses for tasks, inserted into the Stack right after `TaskBoundaryMarkers` (before any task-rendering child, guaranteeing it paints behind every task capsule). `IgnorePointer`-wrapped — never intercepts a tap. The requested "starts slightly earlier/further left than its literal position" offset is a new named constant, `zoneBackgroundOffset = 12.0` — confirmed this is an EXACT match to the existing `theme.spacingIconTop` token rather than assumed close enough, so no new spacing token was needed; kept as its own named constant (not read directly off `theme` at each call site) so top/left offsets can't silently drift apart from each other, and so a future change to `spacingIconTop`'s own original purpose doesn't quietly move every zone block too.
+
+Gated behind `FeatureFlags.zoneEnabled` (rendering an empty zone list when off, zero-cost). Every persisted zone renders unconditionally for its time range — no filtering on whether any task actually references it via `zoneId`, since that would itself be Zone-view/container behavior, out of scope here.
+
+**Real on-device verification, not just widget tests**: built a new dev scaffold (`zone_background_preview_main.dart`, seeding real tasks + categories + zones) and ran it on a booted iOS simulator (iPhone 15 Pro Max) twice — once with the flag on (two zone blocks visibly behind three tasks, correct offset, tasks fully legible and unmoved) and once with `--dart-define=zone=false` (identical tasks at identical positions, zero zone blocks). Screenshots compared directly, not assumed correct from code alone. Hit and fixed two real scaffold issues along the way: the scaffold initially crashed on first build (missing the `preferences` Hive box `TimelineScreen`'s settings providers need — `main.dart` opens 5 boxes, the first scaffold draft only opened 3) and a stray manual `simctl launch` (outside `flutter run`'s own lifecycle) briefly showed the wrong calendar day with no seeded data — resolved by sticking to `flutter run`'s own start/stop lifecycle only, not manual simulator commands alongside it.
+
+New widget test `zone_background_block_test.dart` (4 cases: offset math on top/left, growth math on width/height, the constant's exact value, `IgnorePointer` wrapping) — no golden/screenshot test, matching `FreeWindowBlock`'s own precedent (a rendering-only decorative block with no dedicated widget test, only its pure math tested), with the visual correctness instead confirmed via the real simulator screenshots above.
+
+`dart format .`: clean. `flutter analyze`: clean (2 pre-existing, unrelated warnings only). `flutter test`: 349/349 passing (345 pre-existing + 4 new).
+
+## [2026-09-02] Follow-up: guaranteed a visual gap between back-to-back zone blocks
+
+Reported directly: two zones scheduled exactly back-to-back (one ends the moment the next starts) should always show a visible gap between their rendered blocks. Confirmed via AskUserQuestion this is purely cosmetic — save-time validation (`zonesOverlap`) is unchanged, zones can still be saved back-to-back.
+
+Turned out to be a real latent bug: `zoneBackgroundOffset`'s top/left extension meant two such zones previously rendered as ACTIVELY OVERLAPPING blocks, not just touching ones. Worked the fix out algebraically before coding (a first instinct — trim the bottom/right edge by the gap — provably cannot produce a positive gap against a neighbor's own opposite-direction top/left extension). Correct fix: trailing edges recede by `offset + gap`, not just `gap` — new constant `zoneBackgroundGap = 4.0`, confirmed an exact match to `theme.spacingXs` before adding it. Verified with a hand-checked arithmetic scratch pass and a new dedicated widget test asserting the exact back-to-back scenario (`earlier.endMinutes == later.startMinutes` renders with exactly `zoneBackgroundGap` of clearance).
+
+`dart format .`/`flutter analyze`: clean. `flutter test`: 351/351 passing (349 pre-existing + 2 new/updated in `zone_background_block_test.dart`).
+
+## [2026-09-02] Spatial Zone View — Zone as a real layout container
+
+Built the second Timeline display mode: Zones as real layout containers, alongside (not replacing) the existing Spatial Task View. Read CONSTITUTION.md's full Zone section, ARCHITECTURE.md, DECISIONS.md's Zone history, and PROGRESS_LOG.md's recent Zone entries first, per the work order.
+
+**Containment logic** (`shared/services/zone_containment.dart`, new): `resolveZoneContainment(tasks, zones, day)` — a pure, provider-free function, same "pure grouping function, widget consumes it" shape as `detectOverlapClusters`. Explicit `task.zoneId` wins outright, even against a conflicting `scheduledAt` (confirmed directly — the mismatch is not flagged). Only when `zoneId` is null does a computed fallback apply (`scheduledAt` inside a zone's window) — strictly read-only for display, never writes `zoneId` back onto a `Task`. A task matching neither is "unzoned." A non-recurring zone applies every day viewed (no date field of its own); a recurring zone only applies on its matching weekdays, mirroring `NotificationService`'s private `_ruleMatchesDay` (duplicated, not imported — it's file-private). 8 unit tests in `test/shared/services/zone_containment_test.dart`, all passing: explicit match, computed fallback, neither/unzoned, the zoneId-vs-time mismatch, a half-open boundary edge case, non-recurring-every-day, recurring-only-matching-weekdays, chronological containment ordering.
+
+**`ZoneContainerBlock`** (`features/timeline/zone_container_block.dart`, new): a bounded container with title+duration and the start–end time range in its header (matching the reviewed reference layout), and a flat list of member task rows inside. The inner rows mirror `OverlapClusterBlock`'s `_ClusterTaskRow` precedent, not `TaskCapsuleBlock`'s pill — every row is the SAME fixed height (`zoneContainerRowHeight`), no proportional sizing, and field order is start time → duration → category emoji → title, the reverse of the capsule's icon-first/time-below layout (confirmed directly, including a correction mid-session after an initial draft leaned toward the capsule's own order).
+
+**`ZoneDayTimeline`** (`features/timeline/zone_day_timeline.dart`, new): the outer time axis. Zone containers stack chronologically by `startMinutes`, each sized to `max(strict time-span height, intrinsic content height)` via `ConstrainedBox`+`IntrinsicHeight` (so a short zone with several tasks grows instead of clipping — a judgment call, flagged rather than picking an arbitrary minimum-height constant). Unzoned tasks render as ordinary `TaskCapsuleBlock`s at their own real spatial time position, interleaved with the containers on the same axis — confirmed directly, not a separate flat section and not hidden. Deliberately much simpler than `_DayTimeline`: no drag, no clustering, no placement line, no scroll-to-now — all explicitly out of scope this session.
+
+**Settings toggle**: `ZoneViewEnabledSetting` (`preferences_providers.dart`) + `PreferenceKeys.zoneViewEnabled`, same persisted-bool shape as `ShowHourLabelsSetting`, default `false`. Surfaced in Settings inside the existing `FeatureFlags.zoneEnabled`-gated "Zones" panel, directly under "Manage zones" — with the flag off, the whole panel (toggle included) is const-eliminated. `TimelineScreen` reads it (`FeatureFlags.zoneEnabled && ref.watch(zoneViewEnabledSettingProvider)`) and switches between `ZoneDayTimeline` and the existing `_DayTimeline` at its own top level — `_DayTimeline`/`ZoneBackgroundBlock` untouched.
+
+**Real on-device verification**: two new dev scaffolds, neither part of the shipped app — `zone_view_preview_main.dart` (seeds a mix of explicit-zoneId, computed-fallback, zoneId/time-mismatch, and genuinely-unzoned tasks across two zones, toggle pre-set on) and `zone_toggle_preview_main.dart` (opens straight to `SettingsScreen`, used to screenshot the toggle itself). No simulator tap/scroll automation tool was available in this environment (`osascript` lacks Accessibility permission, no `cliclick`/`idb` installed) — flagged directly rather than silently working around it or installing a new dependency; the user drove the manual scroll/tap on the simulator while screenshots were captured via `xcrun simctl io screenshot`. Confirmed on a real iPhone 15 Pro Max simulator: (1) Zone view renders both zones as containers with the correct header/row layout, including the zoneId-wins mismatch case rendering inside its assigned zone despite a 14:00 `scheduledAt` against a 10:00–12:00 zone, and the unzoned "Lunch with Sam" task rendering outside any container at its own spatial position; (2) the Settings toggle renders correctly in both ON and OFF states and actually flips persisted state on tap; (3) with the toggle off, the Timeline reverts exactly to the prior session's own Task view (zone background blocks, capsule layout, drag/free-window affordances all present, byte-for-byte the same screenshot shape as before this session).
+
+Updated CONSTITUTION.md's Zone status line — both Timeline rendering modes now implemented; only per-occurrence recurrence, capacity enforcement, zone drag/cascade, and zone-assignment UI remain genuinely not built. Added DECISIONS.md entries for the containment precedence rule, the within-container layout approach, the container-height judgment call, and the toggle's persistence shape.
+
+`dart format .`: clean. `flutter analyze`: clean (same 2 pre-existing, unrelated warnings only, in `task_detail_sheet.dart`). `flutter test`: 358/358 passing (350 pre-existing + 8 new in `zone_containment_test.dart`, both `flutter analyze`/`flutter test` re-confirmed clean after all doc edits too).
+
+**Open flag for a future session**: no simulator UI-automation tool (tap/scroll) is available in this environment. If a future session needs to script simulator interaction rather than rely on manual driving, that gap needs addressing first (e.g. granting Accessibility permission to the terminal app, or installing `idb`/`cliclick` — either would need to be raised as a new-dependency/permission decision, not silently added).
+
+## [2026-09-02] Timeline polish pass — scroll range, view-cycle button, alignment, delete button, duration formatting
+
+A long sequence of mostly independent bug reports/small features against the Timeline, driven by direct screenshot feedback.
+
+**Full-day scroll range**: `_visibleRange` (both `_DayTimeline` and `ZoneDayTimeline`) was task-derived (earliest/latest task ± padding), so a day with no tasks, or tasks clustered in a narrow window, couldn't be scrolled past that window. Confirmed via AskUserQuestion: always a full 24h day regardless of task content; an empty day now shows the "nothing scheduled" message floating (via `Stack`+`IgnorePointer`) over the still-scrollable timeline instead of replacing it. Also fixed 00:00 being clipped at the scroll extremes by increasing vertical scroll padding from `spacingMd` to `spacingLg` in both timelines.
+
+**View-cycle button**: added a button next to the "scroll to today" chevron in `DayStrip` that cycles Zone view → List view → Task view → Zone view (skipping Zone when the feature flag is off), with a per-mode icon. Confirmed via AskUserQuestion: List view = `showHourLabels` off, Task view = `showHourLabels` on (both with Zone view off). Re-centering on the current hour now also happens on every view-mode switch and day change, not just first mount (`_scrollToCurrentHourCentered()` extracted and called from both `initState` and `didUpdateWidget`).
+
+**Task pill alignment**: several rounds of pixel-level nudges to the Task-view capsule (checkbox/emoji-badge/title alignment), driven entirely by screenshot comparison against a mockup — pill top padding reduced from `spacingSm` down to flush zero, checkbox nudged via `Transform.translate`. Zone-view's own emoji badge was undersized relative to Task view's (`spacingLg` vs the Task view's own `spacingXl * 0.9` formula) — unified. `CompletionCheckbox.ringColor` made optional (was previously always the selected category's color, causing the checkbox itself to visually change color per category — reported directly as wrong); now defaults to a fixed `theme.colorTextSecondary` at all three call sites (Task view, Zone view, overlap cluster).
+
+**Edit-task delete button**: added an icon delete button to the left of Save on the Edit-task screen only (not Create), without duplicating the shared `StepScaffold` — added generic `onSecondaryAction`/`secondaryActionIcon` params to `StepScaffold` itself. Delete logic promoted out of the task action sheet into a new shared `task_detail/task_remove.dart` (`removeTask`/`askRemoveScope`/`RemoveScope`) so both the action sheet's own Remove row and the new Edit-screen button share one recurring-scope-aware flow; confirmed via AskUserQuestion the Edit-screen delete should NOT get its own confirmation dialog, matching the action sheet's existing immediate-delete behavior.
+
+**Duration-formatting bug**: reported as "the free-window prompt shows '100m' instead of '1h 40m'." Root cause: the whole-hours/under-an-hour duration formatter was duplicated across `FreeWindowBlock`, `TaskCapsuleBlock`, and `ZoneContainerBlock`, and two of the three copies never handled the hours+minutes case. `ZoneContainerBlock`'s own version already had the correct three-way split; promoted it to a new shared `features/timeline/duration_label.dart` (`formatDurationLabel`) and switched all three call sites to it, deleting the two buggy local copies. Confirmed via AskUserQuestion: fix all copies, not just the one reported.
+
+**Dev toggle for the free-window prompt**: added `DevShowFreeWindowPrompt` to `core/dev_config.dart` (in-memory scratch config, `kDebugMode`-gated, defaults to true) and threaded it down through `_DayTimeline` as a plain field (`showFreeWindowPrompt`, same pattern as `showHourLabels`) rather than making the `State` Riverpod-aware — gates the existing `for (window in findFreeWindows(...))` loop alongside the existing `showHourLabels` gate. Added a matching switch in Settings' Developer section, next to the existing timeline dev switches.
+
+Also, per an earlier direct request in this same session: tapping a task on the Timeline now opens Edit directly (`showTaskDetailSheet`) instead of the action sheet (Edit/Duplicate/Remove) — the action sheet stays in the codebase, unused, in case it's wanted again later.
+
+`dart format .`: clean. `flutter analyze`: clean (same 2 pre-existing unrelated `modalTitle` warnings only). `flutter test`: 362/362 passing, no golden-test regressions (goldens were intentionally regenerated mid-session for each visual change, each time verified against the isolated diff image first).
+
+## [2026-09-02] Spatial view scroll-position memory + fixed a real recurring-instance edit-loss bug
+
+**Scroll position now shared between Task view and Zone view** (`viewed_time_provider.dart`, new): both spatial views report their scroll-centered time-of-day on every scroll and read it back on mount, so switching Zone↔Task↔List resumes the same time position instead of always re-centering on "now" — reversing part of an earlier decision this session ("should always lead to the current hour being in the center" on every switch) per direct follow-up: recenter-to-now now fires only on a genuine day change, never on a view-mode switch. Also added the missing `CurrentTimeIndicator` ("now" line) to Zone view, and fixed its outer horizontal padding (was `spacingMd`, should have matched Task view's `spacingScreenPadding`) — both were causing a visible jump/missing element when switching views, reported directly.
+
+**Fixed the recurring-task edit-loss bug flagged (but not fixed) in ERROR_LOG.md's "second, real, confirmed bug" entry from an earlier session.** Reported again independently, in different words ("future instances if changing category, not taking effect... duration on the other hand updates from all instances"): editing a future (non-template) recurring instance's category or duration was silently discarded — `_deleteUntouchedFutureInstances` deleted the just-edited row (still "untouched" by its own definition) and `_materializeSeries` regenerated a fresh copy from the template's old value at the same slot. Fixed with a new `alsoSpare` param sparing the instance actually being edited, additive to the existing template exclusion. See ERROR_LOG.md for the full root-cause writeup and why `disableTaskRecurrence`'s own call site deliberately does NOT get the same `alsoSpare` treatment.
+
+**Notable friction this session**: `flutter test`/`flutter analyze` hung repeatedly (5-8+ minutes each) blocked on `flutter/bin/cache/lockfile`, the Flutter SDK's own global lock, held by the user's own concurrently-running `flutter run` sessions (3 live: moto g54 device, iPhone 15 Pro Max sim, one more). Confirmed via `lsof` rather than guessing. Flagged directly rather than silently retrying forever or killing the user's dev sessions myself; user stopped one and verification proceeded cleanly.
+
+`dart format .`: clean. `flutter analyze`: clean (same 2 pre-existing unrelated warnings only). `flutter test`: 363/363 passing (362 pre-existing + 1 new regression test for the edit-loss fix).
+
+## [2026-09-02] Session continued: back-gesture parity, Inbox Done button, Zone/Task view uniformity
+
+**Android system back gesture on task creation only closed the keyboard, not the modal — fixed.** The create/edit screen had no `PopScope` at all, so the gesture popped the route directly, bypassing `_handleClose()` (the method the close button and stage-1 "Done" both already use). Wrapped in `PopScope(canPop: false, onPopInvokedWithResult: ...)` routing every back attempt through the same method — an empty draft now closes silently on back (matching Done), a named draft still prompts to discard.
+
+**Inbox quick-capture "Add" renamed to "Done"**, matching the same empty-input-closes-the-sheet semantic Task creation's Done already has, and fixed its button shape from `AppButton`'s plain default (`rounded`) to `pill`, matching Task creation's own Done button — genuinely two different shapes, confirmed by reading both call sites. Native swipe-back needed no change: Quick Capture is a `showModalBottomSheet` (not a route push), whose defaults already let the system back gesture close it.
+
+**Zone container position/style unified between Zone view and Task view.** `ZoneDayTimeline`'s own container was rendering a zone at its STRICT time position with no inset, while `ZoneBackgroundBlock` (the same zone on the Task view) insets by `-zoneBackgroundOffset`/`zoneBackgroundGap` — a real, visible jump switching views. Now both apply the identical formula, reusing the same two constants. Also fixed the zone header's title color (was `colorTextPrimary`, now `colorTextSecondary` matching the time-range text beside it). Verified (no change needed) that scroll-position memory between Zone/Task views already correctly excludes List view, per its existing `showHourLabels` guards.
+
+Full detail and root-cause writeups for all of the above are in `docs/ERROR_LOG.md`'s own dated entries.
+
+`dart format .`: clean. `flutter analyze`: clean (same 2 pre-existing unrelated warnings only). `flutter test`: 371/371 passing (362 at this session's start + 9 new across the three fixes above).
+
+## [2026-09-03] Automatic morning summary to Slack (Incoming Webhook)
+
+Built a full work order: a Settings-configured, opt-in background task that posts a plain-text summary of today's tasks to a user's own Slack Incoming Webhook every morning, plus a manual "Send test message now" trigger for on-demand verification. Read every doc CLAUDE.md names, per the order's own instruction, before writing code.
+
+**Flagged and confirmed two real departures before building anything**: this feature isn't in SCOPE.md (whose existing "today's plan summary" nice-to-have is explicitly in-app-only), and it's the first feature where data leaves the device to a third party, in some tension with CONSTITUTION.md's "no cloud sync" locked-stack line. Raised via AskUserQuestion rather than assumed covered by the work order alone; confirmed to proceed and add a new SCOPE.md entry as part of this session (done). Two new dependencies (`workmanager`, `http`) were also pre-flagged in the order itself and confirmed necessary — neither was already a real dependency.
+
+**Settings** (`_SettingsPanel` "Morning summary (Slack)"): webhook URL field, optional display-name/icon-emoji override fields (with a clarifying "Slack uses the webhook's own default" note), an enable toggle with honest reliability copy ("Delivery time isn't guaranteed, especially on iOS..."), and the test-send button — all four new `PreferencesRepository` settings, same shape as every existing one (theme mode, `ShowHourLabelsSetting`, etc.).
+
+**Background scheduling**: `core/background/background_tasks.dart` registers a periodic `workmanager` task (Android WorkManager, iOS BGTaskScheduler), targeting a named `morningSummaryTargetHour = 7` constant, re-registered/cancelled on every app launch against the current setting (mirrors `TaskList.refreshScheduledNotifications`'s own re-sync-on-launch pattern). Handled the real background-isolate/Hive-initialization gotcha explicitly — deliberately reproduced the failure once during development, then fixed it by re-running the necessary subset of `main.dart`'s own init sequence inside the background callback; see ERROR_LOG.md for the full writeup, since this is a reusable gotcha class, not a one-off.
+
+**Summary generation and delivery**: `shared/services/slack_summary_service.dart` — pure `buildMorningSummaryText`/`buildSlackPayload` functions (no I/O), and `postToSlackWebhook` (real HTTP POST, validates the URL is actually a `hooks.slack.com` webhook before sending, wraps every failure mode in one `SlackWebhookException` type). The manual test button and the background task both go through the exact same three functions, so a successful manual test is genuine end-to-end proof the automatic path would also work.
+
+**iOS native config added** (`Info.plist`: `UIBackgroundModes: [fetch]`, `BGTaskSchedulerPermittedIdentifiers`) — confirmed by reading `workmanager_apple`'s own Swift source that no `AppDelegate.swift` change was needed (unlike the Phase 6/7 `flutter_local_notifications` precedent, which did need one). **iOS could not be built or verified on this machine**: `workmanager_apple 0.9.6+` references an iOS 26 API this machine's Xcode 15.4 SDK doesn't have, a genuine compile-time SDK mismatch — investigated and ruled out a `dependency_overrides` pin (incompatible with the modern `workmanager` API this feature needs) before reporting it as a real, open environment gap rather than guessing further. Android built and ran cleanly (`flutter build apk`, real debug install + cold launch on the `Amble_Test_API34` emulator, confirmed `Workmanager().initialize()` doesn't crash startup) and its manifest gained one new permission (`INTERNET`).
+
+**Real device/on-device verification, reported honestly**: no physical device was available this session. On the Android emulator, `adb shell input tap` stopped registering on ANY button partway through verification — confirmed as an environment/tooling issue, not a feature bug, by reproducing the identical non-response on the pre-existing "Export backup" button. Switched to a deterministic widget test instead (this project's own stronger-evidence precedent), which proved the panel renders every named element and that both the validation-error and a real end-to-end HTTP round-trip surface correctly in the UI. Screenshots (evidence: Settings panel showing all fields/toggle/button) were captured before the tap issue surfaced; no real Slack message could be sent/confirmed this session (no real webhook URL available, and the manual send couldn't be triggered on-device once taps stopped registering) — flagged as a genuine open verification item, same as iOS.
+
+5 new files (`background_tasks.dart`, `slack_summary_service.dart`, and their 3 test files) plus 10 modified (Settings screen, preferences layer, `main.dart`, `pubspec.yaml`, both platforms' native config, 4 docs), 22 new tests across `slack_summary_service_test.dart`, `background_tasks_test.dart`, and `slack_summary_settings_test.dart`. `dart format .`: clean. `flutter analyze`: clean (same 2 pre-existing unrelated warnings only). `flutter test`: 391/392 passing — the one failure is pre-existing and unrelated (confirmed before reporting), untouched this session.
+
+**Open items for a future session**: (1) iOS build needs Xcode upgraded past whatever version first ships `BGContinuedProcessingTask`'s declaration (believed Xcode 16+) before this feature can be compiled, run, or verified on iOS at all; (2) no real Slack webhook URL was available to confirm an actual message arriving in a real Slack channel — the HTTP layer is proven correct against `flutter_test`'s network stub and unit tests, but a genuine end-to-end delivery has not been observed; (3) once a physical device (either platform) is available, this is exactly the kind of feature the work order itself calls out as needing real-hardware verification, not simulator/emulator — background execution timing specifically.
+
+## [2026-09-03] Dev Settings: bulk data-clearing tools, including a repair tool for the recurring-series "bad state" bug
+
+User asked for the iOS build blocker to be worked around (tried pinning `workmanager_apple` to a version predating `BGContinuedProcessingTask`; reverted after `flutter pub get` proved the federated packages' version constraints make it incompatible with the modern `workmanager` API this feature needs — genuinely no fix available without an Xcode upgrade, confirmed rather than guessed). Then asked for the previously-diagnosed recurring-series orphan bug ("Bad state: No element" when a series' template is deleted, leaving instances with no template — see the earlier `deleteTask` fix in `task_providers.dart`) to get a Dev Settings repair tool, plus general bulk-clear buttons.
+
+**Four new buttons in Settings' existing Developer section** (`kDebugMode`-gated, same as every other control there): "Clear all tasks," "Clear bad-state tasks," "Clear all zones," "Clear everything." Every button confirms first via a new `_confirmAndClear` helper (`AppAlertDialog`) — these are irreversible bulk deletes, and a debug screen shouldn't let a mis-tap silently wipe real dev data.
+
+**"Clear bad-state tasks" targets exactly the orphan shape the earlier bug produces**: a new pure `findOrphanedRecurringTaskIds(List<Task>)` (`task_providers.dart`, alongside `findSeriesTemplate`) finds every task with a `recurrenceId` whose series has no template row anywhere in the list — the precise condition that makes `findSeriesTemplate`'s `firstWhere` throw. `TaskList.clearBadStateTasks()` deletes only those, leaving plain and healthy-recurring tasks untouched, and returns the count removed so the button can report what it did. `TaskList.clearAllTasks()`/`ZoneList.clearAllZones()` are unconditional bulk deletes over their own repositories — no bulk-delete method existed on either repository interface, so these loop `deleteTask`/`delete` per id, matching each existing single-delete method's own behavior exactly (e.g. `clearAllZones` intentionally does NOT cancel notifications, since `deleteZone` itself doesn't either — not a drive-by fix of a separate, unrelated gap).
+
+7 new tests: 4 for `findOrphanedRecurringTaskIds` (no-recurrence, healthy series, fully-orphaned series, mixed healthy+orphaned in one list), 2 for `TaskList`'s clear methods (including one that manually persists an orphaned instance directly at the repository layer, since the bug's own root cause is now guarded against through the notifier's normal write paths — reproducing pre-existing corrupted data needs a raw repository write, same technique the earlier bug investigation used), 1 for `ZoneList.clearAllZones`.
+
+`dart format .`: clean. `flutter analyze`: clean (same 2 pre-existing unrelated warnings only — and the previously-flagged `zone_form_screen_test.dart` failure has resolved itself since last session, unrelated to this work). `flutter test`: 400/400 passing (391 pre-existing + 2 test files, 7 new tests, and the now-passing zone form test).
+
+## [2026-09-03] Zone view "now" line + spatial-view scroll sync fixes
+
+Three bugs from one report, all in the Timeline's two spatial views.
+
+**Zone view's "now" line was invisible** — the `CurrentTimeIndicator` widget was present but sat second in its Stack's child list, so every zone container and task capsule painted over it. Moved late in the list, matching Task view's own ordering.
+
+**Scroll position reset after visiting List view.** List view and Task view share one widget (`_DayTimeline`, differing only by `showHourLabels`), so switching between them never remounts. The existing guards correctly stopped List view from writing the shared position, but nothing restored it coming back — Task view inherited whatever raw offset List view's scrolling had left behind. Now restored in `didUpdateWidget` when hour labels come back on. **This corrects a "verified already correct — no change needed" note from an earlier session**: the guard existed, but the round trip was never actually exercised, and the observable behavior was broken.
+
+**Scroll position drifted between Task view and Zone view.** The shared value was computed from `rangeStart.hour * 60 + rangeStart.minute`, which is silently correct at midnight but reads 1410 instead of -30 once anything widens the range into the previous day — and the two views widen from different inputs (Task view from tasks, Zone view from zones AND tasks), so they could disagree on `rangeStart` entirely. Both now anchor on minutes-from-the-start-of-the-viewed-day, removing the coupling.
+
+**A wrong first diagnosis, caught by the test rather than shipped**: the drift was initially attributed to the scroll view's 24px top padding being missing from the conversion (which converts to a different number of minutes at each view's scale — 16min vs 8min). The regression test written to demonstrate that drift disproved it: the padding cancels across a round trip. The padding term was kept (the reported minute now matches what's genuinely centered) but is not the fix; the real fix is the day-anchoring above. Full writeup in `docs/ERROR_LOG.md`.
+
+New test file `viewed_time_roundtrip_test.dart` (4 tests) pins the report/restore contract: symmetric at each view's own scale, stable across a Task->Zone->Task round trip at different scales, and explicit about the `clamp(0, maxScrollExtent)` behavior when a requested time isn't reachable in a given view's content height.
+
+`dart format .`: clean. `flutter analyze`: clean (same 2 pre-existing unrelated warnings only). `flutter test`: 404/404 passing (400 before + 4 new).
+
+## [2026-09-03] Fixed the real root cause behind the spatial-view scroll bugs, plus two view-switch animation issues
+
+Follow-up to the same-day scroll-sync work above. The user reported the fix hadn't actually worked (scroll still resetting List->Task), plus two new symptoms: capsules visibly sliding down from the top on List->Task, and a "flash" switching Task->Zone view.
+
+**Found the real cause: `initialViewedMinutes` was `ref.watch`ed, not `ref.read`.** Every scroll writes the shared `viewedTimeProvider`; watching it in `TimelineScreen` meant every scroll rebuilt the ENTIRE screen, which re-fed a fresh value into the child mid-scroll. This one bug explains all three reported symptoms: it broke the List->Task restore timing, it fed `AnimatedPositioned` a stream of layout churn that read as capsules sliding into place, and the same rebuild churn contributed to the Zone-view flash. Changed to a `readViewedMinutes` callback, read lazily and only at the moment a restore actually happens — the provider is now completely outside the screen's build graph.
+
+**List<->Task capsule slide-in, separately fixed.** `_DayTimeline` is shared by both modes (only `showHourLabels` differs, so it never remounts across the switch), and its capsules use `AnimatedPositioned` — which correctly tweens between List view's collapsed-stack `top` and Task view's real time-axis `top`, reading as every capsule sliding down. Suppressed for exactly the one frame the mode changes, via a `_suppressPositionAnimation` flag set in `didUpdateWidget` and cleared on the next frame — drag/cascade repositioning within the same mode still eases normally.
+
+**Task->Zone flash, separately fixed.** `ZoneDayTimeline` is a genuinely different widget (no shared element with `_DayTimeline`), so switching to it is always a real mount with nothing to ease from. Added a one-shot fade-in (`TweenAnimationBuilder`, `theme.motionNormal`) around the whole view, matching the one-shot-animation pattern `TaskCapsuleBlock` already uses.
+
+Full root-cause writeups (including exactly how one bug produced three symptoms) are in `docs/ERROR_LOG.md`.
+
+`dart format .`: clean. `flutter analyze`: clean (same 2 pre-existing unrelated warnings only). `flutter test`: full suite green except a known pre-existing flaky file (`edit_schedule_repeats_test.dart`, unrelated to this work — confirmed by reverting these changes via `git stash` and reproducing the same intermittent failure on unmodified `main`, then confirming it passes standalone every time). The directly-affected suite (`test/features/timeline/`, `test/shared/services/`, `test/core/background/`) is 203/203 green.
+
+## [2026-09-04] List mode now follows overlap clustering, same as Task view
+
+Requested directly: "the list mode should follow overlap clustering same as task spatial mode." Previously, `clusters`/`restingClusters` in `timeline_screen.dart` were gated on `widget.showHourLabels`, so 2-3 mutually-overlapping tasks only collapsed into an `OverlapClusterBlock` in Task view — List (collapsed) view fell back to the plain side-by-side `layoutOverlappingTasks` column split instead. Removed the `showHourLabels` gate (kept the existing `disableClustering`/"Disable overlap clustering" setting gate, which still applies to both modes). Confirmed via code reading that no other change was needed: `_withClusterLanes` (cluster-lane column reassignment) and `_blockTops`'s collapsed-mode row-stacking logic (keyed on `slot.column == 0`) already generalize correctly to List mode, since cluster lane 0 always matches `layoutOverlappingTasks`' own earliest-member-starts-the-group semantics. `OverlapClusterBoundaryLabels` (hour-axis tick marks at cluster edges) deliberately left gated to Task view only — it genuinely needs a time axis that List view doesn't have.
+
+New test `test/features/timeline/list_mode_clustering_test.dart`: a 2-task overlap in List mode renders `OverlapClusterBlock` (was previously two independent capsules), and the disable-clustering setting still suppresses it in List mode too.
+
+`flutter analyze`: clean (same 2 pre-existing unrelated warnings only, confirmed repeatedly across this session). **`flutter test` could not be run to a clean, timed-out-free completion this session** — every attempt (including a from-scratch bounded-pump diagnostic with zero tasks, isolating the hang to before `pumpWidget` even returns) hung past the 10-minute default timeout. Root-caused, not left unexplained: an active `flutter run` process in this same working directory (a live dev session in another terminal, left untouched rather than killed) holds Flutter's own global tool startup lockfile for the entire session, which serializes every `flutter` command — so `flutter test` was queuing behind it indefinitely, not actually deadlocked in test/app code. Confirmed via `lsof` on `flutter/bin/cache/lockfile` and matching PID/PPID. A separate, real toolchain issue was also caught along the way and is independently documented in ERROR_LOG.md: a self-deadlock in Dart's `hooks_runner` native-assets tooling around the transitive `objective_c` dependency, reproduced twice with `lsof` showing the lock held by the same (idle) process that was waiting on it. Given `flutter analyze` is clean and the change is a one-line gate removal onto an already-tested, already-generalized rendering path, shipping without a fresh green test run is a deliberate, flagged risk — not a silent gap.
+
+## [2026-09-04] Fixed: recurring-series same-day duplicate after editing a non-anchor instance's hour
+
+Follow-up to the intermittent duplicate reported earlier ("still having duplicate created in the same day"). A provider-level reproduction of the originally-described scenario (plain task, turning Repeats on for today's own weekday) passed cleanly and did not reproduce it — that path was confirmed correct, not the bug. User's follow-up detail ("after saving another instance with same name but different hour, can't always replicate it") redirected the investigation toward editing an already-recurring task's TIME rather than its Repeats toggle.
+
+Root cause, fix, and prevention are written up in full in `docs/ERROR_LOG.md` under the same date — short version: `_TaskDetailFlowState._save` moved a recurring instance's `scheduledAt` without ever recording `originalScheduledAt`, so `generateRecurrenceInstances`' same-slot dedup check (keyed on `originalScheduledAt ?? scheduledAt`) treated the vacated old slot as still unfilled and regenerated a duplicate there on the next materialization pass. Fixed by setting `originalScheduledAt ??= <old value>` at that call site before the overwrite, mirroring the drag-reschedule paths' existing pattern.
+
+Two new regression tests added to `test/shared/providers/task_providers_test.dart`: one confirms editing the TEMPLATE row's own hour is safe (was already fine), the other reproduces the actual bug on a non-template instance and confirms the fix. `flutter analyze`: clean (same 2 pre-existing unrelated warnings, confirmed unrelated via `git stash` diff). `flutter test test/shared/`: 319/319 green. `flutter test` across `test/features/timeline/` (minus the separately-tracked pre-existing broken `list_mode_clustering_test.dart`) and `test/features/task_detail/`: 87/87 green, including the real end-to-end UI-driven `edit_hour_save_test.dart`.
+
+Also confirmed, while tracing: `_selectedDays` in `_TaskDetailFlowState.initState()` is seeded once from the task's scheduled weekday and never recomputed if the date is changed via the date picker before Repeats is turned on — a real staleness gap, but not the cause of the reported duplicate (it would produce a wrong weekday selection, not an extra same-day row) and not fixed this session — left open, not yet requested.
+
+## [2026-09-04] List mode: external calendar events now render inline (time+title on one line), matching task rows
+
+Follow-up request: "on clustterng task list sohuld have time in front in one line with name ... this still see not in one lne / also inportent tasks not seeing in one line.. hour with title." Investigated both halves separately.
+
+**Overlap-cluster rows:** read the code and wrote a new dedicated `test/features/timeline/overlap_cluster_block_test.dart` to check with a real render, not just code reading, since `_ClusterTaskRow`'s `compactText` branch already looked correct on paper. Confirmed: `compactText: true` genuinely renders one `Text.rich` per row (time+title merged), and `timeline_screen.dart` already wires `compactText: !widget.showHourLabels` at the `OverlapClusterBlock` call site. No code change was needed here — this half of the report reads as already fixed, likely just not visible in whatever build was being tested against (a live `flutter run` session was found holding the tool lockfile during this session — a stale hot-reload on structural widget changes is the most likely explanation, not a code defect).
+
+**External calendar events ("important tasks" on List view) — real bug, fixed.** `ExternalEventBlock` (external_event_block.dart) had NO `compactText` parameter at all — unlike `TaskCapsuleBlock`/`OverlapClusterBlock`, its time and title always rendered as two separate stacked `Text` widgets regardless of Task view vs. List view. The earlier "time in front" request only added the time line; it never merged the two onto one line for List mode, since this block had no inline layout branch to switch to. Added `compactText` (default false), matching the other two blocks: `true` renders one `Text.rich` (time, two spaces, title, `maxLines: 1`, ellipsis); `false` keeps the original stacked `Column`. `externalEventBlockMinHeight` now takes an optional `compactText` flag so List mode's row-height floor only reserves ONE line's worth of space instead of two (the two-line floor was itself a real, deliberate fix from an earlier session — not touched for Task/Zone view, only added a smaller floor for the new compact case). Wired `compactText: !widget.showHourLabels` at all three `timeline_screen.dart` call sites (the render loop, and `_collapsedExternalEventHeight`'s own floor computation, which is List-mode-only by definition so it always passes `true`). Zone view's own `ExternalEventBlock` call site (zone_day_timeline.dart) is untouched — it's never List mode, so it keeps the default stacked layout.
+
+New regression test added to `test/features/timeline/external_event_block_test.dart`: `compactText: true` renders exactly one `Text` widget (a `Text.rich`) containing both the time and title, versus two separate `Text` widgets for the default stacked layout.
+
+`flutter analyze`: clean, whole repo (same 2 pre-existing unrelated warnings only). `flutter test` on `test/features/timeline/` (minus the separately-tracked, still-hanging `list_mode_clustering_test.dart`) + `test/features/task_detail/`: 90/90 green, including both new tests.
+
+## [2026-09-04] Duplicate-task investigation, round 2: double-save guard added, root cause still unconfirmed
+
+New detail from the report reframed this away from the recurrence fix earlier the same day: the duplicate appears **at the same time** (not a different hour), on a task **already recurring on all days**, and **the original existed while the clone did not** — i.e. the save wrote a NEW task rather than updating the existing one. That means `_save` took its `existing == null` branch (`createTask`), which is the only path that mints a fresh `recurrenceId` and therefore a whole second parallel series ("saw 2 tasks everyday").
+
+**Ruled out by real, UI-level tests (all pass, none reproduced the bug):**
+- `updateTaskWithChangedRecurrence` is idempotent for a no-op rule save on an all-days series (provider level, and through the live `showTaskDetailSheet` UI).
+- Creating a task with Repeats on writes exactly one series.
+- Two Save taps in the same frame write once (`_isSaving` already covered this; verified by removing the new guard and seeing the test still pass).
+
+**A hypothesis raised and then disproved, worth recording so it isn't re-litigated:** `_save`'s closing `Navigator.pop()` looked like it would be intercepted by this screen's `PopScope(canPop: false)` and re-routed into `_handleClose`, which — because the `_initial*` snapshot is never refreshed after a save — would still report unconfirmed changes, raise "Discard this task?", and run a SECOND `_save` if the user chose "Save task". A test written to catch that passed even with the fix reverted; reading Flutter's `Navigator.pop` source (navigator.dart, `entry.pop(..., imperativeRemoval: true)`) confirms an **imperative pop never consults `canPop`/`popDisposition`** — `PopScope` only gates system back gestures and `maybePop`. The mechanism is not reachable that way. The `canPop: _hasSaved` change made under that theory was reverted.
+
+**What was kept (defensive, not a proven fix):** a `_hasSaved` flag on `_TaskDetailFlowState`, set before the closing pop and checked at the top of `_save` and in `_hasUnconfirmedChanges`. `_isSaving` only guards two saves *overlapping* — it is already back to false once a save completes — so `_hasSaved` covers the genuinely different shape of a second save arriving *after* the first committed, which on the create branch would write a duplicate task and a second series. The dialog path above remains the one live route that could do that.
+
+Root cause of the reported duplicate is still **unconfirmed** — every path reproduced so far behaves correctly. Left open rather than declared fixed.
+
+`flutter analyze`: clean (same 2 pre-existing unrelated warnings). `flutter test test/features/task_detail/ test/shared/providers/task_providers_test.dart`: 71/71 green.
+
+## [2026-09-04] Zone view showed tasks in the wrong container — time now wins over a stale `zoneId`
+
+Reported directly: a task showing 5:15–17:15 in Task view rendered inside the 09:00–13:00 zone in Zone view. Not a time-to-pixel bug — both views anchor their range at midnight of the selected day and compute `top` identically. The task was placed inside that container by CONSTITUTION.md's containment rule, which made an explicit `zoneId` authoritative over a conflicting `scheduledAt`.
+
+The stale assignment arises because `zoneId` is only ever set and never cleared: `rescheduleTaskWithZone` (dropping a task into a container in Zone view) assigns it, while `rescheduleTask` (Task view's drag) deliberately leaves it untouched and the detail sheet never references `zoneId` at all. Any later time change therefore stranded an assignment that outranked the task's real time.
+
+Because this is a Constitution-level rule, it was put to the user rather than decided here. Confirmed: **time wins whenever both are set**. `resolveZoneContainment` now places a task with a `scheduledAt` by time only — into the zone whose window contains it, or into `unzonedTasks` if none does — and consults `zoneId` solely for zone-only tasks (no `scheduledAt`, nothing to resolve against). Still strictly read-only: `zoneId` is never written or cleared, so a stale value just stops affecting placement.
+
+Updated: `lib/shared/services/zone_containment.dart` (logic + doc comment), CONSTITUTION.md's Zone section (rule rewritten, with the reversal and its reasoning recorded inline), DECISIONS.md, and `zone_view_preview_main.dart`'s seeded mismatch case (its comment claimed the old behavior; the seed itself is kept because it now exercises the reversal on a real device).
+
+Tests: the one test asserting the old rule was rewritten to assert the new one, plus two added — a task whose time falls in a DIFFERENT zone than the one assigned places by time, and a zone-only task still places by `zoneId`. `test/shared/services/zone_containment_test.dart`: 15/15 green.
+
+`flutter analyze`: clean on every touched file. Full run of `test/shared/` + `test/features/` (minus the separately-tracked, still-hanging `list_mode_clustering_test.dart`): 432 pass, 3 fail — all three in `test/features/settings/slack_summary_settings_test.dart`, confirmed pre-existing by stashing this session's changes and reproducing the identical failures on unmodified `main`.
+
+## [2026-09-04] Inline layout reaches cluster rows + external events; new "Show completion checkbox" setting
+
+**Inline gap, fixed.** Reported directly: with the inline layout set, "time and name of important tasks are not in the same line" and "clustered tasks (ok in list) in task view render in 2 lines". Root cause: the `DevTimelineTaskTextLayout` setting only ever reached `TaskCapsuleBlock`. `OverlapClusterBlock` and `ExternalEventBlock` branched solely on `compactText` (`!showHourLabels`, i.e. List mode), so in Task view both stayed stacked while an ordinary capsule beside them went inline — which is exactly why List mode looked right and Task view didn't.
+
+`_DayTimeline` now carries `devTextLayout` as a plain field (same threading as the existing `devDurationVisible`, since `_DayTimelineState` isn't Riverpod-aware). `OverlapClusterBlock` gained a `textLayout` parameter and resolves `isInline = compactText || textLayout == inline`, mirroring `TaskCapsuleBlock`'s own `effectiveTextLayout` rule; `_ClusterTaskRow.compactText` was renamed to `isInline` since it no longer means "List mode". `ExternalEventBlock`'s existing `compactText` is now passed `!showHourLabels || devTextLayout == inline`. Zone view's in-container rows were checked and need no change — they were already single-line by construction (time and title side by side in one `Row`).
+
+**New setting: "Show completion checkbox"** (`PreferenceKeys.showCompletionCheckbox` / `ShowCompletionCheckboxSetting`, defaults true). Requested directly as ONE toggle spanning all three views, unlike `showTimelineConnectors` which is Task-view only. Threaded to all three checkbox call sites: `TaskCapsuleBlock` (Task + List), `OverlapClusterBlock`'s rows, and `ZoneContainerBlock`'s `_ZoneTaskRow`. External-event rows are unaffected — they never had a checkbox.
+
+Two different hiding strategies, deliberately: `TaskCapsuleBlock` hides via the same opacity+`IgnorePointer` path `contentHidden` already uses, keeping the widget in the tree, because that widget documents (from a real past bug) that changing its tree shape mid-gesture breaks drag hit-testing — and a settings toggle can flip mid-drag. The cluster and zone rows drop the checkbox from their `Row` entirely, reclaiming the space: cluster rows own no drag gesture at all, and the zone row's drag lives on its time column, a sibling of the checkbox rather than an ancestor.
+
+**Honesty note on the Settings copy**: the first draft said tasks could still be completed from the task screen. Checked before shipping — the detail sheet has no completion control, and the Inbox's own checkbox only covers unscheduled tasks. So this checkbox is currently the ONLY way to complete a scheduled task, and turning the setting off removes the capability, not just the affordance. Shipped as requested with the copy saying that plainly ("scheduled tasks then have no way to be marked complete"), and the same correction recorded on the provider's doc comment.
+
+Tests: `overlap_cluster_block_test.dart` gained inline-outside-List-mode and checkbox-hiding cases; new `task_capsule_checkbox_test.dart` covers the capsule's own hide-but-keep-in-tree behavior (asserting opacity 0 AND `ignoring: true`, not just invisibility); `zone_container_block_test.dart` gained the zone row's case. `flutter analyze lib/ test/`: clean (same 2 pre-existing unrelated warnings). Full run of `test/shared/` + `test/features/` (minus the still-hanging `list_mode_clustering_test.dart`): 437 pass, same 3 pre-existing `slack_summary_settings_test.dart` failures confirmed earlier this session against unmodified `main`.
+
+## [2026-09-04] Spatial Task View: aligned name column, time/duration columns, pill-hugging zone backgrounds
+
+From an annotated mock ("Build now" vs "Currently"). Three changes, plus one item that turned out to already exist.
+
+**Aligned name column (the non-trivial part).** Previously a capsule was ONE positioned block with the pill and its text as siblings in a `Row`, so text always flowed from its own pill — a lane-2 task's title sat further right than a lane-0 task's. Names sharing one x requires positioning the pill and the text independently. Confirmed via AskUserQuestion as the **fixed-x** variant (over "after the widest stack"): with 3+ stacked pills the rightmost pill now sits under the start of the text column, which is the accepted trade for names that never move.
+
+`TaskCapsuleBlock` gained `splitLayout` (default false): it renders pill-only by hiding its text region through the SAME opacity path `contentHidden` already uses, keeping its tree shape byte-identical. That matters — this widget documents two prior bugs where changing the tree around its drag `GestureDetector` broke hit-testing. `_DraggableTaskBlockState` now builds one capsule subtree shared by both layouts and only chooses where to position it, so the gesture's render-object ancestry is identical either way. In split mode a single outer `AnimatedPositioned` (row-height, day-column wide — deliberately not full-day, which would swallow taps meant for free-window blocks beneath) holds two children: the pill at its lane's x, the text at `_textColumnLeft`. One shared `top` and one animation, so the halves can't drift apart by a frame during a drag, settle, or cascade push. The lift `AnimatedScale` stays on the pill alone.
+
+New `TaskCapsuleTextRow`: fixed-width time and duration columns, then the title, then the checkbox. The fixed widths are the mechanism — they're what make titles align even when time strings differ in width. Both leading columns disappear together under the existing `durationVisible` toggle, matching the mock's left-hand screen.
+
+**Zone backgrounds hug the pill column.** Confirmed as pills-only (time and name sit outside the zone band). Width comes from the deepest overlap lane actually in use inside that zone's own window, via two new pure functions in `task_overlap_layout.dart` — `zonePillLanes` and `zoneBackgroundPillWidth` — extracted rather than left private on the State specifically so the arithmetic is testable. They read the SAME `TaskLayoutSlot`s the capsules are positioned from, so the background can't disagree with the pills drawn over it. Half-open window semantics, matching `resolveZoneContainment`.
+
+**Rotated zone names on the right**: already shipped — present in all three of the mock's screenshots including "Currently". Treated as "keep", not new work.
+
+Scope: `splitLayout` is Task view only. List (collapsed) mode, Zone view, the drag-preview card and the dev previews all keep the combined pill+text row untouched — confirmed by the capsule golden test passing unchanged.
+
+Tests: new `task_capsule_text_row_test.dart` (three columns render; the title starts at the same x for 4:00 vs 11:00 — different time-string widths; `durationVisible: false` drops both leading columns; checkbox toggle) and `zone_pill_lanes_test.dart` (11 cases: empty zone, no stacking, 2 and 3 lanes, stacking outside the zone, both half-open boundaries, straddling stacks, and the width arithmetic). Two of those boundary tests initially failed against my own wrong expectations and were corrected to match the real semantics, not the other way round.
+
+`flutter analyze lib/ test/`: clean (same 2 pre-existing unrelated warnings). Full run of `test/shared/` + `test/features/` (minus the still-hanging `list_mode_clustering_test.dart`): 452 pass, same 3 pre-existing `slack_summary_settings_test.dart` failures.
+
+## [2026-09-04] Task view corrections: uniform zone width, day-wide text column, and a real overflow bug fixed
+
+Follow-up mock with two corrections to the previous session's pass, plus a rendering bug the "Currently" screenshot caught.
+
+**Overflow bug, fixed (my regression, introduced yesterday).** The screenshot showed `RIGHT OVERFLOWED BY 56 PIXELS` banners across stacked pills, with text running off-screen. Cause: in split layout the caller lays `TaskCapsuleBlock` out at exactly one pill width, but the widget's text column, its `spacingSm` spacer, and its trailing checkbox all still claimed their intrinsic widths — they were only faded to opacity 0, never collapsed. This is precisely the RenderFlex-overflow class that widget's own `ClipRect` comment already documents ("OVERFLOWED BY 56px"), reintroduced on the horizontal axis. Fixed by capping the text column at `maxWidth: 0`, zeroing the spacer, and wrapping the checkbox in a `ClipRect` + zero-width `SizedBox` — all width-only changes, so the always-present-tree rule protecting the drag gesture still holds. Verified the new regression test actually catches it by reverting the fix and watching it fail.
+
+**All zones the same width.** Corrected directly: "all zones same width even if only items over 1 zone stack." The previous pass sized each zone band to its OWN deepest stack, which made bands visibly different widths down the day. `zonePillLanes` (per-zone, with its window-overlap math) is replaced by `dayPillLanes` — the deepest stack anywhere in the visible day — so every band is uniform and still clears the widest run.
+
+**Text column aligned day-wide.** Corrected directly: "all text ... always lined up even if one zone." The text column was a flat one-pill offset, so on a day containing any stacking the names sat over the stacked pills. It now derives from the same `dayPillLanes` value the bands do, computed once by `_DayTimeline` and passed to each block as `textColumnLeft` rather than recomputed per block — the whole point being that every block agrees on it. One consequence worth noting: the shared column means a day with a 3-deep stack pushes every name right, including on rows that don't stack. That is what "lined up with those stacked" asks for.
+
+Because both now come from one function, the band and the text can't drift apart — the earlier per-zone version could disagree with the pills drawn between them.
+
+Tests: `zone_pill_lanes_test.dart` renamed to `day_pill_lanes_test.dart` and rewritten for the new day-wide semantics (8 cases, including "the deepest stack anywhere wins" and a check that band width and text offset resolve identically for every task in a mixed day). New overflow regression test in `task_capsule_checkbox_test.dart`, confirmed failing without the fix.
+
+`flutter analyze lib/ test/`: clean (same 2 pre-existing unrelated warnings). Full run of `test/shared/` + `test/features/` (minus the still-hanging `list_mode_clustering_test.dart`): 450 pass, same 3 pre-existing `slack_summary_settings_test.dart` failures.
+
+## [2026-09-04] All overlaps cluster; cluster times follow the duration setting; wider zone band
+
+Three corrections, all in the Spatial Task View.
+
+**One overlap style, not two.** `overlapClusterCap = 3` meant a run of 2–3 tasks got the aggregate cluster treatment while a run of 4+ silently fell back to plain side-by-side capsules — the two styles reported. The cap is removed entirely rather than raised (any bound recreates the same split deeper in the day); see docs/DECISIONS.md, which records this as a reversal of a previously-confirmed decision. No downstream change was needed: `_withClusterLanes` already handles any cluster size.
+
+**Cluster row times follow the duration setting.** Previously `durationVisible: false` dropped only the `(1h)` suffix from a clustered row, leaving "04:00 - 05:00" showing beside an ordinary capsule that hides its time columns entirely under the same setting. The time label is now null when the setting is off, and both the stacked and inline branches omit the whole line/span.
+
+**Zone band widened by one pill.** Requested directly ("zone larger by the width of task pill") so the band reads as a container around the pills rather than a strip cut exactly to them. The shared text column was widened by the same amount so names still start clear of the band — both derive from the one `dayPillLanes` value, so they cannot drift apart.
+
+**Cluster list now uses the shared text column too.** Found while making the above change: the cluster's row list positioned itself from its OWN member count (`cluster.tasks.length * pillWidth`), so a 4-task cluster's rows started further right than a 2-task cluster's, and further right than every unclustered task's name — directly against "all text always lined up". It now uses `_textColumnLeft` like everything else.
+
+Tests: 3 cap-encoding tests in `overlap_cluster_test.dart` rewritten for the new rule (including a 7-deep run asserting it clusters whole); 2 new cases in `overlap_cluster_block_test.dart` covering time-hiding in both the stacked and inline layouts.
+
+`flutter analyze lib/ test/`: clean (same 2 pre-existing unrelated warnings). Full run of `test/shared/` + `test/features/` (minus the still-hanging `list_mode_clustering_test.dart`): 452 pass, same 3 pre-existing `slack_summary_settings_test.dart` failures.
+
+## [2026-09-04] Vertical zone names added to the Task view (they never existed)
+
+Reported directly: "can't see vertical zone name on task view." Investigated before building — the rotated zone name did not exist ANYWHERE in the codebase: no `RotatedBox`/`Transform.rotate` in any timeline file, and `zone.title` was read in exactly one place (`ZoneContainerBlock`'s horizontal header in Zone view). The Task view's `ZoneBackgroundBlock` renders a bare `DecoratedBox` with no label at all.
+
+This corrects a claim from an earlier session in this conversation, where the rotated labels were called "already shipped, keep as-is" — that was read off the design mockups' screenshots without checking the code, and both screenshots were mockups, not builds.
+
+New `ZoneNameLabel` (in `zone_background_block.dart`, beside the block it annotates): the zone's title in `RotatedBox(quarterTurns: 1)`, pinned to the day's right edge, spanning the zone's own time range, centred along that span. Styled `textCaption` in `colorTextSecondary` — the same tokens the hour labels on the opposite edge use, so the two read as one class of ambient annotation framing the day. `IgnorePointer`ed, matching the background block's own display-only scope.
+
+Deliberately a SIBLING of `ZoneBackgroundBlock` rather than a child: the band now hugs the pill column on the left (see the earlier entry), while the label belongs at the far right. Both derive their vertical geometry from the same time math, so they still describe the same band.
+
+New `_zoneLabelGutterWidth` reserves room at the right edge — the mirror of `_hourGutterWidth` on the left. Both the ordinary task rows (`textColumnRight`) and the cluster row list now stop short of it, so a title or checkbox can never render underneath a zone name. Zero when the day has no zones, so a zone-less day loses no width.
+
+Tests: 4 new cases in `zone_background_block_test.dart` — the title renders, the rotation is a quarter turn, the label spans the zone's real time range pinned right (not left), and it stays `IgnorePointer`ed.
+
+`flutter analyze lib/ test/`: clean (same 2 pre-existing unrelated warnings). Full run of `test/shared/` + `test/features/` (minus the still-hanging `list_mode_clustering_test.dart`): 456 pass, same 3 pre-existing `slack_summary_settings_test.dart` failures.
+
+## [2026-09-04] Fixed: lifted (dragged) pill clipped on its right side in the Task view
+
+Reported directly: "affected is lifted (drag drop) state of tasks, right side is cut off, only part of pill visible." A regression from this session's split-layout work.
+
+Cause: `_buildSplit` positioned the pill in a box of exactly `_pillWidth`. That is correct for a resting pill, but while lifted `TaskCapsuleBlock` wraps the pill in its frosted `Container` with `EdgeInsets.all(spacingSm)` inside a `ClipRRect` — so a lifted pill genuinely needs `pillWidth + 2 * spacingSm`, and the `ClipRRect` cut the overflow off at the right edge the moment a drag started.
+
+Fixed by reserving that padding in the pill's own box (`left` shifted back by `spacingSm`, width grown by `spacingSm * 2`) with an `Alignment.topCenter` `Align` inside it. Top-anchored deliberately: the pill's top edge IS the task's start time, so only the horizontal room is added. The extra width is reserved always, not just while dragging, so the pill's resting x doesn't shift as the padding animates in.
+
+Checked and NOT a second cause: the `AnimatedScale` lift (1.04x) sits OUTSIDE `TaskCapsuleBlock`, so its `ClipRRect` can't clip the scale, and the enclosing `Stack` is `Clip.none` — the scaled pixels paint freely. Only the frosted padding was ever being clipped.
+
+New regression test in `task_capsule_checkbox_test.dart` asserting a lifted split-layout pill renders wider than a bare pill width (and no wider than the reserved box), so the reserved room can't silently shrink back. The existing non-lifted "no overflow in a one-pill box" test still passes alongside it.
+
+`flutter analyze lib/ test/`: clean (same 2 pre-existing unrelated warnings). Full run of `test/shared/` + `test/features/` (minus the still-hanging `list_mode_clustering_test.dart`): 457 pass, same 3 pre-existing `slack_summary_settings_test.dart` failures.
+
+## [2026-09-04] Lifted pill carries its own name/time; ghost reduced to a bare shape
+
+Requested directly: "lifted state should have its inner title and time underneath name showing (same as ghost state left in place) ... but in ghost state we shouldn't have title and time and not icon when moving, and pane containing (bg blur one) should be extended to that name." An inversion of what the split layout had been doing.
+
+**Lifted pill.** New `TaskCapsuleBlock.liftedTextInline` reopens the text region that `splitLayout` normally collapses, so a dragged pill carries its own name and time inside the frosted pane. Necessary because the shared text column stays anchored at its own x — a pill dragged away from it travelled unlabelled. The pill's box in `_buildSplit` now runs to the row's right edge while `_isDragging` (instead of one pill width), so the frosted pane grows around the text rather than clipping it, and its `Align` switches to `topLeft` there so the pane expands rightward from where the pill already sits rather than re-centring. The separately-positioned `TaskCapsuleTextRow` is faded out for the dragged task, so its title never shows twice at once.
+
+**Ghost.** Now `contentHidden: true` plus a new `glyphHidden: true` — a plain 20%-opacity shape marking the slot the task came from. `glyphHidden` exists because `contentHidden` alone deliberately KEEPS the category emoji (it is a resting cluster member's only category cue, itself a past direct correction); the ghost is the one case that wants the glyph gone too, so it got its own flag rather than changing that rule.
+
+**A latent bug the tests surfaced.** Asserting the collapsed text width exposed that `splitLayout`'s `maxWidth: 0` never actually collapsed anything on its own: the `ConstrainedBox` sits inside an `Expanded`, which passes a TIGHT width down, and a `maxWidth` constraint cannot shrink below a tight incoming one. The collapse only worked because the split-layout caller happens to size the row to one pill. Fixed properly with `Flexible(flex: textCollapsed ? 0 : 1, fit: loose/tight)` — deliberately NOT an `if` that swaps the child out, since `liftedTextInline` flips mid-drag and changing the tree shape around the pill's gesture detector is the exact bug class this widget has hit twice before.
+
+Tests: 2 new cases in `task_capsule_checkbox_test.dart` — `liftedTextInline` renders the title at real width where `splitLayout` alone gives it zero, and `glyphHidden` drops the emoji that `contentHidden` alone keeps (asserted on opacity, and located by tree position rather than by literal glyph so it survives a category emoji change). One assertion was written wrong first (`findsNothing` for a widget that deliberately stays in the tree at zero width) and corrected to measure width instead.
+
+`flutter analyze lib/ test/`: clean (same 2 pre-existing unrelated warnings). Full run of `test/shared/` + `test/features/` (minus the still-hanging `list_mode_clustering_test.dart`): 459 pass, same 3 pre-existing `slack_summary_settings_test.dart` failures.
+
+## [2026-09-04] Task names align to their own pill's icon, stacking only on collision
+
+Requested directly, with a before/after screenshot: names should sit level with their own pill's icon, and only stack when two tasks start at the same time or too close to fit — "otherwise the title should be at the level of the icon of the pill, but precisely lined up with the icon."
+
+Cause of the old behaviour: a clustered task surrendered its name to `OverlapClusterBlock`, whose `Column` packs every member's row sequentially from the CLUSTER's own top. That reads as a detached list (the left screenshot) and severs each name from the pill it describes — and it applied to any overlap at all, now that the cluster cap is gone.
+
+New pure function `computeLabelTops` (`collapsed_stack_layout.dart`, beside the existing `computeCollapsedStackTops`): each label carries a `preferredTop` — its own pill's top, i.e. where its icon sits — and a height; a greedy chronological sweep places each at its preferred position unless the previous label's bottom has already passed it, in which case it is pushed just clear. Deliberately distinct from `computeCollapsedStackTops`, which packs everything sequentially from zero and has no notion of a preferred position — right for List mode, which has no time axis to align to, wrong here.
+
+Wiring: `labelTops` is computed once per day (like the shared text-column x, so every label agrees) and passed to each block as `labelOffset` — the delta from its own pill's top, so zero means perfectly icon-aligned and the value rides the block's existing drag/settle animation unchanged rather than fighting it. The cluster row list is now gated to List mode only, and `contentHidden` (which suppresses a capsule's own text in favour of that list) likewise, so in Task view every task keeps its own label.
+
+`rowHeight` in `_buildSplit` now also covers a label pushed below the pill's bottom: the Stack is `Clip.none` so it would still paint, but a child outside its parent's bounds is not hit-testable, and the label carries the row's tap target and checkbox.
+
+Tests: 7 new cases for `computeLabelTops` — lone label at its icon, two well-separated labels BOTH keeping exact alignment, same-time pair stacking, a merely-too-close pair pushed just clear, three near-simultaneous reading one-by-one, never pushed above its own icon, and input-order independence.
+
+`flutter analyze lib/ test/`: clean (same 2 pre-existing unrelated warnings). Full run of `test/shared/` + `test/features/` (minus the still-hanging `list_mode_clustering_test.dart`): 466 pass, same 3 pre-existing `slack_summary_settings_test.dart` failures.
+
+## [2026-09-04] Fixed: zone band shrank and titles jumped left while dragging a stacked task
+
+Reported directly: "when one of stacked items is lifted the zones shrink, and titles shift left, as if ghost not holding physical space."
+
+Exactly that. The zone band width and the shared text-column x are both derived from the day's deepest lane count (`dayPillLanes`), and both were measuring it off `slots` — which is re-laned from `clusters`, and `clusters` deliberately EXCLUDES the dragged task so the remaining members don't silently re-form a smaller cluster mid-drag. So lifting one member of a 2-deep stack dropped the day's lane count to 1: the band narrowed and every name in the day jumped left until the drop landed.
+
+The fix needed no new state. `ghostSlots` already existed for precisely this problem in a different guise — it is the same lane layout computed from `restingClusters` (no drag exclusion), added earlier so the ghost renders in the lane it actually held. Both width computations now read it, so the layout reserves the lane the ghost is visibly occupying. Its declaration comment was rewritten, since the variable is no longer ghost-only.
+
+Checked and NOT affected: the per-task label positions (`labelTops`). Their `preferredTop` comes from `_blockTops`, which in Task view is pure time-to-pixel math per task and independent of lane assignment; `slots` and `ghostSlots` differ only in lanes, not membership. So labels never reflowed — only the two lane-derived widths did.
+
+New regression test in `day_pill_lanes_test.dart` pinning the invariant: a 2-task stack is 2 lanes deep, and the same day with the dragged task dropped from the list measures 1 — the exact difference that caused the reflow, now asserted so a future change can't quietly reintroduce measuring off the drag-excluded layout.
+
+`flutter analyze lib/ test/`: clean (same 2 pre-existing unrelated warnings). Full run of `test/shared/` + `test/features/` (minus the still-hanging `list_mode_clustering_test.dart`): 467 pass, same 3 pre-existing `slack_summary_settings_test.dart` failures.
+
+## [2026-09-04] Duplicate-task root cause FOUND and fixed: a moved recurrence instance claimed only the slot it left
+
+Resumed the investigation parked in round 2. The decisive clue from that round — the original survived and the clone was new — had pointed at `_save`'s create branch, but every create path tested clean. Reconsidering that the "clone" might be a materialized recurrence instance rather than a `createTask` write led straight to it.
+
+`generateRecurrenceInstances` built its dedup set as `originalScheduledAt ?? scheduledAt`: one slot per instance, preferring the vacated one. A moved instance therefore left its NEW time reading as an unfilled occurrence, and moving an instance onto a slot the rule also generates made the generator materialize a fresh task on top of it — a duplicate at the same time, exactly as reported.
+
+Latent until this same day's earlier same-day-duplicate fix, which started setting `originalScheduledAt` on detail-form time edits; before that, form edits left it null and the `??` fallback happened to claim the new slot. That earlier fix was right — it exposed the other half of the invariant rather than causing it.
+
+Fixed by claiming BOTH slots (`originalScheduledAt` and `scheduledAt`, null-guarded). Unmoved instances are unaffected: their `originalScheduledAt` is null and the Set collapses the duplicate claim. Full writeup in docs/ERROR_LOG.md.
+
+Method note: this round started by writing a test that reproduced the duplicate BEFORE any fix — the first time in three rounds the bug was actually reproduced — then the fix was verified by reverting it and watching the test fail again. The 47 existing recurrence/provider tests, including the ones specifically covering vacated-slot behaviour, all still pass.
+
+`flutter analyze lib/ test/`: clean (same 2 pre-existing unrelated warnings). Full run of `test/shared/` + `test/features/`: 466 pass. 5 failures, all confirmed pre-existing and unrelated by stashing this change and reproducing them identically: the 3 known `slack_summary_settings_test.dart` ones, plus 2 in `notification_service_test.dart` that are time-of-day dependent (they seed a zone at 23:40 and assert `now.hour != 23`; this run happened at 23:11).
+
+## [2026-09-04] Zone creation now stages like task creation: Name-only first, rest fades in on Done
+
+Requested directly: zones "should follow same pattern of creation as tasks, on creation first just name visible, other items below start end repeat etc not visible, then fade in after Done is clicked."
+
+`_ZoneFormScreenState` gained `_isNameStage` (true only for a fresh create — editing an existing zone still skips straight to the full form, matching "Edit task"'s own behavior). Stage 1 shows only the Name pane with a "Done" primary button; stage 2 (Start/End, Repeat, Notifications) is built as a list and wrapped per-pane in a staggered fade+slide entrance, appearing only once `_isNameStage` flips false. `_confirmNameStage` mirrors `task_detail_sheet.dart`'s own exactly: an empty name closes the whole screen instead of advancing into an empty form, rather than disabling the Done button.
+
+The Name field is built ONCE, unconditionally, both stages — same reasoning as the task flow's `_NameDescriptionPane`: its Element (and any focus/keyboard state) must survive the stage transition rather than remounting as a different field.
+
+**Promoted `_StaggeredEntrance` out of `task_detail_sheet.dart`** into `core/widgets/app_staggered_entrance.dart` as `AppStaggeredEntrance`, the same move `AppStepScaffold` already went through for this exact reuse case — a ~50-line stateful animation with real branching logic (delay-by-index, dispose the controller) is a different judgment call than the small stateless `_ZoneRecurrencePanel` duplication documented elsewhere in this file, which stays duplicated deliberately. `task_detail_sheet.dart` now consumes the promoted widget too, so there is exactly one staggered-entrance implementation, not two that could drift.
+
+Existing zone-form tests written against the old always-visible layout needed updating: they now drive stage 1 (type name, tap Done) before reaching the fields they exercise. Three new tests: stage 1 renders with no time fields in the tree and Done always enabled; an empty-name Done closes the screen; Save is disabled until start/end are set once past stage 1.
+
+`flutter analyze lib/ test/`: clean (same 2 pre-existing unrelated warnings). `test/features/task_detail/`: 40/40 green, confirming the promotion didn't disturb the task flow. `test/features/zones/zone_form_screen_test.dart`: 7/7 green, all three new/changed assertions verified to actually fail with the stage-1 change reverted. Full run of `test/shared/` + `test/features/` (minus the still-hanging `list_mode_clustering_test.dart`): 469 pass, 5 failures — the 3 known pre-existing `slack_summary_settings_test.dart` ones plus 2 in `notification_service_test.dart` that are the already-documented 23:00-hour time-dependent flake (confirmed: this run was at 23:32).
+
+## [2026-09-05] Add-category flow now uses the same near-full-screen, progressive-disclosure pattern as task/zone creation
+
+Requested directly: "add category sheet should be near full screen same as add task and same pattern... this would be a pattern of progressive disclosure that applies to task, zone, category."
+
+`AddCategoryModal` (an `AppSheet`-based stateful widget with a static `.show()`) is replaced by `showAddCategoryModal(context)`, a top-level function pushing the same `PageRouteBuilder` (slide-up, scrim barrier) the task and zone creation flows already use, built on the shared `StepScaffold` chrome instead of `AppSheet`. Stage 1 shows only the Name field with a "Done" primary button; Color and Emoji are built as a staggered list and appear only once Done is confirmed, matching the task/zone flows' own `_confirmNameStage` exactly — an empty name closes the whole screen rather than leaving Done disabled. Always starts on stage 1 (unlike the task/zone flows' `_isEditing` skip): category has no edit entry point to skip it for (v1 scope is create + list only).
+
+**Promoted `_StaggeredEntrance` fully**, not just reused — it was already promoted to `core/widgets/app_staggered_entrance.dart` (`AppStaggeredEntrance`) during the zone-form work; this session was its second consumer, confirming the promotion was the right call rather than a one-off.
+
+API rename note: `AddCategoryModal.show(context: context)` → `showAddCategoryModal(context)`, matching the `showZoneFormScreen`/`showTaskDetailSheet` top-level-function convention exactly rather than being the one static-class-method holdout. Both call sites (`TaskCategoryModal`, `TaskNameCategoryModal`) updated.
+
+Existing `add_category_modal_test.dart` rewritten for the two-stage flow: the color-swatch finder (`find.byType(GestureDetector).at(1)`) broke silently once `StepScaffold`'s own chrome added many more `GestureDetector`s to the tree — replaced with a finder scoped to descend from the "Color" `AppPane`, which is robust regardless of how much chrome surrounds it. 3 new/rewritten test cases; all confirmed to actually fail with `_isNameStage` forced false.
+
+**Investigated but NOT caused by this change**: running the whole `test/features/task_detail/` directory in one invocation flakes (different files fail each run) even on unmodified `main` — a pre-existing environment-level issue, not a regression; every individual file in that directory passes cleanly on its own, both before and after this change. Separately, `task_providers_test.dart`'s "narrowing daily down to 5 weekdays" test fails identically on unmodified `main` whenever run on a Saturday or Sunday (today is Saturday 2026-09-05) — a real, pre-existing weekday-dependent test bug unrelated to today's work, flagged here rather than silently worked around.
+
+`flutter analyze lib/ test/`: clean (same 2 pre-existing unrelated warnings). `add_category_modal_test.dart`: 4/4 green. Full run of `test/shared/` + `test/features/` (minus the still-hanging `list_mode_clustering_test.dart`): 472 pass, 4 failures — the 3 known pre-existing Slack ones plus the pre-existing Saturday/Sunday recurrence flake, both confirmed identical on unmodified `main`.
+
+## [2026-09-05] Task pill corners: 8px (radiusMd), not fully rounded
+
+Requested directly: "rounding of pills make 8 and rounding of zones 16."
+
+Zone backgrounds/containers already use `radiusXl` (16.0) — no change needed there, confirmed by reading the token value before touching anything.
+
+The task capsule's colored rail used `radiusTaskPill` (`RadiusPrimitives.radiusFull`, a true stadium/pill shape) — but that token is shared far beyond the timeline: `AppButton`'s pill-shaped buttons, the theme-mode selector, the tracked-behavior form, and a settings row all read it too. Repointing the token's own value to 8 would have flattened every one of those. Flagged via AskUserQuestion before touching a shared token with that much reach; confirmed scope is the timeline pill only.
+
+Reuses the existing `radiusMd` token (already 8.0, already a real Tier 2 value used across the app) for just the capsule's rail `BoxDecoration`, rather than inventing a new token that would duplicate an existing value.
+
+`timeline_capsule_preview.png` golden regenerated for the resulting real, intentional pixel diff (0.25%, 1353px — corner shape change on every seeded pill) — not a regression, per the project's stale-baseline rule.
+
+`flutter analyze lib/ test/`: clean (same 2 pre-existing unrelated warnings). `test/features/timeline/` (minus the still-hanging `list_mode_clustering_test.dart`): 89/89 green, including the regenerated golden.
+
+## [2026-09-05] Fixed: resting task pill's left corners still clipped at the old 16px radius
+
+Follow-up to the prior session's pill-radius change (8px rail, `radiusMd`). Reported directly: the lifted/dragging pill looked right, but the resting pill's top-left and bottom-left corners still showed the old rounding.
+
+Root cause and fix are written up in full in `docs/ERROR_LOG.md`, dated the same day — short version: `TaskCapsuleBlock`'s always-present frosted lift wrapper had its own `ClipRRect` hard-coded to the LIFTED radius (`radiusXl`, 16) regardless of `isLifted`, and at rest the pill's rail sits flush against that wrapper's left edge with no padding — so the outer 16px clip landed on the pill's own 8px corner and won. The wrapper's radius is now animated by the same `t` value already driving its shadow/blur/padding, landing on `radiusMd` at rest and `radiusXl` once fully lifted.
+
+New regression test in `task_capsule_checkbox_test.dart` asserts the `ClipRRect`'s own `borderRadius` directly at both `isLifted` values — confirmed to fail without the fix and pass with it, rather than relying on the golden diff alone. `timeline_capsule_preview.png` golden regenerated for the resulting small, real, intentional pixel diff (0.07%, 383px — just the pill's left-corner shape while resting).
+
+`flutter analyze lib/ test/`: clean (same 2 pre-existing unrelated warnings). `test/features/timeline/` (minus the still-hanging `list_mode_clustering_test.dart`): 90/90 green.
+
+## [2026-09-05] Task/List view pill and icon now match Zone view's size (20px, not 36px)
+
+Requested directly: "pill size and icon same as on zone view so smaller (apply this on both task and list view)."
+
+Investigated before changing anything: a real shared token, `theme.sizeTaskBadge` (20px, `SpacingPrimitives.space6`), already exists specifically for this — its own doc comment even claims "[TaskCapsuleBlock]'s own pill width... all read from this ONE value now instead of each computing `spacingXl * 0.9` independently." That claim was stale: the token was added, but `TaskCapsuleBlock.badgeSize` and `timeline_screen.dart`'s mirrored `_pillWidth` were never actually switched over — both still computed the old ad hoc `spacingXl * 0.9` (36px). Only `ZoneContainerBlock` had genuinely migrated. This session's request is exactly what closes that gap.
+
+Both `TaskCapsuleBlock.badgeSize` and `_pillWidth` now read `theme.sizeTaskBadge` directly, matching `ZoneContainerBlock`'s row badge exactly (same value, same token, not just the same number reached two ways). Everything already derived from `badgeSize`/`_pillWidth` — the emoji font size (`badgeSize * 0.55`), the pill-height floor, `_collapsedPixelsPerMinute` (List view's own scale, previously-confirmed as `badge ÷ 30`) — scales down automatically with no separate change needed, since none of those were re-hardcoded.
+
+Deliberately left OUT of scope: `_SchedulePreviewCard` in `task_detail_sheet.dart` (the create/edit form's own live preview badge, `task_detail_sheet.dart:2369`) has the identical stale `spacingXl * 0.9` duplicate, but it's a different surface than "task and list view" (the Timeline), which is what was actually requested — flagged here rather than changed silently, since expanding scope to a surface nobody asked about isn't this task's call.
+
+`timeline_capsule_preview.png` golden regenerated for the resulting real, large, intentional pixel diff (4.29%, 23434px — every seeded pill shrinks). Two existing tests in `task_capsule_checkbox_test.dart` hardcoded the OLD `spacingXl * 0.9` formula as their own expected pill width — updated to `theme.sizeTaskBadge` so they keep testing the real invariant rather than a now-stale magic number.
+
+`flutter analyze lib/ test/`: clean (same 2 pre-existing unrelated warnings). `test/features/timeline/` (minus the still-hanging `list_mode_clustering_test.dart`): 90/90 green, including the regenerated golden and both updated tests.
+
+## [2026-09-05] "Task size" ships as a real global Settings toggle (sm/md/lg)
+
+Full architecture and reasoning in docs/DECISIONS.md, dated the same day. Short version: what shipped in the immediately-preceding session (unifying Task/List/Zone view onto one fixed 20px badge) is now reframed as one rung ("sm") of a real three-rung scale (sm 20/12, md 24/14, lg 28/16 — badge px / font px), exposed as a persisted Settings toggle rather than a fixed constant, and confirmed to apply globally (Task, List, AND Zone view together) rather than per-view.
+
+New `TaskSize` enum (own Hive adapter, typeId 11) + `TaskSizeSetting` provider, defaulting to `md` — Task view's own size before any of this session's or the prior session's work began. `AmbleTheme` gained the three fixed rungs as new fields while keeping `sizeTaskBadge`/`textTaskTitle` as the single resolved/active fields every real call site already reads; `main.dart` resolves the setting onto both light and dark palettes once, before `MaterialApp` sees them, so zero call sites in `TaskCapsuleBlock`/`ZoneContainerBlock`/`OverlapClusterBlock` needed to change.
+
+`textTaskTitleCompact` (List view's previously separate, always-smaller font token) is gone — confirmed directly that List view should track the exact same global setting, with no relative "one step down" behavior any more.
+
+New Settings row: "Task size" with Small/Medium/Large chips, placed near the other Timeline display toggles.
+
+Tests: new `test/core/tokens/task_size_scale_test.dart` pins the exact sm/md/lg badge and font values, their strict ordering, the md default, and light/dark parity — and separately verifies `copyWith` resolves each rung correctly (mirroring `main.dart`'s own private, untested-by-precedent `_resolveTaskSize`). New case in `hive_preferences_repository_test.dart` confirms `TaskSize`'s own Hive adapter round-trips (not just the generic mechanism `AppThemeMode` already proved). `timeline_capsule_preview.png` golden regenerated for the resulting real, intentional diff (default size moved from the just-shipped 20px back to 24px/md).
+
+`flutter analyze lib/ test/`: clean (same 2 pre-existing unrelated warnings). Full run of `test/shared/` + `test/features/` + `test/core/` (minus the still-hanging `list_mode_clustering_test.dart`): 520 pass, 4 failures — the 3 known pre-existing Slack ones plus the already-documented Saturday/Sunday recurrence flake (today is still Saturday).
+
+## [2026-09-05] Zone band geometry: precise cusps, task inset instead of band offset, wider lanes
+
+Three changes from an annotated screenshot.
+
+**1. Zone cusps are now precise.** Reported: "zone is 4:00-5:00 but it looks like it ends before 5:00, next zone starts at 5:00 but looks like before — we need to make that cusp precise but retain gap between zones." The band used to start `zoneBackgroundOffset` (12px) ABOVE its own start time and shrink by `zoneBackgroundGap` (4px), so its bottom landed 16px short of the real end — the whole band read as sitting off its real hours. Now the top edge lands exactly on the start time and the ENTIRE gap comes off the bottom, so the earlier zone yields the whole clearance and the later one still starts precisely on the shared boundary. Two back-to-back zones still clear each other by exactly `zoneBackgroundGap`. `zoneBackgroundOffset` is now horizontal-only.
+
+**2. The gap above a task starting at a zone's start moved from the band to the task.** Reported: "task that start same as zone should just have small gap same as from side of the zone, atm too big gap." A task at the zone's start time sits at the same pixel as the zone's boundary, so giving it a gap requires moving one of the two. Confirmed via AskUserQuestion (band-exact vs. band-extends-above): the band's edges stay exact and the TASK is nudged down instead, by a new `_zoneTaskTopInset` — `zoneBackgroundOffset`, so the gap above the task reads as the same size as the gap beside it, which is what "same as from side of the zone" asks for. Zero for any task that doesn't start exactly on some zone's start.
+
+**3. Lane gap widened.** `_columnGap` moved from `spacingXs` (4) to `spacingSm` (8) — "slight larger gap between lanes", one rung up the existing scale rather than a new value.
+
+**Zone view kept in sync.** `ZoneDayTimeline`'s own container applied the same `-zoneBackgroundOffset` on top, under an explicit "both views render the same zone at the same pixel" invariant a previous session established after a reported view-switch jump. Changing only Task view would have silently broken it, so Zone view's container now uses the strict top too. Its height already subtracted the gap, which matches the new model unchanged.
+
+Tests: `zone_background_block_test.dart`'s two geometry tests rewritten for the new model, and its back-to-back-clearance test now measures BOTH blocks' real rendered `Positioned` values instead of recomputing the formula in the test (it previously duplicated the arithmetic it was meant to verify, so it would have passed against a wrong implementation). `zone_day_timeline_position_test.dart` updated — its finder located the zone container by matching a distinctive `top` value, which stopped being unique once the offset was removed and silently matched an unrelated Positioned; it now anchors to `ZoneContainerBlock` itself.
+
+**Not covered by a test**: `_zoneTaskTopInset` is a private State method on `_DayTimelineState`, and the only harness that drives a full `TimelineScreen` is the separately-tracked hanging `list_mode_clustering_test.dart` — so this one is verified visually only. Flagging rather than claiming coverage: `timeline_capsule_preview.png` passes unchanged, but that preview seeds no zones and no overlapping tasks, so it exercises none of these three changes.
+
+`flutter analyze lib/ test/`: clean (same 2 pre-existing unrelated warnings). Full run: 520 pass, 4 failures — the 3 known Slack ones plus the documented Saturday/Sunday recurrence flake (today is Saturday).
+
+## [2026-09-05] Zone band padding made symmetric on all three sides
+
+Reported directly: "gap from top of zone if task starts same hour as zone should be same as from left" and "gap from right (zone to right task) should be same as left gap (padding)".
+
+**Right padding was 8px against a 12px left inset.** `_zoneBackgroundWidth` added a bare `_pillWidth` to the pills' span; `ZoneBackgroundBlock` then starts the band `zoneBackgroundOffset` (12) to the left and trims `zoneBackgroundGap` (4) off the width. The 8px that fell out on the right was an accident of that arithmetic, not a chosen value. Width now carries both insets plus the trim, so the right padding equals the left at every lane depth (verified 1/2/3 lanes).
+
+**Top padding was already correct** at 12px, from the previous session's `_zoneTaskTopInset` — confirmed by measuring a real render rather than assuming, since this geometry has been easy to reason about wrongly. All three paddings now measure exactly `zoneBackgroundOffset`.
+
+**A test that would have passed against a broken implementation.** The new symmetry test initially computed the expected width inline — the same flaw I'd just criticised in the old back-to-back-clearance test — and duly passed with the fix reverted. Fixed properly by promoting the padding arithmetic out of the private `_zoneBackgroundWidth` into a public, testable `zoneBackgroundWidthForPills` in `task_overlap_layout.dart`, which the test now calls directly. Re-verified by reverting: fails with expected 12 / actual 8, exactly the reported asymmetry.
+
+`flutter analyze lib/ test/`: clean (same 2 pre-existing unrelated warnings). `test/features/timeline/`: 91/91 green. Full run: 521 pass, same 4 pre-existing failures (3 Slack, plus the documented Saturday/Sunday recurrence flake).
+
+## [2026-09-05] Zone band width goes per-zone, so a quiet zone stops reserving an empty lane
+
+Reported directly with two arrows both pointing at the band's right edge: "still gap". Clarified as "I mean perceived padding right".
+
+The padding arithmetic from the previous entry was already correct — measured, not assumed: 12px on the left, 12px on the right. What the arrows were actually pointing at was a reserved EMPTY LANE. Bands were sized from `dayPillLanes` (the whole day's deepest stack) under the earlier "all zones same width even if only items over 1 zone stack" request. In the screenshot the day is 2 lanes deep, so the 1-task Meditation zone reserved a second, empty 32px lane — 44px of visible space right of its single pill against 12px on the left.
+
+Confirmed via AskUserQuestion rather than guessed, since fixing it means reversing part of that earlier request. New `zonePillLanes` counts only the lanes a zone's OWN tasks occupy (half-open window, matching `resolveZoneContainment`); `_zoneBackgroundWidth` now takes the zone and uses it. Both zones in the screenshot's scenario now measure 12px on each side.
+
+**The alignment half of the earlier request is untouched**: the shared text column still uses `dayPillLanes`, so every task name in the day stays at one x regardless of which zone it sits in. The two goals only conflicted because one lane count was serving both; they're now separate, which is recorded on both functions' doc comments.
+
+Two stale tests fixed while here. `'the zone band and the text column are derived from the SAME lane count'` asserted something no longer true, and passed only because its loop compared an expression to itself — rewritten to assert the real split (day-wide for text, per-zone for bands). Six new `zonePillLanes` cases cover the screenshot's own scenario, an empty zone, and both half-open boundaries; verified to genuinely catch a regression (4 of them fail if the window filter is removed).
+
+`flutter analyze lib/ test/`: clean (same 2 pre-existing unrelated warnings). `test/features/timeline/`: 97/97 green. Full run: 527 pass, same 4 pre-existing failures (3 Slack, plus the documented Saturday/Sunday recurrence flake).
+
+## [2026-09-05] Dev-config defaults changed: inline layout, no icons, no duration, no free-window prompt, 1.5 scale on both views
+
+Requested directly. All five are `dev_config.dart`'s runtime-toggleable scratch settings (kDebugMode-only, in-memory, never touch real persisted `PreferenceKeys`) — their VALUES changed, not their shape:
+
+- `DevTimelineTaskTextLayout`: `stacked` → `inline`.
+- `DevTimelineTaskIconsVisible`: `true` → `false` (no status icon row).
+- `DevTimelineTaskDurationVisible`: `true` → `false` (no duration shown).
+- `DevShowFreeWindowPrompt`: `true` → `false`.
+- `DevZoneViewPixelsPerMinute`: `3.0` → `1.5`, matching `DevTaskViewPixelsPerMinute`'s own 1.5. Its doc comment previously justified 3.0 by a real layout constraint (a short Zone-view container barely fitting a task row at 1.5) — kept as historical context on why the two scales are independently adjustable, not removed, since the constraint itself didn't go away; changed the default anyway per direct request.
+
+Also fixed in passing: a stray, syntactically-invalid `g` character sitting on its own line inside `DevTimelineTaskIconsVisible` (uncommitted local corruption already in the working tree, unrelated to this change) — left in place would have blocked compilation entirely.
+
+No test asserted any of these five defaults directly, and the one fixture that renders `TaskCapsuleBlock` for a golden (`timeline_capsule_preview.dart`) builds it with explicit parameters rather than reading these providers, so it's unaffected.
+
+`flutter analyze lib/ test/`: clean (same 2 pre-existing unrelated warnings). `test/features/timeline/`: 97/97 green. Full run: 527 pass, same 4 pre-existing failures (3 Slack, plus the documented Saturday/Sunday recurrence flake) — unchanged by this session, confirming no incidental breakage.
+
+## [2026-09-05] Found the real cause of the lopsided zone padding: pills painted 8px left of their own lane
+
+Reported for the third time — "perceived paddings still not fixed ... task starting same hour as zone still much lower, too big perceived padding, should be same as from left" and "right perceived padding on zone is also too big still". The previous two attempts fixed real things (the width arithmetic, then the per-zone lane count) but both verified against CALCULATIONS of where the pill should be, never against where it actually painted. Measuring the rendered rail is what found this.
+
+**Cause.** `_buildSplit` positions each pill's box at `columnOffset - spacingSm`, reserving lift room by starting the box 8px early, and relied on an `Align(topCenter)` to push the rail back to its lane. That never worked: `pillContent` is the whole capsule row (rail + collapsed text column + checkbox) and fills the box's width, so `Align` had nothing to centre and the rail simply hugged the box's LEFT edge. Every pill therefore painted 8px left of its lane. Inside a zone band that measured 4px of padding on the left against 20px on the right — not the 12/12 the previous sessions' arithmetic predicted.
+
+That also explains the vertical complaint, which was never a separate bug: the 12px top inset was correct all along, but sitting beside a 4px left gap it read as far too large. With the left corrected to 12px, all three now match.
+
+**Fix.** The box starts at its lane (`left: columnOffset`) and carries its lift room to the RIGHT instead, which needs no compensating shift and so can't desync from where the rail paints. `Align` is now `topLeft` on both axes, since neither the rail's top (the task's start time) nor its left (its lane) may drift.
+
+**Testing note worth keeping.** My first regression test asserted `TaskCapsuleBlock` paints its rail at its box's left edge — true, but it passed against the broken build too, because the defect was in the CALLER's offset, not the widget. Caught by reverting and re-running. Fixed by extracting `pillBoxLeftForColumn` so the "box starts AT the lane, never left of it" rule is a real, callable function, and asserting band-vs-rail padding through the actual sizing/offset functions at 1, 2, and 3 lanes. Reintroducing the shift now fails with expected 12 / actual 4.
+
+`flutter analyze lib/ test/`: clean (same 2 pre-existing unrelated warnings). `test/features/timeline/`: 102/102 green. Full run: 532 pass, same 4 pre-existing failures (3 Slack, plus the documented Saturday/Sunday recurrence flake).
+
+## [2026-09-05] Zone band padding reduced 12px → 4px so a task at a zone's start doesn't read as starting late
+
+Requested directly: "reduce padding so that it's minimal 4px so that a task that starts at the same time as a zone is actually not too much lower, otherwise the perception will be that it's starting later."
+
+`zoneBackgroundOffset` drives all three paddings at once — the band's left inset, its right inset (via `zoneBackgroundWidthForPills`), and the top inset a task starting exactly at its zone's start gets (`_zoneTaskTopInset`) — so changing the single constant from 12 to 4 moved all three together. Verified at 1, 2, and 3 lanes: 4px on every side.
+
+The reasoning behind the number is worth keeping: this inset sits on a TIME axis, so it isn't only a spacing choice. At the Task view's default 1.5px per minute, a 12px inset placed the pill ~8 minutes below its own start line; at 4px it is under 3. That coupling is now stated on the constant's own doc comment and asserted in `zone_background_block_test.dart` (`zoneBackgroundOffset / 1.5 < 3.0`), so a future increase has to confront what it means in minutes rather than just looking tidier.
+
+Two tests that hardcoded `12.0` now read the real constants instead (`zoneBackgroundOffset` / `zoneBackgroundGap`), so a change follows through rather than silently disagreeing. Re-verified the symmetry tests still catch a regression: reintroducing the 8px lane shift now fails with expected 4 / actual −4 (the pill would overhang the band's left edge outright).
+
+`flutter analyze lib/ test/`: clean (same 2 pre-existing unrelated warnings). `test/features/timeline/`: 102/102 green. Full run: 532 pass, same 4 pre-existing failures (3 Slack, plus the documented Saturday/Sunday recurrence flake).
+
+## [2026-09-05] New dev toggle: "Zone view" in the Settings Developer section, default OFF
+
+Requested directly: "Add dev config > Zone view as default switched off — that means that switch in timeline goes through task and list view only."
+
+New `DevZoneViewInCycle` (default `false`, matching every other dev-config default's shipped-value convention EXCEPT that this one's shipped/desired behavior really is "off"). It ANDs into the existing `FeatureFlags.zoneEnabled` gate rather than replacing it, in both places that gate is read:
+
+- `day_strip.dart`'s view-cycle button: `next()`'s `zoneFeatureEnabled` parameter, so Zone is skipped in the Task→Zone→List cycle exactly like a flag-off build already skips it.
+- `timeline_screen.dart`'s own `zoneViewEnabled` computation, which is otherwise independent of the strip. Missing this half would have let the persisted `ZoneViewEnabledSetting` (still `true` from before the toggle was flipped) keep rendering Zone view while the strip's own button could no longer reach or leave it — a real desync, not a hypothetical one, since the two already read the setting separately before this change.
+
+Debug-only: the whole gate expression is `FeatureFlags.zoneEnabled && (!isDevConfigAvailable || ref.watch(devZoneViewInCycleProvider))`, and `isDevConfigAvailable` is a `kDebugMode` re-export — so in a release build the added term is a compile-time `true` and the expression collapses back to the flag alone. This distinction mattered here specifically because the new toggle's default is `false`; every other dev-config default up to now happened to equal the shipped behavior, so none of them needed this guard to stay safe unread.
+
+New Settings row ("Zone view" switch, off by default) placed in the existing Developer section beside the other dev toggles.
+
+Not unit-tested, matching this codebase's own established convention: none of the existing dev-config providers (`DevShowFreeWindowPrompt`, `DevTimelineTaskIconsVisible`, etc.) have dedicated tests, and `TimelineViewMode.next()`/`day_strip.dart`'s `zoneViewEnabled` are both private/local values with no existing test harness reaching them (the only file that pumps a full `TimelineScreen` is the separately-tracked, still-hanging `list_mode_clustering_test.dart`). Building new test infrastructure for a dev-only scratch toggle would be disproportionate to what was asked.
+
+`flutter analyze lib/`: clean (same 2 pre-existing unrelated warnings). `test/features/timeline/` + `test/features/settings/`: 102/102 green. Full run: 532 pass, same 4 pre-existing failures (3 Slack, plus the documented Saturday/Sunday recurrence flake) — unchanged, confirming no incidental breakage.
+
+## [2026-09-05] Bottom padding for tasks whose end matches their zone's end
+
+Requested directly from a screenshot: a task's pill (Meditation) sat flush against its own zone's bottom edge with no visible gap, while the earlier top-inset fix already gave the analogous START case a clean margin. "Same principle" for the end.
+
+Added `TaskCapsuleBlock.bottomTrim` (default 0) — shrinks `pillHeight` after the existing `badgeSize` floor, itself floored at 0 so a very short task can't go negative. Added `_zoneTaskBottomTrim(Task)` to `_DayTimelineState`, mirroring `_zoneTaskTopInset` exactly: if the task's scheduled end (in minutes-of-day) equals some zone's `endMinutes`, returns `zoneBackgroundOffset` (4.0), else 0. Wired into both the ghost (drag-preview) pill and the real pill — the real pill required threading a new `bottomTrim` field through `_DraggableTaskBlock`'s constructor, since that widget/state has no direct access to `widget.zones`.
+
+Deliberately left `_pillHeight()` (used only by `_TimelineConnectors` for connector-line positioning) untouched, for consistency with its existing behavior of already ignoring the top inset.
+
+Regression tests added to `task_capsule_checkbox_test.dart`, measuring the real rendered `AnimatedContainer` height (not a copy of the widget's internal arithmetic) with and without `bottomTrim`, plus a floor-at-zero case. Verified both fail if the fix is reverted (temporarily replacing `pillHeight`'s computation and re-running).
+
+`flutter analyze`: clean (same 2 pre-existing unrelated warnings). Targeted run (`day_pill_lanes_test.dart`, `zone_background_block_test.dart`, `task_capsule_checkbox_test.dart`): 40/40 green.
+
+## [2026-09-05] Guaranteed 2px gap between close, non-overlapping short tasks
+
+Requested directly, same screenshot as the bottom-padding fix above: two tasks close together in time (5- and 15-minute examples given) each get floored to `badgeSize`, and the floor alone can push one pill's bottom past the very next task's top even though the two never actually overlap in real time — "the smaller one gets below the minimum size in order to always create some small 2-pixel gap."
+
+Added `TaskCapsuleBlock.maxPillHeight` (nullable, default null = no cap) — applied after both the existing `badgeSize` floor and `bottomTrim`, and deliberately allowed to go BELOW `badgeSize` (that's the whole point), floored only at 0. Added `_maxPillHeight(task, slots, blockTops)` to `_DayTimelineState`: finds the next task sharing this task's own overlap COLUMN (scoped to same column deliberately — two tasks in different columns of a group sit side by side and can't visually collide vertically no matter their heights), and if one exists, caps this task's height at `nextTop - ownTop - 2` (new `_minPillGap` constant). Wired into both the ghost and the real pill, same threading pattern as `bottomTrim`.
+
+Confirmed this only matters in Timeline mode: List (collapsed) mode's own `_collapsedTops` already derives every row's top from a shared cursor that advances by the previous row's real floored height plus a gap, so collapsed-mode rows can't collide by construction — `_maxPillHeight` is harmless there (the gap to the next top always exceeds the natural height) but isn't specifically exercised by it.
+
+Regression tests added to `task_capsule_checkbox_test.dart` (new `maxPillHeight` group): caps below `badgeSize`, null leaves the floor unchanged, and never renders negative. Verified all three fail if the cap is dropped from `TaskCapsuleBlock`'s height computation (reverted, re-ran, restored).
+
+`flutter analyze`: clean (same 2 pre-existing unrelated warnings). Targeted run (`day_pill_lanes_test.dart`, `zone_background_block_test.dart`, `task_capsule_checkbox_test.dart`, `task_overlap_layout_test.dart`): 53/53 green.
+
+## [2026-09-05] Real bug: bottom trim landed exactly on the band's own (already-raised) bottom edge
+
+Reported directly from an on-device screenshot after the bottom-trim fix above: a task ending exactly on its zone's end still looked flush against the band, no visible gap — despite `TaskCapsuleBlock.bottomTrim` genuinely being applied (confirmed both by re-reading every line of the wiring and by the passing widget tests). User confirmed on-device that the task's and zone's saved times really were identical, ruling out a data mismatch.
+
+Root cause: `ZoneBackgroundBlock`'s own rendered bottom edge already sits `zoneBackgroundGap` (4px) above the zone's real end time — the inter-zone spacing, taken entirely off each block's bottom so two back-to-back zones don't visually touch. `_zoneTaskBottomTrim` was trimming the task by `zoneBackgroundOffset` (also 4px) alone, which landed the task's new bottom exactly on that already-raised band edge — both moved by the same amount and the visible gap stayed zero. The two constants happening to share a value (4.0) made this easy to miss by inspection alone; it only showed up by working through the actual pixel math of both edges. Fixed: `_zoneTaskBottomTrim` now trims by `zoneBackgroundOffset + zoneBackgroundGap`, so the visible gap below the task matches the visible gap above it (which needed no such stacking, since the band's TOP lands exactly on its own start time with nothing subtracted).
+
+Also actioned a scope change surfaced in the same conversation: zone background bands now ALL render at the day's widest overlap lane count ([dayPillLanes]), reverting the earlier per-zone-lanes design ([zonePillLanes]) that intentionally sized each band to only its own occupied lanes. Confirmed directly, twice, after flagging the conflict with the documented prior decision: "all zones widen to the same size" whenever any overlap exists anywhere in the visible day. `_zoneBackgroundWidth` no longer takes a `Zone` parameter at all, since the width is now the same for every zone on screen. `zonePillLanes` itself is now unused in `lib/` (kept for its own tests and as the earlier design's building block, not deleted).
+
+New regression test in `zone_background_block_test.dart`: renders a real `ZoneBackgroundBlock` + `TaskCapsuleBlock` pair with the actual combined trim and measures the real rendered gap — verified to fail with the old (offset-alone) value. A second new test there renders two zones (one 2-lane, one single-task) at the day-wide width and confirms both bands measure identical, with `zonePillLanes` proven to disagree (would give the quiet zone 1 lane) as evidence the day-wide value is a real, distinguishing choice rather than a coincidence.
+
+`flutter analyze`: clean (same 2 pre-existing unrelated warnings). Full targeted timeline suite (14 files, excluding the separately-tracked `list_mode_clustering_test.dart`): 109/109 green.
+
+## [2026-09-05] Task pill rail moved to radiusSm; fixed the wrapper anchor that didn't follow it
+
+User changed the task pill rail's own rounding from `radiusMd` to `radiusSm` directly in `task_capsule_block.dart`. This retriggered the exact symptom from the earlier "resting pill's left corners" fix — top-left/bottom-left corners still showing the old, larger rounding — because the frosted lift wrapper's rest-state radius anchor was still hardcoded to `radiusMd` (copied from the pill's OLD token at the time of that fix, not a live reference). Fixed both the anchor and a second, previously-latent bug in the same expression's interpolation slope (`radiusXl - radiusSm` instead of `radiusXl - radiusMd`, which happened to cancel out correctly at rest under the old values but always undershot the lifted radius) — the wrapper's radius formula now reads `radiusSm` throughout, so it always matches whatever the pill rail's own current token is.
+
+Updated the existing regression test (`task_capsule_checkbox_test.dart`) that had hardcoded the stale `radiusMd` expectation — it was passing right up until this report because it copied the same stale token the production code did. Verified the new assertion fails against the pre-fix formula and passes with it.
+
+Full writeup in `docs/ERROR_LOG.md` (same date) — flagged as a recurring pattern: a token value copied into a second location as "must match X" is a duplicate that silently drifts the moment X changes, with no compiler error to catch it.
+
+`flutter analyze`: clean (same 2 pre-existing unrelated warnings). `task_capsule_checkbox_test.dart`: 13/13 green.
+
+## [2026-09-05] List (collapsed) mode: zones, split layout, shared text column
+
+Requested directly from a "Current vs To be" mockup: List mode should adopt Task view's zone bands and split layout (icon-only pill + shared text column so names line up across all lanes) while keeping its own condensed, gap-collapsing vertical rhythm (not real elapsed time) — matching CONSTITUTION.md's per-view-job rule (List "organizes action", Task "organizes time"; this changes what's shown, not what List mode does).
+
+Planned via EnterPlanMode + Explore agents given the scope (multiple files, a real architectural question). Core obstacle: `ZoneBackgroundBlock`/`ZoneNameLabel` position via real time-to-pixel math, which has no relationship to List mode's non-linear collapsed-cursor task positions, and `computeCollapsedStackTops`'s cursor can't host a zone as a peer row (it only knows sequential, non-overlapping, point-start rows — not a range that wraps others).
+
+Solution: a zone's List-mode band is derived by wrapping the ALREADY-COMPUTED collapsed tops of its own member tasks/events, not by feeding zones through the cursor or through real-time math. New public `collapsedZoneBands()` (`task_overlap_layout.dart`) takes `resolveZoneContainment`'s existing "which tasks belong to which zone" result (previously used only by the separate Zone View, reused here unchanged) and returns each zone's `top`/`height` by taking the min-top/max-bottom of its members, padded by `zoneBackgroundOffset` on both edges. A zone with zero members (confirmed decision) gets a fixed-height placeholder (one pill's height) slotted immediately before the first chronological row at or after its own start time — a decorative approximation, since it doesn't correspond to any real position and doesn't consume cursor space.
+
+`ZoneBackgroundBlock`/`ZoneNameLabel` gained nullable `collapsedTop`/`collapsedHeight` overrides, same contract `ExternalEventBlock` already established for its own List-mode positioning — null (Task view) falls through to the existing real-time formula unchanged. `timeline_screen.dart` computes the bands once (`_collapsedZoneBands`) and renders two new List-mode-only blocks mirroring the existing Task-view ones. `splitLayout` is now unconditional (both views), so List mode's pills also become icon rail + shared text column.
+
+Also fixed a real bug surfaced immediately after: `TaskCapsuleTextRow` (the split layout's shared text column) hid its ENTIRE time text — not just the duration suffix — whenever the `durationVisible` dev toggle was off (which defaults off), per an old, deliberate "time and duration disappear together" design documented in its own doc comment for a since-superseded mock. List mode has no timeline axis at all, so hiding time there left tasks with no visible schedule whatsoever — reported directly ("cant see it (on list mode)"). Confirmed the fix scope directly: added a separate `alwaysShowTime` param (List-mode-only, wired from `_DraggableTaskBlock.compactText`) rather than changing `durationVisible`'s existing meaning, since Task view's split layout should keep its current dev-toggle-driven behavior unchanged.
+
+New test file `collapsed_zone_bands_test.dart` (7 tests) for the pure geometry function, new `collapsedTop`/`collapsedHeight` tests in `zone_background_block_test.dart`, new `alwaysShowTime` tests in `task_capsule_text_row_test.dart` — all verified to fail on a deliberately reverted fix before being confirmed as real regression guards. Regenerated the `timeline_capsule_preview.png` golden, which had drifted (unrelated corner-radius diff from the earlier `radiusSm` token fix) and was already failing before this session's changes.
+
+`flutter analyze`: clean (same 2 pre-existing unrelated warnings). Full targeted timeline suite (15 files): 120/120 green. Manual on-device verification still pending (emulator running, not yet walked through interactively this session).
+
+## [2026-09-05] Two more real List-mode bugs found from an on-device screenshot
+
+Reported directly, from a screenshot: "stacked tasks in list view are not positioned x same like others" plus "not showing time" plus "gap between tasks in list mode not [see reduced]". User later confirmed the screenshot was from an OLDER build (pre-dating the zone/splitLayout session), so it shows pre-existing bugs in the ordinary (non-split) clustered-task rendering path — not regressions from that work. Two were confirmed and fixed; a third (zone bands overlapping in some cases) is still pending a screenshot to pin down the exact scenario.
+
+**Missing time in clustered rows**: `OverlapClusterBlock`/`_ClusterTaskRow` (the flat list a cluster of overlapping tasks renders as) had the exact same bug class as the earlier `TaskCapsuleTextRow` fix, in a completely separate code path I hadn't touched: `durationVisible: false` (the current dev-toggle default) hid the ENTIRE time range, not just the `(Xm)` suffix. Fixed with the same pattern — a new `alwaysShowTime` param (List-mode-only, set unconditionally at the one List-mode call site) that shows the time range regardless of `durationVisible`, while the suffix itself stays independently gated.
+
+**Cluster row height under-reserved in the collapsed stacking cursor**: a clustered row's height (used to compute how far down the NEXT row starts) was `math.max` of its members' own badge-floored PILL heights — a couple of small icons' worth of space — while the cluster's real rendered content (`OverlapClusterBlock`'s own flat list: one text line per member, its own inter-row gaps, its own vertical padding) is far taller. New public `collapsedClusterHeight()` (`collapsed_stack_layout.dart`) computes the real reserved height from member count + line height + gaps + padding; `_collapsedTops` now looks up each task's cluster membership and uses this instead of the plain pill height whenever a task belongs to a real cluster (size ≥ 2).
+
+New tests: `collapsed_stack_layout_test.dart` (3 for `collapsedClusterHeight`), `overlap_cluster_block_test.dart` (2 for `alwaysShowTime`) — both verified to fail on a deliberately reverted fix.
+
+Zone-band overlap report still open: traced the padding math for the simple back-to-back-zones case (4px padding per side against a 16px real inter-row gap — no overlap possible there), so the actual trigger is a less obvious scenario, likely involving interleaved unzoned tasks or non-adjacent zone ordering. Waiting on a screenshot before changing `collapsedZoneBands` further.
+
+`flutter analyze`: clean (same 2 pre-existing unrelated warnings). Full targeted timeline suite: 125/125 green.
+
+## [2026-09-05] List-mode gap tuning + zone-overlap root cause found and fixed
+
+Follow-up screenshot confirmed the earlier bug fixes landed (time now visible, split layout working, zone bands rendering) and surfaced new, precise feedback: the fixed inter-row gap (`_collapsedBlockGap`, `spacingMd`/16px) read as too generous — reduced to `spacingXs` (4px), confirmed directly.
+
+That change immediately exposed the mechanism behind the previously-reported zone overlap: with a 16px gap, two adjacent zones' independent `zoneBackgroundOffset` (4px) paddings never collided (4+4=8 < 16); at 4px they mathematically could (4+4=8 > 4). `collapsedZoneBands` had no concept of a neighbouring band or row at all — each zone padded outward from its own members unconditionally. Fixed with a clamp: every band's padding is now capped per edge at half the REAL gap to whatever sits nearest on that side (another band's edge, or a plain task/event row's own top or bottom — not just its start point, so a band can't eat into a tall row's own body either), so two neighbours split a tight gap rather than one overlapping into the other's space. `collapsedZoneBands` gained a new `rowExtents` parameter (real row top+bottom pairs) alongside the existing `rowTopsByStartTime` (used only for the empty-zone placeholder's chronological anchor).
+
+Also, per direct request ("add space also before and after" around a zone's own band), List mode's zone-band padding is no longer `zoneBackgroundOffset` — that constant is explicitly tied to Task view's own real-time-axis "task starting late" perception fix and doesn't carry the same meaning against collapsed, non-time-linear positions. List mode now uses its own `theme.spacingSm` (8px, double the old value) for this padding, independently of Task view.
+
+New tests in `collapsed_zone_bands_test.dart`: two for the clamp (adjacent zones with a too-small real gap never overlap; a band never eats into a neighbouring row's own body), both verified to fail without the clamp.
+
+`flutter analyze`: clean (same 2 pre-existing unrelated warnings). Full targeted timeline suite: 127/127 green.

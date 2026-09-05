@@ -220,6 +220,28 @@ abstract final class ColorPrimitives {
   static final sand200 = oklch(0.940, 0.008, 90); // dark-mode primary text
   static final sand400 = oklch(0.720, 0.018, 90); // dark-mode secondary text
 
+  // Zone background — a light, low-chroma "this is Zone territory"
+  // rendering-only backdrop for the Spatial Task View (Timeline), NOT a
+  // category/task color. Deliberately distinct in hue from every existing
+  // signal on that screen so it never reads as a category or a status:
+  // hue 240 sits apart from all 4 built-in category hues (clay 32, ochre
+  // 153, periwinkle 216, berry 300) and from `colorFreeWindow`'s neutral
+  // (zero-chroma) sand tone — a viewer can't mistake a zone block for a
+  // category tint or a free-window gap indicator. Chroma is intentionally
+  // very low (0.02, versus 0.055-0.075 for the pale category tints) so it
+  // sits visually "behind" and beneath every other color on the screen,
+  // never competing with a task capsule for attention. Confirmed with the
+  // user directly (cool blue-grey over a zero-chroma neutral) before
+  // building — flagged per the work order's own instruction, not treated
+  // as a small enough choice to decide silently.
+  //
+  // Dark variant follows the same "hue 240, very low chroma" family rather
+  // than the `ink` ramp's own warm 90° hue — a zone block needs to read as
+  // the same kind of thing in both palettes, not blend into dark mode's
+  // neutral surface ramp.
+  static final zoneBackground = oklch(0.97, 0.02, 240);
+  static final zoneBackgroundDark = oklch(0.28, 0.02, 240);
+
   static const white = Color(0xFFFFFFFF);
   static const black = Color(0xFF000000);
   static const transparent = Color(0x00000000);

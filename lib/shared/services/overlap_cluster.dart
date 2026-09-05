@@ -1,14 +1,6 @@
 import '../models/task.dart';
 
-/// The most tasks one [OverlapCluster] can hold. A 4th task overlapping an
-/// existing cluster's window is left OUT of the cluster entirely (rendered
-/// as its own ordinary capsule, still spatially overlapping the cluster) —
-/// this is a deliberate, narrow choice for a case the visual design never
-/// specified a treatment for, not a general "clusters cap at 3, extras
-/// vanish" rule. See docs/DECISIONS.md for the reasoning.
-const overlapClusterCap = 3;
-
-/// A contiguous run of 2–3 [Task]s that genuinely intersect in time —
+/// A contiguous run of 2+ [Task]s that genuinely intersect in time —
 /// candidates for the Timeline's aggregate [OverlapClusterBlock] instead of
 /// individual capsule blocks.
 class OverlapCluster {
@@ -30,7 +22,7 @@ class OverlapCluster {
   final List<Task> tasks;
 }
 
-/// Finds every genuine time-overlap cluster of 2–3 tasks among
+/// Finds every genuine time-overlap cluster of 2+ tasks among
 /// [tasks] — pure and widget-free, same shape as
 /// `recurrence_generator.dart`'s `generateRecurrenceInstances`, so the
 /// grouping logic is unit-testable without touching a widget tree.
@@ -43,9 +35,10 @@ class OverlapCluster {
 /// (columns) and "should these render as one aggregate object" are
 /// different questions answered by different callers.
 ///
-/// A run longer than [overlapClusterCap] is NOT clustered at all — see
-/// [overlapClusterCap]'s own doc comment for why a 4th overlapping task
-/// is left out of clustering entirely rather than guessing a treatment.
+/// EVERY run of 2 or more clusters, with no upper bound — corrected
+/// directly ("all should overlap as cluster mode"), reversing an earlier
+/// cap of 3 that left a run of 4+ rendering as plain side-by-side
+/// capsules and so produced two different overlap treatments on one day.
 /// Every [tasks] entry must be scheduled (`isScheduled == true`); callers
 /// get their tasks from `tasksForSelectedDayProvider`, which already
 /// guarantees this.
@@ -65,7 +58,12 @@ List<OverlapCluster> detectOverlapClusters(List<Task> tasks) {
 
     if (startsNewGroup) {
       final group = sorted.sublist(groupStart, i);
-      if (group.length >= 2 && group.length <= overlapClusterCap) {
+      // No upper bound: EVERY overlapping run clusters, however deep.
+      // Corrected directly ("all should overlap as cluster mode") — an
+      // earlier pass capped clusters at 3 and let a run of 4+ fall back to
+      // plain side-by-side capsules, which is why the same day showed two
+      // different overlap treatments. See docs/DECISIONS.md.
+      if (group.length >= 2) {
         clusters.add(
           OverlapCluster(
             start: group.first.scheduledAt!,

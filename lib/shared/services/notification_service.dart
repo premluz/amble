@@ -4,8 +4,11 @@ import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 
+import '../models/recurrence_frequency.dart';
+import '../models/recurrence_rule.dart';
 import '../models/task.dart';
 import '../models/task_status.dart';
+import '../models/zone.dart';
 
 const _androidChannelId = 'task_alerts';
 const _androidChannelName = 'Task alerts';
@@ -270,7 +273,120 @@ class NotificationService {
     if (task.status == TaskStatus.completed) return;
     await scheduleForTask(task);
   }
+
+  /// Schedules a start-time alert for [zone]. No-ops silently if
+  /// [Zone.notificationsEnabled] is off or notification permission is
+  /// denied — same "the app must keep working without it" contract as
+  /// [scheduleForTask].
+  ///
+  /// A zone has no absolute [DateTime] the way a task does — just a
+  /// time-of-day ([Zone.startMinutes]) plus an optional [RecurrenceRule].
+  /// Two cases:
+  ///
+  /// - **Non-recurring**: [startMinutes] is resolved against TODAY's date.
+  ///   If that time has already passed today, this NO-OPS rather than
+  ///   rolling forward to tomorrow — deliberately mirrors how
+  ///   [scheduleForTask] no-ops for any already-past time, rather than
+  ///   inventing "next occurrence" logic for a non-recurring zone (that's
+  ///   exactly the kind of recurrence-adjacent scope creep CONSTITUTION.md's
+  ///   still-deferred per-occurrence-times fork warns against building at
+  ///   this depth).
+  /// - **Recurring**: real new territory — recurring TASKS get their own
+  ///   notification per materialized instance (a real persisted `Task`
+  ///   row), but Zone has no materialization step (explicitly out of scope
+  ///   for this pass, per the confirmed "simple recurrence" decision — see
+  ///   docs/DECISIONS.md). Simplest correct behavior for this session:
+  ///   schedule a single ONE-SHOT notification for the next upcoming
+  ///   occurrence the rule produces (today if it matches and hasn't
+  ///   passed, otherwise the soonest future day), not a recurring OS
+  ///   alarm. The zone form's save path re-resolves and reschedules this
+  ///   on every save, which is what keeps it from going stale — a genuine
+  ///   recurring OS-level schedule (`DateTimeComponents.dayOfWeekAndTime`)
+  ///   is a real future enhancement, not attempted here.
+  ///
+  /// Respects [isWithinSchedulingHorizon] the same way task scheduling
+  /// does, reusing the same [notificationHorizonDays] constant established
+  /// by the 500-alarm-cap fix rather than inventing a separate one.
+  Future<void> scheduleForZone(Zone zone) async {
+    if (!zone.notificationsEnabled) return;
+
+    final occurrence = _nextZoneOccurrence(zone);
+    if (occurrence == null) return;
+    if (!isWithinSchedulingHorizon(occurrence)) return;
+
+    final granted = await requestPermissionIfNeeded();
+    if (!granted) return;
+
+    await _plugin.zonedSchedule(
+      id: _zoneNotificationId(zone.id),
+      title: zone.title,
+      body: '${zone.title} is starting',
+      scheduledDate: tz.TZDateTime.from(occurrence, tz.local),
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      payload: zone.id,
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails(
+          _androidChannelId,
+          _androidChannelName,
+          channelDescription: _androidChannelDescription,
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+        iOS: DarwinNotificationDetails(),
+      ),
+    );
+  }
+
+  Future<void> cancelForZone(String zoneId) =>
+      _plugin.cancel(id: _zoneNotificationId(zoneId));
 }
+
+/// Resolves [zone]'s next upcoming occurrence to a concrete [DateTime], or
+/// null if there is none to schedule (non-recurring and today's slot has
+/// already passed).
+///
+/// Pure and separated from [NotificationService.scheduleForZone] so the
+/// resolution rule is testable without a platform channel.
+DateTime? _nextZoneOccurrence(Zone zone, {DateTime? now}) {
+  final from = now ?? DateTime.now();
+  final today = DateTime(from.year, from.month, from.day);
+  DateTime atMinutesOn(DateTime day) => day.add(
+    Duration(hours: zone.startMinutes ~/ 60, minutes: zone.startMinutes % 60),
+  );
+
+  final rule = zone.recurrenceRule;
+  if (rule == null) {
+    final todayOccurrence = atMinutesOn(today);
+    return todayOccurrence.isAfter(from) ? todayOccurrence : null;
+  }
+
+  // Recurring: walk forward from today to find the soonest matching day,
+  // capped at 7 days out (a weekly rule can never need more than one full
+  // week to find its next matching weekday).
+  for (var offset = 0; offset < 7; offset++) {
+    final day = today.add(Duration(days: offset));
+    if (!_ruleMatchesDay(rule, day)) continue;
+    final candidate = atMinutesOn(day);
+    if (candidate.isAfter(from)) return candidate;
+  }
+  return null;
+}
+
+bool _ruleMatchesDay(RecurrenceRule rule, DateTime day) {
+  if (rule.frequency == RecurrenceFrequency.daily) return true;
+  return rule.daysOfWeek?.contains(day.weekday) ?? false;
+}
+
+/// Separate hashing input from [_notificationId] (`"zone:" + id` rather
+/// than the bare id) even though Task and Zone ids are both client-generated
+/// UUIDs hashed into the same 31-bit space — an existing accepted risk
+/// elsewhere in this codebase (see [_notificationId]'s own doc comment).
+/// A zone and a task can otherwise collide on the exact same notification
+/// id if their UUIDs happen to hash equal, which would let one silently
+/// cancel/overwrite the other's alert; prefixing the hash input all but
+/// eliminates that by construction rather than accepting the same risk
+/// twice over for no reason.
+int _zoneNotificationId(String zoneId) => 'zone:$zoneId'.hashCode & 0x7fffffff;
 
 /// Derives a stable, deterministic notification id from a task's UUID
 /// string — flutter_local_notifications requires an `int` id, and this

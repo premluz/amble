@@ -26,6 +26,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     required this.colorSurfaceBlurOverlay,
     required this.blurOverlaySigma,
     required this.colorFreeWindow,
+    required this.colorZoneBackground,
     required this.colorTextPrimary,
     required this.colorTextSecondary,
     required this.colorBorder,
@@ -46,6 +47,10 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     required this.spacingScreenPadding,
     required this.spacingMinTapTarget,
     required this.sizeMinFieldHeight,
+    required this.sizeTaskBadgeSm,
+    required this.sizeTaskBadgeMd,
+    required this.sizeTaskBadgeLg,
+    required this.sizeTaskBadge,
     required this.radiusSm,
     required this.radiusMd,
     required this.radiusLg,
@@ -61,6 +66,10 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     required this.textBody,
     required this.textLabel,
     required this.textCaption,
+    required this.textTaskTitleSm,
+    required this.textTaskTitleMd,
+    required this.textTaskTitleLg,
+    required this.textTaskTitle,
     required this.motionFast,
     required this.motionNormal,
     required this.motionSlow,
@@ -123,6 +132,17 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   /// competing task-like element. Requested directly: "a subtle block...
   /// some transparent light grey color."
   final Color colorFreeWindow;
+
+  /// The rendering-only backdrop for a [Zone] on the Spatial Task View
+  /// (Timeline) — see `zone_background_block.dart`. Deliberately its own
+  /// primitive (`ColorPrimitives.zoneBackground`), not a reuse of
+  /// [colorFreeWindow] or any category color: a zone block and a
+  /// free-window block answer different questions (Zone = "this time
+  /// range has meaning," free window = "nothing is scheduled here") and
+  /// must not be visually conflated. See CONSTITUTION.md's Zone section —
+  /// this token exists purely for the Spatial Task View's decorative
+  /// treatment; it carries no container/layout meaning.
+  final Color colorZoneBackground;
 
   // Text
   final Color colorTextPrimary;
@@ -192,6 +212,32 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   /// accessibility floor for any control, this is the field's own visual
   /// minimum, and it is deliberately the larger of the two.
   final double sizeMinFieldHeight;
+
+  /// The three fixed rungs of the task-size scale's badge/icon diameter —
+  /// the "Task size" Settings toggle (`TaskSizeSetting`) picks one of these
+  /// three to become [sizeTaskBadge] below. Requested directly: "let's
+  /// establish this size as sm ... let's bring md that is slight larger
+  /// ... previous before this change was lg" (lg's own value later
+  /// overridden to 28, not the original 36, per direct follow-up).
+  ///
+  /// sm ([SpacingPrimitives.space6], 20) is List view's own prior fixed
+  /// size; md ([SpacingPrimitives.space7], 24) is Task view's prior fixed
+  /// size, slightly enlarged; lg ([SpacingPrimitives.space7Point5], 28) is
+  /// a still-larger rung, not used as any view's default today.
+  final double sizeTaskBadgeSm;
+  final double sizeTaskBadgeMd;
+  final double sizeTaskBadgeLg;
+
+  /// The ACTIVE badge/icon diameter — whichever of [sizeTaskBadgeSm]/
+  /// [sizeTaskBadgeMd]/[sizeTaskBadgeLg] the "Task size" setting currently
+  /// selects. Every real call site ([TaskCapsuleBlock]'s own pill width,
+  /// [ZoneContainerBlock]'s row category-emoji circle, and — indirectly,
+  /// since it feeds `_collapsedPixelsPerMinute` — List view's own scale)
+  /// reads this ONE resolved value, never the three rungs directly, so a
+  /// setting change propagates everywhere without touching a call site.
+  /// Resolved once in `main.dart` via `AmbleTheme.copyWith` before the
+  /// palette reaches [MaterialApp]'s `extensions`.
+  final double sizeTaskBadge;
 
   // Radii`
   // Corner radii, named by SIZE rather than by component. A component
@@ -265,6 +311,33 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   final TextStyle textLabel;
   final TextStyle textCaption;
 
+  /// The three fixed rungs of the task-size scale's own font size —
+  /// paired with [sizeTaskBadgeSm]/[sizeTaskBadgeMd]/[sizeTaskBadgeLg]
+  /// respectively, so the "Task size" setting moves badge and text
+  /// together. sm ([TypePrimitives.size1], 12) is List view's prior fixed
+  /// size ([textTaskTitleCompact]'s old value); md ([TypePrimitives.size2],
+  /// 14) is Task view's prior fixed size (this token's own old, single
+  /// value); lg ([TypePrimitives.size3], 16) is a still-larger rung, not
+  /// used as any view's default today. Requested directly, alongside the
+  /// badge-size scale: "with that also task name and time font size
+  /// changes."
+  final TextStyle textTaskTitleSm;
+  final TextStyle textTaskTitleMd;
+  final TextStyle textTaskTitleLg;
+
+  /// The ACTIVE task-title font — whichever of [textTaskTitleSm]/
+  /// [textTaskTitleMd]/[textTaskTitleLg] the "Task size" setting currently
+  /// selects. Every real call site (Task view's capsule, List view's own
+  /// task/external-event text, Zone view's in-container rows and its own
+  /// zone header) reads this ONE resolved value. List view previously read
+  /// a separate, always-one-step-smaller `textTaskTitleCompact` token
+  /// regardless of Task view's own size; confirmed directly that List view
+  /// should now track the SAME global setting Task/Zone view do, with no
+  /// relative step, so that separate token is gone — resolved once in
+  /// `main.dart` via `AmbleTheme.copyWith`, same mechanism as
+  /// [sizeTaskBadge].
+  final TextStyle textTaskTitle;
+
   // Motion
   final Duration motionFast;
   final Duration motionNormal;
@@ -300,6 +373,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     // since these are compile-time const field initializers and colorBorder
     // isn't assigned yet at this point in the constructor call.
     colorFreeWindow: ColorPrimitives.sand300.withValues(alpha: 0.5),
+    colorZoneBackground: ColorPrimitives.zoneBackground,
     colorTextPrimary: ColorPrimitives.slate900,
     colorTextSecondary: ColorPrimitives.slate500,
     colorBorder: ColorPrimitives.sand300,
@@ -334,6 +408,12 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     spacingScreenPadding: SpacingPrimitives.space7,
     spacingMinTapTarget: 48.0,
     sizeMinFieldHeight: 60.0,
+    sizeTaskBadgeSm: SpacingPrimitives.space6,
+    sizeTaskBadgeMd: SpacingPrimitives.space7,
+    sizeTaskBadgeLg: SpacingPrimitives.space7Point5,
+    // Default rung: md — Task view's own prior fixed size, now the
+    // starting point for the "Task size" setting.
+    sizeTaskBadge: SpacingPrimitives.space7,
     radiusSm: RadiusPrimitives.radiusSm,
     radiusMd: RadiusPrimitives.radiusMd,
     radiusLg: RadiusPrimitives.radiusLg,
@@ -401,6 +481,39 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       height: TypePrimitives.lineHeightNormal,
       color: ColorPrimitives.slate500,
     ),
+    // Same fontSize/weight/height as textLabel — the zone header's prior
+    // size, now the shared task-title base — but under its own semantic
+    // name so a future change to textLabel's more generic meaning can't
+    // silently also move every task title. Color left to call sites via
+    // .copyWith (they already vary: primary for a task's own title,
+    // secondary for its time line), matching every other text token here.
+    textTaskTitleSm: TextStyle(
+      fontSize: TypePrimitives.size1,
+      fontWeight: TypePrimitives.weightRegular,
+      height: TypePrimitives.lineHeightNormal,
+      color: ColorPrimitives.slate900,
+    ),
+    textTaskTitleMd: TextStyle(
+      fontSize: TypePrimitives.size2,
+      fontWeight: TypePrimitives.weightRegular,
+      height: TypePrimitives.lineHeightNormal,
+      color: ColorPrimitives.slate900,
+    ),
+    textTaskTitleLg: TextStyle(
+      fontSize: TypePrimitives.size3,
+      fontWeight: TypePrimitives.weightRegular,
+      height: TypePrimitives.lineHeightNormal,
+      color: ColorPrimitives.slate900,
+    ),
+    // Default rung: md — Task view's own prior fixed size, now the
+    // starting point for the "Task size" setting (see sizeTaskBadge's own
+    // matching default comment).
+    textTaskTitle: TextStyle(
+      fontSize: TypePrimitives.size2,
+      fontWeight: TypePrimitives.weightRegular,
+      height: TypePrimitives.lineHeightNormal,
+      color: ColorPrimitives.slate900,
+    ),
     motionFast: const Duration(milliseconds: MotionPrimitives.durationFastMs),
     motionNormal: const Duration(
       milliseconds: MotionPrimitives.durationNormalMs,
@@ -438,6 +551,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     // Same primitive as colorBorder below (ink600), at low alpha — same
     // reasoning as the light palette above.
     colorFreeWindow: ColorPrimitives.ink600.withValues(alpha: 0.5),
+    colorZoneBackground: ColorPrimitives.zoneBackgroundDark,
     colorTextPrimary: ColorPrimitives.sand200,
     colorTextSecondary: ColorPrimitives.sand400,
     colorBorder: ColorPrimitives.ink600,
@@ -494,6 +608,12 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     spacingScreenPadding: SpacingPrimitives.space7,
     spacingMinTapTarget: 48.0,
     sizeMinFieldHeight: 60.0,
+    sizeTaskBadgeSm: SpacingPrimitives.space6,
+    sizeTaskBadgeMd: SpacingPrimitives.space7,
+    sizeTaskBadgeLg: SpacingPrimitives.space7Point5,
+    // Default rung: md — Task view's own prior fixed size, now the
+    // starting point for the "Task size" setting.
+    sizeTaskBadge: SpacingPrimitives.space7,
     radiusSm: RadiusPrimitives.radiusSm,
     radiusMd: RadiusPrimitives.radiusMd,
     radiusLg: RadiusPrimitives.radiusLg,
@@ -561,6 +681,33 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       height: TypePrimitives.lineHeightNormal,
       color: ColorPrimitives.sand400,
     ),
+    textTaskTitleSm: TextStyle(
+      fontSize: TypePrimitives.size1,
+      fontWeight: TypePrimitives.weightRegular,
+      height: TypePrimitives.lineHeightNormal,
+      color: ColorPrimitives.sand200,
+    ),
+    textTaskTitleMd: TextStyle(
+      fontSize: TypePrimitives.size2,
+      fontWeight: TypePrimitives.weightRegular,
+      height: TypePrimitives.lineHeightNormal,
+      color: ColorPrimitives.sand200,
+    ),
+    textTaskTitleLg: TextStyle(
+      fontSize: TypePrimitives.size3,
+      fontWeight: TypePrimitives.weightRegular,
+      height: TypePrimitives.lineHeightNormal,
+      color: ColorPrimitives.sand200,
+    ),
+    // Default rung: md — Task view's own prior fixed size, now the
+    // starting point for the "Task size" setting (see sizeTaskBadge's own
+    // matching default comment).
+    textTaskTitle: TextStyle(
+      fontSize: TypePrimitives.size2,
+      fontWeight: TypePrimitives.weightRegular,
+      height: TypePrimitives.lineHeightNormal,
+      color: ColorPrimitives.sand200,
+    ),
     motionFast: const Duration(milliseconds: MotionPrimitives.durationFastMs),
     motionNormal: const Duration(
       milliseconds: MotionPrimitives.durationNormalMs,
@@ -584,6 +731,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     Color? colorSurfaceBlurOverlay,
     double? blurOverlaySigma,
     Color? colorFreeWindow,
+    Color? colorZoneBackground,
     Color? colorTextPrimary,
     Color? colorTextSecondary,
     Color? colorBorder,
@@ -604,6 +752,10 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     double? spacingScreenPadding,
     double? spacingMinTapTarget,
     double? sizeMinFieldHeight,
+    double? sizeTaskBadgeSm,
+    double? sizeTaskBadgeMd,
+    double? sizeTaskBadgeLg,
+    double? sizeTaskBadge,
     double? radiusSm,
     double? radiusMd,
     double? radiusLg,
@@ -619,6 +771,10 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     TextStyle? textBody,
     TextStyle? textLabel,
     TextStyle? textCaption,
+    TextStyle? textTaskTitleSm,
+    TextStyle? textTaskTitleMd,
+    TextStyle? textTaskTitleLg,
+    TextStyle? textTaskTitle,
     Duration? motionFast,
     Duration? motionNormal,
     Duration? motionSlow,
@@ -639,6 +795,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
           colorSurfaceBlurOverlay ?? this.colorSurfaceBlurOverlay,
       blurOverlaySigma: blurOverlaySigma ?? this.blurOverlaySigma,
       colorFreeWindow: colorFreeWindow ?? this.colorFreeWindow,
+      colorZoneBackground: colorZoneBackground ?? this.colorZoneBackground,
       colorTextPrimary: colorTextPrimary ?? this.colorTextPrimary,
       colorTextSecondary: colorTextSecondary ?? this.colorTextSecondary,
       colorBorder: colorBorder ?? this.colorBorder,
@@ -659,6 +816,10 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       spacingScreenPadding: spacingScreenPadding ?? this.spacingScreenPadding,
       spacingMinTapTarget: spacingMinTapTarget ?? this.spacingMinTapTarget,
       sizeMinFieldHeight: sizeMinFieldHeight ?? this.sizeMinFieldHeight,
+      sizeTaskBadgeSm: sizeTaskBadgeSm ?? this.sizeTaskBadgeSm,
+      sizeTaskBadgeMd: sizeTaskBadgeMd ?? this.sizeTaskBadgeMd,
+      sizeTaskBadgeLg: sizeTaskBadgeLg ?? this.sizeTaskBadgeLg,
+      sizeTaskBadge: sizeTaskBadge ?? this.sizeTaskBadge,
       radiusSm: radiusSm ?? this.radiusSm,
       radiusMd: radiusMd ?? this.radiusMd,
       radiusLg: radiusLg ?? this.radiusLg,
@@ -674,6 +835,10 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       textBody: textBody ?? this.textBody,
       textLabel: textLabel ?? this.textLabel,
       textCaption: textCaption ?? this.textCaption,
+      textTaskTitleSm: textTaskTitleSm ?? this.textTaskTitleSm,
+      textTaskTitleMd: textTaskTitleMd ?? this.textTaskTitleMd,
+      textTaskTitleLg: textTaskTitleLg ?? this.textTaskTitleLg,
+      textTaskTitle: textTaskTitle ?? this.textTaskTitle,
       motionFast: motionFast ?? this.motionFast,
       motionNormal: motionNormal ?? this.motionNormal,
       motionSlow: motionSlow ?? this.motionSlow,
@@ -728,6 +893,11 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
         t,
       ),
       colorFreeWindow: Color.lerp(colorFreeWindow, other.colorFreeWindow, t)!,
+      colorZoneBackground: Color.lerp(
+        colorZoneBackground,
+        other.colorZoneBackground,
+        t,
+      )!,
       colorTextPrimary: Color.lerp(
         colorTextPrimary,
         other.colorTextPrimary,
@@ -778,6 +948,10 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
         other.sizeMinFieldHeight,
         t,
       ),
+      sizeTaskBadgeSm: _lerpDouble(sizeTaskBadgeSm, other.sizeTaskBadgeSm, t),
+      sizeTaskBadgeMd: _lerpDouble(sizeTaskBadgeMd, other.sizeTaskBadgeMd, t),
+      sizeTaskBadgeLg: _lerpDouble(sizeTaskBadgeLg, other.sizeTaskBadgeLg, t),
+      sizeTaskBadge: _lerpDouble(sizeTaskBadge, other.sizeTaskBadge, t),
       radiusSm: _lerpDouble(radiusSm, other.radiusSm, t),
       radiusMd: _lerpDouble(radiusMd, other.radiusMd, t),
       radiusLg: _lerpDouble(radiusLg, other.radiusLg, t),
@@ -801,6 +975,22 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       textBody: TextStyle.lerp(textBody, other.textBody, t)!,
       textLabel: TextStyle.lerp(textLabel, other.textLabel, t)!,
       textCaption: TextStyle.lerp(textCaption, other.textCaption, t)!,
+      textTaskTitleSm: TextStyle.lerp(
+        textTaskTitleSm,
+        other.textTaskTitleSm,
+        t,
+      )!,
+      textTaskTitleMd: TextStyle.lerp(
+        textTaskTitleMd,
+        other.textTaskTitleMd,
+        t,
+      )!,
+      textTaskTitleLg: TextStyle.lerp(
+        textTaskTitleLg,
+        other.textTaskTitleLg,
+        t,
+      )!,
+      textTaskTitle: TextStyle.lerp(textTaskTitle, other.textTaskTitle, t)!,
       motionFast: t < 0.5 ? motionFast : other.motionFast,
       motionNormal: t < 0.5 ? motionNormal : other.motionNormal,
       motionSlow: t < 0.5 ? motionSlow : other.motionSlow,

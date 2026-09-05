@@ -195,6 +195,73 @@ void main() {
     },
   );
 
+  testWidgets('create flow: the system back gesture (Android edge swipe) on an '
+      'untouched, unnamed stage-1 task closes the whole sheet — same as '
+      'Done/the close button, not just a keyboard dismiss', (tester) async {
+    // Real bug, reported directly: "on task creation when nothing added
+    // no letter and swipe is done it closes keyboard only but should
+    // actually close both keyboard and modal, same as Done does." The
+    // route had no PopScope at all, so Navigator.maybePop (what the
+    // system back gesture ultimately drives) popped straight through
+    // without ever running _handleClose — the same method Done and the
+    // close (X) button both already use, which is what makes an empty
+    // stage-1 task close silently instead of prompting.
+    final navigatorKey = await _pumpHost(
+      tester,
+      box: box,
+      categoryBox: categoryBox,
+    );
+    showTaskDetailSheet(
+      navigatorKey.currentContext!,
+      initialScheduledAt: DateTime(2026, 8, 20, 9),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Create task'), findsOneWidget);
+
+    await tester.runAsync(() async {
+      await navigatorKey.currentState!.maybePop();
+      await tester.pump();
+      await Future<void>.delayed(Duration.zero);
+      await tester.pumpAndSettle();
+    });
+
+    expect(find.text('Discard this task?'), findsNothing);
+    // The whole sheet closed, not just its keyboard — the route itself
+    // is gone.
+    expect(find.text('Create task'), findsNothing);
+  });
+
+  testWidgets(
+    'create flow: the system back gesture after naming the task prompts '
+    'to discard, exactly like the close button does',
+    (tester) async {
+      final navigatorKey = await _pumpHost(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+      );
+      showTaskDetailSheet(
+        navigatorKey.currentContext!,
+        initialScheduledAt: DateTime(2026, 8, 20, 9),
+      );
+      await tester.pumpAndSettle();
+
+      await _nameTaskViaModal(tester, 'Buy milk');
+
+      await tester.runAsync(() async {
+        await navigatorKey.currentState!.maybePop();
+        await tester.pump();
+        await Future<void>.delayed(Duration.zero);
+        await tester.pumpAndSettle();
+      });
+
+      expect(find.text('Discard this task?'), findsOneWidget);
+      // The route is still there behind the dialog — a back gesture on a
+      // real draft must never silently lose it.
+      expect(find.text('Create task'), findsOneWidget);
+    },
+  );
+
   testWidgets(
     'create flow: naming the task via stage 1 then closing still prompts, '
     'since a title is itself a real change from the empty default',

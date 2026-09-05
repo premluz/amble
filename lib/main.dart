@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';
+import 'package:workmanager/workmanager.dart';
 
+import 'core/background/background_tasks.dart';
 import 'core/tokens/color_primitives.dart';
 import 'core/tokens/semantic_theme.dart';
 import 'features/inbox/inbox_screen.dart';
@@ -15,13 +17,18 @@ import 'features/timeline/timeline_screen.dart';
 import 'hive_registrar.g.dart';
 import 'shared/models/app_theme_mode.dart';
 import 'shared/models/category.dart';
+import 'shared/models/synced_calendar_event.dart';
 import 'shared/models/task.dart';
+import 'shared/models/task_size.dart';
+import 'shared/models/task_template.dart';
 import 'shared/models/tracked_behavior.dart';
 import 'shared/models/zone.dart';
+import 'shared/providers/calendar_providers.dart';
 import 'shared/providers/category_providers.dart';
 import 'shared/providers/notification_providers.dart';
 import 'shared/providers/notification_tap_provider.dart';
 import 'shared/providers/task_providers.dart';
+import 'shared/providers/task_template_providers.dart';
 import 'shared/providers/preferences_providers.dart';
 import 'shared/providers/tracked_behavior_providers.dart';
 import 'shared/providers/zone_providers.dart';
@@ -42,10 +49,18 @@ void main() async {
   // The user-extensible category entity — seeded with 5 built-in rows and
   // backfilled onto existing tasks below, once, at launch.
   await Hive.openBox<Category>(categoryBoxName);
+  // Reusable task blueprints, surfaced on the Inbox's "Templates" tab —
+  // ungated (free functionality, same tier as Category), see
+  // CONSTITUTION.md's "TaskTemplate" section.
+  await Hive.openBox<TaskTemplate>(taskTemplateBoxName);
   // Small key-value store for app preferences (theme mode today, more
   // later). Untyped box: it holds heterogeneous primitive/adapter values by
   // design — see PreferencesRepository.
   await Hive.openBox<dynamic>(preferencesBoxName);
+  // Tracks device-calendar event ids created by Feature 2's manual sync-out
+  // — see CONSTITUTION.md's "Calendar" section and SyncedCalendarEvent's
+  // own doc comment for why this can't just live in `preferences`.
+  await Hive.openBox<SyncedCalendarEvent>(syncedCalendarEventBoxName);
 
   final container = ProviderContainer();
   final notificationService = container.read(notificationServiceProvider);
@@ -84,6 +99,35 @@ void main() async {
   unawaited(
     container.read(taskListProvider.notifier).refreshScheduledNotifications(),
   );
+  // Same reasoning as the task refresh above, for Zone's own one-shot,
+  // re-resolved-on-save notifications — without this, a zone's alert goes
+  // stale the day after it fires (or its target occurrence passes) until
+  // someone happens to reopen and re-save that exact zone. See
+  // ZoneList.refreshScheduledNotifications's own doc comment.
+  unawaited(
+    container.read(zoneListProvider.notifier).refreshScheduledNotifications(),
+  );
+
+  // Morning-summary background task: re-registered (or cancelled) on every
+  // launch against the CURRENT setting value, same reasoning as the
+  // notification refreshes above — the toggle may have changed since the
+  // last launch, and a stale registration should never be trusted to
+  // still be correct. `initialize` must run before any
+  // register/cancel call; `callbackDispatcher` is the one AOT entry point
+  // the native side invokes for every dispatch, on both platforms.
+  //
+  // Deliberately NOT awaited, same reasoning as the notification refreshes
+  // above: this is a batch of native platform calls with no bearing on the
+  // first frame.
+  unawaited(
+    Workmanager()
+        .initialize(backgroundTaskDispatcher)
+        .then(
+          (_) => registerMorningSummaryTask(
+            enabled: container.read(slackSummaryEnabledSettingProvider),
+          ),
+        ),
+  );
 
   runApp(
     UncontrolledProviderScope(container: container, child: const AmbleApp()),
@@ -97,6 +141,16 @@ class AmbleApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(themeModeSettingProvider);
     final hasSeenSplash = ref.watch(hasSeenSplashProvider);
+    // One global rung (sm/md/lg) resolved onto BOTH light and dark
+    // palettes here, once, before either reaches MaterialApp — every
+    // existing call site (TaskCapsuleBlock, ZoneContainerBlock,
+    // OverlapClusterBlock) keeps reading the same `sizeTaskBadge`/
+    // `textTaskTitle` fields it always has, with no per-call-site changes.
+    // Requested directly: "it's not per view, it's a setting, that when
+    // set affects all."
+    final taskSize = ref.watch(taskSizeSettingProvider);
+    final lightTheme = _resolveTaskSize(AmbleTheme.light, taskSize);
+    final darkTheme = _resolveTaskSize(AmbleTheme.dark, taskSize);
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       // Status/navigation bar icons must contrast with our surface, and
@@ -114,8 +168,8 @@ class AmbleApp extends ConsumerWidget {
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'Amble',
-        theme: _themeDataFor(AmbleTheme.light, Brightness.light),
-        darkTheme: _themeDataFor(AmbleTheme.dark, Brightness.dark),
+        theme: _themeDataFor(lightTheme, Brightness.light),
+        darkTheme: _themeDataFor(darkTheme, Brightness.dark),
         themeMode: toFlutterThemeMode(themeMode),
         // First launch shows the splash/carousel once — HasSeenSplash
         // defaults to false until its CTA calls markSeen(), at which point
@@ -160,6 +214,28 @@ SystemUiOverlayStyle _overlayStyleFor(Brightness surface) {
         ? Brightness.light
         : Brightness.dark,
   );
+}
+
+/// Resolves the ACTIVE `sizeTaskBadge`/`textTaskTitle` fields on [palette]
+/// to whichever fixed rung [size] selects — see `TaskSizeSetting`'s own
+/// doc comment. Every real call site reads `theme.sizeTaskBadge`/
+/// `theme.textTaskTitle` directly and has no idea this setting exists;
+/// this is the one place the mapping happens.
+AmbleTheme _resolveTaskSize(AmbleTheme palette, TaskSize size) {
+  return switch (size) {
+    TaskSize.sm => palette.copyWith(
+      sizeTaskBadge: palette.sizeTaskBadgeSm,
+      textTaskTitle: palette.textTaskTitleSm,
+    ),
+    TaskSize.md => palette.copyWith(
+      sizeTaskBadge: palette.sizeTaskBadgeMd,
+      textTaskTitle: palette.textTaskTitleMd,
+    ),
+    TaskSize.lg => palette.copyWith(
+      sizeTaskBadge: palette.sizeTaskBadgeLg,
+      textTaskTitle: palette.textTaskTitleLg,
+    ),
+  };
 }
 
 /// Builds the Material [ThemeData] wrapper around one of our [AmbleTheme]

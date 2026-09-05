@@ -228,8 +228,11 @@ void main() {
       expect(clusters.single.end, DateTime(2026, 8, 24, 11));
     });
 
-    test('4 mutually-overlapping tasks are NOT clustered at all — left as '
-        'individual tasks rather than guessing a treatment', () {
+    // Reversed directly ("all should overlap as cluster mode"): an
+    // earlier pass capped clusters at 3 and let a run of 4+ fall back to
+    // plain side-by-side capsules, which produced two different overlap
+    // treatments on the same day. There is no upper bound any more.
+    test('4 mutually-overlapping tasks DO cluster — no upper bound', () {
       final tasks = [
         for (var i = 0; i < 4; i++)
           _task(
@@ -239,26 +242,32 @@ void main() {
           ),
       ];
 
-      expect(detectOverlapClusters(tasks), isEmpty);
-    });
-
-    test('a 4-task overlapping run does not accidentally clip into a smaller '
-        'cluster — the whole run is excluded, not just the excess task', () {
-      final tasks = [
-        for (var i = 0; i < 4; i++)
-          _task(
-            title: 'T$i',
-            scheduledAt: DateTime(2026, 8, 24, 9, i * 5),
-            durationMinutes: 60,
-          ),
-      ];
-
       final clusters = detectOverlapClusters(tasks);
 
-      expect(clusters, isEmpty);
+      expect(clusters, hasLength(1));
+      expect(clusters.single.tasks, hasLength(4));
     });
 
-    test('an unrelated task before/after a 4-task run is unaffected', () {
+    test(
+      'a deep run clusters WHOLE — it is never clipped to the first few',
+      () {
+        final tasks = [
+          for (var i = 0; i < 7; i++)
+            _task(
+              title: 'T$i',
+              scheduledAt: DateTime(2026, 8, 24, 9, i * 5),
+              durationMinutes: 60,
+            ),
+        ];
+
+        final clusters = detectOverlapClusters(tasks);
+
+        expect(clusters, hasLength(1));
+        expect(clusters.single.tasks, hasLength(7));
+      },
+    );
+
+    test('an unrelated task before/after a 4-task run is left out of it', () {
       final tasks = [
         _task(
           title: 'Before',
@@ -278,7 +287,15 @@ void main() {
         ),
       ];
 
-      expect(detectOverlapClusters(tasks), isEmpty);
+      final clusters = detectOverlapClusters(tasks);
+
+      expect(clusters, hasLength(1));
+      expect(clusters.single.tasks.map((t) => t.title), [
+        'T0',
+        'T1',
+        'T2',
+        'T3',
+      ]);
     });
 
     test('a task can only belong to one cluster at a time', () {

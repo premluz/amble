@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
 import '../../shared/models/task.dart';
+import 'duration_label.dart';
 
 /// How long a gap between tasks has to be before it earns its own block on
 /// the Timeline. Requested directly: "no indicator for small/normal gaps
@@ -132,7 +133,8 @@ class FreeWindowBlock extends StatelessWidget {
             borderRadius: BorderRadius.circular(theme.radiusXl),
           ),
           child: Text(
-            '${_formatWindowDuration(window.duration)} window, add a task.',
+            '${formatDurationLabel(window.duration.inMinutes)} window, add '
+            'a task.',
             textAlign: TextAlign.center,
             style: theme.textCaption.copyWith(color: theme.colorTextSecondary),
           ),
@@ -140,14 +142,4 @@ class FreeWindowBlock extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Whole hours render as "2h"/"3h"; anything with leftover minutes (or
-/// under an hour) renders as total minutes — same convention
-/// [TaskCapsuleBlock]'s own duration label uses, so the two read
-/// consistently wherever a duration appears on the Timeline.
-String _formatWindowDuration(Duration duration) {
-  final minutes = duration.inMinutes;
-  if (minutes % 60 == 0) return '${minutes ~/ 60}h';
-  return '${minutes}m';
 }

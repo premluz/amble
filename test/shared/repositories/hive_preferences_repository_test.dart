@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive_ce.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/shared/models/app_theme_mode.dart';
+import 'package:amble/shared/models/task_size.dart';
 import 'package:amble/shared/repositories/hive_preferences_repository.dart';
 import 'package:amble/shared/repositories/preferences_repository.dart';
 
@@ -77,6 +78,14 @@ void main() {
       repository.getValue<AppThemeMode>(PreferenceKeys.themeMode),
       AppThemeMode.dark,
     );
+  });
+
+  test('TaskSize (a second, independently-registered adapter enum) also '
+      'round-trips — confirms its own Hive adapter registration, not just '
+      'the generic mechanism AppThemeMode already proves', () async {
+    await repository.setValue(PreferenceKeys.taskSize, TaskSize.lg);
+
+    expect(repository.getValue<TaskSize>(PreferenceKeys.taskSize), TaskSize.lg);
   });
 
   test('a value stored under a different type reads as null rather than '

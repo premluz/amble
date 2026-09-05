@@ -39,6 +39,31 @@ Task findSeriesTemplate(Task instance, List<Task> allTasks) {
   );
 }
 
+/// The ids of every task in [allTasks] that is "bad state": recurring
+/// (`recurrenceId != null`) but belonging to a series with NO template row
+/// (no task sharing that `recurrenceId` has `isRecurrenceTemplate == true`)
+/// — exactly the shape `findSeriesTemplate`'s `firstWhere` throws `Bad
+/// state: No element` on. `deleteTask` now prevents this going forward (see
+/// its own doc comment — deleting a template promotes a successor first),
+/// but pre-existing data from before that fix (or any other path that
+/// could orphan a series) can still have rows in this state, permanently
+/// unopenable until removed. Pure and dev-tool-only — the real app has no
+/// "repair" affordance for this by design; the fix is not creating the
+/// orphan in the first place, not silently patching one back together.
+List<String> findOrphanedRecurringTaskIds(List<Task> allTasks) {
+  final templatedSeriesIds = <String>{
+    for (final task in allTasks)
+      if (task.isRecurrenceTemplate && task.recurrenceId != null)
+        task.recurrenceId!,
+  };
+  return [
+    for (final task in allTasks)
+      if (task.recurrenceId != null &&
+          !templatedSeriesIds.contains(task.recurrenceId))
+        task.id,
+  ];
+}
+
 /// Outcome of [TaskList.importTasks] — per-task counts so the caller can
 /// show a summary without needing to inspect individual tasks. See
 /// docs/DECISIONS.md for the conflict-handling rationale (skip + report,
@@ -94,6 +119,10 @@ class TaskList extends _$TaskList {
     RecurrenceRule? recurrenceRule,
     String? behaviorId,
     bool notificationsEnabled = true,
+    // Set only when this task was spawned from a TaskTemplate — recorded
+    // for future frequency-ranking of the quick-drop drawer, never read
+    // for cascade or validation. See Task.templateId's own doc comment.
+    String? templateId,
   }) async {
     final task = Task.create(
       title: title,
@@ -106,6 +135,7 @@ class TaskList extends _$TaskList {
       recurrenceId: recurrenceRule == null ? null : _uuid.v4(),
       recurrenceRule: recurrenceRule,
       notificationsEnabled: notificationsEnabled,
+      templateId: templateId,
     )..behaviorId = behaviorId;
     await ref.read(taskRepositoryProvider).saveTask(task);
     _syncNotificationInBackground(task);
@@ -279,7 +309,20 @@ class TaskList extends _$TaskList {
   /// never deleted just because the series rule changed underneath it.
   /// The template itself is never a candidate (it's the row being edited,
   /// not one of its own generated instances).
-  Future<void> _deleteUntouchedFutureInstances(Task template) async {
+  ///
+  /// [alsoSpare] is the instance the CALLER is editing right now, if it's
+  /// not the template — real bug, reported directly: a future instance's
+  /// own field edit (category, duration, ...) is saved just before this
+  /// runs (see [updateTaskWithChangedRecurrence]), but that instance is
+  /// itself "untouched" by this method's own definition (still `pending`,
+  /// `originalScheduledAt` still null — editing a plain field sets
+  /// neither), so it was deleted and immediately replaced by a fresh copy
+  /// regenerated from the template's OLD field values, silently discarding
+  /// the very edit that was just saved.
+  Future<void> _deleteUntouchedFutureInstances(
+    Task template, {
+    Task? alsoSpare,
+  }) async {
     final repository = ref.read(taskRepositoryProvider);
     final seriesId = template.recurrenceId;
     final now = DateTime.now();
@@ -291,6 +334,7 @@ class TaskList extends _$TaskList {
           (task) =>
               task.recurrenceId == seriesId &&
               task.id != template.id &&
+              task.id != alsoSpare?.id &&
               task.status == TaskStatus.pending &&
               task.originalScheduledAt == null &&
               task.scheduledAt != null &&
@@ -325,7 +369,7 @@ class TaskList extends _$TaskList {
     _syncNotificationInBackground(task);
 
     final template = _findSeriesTemplate(task);
-    await _deleteUntouchedFutureInstances(template);
+    await _deleteUntouchedFutureInstances(template, alsoSpare: task);
     template.recurrenceRule = recurrenceRule;
     await ref.read(taskRepositoryProvider).saveTask(template);
     await _materializeSeries(template);
@@ -396,6 +440,29 @@ class TaskList extends _$TaskList {
     _refresh();
   }
 
+  /// Moves [task] to [newScheduledAt] AND sets its explicit [zoneId] in one
+  /// write — the Spatial Zone View's own drag-and-drop: dropping a task
+  /// inside a container assigns it to that zone explicitly (confirmed
+  /// directly), dropping it back on the outer axis clears the assignment
+  /// (`zoneId: null`). Deliberately a separate method from [rescheduleTask]
+  /// rather than an added optional parameter there — every other
+  /// `rescheduleTask` caller (the Task view's own drag) must never
+  /// accidentally touch `zoneId`, which stays untouched by that method.
+  /// Same `originalScheduledAt`/`status` semantics as [rescheduleTask].
+  Future<void> rescheduleTaskWithZone(
+    Task task,
+    DateTime newScheduledAt,
+    String? zoneId,
+  ) async {
+    task.originalScheduledAt ??= task.scheduledAt;
+    task.scheduledAt = newScheduledAt;
+    task.status = TaskStatus.rescheduled;
+    task.zoneId = zoneId;
+    await ref.read(taskRepositoryProvider).saveTask(task);
+    _syncNotificationInBackground(task);
+    _refresh();
+  }
+
   /// Applies every move in a cascade reschedule (see
   /// `shared/services/cascade_reschedule.dart`) — the dragged task's own
   /// move plus every task it pushed out of the way. Each move goes through
@@ -450,10 +517,68 @@ class TaskList extends _$TaskList {
     _refresh();
   }
 
+  /// Deletes one task by id. When that task is a series TEMPLATE (the one
+  /// row carrying the rule), the rule is handed to the earliest surviving
+  /// instance first, so the series keeps exactly one template instead of
+  /// being orphaned.
+  ///
+  /// Real bug, reported directly ("I removed the original as a single
+  /// instance and have a read error, but state no element"): removing a
+  /// template via the "Remove this occurrence" branch left every other
+  /// instance still carrying the series' `recurrenceId` — so each still
+  /// reported `isRecurring == true` — with NO row carrying the rule at
+  /// all. `findSeriesTemplate`'s `firstWhere` then threw `Bad state: No
+  /// element` on the next open/edit of ANY of them, including from the
+  /// detail sheet's own `initState`, which made those tasks impossible to
+  /// open at all. Reproduced directly: deleting the template of a daily
+  /// series left 56 orphaned instances and threw on the first edit.
+  ///
+  /// Promotion (rather than detaching every instance, or refusing the
+  /// delete) keeps the user's actual intent — "remove just this
+  /// occurrence" — while preserving the series' own invariant that
+  /// exactly one row carries the rule.
   Future<void> deleteTask(String id) async {
-    await ref.read(taskRepositoryProvider).deleteTask(id);
+    final repository = ref.read(taskRepositoryProvider);
+    final deleted = repository.getTaskById(id);
+    if (deleted != null && deleted.isRecurrenceTemplate) {
+      await _promoteSuccessorTemplate(deleted);
+    }
+    await repository.deleteTask(id);
     await _cancelNotificationSafely(id);
     _refresh();
+  }
+
+  /// Hands [outgoing]'s recurrence rule to the earliest other instance of
+  /// its series, so deleting [outgoing] doesn't leave the series without a
+  /// template. No-op when it's the series' last remaining row — nothing is
+  /// left to carry the rule, and the series ceases to exist along with it.
+  ///
+  /// The successor keeps its own `scheduledAt`, so it becomes the series'
+  /// new anchor. That genuinely re-anchors future generation (a weekly
+  /// rule with no explicit `daysOfWeek` follows the anchor's own weekday),
+  /// which is the correct reading of "the first occurrence was removed" —
+  /// and for a rule with explicit days, generation is unchanged.
+  Future<void> _promoteSuccessorTemplate(Task outgoing) async {
+    final repository = ref.read(taskRepositoryProvider);
+    final seriesId = outgoing.recurrenceId;
+    if (seriesId == null) return;
+
+    final candidates =
+        repository
+            .getTasks()
+            .where(
+              (task) =>
+                  task.recurrenceId == seriesId &&
+                  task.id != outgoing.id &&
+                  task.scheduledAt != null,
+            )
+            .toList()
+          ..sort((a, b) => a.scheduledAt!.compareTo(b.scheduledAt!));
+    if (candidates.isEmpty) return;
+
+    final successor = candidates.first;
+    successor.recurrenceRule = outgoing.recurrenceRule;
+    await repository.saveTask(successor);
   }
 
   /// Removes [instance] and every OTHER instance of its series scheduled
@@ -614,6 +739,33 @@ class TaskList extends _$TaskList {
       alreadyPresent: alreadyPresent,
       conflicts: conflicts,
     );
+  }
+
+  /// Dev-only: deletes every task, unconditionally. Gated at every call
+  /// site by `kDebugMode` (see `settings_screen.dart`'s Developer section)
+  /// — this is a destructive bulk operation with no place in a real build.
+  Future<void> clearAllTasks() async {
+    final repository = ref.read(taskRepositoryProvider);
+    for (final task in repository.getTasks()) {
+      await repository.deleteTask(task.id);
+      await _cancelNotificationSafely(task.id);
+    }
+    _refresh();
+  }
+
+  /// Dev-only: deletes every "bad state" orphaned-recurring task (see
+  /// [findOrphanedRecurringTaskIds]) — the rows that throw `Bad state: No
+  /// element` on open because their series has no template. Returns the
+  /// count removed, so the Settings button can report what it did.
+  Future<int> clearBadStateTasks() async {
+    final repository = ref.read(taskRepositoryProvider);
+    final orphanedIds = findOrphanedRecurringTaskIds(repository.getTasks());
+    for (final id in orphanedIds) {
+      await repository.deleteTask(id);
+      await _cancelNotificationSafely(id);
+    }
+    _refresh();
+    return orphanedIds.length;
   }
 
   void _refresh() {

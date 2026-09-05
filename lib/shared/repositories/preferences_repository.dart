@@ -61,4 +61,67 @@ abstract final class PreferenceKeys {
   /// install upgrading to this version both run the one-time seed/backfill
   /// exactly once, gated by this flag (see `main.dart`).
   static const String categoriesSeeded = 'categoriesSeeded';
+
+  /// Whether the Timeline renders in Zone view (Zones as real layout
+  /// containers) instead of the default Task view. Absent (null) defaults
+  /// to false — see [ZoneViewEnabledSetting]. Only ever surfaced in
+  /// Settings when `FeatureFlags.zoneEnabled` is also true.
+  static const String zoneViewEnabled = 'zoneViewEnabled';
+
+  /// Whether the gray thread connecting consecutive tasks renders on the
+  /// Spatial Task View. Absent (null) defaults to true — see
+  /// [ShowTimelineConnectorsSetting]. Task view only (Zone view has no
+  /// equivalent connector); already gated by `showHourLabels`, this
+  /// toggle is a further opt-out within that mode.
+  static const String showTimelineConnectors = 'showTimelineConnectors';
+
+  /// Whether a task's trailing completion checkbox renders at all. Absent
+  /// (null) defaults to true — see [ShowCompletionCheckboxSetting].
+  /// Requested directly as a single setting spanning ALL THREE views (Task,
+  /// List, Zone), unlike [showTimelineConnectors] above, which is Task-view
+  /// only.
+  static const String showCompletionCheckbox = 'showCompletionCheckbox';
+
+  /// Which rung of the task-size scale (badge/icon + task-related font,
+  /// see `TaskSize`) the Timeline renders at — Task, List, and Zone view
+  /// alike. Absent (null) defaults to `TaskSize.md` — see
+  /// [TaskSizeSetting].
+  static const String taskSize = 'taskSize';
+
+  /// The user-pasted Slack Incoming Webhook URL for the automatic morning
+  /// summary. Absent (null) means no webhook is configured — see
+  /// [SlackWebhookUrlSetting]. A plain user-managed webhook URL, not an
+  /// Amble-side OAuth/Slack-app connection.
+  static const String slackWebhookUrl = 'slackWebhookUrl';
+
+  /// Whether the automatic morning summary is enabled. Absent (null)
+  /// defaults to false — a webhook URL alone does not turn the feature on;
+  /// the user must explicitly enable it. See [SlackSummaryEnabledSetting].
+  static const String slackSummaryEnabled = 'slackSummaryEnabled';
+
+  /// Optional display-name override for the summary message (Slack's
+  /// `username` payload field). Absent/blank omits the field entirely from
+  /// the payload — see `buildSlackPayload`'s own doc comment for why this
+  /// is not defaulted to some fallback name.
+  static const String slackDisplayName = 'slackDisplayName';
+
+  /// Optional icon-emoji override (Slack's `icon_emoji` payload field,
+  /// e.g. ":sunrise:"). Same absent/blank-omits-the-field behavior as
+  /// [slackDisplayName].
+  static const String slackIconEmoji = 'slackIconEmoji';
+
+  /// Device calendar ids whose events display (read-only) on the Timeline
+  /// — Feature 1 of CONSTITUTION.md's "Calendar" section. Absent (null)
+  /// defaults to an empty list — no calendars selected, so nothing is
+  /// fetched or shown, matching a fresh install's previous (calendar-free)
+  /// Timeline exactly. Stored as `List<String>`, distinct from
+  /// [calendarSyncTargetId] below — display (source) and sync (destination)
+  /// are deliberately separate settings, never inferred from one another.
+  static const String calendarDisplayIds = 'calendarDisplayIds';
+
+  /// The single device calendar Amble tasks are pushed to via manual
+  /// "Sync to Calendar" — Feature 2. Absent (null) means no target is
+  /// chosen yet; the sync button is disabled until one is set (see
+  /// `SettingsScreen`).
+  static const String calendarSyncTargetId = 'calendarSyncTargetId';
 }

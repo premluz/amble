@@ -23,7 +23,7 @@ import 'category_visual.dart';
 ///
 /// Iterates live [categoryListProvider] data rather than the old fixed
 /// `TaskCategory` enum, and adds a right-aligned "+ Add new" link on the
-/// title row that opens [AddCategoryModal] — the newly created category
+/// title row that opens [showAddCategoryModal] — the newly created category
 /// becomes this sheet's own selection, per the same "resolves to the
 /// chosen category" `show()` contract.
 class TaskCategoryModal extends ConsumerWidget {
@@ -39,6 +39,7 @@ class TaskCategoryModal extends ConsumerWidget {
   }) {
     return AppSheet.show<String>(
       context: context,
+      size: AppSheetSize.half,
       builder: (context) => TaskCategoryModal(categoryId: categoryId),
     );
   }
@@ -54,35 +55,33 @@ class TaskCategoryModal extends ConsumerWidget {
       children: [
         Row(
           children: [
-            // Balances the trailing link so the title stays visually
-            // centered — same fixed-width-spacer trick used wherever a
-            // title row needs a symmetric third element.
-            const SizedBox(width: 72),
+            // Left-aligned, not centered — corrected directly: a centered
+            // title with a fixed-width balancing spacer left too little
+            // room for "+ Add new" and wrapped it onto two lines. A plain
+            // Expanded title plus a trailing, intrinsically-sized button
+            // (no artificial symmetry) gives the link all the width it
+            // needs.
             Expanded(
               child: Text(
                 'Category',
-                textAlign: TextAlign.center,
                 style: theme.textTitle.copyWith(
                   color: theme.colorTextPrimary,
                   fontWeight: FontWeight.w700,
                 ),
               ),
             ),
-            SizedBox(
-              width: 72,
-              child: TextButton(
-                onPressed: () async {
-                  final created = await AddCategoryModal.show(context: context);
-                  if (created != null && context.mounted) {
-                    Navigator.of(context).pop(created.id);
-                  }
-                },
-                child: Text(
-                  '+ Add new',
-                  style: theme.textBody.copyWith(
-                    color: theme.colorAccent,
-                    fontWeight: FontWeight.w600,
-                  ),
+            TextButton(
+              onPressed: () async {
+                final created = await showAddCategoryModal(context);
+                if (created != null && context.mounted) {
+                  Navigator.of(context).pop(created.id);
+                }
+              },
+              child: Text(
+                '+ Add new',
+                style: theme.textBody.copyWith(
+                  color: theme.colorAccent,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),

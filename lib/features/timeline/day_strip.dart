@@ -1,9 +1,53 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/dev_config.dart';
+import '../../core/feature_flags.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_icon_button.dart';
+import '../../shared/providers/preferences_providers.dart';
 import 'selected_date_provider.dart';
+
+/// The Timeline's three display modes, cycled by the icon button leading
+/// [DayStrip] — requested directly, from a mockup. Each maps onto the
+/// SAME two existing persisted settings that already independently
+/// controlled Zone view and hour-labels/collapsed mode; this is a new,
+/// coordinated way to move between them, not a new setting of its own.
+enum TimelineViewMode {
+  /// `ZoneViewEnabledSetting` on. Only reachable when
+  /// `FeatureFlags.zoneEnabled` is also true, AND (debug builds only) the
+  /// `devZoneViewInCycle` dev-config toggle isn't switched off — see
+  /// [TimelineViewMode.next].
+  zone,
+
+  /// `ZoneViewEnabledSetting` off, `ShowHourLabelsSetting` off — tasks
+  /// stack one after another, sized by duration, no time axis.
+  list,
+
+  /// `ZoneViewEnabledSetting` off, `ShowHourLabelsSetting` on — the
+  /// original spatial Timeline, tasks positioned against a real time
+  /// axis.
+  task,
+}
+
+extension on TimelineViewMode {
+  /// Zone → List → Task → Zone — confirmed directly. Skips [zone] when
+  /// [zoneFeatureEnabled] is false, since that mode isn't reachable at
+  /// all with the feature flag off (matches every other Zone UI surface's
+  /// own gating).
+  TimelineViewMode next({required bool zoneFeatureEnabled}) => switch (this) {
+    TimelineViewMode.zone => TimelineViewMode.list,
+    TimelineViewMode.list => TimelineViewMode.task,
+    TimelineViewMode.task =>
+      zoneFeatureEnabled ? TimelineViewMode.zone : TimelineViewMode.list,
+  };
+
+  IconData get icon => switch (this) {
+    TimelineViewMode.zone => Icons.grid_view_rounded,
+    TimelineViewMode.list => Icons.view_agenda_outlined,
+    TimelineViewMode.task => Icons.view_timeline_outlined,
+  };
+}
 
 const _weekdayAbbreviations = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 
@@ -114,6 +158,28 @@ class _DayStripState extends ConsumerState<DayStrip> {
     final selectedDate = ref.watch(selectedDateProvider);
     final today = DateTime.now();
 
+    // The dev toggle only ever REMOVES Zone view from the cycle, and only
+    // in a debug build: `isDevConfigAvailable` is a plain `kDebugMode`
+    // re-export, so this whole term is a compile-time `true` in release
+    // and the expression collapses back to `FeatureFlags.zoneEnabled`
+    // alone. That guard matters here specifically because this toggle
+    // defaults to FALSE — unlike every other dev-config default, which is
+    // the safe production value — so reading it unguarded would silently
+    // disable a shipped feature (`zoneEnabled` is true in release builds).
+    final zoneFeatureEnabled =
+        FeatureFlags.zoneEnabled &&
+        (!isDevConfigAvailable || ref.watch(devZoneViewInCycleProvider));
+    final zoneViewEnabled =
+        zoneFeatureEnabled && ref.watch(zoneViewEnabledSettingProvider);
+    final showHourLabels = ref.watch(showHourLabelsSettingProvider);
+    // Falls back to Task/List when Zone view is unreachable — without
+    // this, turning the toggle off while Zone view was the ACTIVE mode
+    // would strand the user in a mode the cycle button can no longer
+    // reach or leave.
+    final currentMode = zoneViewEnabled
+        ? TimelineViewMode.zone
+        : (showHourLabels ? TimelineViewMode.task : TimelineViewMode.list);
+
     return DecoratedBox(
       decoration: BoxDecoration(
         color: theme.colorSurfacePrimary,
@@ -142,6 +208,35 @@ class _DayStripState extends ConsumerState<DayStrip> {
           ),
           child: Row(
             children: [
+              // Cycles Zone → List → Task → Zone (skipping Zone when
+              // `zoneFeatureEnabled` above is false — either
+              // FeatureFlags.zoneEnabled itself, or the debug-only
+              // `devZoneViewInCycle` toggle, is off) — requested directly,
+              // from a mockup. Writes both existing settings together
+              // rather than introducing a new one of its own.
+              Padding(
+                padding: EdgeInsets.only(right: theme.spacingXs),
+                child: IconButton(
+                  onPressed: () {
+                    final nextMode = currentMode.next(
+                      zoneFeatureEnabled: zoneFeatureEnabled,
+                    );
+                    ref
+                        .read(zoneViewEnabledSettingProvider.notifier)
+                        .set(nextMode == TimelineViewMode.zone);
+                    ref
+                        .read(showHourLabelsSettingProvider.notifier)
+                        .set(nextMode == TimelineViewMode.task);
+                  },
+                  icon: Icon(currentMode.icon),
+                  color: theme.colorTextPrimary,
+                  tooltip: switch (currentMode) {
+                    TimelineViewMode.zone => 'Zone view',
+                    TimelineViewMode.list => 'List view',
+                    TimelineViewMode.task => 'Spatial view',
+                  },
+                ),
+              ),
               // The "return to today" chevron — shown only once the strip
               // has been scrolled away from today, replacing that space
               // with a tap target back to it rather than sitting alongside

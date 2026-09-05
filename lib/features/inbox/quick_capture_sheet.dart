@@ -127,7 +127,14 @@ class _QuickCaptureFormState extends ConsumerState<_QuickCaptureForm> {
     if (_isSubmitting) return;
 
     final rawInput = _titleController.text.trim();
-    if (rawInput.isEmpty) return;
+    // Matches Task creation's own stage-1 "Done" exactly (see
+    // _TaskDetailFlowState._confirmNameStage): nothing typed abandons the
+    // sheet instead of no-opping — requested directly, alongside renaming
+    // this button from "Add" to "Done" to match that same semantic.
+    if (rawInput.isEmpty) {
+      Navigator.of(context).pop();
+      return;
+    }
 
     setState(() => _isSubmitting = true);
     try {
@@ -245,9 +252,15 @@ class _QuickCaptureFormState extends ConsumerState<_QuickCaptureForm> {
               SizedBox(width: theme.spacingMd),
               Expanded(
                 child: AppButton(
-                  label: 'Add',
+                  label: 'Done',
                   onPressed: _submit,
                   isLoading: _isSubmitting,
+                  // Pill, matching Task creation's own "Done" button
+                  // (StepScaffold's primary action) — reported directly as
+                  // a shape mismatch; AppButton's plain default is the
+                  // smaller-radius `rounded` shape, not the pill the other
+                  // Done uses.
+                  shape: AppButtonShape.pill,
                 ),
               ),
             ],

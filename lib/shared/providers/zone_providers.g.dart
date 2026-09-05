@@ -112,7 +112,7 @@ final class ZoneListProvider extends $NotifierProvider<ZoneList, List<Zone>> {
   }
 }
 
-String _$zoneListHash() => r'b8595a1c7c12e09d6d0123ffc3ba063e8322649a';
+String _$zoneListHash() => r'43efdf9a42f122c55331d143e875a92d3ad47569';
 
 /// CRUD state over [ZoneRepository], mirroring `TrackedBehaviorList`.
 ///

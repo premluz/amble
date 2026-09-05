@@ -27,15 +27,18 @@ abstract final class FeatureFlags {
     'trackedBehavior',
   );
 
-  /// Gates every Zone UI surface: creating/editing a zone, assigning a task
-  /// to one, and any zone-aware Timeline view. No such UI exists yet — see
-  /// CONSTITUTION.md's "Zone" section.
+  /// Gates every Zone UI surface: Settings' "Zones" section, the zone list,
+  /// and add/edit — see CONSTITUTION.md's "Zone" section.
   ///
-  /// **Default off**, per SCOPE.md's Zone entry. Same build-time-override
-  /// mechanism as [trackedBehaviorEnabled], for consistency:
+  /// **Default ON**, confirmed directly — Zone's first UI (list + add/edit)
+  /// ships in every build, including release, same as any other finished
+  /// feature. Still overridable for testing if ever needed:
   ///
   /// ```
-  /// flutter run --dart-define=zone=true
+  /// flutter run --dart-define=zone=false
   /// ```
-  static const bool zoneEnabled = bool.fromEnvironment('zone');
+  static const bool zoneEnabled = bool.fromEnvironment(
+    'zone',
+    defaultValue: true,
+  );
 }

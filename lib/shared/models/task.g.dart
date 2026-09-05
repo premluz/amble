@@ -36,13 +36,15 @@ class TaskAdapter extends TypeAdapter<Task> {
       notificationsEnabled: fields[14] == null ? true : fields[14] as bool,
       categoryId: fields[15] as String?,
       zoneId: fields[16] as String?,
+      externalEventId: fields[17] as String?,
+      templateId: fields[18] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, Task obj) {
     writer
-      ..writeByte(17)
+      ..writeByte(19)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -76,7 +78,11 @@ class TaskAdapter extends TypeAdapter<Task> {
       ..writeByte(15)
       ..write(obj.categoryId)
       ..writeByte(16)
-      ..write(obj.zoneId);
+      ..write(obj.zoneId)
+      ..writeByte(17)
+      ..write(obj.externalEventId)
+      ..writeByte(18)
+      ..write(obj.templateId);
   }
 
   @override

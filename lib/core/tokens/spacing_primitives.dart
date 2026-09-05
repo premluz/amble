@@ -8,6 +8,11 @@ abstract final class SpacingPrimitives {
   static const space5 = 16.0;
   static const space6 = 20.0;
   static const space7 = 24.0;
+
+  /// Sits between [space7] (24) and [space8] (32) — added specifically for
+  /// the "lg" rung of the task-size scale (`AmbleTheme.sizeTaskBadgeLg`),
+  /// confirmed directly at 28 rather than either neighbouring rung.
+  static const space7Point5 = 28.0;
   static const space8 = 32.0;
   static const space9 = 40.0;
   static const space10 = 56.0;

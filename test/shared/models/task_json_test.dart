@@ -202,4 +202,111 @@ void main() {
       expect(a.hasSameFieldsAs(b), isFalse);
     });
   });
+
+  group('externalEventId', () {
+    test('survives a JSON round-trip', () {
+      final task = Task.create(
+        title: 'Synced task',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      )..externalEventId = 'device-event-1';
+
+      final restored = Task.fromJson(task.toJson());
+
+      expect(restored.externalEventId, 'device-event-1');
+    });
+
+    test('a backup exported before Calendar sync existed still imports — '
+        'externalEventId defaults to null, not required', () {
+      final legacyJson = Task.create(
+        title: 'Legacy task',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      ).toJson()..remove('externalEventId');
+
+      final restored = Task.fromJson(legacyJson);
+
+      expect(restored.externalEventId, isNull);
+    });
+
+    test('hasSameFieldsAs distinguishes tasks differing only by '
+        'externalEventId', () {
+      final a = Task.create(
+        title: 'Same',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      );
+      final b = Task.create(
+        title: 'Same',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      )..externalEventId = 'device-event-1';
+
+      expect(a.hasSameFieldsAs(b), isFalse);
+    });
+  });
+
+  group('templateId', () {
+    test('survives a JSON round-trip', () {
+      final task = Task.create(
+        title: 'Take a walk',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.health,
+        templateId: 'template-1',
+      );
+
+      final restored = Task.fromJson(task.toJson());
+
+      expect(restored.templateId, 'template-1');
+    });
+
+    test('a backup exported before TaskTemplate existed still imports — '
+        'templateId defaults to null, not required', () {
+      final legacyJson = Task.create(
+        title: 'Legacy task',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      ).toJson()..remove('templateId');
+
+      final restored = Task.fromJson(legacyJson);
+
+      expect(restored.templateId, isNull);
+    });
+
+    test('an ordinary task created without a template leaves it null', () {
+      final task = Task.create(
+        title: 'Ordinary',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      );
+
+      expect(task.templateId, isNull);
+    });
+
+    test('hasSameFieldsAs distinguishes tasks differing only by '
+        'templateId', () {
+      final a = Task.create(
+        title: 'Same',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      );
+      final b = Task.create(
+        title: 'Same',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+        templateId: 'template-1',
+      );
+
+      expect(a.hasSameFieldsAs(b), isFalse);
+    });
+  });
 }

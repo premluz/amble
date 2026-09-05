@@ -9,17 +9,38 @@ import '../task_detail/task_detail_sheet.dart';
 import '../timeline/task_category_token_mapping.dart';
 import 'inbox_tasks_provider.dart';
 import 'quick_capture_sheet.dart';
+import 'inbox_tab_switcher.dart';
+import 'task_template_form.dart';
+import 'template_list_view.dart';
 
 /// The Inbox — unscheduled, captured tasks awaiting prioritization. Tapping
 /// an item opens the existing task detail screen ([showTaskDetailSheet]) to
 /// give it a schedule, moving it onto the Timeline; no separate scheduling
 /// UI is built for this. Wired to [inboxTasksProvider], derived from
 /// [taskListProvider] (Phase 1).
-class InboxScreen extends ConsumerWidget {
+///
+/// Two tabs: the captured-tasks list, and "Templates" — reusable
+/// blueprints (see CONSTITUTION.md's "TaskTemplate" section), deliberately
+/// NOT mixed into the same list: a template is never itself schedulable or
+/// completable, so folding it into a list whose every row can be ticked
+/// off or opened for scheduling would blur two genuinely different kinds
+/// of row.
+class InboxScreen extends ConsumerStatefulWidget {
   const InboxScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<InboxScreen> createState() => _InboxScreenState();
+}
+
+class _InboxScreenState extends ConsumerState<InboxScreen> {
+  /// Which tab is showing. Plain local state rather than a provider — no
+  /// other screen needs to read or set it, and it is deliberately not
+  /// persisted across launches (the Inbox opens on capture, its primary
+  /// job, every time).
+  bool _showTemplates = false;
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     final tasks = ref.watch(inboxTasksProvider);
     final taskNotifier = ref.read(taskListProvider.notifier);
@@ -41,8 +62,15 @@ class InboxScreen extends ConsumerWidget {
                   ),
                   child: Text('Inbox', style: theme.textHeadline),
                 ),
+                InboxTabSwitcher(
+                  theme: theme,
+                  showTemplates: _showTemplates,
+                  onChanged: (value) => setState(() => _showTemplates = value),
+                ),
                 Expanded(
-                  child: tasks.isEmpty
+                  child: _showTemplates
+                      ? const TemplateListView()
+                      : tasks.isEmpty
                       ? _EmptyInboxState(theme: theme)
                       : ListView.separated(
                           padding: EdgeInsets.symmetric(
@@ -72,7 +100,12 @@ class InboxScreen extends ConsumerWidget {
               bottom: theme.spacingLg,
               child: AppIconButton(
                 icon: Icons.add_rounded,
-                onPressed: () => showQuickCaptureSheet(context),
+                // One "+" for both tabs, acting on whichever is showing —
+                // rather than a second, permanently-visible button for a
+                // tab that may not be open.
+                onPressed: () => _showTemplates
+                    ? showTaskTemplateForm(context)
+                    : showQuickCaptureSheet(context),
               ),
             ),
           ],

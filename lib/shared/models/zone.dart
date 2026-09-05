@@ -1,6 +1,8 @@
 import 'package:hive_ce/hive_ce.dart';
 import 'package:uuid/uuid.dart';
 
+import 'recurrence_rule.dart';
+
 part 'zone.g.dart';
 
 const _uuid = Uuid();
@@ -11,10 +13,10 @@ const _uuid = Uuid();
 /// [TrackedBehavior]. See CONSTITUTION.md's "Zone" section for the full
 /// design.
 ///
-/// Non-recurring only for this pass: [startMinutes]/[endMinutes] describe
-/// one time-of-day window, not a specific date, and there is no
-/// series/recurrence concept here yet — see CONSTITUTION.md, which flags
-/// zone recurrence as a genuine open fork needing its own design pass.
+/// [startMinutes]/[endMinutes] describe one time-of-day window, not a
+/// specific date. [recurrenceRule] optionally repeats that same window on
+/// a schedule (same time every occurrence) — see its own doc comment for
+/// what's implemented vs. still deferred.
 ///
 /// Additive and inert until a Zone UI exists — see `core/feature_flags.dart`.
 @HiveType(typeId: 9)
@@ -25,6 +27,8 @@ class Zone extends HiveObject {
     required this.startMinutes,
     required this.endMinutes,
     this.schemaVersion = 1,
+    this.recurrenceRule,
+    this.notificationsEnabled = true,
   }) : assert(
          startMinutes >= 0 && startMinutes < _minutesPerDay,
          'startMinutes must be within a single day (0-1439)',
@@ -41,11 +45,15 @@ class Zone extends HiveObject {
     required String title,
     required int startMinutes,
     required int endMinutes,
+    RecurrenceRule? recurrenceRule,
+    bool notificationsEnabled = true,
   }) : this(
          id: _uuid.v4(),
          title: title,
          startMinutes: startMinutes,
          endMinutes: endMinutes,
+         recurrenceRule: recurrenceRule,
+         notificationsEnabled: notificationsEnabled,
        );
 
   @HiveField(0)
@@ -73,9 +81,119 @@ class Zone extends HiveObject {
   @HiveField(4)
   int schemaVersion;
 
+  /// Simple recurrence only: reuses [RecurrenceRule]'s shape as-is (same
+  /// start/end time on every occurrence) — confirmed directly with the user
+  /// as the scope for this pass, NOT the per-occurrence-adjustable-times
+  /// version CONSTITUTION.md flags as a still-deferred future fork. Null
+  /// means non-recurring, today's only behavior, unaffected default.
+  @HiveField(5)
+  RecurrenceRule? recurrenceRule;
+
+  /// Whether an alert fires at this zone's start time — same mechanism as
+  /// [Task.notificationsEnabled]. Defaults true (notified by default,
+  /// opt-out not opt-in), matching a newly created task's own default.
+  @HiveField(6)
+  bool notificationsEnabled;
+
   /// Derived, never stored — so duration can never drift from the two times
   /// that define it, per CONSTITUTION.md.
   int get durationMinutes => endMinutes - startMinutes;
 
+  /// Serializes every persisted field to a JSON-safe map, for export.
+  /// Hand-written, matching [Task.toJson]/[Category.toJson]'s style — not
+  /// generated, per the same "small and stable enough to avoid a new
+  /// dependency" reasoning.
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'title': title,
+    'startMinutes': startMinutes,
+    'endMinutes': endMinutes,
+    'schemaVersion': schemaVersion,
+    'recurrenceRule': recurrenceRule?.toJson(),
+    'notificationsEnabled': notificationsEnabled,
+  };
+
+  /// Reconstructs a [Zone] from [toJson]'s output, for import. Throws
+  /// [FormatException] if a required field is missing or malformed —
+  /// matches [Task.fromJson]/[Category.fromJson]'s fail-loud-on-malformed-
+  /// input convention.
+  factory Zone.fromJson(Map<String, dynamic> json) {
+    final id = json['id'];
+    final title = json['title'];
+    final startMinutes = json['startMinutes'];
+    final endMinutes = json['endMinutes'];
+    final schemaVersion = json['schemaVersion'];
+    if (id is! String || id.isEmpty) {
+      throw const FormatException('Zone.fromJson: missing or invalid "id"');
+    }
+    if (title is! String) {
+      throw const FormatException('Zone.fromJson: missing or invalid "title"');
+    }
+    if (startMinutes is! int) {
+      throw const FormatException(
+        'Zone.fromJson: missing or invalid "startMinutes"',
+      );
+    }
+    if (endMinutes is! int) {
+      throw const FormatException(
+        'Zone.fromJson: missing or invalid "endMinutes"',
+      );
+    }
+    if (schemaVersion is! int) {
+      throw const FormatException(
+        'Zone.fromJson: missing or invalid "schemaVersion"',
+      );
+    }
+    final recurrenceRuleJson = json['recurrenceRule'];
+    RecurrenceRule? recurrenceRule;
+    if (recurrenceRuleJson != null) {
+      if (recurrenceRuleJson is! Map) {
+        throw const FormatException('Zone.fromJson: invalid "recurrenceRule"');
+      }
+      recurrenceRule = RecurrenceRule.fromJson(
+        Map<String, dynamic>.from(recurrenceRuleJson),
+      );
+    }
+    return Zone(
+      id: id,
+      title: title,
+      startMinutes: startMinutes,
+      endMinutes: endMinutes,
+      schemaVersion: schemaVersion,
+      recurrenceRule: recurrenceRule,
+      // Deliberately optional, not required — a backup exported before
+      // this field existed simply omits it, and must still import cleanly,
+      // matching the historical unconditional-notification default (the
+      // constructor's own `= true`), same "old exports still import"
+      // contract every other optional Task/Category field already has.
+      notificationsEnabled: json['notificationsEnabled'] as bool? ?? true,
+    );
+  }
+
+  /// Field-by-field equality, deliberately not `==` — this is a
+  /// [HiveObject] subclass, and overriding `==`/`hashCode` would risk
+  /// interfering with Hive's own key-based identity semantics. Used by
+  /// import to distinguish "already have this exact zone" from "same id,
+  /// different content" (a real conflict) — matches [Task.hasSameFieldsAs]'s
+  /// exact contract; confirmed directly, since Zone (unlike Category) has
+  /// real edit capability, so a re-imported zone with the same id but
+  /// changed fields is a genuinely reachable case, not a hypothetical.
+  /// Compares every persisted field except [id] itself, which the caller
+  /// already knows matches.
+  bool hasSameFieldsAs(Zone other) {
+    return title == other.title &&
+        startMinutes == other.startMinutes &&
+        endMinutes == other.endMinutes &&
+        schemaVersion == other.schemaVersion &&
+        _sameRule(recurrenceRule, other.recurrenceRule) &&
+        notificationsEnabled == other.notificationsEnabled;
+  }
+
   static const _minutesPerDay = 24 * 60;
+}
+
+bool _sameRule(RecurrenceRule? a, RecurrenceRule? b) {
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+  return a.hasSameFieldsAs(b);
 }
