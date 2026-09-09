@@ -4,15 +4,16 @@ import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/feature_flags.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_alert_dialog.dart';
 import '../../core/widgets/app_button.dart';
-import '../../core/feature_flags.dart';
 import '../../core/widgets/app_field_action_button.dart';
 import '../../core/widgets/app_field_shell.dart';
+import '../../core/widgets/app_modal_route.dart';
 import '../../core/widgets/app_pane.dart';
-import '../../core/widgets/app_selectable_chip.dart';
 import '../../core/widgets/app_segmented_time_field.dart';
+import '../../core/widgets/app_selectable_chip.dart';
 import '../../core/widgets/app_staggered_entrance.dart';
 import '../../core/widgets/app_step_scaffold.dart';
 import '../../core/widgets/app_switch.dart';
@@ -45,29 +46,8 @@ import '../timeline/recently_saved_task_provider.dart';
 /// edit-schedule). Not [AppSheet] — the colored, edge-to-edge header these
 /// screens share doesn't fit AppSheet's fixed white-background contract, per
 /// docs/DECISIONS.md, Phase 4.
-Future<T?> _pushDetailRoute<T>(BuildContext context, WidgetBuilder builder) {
-  final theme = Theme.of(context).extension<AmbleTheme>()!;
-  return Navigator.of(context).push<T>(
-    PageRouteBuilder<T>(
-      opaque: false,
-      // Dims the screen behind the sheet. Was transparent, which left the
-      // page underneath at full brightness competing with the modal — the
-      // sheet is inset from the top, so what's behind it is visible and
-      // needs pushing back.
-      barrierColor: theme.colorScrim,
-      transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        return SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, 1),
-            end: Offset.zero,
-          ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOut)),
-          child: child,
-        );
-      },
-      pageBuilder: (context, animation, secondaryAnimation) => builder(context),
-    ),
-  );
-}
+Future<T?> _pushDetailRoute<T>(BuildContext context, WidgetBuilder builder) =>
+    pushAppSheetRoute<T>(context, builder);
 
 /// Opens the task detail sheet — a genuinely new task starts on the
 /// Name-only stage 1 before advancing into the full form (stage 2: title,

@@ -76,6 +76,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     required this.motionSlow,
     required this.motionRouteSettle,
     required this.curveStandard,
+    required this.curveDecelerate,
   });
 
   // Surfaces — an explicit elevation scale, read as steps 0/1/2 rather
@@ -365,6 +366,14 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   final Duration motionRouteSettle;
   final Curve curveStandard;
 
+  /// Starts at full speed and eases to a stop — no slow ramp-in. For
+  /// motion that should feel like it has already begun by the time the
+  /// user perceives it, which is what makes a sheet entrance read as
+  /// immediate rather than as something winding up. Promoted from
+  /// [MotionPrimitives.curveDecelerate], which Tier 1 has always defined
+  /// but Tier 2 never exposed.
+  final Curve curveDecelerate;
+
   static final light = AmbleTheme(
     colorSurfaceBase: ColorPrimitives.surface0,
     colorSurfacePrimary: ColorPrimitives.surface1,
@@ -543,6 +552,12 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       milliseconds: MotionPrimitives.durationRouteSettleMs,
     ),
     curveStandard: const Cubic(0.4, 0.0, 0.2, 1.0),
+    // Mirrors MotionPrimitives.curveDecelerate's control points. Spelled
+    // out rather than read from the record: Tier 1 stores them as a
+    // plain tuple (it must stay Flutter-free, so it can't hold a Curve),
+    // and record fields aren't accessible in a const expression — the
+    // same reason curveStandard above is also written out longhand.
+    curveDecelerate: const Cubic(0.0, 0.0, 0.2, 1.0),
   );
 
   /// First-pass dark palette (Phase 13a). Surfaces/text/border are derived
@@ -747,6 +762,12 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       milliseconds: MotionPrimitives.durationRouteSettleMs,
     ),
     curveStandard: const Cubic(0.4, 0.0, 0.2, 1.0),
+    // Mirrors MotionPrimitives.curveDecelerate's control points. Spelled
+    // out rather than read from the record: Tier 1 stores them as a
+    // plain tuple (it must stay Flutter-free, so it can't hold a Curve),
+    // and record fields aren't accessible in a const expression — the
+    // same reason curveStandard above is also written out longhand.
+    curveDecelerate: const Cubic(0.0, 0.0, 0.2, 1.0),
   );
 
   @override
@@ -811,6 +832,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     Duration? motionSlow,
     Duration? motionRouteSettle,
     Curve? curveStandard,
+    Curve? curveDecelerate,
   }) {
     return AmbleTheme(
       colorSurfaceBase: colorSurfaceBase ?? this.colorSurfaceBase,
@@ -876,6 +898,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       motionSlow: motionSlow ?? this.motionSlow,
       motionRouteSettle: motionRouteSettle ?? this.motionRouteSettle,
       curveStandard: curveStandard ?? this.curveStandard,
+      curveDecelerate: curveDecelerate ?? this.curveDecelerate,
     );
   }
 
@@ -1033,6 +1056,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       motionSlow: t < 0.5 ? motionSlow : other.motionSlow,
       motionRouteSettle: t < 0.5 ? motionRouteSettle : other.motionRouteSettle,
       curveStandard: t < 0.5 ? curveStandard : other.curveStandard,
+      curveDecelerate: t < 0.5 ? curveDecelerate : other.curveDecelerate,
     );
   }
 

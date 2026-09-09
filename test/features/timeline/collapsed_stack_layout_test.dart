@@ -1,5 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:amble/features/timeline/collapsed_stack_layout.dart';
+import 'package:amble/features/timeline/task_overlap_layout.dart';
+import 'package:amble/shared/models/category.dart';
+import 'package:amble/shared/models/task.dart';
 
 CollapsedStackRow _row(String id, DateTime start, double height) =>
     CollapsedStackRow(ids: [id], start: start, height: height);
@@ -255,6 +258,103 @@ void _labelTopsTests() {
         gap: 4,
       );
       expect(reversed.values.toSet(), ordered.values.toSet());
+    });
+  });
+
+  // End-to-end guard for the reported bug: "on list view we have some
+  // important tasks overlap they seem duplicated... whatever the scenario
+  // should never overlap."
+  //
+  // Mirrors how `_DayTimelineState._collapsedTops` builds its rows (group
+  // by `slot.groupIndex`, tallest member wins the height) and then asserts
+  // the invariant that actually matters — no two rows share vertical
+  // space. Kept here rather than as a TimelineScreen widget test because
+  // `_collapsedTops` is private and this directory is the known-hanging
+  // one; this exercises the same composition without a widget tree.
+  group('rows never overlap, whatever the schedule', () {
+    Task task(String id, int h, int m, int dur) => Task(
+      id: id,
+      title: id,
+      scheduledAt: DateTime(2026, 9, 4, h, m),
+      durationMinutes: dur,
+      categoryId: BuiltInCategoryIds.general,
+    );
+
+    /// The row-building half of `_collapsedTops`, with a fixed height per
+    /// row so the assertion is about POSITIONS, not height maths.
+    Map<String, double> topsFor(List<Task> tasks, {double height = 40}) {
+      final slots = layoutOverlappingTasks(tasks);
+      final rows = <CollapsedStackRow>[];
+      int? currentGroup;
+      for (final slot in slots) {
+        if (slot.groupIndex != currentGroup || rows.isEmpty) {
+          currentGroup = slot.groupIndex;
+          rows.add(
+            CollapsedStackRow(
+              ids: [slot.block.id],
+              start: slot.block.scheduledStart,
+              height: height,
+            ),
+          );
+        } else {
+          final last = rows.removeLast();
+          rows.add(
+            CollapsedStackRow(
+              ids: [...last.ids, slot.block.id],
+              start: last.start,
+              height: height,
+            ),
+          );
+        }
+      }
+      return computeCollapsedStackTops(
+        taskRows: rows,
+        externalEventRows: const [],
+        gap: 4,
+      );
+    }
+
+    test('the column-0-reuse case that was painting two rows on top of '
+        'each other now yields a single row', () {
+      final tops = topsFor([
+        task('A', 9, 0, 60), // 09:00-10:00, column 0
+        task('B', 9, 30, 60), // 09:30-10:30, column 1
+        task('C', 10, 0, 60), // 10:00-11:00, column 0 AGAIN
+      ]);
+
+      expect(
+        tops.values.toSet(),
+        hasLength(1),
+        reason:
+            'all three are one overlap group, so they share one row — the '
+            'bug split them into two rows at different tops that then '
+            'overlapped on screen',
+      );
+    });
+
+    test('separate groups stack with no vertical overlap', () {
+      const height = 40.0;
+      const gap = 4.0;
+      final tops = topsFor([
+        task('A', 9, 0, 60),
+        task('B', 9, 30, 60),
+        task('C', 10, 0, 60), // one group with A and B
+        task('D', 14, 0, 30), // its own group
+        task('E', 16, 0, 30), // its own group
+      ], height: height);
+
+      final distinct = tops.values.toSet().toList()..sort();
+      for (var i = 1; i < distinct.length; i++) {
+        expect(
+          distinct[i],
+          greaterThanOrEqualTo(distinct[i - 1] + height),
+          reason:
+              'row $i starts before row ${i - 1} ends — rows must never '
+              'share vertical space',
+        );
+      }
+      expect(distinct, hasLength(3));
+      expect(distinct[1] - distinct[0], height + gap);
     });
   });
 }

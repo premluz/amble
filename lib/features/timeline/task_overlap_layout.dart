@@ -37,6 +37,7 @@ class TaskLayoutSlot {
     required this.block,
     required this.column,
     required this.columnCount,
+    required this.groupIndex,
   });
 
   final ScheduledBlock block;
@@ -52,6 +53,21 @@ class TaskLayoutSlot {
   /// How many columns the block's overlap group needs. 1 means the block
   /// overlaps nothing and takes the full width.
   final int columnCount;
+
+  /// Which overlap group this block belongs to — blocks sharing a value
+  /// are the ones that were laid out against each other.
+  ///
+  /// The reliable way to ask "do these share a row?", which [column] is
+  /// NOT: a group packs blocks into the fewest columns it can, so column
+  /// 0 is REUSED by any later block whose start clears column 0's last
+  /// occupant. List mode used to treat `column == 0` as "starts a new
+  /// row" and consequently split one group across two rows whenever that
+  /// reuse happened (09:00-10:00, 09:30-10:30, 10:00-11:00 → columns 0,
+  /// 1, 0), painting the two rows on top of each other. Reported directly
+  /// from a screenshot: "on list view we have some important tasks
+  /// overlap they seem duplicated... whatever the scenario should never
+  /// overlap."
+  final int groupIndex;
 
   /// Fraction of the available width this block occupies (1.0 when alone).
   double get widthFraction => 1 / columnCount;
@@ -89,14 +105,16 @@ List<TaskLayoutSlot> layoutOverlappingTasks(List<ScheduledBlock> blocks) {
   // already in the group.
   var groupStart = 0;
   var groupEnd = sorted.first.scheduledEnd;
+  var groupIndex = 0;
 
   for (var i = 1; i <= sorted.length; i++) {
     final startsNewGroup =
         i == sorted.length || !sorted[i].scheduledStart.isBefore(groupEnd);
 
     if (startsNewGroup) {
-      slots.addAll(_layoutGroup(sorted.sublist(groupStart, i)));
+      slots.addAll(_layoutGroup(sorted.sublist(groupStart, i), groupIndex));
       if (i == sorted.length) break;
+      groupIndex++;
       groupStart = i;
       groupEnd = sorted[i].scheduledEnd;
     } else {
@@ -112,9 +130,16 @@ List<TaskLayoutSlot> layoutOverlappingTasks(List<ScheduledBlock> blocks) {
 /// genuinely-overlapping blocks apart. A block reuses the first column
 /// whose last occupant has already finished, so a group like 9:00-10:00,
 /// 9:30-10:30, 10:00-11:00 needs two columns rather than three.
-List<TaskLayoutSlot> _layoutGroup(List<ScheduledBlock> group) {
+List<TaskLayoutSlot> _layoutGroup(List<ScheduledBlock> group, int groupIndex) {
   if (group.length == 1) {
-    return [TaskLayoutSlot(block: group.single, column: 0, columnCount: 1)];
+    return [
+      TaskLayoutSlot(
+        block: group.single,
+        column: 0,
+        columnCount: 1,
+        groupIndex: groupIndex,
+      ),
+    ];
   }
 
   final columnEndTimes = <DateTime>[];
@@ -140,6 +165,7 @@ List<TaskLayoutSlot> _layoutGroup(List<ScheduledBlock> group) {
         block: group[i],
         column: assignedColumns[i],
         columnCount: columnCount,
+        groupIndex: groupIndex,
       ),
   ];
 }

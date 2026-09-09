@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart' show kLongPressTimeout, kTouchSlop;
 import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
@@ -123,6 +124,46 @@ class _PlaceTaskLineLayerState extends State<PlaceTaskLineLayer> {
   /// no position of its own — this field is what supplies one.
   Offset? _lastPointerPosition;
 
+  /// When the current pointer went down, and where — used by
+  /// [_handlePointerUp] to tell a quick tap from a hold or a drag.
+  DateTime? _pointerDownAt;
+  Offset? _pointerDownPosition;
+
+  /// Set once [LongPressDraggable] actually begins a drag, so the release
+  /// at the end of that drag is never also treated as a tap.
+  bool _dragStarted = false;
+
+  /// Fires [PlaceTaskLineLayer.onTapAt] straight from the raw pointer
+  /// stream, rather than through a `GestureDetector.onTapUp`.
+  ///
+  /// Reported directly: "the quick task add tap on the timeline is not
+  /// responsive. It opens after a few moments." A tap recognizer here
+  /// shares the gesture arena with [LongPressDraggable]'s own recognizer,
+  /// and `onTapUp` only fires once that arena resolves — so every tap
+  /// waited out the long-press contest before anything happened. A
+  /// [Listener] sits outside the arena entirely, so this fires on the
+  /// actual finger-lift.
+  ///
+  /// Guards reproduce what the tap recognizer was doing for us: ignore a
+  /// release that ended a drag, one that lingered past the long-press
+  /// threshold, and one that moved far enough to read as a scroll.
+  void _handlePointerUp(PointerUpEvent event) {
+    final downAt = _pointerDownAt;
+    final downPosition = _pointerDownPosition;
+    _pointerDownAt = null;
+    _pointerDownPosition = null;
+
+    final onTapAt = widget.onTapAt;
+    if (onTapAt == null || downAt == null || downPosition == null) return;
+    if (_dragStarted) return;
+    if (DateTime.now().difference(downAt) > kLongPressTimeout) return;
+    if ((event.position - downPosition).distance > kTouchSlop) return;
+
+    final y = _localY(event.position);
+    if (y == null) return;
+    onTapAt(_instantAt(y.clamp(0.0, _maxTop)));
+  }
+
   double get _totalMinutes =>
       widget.rangeEnd.difference(widget.rangeStart).inMinutes.toDouble();
 
@@ -159,8 +200,15 @@ class _PlaceTaskLineLayerState extends State<PlaceTaskLineLayer> {
       // finger currently is at the moment the hold completes (see
       // _lastPointerPosition's own doc comment).
       child: Listener(
-        onPointerDown: (event) => _lastPointerPosition = event.position,
+        onPointerDown: (event) {
+          _lastPointerPosition = event.position;
+          _pointerDownAt = DateTime.now();
+          _pointerDownPosition = event.position;
+          _dragStarted = false;
+        },
         onPointerMove: (event) => _lastPointerPosition = event.position,
+        onPointerUp: _handlePointerUp,
+        onPointerCancel: (_) => _pointerDownAt = null,
         // The anchor key sits on a real RenderBox (this SizedBox), never
         // on a `Positioned`/`Listener` — `Positioned` is a
         // ParentDataWidget with no box of its own, so `findRenderObject()`
@@ -186,41 +234,32 @@ class _PlaceTaskLineLayerState extends State<PlaceTaskLineLayer> {
             decorationOnly: true,
             maxRippleRadius: _tapRippleRadius,
             onTap: widget.onTapAt == null ? null : () {},
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapUp: widget.onTapAt == null
-                  ? null
-                  : (details) {
-                      final y = _localY(details.globalPosition);
-                      if (y == null) return;
-                      widget.onTapAt!(_instantAt(y.clamp(0.0, _maxTop)));
-                    },
-              child: LongPressDraggable<Object>(
-                // OPAQUE, not the default deferToChild — fixed directly after
-                // this stopped firing entirely: `deferToChild` hit-tests
-                // against the child's own painted content, and the child
-                // here paints nothing, so there was literally nothing to hit
-                // and the pointer passed straight through without the
-                // recognizer ever seeing it. Opaque makes this layer claim
-                // its whole area regardless of what its child paints.
-                hitTestBehavior: HitTestBehavior.opaque,
-                // Invisible: the real line is drawn by PlaceTaskLineOverlay,
-                // in the timeline's own coordinate space, rather than the
-                // app-wide Overlay this feedback would otherwise float in.
-                feedback: const SizedBox.shrink(),
-                onDragStarted: () {
-                  final position = _lastPointerPosition;
-                  if (position != null) _updateFromGlobal(position);
-                },
-                onDragUpdate: (details) =>
-                    _updateFromGlobal(details.globalPosition),
-                onDragEnd: (details) {
-                  final top = _lineTop;
-                  _lineTop = null;
-                  if (top != null) widget.onPlaced(_instantAt(top));
-                },
-                child: const SizedBox.expand(),
-              ),
+            child: LongPressDraggable<Object>(
+              // OPAQUE, not the default deferToChild — fixed directly after
+              // this stopped firing entirely: `deferToChild` hit-tests
+              // against the child's own painted content, and the child
+              // here paints nothing, so there was literally nothing to hit
+              // and the pointer passed straight through without the
+              // recognizer ever seeing it. Opaque makes this layer claim
+              // its whole area regardless of what its child paints.
+              hitTestBehavior: HitTestBehavior.opaque,
+              // Invisible: the real line is drawn by PlaceTaskLineOverlay,
+              // in the timeline's own coordinate space, rather than the
+              // app-wide Overlay this feedback would otherwise float in.
+              feedback: const SizedBox.shrink(),
+              onDragStarted: () {
+                _dragStarted = true;
+                final position = _lastPointerPosition;
+                if (position != null) _updateFromGlobal(position);
+              },
+              onDragUpdate: (details) =>
+                  _updateFromGlobal(details.globalPosition),
+              onDragEnd: (details) {
+                final top = _lineTop;
+                _lineTop = null;
+                if (top != null) widget.onPlaced(_instantAt(top));
+              },
+              child: const SizedBox.expand(),
             ),
           ),
         ),

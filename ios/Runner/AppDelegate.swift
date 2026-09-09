@@ -1,23 +1,15 @@
 import Flutter
 import UIKit
-// Required for calling FlutterLocalNotificationsPlugin.setPluginRegistrantCallback,
-// so plugin channels are available if a notification action runs in the
-// background isolate.
-import flutter_local_notifications
 
 @main
-@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+@objc class AppDelegate: FlutterAppDelegate {
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    // App Intents can launch the application WITHOUT connecting a scene.
+    // Start Dart here, then let SceneDelegate attach to this same engine.
+    AmbleFlutterHost.shared.start()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
-  }
-
-  func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
-    FlutterLocalNotificationsPlugin.setPluginRegistrantCallback { (registry) in
-      GeneratedPluginRegistrant.register(with: registry)
-    }
-    GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
   }
 }

@@ -110,10 +110,20 @@ class _QuickCaptureFormState extends ConsumerState<_QuickCaptureForm> {
             theme: () => Theme.of(context).extension<AmbleTheme>()!,
             categories: () => ref.read(categoryListProvider),
           );
+    // `autofocus: true` on the field itself (see build()) rather than a
+    // focus request from here — the keyboard then starts rising as the
+    // sheet mounts, so the two rise TOGETHER as one entrance.
+    //
+    // A previous version deferred focus until the sheet's own slide-up
+    // had completed, reasoning that the two animations shouldn't overlap.
+    // That was backwards, and reported directly: "the new note sheet
+    // opens in two sequences: 1. opens the actual sheet. 2. after a
+    // moment, the keyboard is pushing it. While creating a task, the big
+    // sheet is opening without that kind of delay. Both open at once."
+    // Not overlapping is exactly what produced the two-step feel; the
+    // task-detail sheet (the one that feels right) has always used plain
+    // `autofocus`, and this now matches it.
     _focusNode = FocusNode();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _focusNode.requestFocus();
-    });
   }
 
   @override
@@ -270,14 +280,18 @@ class _QuickCaptureFormState extends ConsumerState<_QuickCaptureForm> {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
 
     return Padding(
-      // viewInsets.bottom clears the keyboard; spacingLg on top of that is
-      // real breathing room below the Save/Done button, so the sheet
-      // doesn't end flush against the keyboard's top edge or the screen
-      // bottom. Requested directly: "add padding bottom to that add/edit
-      // note sheet."
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom + theme.spacingLg,
-      ),
+      // Breathing room below the Save/Done button, so the sheet doesn't
+      // end flush against the keyboard's top edge or the screen bottom.
+      // Requested directly: "add padding bottom to that add/edit note
+      // sheet."
+      //
+      // The KEYBOARD's own inset is deliberately NOT added here any more:
+      // AppSheet now applies it for every sheet, via an AnimatedPadding
+      // that smooths the keyboard's rise (see `liftedForKeyboard`).
+      // Reading `viewInsets` here as well would double-count it — and
+      // reading it raw, per frame, is exactly what made the sheet jitter
+      // against its own slide-up transition.
+      padding: EdgeInsets.only(bottom: theme.spacingLg),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -306,6 +320,10 @@ class _QuickCaptureFormState extends ConsumerState<_QuickCaptureForm> {
           TextField(
             controller: _titleController,
             focusNode: _focusNode,
+            // Fires as the sheet mounts, so the keyboard rises with the
+            // sheet's own entrance rather than after it — see initState's
+            // note on why deferring this read as two separate steps.
+            autofocus: true,
             style: theme.textBody,
             textInputAction: TextInputAction.done,
             onSubmitted: (_) => _submit(),

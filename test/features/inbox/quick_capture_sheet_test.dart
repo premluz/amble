@@ -267,4 +267,111 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  // Reported directly: "when opening sheets with keyboard along seems
+  // jittery not as smooth as without" — then, after a first attempt used
+  // an AnimatedPadding, corrected directly: "do one motion best pattern."
+  //
+  // The sheet must be positioned DIRECTLY from the keyboard's own live
+  // inset, so the two move as one motion with a single source of truth
+  // (what native sheets on both platforms do). An AnimatedPadding here
+  // would give the sheet its own separate curve and duration, leaving it
+  // permanently trailing the keyboard.
+  testWidgets('the keyboard inset is applied directly, not through its own '
+      'animation — the sheet moves in lockstep with the keyboard', (
+    tester,
+  ) async {
+    final navigatorKey = await _pumpHost(
+      tester,
+      box: box,
+      categoryBox: categoryBox,
+    );
+    showQuickCaptureSheet(navigatorKey.currentContext!);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byType(AnimatedPadding),
+      findsNothing,
+      reason:
+          'an AnimatedPadding would run a SECOND animation against the '
+          "keyboard's own, so the sheet trails it instead of moving "
+          'with it',
+    );
+  });
+  // Reported directly: "the new note sheet opens in two sequences: 1.
+  // opens the actual sheet. 2. after a moment, the keyboard is pushing
+  // it. While creating a task, the big sheet is opening without that kind
+  // of delay. Both open at once."
+  //
+  // A previous version deferred focus until the sheet's slide-up had
+  // finished, which is exactly what produced that two-step feel. The
+  // field autofocuses as it mounts instead, matching the task-detail
+  // sheet (the one that feels right), so the keyboard rises WITH the
+  // sheet rather than after it.
+  testWidgets('the text field takes focus as the sheet mounts, so the keyboard '
+      'rises with it rather than in a second step', (tester) async {
+    final navigatorKey = await _pumpHost(
+      tester,
+      box: box,
+      categoryBox: categoryBox,
+    );
+    showQuickCaptureSheet(navigatorKey.currentContext!);
+
+    // One frame in — mid-transition. Focus must ALREADY be requested,
+    // so the keyboard is on its way up alongside the sheet.
+    await tester.pump();
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(
+      field.autofocus,
+      isTrue,
+      reason:
+          'deferring focus until after the slide-up is what made the '
+          'sheet and keyboard arrive as two separate steps',
+    );
+    expect(field.focusNode?.hasFocus ?? false, isTrue);
+
+    // Close before the test ends. AppSheet releases its transition
+    // controller once the sheet animates OUT (see `_disposeWhenSettled`),
+    // so a sheet left open at teardown would leak its ticker and trip
+    // Flutter's "disposed with an active Ticker" assert — every other
+    // test here already dismisses the sheet as part of what it asserts.
+    await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
+  });
+
+  // Reported directly twice — "small sheet on tasks manage feels
+  // sluggish", then "create note (still slow) sheet opening in manage
+  // (tasks)". The first fix set only the DURATION (via a custom
+  // transitionAnimationController); the sheet still felt slow because
+  // Flutter shapes the motion with `Easing.legacyDecelerate` for both
+  // directions regardless. `sheetAnimationStyle` sets curve AND duration,
+  // which is what actually fixed it.
+  testWidgets(
+    'the sheet opens on the app\'s own curve and duration, not Flutter\'s '
+    'slower bottom-sheet defaults',
+    (tester) async {
+      final navigatorKey = await _pumpHost(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+      );
+      showQuickCaptureSheet(navigatorKey.currentContext!);
+      await tester.pump();
+
+      final route = ModalRoute.of(tester.element(find.byType(TextField)))!;
+      expect(
+        route.transitionDuration,
+        AmbleTheme.light.motionNormal,
+        reason:
+            "Flutter's stock bottom-sheet duration is longer; this is the "
+            'app-wide motionNormal',
+      );
+      expect(
+        route.reverseTransitionDuration,
+        AmbleTheme.light.motionFast,
+        reason: 'dismissal is deliberately quicker than the entrance',
+      );
+
+      await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
+    },
+  );
 }

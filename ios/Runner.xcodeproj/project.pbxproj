@@ -18,6 +18,11 @@
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
+		AAB200000000000000000000 /* AmbleFlutterHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAB100000000000000000000 /* AmbleFlutterHost.swift */; };
+		AAB200000000000000000001 /* AmbleAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAB100000000000000000001 /* AmbleAppIntents.swift */; };
+		AAB200000000000000000002 /* ScheduledTaskEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAB100000000000000000002 /* ScheduledTaskEntity.swift */; };
+		AAB200000000000000000003 /* AmbleShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAB100000000000000000003 /* AmbleShortcuts.swift */; };
+		AAB200000000000000000010 /* AppIntents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AAB100000000000000000010 /* AppIntents.framework */; settings = {ATTRIBUTES = (Weak, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -69,6 +74,11 @@
 		A198063A0DF444BA78711F2B /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
 		C62E04F31BFD13CF3E6D2393 /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
 		F083FD8E7FD2CDBA9985FB4E /* Pods-RunnerTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release.xcconfig"; sourceTree = "<group>"; };
+		AAB100000000000000000000 /* AmbleFlutterHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmbleFlutterHost.swift; sourceTree = "<group>"; };
+		AAB100000000000000000001 /* AmbleAppIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmbleAppIntents.swift; sourceTree = "<group>"; };
+		AAB100000000000000000002 /* ScheduledTaskEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduledTaskEntity.swift; sourceTree = "<group>"; };
+		AAB100000000000000000003 /* AmbleShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmbleShortcuts.swift; sourceTree = "<group>"; };
+		AAB100000000000000000010 /* AppIntents.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppIntents.framework; path = System/Library/Frameworks/AppIntents.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -78,6 +88,7 @@
 			files = (
 				78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */,
 				3C30508049171C9DBB1B2976 /* Pods_Runner.framework in Frameworks */,
+				AAB200000000000000000010 /* AppIntents.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -104,6 +115,7 @@
 			isa = PBXGroup;
 			children = (
 				88E1648D1E3A8263A42E2483 /* Pods_Runner.framework */,
+				AAB100000000000000000010 /* AppIntents.framework */,
 				710EDB34D9F616560268584A /* Pods_RunnerTests.framework */,
 			);
 			name = Frameworks;
@@ -151,6 +163,10 @@
 				97C147021CF9000F007C117D /* Info.plist */,
 				1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */,
 				1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */,
+				AAB100000000000000000000 /* AmbleFlutterHost.swift */,
+				AAB100000000000000000001 /* AmbleAppIntents.swift */,
+				AAB100000000000000000002 /* ScheduledTaskEntity.swift */,
+				AAB100000000000000000003 /* AmbleShortcuts.swift */,
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
@@ -390,6 +406,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AAB200000000000000000000 /* AmbleFlutterHost.swift in Sources */,
+				AAB200000000000000000001 /* AmbleAppIntents.swift in Sources */,
+				AAB200000000000000000002 /* ScheduledTaskEntity.swift in Sources */,
+				AAB200000000000000000003 /* AmbleShortcuts.swift in Sources */,
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,

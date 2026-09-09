@@ -1664,7 +1664,18 @@ class _DayTimelineState extends State<_DayTimeline> {
     // the now-line reclaim the space rather than leaving a blank margin —
     // confirmed via AskUserQuestion over the alternative (keep the width
     // reserved but empty).
-    final hourGutterWidth = widget.showHourLabels ? _hourGutterWidth : 0.0;
+    // Absorbs the horizontal screen padding the scroll view no longer
+    // applies (see its `padding:` note below): every content child in the
+    // timeline Stack already positions from this one value, so folding
+    // the inset in here keeps them all exactly where they were while
+    // letting the Stack itself span the full viewport width.
+    final hourGutterWidth =
+        (widget.showHourLabels ? _hourGutterWidth : 0.0) +
+        theme.spacingScreenPadding;
+
+    /// The matching inset on the RIGHT, for children that previously
+    /// stopped at the padded viewport's own edge (`right: 0`).
+    final rightEdgeInset = theme.spacingScreenPadding;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1729,9 +1740,22 @@ class _DayTimelineState extends State<_DayTimeline> {
               // proportion of the SCREEN, not of this scroll viewport, so
               // it's applied against the physical screen height via
               // MediaQuery, matching how the sheet itself sizes.
+              // NO horizontal padding — deliberately, and this is what
+              // makes the tap-to-create ripple reach the screen edges.
+              // Reported directly: "there is some padding or margin on
+              // the right because, of the entire viewport in the timeline,
+              // I can see that when tapping, the ripple is cut off. Let's
+              // remove this. This will give us more horizontal real
+              // estate... the individual inner elements would have their
+              // own padding."
+              //
+              // The inset moved INWARD instead: `hourGutterWidth` below
+              // absorbs it on the left (every content child already
+              // positions from that one value), and each child's own
+              // `right:` adds it back on the right. So content sits
+              // exactly where it did, while the Stack — and the
+              // full-bleed tap layer inside it — spans the whole width.
               padding: EdgeInsets.only(
-                left: theme.spacingScreenPadding,
-                right: theme.spacingScreenPadding,
                 top: theme.spacingLg,
                 bottom:
                     theme.spacingLg +
@@ -1775,6 +1799,7 @@ class _DayTimelineState extends State<_DayTimeline> {
                         rangeEnd: rangeEnd,
                         pixelsPerMinute: widget.pixelsPerMinute,
                         hideLabelNear: _now,
+                        leftInset: theme.spacingScreenPadding,
                       ),
                     // Zone background blocks — purely decorative, rendered
                     // BEHIND every task capsule (this Stack paints in child-
@@ -2008,7 +2033,7 @@ class _DayTimelineState extends State<_DayTimeline> {
                               hourGutterWidth +
                               _ghostSlotFor(ghostSlots, draggedTask.id).column *
                                   (_pillWidth(theme) + _columnGap(theme)),
-                          right: 0,
+                          right: rightEdgeInset,
                           child: IgnorePointer(
                             child: Opacity(
                               opacity: 0.2,
@@ -2074,6 +2099,7 @@ class _DayTimelineState extends State<_DayTimeline> {
                           theme: theme,
                           baseTop: blockTops[task.id]!,
                           left: hourGutterWidth,
+                          rightInset: rightEdgeInset,
                           slot: slot,
                           pixelsPerMinute: pixelsPerMinute,
                           // Only in List mode does a clustered task surrender its
@@ -2107,9 +2133,11 @@ class _DayTimelineState extends State<_DayTimeline> {
                           labelOffset:
                               (labelTops[task.id] ?? blockTops[task.id]!) -
                               blockTops[task.id]!,
-                          textColumnRight: widget.zones.isEmpty
-                              ? 0
-                              : _zoneLabelGutterWidth(theme),
+                          textColumnRight:
+                              rightEdgeInset +
+                              (widget.zones.isEmpty
+                                  ? 0
+                                  : _zoneLabelGutterWidth(theme)),
                           bottomTrim: _zoneTaskBottomTrim(task),
                           maxPillHeight: _maxPillHeight(task, slots, blockTops),
                           // Only the block for the task the modal just CREATED
@@ -2197,9 +2225,11 @@ class _DayTimelineState extends State<_DayTimeline> {
                             columnGap: _columnGap(theme),
                           ),
                           textColumnLeft: _textColumnLeft(theme, ghostSlots),
-                          textColumnRight: widget.zones.isEmpty
-                              ? 0
-                              : _zoneLabelGutterWidth(theme),
+                          textColumnRight:
+                              rightEdgeInset +
+                              (widget.zones.isEmpty
+                                  ? 0
+                                  : _zoneLabelGutterWidth(theme)),
                           collapsedTop: widget.showHourLabels
                               ? null
                               : blockTops[event.id],
@@ -2240,9 +2270,11 @@ class _DayTimelineState extends State<_DayTimeline> {
                         // sits in — requested directly ("the task name
                         // should also be aligned as other text").
                         textColumnLeft: _textColumnLeft(theme, ghostSlots),
-                        textColumnRight: widget.zones.isEmpty
-                            ? 0
-                            : _zoneLabelGutterWidth(theme),
+                        textColumnRight:
+                            rightEdgeInset +
+                            (widget.zones.isEmpty
+                                ? 0
+                                : _zoneLabelGutterWidth(theme)),
                       ),
                     // The cluster's own flat title+time list — the member pills
                     // themselves now render through the ordinary slot loop above
@@ -2300,7 +2332,17 @@ class _DayTimelineState extends State<_DayTimeline> {
                           key: ValueKey(
                             'cluster-list-${cluster.tasks.map((task) => task.id).join('-')}',
                           ),
-                          top: blockTops[cluster.tasks.first.id]!,
+                          // `blocks.first`, NOT `tasks.first`. `tasks` is a
+                          // filtered view of `blocks` (events dropped), so
+                          // whenever a cluster's EARLIEST member is an
+                          // imported calendar event, `tasks.first` is some
+                          // later task — and `blockTops` is keyed by the
+                          // row's own first member. The cluster then
+                          // rendered at a different row's top and painted
+                          // over it. Reported directly from a screenshot:
+                          // an 08:30 imported event's row sitting between
+                          // 15:20 and 19:30, overlapping its neighbour.
+                          top: blockTops[cluster.blocks.first.id]!,
                           // The SHARED text column, not this cluster's own member
                           // count — corrected directly ("all text ... always lined
                           // up"). Sizing it per cluster meant a 4-task cluster's
@@ -2311,9 +2353,11 @@ class _DayTimelineState extends State<_DayTimeline> {
                               _textColumnLeft(theme, ghostSlots),
                           // Same zone-label gutter the ordinary task rows leave
                           // — see _zoneLabelGutterWidth.
-                          right: widget.zones.isEmpty
-                              ? 0
-                              : _zoneLabelGutterWidth(theme),
+                          right:
+                              rightEdgeInset +
+                              (widget.zones.isEmpty
+                                  ? 0
+                                  : _zoneLabelGutterWidth(theme)),
                           child: AnimatedSwitcher(
                             duration: theme.motionNormal,
                             child: OverlapClusterBlock(
@@ -2355,6 +2399,8 @@ class _DayTimelineState extends State<_DayTimeline> {
                         rangeEnd: rangeEnd,
                         pixelsPerMinute: widget.pixelsPerMinute,
                         gutterWidth: hourGutterWidth,
+                        leftInset: theme.spacingScreenPadding,
+                        rightInset: rightEdgeInset,
                       ),
                     // LAST, deliberately — the placement line has to paint above
                     // every task (reported directly: it was rendering underneath
@@ -2628,11 +2674,22 @@ class _DayTimelineState extends State<_DayTimeline> {
         for (final block in cluster.blocks) block.id: cluster.blocks.length,
     };
 
-    // One row per overlap GROUP (column 0 starts a new group — see
-    // layoutOverlappingTasks), carrying the group's start time and the
+    // One row per overlap GROUP, carrying the group's start time and the
     // tallest member's height. The actual merge (this function's whole
     // point) lives in the pure, unit-tested computeCollapsedStackTops.
+    //
+    // Grouped by `slot.groupIndex`, NOT by `slot.column == 0`. Real bug,
+    // reported directly from a screenshot ("on list view we have some
+    // important tasks overlap they seem duplicated... whatever the
+    // scenario should never overlap"): a group packs its blocks into the
+    // fewest columns it can, so column 0 gets REUSED by any later block
+    // that starts after column 0's previous occupant ends (09:00-10:00,
+    // 09:30-10:30, 10:00-11:00 → columns 0, 1, 0). Treating column 0 as
+    // "starts a new row" therefore split a single group into two rows
+    // whose members interleave in time, and the two painted on top of
+    // each other.
     final rows = <CollapsedStackRow>[];
+    int? currentGroupIndex;
     for (final slot in slots) {
       final task = slot.task;
       final height = clusterSizeById[slot.block.id] != null
@@ -2643,7 +2700,8 @@ class _DayTimelineState extends State<_DayTimeline> {
               slot.block as ExternalCalendarEvent,
               theme,
             );
-      if (slot.column == 0 || rows.isEmpty) {
+      if (slot.groupIndex != currentGroupIndex || rows.isEmpty) {
+        currentGroupIndex = slot.groupIndex;
         rows.add(
           CollapsedStackRow(
             ids: [slot.block.id],
@@ -2907,6 +2965,9 @@ class _DayTimelineState extends State<_DayTimeline> {
             block: slot.block,
             column: laneById[slot.block.id]!,
             columnCount: countById[slot.block.id]!,
+            // Carried through unchanged: this only re-lanes a slot within
+            // its cluster, it never moves it to a different overlap group.
+            groupIndex: slot.groupIndex,
           )
         else
           slot,
@@ -3403,6 +3464,7 @@ class _DraggableTaskBlock extends ConsumerStatefulWidget {
     required this.theme,
     required this.baseTop,
     required this.left,
+    required this.rightInset,
     required this.slot,
     required this.onTap,
     required this.onToggleComplete,
@@ -3433,6 +3495,13 @@ class _DraggableTaskBlock extends ConsumerStatefulWidget {
   final AmbleTheme theme;
   final double baseTop;
   final double left;
+
+  /// The timeline's horizontal screen padding, applied to this block's
+  /// own right edge. The scroll view no longer pads itself (so the
+  /// tap-to-create ripple can reach the screen edges), so every child
+  /// that used to stop at the padded viewport's edge carries the inset
+  /// itself — see the scroll view's own `padding:` note.
+  final double rightInset;
 
   /// Whether Edit Mode is active — see [_DayTimeline.editModeEnabled]'s
   /// own doc comment for why this is a plain field, not a Riverpod watch,
@@ -4523,7 +4592,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
       curve: Curves.easeOut,
       top: top,
       left: widget.left + columnOffset,
-      right: 0,
+      right: widget.rightInset,
       child: capsule,
     );
   }
@@ -4568,7 +4637,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
       curve: Curves.easeOut,
       top: top,
       left: widget.left,
-      right: 0,
+      right: widget.rightInset,
       height: rowHeight,
       // Unclipped so a lifted pill's shadow still spills over its
       // neighbours, exactly as it does in the combined layout.

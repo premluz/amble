@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +8,8 @@ import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'package:workmanager/workmanager.dart';
 
 import 'core/background/background_tasks.dart';
+import 'core/app_intents/app_intent_channel.dart';
+import 'core/app_intents/intent_notification_service.dart';
 import 'core/dev_config.dart';
 import 'core/feature_flags.dart';
 import 'core/tokens/color_primitives.dart';
@@ -68,7 +71,14 @@ void main() async {
   // own doc comment for why this can't just live in `preferences`.
   await Hive.openBox<SyncedCalendarEvent>(syncedCalendarEventBoxName);
 
-  final container = ProviderContainer();
+  final container = ProviderContainer(
+    overrides: [
+      if (defaultTargetPlatform == TargetPlatform.iOS)
+        notificationServiceProvider.overrideWithValue(
+          IntentNotificationService(),
+        ),
+    ],
+  );
   final notificationService = container.read(notificationServiceProvider);
   await notificationService.initialize(
     onNotificationTap: (taskId) =>
@@ -140,6 +150,10 @@ void main() async {
           ),
         ),
   );
+
+  // Native Siri calls wait for this handshake, not for a visible UI frame.
+  // The iOS host and its eventual scene share this engine and these boxes.
+  unawaited(registerAppIntentChannel(container));
 
   runApp(
     UncontrolledProviderScope(container: container, child: const AmbleApp()),

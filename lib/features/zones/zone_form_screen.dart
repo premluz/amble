@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_field_action_button.dart';
+import '../../core/widgets/app_modal_route.dart';
 import '../../core/widgets/app_pane.dart';
 import '../../core/widgets/app_segmented_time_field.dart';
 import '../../core/widgets/app_selectable_chip.dart';
@@ -30,26 +31,9 @@ import '../timeline/selected_date_provider.dart';
 /// All writes go through `zoneListProvider` — this UI never touches
 /// [ZoneRepository]/Hive directly.
 Future<void> showZoneFormScreen(BuildContext context, {Zone? zone}) {
-  final theme = Theme.of(context).extension<AmbleTheme>()!;
-  return Navigator.of(context).push<void>(
-    PageRouteBuilder<void>(
-      opaque: false,
-      // Same slide-up, scrim-barrier presentation as
-      // `task_detail_sheet.dart`'s `_pushDetailRoute` — this is the exact
-      // route shape `StepScaffold` was designed to sit inside.
-      barrierColor: theme.colorScrim,
-      transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        return SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, 1),
-            end: Offset.zero,
-          ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOut)),
-          child: child,
-        );
-      },
-      pageBuilder: (context, animation, secondaryAnimation) =>
-          _ZoneFormScreen(zone: zone),
-    ),
+  return pushAppSheetRoute<void>(
+    context,
+    (context) => _ZoneFormScreen(zone: zone),
   );
 }
 

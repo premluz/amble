@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/app_modal_route.dart';
 import '../../core/widgets/app_pane.dart';
 import '../../core/widgets/app_staggered_entrance.dart';
 import '../../core/widgets/app_step_scaffold.dart';
@@ -37,26 +38,9 @@ Future<void> showTrackedBehaviorForm(
   BuildContext context, {
   TrackedBehavior? behavior,
 }) {
-  final theme = Theme.of(context).extension<AmbleTheme>()!;
-  return Navigator.of(context).push<void>(
-    PageRouteBuilder<void>(
-      opaque: false,
-      // Same slide-up, scrim-barrier presentation as
-      // `task_detail_sheet.dart`'s `_pushDetailRoute` and
-      // `zone_form_screen.dart`'s `showZoneFormScreen`.
-      barrierColor: theme.colorScrim,
-      transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        return SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, 1),
-            end: Offset.zero,
-          ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOut)),
-          child: child,
-        );
-      },
-      pageBuilder: (context, animation, secondaryAnimation) =>
-          _TrackedBehaviorForm(behavior: behavior),
-    ),
+  return pushAppSheetRoute<void>(
+    context,
+    (context) => _TrackedBehaviorForm(behavior: behavior),
   );
 }
 

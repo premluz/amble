@@ -492,4 +492,54 @@ void main() {
       expect(clusters.single.blocks, hasLength(3));
     });
   });
+
+  // Real bug, reported directly from a screenshot: an imported 08:30
+  // calendar event's row rendered between 15:20 and 19:30, overlapping
+  // its neighbour. List mode positioned each cluster with
+  // `blockTops[cluster.tasks.first.id]` — but `tasks` is a FILTERED view
+  // of `blocks` (events dropped), so when a cluster's earliest member is
+  // an event, `tasks.first` is a later task and the cluster took a
+  // different row's top. `blockTops` is keyed by the row's own first
+  // member, which is `blocks.first`.
+  group('blocks.first is the cluster\'s earliest member', () {
+    test('holds when an external event starts before every task in the '
+        'cluster', () {
+      final event = ExternalCalendarEvent(
+        id: 'evt-early',
+        title: 'Daily Mixtape',
+        start: DateTime(2026, 9, 4, 8, 30),
+        end: DateTime(2026, 9, 4, 9, 15),
+        sourceCalendarId: 'cal-1',
+      );
+      final task = _task(
+        title: 'Later task',
+        scheduledAt: DateTime(2026, 9, 4, 8, 45),
+        durationMinutes: 60,
+      );
+
+      final clusters = detectOverlapClusters([task, event]);
+      expect(clusters, hasLength(1));
+      final cluster = clusters.single;
+
+      expect(
+        cluster.blocks.first.id,
+        event.id,
+        reason: 'the event starts first, so it heads the cluster',
+      );
+      expect(
+        cluster.tasks.first.id,
+        task.id,
+        reason:
+            'guards the premise: tasks.first is a DIFFERENT block, which '
+            'is exactly why using it for the row top was wrong',
+      );
+      expect(
+        cluster.blocks.first.scheduledStart,
+        cluster.blocks
+            .map((b) => b.scheduledStart)
+            .reduce((a, b) => a.isBefore(b) ? a : b),
+        reason: 'blocks.first must be the earliest member',
+      );
+    });
+  });
 }

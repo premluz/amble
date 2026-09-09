@@ -53,6 +53,7 @@ class TaskBoundaryMarkers extends StatelessWidget {
     required this.rangeStart,
     required this.rangeEnd,
     required this.pixelsPerMinute,
+    this.leftInset = 0,
     this.intervalHours = 1,
     this.hideLabelNear,
   });
@@ -64,6 +65,13 @@ class TaskBoundaryMarkers extends StatelessWidget {
   /// The day view's bottom edge — the last tick at or before this.
   final DateTime rangeEnd;
   final double pixelsPerMinute;
+
+  /// Indents the hour labels from this widget's own left edge. The
+  /// Timeline's scroll view no longer applies horizontal screen padding
+  /// (so the tap-to-create ripple can reach the screen edges), so the
+  /// labels carry that inset themselves rather than sitting flush against
+  /// the physical edge.
+  final double leftInset;
 
   /// Spacing between ticks, in hours. Default 1 (every hour); the
   /// configurable-interval seam mentioned for a later pass.
@@ -101,7 +109,7 @@ class TaskBoundaryMarkers extends StatelessWidget {
           if (!_isHiddenByNowLabel(tick.time, theme))
             Positioned(
               top: _minutesSinceStart(tick.time) * pixelsPerMinute,
-              left: 0,
+              left: leftInset,
               child: FractionalTranslation(
                 translation: const Offset(0, -0.5),
                 child: Text(

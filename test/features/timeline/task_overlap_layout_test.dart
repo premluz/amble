@@ -217,4 +217,49 @@ void main() {
       expect(slots.every((s) => s.columnCount == 1), isTrue);
     });
   });
+
+  // Real bug, reported directly from a screenshot: "on list view we have
+  // some important tasks overlap they seem duplicated... whatever the
+  // scenario should never overlap." A group packs into the fewest columns
+  // it can, so column 0 is REUSED once its previous occupant ends — and
+  // List mode's stacking used `column == 0` to mean "starts a new row",
+  // splitting one group across two rows that then painted over each
+  // other. `groupIndex` is the identity that actually answers "do these
+  // share a row?".
+  group('groupIndex', () {
+    test('every member of one overlap group shares a groupIndex, even when '
+        'column 0 gets reused within it', () {
+      final slots = layoutOverlappingTasks([
+        _task('A', 9, 0, 60), // 09:00-10:00, column 0
+        _task('B', 9, 30, 60), // 09:30-10:30, column 1
+        _task('C', 10, 0, 60), // 10:00-11:00, column 0 AGAIN
+      ]);
+
+      expect(
+        _slotFor(slots, 'C').column,
+        0,
+        reason:
+            'guards the premise: C really does reuse column 0, which is '
+            'what made the old column-based grouping split the row',
+      );
+      final groups = slots.map((s) => s.groupIndex).toSet();
+      expect(
+        groups,
+        hasLength(1),
+        reason: 'all three overlap transitively — they are one group',
+      );
+    });
+
+    test('genuinely separate groups get distinct groupIndexes', () {
+      final slots = layoutOverlappingTasks([
+        _task('Morning', 9, 0, 30), // 09:00-09:30
+        _task('Afternoon', 14, 0, 30), // 14:00-14:30, no overlap
+      ]);
+
+      expect(
+        _slotFor(slots, 'Morning').groupIndex,
+        isNot(_slotFor(slots, 'Afternoon').groupIndex),
+      );
+    });
+  });
 }

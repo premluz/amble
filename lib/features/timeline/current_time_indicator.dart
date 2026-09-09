@@ -20,6 +20,8 @@ class CurrentTimeIndicator extends StatefulWidget {
     super.key,
     required this.rangeStart,
     required this.rangeEnd,
+    this.leftInset = 0,
+    this.rightInset = 0,
     this.pixelsPerMinute = 1.5,
     this.gutterWidth = 56.0,
   });
@@ -29,6 +31,12 @@ class CurrentTimeIndicator extends StatefulWidget {
   /// renders when it actually falls inside this window; a day clamped to
   /// its tasks' own times can easily not include the real current time.
   final DateTime rangeStart;
+
+  /// The Timeline's horizontal screen padding, which its scroll view no
+  /// longer applies itself (so the tap-to-create ripple can reach the
+  /// screen edges) — see that widget's own `padding:` note.
+  final double leftInset;
+  final double rightInset;
   final DateTime rangeEnd;
   final double pixelsPerMinute;
 
@@ -69,8 +77,12 @@ class _CurrentTimeIndicatorState extends State<CurrentTimeIndicator> {
 
     return Positioned(
       top: top,
-      left: 0,
-      right: 0,
+      // Insets match the Timeline's own horizontal screen padding, which
+      // its scroll view no longer applies — see that `padding:` note.
+      // Without these the now-line would run flush to both physical
+      // screen edges while every task beside it stays inset.
+      left: widget.leftInset,
+      right: widget.rightInset,
       // The row is taller than the line itself (the time label sets its
       // height), so shift it up by half to keep the line — not the row's
       // top edge — sitting exactly on the current minute.
@@ -79,7 +91,12 @@ class _CurrentTimeIndicatorState extends State<CurrentTimeIndicator> {
         child: Row(
           children: [
             SizedBox(
-              width: widget.gutterWidth,
+              // gutterWidth arrives already carrying the screen padding
+              // (see the Timeline's own hourGutterWidth); this Positioned
+              // has separately shifted the whole row right by that same
+              // amount, so take it back off here or the label would be
+              // double-indented.
+              width: widget.gutterWidth - widget.leftInset,
               child: Text(
                 TimeOfDay.fromDateTime(_now).format(context),
                 style: theme.textCaption.copyWith(
