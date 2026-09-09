@@ -2,6 +2,7 @@ import 'package:hive_ce/hive_ce.dart';
 import 'package:uuid/uuid.dart';
 
 import 'recurrence_rule.dart';
+import 'scheduled_block.dart';
 import 'task_category.dart';
 import 'task_status.dart';
 
@@ -10,7 +11,7 @@ part 'task.g.dart';
 const _uuid = Uuid();
 
 @HiveType(typeId: 0)
-class Task extends HiveObject {
+class Task extends HiveObject implements ScheduledBlock {
   Task({
     required this.id,
     required this.title,
@@ -31,6 +32,7 @@ class Task extends HiveObject {
     this.zoneId,
     this.externalEventId,
     this.templateId,
+    this.isImportant = false,
   });
 
   /// Creates a new scheduled task with a client-generated UUID.
@@ -55,6 +57,7 @@ class Task extends HiveObject {
     RecurrenceRule? recurrenceRule,
     bool notificationsEnabled = true,
     String? templateId,
+    bool isImportant = false,
   }) : this(
          id: _uuid.v4(),
          title: title,
@@ -66,6 +69,7 @@ class Task extends HiveObject {
          notificationsEnabled: notificationsEnabled,
          categoryId: categoryId,
          templateId: templateId,
+         isImportant: isImportant,
        );
 
   /// Creates a new unscheduled (Inbox) task with a client-generated UUID.
@@ -75,6 +79,7 @@ class Task extends HiveObject {
   Task.captured({required String title, String? notes})
     : this(id: _uuid.v4(), title: title, notes: notes);
 
+  @override
   @HiveField(0)
   final String id;
 
@@ -204,6 +209,27 @@ class Task extends HiveObject {
   @HiveField(18)
   String? templateId;
 
+  /// Marks the small set of tasks that matter most on a given day.
+  /// Additive and inert when unset — same pattern as [zoneId]/[behaviorId]/
+  /// [templateId] above: `false` on every existing row, and nothing in the
+  /// app's behavior changes until a task is actually marked.
+  ///
+  /// **Display-only.** Confirmed directly, narrowing an earlier draft that
+  /// also gave important tasks cascade-anchor priority and a soft cap at 3
+  /// per day: "actually.. no restrictions. just icon in front of the task".
+  /// So this is deliberately NOT consulted by `computeCascadeMoves`, by any
+  /// overlap check, or by any validation — an important task is pushed,
+  /// moved, resized, and edited exactly like any other, and there is no
+  /// limit on how many can be marked. It renders a marker icon and nothing
+  /// more.
+  ///
+  /// Orthogonal to [behaviorId] and to recurrence: a tracked task can also
+  /// be important, and (per CONSTITUTION.md's recurring-edit scope) marking
+  /// one materialized instance important does not mark its whole series —
+  /// it is an ordinary per-instance field like any other.
+  @HiveField(19)
+  bool isImportant;
+
   /// True when this task is an instance of a [TrackedBehavior] rather than
   /// a standalone task.
   bool get isBehaviorInstance => behaviorId != null;
@@ -220,6 +246,18 @@ class Task extends HiveObject {
   /// has left the Inbox and appears on the Timeline. Both fields are set
   /// together (see [TaskList.scheduleTask]), so checking either suffices.
   bool get isScheduled => scheduledAt != null && durationMinutes != null;
+
+  /// [ScheduledBlock] conformance — every call site already requires
+  /// [isScheduled] before touching layout (`layoutOverlappingTasks`/
+  /// `detectOverlapClusters`'s own doc comments), so asserting here (via
+  /// `!`) rather than returning a nullable matches the precondition that
+  /// already existed everywhere these values were read directly.
+  @override
+  DateTime get scheduledStart => scheduledAt!;
+
+  @override
+  DateTime get scheduledEnd =>
+      scheduledAt!.add(Duration(minutes: durationMinutes!));
 
   /// Serializes every persisted field to a JSON-safe map, for export. Not
   /// generated (`json_serializable`) — the model is small and stable enough
@@ -245,6 +283,7 @@ class Task extends HiveObject {
     'zoneId': zoneId,
     'externalEventId': externalEventId,
     'templateId': templateId,
+    'isImportant': isImportant,
   };
 
   /// Reconstructs a [Task] from [toJson]'s output, for import. Throws
@@ -330,6 +369,10 @@ class Task extends HiveObject {
       // Same "old exports still import" contract — a backup exported
       // before TaskTemplate existed has no templateId at all.
       templateId: json['templateId'] as String?,
+      // Same "old exports still import" contract — a backup exported
+      // before the important flag existed has no isImportant at all, and
+      // must import as an ordinary (unmarked) task rather than failing.
+      isImportant: json['isImportant'] as bool? ?? false,
     );
   }
 
@@ -358,7 +401,8 @@ class Task extends HiveObject {
         categoryId == other.categoryId &&
         zoneId == other.zoneId &&
         externalEventId == other.externalEventId &&
-        templateId == other.templateId;
+        templateId == other.templateId &&
+        isImportant == other.isImportant;
   }
 }
 

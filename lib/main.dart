@@ -7,13 +7,19 @@ import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'package:workmanager/workmanager.dart';
 
 import 'core/background/background_tasks.dart';
+import 'core/dev_config.dart';
+import 'core/feature_flags.dart';
 import 'core/tokens/color_primitives.dart';
 import 'core/tokens/semantic_theme.dart';
+import 'core/tokens/type_primitives.dart';
 import 'features/inbox/inbox_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/splash/splash_carousel_screen.dart';
+import 'features/timeline/edit_mode_provider.dart';
+import 'features/timeline/pending_task_draft_provider.dart';
 import 'features/timeline/selected_date_provider.dart';
 import 'features/timeline/timeline_screen.dart';
+import 'features/tracked_behavior/tracked_behavior_list_screen.dart';
 import 'hive_registrar.g.dart';
 import 'shared/models/app_theme_mode.dart';
 import 'shared/models/category.dart';
@@ -86,6 +92,11 @@ void main() async {
   // 8-week window means a session would have to stay open for weeks before
   // running dry. Idempotent, so this never duplicates existing instances.
   await container.read(taskListProvider.notifier).materializeDueRecurrences();
+  // Same rolling-window top-up, for Zone's own materialized recurring
+  // instances (see docs/DECISIONS.md — Zone materialization session).
+  // Mirrors the Task call above exactly, including trigger point (app
+  // open, before notification refresh) and idempotency.
+  await container.read(zoneListProvider.notifier).materializeDueRecurrences();
 
   // Roll the notification window forward. Materialization above writes rows
   // 8 weeks out but deliberately schedules no alarms; this registers them
@@ -99,11 +110,12 @@ void main() async {
   unawaited(
     container.read(taskListProvider.notifier).refreshScheduledNotifications(),
   );
-  // Same reasoning as the task refresh above, for Zone's own one-shot,
-  // re-resolved-on-save notifications — without this, a zone's alert goes
-  // stale the day after it fires (or its target occurrence passes) until
-  // someone happens to reopen and re-save that exact zone. See
-  // ZoneList.refreshScheduledNotifications's own doc comment.
+  // Same reasoning as the task refresh above, for Zone's own notifications
+  // — now each materialized instance schedules against its own real
+  // `anchorDate`, replacing the former one-shot, re-resolved-on-save
+  // workaround (see docs/DECISIONS.md). Without this launch-time pass, an
+  // instance that later moves into the horizon would never pick up an
+  // alarm until its zone happened to be re-saved.
   unawaited(
     container.read(zoneListProvider.notifier).refreshScheduledNotifications(),
   );
@@ -256,6 +268,12 @@ ThemeData _themeDataFor(AmbleTheme palette, Brightness brightness) {
       brightness: brightness,
     ),
     scaffoldBackgroundColor: palette.colorSurfacePrimary,
+    // App-wide font fallback — every text style built from `AmbleTheme`'s
+    // own tokens already carries `TypePrimitives.fontFamily` explicitly
+    // (see semantic_theme.dart), but this covers default Material text
+    // that ISN'T one of ours (an AlertDialog action, a SnackBar) so
+    // nothing on screen falls back to the platform default font.
+    fontFamily: TypePrimitives.fontFamily,
     extensions: [palette],
   );
 }
@@ -280,11 +298,83 @@ class AmbleHome extends ConsumerStatefulWidget {
 class _AmbleHomeState extends ConsumerState<AmbleHome> {
   int _selectedIndex = 1;
 
-  static const _screens = [InboxScreen(), TimelineScreen(), SettingsScreen()];
+  /// Inbox / Timeline / [Tracked] / Settings, per docs/SCOPE.md's
+  /// navigation structure. "Tracked" is present when
+  /// [FeatureFlags.trackedBehaviorEnabled] is on (default true) AND — in a
+  /// debug build only — the `DevTrackedTabInCycle` dev toggle
+  /// (`core/dev_config.dart`) hasn't been switched off; the flag omits the
+  /// destination entirely rather than showing a disabled one.
+  ///
+  /// Deliberately inserted AFTER Timeline, not before it: the
+  /// notification-tap handler below hardcodes `_selectedIndex = 1` for
+  /// "switch to the Timeline", so anything added ahead of Timeline would
+  /// silently redirect every notification tap to the wrong screen. Same
+  /// reasoning the Phase 7 "Backup" tab was placed after Timeline for —
+  /// see docs/DECISIONS.md.
+  ///
+  /// Computed per-build (not `static final`) now that visibility can
+  /// change at runtime via the dev toggle — `ref.watch`ing
+  /// `devTrackedTabInCycleProvider` needs a live rebuild, which a
+  /// once-computed static list can never give. The `isDevConfigAvailable`
+  /// guard (a `kDebugMode` re-export) means this collapses back to the
+  /// plain flag check in release, exactly like `TimelineScreen`'s own
+  /// `zoneViewEnabled` resolution already does for `DevZoneViewInCycle`.
+  List<Widget> _screens(bool trackedTabVisible) => [
+    const InboxScreen(),
+    const TimelineScreen(),
+    if (trackedTabVisible) const TrackedBehaviorListScreen(),
+    const SettingsScreen(),
+  ];
+
+  /// The nav destinations, kept in the SAME order as [_screens] — the two
+  /// are indexed by one shared `_selectedIndex`, so a divergence between
+  /// them would silently show the wrong screen for a tapped tab.
+  List<NavigationDestination> _destinations(bool trackedTabVisible) => [
+    const NavigationDestination(
+      icon: Icon(Icons.inbox_rounded),
+      // "Inbox" -> "Manage" — matches the in-screen heading, requested
+      // directly alongside adding the Zones/Categories sub-tabs.
+      label: 'Manage',
+    ),
+    const NavigationDestination(
+      icon: Icon(Icons.view_day_rounded),
+      label: 'Timeline',
+    ),
+    if (trackedTabVisible)
+      const NavigationDestination(
+        icon: Icon(Icons.track_changes_rounded),
+        label: 'Tracked',
+      ),
+    const NavigationDestination(
+      icon: Icon(Icons.settings_rounded),
+      label: 'Settings',
+    ),
+  ];
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
+
+    // Same "flag AND (release OR dev-toggle-still-on)" resolution
+    // `TimelineScreen`'s own `zoneViewEnabled` uses for
+    // `DevZoneViewInCycle` — `isDevConfigAvailable` is a `kDebugMode`
+    // re-export, so this collapses to the plain flag in release builds.
+    final trackedTabVisible =
+        FeatureFlags.trackedBehaviorEnabled &&
+        (!isDevConfigAvailable || ref.watch(devTrackedTabInCycleProvider));
+    final screens = _screens(trackedTabVisible);
+
+    // The dev toggle can shrink the tab list at runtime (unlike the
+    // compile-time flag, which can't change after launch) — if the
+    // currently-selected index no longer exists, fall back to Timeline
+    // rather than crashing IndexedStack/NavigationBar on an out-of-range
+    // index. Mirrors `DevZoneViewInCycle`'s own "don't strand the user in
+    // a mode the toggle just removed" reasoning.
+    if (_selectedIndex >= screens.length) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _selectedIndex = 1);
+      });
+    }
 
     ref.listen(notificationTapProvider, (previous, taskId) {
       if (taskId == null) return;
@@ -297,38 +387,54 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
       ref.read(notificationTapProvider.notifier).consume();
     });
 
+    // Timeline is always index 1 in `_screens`/`_destinations` (see their
+    // own doc comments — the tracked tab only ever inserts AFTER it), so
+    // this checks "is Timeline the visible tab" without needing to derive
+    // the index from `trackedTabVisible`. Hidden entirely (not just
+    // disabled) while Edit Mode is active on that tab — requested
+    // directly: "in edit mode we don't see main menu and days and view
+    // switching." Reported directly as a real gap: the task edit sheet's
+    // OWN full-screen route already covers this bar for free (a separate,
+    // unrelated feature), which is not true here — Edit Mode is a toggle
+    // on the same already-visible TimelineScreen, not a pushed route, so
+    // nothing hid this bar until now.
+    // Same reasoning as the Edit Mode case just above — the quick-create
+    // overlay's own small sheet is meant to cover the nav bar's own
+    // screen real estate (reported directly, from a screenshot: "should
+    // cover main nav currently it opens above main nav"), and like Edit
+    // Mode, it's a state on the already-visible TimelineScreen rather
+    // than a pushed route, so nothing else hides this bar for it.
+    final hideBottomNav =
+        _selectedIndex == 1 &&
+        (ref.watch(editModeEnabledProvider) ||
+            ref.watch(pendingTaskDraftProvider) != null);
+
     return Scaffold(
-      body: IndexedStack(index: _selectedIndex, children: _screens),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: (index) =>
-            setState(() => _selectedIndex = index),
-        backgroundColor: theme.colorSurfacePrimary,
-        // Material 3's NavigationBar applies its own surfaceTintColor
-        // overlay by default (derived from ColorScheme.fromSeed), which
-        // paints OVER an explicit backgroundColor rather than being
-        // overridden by it — a real, pre-existing dark-mode bug found
-        // while verifying this session's splash screen: the nav bar
-        // stayed white in dark mode despite backgroundColor already being
-        // wired to theme.colorSurfacePrimary at Phase 5. Zeroing the tint
-        // out makes backgroundColor the only thing that paints. See
-        // docs/DECISIONS.md.
-        surfaceTintColor: ColorPrimitives.transparent,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.inbox_rounded),
-            label: 'Inbox',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.view_day_rounded),
-            label: 'Timeline',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_rounded),
-            label: 'Settings',
-          ),
-        ],
+      body: IndexedStack(
+        index: _selectedIndex < screens.length ? _selectedIndex : 1,
+        children: screens,
       ),
+      bottomNavigationBar: hideBottomNav
+          ? null
+          : NavigationBar(
+              selectedIndex: _selectedIndex < screens.length
+                  ? _selectedIndex
+                  : 1,
+              onDestinationSelected: (index) =>
+                  setState(() => _selectedIndex = index),
+              backgroundColor: theme.colorSurfacePrimary,
+              // Material 3's NavigationBar applies its own surfaceTintColor
+              // overlay by default (derived from ColorScheme.fromSeed), which
+              // paints OVER an explicit backgroundColor rather than being
+              // overridden by it — a real, pre-existing dark-mode bug found
+              // while verifying this session's splash screen: the nav bar
+              // stayed white in dark mode despite backgroundColor already being
+              // wired to theme.colorSurfacePrimary at Phase 5. Zeroing the tint
+              // out makes backgroundColor the only thing that paints. See
+              // docs/DECISIONS.md.
+              surfaceTintColor: ColorPrimitives.transparent,
+              destinations: _destinations(trackedTabVisible),
+            ),
     );
   }
 }

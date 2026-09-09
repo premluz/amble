@@ -10,6 +10,7 @@ import '../task_detail/category_visual.dart';
 import 'completion_checkbox.dart';
 import 'duration_label.dart';
 import 'external_event_block.dart' show showExternalCalendarEventInfo;
+import 'resize_handle.dart';
 
 /// The minimum height a [ZoneContainerBlock] renders at even when its own
 /// time span (per [Zone.startMinutes]/[Zone.endMinutes] at the outer
@@ -54,6 +55,17 @@ class ZoneContainerBlock extends StatelessWidget {
     this.onRowDragEnd,
     this.durationVisible = true,
     this.showCompletionCheckbox = true,
+    this.editModeEnabled = false,
+    this.onResizeTopStart,
+    this.onResizeTopUpdate,
+    this.onResizeTopEnd,
+    this.onResizeBottomStart,
+    this.onResizeBottomUpdate,
+    this.onResizeBottomEnd,
+    this.onMoveStart,
+    this.onMoveUpdate,
+    this.onMoveEnd,
+    this.onHeaderTap,
   });
 
   final AmbleTheme theme;
@@ -78,6 +90,52 @@ class ZoneContainerBlock extends StatelessWidget {
   /// views. Never applies to [externalEvents]' own rows, which are
   /// read-only and carry no checkbox in the first place.
   final bool showCompletionCheckbox;
+
+  /// Whether Edit Mode is active — gates both resize handles' visibility.
+  /// See `TaskCapsuleBlock.editModeEnabled`'s own doc comment for why this
+  /// is a plain field rather than a Riverpod watch (this is a
+  /// `StatelessWidget` with no provider access).
+  final bool editModeEnabled;
+
+  /// The TOP-edge handle's drag handlers — changes [Zone.startMinutes]
+  /// only (the zone's end stays fixed). Null callbacks mean "no handle
+  /// rendered here," matching [TaskCapsuleBlock.onResizeStart]'s own
+  /// "null means not resizable" contract.
+  final GestureDragStartCallback? onResizeTopStart;
+  final GestureDragUpdateCallback? onResizeTopUpdate;
+  final GestureDragEndCallback? onResizeTopEnd;
+
+  /// The BOTTOM-edge handle's drag handlers — changes [Zone.endMinutes]
+  /// only. A Zone (unlike a Task) gets handles at BOTH edges per
+  /// CONSTITUTION.md, since either edge is independently a real thing to
+  /// change (a Task has no equivalent "start" resize — its start is
+  /// `scheduledAt`, a reschedule, not a resize).
+  final GestureDragStartCallback? onResizeBottomStart;
+  final GestureDragUpdateCallback? onResizeBottomUpdate;
+  final GestureDragEndCallback? onResizeBottomEnd;
+
+  /// Whole-block MOVE handlers — Edit Mode only, requested directly
+  /// (reversing CONSTITUTION.md's earlier "zone reposition remains
+  /// deferred" lock). Deliberately scoped to just the HEADER row (title/
+  /// time/duration), not the whole container: matches how Task move is
+  /// scoped to only its icon pill, avoiding a fight with this container's
+  /// own row-list scroll/drag detectors underneath. Null callbacks mean
+  /// "not movable here," same "null means not draggable" contract every
+  /// other optional gesture in this codebase already uses.
+  final GestureDragStartCallback? onMoveStart;
+  final GestureDragUpdateCallback? onMoveUpdate;
+  final GestureDragEndCallback? onMoveEnd;
+
+  /// Selects this zone instead of moving it — only ever non-null under
+  /// multi-task mode (`DevMultiTaskEditMode`). **New 2026-09-06** (confirmed
+  /// directly — zones should not wiggle/be draggable in multi-task mode
+  /// unless selected, mirroring the existing task-selection rule): mutually
+  /// exclusive with [onMoveEnd] at any one time (see `ZoneDayTimeline`'s own
+  /// caller, which never wires both together for the same zone) — an
+  /// unselected zone under multi-task mode gets tap-to-select only; the
+  /// selected one gets drag-to-move only, matching
+  /// `ZoneBackgroundBlock.onHeaderTap`'s identical Task-view contract.
+  final VoidCallback? onHeaderTap;
 
   /// Key on `ZoneDayTimeline`'s own outer Stack — a row resolves its
   /// current top RELATIVE TO THIS ancestor on drag start (see
@@ -164,74 +222,132 @@ class ZoneContainerBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final durationMinutes = zone.endMinutes - zone.startMinutes;
 
-    return DecoratedBox(
-      // Same fill, no outline, as ZoneBackgroundBlock's own treatment on
-      // the Task view — confirmed directly: the reviewed reference was a
-      // wireframe, not the final style, and Zone's rendered color should
-      // stay consistent between the two views rather than diverge into a
-      // second zone visual language.
-      decoration: BoxDecoration(
-        color: theme.colorZoneBackground,
-        borderRadius: BorderRadius.circular(theme.radiusXl),
-        // Only while this zone is the live drop target — the resting
-        // state stays borderless (fill only), matching the Task view.
-        border: isDropTarget
-            ? Border.all(color: theme.colorTextPrimary, width: 2)
-            : null,
-      ),
-      child: Padding(
-        padding: EdgeInsets.all(theme.spacingMd),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _Header(theme: theme, zone: zone, durationMinutes: durationMinutes),
-            SizedBox(height: theme.spacingSm),
-            for (final (index, row) in _mergedRows().indexed) ...[
-              if (index > 0) SizedBox(height: theme.spacingXs),
-              if (row is Task)
-                Opacity(
-                  opacity: row.id == draggingTaskId ? 0.0 : 1.0,
-                  child: _ZoneTaskRow(
-                    // Keyed by task id so a rebuild mid-drag (the drag's
-                    // own setState fires one on every pointer move)
-                    // matches this row's element by TASK rather than by
-                    // list position — the rows re-sort by time as a drag
-                    // commits, and a position-matched element would hand
-                    // the active gesture to whichever task happened to
-                    // land on that index.
-                    key: ValueKey(row.id),
+    // Wrapped in a Stack (a genuinely new, always-present ancestor, same
+    // discipline as TaskCapsuleBlock's own resize-handle wrap) so the two
+    // resize handles can overlay this container's top/bottom edges
+    // without touching anything inside the DecoratedBox's own subtree —
+    // in particular, never nested inside any row's own drag detector.
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        DecoratedBox(
+          // Same fill, no outline, as ZoneBackgroundBlock's own treatment on
+          // the Task view — confirmed directly: the reviewed reference was a
+          // wireframe, not the final style, and Zone's rendered color should
+          // stay consistent between the two views rather than diverge into a
+          // second zone visual language.
+          decoration: BoxDecoration(
+            color: theme.colorZoneBackground,
+            borderRadius: BorderRadius.circular(theme.radiusXl),
+            // Only while this zone is the live drop target — the resting
+            // state stays borderless (fill only), matching the Task view.
+            border: isDropTarget
+                ? Border.all(color: theme.colorTextPrimary, width: 2)
+                : null,
+          ),
+          child: Padding(
+            padding: EdgeInsets.all(theme.spacingMd),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Edit Mode only — outside it the header is a plain,
+                // non-interactive label, matching the resize handles'
+                // own Edit-Mode gating. `HitTestBehavior.opaque` so the
+                // whole header row (including the empty space beside the
+                // text) is a drag surface, not just the text glyphs.
+                // `onTap`/`onVerticalDrag*` are mutually exclusive per
+                // the caller's own contract (see `onHeaderTap`'s doc
+                // comment) — never both wired for the same zone at once.
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: editModeEnabled ? onHeaderTap : null,
+                  onVerticalDragStart: editModeEnabled ? onMoveStart : null,
+                  onVerticalDragUpdate: editModeEnabled ? onMoveUpdate : null,
+                  onVerticalDragEnd: editModeEnabled ? onMoveEnd : null,
+                  child: _Header(
                     theme: theme,
-                    task: row,
-                    category: row.categoryId == null
-                        ? null
-                        : categoriesById[row.categoryId],
-                    onTap: onTaskTap == null ? null : () => onTaskTap!(row),
-                    onToggleComplete: onToggleComplete == null
-                        ? null
-                        : () => onToggleComplete!(row),
-                    stackAncestorKey: stackAncestorKey,
-                    onDragStart: onRowDragStart,
-                    onDragUpdate: onRowDragUpdate == null
-                        ? null
-                        : (details) => onRowDragUpdate!(row, details),
-                    onDragEnd: onRowDragEnd == null
-                        ? null
-                        : (_) => onRowDragEnd!(row),
-                    durationVisible: durationVisible,
-                    showCompletionCheckbox: showCompletionCheckbox,
+                    zone: zone,
+                    durationMinutes: durationMinutes,
                   ),
-                )
-              else if (row is ExternalCalendarEvent)
-                _ZoneExternalEventRow(
-                  key: ValueKey(row.id),
-                  theme: theme,
-                  event: row,
-                  durationVisible: durationVisible,
                 ),
-            ],
-          ],
+                SizedBox(height: theme.spacingSm),
+                for (final (index, row) in _mergedRows().indexed) ...[
+                  if (index > 0) SizedBox(height: theme.spacingXs),
+                  if (row is Task)
+                    Opacity(
+                      opacity: row.id == draggingTaskId ? 0.0 : 1.0,
+                      child: _ZoneTaskRow(
+                        // Keyed by task id so a rebuild mid-drag (the drag's
+                        // own setState fires one on every pointer move)
+                        // matches this row's element by TASK rather than by
+                        // list position — the rows re-sort by time as a drag
+                        // commits, and a position-matched element would hand
+                        // the active gesture to whichever task happened to
+                        // land on that index.
+                        key: ValueKey(row.id),
+                        theme: theme,
+                        task: row,
+                        category: row.categoryId == null
+                            ? null
+                            : categoriesById[row.categoryId],
+                        onTap: onTaskTap == null ? null : () => onTaskTap!(row),
+                        onToggleComplete: onToggleComplete == null
+                            ? null
+                            : () => onToggleComplete!(row),
+                        stackAncestorKey: stackAncestorKey,
+                        onDragStart: onRowDragStart,
+                        onDragUpdate: onRowDragUpdate == null
+                            ? null
+                            : (details) => onRowDragUpdate!(row, details),
+                        onDragEnd: onRowDragEnd == null
+                            ? null
+                            : (_) => onRowDragEnd!(row),
+                        durationVisible: durationVisible,
+                        showCompletionCheckbox: showCompletionCheckbox,
+                      ),
+                    )
+                  else if (row is ExternalCalendarEvent)
+                    _ZoneExternalEventRow(
+                      key: ValueKey(row.id),
+                      theme: theme,
+                      event: row,
+                      durationVisible: durationVisible,
+                    ),
+                ],
+              ],
+            ),
+          ),
         ),
-      ),
+        // Top-edge handle — changes Zone.startMinutes only. Rendered
+        // ABOVE the container's own top edge (negative offset), same
+        // "handle sits just outside the block it resizes" placement
+        // TaskCapsuleBlock's bottom handle uses.
+        if (editModeEnabled && onResizeTopEnd != null)
+          Positioned(
+            top: -theme.spacingXs,
+            left: 0,
+            right: 0,
+            child: ResizeHandle(
+              theme: theme,
+              onDragStart: onResizeTopStart,
+              onDragUpdate: onResizeTopUpdate,
+              onDragEnd: onResizeTopEnd,
+            ),
+          ),
+        // Bottom-edge handle — changes Zone.endMinutes only.
+        if (editModeEnabled && onResizeBottomEnd != null)
+          Positioned(
+            bottom: -theme.spacingXs,
+            left: 0,
+            right: 0,
+            child: ResizeHandle(
+              theme: theme,
+              onDragStart: onResizeBottomStart,
+              onDragUpdate: onResizeBottomUpdate,
+              onDragEnd: onResizeBottomEnd,
+            ),
+          ),
+      ],
     );
   }
 }

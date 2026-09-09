@@ -24,6 +24,7 @@ void main() {
     bool durationVisible = true,
     bool alwaysShowTime = false,
     bool showCompletionCheckbox = true,
+    bool compactInlineLayout = false,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -36,6 +37,7 @@ void main() {
             durationVisible: durationVisible,
             alwaysShowTime: alwaysShowTime,
             showCompletionCheckbox: showCompletionCheckbox,
+            compactInlineLayout: compactInlineLayout,
           ),
         ),
       ),
@@ -129,5 +131,109 @@ void main() {
 
     expect(find.textContaining('4:00'), findsNothing);
     expect(find.text('1h'), findsNothing);
+  });
+
+  // Reported directly: List mode's individual (non-stacked) rows used a
+  // different time/title layout than the stacked cluster rows —
+  // unspaced dash ("4:00-5:00") plus a large fixed-column gap before the
+  // title, instead of the cluster row's spaced dash and tight single-space
+  // join. `compactInlineLayout` (wired from `_DraggableTaskBlock.compactText`
+  // in timeline_screen.dart, so it's on in List mode and off in Task view)
+  // makes this row match `OverlapClusterBlock`'s own inline format exactly.
+  testWidgets(
+    'compactInlineLayout renders a single spaced-dash time+title run, '
+    'matching the stacked cluster row\'s own format — no fixed column gap',
+    (tester) async {
+      await pumpRow(
+        tester,
+        taskAt(4),
+        compactInlineLayout: true,
+        durationVisible: false,
+        alwaysShowTime: true,
+      );
+
+      expect(find.text('4:00 AM - 5:00 AM  Stretching'), findsOneWidget);
+      expect(find.textContaining('4:00 AM-5:00 AM'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'compactInlineLayout with durationVisible shows the (Xm) suffix inside '
+    'the same inline run',
+    (tester) async {
+      await pumpRow(
+        tester,
+        taskAt(4),
+        compactInlineLayout: true,
+        durationVisible: true,
+      );
+
+      expect(find.text('4:00 AM - 5:00 AM (1h)  Stretching'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'compactInlineLayout: false (the default) keeps the original unspaced '
+    'dash and fixed-column layout unchanged for Task view',
+    (tester) async {
+      await pumpRow(tester, taskAt(4));
+
+      expect(find.textContaining('4:00 AM-5:00 AM'), findsOneWidget);
+      expect(find.text('Stretching'), findsOneWidget);
+    },
+  );
+
+  // The `isImportant` marker (see `Task.isImportant`) renders in the
+  // margin BEFORE the title — requested directly: "just icon in front of
+  // the task (with negative margin so the task name remains aligned with
+  // all other tasks)". The alignment half is the load-bearing assertion:
+  // a marker that shifted its own title would break the shared text
+  // column every other row lines up against.
+  testWidgets('isImportant renders a marker without moving the title — a '
+      'marked and an unmarked task\'s titles start at the SAME x', (
+    tester,
+  ) async {
+    // Measured off the RichText's own box rather than `find.text`: the
+    // title is a nested TextSpan inside a parent span once the marker
+    // exists, and `find.text` only matches a Text widget's own `data`.
+    double titleX(WidgetTester tester) => tester
+        .getTopLeft(
+          find.byWidgetPredicate(
+            (w) => w is RichText && w.text.toPlainText().contains('Stretching'),
+          ),
+        )
+        .dx;
+
+    await pumpRow(tester, taskAt(4), durationVisible: false);
+    final plainTitleX = titleX(tester);
+    expect(find.byIcon(Icons.star_rounded), findsNothing);
+
+    final important = taskAt(4)..isImportant = true;
+    await pumpRow(tester, important, durationVisible: false);
+    final markedTitleX = titleX(tester);
+
+    expect(find.byIcon(Icons.star_rounded), findsOneWidget);
+    expect(
+      markedTitleX,
+      plainTitleX,
+      reason:
+          'the marker occupies zero layout width, so it must not displace '
+          'the title it precedes',
+    );
+  });
+
+  testWidgets('the marker also renders in List mode\'s inline layout, '
+      'still without moving the title', (tester) async {
+    final important = taskAt(4)..isImportant = true;
+    await pumpRow(
+      tester,
+      important,
+      compactInlineLayout: true,
+      durationVisible: false,
+      alwaysShowTime: true,
+    );
+
+    expect(find.byIcon(Icons.star_rounded), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

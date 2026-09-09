@@ -2,32 +2,48 @@ import 'package:flutter/material.dart';
 
 import '../../core/dev_config.dart' show TimelineTaskTextLayout;
 import '../../core/tokens/semantic_theme.dart';
+import '../../shared/models/external_calendar_event.dart';
 import '../../shared/models/task.dart';
 import '../../shared/models/task_status.dart';
 import '../../shared/services/overlap_cluster.dart';
 import 'completion_checkbox.dart';
 import 'duration_label.dart';
+import 'external_event_block.dart' show showExternalCalendarEventInfo;
 
-/// The cluster's flat list of member tasks — title + time only, no icon,
-/// no per-row card/color/indentation, per the settled design (a category
+/// The cluster's flat list of members — title + time only, no icon, no
+/// per-row card/color/indentation, per the settled design (a category
 /// emoji was tried here directly, then reverted: it overflowed the row's
 /// fixed height and, per direct feedback, belongs on the cluster's own
 /// PILL markers instead — see [TaskCapsuleBlock]'s own `contentHidden`
 /// handling for where that now happens) — plus a trailing completion
-/// checkbox per row, in a fixed color no longer tied to the task's own
-/// category (see `CompletionCheckbox`'s own doc comment), right-aligned
-/// within this list panel exactly like an ordinary capsule's own checkbox
-/// is right-aligned within its row. Positioned beside the cluster's
-/// member pills, which render through the ordinary timeline slot loop in
-/// `timeline_screen.dart` (each pinned to a fixed one-lane-per-task
-/// column — see `_withClusterLanes` — so lane order always matches this
-/// list's row order: leftmost pill, topmost row). The pills themselves
-/// carry no checkbox of their own — confirmed directly, over an earlier
-/// pass that put a checkbox next to each pill instead, since that read as
-/// if the pill were its own separate task card rather than a plain
-/// positional marker for the row here. See docs/DECISIONS.md for the
-/// full revision history (this replaced an earlier stacked-icon-badge
-/// design).
+/// checkbox per TASK row (an event row has no completion state, so it
+/// renders no checkbox — see [_ClusterEventRow]), in a fixed color no
+/// longer tied to the task's own category (see `CompletionCheckbox`'s own
+/// doc comment), right-aligned within this list panel exactly like an
+/// ordinary capsule's own checkbox is right-aligned within its row.
+/// Positioned beside the cluster's member pills, which render through the
+/// ordinary timeline slot loop in `timeline_screen.dart` (each pinned to a
+/// fixed one-lane-per-member column — see `_withClusterLanes` — so lane
+/// order always matches this list's row order: leftmost pill, topmost
+/// row). The pills themselves carry no checkbox of their own — confirmed
+/// directly, over an earlier pass that put a checkbox next to each pill
+/// instead, since that read as if the pill were its own separate task
+/// card rather than a plain positional marker for the row here. See
+/// docs/DECISIONS.md for the full revision history (this replaced an
+/// earlier stacked-icon-badge design).
+///
+/// **A run can mix real tasks and imported [ExternalCalendarEvent]s as of
+/// 2026-09-07** (confirmed directly: "the imported tasks should also
+/// stack in the same way as native tasks... otherwise exactly the same,
+/// with different styling") — [cluster.blocks] is the authoritative
+/// member list this widget iterates, branching per member on its runtime
+/// type: a [Task] gets the full [_ClusterTaskRow] (tap opens the detail
+/// sheet, checkbox toggles completion, drag/complete callbacks apply); an
+/// [ExternalCalendarEvent] gets [_ClusterEventRow] — same title+time
+/// shape and row height, but read-only (tap opens the same info sheet
+/// every other event display uses, no checkbox at all, muted title color
+/// matching every other "this is not an editable Amble object" cue this
+/// codebase already establishes for events).
 class OverlapClusterBlock extends StatelessWidget {
   const OverlapClusterBlock({
     super.key,
@@ -121,22 +137,32 @@ class OverlapClusterBlock extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final (index, task) in cluster.tasks.indexed) ...[
+          for (final (index, block) in cluster.blocks.indexed) ...[
             if (index > 0) SizedBox(height: theme.spacingXs),
-            _ClusterTaskRow(
-              theme: theme,
-              titleTextStyle: titleTextStyle,
-              isInline: isInline,
-              durationVisible: durationVisible,
-              alwaysShowTime: alwaysShowTime,
-              showCompletionCheckbox: showCompletionCheckbox,
-              task: task,
-              onTap: onTaskTap == null ? null : () => onTaskTap!(task),
-              onToggleComplete: onToggleComplete == null
-                  ? null
-                  : () => onToggleComplete!(task),
-              isFaded: task.id == fadedTaskId,
-            ),
+            if (block case final Task task)
+              _ClusterTaskRow(
+                theme: theme,
+                titleTextStyle: titleTextStyle,
+                isInline: isInline,
+                durationVisible: durationVisible,
+                alwaysShowTime: alwaysShowTime,
+                showCompletionCheckbox: showCompletionCheckbox,
+                task: task,
+                onTap: onTaskTap == null ? null : () => onTaskTap!(task),
+                onToggleComplete: onToggleComplete == null
+                    ? null
+                    : () => onToggleComplete!(task),
+                isFaded: task.id == fadedTaskId,
+              )
+            else if (block case final ExternalCalendarEvent event)
+              _ClusterEventRow(
+                theme: theme,
+                titleTextStyle: titleTextStyle,
+                isInline: isInline,
+                durationVisible: durationVisible,
+                alwaysShowTime: alwaysShowTime,
+                event: event,
+              ),
           ],
         ],
       ),
@@ -353,6 +379,116 @@ class _ClusterTaskRow extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// The read-only counterpart to [_ClusterTaskRow] for one
+/// [ExternalCalendarEvent] pulled into a cluster's flat list — same
+/// title+time shape and row height as a task row, so a glance down the
+/// merged list reads as one consistent list, but strictly read-only: no
+/// completion checkbox, no recurring/tracked-behavior indicators (neither
+/// concept applies to an event), tapping only opens the same read-only
+/// info sheet [ExternalEventBlock]/`_ZoneExternalEventRow` already use
+/// elsewhere ([showExternalCalendarEventInfo]). Title stays in
+/// [AmbleTheme.colorTextSecondary], never the bold primary color a real
+/// task's title gets — the same "must never look like an editable Amble
+/// object" distinction this codebase already makes visually for every
+/// other event display.
+class _ClusterEventRow extends StatelessWidget {
+  const _ClusterEventRow({
+    required this.theme,
+    required this.titleTextStyle,
+    required this.event,
+    this.isInline = false,
+    this.durationVisible = true,
+    this.alwaysShowTime = false,
+  });
+
+  final AmbleTheme theme;
+
+  /// [OverlapClusterBlock]'s own resolved base/compact title style — see
+  /// its `compactText` doc comment.
+  final TextStyle titleTextStyle;
+
+  /// See [_ClusterTaskRow.isInline].
+  final bool isInline;
+
+  /// See [OverlapClusterBlock.durationVisible].
+  final bool durationVisible;
+
+  /// See [OverlapClusterBlock.alwaysShowTime].
+  final bool alwaysShowTime;
+
+  final ExternalCalendarEvent event;
+
+  @override
+  Widget build(BuildContext context) {
+    final start = TimeOfDay.fromDateTime(event.start);
+    final end = TimeOfDay.fromDateTime(event.end);
+
+    // Same durationVisible/alwaysShowTime split as _ClusterTaskRow — see
+    // that row's own doc comment for the full reasoning.
+    final timeRange = '${start.format(context)} - ${end.format(context)}';
+    final durationMinutes = event.end.difference(event.start).inMinutes;
+    final withSuffix = '$timeRange (${formatDurationLabel(durationMinutes)})';
+    final timeLabel = !alwaysShowTime && !durationVisible
+        ? null
+        : durationVisible
+        ? withSuffix
+        : timeRange;
+
+    final content = isInline
+        ? Text.rich(
+            TextSpan(
+              children: [
+                if (timeLabel != null)
+                  TextSpan(
+                    text: '$timeLabel  ',
+                    style: titleTextStyle.copyWith(
+                      color: theme.colorTextSecondary,
+                    ),
+                  ),
+                TextSpan(
+                  text: event.title,
+                  style: titleTextStyle.copyWith(
+                    color: theme.colorTextSecondary,
+                  ),
+                ),
+              ],
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          )
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                event.title,
+                style: titleTextStyle.copyWith(color: theme.colorTextSecondary),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (timeLabel != null)
+                Text(
+                  timeLabel,
+                  style: titleTextStyle.copyWith(
+                    color: theme.colorTextSecondary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+            ],
+          );
+
+    return GestureDetector(
+      onTap: () => showExternalCalendarEventInfo(
+        context: context,
+        theme: theme,
+        event: event,
+      ),
+      behavior: HitTestBehavior.opaque,
+      child: content,
     );
   }
 }

@@ -7,13 +7,19 @@ import 'package:amble/core/widgets/app_text_field.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/task_detail/task_detail_sheet.dart';
 import 'package:amble/shared/models/category.dart';
+import 'package:amble/shared/models/task_template.dart';
+import 'package:amble/shared/models/tracked_behavior.dart';
 import 'package:amble/shared/models/task.dart';
 import 'package:amble/shared/providers/category_providers.dart';
 import 'package:amble/shared/providers/notification_providers.dart';
 import 'package:amble/shared/providers/preferences_providers.dart';
 import 'package:amble/shared/providers/task_providers.dart';
+import 'package:amble/shared/providers/task_template_providers.dart';
+import 'package:amble/shared/providers/tracked_behavior_providers.dart';
 import 'package:amble/shared/repositories/hive_category_repository.dart';
 import 'package:amble/shared/repositories/hive_task_repository.dart';
+import 'package:amble/shared/repositories/hive_task_template_repository.dart';
+import 'package:amble/shared/repositories/hive_tracked_behavior_repository.dart';
 
 import '../../support/fake_notification_service.dart';
 import '../../support/seeded_category_box.dart';
@@ -39,6 +45,8 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
   WidgetTester tester, {
   required Box<Task> box,
   required Box<Category> categoryBox,
+  required Box<TrackedBehavior> trackedBehaviorBox,
+  required Box<TaskTemplate> templateBox,
 }) async {
   tester.view.physicalSize = const Size(390, 844);
   tester.view.devicePixelRatio = 1.0;
@@ -51,6 +59,16 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
         taskRepositoryProvider.overrideWithValue(HiveTaskRepository(box)),
         categoryRepositoryProvider.overrideWithValue(
           HiveCategoryRepository(categoryBox),
+        ),
+        trackedBehaviorRepositoryProvider.overrideWithValue(
+          HiveTrackedBehaviorRepository(trackedBehaviorBox),
+        ),
+        // The Add Task sheet's Name stage now shows an inline template
+        // browser unconditionally (2026-09-07) — this box just needs to
+        // exist so taskTemplateRepositoryProvider resolves; nothing here
+        // exercises it, so it's never seeded.
+        taskTemplateRepositoryProvider.overrideWithValue(
+          HiveTaskTemplateRepository(templateBox),
         ),
         notificationServiceProvider.overrideWithValue(
           FakeNotificationService(),
@@ -72,6 +90,8 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
 void main() {
   late Box<Task> box;
   late Box<Category> categoryBox;
+  late Box<TrackedBehavior> trackedBehaviorBox;
+  late Box<TaskTemplate> templateBox;
 
   setUp(() async {
     Hive.init('./.dart_tool/test_hive_create_flow_initial_modal');
@@ -84,11 +104,24 @@ void main() {
     categoryBox = await openSeededCategoryBox(
       'test_categories_${DateTime.now().microsecondsSinceEpoch}',
     );
+    // The task detail sheet's tracked-behavior link section is now
+    // unconditionally compiled in (FeatureFlags.trackedBehaviorEnabled
+    // defaults true as of 2026-09-06) — this box just needs to exist
+    // so trackedBehaviorRepositoryProvider resolves; nothing here
+    // exercises linking, so it's never seeded.
+    trackedBehaviorBox = await Hive.openBox<TrackedBehavior>(
+      'test_tracked_behaviors_${DateTime.now().microsecondsSinceEpoch}',
+    );
+    templateBox = await Hive.openBox<TaskTemplate>(
+      'test_templates_${DateTime.now().microsecondsSinceEpoch}',
+    );
   });
 
   tearDown(() async {
     await box.close();
     await categoryBox.close();
+    await trackedBehaviorBox.close();
+    await templateBox.close();
   });
 
   testWidgets(
@@ -99,6 +132,8 @@ void main() {
         tester,
         box: box,
         categoryBox: categoryBox,
+        trackedBehaviorBox: trackedBehaviorBox,
+        templateBox: templateBox,
       );
       showTaskDetailSheet(
         navigatorKey.currentContext!,
@@ -124,6 +159,8 @@ void main() {
         tester,
         box: box,
         categoryBox: categoryBox,
+        trackedBehaviorBox: trackedBehaviorBox,
+        templateBox: templateBox,
       );
       showTaskDetailSheet(
         navigatorKey.currentContext!,
@@ -145,6 +182,8 @@ void main() {
         tester,
         box: box,
         categoryBox: categoryBox,
+        trackedBehaviorBox: trackedBehaviorBox,
+        templateBox: templateBox,
       );
       showTaskDetailSheet(
         navigatorKey.currentContext!,
@@ -177,6 +216,8 @@ void main() {
         tester,
         box: box,
         categoryBox: categoryBox,
+        trackedBehaviorBox: trackedBehaviorBox,
+        templateBox: templateBox,
       );
       showTaskDetailSheet(
         navigatorKey.currentContext!,
@@ -209,6 +250,8 @@ void main() {
         tester,
         box: box,
         categoryBox: categoryBox,
+        trackedBehaviorBox: trackedBehaviorBox,
+        templateBox: templateBox,
       );
       showTaskDetailSheet(
         navigatorKey.currentContext!,

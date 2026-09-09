@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:amble/features/timeline/task_overlap_layout.dart';
 import 'package:amble/shared/models/category.dart';
+import 'package:amble/shared/models/external_calendar_event.dart';
 import 'package:amble/shared/models/task.dart';
 
 Task _task(String title, int hour, int minute, int durationMinutes) {
@@ -12,8 +13,11 @@ Task _task(String title, int hour, int minute, int durationMinutes) {
   );
 }
 
+// `.task!` — this file only ever feeds real Task lists into
+// layoutOverlappingTasks, so every returned slot is guaranteed to carry a
+// non-null task.
 TaskLayoutSlot _slotFor(List<TaskLayoutSlot> slots, String title) =>
-    slots.firstWhere((slot) => slot.task.title == title);
+    slots.firstWhere((slot) => slot.task!.title == title);
 
 void main() {
   test('an empty day produces no slots', () {
@@ -136,5 +140,81 @@ void main() {
       _slotFor(slots, 'Long').column,
       isNot(_slotFor(slots, 'Short').column),
     );
+  });
+
+  // Reported directly: "the imported tasks should also stack in the same
+  // way as native tasks... otherwise exactly the same, with different
+  // styling" — layoutOverlappingTasks was generalized from `List<Task>` to
+  // `List<ScheduledBlock>` so an ExternalCalendarEvent can share a lane
+  // with real tasks instead of positioning independently with no overlap
+  // awareness.
+  group('mixing tasks and external events (2026-09-07)', () {
+    ExternalCalendarEvent event(
+      String title,
+      int hour,
+      int minute,
+      int durationMinutes,
+    ) {
+      final start = DateTime(2026, 8, 21, hour, minute);
+      return ExternalCalendarEvent(
+        id: title,
+        title: title,
+        start: start,
+        end: start.add(Duration(minutes: durationMinutes)),
+        sourceCalendarId: 'cal-1',
+      );
+    }
+
+    test('a task and an overlapping event split into two columns, exactly '
+        'like two overlapping tasks would', () {
+      final slots = layoutOverlappingTasks([
+        _task('Standup', 9, 0, 60),
+        event('Dentist', 9, 30, 60),
+      ]);
+
+      expect(slots, hasLength(2));
+      final taskSlot = slots.firstWhere((s) => s.task?.title == 'Standup');
+      final eventSlot = slots.firstWhere((s) => s.block.id == 'Dentist');
+      expect(taskSlot.columnCount, 2);
+      expect(eventSlot.columnCount, 2);
+      expect(taskSlot.column, isNot(eventSlot.column));
+    });
+
+    test('a non-overlapping event takes the full width, same as a lone '
+        'task', () {
+      final slots = layoutOverlappingTasks([event('Solo', 14, 0, 30)]);
+
+      expect(slots, hasLength(1));
+      expect(slots.single.columnCount, 1);
+      expect(slots.single.widthFraction, 1.0);
+    });
+
+    test('TaskLayoutSlot.task is null for an event slot, non-null for a '
+        'task slot', () {
+      final slots = layoutOverlappingTasks([
+        _task('Standup', 9, 0, 30),
+        event('Dentist', 10, 0, 30),
+      ]);
+
+      final taskSlot = slots.firstWhere((s) => s.task?.title == 'Standup');
+      final eventSlot = slots.firstWhere((s) => s.block.id == 'Dentist');
+      expect(taskSlot.task, isNotNull);
+      expect(taskSlot.task!.title, 'Standup');
+      expect(eventSlot.task, isNull);
+      expect(eventSlot.block, isA<ExternalCalendarEvent>());
+    });
+
+    test('sorts a task and event together by start time, not by kind', () {
+      final slots = layoutOverlappingTasks([
+        _task('Later', 11, 0, 30),
+        event('Earlier', 8, 0, 30),
+      ]);
+
+      // Neither overlaps, so both take the full width — this only checks
+      // that construction with a mixed, out-of-order list doesn't throw
+      // and produces one slot per block.
+      expect(slots, hasLength(2));
+      expect(slots.every((s) => s.columnCount == 1), isTrue);
+    });
   });
 }

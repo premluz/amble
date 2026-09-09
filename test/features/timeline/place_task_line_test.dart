@@ -9,16 +9,22 @@ import 'package:amble/features/timeline/place_task_line.dart';
 /// FIRST child of that column's Stack (its documented contract).
 const _pixelsPerMinute = 1.5;
 
-Future<List<DateTime>> _pumpLayer(
+class _PlacedResult {
+  final placed = <DateTime>[];
+  final tapped = <DateTime>[];
+}
+
+Future<_PlacedResult> _pumpLayer(
   WidgetTester tester, {
   required DateTime rangeStart,
   required DateTime rangeEnd,
+  bool withOnTapAt = false,
 }) async {
   tester.view.physicalSize = const Size(390, 844);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
 
-  final placed = <DateTime>[];
+  final result = _PlacedResult();
   final controller = PlaceTaskLineController(null);
   addTearDown(controller.dispose);
   final dayHeight =
@@ -45,7 +51,8 @@ Future<List<DateTime>> _pumpLayer(
                       rangeEnd: rangeEnd,
                       pixelsPerMinute: _pixelsPerMinute,
                       controller: controller,
-                      onPlaced: placed.add,
+                      onPlaced: result.placed.add,
+                      onTapAt: withOnTapAt ? result.tapped.add : null,
                     ),
                     PlaceTaskLineOverlay(
                       theme: theme,
@@ -62,7 +69,7 @@ Future<List<DateTime>> _pumpLayer(
       ),
     ),
   );
-  return placed;
+  return result;
 }
 
 void main() {
@@ -127,7 +134,7 @@ void main() {
   testWidgets('releasing reports the dropped time, snapped to 5 minutes', (
     tester,
   ) async {
-    final placed = await _pumpLayer(
+    final result = await _pumpLayer(
       tester,
       rangeStart: rangeStart,
       rangeEnd: rangeEnd,
@@ -144,7 +151,7 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
 
-    expect(placed.single, DateTime(2026, 8, 31, 12));
+    expect(result.placed.single, DateTime(2026, 8, 31, 12));
   });
 
   testWidgets('the line disappears once released', (tester) async {
@@ -165,7 +172,7 @@ void main() {
   });
 
   testWidgets('a quick drag scrolls instead of placing a line', (tester) async {
-    final placed = await _pumpLayer(
+    final result = await _pumpLayer(
       tester,
       rangeStart: rangeStart,
       rangeEnd: rangeEnd,
@@ -179,6 +186,76 @@ void main() {
     await tester.pumpAndSettle();
 
     // Nothing placed, and no line was ever shown.
-    expect(placed, isEmpty);
+    expect(result.placed, isEmpty);
+  });
+
+  // New tap-empty-space interaction, requested directly: "tap on an empty
+  // space in timeline view... puts a wiggly gray default task and opens a
+  // small sheet" — distinct from the existing long-press-and-drag flow
+  // above, which stays unchanged.
+  group('onTapAt (2026-09-07)', () {
+    testWidgets('a plain tap fires onTapAt with the tapped time, snapped '
+        'to 5 minutes', (tester) async {
+      final result = await _pumpLayer(
+        tester,
+        rangeStart: rangeStart,
+        rangeEnd: rangeEnd,
+        withOnTapAt: true,
+      );
+
+      final columnTopLeft = tester.getTopLeft(find.byType(PlaceTaskLineLayer));
+      // 180px below the column's top == 120 minutes == 11:00.
+      await tester.tapAt(columnTopLeft + const Offset(150, 180));
+      await tester.pumpAndSettle();
+
+      expect(result.tapped.single, DateTime(2026, 8, 31, 11));
+      expect(result.placed, isEmpty);
+    });
+
+    testWidgets('a plain tap never shows the placement line or fires '
+        'onPlaced', (tester) async {
+      final result = await _pumpLayer(
+        tester,
+        rangeStart: rangeStart,
+        rangeEnd: rangeEnd,
+        withOnTapAt: true,
+      );
+
+      final columnTopLeft = tester.getTopLeft(find.byType(PlaceTaskLineLayer));
+      await tester.tapAt(columnTopLeft + const Offset(150, 180));
+      await tester.pumpAndSettle();
+
+      expect(find.text('11:00 AM'), findsNothing);
+      expect(result.placed, isEmpty);
+    });
+
+    testWidgets(
+      'a long press still shows the line and fires onPlaced, unaffected '
+      'by onTapAt being wired up',
+      (tester) async {
+        final result = await _pumpLayer(
+          tester,
+          rangeStart: rangeStart,
+          rangeEnd: rangeEnd,
+          withOnTapAt: true,
+        );
+
+        final columnTopLeft = tester.getTopLeft(
+          find.byType(PlaceTaskLineLayer),
+        );
+        final gesture = await tester.startGesture(
+          columnTopLeft + const Offset(150, 180),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 600));
+        expect(find.text('11:00 AM'), findsOneWidget);
+
+        await gesture.up();
+        await tester.pumpAndSettle();
+
+        expect(result.placed.single, DateTime(2026, 8, 31, 11));
+        expect(result.tapped, isEmpty);
+      },
+    );
   });
 }

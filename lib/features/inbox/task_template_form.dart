@@ -3,8 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/feature_flags.dart';
 import '../../core/tokens/semantic_theme.dart';
-import '../../core/widgets/app_button.dart';
-import '../../core/widgets/app_sheet.dart';
+import '../../core/widgets/app_pane.dart';
+import '../../core/widgets/app_staggered_entrance.dart';
+import '../../core/widgets/app_step_scaffold.dart';
 import '../../core/widgets/app_text_field.dart';
 import '../../shared/models/category.dart';
 import '../../shared/models/task_template.dart';
@@ -17,13 +18,16 @@ import 'task_template_form_panes.dart';
 /// Opens the create/edit form for a [TaskTemplate] — [template] null to
 /// create, non-null to edit that row.
 ///
-/// Presented via [AppSheet] rather than the task detail screen's
-/// near-full-screen modal, matching `showTrackedBehaviorForm`'s own
-/// precedent and its recorded reasoning (docs/DECISIONS.md): that
-/// full-screen pattern exists for the detail screen's colored edge-to-edge
-/// header, live schedule preview, and wheel controls — none of which a
-/// template has, since a template carries no time at all. Four short
-/// fields don't justify a full-screen takeover.
+/// Near-full-screen, built on [StepScaffold] — the exact same chrome (and,
+/// on create, the exact same Name-only stage 1 that reveals everything
+/// else on "Done") the real task-creation flow and Zone's own add/edit
+/// screen already use. Requested directly: "add template and add tracked
+/// should follow same modal UI and interaction model as add task and add
+/// zone." Reverses this feature's own earlier choice of [AppSheet] (a
+/// half-height sheet, reasoned at the time as "four short fields don't
+/// justify a full-screen takeover") — that reasoning no longer holds once
+/// consistency with every other create flow in the app is the actual
+/// requirement.
 ///
 /// All writes go through `taskTemplateListProvider`; this UI never touches
 /// the repository or Hive directly.
@@ -31,10 +35,27 @@ Future<void> showTaskTemplateForm(
   BuildContext context, {
   TaskTemplate? template,
 }) {
-  return AppSheet.show(
-    context: context,
-    size: AppSheetSize.half,
-    builder: (context) => _TaskTemplateForm(template: template),
+  final theme = Theme.of(context).extension<AmbleTheme>()!;
+  return Navigator.of(context).push<void>(
+    PageRouteBuilder<void>(
+      opaque: false,
+      // Same slide-up, scrim-barrier presentation as
+      // `task_detail_sheet.dart`'s `_pushDetailRoute` and
+      // `zone_form_screen.dart`'s `showZoneFormScreen` — the route shape
+      // `StepScaffold` is built to sit inside.
+      barrierColor: theme.colorScrim,
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 1),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOut)),
+          child: child,
+        );
+      },
+      pageBuilder: (context, animation, secondaryAnimation) =>
+          _TaskTemplateForm(template: template),
+    ),
   );
 }
 
@@ -55,12 +76,34 @@ class _TaskTemplateFormState extends ConsumerState<_TaskTemplateForm> {
   late String _categoryId;
   int? _durationMinutes;
   String? _behaviorId;
+  bool _isSaving = false;
+
+  /// See [TaskTemplate.isImportant] — carried onto any task spawned from
+  /// this template, same as category/duration/notes already are.
+  /// Requested directly: "under templates, add a checkbox... we already
+  /// have this flag."
+  bool _isImportant = false;
+
+  /// Stage 1 (Name only) vs. stage 2 (everything else) — matches
+  /// `task_detail_sheet.dart`/`zone_form_screen.dart`'s own create-flow
+  /// pattern exactly. Editing an existing template skips straight to
+  /// stage 2, same as "Edit task"/"Edit zone" do — there is nothing to
+  /// stage for a template that already has every field filled in.
+  bool _isNameStage = false;
+
+  bool get _isEditing => widget.template != null;
 
   @override
   void initState() {
     super.initState();
     final template = widget.template;
-    _titleController = TextEditingController(text: template?.title ?? '');
+    _titleController = TextEditingController(text: template?.title ?? '')
+      // Same fix `zone_form_screen.dart`'s own Name field needed: nothing
+      // here otherwise rebuilds on the controller's own text changing, so
+      // the stage-1 Done button stayed disabled while typing. AppTextField
+      // has no onChanged of its own, so this listens to the controller
+      // directly instead.
+      ..addListener(() => setState(() {}));
     _notesController = TextEditingController(text: template?.notes ?? '');
     // General for a fresh template — the same neutral default the task
     // detail sheet's own create path uses, rather than silently picking
@@ -68,6 +111,8 @@ class _TaskTemplateFormState extends ConsumerState<_TaskTemplateForm> {
     _categoryId = template?.categoryId ?? BuiltInCategoryIds.general;
     _durationMinutes = template?.durationMinutes;
     _behaviorId = template?.behaviorId;
+    _isImportant = template?.isImportant ?? false;
+    _isNameStage = template == null;
   }
 
   @override
@@ -81,7 +126,7 @@ class _TaskTemplateFormState extends ConsumerState<_TaskTemplateForm> {
   /// a prefill suggestion for a spawned task, not an enforced value (see
   /// [TaskTemplate.durationMinutes]), so an unset one is a real state
   /// rather than a number to silently fill in.
-  bool get _canSave => _titleController.text.trim().isNotEmpty;
+  bool get _canSave => _titleController.text.trim().isNotEmpty && !_isSaving;
 
   Future<void> _pickDuration() async {
     final minutes = await TaskDurationModal.show(
@@ -92,107 +137,157 @@ class _TaskTemplateFormState extends ConsumerState<_TaskTemplateForm> {
     setState(() => _durationMinutes = minutes);
   }
 
+  /// Confirms stage 1 (Name) and advances to stage 2 — fired by stage 1's
+  /// own Done button or the Name field's keyboard-complete action. Mirrors
+  /// `zone_form_screen.dart`'s own `_confirmNameStage` exactly: an empty
+  /// name at this point closes the whole screen instead of advancing to a
+  /// form with nothing in it.
+  void _confirmNameStage() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    if (_titleController.text.trim().isEmpty) {
+      Navigator.of(context).pop();
+      return;
+    }
+    setState(() => _isNameStage = false);
+  }
+
   Future<void> _save() async {
     if (!_canSave) return;
-    final notes = _notesController.text.trim();
-    final notifier = ref.read(taskTemplateListProvider.notifier);
-    final existing = widget.template;
+    setState(() => _isSaving = true);
+    try {
+      final notes = _notesController.text.trim();
+      final notifier = ref.read(taskTemplateListProvider.notifier);
+      final existing = widget.template;
 
-    if (existing == null) {
-      await notifier.createTemplate(
-        title: _titleController.text.trim(),
-        categoryId: _categoryId,
-        durationMinutes: _durationMinutes,
-        notes: notes.isEmpty ? null : notes,
-        behaviorId: _behaviorId,
-      );
-    } else {
-      existing.title = _titleController.text.trim();
-      existing.categoryId = _categoryId;
-      existing.durationMinutes = _durationMinutes;
-      existing.notes = notes.isEmpty ? null : notes;
-      existing.behaviorId = _behaviorId;
-      await notifier.updateTemplate(existing);
+      if (existing == null) {
+        await notifier.createTemplate(
+          title: _titleController.text.trim(),
+          categoryId: _categoryId,
+          durationMinutes: _durationMinutes,
+          notes: notes.isEmpty ? null : notes,
+          behaviorId: _behaviorId,
+          isImportant: _isImportant,
+        );
+      } else {
+        existing.title = _titleController.text.trim();
+        existing.categoryId = _categoryId;
+        existing.durationMinutes = _durationMinutes;
+        existing.notes = notes.isEmpty ? null : notes;
+        existing.behaviorId = _behaviorId;
+        existing.isImportant = _isImportant;
+        await notifier.updateTemplate(existing);
+      }
+      if (mounted) Navigator.of(context).pop();
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
-    if (mounted) Navigator.of(context).pop();
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     final categories = ref.watch(categoryListProvider);
-    final isEdit = widget.template != null;
 
-    return SingleChildScrollView(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            isEdit ? 'Edit template' : 'New template',
-            style: theme.textTitle.copyWith(fontWeight: FontWeight.w700),
-          ),
-          SizedBox(height: theme.spacingMd),
+    // Stage 2's panes, staggered in exactly like task_detail_sheet.dart/
+    // zone_form_screen.dart's own `staggeredPanes` — a plain list so the
+    // entrance index is each pane's position in it, not hand-numbered at
+    // each call site.
+    final staggeredPanes = [
+      TemplateCategoryPane(
+        theme: theme,
+        categories: categories,
+        selectedId: _categoryId,
+        onChanged: (id) => setState(() => _categoryId = id),
+      ),
+      // Right after Category, matching the task detail sheet's own
+      // adjacency ("after category, add important").
+      TemplateImportantPane(
+        theme: theme,
+        value: _isImportant,
+        onChanged: (value) => setState(() => _isImportant = value),
+      ),
+      TemplateDurationPane(
+        theme: theme,
+        durationMinutes: _durationMinutes,
+        onPick: _pickDuration,
+        onClear: () => setState(() => _durationMinutes = null),
+      ),
+      // Tracked-behavior link, gated exactly as the task detail sheet
+      // gates its own: with the flag off this whole subtree is
+      // const-eliminated and the field is absent from the form entirely,
+      // not merely disabled.
+      if (FeatureFlags.trackedBehaviorEnabled)
+        TemplateBehaviorPane(
+          theme: theme,
+          behaviors: ref.watch(trackedBehaviorListProvider),
+          selectedId: _behaviorId,
+          onChanged: (id) => setState(() => _behaviorId = id),
+        ),
+    ];
 
-          AppTextField(
-            controller: _titleController,
-            label: 'Template name',
-            autofocus: !isEdit,
-          ),
-          SizedBox(height: theme.spacingSm),
-          AppTextField(
-            controller: _notesController,
-            label: 'Description',
-            maxLines: 3,
-          ),
-          SizedBox(height: theme.spacingLg),
-
-          TemplateCategoryPane(
-            theme: theme,
-            categories: categories,
-            selectedId: _categoryId,
-            onChanged: (id) => setState(() => _categoryId = id),
-          ),
-          SizedBox(height: theme.spacingLg),
-
-          TemplateDurationPane(
-            theme: theme,
-            durationMinutes: _durationMinutes,
-            onPick: _pickDuration,
-            onClear: () => setState(() => _durationMinutes = null),
-          ),
-          SizedBox(height: theme.spacingLg),
-
-          // Tracked-behavior link, gated exactly as the task detail sheet
-          // gates its own: with the flag off this whole subtree is
-          // const-eliminated and the field is absent from the form
-          // entirely, not merely disabled.
-          if (FeatureFlags.trackedBehaviorEnabled) ...[
-            SizedBox(height: theme.spacingLg),
-            TemplateBehaviorPane(
-              theme: theme,
-              behaviors: ref.watch(trackedBehaviorListProvider),
-              selectedId: _behaviorId,
-              onChanged: (id) => setState(() => _behaviorId = id),
-            ),
-          ],
-
-          SizedBox(height: theme.spacingLg),
-          // Only the button reacts per keystroke, rather than rebuilding
-          // the whole form on every character — same ListenableBuilder
-          // pattern `_DetailsStepScaffold` already uses for its own
-          // title-gated primary button.
-          ListenableBuilder(
-            listenable: _titleController,
-            builder: (context, _) => SizedBox(
-              width: double.infinity,
-              child: AppButton(
-                label: isEdit ? 'Save template' : 'Create template',
-                onPressed: _canSave ? _save : null,
+    return StepScaffold(
+      theme: theme,
+      modalTitle: _isEditing ? 'Edit template' : 'New template',
+      titleAlignment: TextAlign.left,
+      headerColor: theme.colorAccent,
+      headerContent: null,
+      onClose: () => Navigator.of(context).pop(),
+      onBack: null,
+      primaryLabel: _isNameStage
+          ? 'Done'
+          : (_isEditing ? 'Save template' : 'Create template'),
+      onPrimaryPressed: _isNameStage
+          ? _confirmNameStage
+          : (_canSave ? _save : null),
+      isPrimaryLoading: !_isNameStage && _isSaving,
+      body: SingleChildScrollView(
+        // Top reverted to a plain spacingLg — the fade now lives inside
+        // StepScaffold's own header container, clipped to it.
+        padding: EdgeInsets.fromLTRB(
+          theme.spacingLg,
+          theme.spacingLg,
+          theme.spacingLg,
+          theme.spacingXl * 3,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Name and Description share one pane with the section title
+            // outside it, matching task_detail_sheet.dart's own "Name and
+            // Notes share one pane" convention exactly — both fields are
+            // always in the tree, never rebuilt as a different instance,
+            // so their Elements (and any keyboard/focus state) survive the
+            // stage 1 -> 2 transition untouched. Description is visible
+            // from stage 1 too, same as the task-creation flow's own
+            // Notes field.
+            AppPane(
+              title: 'Name',
+              child: Column(
+                children: [
+                  AppTextField(
+                    controller: _titleController,
+                    label: 'Template name',
+                    autofocus: !_isEditing,
+                    onSubmitted: (_) => _confirmNameStage(),
+                  ),
+                  SizedBox(height: theme.spacingSm),
+                  AppTextField(
+                    controller: _notesController,
+                    label: 'Description',
+                    maxLines: 3,
+                  ),
+                ],
               ),
             ),
-          ),
-        ],
+            if (!_isNameStage) ...[
+              SizedBox(height: theme.spacingLg),
+              for (final (index, pane) in staggeredPanes.indexed) ...[
+                AppStaggeredEntrance(index: index, child: pane),
+                SizedBox(height: theme.spacingLg),
+              ],
+            ],
+          ],
+        ),
       ),
     );
   }

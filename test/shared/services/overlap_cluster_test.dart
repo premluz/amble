@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:amble/shared/models/external_calendar_event.dart';
 import 'package:amble/shared/models/task.dart';
 import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/services/overlap_cluster.dart';
@@ -371,6 +372,124 @@ void main() {
       );
 
       expect(clusteredTaskIds(detectOverlapClusters([solo])), isEmpty);
+    });
+  });
+
+  // Reported directly: "the imported tasks should also stack in the same
+  // way as native tasks... otherwise exactly the same, with different
+  // styling" — detectOverlapClusters was generalized from `List<Task>` to
+  // `List<ScheduledBlock>` so a run of overlapping blocks can mix real
+  // tasks and imported ExternalCalendarEvents into ONE cluster, instead of
+  // events being excluded from clustering entirely.
+  group('detectOverlapClusters mixing tasks and external events '
+      '(2026-09-07)', () {
+    ExternalCalendarEvent event({
+      required String id,
+      required String title,
+      required DateTime start,
+      required int durationMinutes,
+    }) => ExternalCalendarEvent(
+      id: id,
+      title: title,
+      start: start,
+      end: start.add(Duration(minutes: durationMinutes)),
+      sourceCalendarId: 'cal-1',
+    );
+
+    test('a task and an overlapping event form one 2-member cluster', () {
+      final task = _task(
+        title: 'Standup',
+        scheduledAt: DateTime(2026, 8, 24, 9),
+        durationMinutes: 60,
+      );
+      final calEvent = event(
+        id: 'evt-1',
+        title: 'Dentist',
+        start: DateTime(2026, 8, 24, 9, 30),
+        durationMinutes: 60,
+      );
+
+      final clusters = detectOverlapClusters([task, calEvent]);
+
+      expect(clusters, hasLength(1));
+      expect(clusters.single.blocks, hasLength(2));
+      // Chronological order — the task starts first.
+      expect(clusters.single.blocks.map((b) => b.id), [task.id, 'evt-1']);
+    });
+
+    test('OverlapCluster.tasks filters out event members, keeping only '
+        'real tasks', () {
+      final task = _task(
+        title: 'Standup',
+        scheduledAt: DateTime(2026, 8, 24, 9),
+        durationMinutes: 60,
+      );
+      final calEvent = event(
+        id: 'evt-1',
+        title: 'Dentist',
+        start: DateTime(2026, 8, 24, 9, 30),
+        durationMinutes: 60,
+      );
+
+      final clusters = detectOverlapClusters([task, calEvent]);
+
+      expect(clusters.single.tasks, [task]);
+      expect(clusters.single.blocks, hasLength(2));
+    });
+
+    test('clusteredTaskIds includes an event\'s id alongside task ids', () {
+      final task = _task(
+        title: 'Standup',
+        scheduledAt: DateTime(2026, 8, 24, 9),
+        durationMinutes: 60,
+      );
+      final calEvent = event(
+        id: 'evt-1',
+        title: 'Dentist',
+        start: DateTime(2026, 8, 24, 9, 30),
+        durationMinutes: 60,
+      );
+
+      final ids = clusteredTaskIds(detectOverlapClusters([task, calEvent]));
+
+      expect(ids, {task.id, 'evt-1'});
+    });
+
+    test('an event overlapping nothing never clusters, same as a solo '
+        'task', () {
+      final calEvent = event(
+        id: 'evt-1',
+        title: 'Solo event',
+        start: DateTime(2026, 8, 24, 14),
+        durationMinutes: 30,
+      );
+
+      expect(detectOverlapClusters([calEvent]), isEmpty);
+    });
+
+    test('three mutually-overlapping members (task, event, task) form one '
+        '3-member cluster', () {
+      final a = _task(
+        title: 'A',
+        scheduledAt: DateTime(2026, 8, 24, 9),
+        durationMinutes: 60,
+      );
+      final b = event(
+        id: 'evt-b',
+        title: 'B',
+        start: DateTime(2026, 8, 24, 9, 20),
+        durationMinutes: 60,
+      );
+      final c = _task(
+        title: 'C',
+        scheduledAt: DateTime(2026, 8, 24, 9, 40),
+        durationMinutes: 60,
+      );
+
+      final clusters = detectOverlapClusters([a, b, c]);
+
+      expect(clusters, hasLength(1));
+      expect(clusters.single.blocks, hasLength(3));
     });
   });
 }

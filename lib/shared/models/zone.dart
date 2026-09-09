@@ -29,6 +29,8 @@ class Zone extends HiveObject {
     this.schemaVersion = 1,
     this.recurrenceRule,
     this.notificationsEnabled = true,
+    this.recurrenceId,
+    this.anchorDate,
   }) : assert(
          startMinutes >= 0 && startMinutes < _minutesPerDay,
          'startMinutes must be within a single day (0-1439)',
@@ -47,6 +49,8 @@ class Zone extends HiveObject {
     required int endMinutes,
     RecurrenceRule? recurrenceRule,
     bool notificationsEnabled = true,
+    String? recurrenceId,
+    DateTime? anchorDate,
   }) : this(
          id: _uuid.v4(),
          title: title,
@@ -54,6 +58,8 @@ class Zone extends HiveObject {
          endMinutes: endMinutes,
          recurrenceRule: recurrenceRule,
          notificationsEnabled: notificationsEnabled,
+         recurrenceId: recurrenceId,
+         anchorDate: anchorDate,
        );
 
   @HiveField(0)
@@ -95,6 +101,36 @@ class Zone extends HiveObject {
   @HiveField(6)
   bool notificationsEnabled;
 
+  /// The series link for a materialized recurring instance — same shape as
+  /// [Task.recurrenceId]: null for a non-recurring zone (unaffected, still
+  /// just one row, no series concept applies), set to the same id shared by
+  /// every instance of a series otherwise. See
+  /// `shared/services/zone_recurrence_generator.dart` for how instances are
+  /// generated.
+  @HiveField(7)
+  String? recurrenceId;
+
+  /// The specific calendar day this materialized instance occupies. Null
+  /// for a non-recurring zone — that shape is UNCHANGED from before this
+  /// session: a single dateless row that applies to every day (see
+  /// `resolveZoneContainment`'s `_zoneAppliesOnDay`). Set on every instance
+  /// of a recurring series, including its own template — mirrors
+  /// [Task.scheduledAt] acting as both "this instance's own occurrence"
+  /// and the anchor `zone_recurrence_generator.dart` walks forward from.
+  /// Confirmed directly: giving even non-recurring zones a date was ruled
+  /// out as out-of-scope broadening — see docs/DECISIONS.md.
+  @HiveField(8)
+  DateTime? anchorDate;
+
+  /// True when this row belongs to a recurring series (materialized
+  /// instance or template) — mirrors [Task.isRecurring] exactly.
+  bool get isRecurring => recurrenceId != null;
+
+  /// True when this row is the template carrying the series' own
+  /// [recurrenceRule] — mirrors [Task.isRecurrenceTemplate] exactly. Later
+  /// instances share [recurrenceId] but never repeat the rule.
+  bool get isRecurrenceTemplate => recurrenceRule != null;
+
   /// Derived, never stored — so duration can never drift from the two times
   /// that define it, per CONSTITUTION.md.
   int get durationMinutes => endMinutes - startMinutes;
@@ -111,6 +147,8 @@ class Zone extends HiveObject {
     'schemaVersion': schemaVersion,
     'recurrenceRule': recurrenceRule?.toJson(),
     'notificationsEnabled': notificationsEnabled,
+    'recurrenceId': recurrenceId,
+    'anchorDate': anchorDate?.toIso8601String(),
   };
 
   /// Reconstructs a [Zone] from [toJson]'s output, for import. Throws
@@ -167,6 +205,14 @@ class Zone extends HiveObject {
       // constructor's own `= true`), same "old exports still import"
       // contract every other optional Task/Category field already has.
       notificationsEnabled: json['notificationsEnabled'] as bool? ?? true,
+      // Both deliberately optional, not required — a backup exported
+      // before this session still imports cleanly as a non-recurring zone,
+      // same "old exports still import" contract as every other optional
+      // field on this model.
+      recurrenceId: json['recurrenceId'] as String?,
+      anchorDate: (json['anchorDate'] as String?) == null
+          ? null
+          : DateTime.parse(json['anchorDate'] as String),
     );
   }
 
@@ -186,7 +232,9 @@ class Zone extends HiveObject {
         endMinutes == other.endMinutes &&
         schemaVersion == other.schemaVersion &&
         _sameRule(recurrenceRule, other.recurrenceRule) &&
-        notificationsEnabled == other.notificationsEnabled;
+        notificationsEnabled == other.notificationsEnabled &&
+        recurrenceId == other.recurrenceId &&
+        anchorDate == other.anchorDate;
   }
 
   static const _minutesPerDay = 24 * 60;

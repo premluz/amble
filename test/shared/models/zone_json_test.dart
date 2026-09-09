@@ -40,7 +40,46 @@ void main() {
     final restored = Zone.fromJson(zone.toJson());
 
     expect(restored.recurrenceRule, isNull);
+    expect(restored.recurrenceId, isNull);
+    expect(restored.anchorDate, isNull);
     expect(restored.hasSameFieldsAs(zone), isTrue);
+  });
+
+  test('toJson -> fromJson round-trips a materialized recurring instance '
+      '(recurrenceId + anchorDate)', () {
+    final zone = Zone.create(
+      title: 'Morning ritual',
+      startMinutes: 7 * 60,
+      endMinutes: 8 * 60,
+      recurrenceId: 'series-1',
+      anchorDate: DateTime(2026, 8, 10),
+    );
+
+    final restored = Zone.fromJson(zone.toJson());
+
+    expect(restored.recurrenceId, 'series-1');
+    expect(restored.anchorDate, DateTime(2026, 8, 10));
+    expect(restored.isRecurring, isTrue);
+    expect(restored.isRecurrenceTemplate, isFalse);
+    expect(restored.hasSameFieldsAs(zone), isTrue);
+  });
+
+  test('a backup exported before recurrenceId/anchorDate existed imports as '
+      'a non-recurring zone — old exports still import cleanly', () {
+    final legacyJson =
+        Zone.create(
+            title: 'Legacy zone',
+            startMinutes: 0,
+            endMinutes: 60,
+          ).toJson()
+          ..remove('recurrenceId')
+          ..remove('anchorDate');
+
+    final restored = Zone.fromJson(legacyJson);
+
+    expect(restored.recurrenceId, isNull);
+    expect(restored.anchorDate, isNull);
+    expect(restored.isRecurring, isFalse);
   });
 
   test('fromJson throws FormatException for a missing id', () {

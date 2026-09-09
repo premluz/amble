@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart' show Color;
 
+import 'scheduled_block.dart';
+
 // Deliberately no @immutable annotation — `hive_ce_generator` scans every
 // file for its own annotations and fails to resolve @immutable's import on
 // this plain (non-Hive) class. Every field below is already `final`, which
@@ -16,7 +18,7 @@ import 'package:flutter/material.dart' show Color;
 /// device calendar is always the single source of truth for its own
 /// events, and Amble's job here is strictly "display what's there right
 /// now," never "remember what was there."
-final class ExternalCalendarEvent {
+final class ExternalCalendarEvent implements ScheduledBlock {
   const ExternalCalendarEvent({
     required this.id,
     required this.title,
@@ -29,11 +31,21 @@ final class ExternalCalendarEvent {
 
   /// The device calendar's own event id. Only ever used to key a widget or
   /// de-duplicate within one fetch — never written back anywhere.
+  @override
   final String id;
 
   final String title;
   final DateTime start;
   final DateTime end;
+
+  /// [ScheduledBlock] conformance — see that interface's own doc comment
+  /// for why the Timeline's shared lane/cluster layout reads through
+  /// these rather than [start]/[end] directly.
+  @override
+  DateTime get scheduledStart => start;
+
+  @override
+  DateTime get scheduledEnd => end;
 
   /// The device calendar this event came from — always present, since
   /// every fetch is scoped to a specific calendar id (see

@@ -24,16 +24,20 @@ import '../../shared/models/recurrence_rule.dart';
 import '../../shared/models/task.dart';
 import '../../shared/models/tracked_behavior.dart';
 import '../../shared/providers/category_providers.dart';
+import '../../shared/models/task_template.dart';
 import '../../shared/providers/preferences_providers.dart';
 import '../../shared/providers/task_providers.dart';
+import '../../shared/providers/task_template_providers.dart';
 import '../../shared/providers/tracked_behavior_providers.dart';
 import '../../shared/services/overlap_checker.dart';
+import '../inbox/template_list_view.dart' show TemplateRow;
 import 'category_visual.dart';
 import 'task_category_modal.dart';
 import 'task_duration_modal.dart';
 import 'task_name_category_modal.dart';
 import 'task_remove.dart';
 import 'task_start_time_modal.dart';
+import '../timeline/pending_task_draft_provider.dart';
 import '../timeline/recently_saved_task_provider.dart';
 
 /// Pushes [child] using the same slide-up, near-full-screen presentation
@@ -110,6 +114,51 @@ Future<void> showTaskDetailSheet(
   TimeOfDay? initialTimeOfDay,
   // Scaffold-only — see _TaskDetailFlowState.debugStartWithRepeatsOn.
   bool debugStartWithRepeatsOn = false,
+  // Links this flow to the already-visible placeholder pill on Timeline
+  // (see pending_task_draft_provider.dart) — non-null only for the
+  // tap-empty-Timeline-space quick-create entry, where a PendingTaskDraft
+  // already exists before this sheet opens.
+  String? draftId,
+  // Seeds _titleController with whatever the user already typed into the
+  // quick-create overlay's own Name field before dragging its handle to
+  // expand into this real sheet (see quick_create_overlay.dart) — a
+  // plain value handoff, not shared widget state. Null for every other
+  // entry path, where the title starts empty (or from `seed`) as before.
+  String? initialTitle,
+  // Seeds _durationMinutes directly, the same way initialTimeOfDay seeds
+  // _timeOfDay — used only by the quick-create overlay's promotion,
+  // whose placeholder pill already has a real duration (from being
+  // resized) before this screen ever opens, and which (for the
+  // handle-drag/Done-button promotion paths) skips stage 1 entirely (see
+  // initialTitle's own effect on _autoAdvanceEligible), so there is no
+  // stage-1-confirm moment left to apply the usual presetMinutes.first
+  // default.
+  int? initialDurationMinutes,
+  // Seeds _categoryId directly — set only by the quick-create overlay's
+  // promotion, when the user applied one of its mini template chips
+  // before expanding. Deliberately NOT routed through `duplicateFrom`
+  // (which would be the obvious reuse) nor through the sheet's own
+  // _seedFromTemplate: both of those also carry the template's
+  // durationMinutes across, and this path must preserve the duration the
+  // user already expressed by resizing the placeholder pill. Specified
+  // directly: applying a template sets "the name and the category, but
+  // not the duration."
+  String? initialCategoryId,
+  // Seeds [_isImportant] the same way `initialCategoryId` seeds
+  // `_categoryId` — used by the quick-create overlay's own template-chip
+  // apply, which (unlike duration) treats `isImportant` as metadata
+  // carried straight through, matching the Inbox's own `useTemplate` and
+  // the full sheet's own `_seedFromTemplate`.
+  bool initialIsImportant = false,
+  // True only for the quick-create overlay's Name-field-tap promotion
+  // path (see quick_create_overlay.dart) — requested directly: "when
+  // name input is tapped then it goes into near full screen mode," with
+  // typing continuing uninterrupted in the SAME field (autofocused,
+  // keyboard already up). Forces stage 1 (Name-only) regardless of
+  // whether `initialTitle` is set, overriding that param's usual
+  // "skip straight to stage 2" effect — the field-tap happens BEFORE
+  // any typing, so there is no confirmed name yet to skip ahead on.
+  bool stayOnNameStage = false,
 }) {
   final seed = task ?? duplicateFrom;
   return _pushDetailRoute<void>(
@@ -122,6 +171,12 @@ Future<void> showTaskDetailSheet(
           initialScheduledAt ?? seed?.scheduledAt ?? DateTime.now(),
       initialTimeOfDay: initialTimeOfDay,
       debugStartWithRepeatsOn: debugStartWithRepeatsOn,
+      draftId: draftId,
+      initialTitle: initialTitle,
+      initialDurationMinutes: initialDurationMinutes,
+      initialCategoryId: initialCategoryId,
+      initialIsImportant: initialIsImportant,
+      stayOnNameStage: stayOnNameStage,
     ),
   );
 }
@@ -195,6 +250,12 @@ class _TaskDetailFlow extends ConsumerStatefulWidget {
     required this.initialScheduledAt,
     this.initialTimeOfDay,
     this.debugStartWithRepeatsOn = false,
+    this.draftId,
+    this.initialTitle,
+    this.initialDurationMinutes,
+    this.initialCategoryId,
+    this.initialIsImportant = false,
+    this.stayOnNameStage = false,
   });
 
   /// Set only for the Inbox "give it a schedule" case, or "Edit task" —
@@ -231,6 +292,21 @@ class _TaskDetailFlow extends ConsumerStatefulWidget {
   @visibleForTesting
   final bool debugStartWithRepeatsOn;
 
+  /// See [showTaskDetailSheet]'s own doc comment on the matching param.
+  final String? draftId;
+  final String? initialTitle;
+  final int? initialDurationMinutes;
+
+  /// Seeds [_categoryId] on a from-scratch create — see
+  /// [showTaskDetailSheet]'s own `initialCategoryId` doc comment for why
+  /// this is a separate param rather than a `duplicateFrom` seed.
+  final String? initialCategoryId;
+
+  /// Seeds [_isImportant] on a from-scratch create — see
+  /// [showTaskDetailSheet]'s own `initialIsImportant` doc comment.
+  final bool initialIsImportant;
+  final bool stayOnNameStage;
+
   @override
   ConsumerState<_TaskDetailFlow> createState() => _TaskDetailFlowState();
 }
@@ -256,6 +332,20 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
   late Set<int> _selectedDays;
   String? _behaviorId;
 
+  /// Provenance for the task this form will CREATE, if it was seeded from
+  /// a [TaskTemplate] — recorded on save (see [Task.templateId]) so a
+  /// future quick-drop drawer can frequency-rank templates.
+  ///
+  /// Mutable (unlike [widget.templateId], which only ever seeds this at
+  /// construction, the same as `task`/`duplicateFrom`) because the Add
+  /// Task sheet's own template browser (see [_TemplateBrowserPane]) lets
+  /// the user pick a template WHILE this form is already open, mid-
+  /// session — requested directly: "let's list the templates and tasks
+  /// ... under Task Name" (narrowed to templates only — see
+  /// [_TemplateBrowserPane]'s own doc comment). [_seedFromTemplate] is
+  /// what applies a later pick to this already-live state.
+  String? _templateId;
+
   /// Whether [widget.task] was ALREADY part of a recurring series when
   /// this form opened — captured once, before [_repeats] can change, so
   /// [_save] can tell which of the three recurrence-provider methods
@@ -266,9 +356,24 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
   /// never consults this.
   late final bool? _wasRecurring;
 
+  /// Recurring-edit scope choice — see [_AffectFutureInstancesToggle].
+  /// Off (the default) means "just this occurrence"
+  /// ([TaskList.updateTaskThisInstanceOnly]); on means "this and all
+  /// future occurrences" ([TaskList.updateTaskWithChangedRecurrence], the
+  /// cascade every recurring edit already used before this toggle
+  /// existed). Only consulted when [_showFutureInstancesToggle] is true.
+  bool _affectFutureInstances = false;
+
   /// Defaults to `true` — matching the persisted [Task.notificationsEnabled]
   /// default, so a fresh create is unaffected unless the user turns it off.
   bool _notificationsEnabled = true;
+
+  /// See [Task.isImportant]. Own field/pane in the create flow now,
+  /// requested directly — previously the ONLY way to mark a task
+  /// important was after the fact, via the task action sheet
+  /// (`_toggleImportant` in `task_action_sheet.dart`), which stays as an
+  /// after-the-fact toggle unaffected by this addition.
+  bool _isImportant = false;
 
   /// Whether the form is still on the Name-only first stage — per direct
   /// request: "just first stage when clicked Add only Name visible and
@@ -303,6 +408,7 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
   late final String _initialCategoryId;
   late final String _initialNotes;
   late final bool _initialNotificationsEnabled;
+  late final bool _initialIsImportant;
   late final Set<int> _initialSelectedDays;
 
   /// Set when Save was blocked by the "Prevent overlapping tasks"
@@ -343,7 +449,13 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
     // or a duplicate's source. Never both: showTaskDetailSheet's two call
     // sites only ever pass one.
     final seed = task ?? widget.duplicateFrom;
-    _titleController = TextEditingController(text: seed?.title ?? '');
+    // `initialTitle` carries over whatever the user already typed into
+    // the quick-create overlay's own Name field before dragging its
+    // handle to expand into this real sheet (see
+    // quick_create_overlay.dart) — null for every other entry path.
+    _titleController = TextEditingController(
+      text: seed?.title ?? widget.initialTitle ?? '',
+    );
     _notesController = TextEditingController(text: seed?.notes ?? '');
     _scheduledAt = widget.initialScheduledAt;
     // Only an existing (Inbox) task or a duplicate arrives with a real
@@ -356,15 +468,20 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
         (seed?.scheduledAt == null
             ? null
             : TimeOfDay.fromDateTime(seed!.scheduledAt!));
-    _durationMinutes = seed?.durationMinutes;
+    _durationMinutes = seed?.durationMinutes ?? widget.initialDurationMinutes;
     // General, not Personal — requested directly: a new task starts
     // uncategorised (the neutral grey) rather than silently pre-assigned
     // to one specific real category. seed?.categoryId is null for a
     // pre-migration task that hasn't been backfilled yet (see
     // docs/DECISIONS.md) — General is the correct fallback there too.
-    _categoryId = seed?.categoryId ?? BuiltInCategoryIds.general;
+    _categoryId =
+        seed?.categoryId ??
+        widget.initialCategoryId ??
+        BuiltInCategoryIds.general;
     _behaviorId = seed?.behaviorId;
+    _templateId = widget.templateId;
     _notificationsEnabled = seed?.notificationsEnabled ?? true;
+    _isImportant = seed?.isImportant ?? widget.initialIsImportant;
     // Real bug, reported directly: editing an already-recurring task's
     // Repeats panel silently did nothing on Save — `_repeats`/
     // `_selectedDays` always started as if the task were plain, and
@@ -395,8 +512,19 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
     // duplicate already has a title (and possibly a time/duration), so
     // both are closer to an edit than a from-scratch create, and
     // shouldn't force the user through a guided sequence for fields they
-    // may already have opinions about.
-    _autoAdvanceEligible = seed == null;
+    // may already have opinions about. A non-empty `initialTitle` counts
+    // the same way: the quick-create overlay's own handle-drag/Done-
+    // button promotion means the user already decided on a name before
+    // this screen ever opened, so it should land straight on the full
+    // form too, the same as if they'd typed the name here and tapped
+    // Done — not repeat a stage they already effectively completed.
+    // `stayOnNameStage` overrides this back to true regardless — the
+    // Name-field-TAP promotion path fires before any typing happens, so
+    // there's no confirmed name yet to skip ahead on; see its own doc
+    // comment on `showTaskDetailSheet`.
+    _autoAdvanceEligible =
+        widget.stayOnNameStage ||
+        (seed == null && (widget.initialTitle?.trim().isEmpty ?? true));
     _isNameStage = _autoAdvanceEligible;
 
     _initialTitle = _titleController.text;
@@ -406,6 +534,7 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
     _initialCategoryId = _categoryId;
     _initialNotes = _notesController.text;
     _initialNotificationsEnabled = _notificationsEnabled;
+    _initialIsImportant = _isImportant;
     _initialSelectedDays = Set.of(_selectedDays);
 
     if (widget.debugStartWithRepeatsOn) _repeats = true;
@@ -427,6 +556,36 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
       _scheduledAt.year,
       _scheduledAt.month,
       _scheduledAt.day,
+      time.hour,
+      time.minute,
+    );
+  }
+
+  /// Whether [_AffectFutureInstancesToggle] should show at all — only
+  /// once the task is (and remains) part of a series AND its start time
+  /// or duration has actually moved from what the sheet opened with.
+  /// Other field-only edits (title, category, notes...) keep the old
+  /// silent-cascade behavior via [TaskList.updateTaskWithChangedRecurrence]
+  /// — this choice is specifically about the fields CONSTITUTION.md's
+  /// recurring-instance scope reversal was written for.
+  bool get _showFutureInstancesToggle =>
+      (_wasRecurring ?? false) &&
+      _repeats &&
+      (_resolvedScheduledAt != _initialScheduledAtCombined ||
+          _durationMinutes != _initialDurationMinutes);
+
+  /// [_initialScheduledAt] only tracks the DATE (see its own doc comment);
+  /// this combines it with [_initialTimeOfDay] once, at open, so
+  /// [_showFutureInstancesToggle] compares like-for-like against
+  /// [_resolvedScheduledAt] rather than a date-only value that would read
+  /// as "changed" the moment any time was ever entered.
+  DateTime? get _initialScheduledAtCombined {
+    final time = _initialTimeOfDay;
+    if (time == null) return null;
+    return DateTime(
+      _initialScheduledAt.year,
+      _initialScheduledAt.month,
+      _initialScheduledAt.day,
       time.hour,
       time.minute,
     );
@@ -462,6 +621,12 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
     final scheduledAt = _resolvedScheduledAt;
     final durationMinutes = _durationMinutes;
     if (scheduledAt == null || durationMinutes == null) return;
+
+    // Last chance for the draft to reflect a value typed directly into
+    // this form (rather than dragged on the pill) before it's used below
+    // to decide whether the just-saved task's id should reuse the
+    // placeholder's own id — see _syncDraftFromForm's own doc comment.
+    _syncDraftFromForm();
 
     setState(() => _overlapError = null);
     if (ref.read(preventOverlappingTasksSettingProvider) &&
@@ -503,7 +668,8 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
           recurrenceRule: _repeats ? _buildRecurrenceRule() : null,
           behaviorId: _behaviorId,
           notificationsEnabled: _notificationsEnabled,
-          templateId: widget.templateId,
+          isImportant: _isImportant,
+          templateId: _templateId,
         );
         savedNotifier.record(created.id, SavedTaskChange.created);
       } else {
@@ -543,6 +709,7 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
         existing.durationMinutes = durationMinutes;
         existing.categoryId = _categoryId;
         existing.notificationsEnabled = _notificationsEnabled;
+        existing.isImportant = _isImportant;
         if (_behaviorId == null) existing.actualAmount = null;
         existing.behaviorId = _behaviorId;
 
@@ -563,10 +730,19 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
           // Recurring -> off: detaches the series' template and prunes
           // untouched future instances.
           await notifier.disableTaskRecurrence(existing);
+        } else if ((_wasRecurring ?? false) &&
+            _repeats &&
+            _showFutureInstancesToggle &&
+            !_affectFutureInstances) {
+          // Recurring -> recurring, but the user explicitly chose "just
+          // this occurrence" for a start-time/duration change: isolates
+          // the edit to `existing` alone, leaving the template/rule and
+          // every other instance untouched.
+          await notifier.updateTaskThisInstanceOnly(existing);
         } else if ((_wasRecurring ?? false) && _repeats) {
-          // Recurring -> recurring, days possibly changed: resolves to
-          // the series' template regardless of which instance `existing`
-          // is.
+          // Recurring -> recurring, days possibly changed (or the toggle
+          // wasn't shown/was left on "future"): resolves to the series'
+          // template regardless of which instance `existing` is.
           await notifier.updateTaskWithChangedRecurrence(
             existing,
             _buildRecurrenceRule(),
@@ -592,6 +768,13 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
       // Before the pop, so any close path that runs afterwards already
       // sees the write as committed — see [_hasSaved].
       _hasSaved = true;
+      // The real task pill takes over from here — same handoff moment
+      // `recentlySavedTaskProvider` above already uses ("fade in the
+      // just-saved real pill"). No-op for every entry path except
+      // quick-create.
+      if (widget.draftId != null) {
+        ref.read(pendingTaskDraftProvider.notifier).clear();
+      }
       if (mounted) Navigator.of(context).pop();
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -618,6 +801,7 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
         _categoryId != _initialCategoryId ||
         _notesController.text != _initialNotes ||
         _notificationsEnabled != _initialNotificationsEnabled ||
+        _isImportant != _initialIsImportant ||
         _repeats != (_wasRecurring ?? false) ||
         // A same-days no-op toggle doesn't count as a real edit, but a
         // genuine day-set change while already recurring does — mirrors
@@ -630,6 +814,15 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
 
   Future<void> _handleClose() async {
     if (!_hasUnconfirmedChanges) {
+      // Abandoning the quick-create flow untouched — the placeholder pill
+      // must go too, or it would be left stranded on Timeline with
+      // nothing open to finish placing it. Guarded on `_hasSaved` the same
+      // way `_hasUnconfirmedChanges` itself is: a close reached AFTER a
+      // successful save (which already cleared the draft on its own, see
+      // [_save]) must not clear it a harmless-but-pointless second time.
+      if (widget.draftId != null && !_hasSaved) {
+        ref.read(pendingTaskDraftProvider.notifier).clear();
+      }
       Navigator.of(context).pop();
       return;
     }
@@ -653,6 +846,9 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
       case AppAlertDialogChoice.primary:
         await _save();
       case AppAlertDialogChoice.destructive:
+        if (widget.draftId != null) {
+          ref.read(pendingTaskDraftProvider.notifier).clear();
+        }
         Navigator.of(context).pop();
       case AppAlertDialogChoice.cancel:
         // Stay exactly where the user was — no navigation, no save.
@@ -710,10 +906,64 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
       // default rather than one that varies by when the sheet happened to
       // open. Only seeded if still unset: an Inbox "give it a schedule"
       // task skips stage 1 entirely and may already carry its own
-      // time/duration, which this must not overwrite.
+      // time/duration, which this must not overwrite. The quick-create
+      // path always arrives with both already set (from the tapped
+      // pill's own position), so neither `??=` fires there.
       _timeOfDay ??= const TimeOfDay(hour: 12, minute: 0);
       _durationMinutes ??= presetMinutes.first;
     });
+    _syncDraftFromForm();
+  }
+
+  /// Pushes this form's own live start time/duration onto the on-Timeline
+  /// placeholder pill (`pending_task_draft_provider.dart`) — called right
+  /// after stage 1 confirms (so the pill reflects wherever it was tapped/
+  /// dragged before the quick-create overlay promoted into this real
+  /// sheet) and right before Save commits (so a value the user typed
+  /// directly into the expanded form's Date/Time/Duration fields, rather
+  /// than by dragging the pill, is still what gets saved). No-op for
+  /// every entry path except quick-create (`widget.draftId == null`
+  /// elsewhere) and while the time/duration are still unset.
+  void _syncDraftFromForm() {
+    final draftId = widget.draftId;
+    if (draftId == null) return;
+    final scheduledAt = _resolvedScheduledAt;
+    final durationMinutes = _durationMinutes;
+    if (scheduledAt == null || durationMinutes == null) return;
+    final notifier = ref.read(pendingTaskDraftProvider.notifier);
+    notifier.updatePosition(scheduledAt);
+    notifier.updateDuration(durationMinutes);
+  }
+
+  /// Seeds this ALREADY-OPEN form's live fields from [template] — the Add
+  /// Task sheet's own inline template browser (see [_TemplateBrowserPane]),
+  /// requested directly: "let's list the templates ... under Task Name."
+  ///
+  /// Deliberately NOT [useTemplate] (`inbox/template_list_view.dart`),
+  /// which pushes a SECOND `showTaskDetailSheet` on top of the current
+  /// one — the Inbox's own Templates tab is a standalone screen with
+  /// nothing already open, but here a create flow is already live, so
+  /// picking a template must update its state in place, not stack a
+  /// second sheet over it. Mirrors [initState]'s own `seed?.` field-by-
+  /// field assignment for a `duplicateFrom` seed, applied imperatively
+  /// instead of at construction.
+  ///
+  /// Confirms stage 1 afterward (same as tapping "Done"/submitting the
+  /// keyboard) — picking a template is a complete answer to "what's this
+  /// task," so the form advances straight to the pre-filled schedule
+  /// stage, same as the Inbox's own template "Use" lands on a pre-filled
+  /// form rather than an empty one.
+  void _seedFromTemplate(TaskTemplate template) {
+    setState(() {
+      _titleController.text = template.title;
+      _notesController.text = template.notes ?? '';
+      _durationMinutes = template.durationMinutes;
+      _categoryId = template.categoryId;
+      _behaviorId = template.behaviorId;
+      _isImportant = template.isImportant;
+      _templateId = template.id;
+    });
+    _confirmNameStage();
   }
 
   /// Opens the standalone Category modal — the schedule pane's own
@@ -784,6 +1034,14 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
             ? _confirmNameStage
             : (_canSave ? _save : null),
         errorMessage: _isNameStage ? null : _overlapError,
+        footerContent: !_isNameStage && _showFutureInstancesToggle
+            ? _AffectFutureInstancesToggle(
+                theme: theme,
+                value: _affectFutureInstances,
+                onChanged: (value) =>
+                    setState(() => _affectFutureInstances = value),
+              )
+            : null,
         isPrimaryLoading: !_isNameStage && _isSaving,
         // Edit only, requested directly — the create flow has no task yet
         // to delete, and the name stage (stage 1) shows no schedule/delete
@@ -815,6 +1073,8 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
           notificationsEnabled: _notificationsEnabled,
           onNotificationsEnabledChanged: (value) =>
               setState(() => _notificationsEnabled = value),
+          isImportant: _isImportant,
+          onImportantChanged: (value) => setState(() => _isImportant = value),
           onCategoryTap: _openCategoryModal,
           onDateTap: () => _pickDate(context),
           showRepeats: true,
@@ -828,6 +1088,7 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
               _selectedDays.add(day);
             }
           }),
+          onTemplateSelected: _seedFromTemplate,
         ),
       ),
     );
@@ -872,6 +1133,8 @@ class _ScheduleFieldsStage extends StatelessWidget {
     required this.onDurationChanged,
     required this.notificationsEnabled,
     required this.onNotificationsEnabledChanged,
+    required this.isImportant,
+    required this.onImportantChanged,
     required this.onCategoryTap,
     required this.onDateTap,
     required this.showRepeats,
@@ -879,6 +1142,7 @@ class _ScheduleFieldsStage extends StatelessWidget {
     required this.selectedDays,
     required this.onRepeatsChanged,
     required this.onDayToggled,
+    required this.onTemplateSelected,
   });
 
   final AmbleTheme theme;
@@ -899,6 +1163,11 @@ class _ScheduleFieldsStage extends StatelessWidget {
   /// `onNameSubmitted` doc comment.
   final VoidCallback onNameSubmitted;
 
+  /// Fired when the user picks a row in [_TemplateBrowserPane] — see that
+  /// widget's own doc comment. Only rendered while [showScheduleFields] is
+  /// false (stage 1 / Name stage), same gating as everything below it.
+  final ValueChanged<TaskTemplate> onTemplateSelected;
+
   final Category? category;
   final DateTime date;
   final TimeOfDay? timeOfDay;
@@ -908,6 +1177,14 @@ class _ScheduleFieldsStage extends StatelessWidget {
   final ValueChanged<int> onDurationChanged;
   final bool notificationsEnabled;
   final ValueChanged<bool> onNotificationsEnabledChanged;
+
+  /// See [Task.isImportant]. Own pane below, between Category and Repeats
+  /// — requested directly, matching how Repeats/Notifications already
+  /// each get their own bare pane rather than living inside another
+  /// field's.
+  final bool isImportant;
+  final ValueChanged<bool> onImportantChanged;
+
   final VoidCallback onCategoryTap;
   final VoidCallback onDateTap;
   final bool showRepeats;
@@ -928,16 +1205,9 @@ class _ScheduleFieldsStage extends StatelessWidget {
         : startTime.add(Duration(minutes: duration));
 
     final staggeredPanes = <Widget>[
-      // Category is its own standalone pane — requested directly
-      // ("Category should be its own section"), separate from both
-      // Name/Description above and Date/Time/Duration below.
-      AppPane(
-        child: _CategoryFieldRow(
-          theme: theme,
-          category: category,
-          onTap: onCategoryTap,
-        ),
-      ),
+      // Date/Time/Duration now comes FIRST, Category second — flipped
+      // from the original order, requested directly ("flip the date/time
+      // duration section with category").
       AppPane(
         child: Column(
           children: [
@@ -1004,6 +1274,32 @@ class _ScheduleFieldsStage extends StatelessWidget {
           ],
         ),
       ),
+      // Category is its own standalone pane — requested directly
+      // ("Category should be its own section"), separate from both
+      // Name/Description above and Date/Time/Duration above it now.
+      AppPane(
+        child: _CategoryFieldRow(
+          theme: theme,
+          category: category,
+          onTap: onCategoryTap,
+        ),
+      ),
+      // Important — its own bare pane (no AppPane `title`), matching
+      // Repeats/Notifications' own treatment exactly. Placed right after
+      // Category — requested directly: "after category, add important,
+      // as we do have a repeat section with a checkbox."
+      AppPane(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Important',
+              style: theme.textBody.copyWith(color: theme.colorTextPrimary),
+            ),
+            AppSwitch(value: isImportant, onChanged: onImportantChanged),
+          ],
+        ),
+      ),
       if (showRepeats)
         AppPane(
           child: _RecurrencePanel(
@@ -1032,6 +1328,11 @@ class _ScheduleFieldsStage extends StatelessWidget {
     ];
 
     return SingleChildScrollView(
+      // Reverted to a plain uniform inset — the fade this used to clear
+      // now lives INSIDE the header container itself (StepScaffold's own
+      // fix, requested directly: "should not expand beyond the title
+      // container... so it doesn't push the content too much down"), so
+      // the body needs no extra top clearance any more.
       padding: EdgeInsets.all(theme.spacingLg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1045,6 +1346,14 @@ class _ScheduleFieldsStage extends StatelessWidget {
             autofocusName: !showScheduleFields,
             onNameSubmitted: onNameSubmitted,
           ),
+          // Stage 1 (Name) only — requested directly: "on the Add Task
+          // sheet, under Task Name, let's list the templates ... under
+          // that section, not the actual input." Gone the instant stage 2
+          // reveals, same as every other stage-1-only affordance here.
+          if (!showScheduleFields) ...[
+            SizedBox(height: theme.spacingLg),
+            _TemplateBrowserPane(theme: theme, onSelected: onTemplateSelected),
+          ],
           if (showScheduleFields) ...[
             SizedBox(height: theme.spacingLg),
             for (final (index, pane) in staggeredPanes.indexed) ...[
@@ -1055,6 +1364,67 @@ class _ScheduleFieldsStage extends StatelessWidget {
           SizedBox(height: theme.spacingXl * 2),
         ],
       ),
+    );
+  }
+}
+
+/// Stage 1's inline template browser — requested directly: "on the Add
+/// Task sheet, under Task Name, let's list the templates and tasks in the
+/// same way... Templates just as they are rendered in the Template tab in
+/// Inbox, without these three dots." Narrowed to templates only (no tabs,
+/// no task list) via a direct follow-up: tapping an Inbox TASK row here
+/// would be ambiguous (seed a new task from it, leaving the original
+/// inbox task untouched and duplicated, vs. switching this form into
+/// editing that specific task) in a way tapping a TEMPLATE never is — a
+/// template is already a reusable blueprint, so "seed a new task from it"
+/// is its one unambiguous meaning, the same as the Inbox's own "Use".
+///
+/// Reuses [TemplateRow] (`inbox/template_list_view.dart`) directly rather
+/// than a second copy of that row's layout — `onMore: null` there omits
+/// the Edit/Delete affordance (see that field's own doc comment), since
+/// this browser only ever picks a template, never manages the list.
+///
+/// Tapping a row calls [onSelected] — see [_TaskDetailFlowState.
+/// _seedFromTemplate] for why this updates the ALREADY-OPEN form in place
+/// rather than reusing [useTemplate]'s own "push a second sheet" behavior.
+class _TemplateBrowserPane extends ConsumerWidget {
+  const _TemplateBrowserPane({required this.theme, required this.onSelected});
+
+  final AmbleTheme theme;
+  final ValueChanged<TaskTemplate> onSelected;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final templates = ref.watch(taskTemplateListProvider);
+    final categories = ref.watch(categoryListProvider);
+
+    if (templates.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: EdgeInsets.only(bottom: theme.spacingSm),
+          child: Text(
+            'Templates',
+            style: theme.textBody.copyWith(
+              color: theme.colorTextSecondary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        for (final (index, template) in templates.indexed) ...[
+          if (index > 0) SizedBox(height: theme.spacingSm),
+          TemplateRow(
+            theme: theme,
+            template: template,
+            category: categories
+                .where((c) => c.id == template.categoryId)
+                .firstOrNull,
+            onUse: () => onSelected(template),
+          ),
+        ],
+      ],
     );
   }
 }
@@ -1586,6 +1956,10 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
   String? _behaviorId;
   late bool _notificationsEnabled;
 
+  /// See [_TaskDetailFlowState._isImportant] — same field, same own pane,
+  /// wired here too for create/edit parity (requested directly).
+  late bool _isImportant;
+
   late final DateTime _initialScheduledAt;
   late final int _initialDurationMinutes;
   late final Set<int> _initialSelectedDays;
@@ -1593,6 +1967,7 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
   late final String _initialNotes;
   late final String _initialCategoryId;
   late final bool _initialNotificationsEnabled;
+  late final bool _initialIsImportant;
 
   /// See _TaskDetailFlowState's matching field — same inline-error contract
   /// for the "Prevent overlapping tasks" preference.
@@ -1610,6 +1985,10 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
   late bool _repeats;
   late Set<int> _selectedDays;
 
+  /// See [_TaskDetailFlowState._affectFutureInstances] — same toggle,
+  /// same default, same "just this occurrence" meaning when off.
+  bool _affectFutureInstances = false;
+
   @override
   void initState() {
     super.initState();
@@ -1623,10 +2002,12 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
     _categoryId = task.categoryId ?? BuiltInCategoryIds.general;
     _behaviorId = task.behaviorId;
     _notificationsEnabled = task.notificationsEnabled;
+    _isImportant = task.isImportant;
     _initialTitle = task.title;
     _initialNotes = task.notes ?? '';
     _initialCategoryId = _categoryId;
     _initialNotificationsEnabled = task.notificationsEnabled;
+    _initialIsImportant = task.isImportant;
     _wasRecurring = task.isRecurring;
     _repeats = task.isRecurring;
     // An already-recurring task seeds its REAL days from the series'
@@ -1671,6 +2052,7 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
         _notesController.text != _initialNotes ||
         _categoryId != _initialCategoryId ||
         _notificationsEnabled != _initialNotificationsEnabled ||
+        _isImportant != _initialIsImportant ||
         _repeats != _wasRecurring ||
         // A same-days no-op toggle doesn't count as a real edit, but a
         // genuine day-set change while already recurring does.
@@ -1678,6 +2060,16 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
             _wasRecurring &&
             !setEquals(_selectedDays, _initialSelectedDays));
   }
+
+  /// See [_TaskDetailFlowState._showFutureInstancesToggle] — same
+  /// condition (recurring, stays recurring, start time or duration
+  /// actually moved), simpler here since this form tracks `_scheduledAt`
+  /// as a single combined DateTime rather than a separate date/time pair.
+  bool get _showFutureInstancesToggle =>
+      _wasRecurring &&
+      _repeats &&
+      (_scheduledAt != _initialScheduledAt ||
+          _durationMinutes != _initialDurationMinutes);
 
   Future<void> _save() async {
     setState(() => _overlapError = null);
@@ -1696,6 +2088,17 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
     }
 
     final existing = widget.task;
+    // Capture the slot this instance is VACATING before overwriting it —
+    // must happen here, since the old value is unrecoverable afterward.
+    // Real bug: `updateTaskThisInstanceOnly`'s own
+    // `originalScheduledAt ??= scheduledAt` runs AFTER this assignment, so
+    // without this it recorded the NEW time as the "original" one. The
+    // vacated slot then went unclaimed, and the next materialization pass
+    // refilled it with a duplicate. Mirrors the identical guard the other
+    // save path (`_TaskDetailFlowState`) already had.
+    if (existing.isRecurring && existing.scheduledAt != _scheduledAt) {
+      existing.originalScheduledAt ??= existing.scheduledAt;
+    }
     existing.scheduledAt = _scheduledAt;
     existing.durationMinutes = _durationMinutes;
     existing.title = _titleController.text.trim();
@@ -1703,6 +2106,7 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
     existing.notes = notes.isEmpty ? null : notes;
     existing.categoryId = _categoryId;
     existing.notificationsEnabled = _notificationsEnabled;
+    existing.isImportant = _isImportant;
     if (_behaviorId == null) existing.actualAmount = null;
     existing.behaviorId = _behaviorId;
 
@@ -1724,11 +2128,20 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
       // for `existing`'s scheduledAt/durationMinutes, which
       // disableTaskRecurrence does as part of its own contract.
       await notifier.disableTaskRecurrence(existing);
+    } else if (_wasRecurring &&
+        _repeats &&
+        _showFutureInstancesToggle &&
+        !_affectFutureInstances) {
+      // Recurring -> recurring, but the user explicitly chose "just this
+      // occurrence" for a start-time/duration change: isolates the edit
+      // to `existing` alone.
+      await notifier.updateTaskThisInstanceOnly(existing);
     } else if (_wasRecurring && _repeats) {
-      // Recurring -> recurring, days possibly changed: always resolves
-      // to the series' template regardless of which instance `existing`
-      // is — a same-days save still round-trips harmlessly (the rule is
-      // rebuilt identically, and _deleteUntouchedFutureInstances /
+      // Recurring -> recurring, days possibly changed (or the toggle
+      // wasn't shown/was left on "future"): always resolves to the
+      // series' template regardless of which instance `existing` is — a
+      // same-days save still round-trips harmlessly (the rule is rebuilt
+      // identically, and _deleteUntouchedFutureInstances /
       // _materializeSeries together just regenerate the same slots).
       await notifier.updateTaskWithChangedRecurrence(
         existing,
@@ -1822,6 +2235,8 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
       notificationsEnabled: _notificationsEnabled,
       onNotificationsEnabledChanged: (value) =>
           setState(() => _notificationsEnabled = value),
+      isImportant: _isImportant,
+      onImportantChanged: (value) => setState(() => _isImportant = value),
       onNameCategoryTap: () async {
         await TaskNameCategoryModal.show(
           context: context,
@@ -1854,6 +2269,10 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
       primaryLabel: 'Save',
       onPrimaryPressed: _save,
       errorMessage: _overlapError,
+      showFutureInstancesToggle: _showFutureInstancesToggle,
+      affectFutureInstances: _affectFutureInstances,
+      onAffectFutureInstancesChanged: (value) =>
+          setState(() => _affectFutureInstances = value),
     );
   }
 }
@@ -1941,6 +2360,8 @@ class _DetailsStepScaffold extends ConsumerWidget {
         // used to live in the coloured header and jump straight to
         // category; now it's the first ordinary field in the body.
         body: SingleChildScrollView(
+          // Reverted — see the other SingleChildScrollView in this file
+          // for why.
           padding: EdgeInsets.all(theme.spacingLg),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2048,6 +2469,8 @@ class _ScheduleStepScaffold extends StatelessWidget {
     required this.onDurationChanged,
     required this.notificationsEnabled,
     required this.onNotificationsEnabledChanged,
+    required this.isImportant,
+    required this.onImportantChanged,
     required this.onNameCategoryTap,
     required this.showRepeats,
     required this.repeats,
@@ -2058,6 +2481,9 @@ class _ScheduleStepScaffold extends StatelessWidget {
     required this.primaryLabel,
     required this.onPrimaryPressed,
     this.errorMessage,
+    required this.showFutureInstancesToggle,
+    required this.affectFutureInstances,
+    required this.onAffectFutureInstancesChanged,
   });
 
   final AmbleTheme theme;
@@ -2092,6 +2518,12 @@ class _ScheduleStepScaffold extends StatelessWidget {
   final bool notificationsEnabled;
   final ValueChanged<bool> onNotificationsEnabledChanged;
 
+  /// See [_TaskDetailFlowState._isImportant]/[_ScheduleFieldsStage]'s own
+  /// field of the same name — same meaning, same own bare pane, wired
+  /// here for create/edit parity.
+  final bool isImportant;
+  final ValueChanged<bool> onImportantChanged;
+
   /// Opens the compact Name/Category modal — the preview card's pencil,
   /// and (per the mockup) the whole point of that field existing at all
   /// now that there's no separate step 1 to navigate back to.
@@ -2113,6 +2545,12 @@ class _ScheduleStepScaffold extends StatelessWidget {
   /// the "Prevent overlapping tasks" preference. Null when there's nothing
   /// to report.
   final String? errorMessage;
+
+  /// See [_EditScheduleFormState._showFutureInstancesToggle] — whether
+  /// [_AffectFutureInstancesToggle] should render at all.
+  final bool showFutureInstancesToggle;
+  final bool affectFutureInstances;
+  final ValueChanged<bool> onAffectFutureInstancesChanged;
 
   Future<void> _pickDate(BuildContext context) async {
     final picked = await showDatePicker(
@@ -2177,6 +2615,13 @@ class _ScheduleStepScaffold extends StatelessWidget {
       primaryLabel: primaryLabel,
       onPrimaryPressed: onPrimaryPressed,
       errorMessage: errorMessage,
+      footerContent: showFutureInstancesToggle
+          ? _AffectFutureInstancesToggle(
+              theme: theme,
+              value: affectFutureInstances,
+              onChanged: onAffectFutureInstancesChanged,
+            )
+          : null,
       // No coloured banner here either (mockup): the "preview" — the
       // task exactly as it will appear on the Timeline, badge/title/time
       // — now lives as an ordinary card at the top of the body instead,
@@ -2184,6 +2629,8 @@ class _ScheduleStepScaffold extends StatelessWidget {
       // a different, header-only treatment.
       headerContent: null,
       body: SingleChildScrollView(
+        // Reverted — see the other SingleChildScrollView bodies in this
+        // file for why.
         padding: EdgeInsets.all(theme.spacingLg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2276,6 +2723,24 @@ class _ScheduleStepScaffold extends StatelessWidget {
                       ),
                     ),
                   ),
+                ],
+              ),
+            ),
+            SizedBox(height: theme.spacingLg),
+            // Important — its own bare pane, same shape as
+            // Repeats/Notifications below. Requested directly: create and
+            // edit flows stay at parity on this field.
+            AppPane(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Important',
+                    style: theme.textBody.copyWith(
+                      color: theme.colorTextPrimary,
+                    ),
+                  ),
+                  AppSwitch(value: isImportant, onChanged: onImportantChanged),
                 ],
               ),
             ),
@@ -2632,6 +3097,58 @@ class _RecurrencePanel extends StatelessWidget {
 }
 
 const _weekdayAbbreviations = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+
+/// Shown in the edit sheet's footer (via [StepScaffold.footerContent])
+/// only while a recurring task's start time or duration has actually
+/// changed from what the sheet opened with — requested directly: editing
+/// a recurring instance's schedule needs a choice between "just this
+/// occurrence" and "this and all future occurrences," which the sheet has
+/// never asked before (every prior edit silently cascaded to future
+/// instances, whatever the field). Off (the default) means "just this
+/// occurrence" — [_TaskDetailFlowState._save]/[_EditScheduleFormState._save]
+/// route to [TaskList.updateTaskThisInstanceOnly] when off,
+/// [TaskList.updateTaskWithChangedRecurrence] (the existing cascade) when
+/// on. Shared by both save flows — same toggle, same wording, one place
+/// to change either.
+class _AffectFutureInstancesToggle extends StatelessWidget {
+  const _AffectFutureInstancesToggle({
+    required this.theme,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final AmbleTheme theme;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorSurfaceSecondary,
+        borderRadius: BorderRadius.circular(theme.radiusTaskPill),
+      ),
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: theme.spacingMd,
+          vertical: theme.spacingSm,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Text(
+                'Affect future instances',
+                style: theme.textBody.copyWith(color: theme.colorTextPrimary),
+              ),
+            ),
+            AppSwitch(value: value, onChanged: onChanged),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 /// All 7 days selected maps to [RecurrenceFrequency.daily] — matching the
 /// model's existing "daily" concept exactly. Any smaller selection maps to

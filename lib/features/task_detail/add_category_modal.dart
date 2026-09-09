@@ -52,10 +52,22 @@ const _curatedCategoryEmoji = [
 /// two-stage body, both of which this now needs.
 ///
 /// Reachable via the "+ Add new" link on both [TaskCategoryModal] and
-/// `TaskNameCategoryModal`'s title row — resolves to the newly created
-/// [Category] so the calling picker sheet can select it immediately,
-/// unchanged from before this became a pushed route rather than a sheet.
-Future<Category?> showAddCategoryModal(BuildContext context) {
+/// `TaskNameCategoryModal`'s title row (create-only there — [category] is
+/// always null) — resolves to the newly created [Category] so the calling
+/// picker sheet can select it immediately, unchanged from before this
+/// became a pushed route rather than a sheet.
+///
+/// [category] non-null opens in EDIT mode — rename + recolor + re-emoji an
+/// existing category, per CONSTITUTION.md's "v2" section (reorder itself
+/// confirmed out of scope for now). Reached from [CategoryListScreen]'s
+/// own list. Mirrors `zone_form_screen.dart`'s `showZoneFormScreen(zone:)`
+/// shape exactly: editing skips straight to the full form (stage 2),
+/// there being nothing to stage for a category that already has every
+/// field filled in.
+Future<Category?> showAddCategoryModal(
+  BuildContext context, {
+  Category? category,
+}) {
   final theme = Theme.of(context).extension<AmbleTheme>()!;
   return Navigator.of(context).push<Category?>(
     PageRouteBuilder<Category?>(
@@ -74,13 +86,17 @@ Future<Category?> showAddCategoryModal(BuildContext context) {
         );
       },
       pageBuilder: (context, animation, secondaryAnimation) =>
-          const _AddCategoryScreen(),
+          _AddCategoryScreen(category: category),
     ),
   );
 }
 
 class _AddCategoryScreen extends ConsumerStatefulWidget {
-  const _AddCategoryScreen();
+  const _AddCategoryScreen({this.category});
+
+  /// Non-null for edit mode — see [showAddCategoryModal]'s own doc
+  /// comment.
+  final Category? category;
 
   @override
   ConsumerState<_AddCategoryScreen> createState() => _AddCategoryScreenState();
@@ -95,15 +111,24 @@ class _AddCategoryScreenState extends ConsumerState<_AddCategoryScreen> {
   /// Stage 1 (Name only) vs. stage 2 (Color + Emoji) — the same
   /// progressive-disclosure pattern the task and zone creation flows use.
   /// Requested directly: "this would be a pattern of progressive
-  /// disclosure that applies to task, zone, category." Always true here
-  /// (unlike the task/zone flows' own `_isEditing` skip) — creating a
-  /// category has no "edit" entry point to skip stage 1 for for (v1 scope
-  /// is create + list only, per docs/DECISIONS.md).
+  /// disclosure that applies to task, zone, category." Editing an existing
+  /// category skips straight to stage 2, same as `zone_form_screen.dart`'s
+  /// own `_isEditing` skip — there is nothing to stage for a category that
+  /// already has every field filled in.
   bool _isNameStage = true;
+
+  bool get _isEditing => widget.category != null;
 
   @override
   void initState() {
     super.initState();
+    final category = widget.category;
+    if (category != null) {
+      _nameController.text = category.name;
+      _colorToken = category.colorToken;
+      _emoji = category.emoji;
+      _isNameStage = false;
+    }
     // Save's enabled state depends on the name being non-empty, so it has
     // to react on every keystroke — AppTextField's own onFocusChanged only
     // fires on focus change, not per-character, so this listens to the
@@ -146,6 +171,16 @@ class _AddCategoryScreenState extends ConsumerState<_AddCategoryScreen> {
     if (!_canSave) return;
     setState(() => _isSaving = true);
     try {
+      final existing = widget.category;
+      if (existing != null) {
+        existing.name = _nameController.text.trim();
+        existing.colorToken = _colorToken!;
+        existing.emoji = _emoji!;
+        await ref.read(categoryListProvider.notifier).updateCategory(existing);
+        if (!mounted) return;
+        Navigator.of(context).pop(existing);
+        return;
+      }
       final created = await ref
           .read(categoryListProvider.notifier)
           .createCategory(
@@ -203,7 +238,7 @@ class _AddCategoryScreenState extends ConsumerState<_AddCategoryScreen> {
 
     return StepScaffold(
       theme: theme,
-      modalTitle: 'New category',
+      modalTitle: _isEditing ? 'Edit category' : 'New category',
       titleAlignment: TextAlign.left,
       headerColor: theme.colorAccent,
       headerContent: null,
@@ -217,6 +252,8 @@ class _AddCategoryScreenState extends ConsumerState<_AddCategoryScreen> {
           : (_canSave ? _save : null),
       isPrimaryLoading: !_isNameStage && _isSaving,
       body: SingleChildScrollView(
+        // Top reverted to a plain spacingLg — the fade now lives inside
+        // StepScaffold's own header container, clipped to it.
         padding: EdgeInsets.fromLTRB(
           theme.spacingLg,
           theme.spacingLg,
@@ -236,7 +273,7 @@ class _AddCategoryScreenState extends ConsumerState<_AddCategoryScreen> {
               child: AppTextField(
                 controller: _nameController,
                 label: 'Category name',
-                autofocus: true,
+                autofocus: !_isEditing,
                 onSubmitted: (_) => _confirmNameStage(),
               ),
             ),

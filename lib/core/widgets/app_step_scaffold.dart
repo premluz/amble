@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../tokens/semantic_theme.dart';
 import 'app_button.dart';
+import 'app_press_feedback.dart';
+import 'app_top_scroll_fade.dart';
 
 /// The near-full-screen slide-up chrome shared by every task-detail-family
 /// modal (create wizard, edit-details, edit-schedule) — colored header
@@ -33,6 +35,7 @@ class StepScaffold extends StatelessWidget {
     required this.primaryLabel,
     this.onPrimaryPressed,
     this.errorMessage,
+    this.footerContent,
     this.isPrimaryLoading = false,
     this.onSecondaryAction,
     this.secondaryActionIcon,
@@ -69,6 +72,13 @@ class StepScaffold extends StatelessWidget {
   /// Shown inline just above the primary button — e.g. a validation
   /// rejection message. Null when there's nothing to report.
   final String? errorMessage;
+
+  /// Extra content pinned above the primary button, below [errorMessage]
+  /// — e.g. the recurring-edit scope toggle ("Affect future instances")
+  /// task_detail_sheet.dart shows only while a start-time/duration change
+  /// on a recurring task is pending. Null renders nothing; every existing
+  /// caller predates this and keeps its unchanged footer layout.
+  final Widget? footerContent;
 
   /// Shows a spinner on the primary button and disables it for the
   /// duration of an in-flight save — see [AppButton.isLoading].
@@ -113,87 +123,132 @@ class StepScaffold extends StatelessWidget {
                 children: [
                   Container(
                     width: double.infinity,
+                    // Title-bearing case bumped from `spacingXl + spacingMd`
+                    // to `spacingXl + spacingLg` — requested directly,
+                    // alongside the Inbox/Tracked screen headings' own
+                    // identical bump: "same for sheets heading."
                     height: headerContent == null
                         ? theme.spacingXl +
                               (modalTitle == null
                                   ? theme.spacingLg
-                                  : theme.spacingXl + theme.spacingMd)
+                                  : theme.spacingXl + theme.spacingLg)
                         : null,
-                    decoration: headerContent == null
-                        ? null
-                        : BoxDecoration(
-                            color: headerColor,
-                            borderRadius: BorderRadius.vertical(
+                    decoration: BoxDecoration(
+                      // Plain-title case: the header's OWN background IS
+                      // the gradient — colorSurfaceSecondary at the top,
+                      // blending down into the body's own colorSurfaceBase
+                      // at the header's bottom edge, so there's no hard
+                      // seam where the two meet. A flat colorSurfaceSecondary
+                      // FILL with a separate `AppTopScrollFade` painted on
+                      // top of it (the previous shape) never actually blended
+                      // anything — that fade goes colorSurfaceSecondary-to-
+                      // transparent, which is invisible against a layer
+                      // that's already solid colorSurfaceSecondary underneath
+                      // it, so it read as a flat block with an abrupt colour
+                      // change against the body, not a gradient. Reported
+                      // directly: "heading not have nice gradient... sheet
+                      // heading section different color than body."
+                      gradient: headerContent == null
+                          ? LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                theme.colorSurfaceSecondary,
+                                theme.colorSurfaceBase,
+                              ],
+                            )
+                          : null,
+                      color: headerContent == null ? null : headerColor,
+                      // Rounded bottom corner is only right for the
+                      // colored `headerContent` banner, which reads as a
+                      // floating panel — the plain-title header sits flush
+                      // against the body below it, same as before this
+                      // case had a background at all.
+                      borderRadius: headerContent == null
+                          ? null
+                          : BorderRadius.vertical(
                               bottom: Radius.circular(theme.radiusModal),
                             ),
-                          ),
-                    child: Stack(
-                      children: [
-                        if (modalTitle != null)
-                          Positioned.fill(
-                            child: Padding(
-                              padding: EdgeInsets.only(
-                                left:
-                                    onBack != null ||
-                                        titleAlignment == TextAlign.center
-                                    ? theme.spacingXl + theme.spacingLg
-                                    : theme.spacingLg,
-                                right: theme.spacingXl + theme.spacingLg,
-                              ),
-                              child: Align(
-                                alignment: titleAlignment == TextAlign.center
-                                    ? Alignment.center
-                                    : Alignment.centerLeft,
-                                child: Text(
-                                  modalTitle!,
-                                  textAlign: titleAlignment,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textHeadline.copyWith(
-                                    color: theme.colorTextPrimary,
+                    ),
+                    // ClipRect confines the fade strictly to THIS
+                    // container's own bounds — moved here from the body
+                    // below, requested directly: "the shade on the
+                    // sheets' title should not expand beyond the title
+                    // container. This [fade] should be just within, so
+                    // it doesn't push the content too much down." A
+                    // fade in the body needed extra top padding on every
+                    // sheet's own content to clear it; living inside the
+                    // header instead needs none, since the header
+                    // already reserves its own height.
+                    child: ClipRect(
+                      child: Stack(
+                        children: [
+                          if (modalTitle != null)
+                            Positioned.fill(
+                              child: Padding(
+                                padding: EdgeInsets.only(
+                                  left:
+                                      onBack != null ||
+                                          titleAlignment == TextAlign.center
+                                      ? theme.spacingXl + theme.spacingLg
+                                      : theme.spacingLg,
+                                  right: theme.spacingXl + theme.spacingLg,
+                                ),
+                                child: Align(
+                                  alignment: titleAlignment == TextAlign.center
+                                      ? Alignment.center
+                                      : Alignment.centerLeft,
+                                  child: Text(
+                                    modalTitle!,
+                                    textAlign: titleAlignment,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textHeadline.copyWith(
+                                      color: theme.colorTextPrimary,
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                        if (headerContent != null)
-                          Padding(
-                            padding: EdgeInsets.fromLTRB(
-                              onBack != null
-                                  ? theme.spacingXl + theme.spacingLg
-                                  : theme.spacingLg,
-                              theme.spacingXl + theme.spacingSm,
-                              theme.spacingXl + theme.spacingLg,
-                              theme.spacingLg,
+                          if (headerContent != null)
+                            Padding(
+                              padding: EdgeInsets.fromLTRB(
+                                onBack != null
+                                    ? theme.spacingXl + theme.spacingLg
+                                    : theme.spacingLg,
+                                theme.spacingXl + theme.spacingSm,
+                                theme.spacingXl + theme.spacingLg,
+                                theme.spacingLg,
+                              ),
+                              child: headerContent,
                             ),
-                            child: headerContent,
-                          ),
-                        if (onBack != null)
+                          if (onBack != null)
+                            Positioned(
+                              top: 0,
+                              bottom: 0,
+                              left: theme.spacingLg,
+                              child: Center(
+                                child: HeaderCircleButton(
+                                  theme: theme,
+                                  icon: Icons.arrow_back_rounded,
+                                  onTap: onBack!,
+                                ),
+                              ),
+                            ),
                           Positioned(
                             top: 0,
                             bottom: 0,
-                            left: theme.spacingLg,
+                            right: theme.spacingLg,
                             child: Center(
                               child: HeaderCircleButton(
                                 theme: theme,
-                                icon: Icons.arrow_back_rounded,
-                                onTap: onBack!,
+                                icon: Icons.close_rounded,
+                                onTap: onClose,
                               ),
                             ),
                           ),
-                        Positioned(
-                          top: 0,
-                          bottom: 0,
-                          right: theme.spacingLg,
-                          child: Center(
-                            child: HeaderCircleButton(
-                              theme: theme,
-                              icon: Icons.close_rounded,
-                              onTap: onClose,
-                            ),
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                   Expanded(
@@ -202,6 +257,46 @@ class StepScaffold extends StatelessWidget {
                     child: Stack(
                       children: [
                         body,
+                        // Top fade at the header/body seam — reported
+                        // directly: "the header on pages like Tasks...is
+                        // not a smooth gradient. The content slides
+                        // through underneath, and the header cuts the
+                        // content with a hard edge." The header's own
+                        // gradient (above) only ever blends ITS OWN fixed
+                        // background down to colorSurfaceBase — it says
+                        // nothing about the body's actual scrolling
+                        // content, which had no fade at all here and so
+                        // hit the Expanded's top edge with a hard cut, the
+                        // same bug already fixed on the Inbox/Tracked
+                        // pages (see docs/DECISIONS.md). Only for the
+                        // plain-title header (which blends into
+                        // colorSurfaceBase); the colored `headerContent`
+                        // banner case is a deliberately floating panel
+                        // with a rounded bottom corner, not something body
+                        // content should visually blend into.
+                        if (headerContent == null)
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            top: 0,
+                            child: AppTopScrollFade(
+                              color: theme.colorSurfaceBase,
+                            ),
+                          ),
+                        // Mirrored bottom fade — requested directly:
+                        // "use same at the bottom." Painted BEFORE the
+                        // primary-button footer below (so the footer
+                        // paints on top and stays crisp; only the
+                        // scrolling body content behind it fades).
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: AppTopScrollFade(
+                            color: theme.colorSurfaceBase,
+                            fromBottom: true,
+                          ),
+                        ),
                         Positioned(
                           left: 0,
                           right: 0,
@@ -221,6 +316,10 @@ class StepScaffold extends StatelessWidget {
                                     ),
                                     textAlign: TextAlign.center,
                                   ),
+                                  SizedBox(height: theme.spacingSm),
+                                ],
+                                if (footerContent != null) ...[
+                                  footerContent!,
                                   SizedBox(height: theme.spacingSm),
                                 ],
                                 Row(
@@ -325,8 +424,13 @@ class HeaderCircleButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return AppPressFeedback(
       onTap: onTap,
+      shape: BoxShape.circle,
+      // Rides on the icon's own color, so the wash stays visible whether
+      // this button sits on the neutral field fill (its default) or on a
+      // caller-supplied colored header banner.
+      rippleColor: iconColor ?? theme.colorTextPrimary,
       child: Container(
         width: theme.spacingXl,
         height: theme.spacingXl,

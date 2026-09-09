@@ -45,6 +45,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     required this.spacingXl,
     required this.spacingBlockGap,
     required this.spacingScreenPadding,
+    required this.spacingContentTop,
     required this.spacingMinTapTarget,
     required this.sizeMinFieldHeight,
     required this.sizeTaskBadgeSm,
@@ -194,6 +195,15 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   final double spacingXl;
   final double spacingBlockGap;
   final double spacingScreenPadding;
+
+  /// The shared top offset for a scrollable's own first item/pane, under
+  /// a fixed heading or [AppTopScrollFade] — one value across Tasks,
+  /// Templates, Tracked, and every modal sheet's body, confirmed directly
+  /// after "templates are higher" than the other two: "as in templates
+  /// current position +30 becomes NEW for all." Not part of the general
+  /// Xs/Sm/Md/Lg/Xl progression — a narrow-purpose token for this one
+  /// role, matching [spacingIconTop]'s own precedent.
+  final double spacingContentTop;
 
   /// Minimum interactive tap target size (48dp/pt), independent of any
   /// element's own visible size — a visually small control (e.g. the
@@ -406,6 +416,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     spacingXl: SpacingPrimitives.space9,
     spacingBlockGap: SpacingPrimitives.space3,
     spacingScreenPadding: SpacingPrimitives.space7,
+    spacingContentTop: SpacingPrimitives.space7Point75,
     spacingMinTapTarget: 48.0,
     sizeMinFieldHeight: 60.0,
     sizeTaskBadgeSm: SpacingPrimitives.space6,
@@ -452,30 +463,35 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       ),
     ],
     textHeadline: TextStyle(
+      fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size6,
       fontWeight: TypePrimitives.weightBold,
       height: TypePrimitives.lineHeightTight,
       color: ColorPrimitives.slate900,
     ),
     textTitle: TextStyle(
+      fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size4,
       fontWeight: TypePrimitives.weightSemibold,
       height: TypePrimitives.lineHeightTight,
       color: ColorPrimitives.slate900,
     ),
     textBody: TextStyle(
+      fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size3,
       fontWeight: TypePrimitives.weightRegular,
       height: TypePrimitives.lineHeightNormal,
       color: ColorPrimitives.slate900,
     ),
     textLabel: TextStyle(
+      fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size2,
       fontWeight: TypePrimitives.weightMedium,
       height: TypePrimitives.lineHeightNormal,
       color: ColorPrimitives.slate700,
     ),
     textCaption: TextStyle(
+      fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size1,
       fontWeight: TypePrimitives.weightRegular,
       height: TypePrimitives.lineHeightNormal,
@@ -488,18 +504,21 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     // .copyWith (they already vary: primary for a task's own title,
     // secondary for its time line), matching every other text token here.
     textTaskTitleSm: TextStyle(
+      fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size1,
       fontWeight: TypePrimitives.weightRegular,
       height: TypePrimitives.lineHeightNormal,
       color: ColorPrimitives.slate900,
     ),
     textTaskTitleMd: TextStyle(
+      fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size2,
       fontWeight: TypePrimitives.weightRegular,
       height: TypePrimitives.lineHeightNormal,
       color: ColorPrimitives.slate900,
     ),
     textTaskTitleLg: TextStyle(
+      fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size3,
       fontWeight: TypePrimitives.weightRegular,
       height: TypePrimitives.lineHeightNormal,
@@ -509,6 +528,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     // starting point for the "Task size" setting (see sizeTaskBadge's own
     // matching default comment).
     textTaskTitle: TextStyle(
+      fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size2,
       fontWeight: TypePrimitives.weightRegular,
       height: TypePrimitives.lineHeightNormal,
@@ -606,6 +626,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     spacingXl: SpacingPrimitives.space9,
     spacingBlockGap: SpacingPrimitives.space3,
     spacingScreenPadding: SpacingPrimitives.space7,
+    spacingContentTop: SpacingPrimitives.space7Point75,
     spacingMinTapTarget: 48.0,
     sizeMinFieldHeight: 60.0,
     sizeTaskBadgeSm: SpacingPrimitives.space6,
@@ -652,48 +673,56 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       ),
     ],
     textHeadline: TextStyle(
+      fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size6,
       fontWeight: TypePrimitives.weightBold,
       height: TypePrimitives.lineHeightTight,
       color: ColorPrimitives.sand200,
     ),
     textTitle: TextStyle(
+      fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size4,
       fontWeight: TypePrimitives.weightSemibold,
       height: TypePrimitives.lineHeightTight,
       color: ColorPrimitives.sand200,
     ),
     textBody: TextStyle(
+      fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size3,
       fontWeight: TypePrimitives.weightRegular,
       height: TypePrimitives.lineHeightNormal,
       color: ColorPrimitives.sand200,
     ),
     textLabel: TextStyle(
+      fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size2,
       fontWeight: TypePrimitives.weightMedium,
       height: TypePrimitives.lineHeightNormal,
       color: ColorPrimitives.sand400,
     ),
     textCaption: TextStyle(
+      fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size1,
       fontWeight: TypePrimitives.weightRegular,
       height: TypePrimitives.lineHeightNormal,
       color: ColorPrimitives.sand400,
     ),
     textTaskTitleSm: TextStyle(
+      fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size1,
       fontWeight: TypePrimitives.weightRegular,
       height: TypePrimitives.lineHeightNormal,
       color: ColorPrimitives.sand200,
     ),
     textTaskTitleMd: TextStyle(
+      fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size2,
       fontWeight: TypePrimitives.weightRegular,
       height: TypePrimitives.lineHeightNormal,
       color: ColorPrimitives.sand200,
     ),
     textTaskTitleLg: TextStyle(
+      fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size3,
       fontWeight: TypePrimitives.weightRegular,
       height: TypePrimitives.lineHeightNormal,
@@ -703,6 +732,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     // starting point for the "Task size" setting (see sizeTaskBadge's own
     // matching default comment).
     textTaskTitle: TextStyle(
+      fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size2,
       fontWeight: TypePrimitives.weightRegular,
       height: TypePrimitives.lineHeightNormal,
@@ -750,6 +780,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     double? spacingXl,
     double? spacingBlockGap,
     double? spacingScreenPadding,
+    double? spacingContentTop,
     double? spacingMinTapTarget,
     double? sizeMinFieldHeight,
     double? sizeTaskBadgeSm,
@@ -814,6 +845,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       spacingXl: spacingXl ?? this.spacingXl,
       spacingBlockGap: spacingBlockGap ?? this.spacingBlockGap,
       spacingScreenPadding: spacingScreenPadding ?? this.spacingScreenPadding,
+      spacingContentTop: spacingContentTop ?? this.spacingContentTop,
       spacingMinTapTarget: spacingMinTapTarget ?? this.spacingMinTapTarget,
       sizeMinFieldHeight: sizeMinFieldHeight ?? this.sizeMinFieldHeight,
       sizeTaskBadgeSm: sizeTaskBadgeSm ?? this.sizeTaskBadgeSm,
@@ -936,6 +968,11 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       spacingScreenPadding: _lerpDouble(
         spacingScreenPadding,
         other.spacingScreenPadding,
+        t,
+      ),
+      spacingContentTop: _lerpDouble(
+        spacingContentTop,
+        other.spacingContentTop,
         t,
       ),
       spacingMinTapTarget: _lerpDouble(

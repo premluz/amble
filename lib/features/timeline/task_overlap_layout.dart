@@ -1,10 +1,24 @@
 import 'dart:math' as math;
 
+import '../../shared/models/scheduled_block.dart';
 import '../../shared/models/task.dart';
 import '../../shared/models/zone.dart';
 import '../../shared/services/zone_containment.dart';
+import 'zone_background_block.dart' show zoneBackgroundGap;
 
-/// Where a task sits horizontally when it shares time with others.
+/// Where a block sits horizontally when it shares time with others.
+///
+/// [block] is a [ScheduledBlock] rather than a bare [Task] — **generalized
+/// 2026-09-07** (confirmed directly: "the imported tasks should also
+/// stack in the same way as native tasks... otherwise exactly the same,
+/// with different styling") so an [ExternalCalendarEvent] can occupy a
+/// lane next to real tasks instead of positioning independently with no
+/// overlap awareness. [task] stays as a convenience getter, non-null only
+/// when [block] genuinely is a [Task] — every existing call site that
+/// only ever handled tasks keeps working unchanged; new call sites that
+/// need to render an event differently check [block] directly (or use
+/// [task] with a null-check, per `timeline_screen.dart`'s own render-loop
+/// branch on slot content).
 ///
 /// This layout only ever applies to tasks the user didn't just drag — an
 /// overlap left in place (created/edited via the modals, which reject
@@ -15,68 +29,78 @@ import '../../shared/services/zone_containment.dart';
 /// `cascade_reschedule.dart`'s push logic resolves it before this layout
 /// ever sees the conflict — see docs/SCOPE.md. This is the standard
 /// calendar treatment for the remaining cases and matches design principle
-/// 1 (the plan is provisional, not a verdict).
+/// 1 (the plan is provisional, not a verdict). An [ExternalCalendarEvent]
+/// is never draggable regardless of which lane it lands in — nothing about
+/// this layout makes it so; it only decides where things sit.
 class TaskLayoutSlot {
   const TaskLayoutSlot({
-    required this.task,
+    required this.block,
     required this.column,
     required this.columnCount,
   });
 
-  final Task task;
+  final ScheduledBlock block;
 
-  /// 0-based horizontal position within this task's overlap group.
+  /// Non-null only when [block] is a real [Task] — the common case, and
+  /// every call site written before events joined this layout. Null for
+  /// an [ExternalCalendarEvent] slot.
+  Task? get task => block is Task ? block as Task : null;
+
+  /// 0-based horizontal position within this block's overlap group.
   final int column;
 
-  /// How many columns the task's overlap group needs. 1 means the task
+  /// How many columns the block's overlap group needs. 1 means the block
   /// overlaps nothing and takes the full width.
   final int columnCount;
 
-  /// Fraction of the available width this task occupies (1.0 when alone).
+  /// Fraction of the available width this block occupies (1.0 when alone).
   double get widthFraction => 1 / columnCount;
 
-  /// Fraction of the available width to offset this task from the left.
+  /// Fraction of the available width to offset this block from the left.
   double get leftFraction => column / columnCount;
 }
 
-/// Assigns each of [tasks] a horizontal column so overlapping tasks render
-/// side by side rather than stacked invisibly on top of each other.
+/// Assigns each of [blocks] a horizontal column so overlapping blocks
+/// render side by side rather than stacked invisibly on top of each
+/// other.
 ///
-/// Tasks that don't overlap anything get the full width. A set of tasks
-/// that mutually overlap forms a group, and every task in that group is
-/// laid out against the same column count — so two overlapping tasks each
+/// Blocks that don't overlap anything get the full width. A set of blocks
+/// that mutually overlap forms a group, and every block in that group is
+/// laid out against the same column count — so two overlapping blocks each
 /// take half the width, three take a third, and so on. Column count is
 /// computed per group rather than globally, so one busy hour doesn't
 /// narrow the whole day.
 ///
 /// Every task must be scheduled (`isScheduled == true`); callers get their
 /// tasks from `tasksForSelectedDayProvider`, which already guarantees this.
-List<TaskLayoutSlot> layoutOverlappingTasks(List<Task> tasks) {
-  if (tasks.isEmpty) return const [];
+/// An [ExternalCalendarEvent] is always scheduled by construction (it has
+/// no unscheduled state at all).
+List<TaskLayoutSlot> layoutOverlappingTasks(List<ScheduledBlock> blocks) {
+  if (blocks.isEmpty) return const [];
 
-  final sorted = [...tasks]
-    ..sort((a, b) => a.scheduledAt!.compareTo(b.scheduledAt!));
+  final sorted = [...blocks]
+    ..sort((a, b) => a.scheduledStart.compareTo(b.scheduledStart));
 
   final slots = <TaskLayoutSlot>[];
 
-  // Walk the day in time order, accumulating a group of tasks that overlap
-  // each other. A group ends at the first task starting at or after the
+  // Walk the day in time order, accumulating a group of blocks that overlap
+  // each other. A group ends at the first block starting at or after the
   // group's latest end time — nothing after that point can overlap anything
   // already in the group.
   var groupStart = 0;
-  var groupEnd = _endOf(sorted.first);
+  var groupEnd = sorted.first.scheduledEnd;
 
   for (var i = 1; i <= sorted.length; i++) {
     final startsNewGroup =
-        i == sorted.length || !sorted[i].scheduledAt!.isBefore(groupEnd);
+        i == sorted.length || !sorted[i].scheduledStart.isBefore(groupEnd);
 
     if (startsNewGroup) {
       slots.addAll(_layoutGroup(sorted.sublist(groupStart, i)));
       if (i == sorted.length) break;
       groupStart = i;
-      groupEnd = _endOf(sorted[i]);
+      groupEnd = sorted[i].scheduledEnd;
     } else {
-      final end = _endOf(sorted[i]);
+      final end = sorted[i].scheduledEnd;
       if (end.isAfter(groupEnd)) groupEnd = end;
     }
   }
@@ -85,26 +109,26 @@ List<TaskLayoutSlot> layoutOverlappingTasks(List<Task> tasks) {
 }
 
 /// Packs one overlap group into the fewest columns that keep every pair of
-/// genuinely-overlapping tasks apart. A task reuses the first column whose
-/// last occupant has already finished, so a group like 9:00-10:00,
+/// genuinely-overlapping blocks apart. A block reuses the first column
+/// whose last occupant has already finished, so a group like 9:00-10:00,
 /// 9:30-10:30, 10:00-11:00 needs two columns rather than three.
-List<TaskLayoutSlot> _layoutGroup(List<Task> group) {
+List<TaskLayoutSlot> _layoutGroup(List<ScheduledBlock> group) {
   if (group.length == 1) {
-    return [TaskLayoutSlot(task: group.single, column: 0, columnCount: 1)];
+    return [TaskLayoutSlot(block: group.single, column: 0, columnCount: 1)];
   }
 
   final columnEndTimes = <DateTime>[];
   final assignedColumns = <int>[];
 
-  for (final task in group) {
+  for (final block in group) {
     var column = columnEndTimes.indexWhere(
-      (end) => !end.isAfter(task.scheduledAt!),
+      (end) => !end.isAfter(block.scheduledStart),
     );
     if (column == -1) {
       column = columnEndTimes.length;
-      columnEndTimes.add(_endOf(task));
+      columnEndTimes.add(block.scheduledEnd);
     } else {
-      columnEndTimes[column] = _endOf(task);
+      columnEndTimes[column] = block.scheduledEnd;
     }
     assignedColumns.add(column);
   }
@@ -113,15 +137,12 @@ List<TaskLayoutSlot> _layoutGroup(List<Task> group) {
   return [
     for (var i = 0; i < group.length; i++)
       TaskLayoutSlot(
-        task: group[i],
+        block: group[i],
         column: assignedColumns[i],
         columnCount: columnCount,
       ),
   ];
 }
-
-DateTime _endOf(Task task) =>
-    task.scheduledAt!.add(Duration(minutes: task.durationMinutes!));
 
 /// The deepest overlap stack anywhere in [slots] — at least 1, even for
 /// an empty day.
@@ -171,8 +192,14 @@ int zonePillLanes({
 }) {
   var lanes = 1;
   for (final slot in slots) {
-    final start = slot.task.scheduledAt;
-    final duration = slot.task.durationMinutes;
+    // Zone bands are a TASK-only concept (a zone assignment is `Task.zoneId`
+    // — an ExternalCalendarEvent has no such field), so an event slot never
+    // widens a band. Skipped rather than erroring: `slot.task` is null for
+    // one now that events share this same lane layout.
+    final task = slot.task;
+    if (task == null) continue;
+    final start = task.scheduledAt;
+    final duration = task.durationMinutes;
     if (start == null || duration == null) continue;
     final end = start.add(Duration(minutes: duration));
     if (!start.isBefore(zoneEnd) || !end.isAfter(zoneStart)) continue;
@@ -359,15 +386,63 @@ List<CollapsedZoneBand> collapsedZoneBands({
     return math.min(padding, (nearest - bottom) / 2);
   }
 
+  // Index-keyed (not zone-keyed): [Zone] has no `==` override, so
+  // matching bands back up by identity through a lookup would work but is
+  // needlessly fragile — an index into `raw`/`containments` (both already
+  // in one fixed, shared order) is simpler and can't misidentify two
+  // zones that happen to be `identical()`-distinct-but-equal-looking.
+  final padded = [
+    for (var i = 0; i < raw.length; i++)
+      (
+        index: i,
+        top: raw[i].top - clampedPaddingAbove(raw[i].top),
+        bottom: raw[i].bottom + clampedPaddingBelow(raw[i].bottom),
+      ),
+  ];
+
+  // Pass 3: guarantee at least `zoneBackgroundGap` between two bands that
+  // ended up touching (or overlapping) after pass 2's clamp — real bug,
+  // reported directly: List mode showed zero visible gap between two
+  // adjacent zones, unlike Task view's own always-4px separation
+  // (`zoneBackgroundGap`, see zone_background_block.dart). Pass 2's clamp
+  // is "AT MOST half the real gap to a neighbour," which is correctly 0
+  // when two zones' member rows are genuinely back-to-back with no real
+  // gap at all — exactly the case that produced the bug, since "at most
+  // half of zero" is still zero. This pass takes the shortfall entirely
+  // off the LATER band's top, matching zoneBackgroundGap's own rule
+  // ("taken entirely off a block's bottom edge, never its top... the
+  // earlier zone yields the whole gap") — a zone's rendered TOP still
+  // lands on its own real start, only a later zone's start may read as
+  // slightly later than it in a collapsed, non-linear view anyway.
+  //
+  // Sorted by top first: bands can arrive in zone-start order, not
+  // necessarily band-position order, once padding has shifted them.
+  final byTop = [...padded]..sort((a, b) => a.top.compareTo(b.top));
+  final adjustedTop = List<double>.filled(raw.length, 0);
+  final adjustedBottom = List<double>.filled(raw.length, 0);
+  double? previousBottom;
+  for (final band in byTop) {
+    var top = band.top;
+    var bottom = band.bottom;
+    if (previousBottom != null) {
+      final realGap = top - previousBottom;
+      if (realGap < zoneBackgroundGap) {
+        final shortfall = zoneBackgroundGap - realGap;
+        top += shortfall;
+        bottom += shortfall;
+      }
+    }
+    adjustedTop[band.index] = top;
+    adjustedBottom[band.index] = bottom;
+    previousBottom = bottom;
+  }
+
   return [
-    for (final band in raw)
+    for (var i = 0; i < raw.length; i++)
       CollapsedZoneBand(
-        zone: band.zone,
-        top: band.top - clampedPaddingAbove(band.top),
-        height:
-            (band.bottom - band.top) +
-            clampedPaddingAbove(band.top) +
-            clampedPaddingBelow(band.bottom),
+        zone: raw[i].zone,
+        top: adjustedTop[i],
+        height: adjustedBottom[i] - adjustedTop[i],
       ),
   ];
 }

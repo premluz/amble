@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/app_press_feedback.dart';
 import '../../shared/models/category.dart';
 import '../../shared/models/task.dart';
 import '../../shared/models/task_template.dart';
@@ -32,7 +33,19 @@ class TemplateListView extends ConsumerWidget {
     if (templates.isEmpty) return _EmptyState(theme: theme);
 
     return ListView.separated(
-      padding: EdgeInsets.symmetric(horizontal: theme.spacingScreenPadding),
+      // spacingContentTop — real bug, reported directly: "tasks
+      // templates tracked cards should all start at same y level,
+      // currently templates are higher." This list had NO top padding
+      // at all, so its first row sat flush under the heading. Templates'
+      // OWN un-padded position (0) plus 30px became the confirmed shared
+      // standard every other list/sheet now also uses: "as in templates
+      // current position +30 becomes NEW for all."
+      padding: EdgeInsets.fromLTRB(
+        theme.spacingScreenPadding,
+        theme.spacingContentTop,
+        theme.spacingScreenPadding,
+        0,
+      ),
       itemCount: templates.length,
       separatorBuilder: (context, _) => SizedBox(height: theme.spacingSm),
       itemBuilder: (context, index) {
@@ -69,6 +82,7 @@ Future<void> useTemplate(BuildContext context, TaskTemplate template) {
     durationMinutes: template.durationMinutes,
     categoryId: template.categoryId,
     behaviorId: template.behaviorId,
+    isImportant: template.isImportant,
   );
   return showTaskDetailSheet(
     context,
@@ -107,7 +121,7 @@ class TemplateRow extends StatelessWidget {
     required this.template,
     required this.category,
     required this.onUse,
-    required this.onMore,
+    this.onMore,
   });
 
   final AmbleTheme theme;
@@ -119,7 +133,15 @@ class TemplateRow extends StatelessWidget {
   final Category? category;
 
   final VoidCallback onUse;
-  final VoidCallback onMore;
+
+  /// Null omits the trailing "more" (Edit/Delete) affordance entirely —
+  /// used by the Add Task sheet's own template browser, requested
+  /// directly ("Templates just as they are rendered in the Template tab
+  /// in Inbox, without these three dots"): that context only ever picks a
+  /// template to seed a new task from, never manages the template list
+  /// itself, so editing/deleting one belongs solely to the Inbox's own
+  /// Templates tab.
+  final VoidCallback? onMore;
 
   @override
   Widget build(BuildContext context) {
@@ -129,14 +151,19 @@ class TemplateRow extends StatelessWidget {
         : resolveCategoryVisual(theme: theme, category: resolved).pillColor;
     final badgeSize = theme.spacingXl;
 
-    return GestureDetector(
+    return AppPressFeedback(
       onTap: onUse,
-      behavior: HitTestBehavior.opaque,
+      borderRadius: BorderRadius.circular(theme.radiusXl),
       child: Container(
         padding: EdgeInsets.all(theme.spacingMd),
         decoration: BoxDecoration(
           color: theme.colorSurfaceSecondary,
           borderRadius: BorderRadius.circular(theme.radiusXl),
+          // No border. Matches AppPane's own reasoning: the card and page
+          // background are too close in lightness for a flat edge to read
+          // softly, so a shadow carries it instead of a border. Reported
+          // directly as a hard edge on task/template cards.
+          boxShadow: theme.shadowPane,
         ),
         child: Row(
           children: [
@@ -181,18 +208,20 @@ class TemplateRow extends StatelessWidget {
             // uses (`task_action_sheet.dart`), rather than a second,
             // row-local convention invented for this list. The row's own
             // tap stays the primary action (Use), same as tapping a task
-            // opens its detail.
-            GestureDetector(
-              onTap: onMore,
-              behavior: HitTestBehavior.opaque,
-              child: Padding(
-                padding: EdgeInsets.all(theme.spacingSm),
-                child: Icon(
-                  Icons.more_horiz_rounded,
-                  color: theme.colorTextSecondary,
+            // opens its detail. Omitted entirely when [onMore] is null —
+            // see that field's own doc comment.
+            if (onMore != null)
+              GestureDetector(
+                onTap: onMore,
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: EdgeInsets.all(theme.spacingSm),
+                  child: Icon(
+                    Icons.more_horiz_rounded,
+                    color: theme.colorTextSecondary,
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       ),

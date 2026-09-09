@@ -28,6 +28,7 @@ class TaskTemplate extends HiveObject {
     this.notes,
     this.behaviorId,
     this.schemaVersion = 1,
+    this.isImportant = false,
   });
 
   /// Creates a new template with a client-generated UUID — the same `uuid`
@@ -39,6 +40,7 @@ class TaskTemplate extends HiveObject {
     int? durationMinutes,
     String? notes,
     String? behaviorId,
+    bool isImportant = false,
   }) : this(
          id: _uuid.v4(),
          title: title,
@@ -46,6 +48,7 @@ class TaskTemplate extends HiveObject {
          durationMinutes: durationMinutes,
          notes: notes,
          behaviorId: behaviorId,
+         isImportant: isImportant,
        );
 
   @HiveField(0)
@@ -78,6 +81,13 @@ class TaskTemplate extends HiveObject {
   @HiveField(6)
   int schemaVersion;
 
+  /// Carries through to any [Task] spawned from this template — the same
+  /// "template's stored value is a real prefill, not a suggestion the
+  /// spawn path ignores" treatment [durationMinutes]/[notes]/[behaviorId]
+  /// already get. Mirrors [Task.isImportant] field-for-field.
+  @HiveField(7)
+  bool isImportant;
+
   /// Serializes every persisted field to a JSON-safe map. Hand-written,
   /// matching [Task.toJson]/[Category.toJson]'s style — the model is small
   /// and stable enough that this avoids a new dependency, per CLAUDE.md.
@@ -89,6 +99,7 @@ class TaskTemplate extends HiveObject {
     'notes': notes,
     'behaviorId': behaviorId,
     'schemaVersion': schemaVersion,
+    'isImportant': isImportant,
   };
 
   /// Reconstructs a [TaskTemplate] from [toJson]'s output. Throws
@@ -127,6 +138,10 @@ class TaskTemplate extends HiveObject {
       notes: json['notes'] as String?,
       behaviorId: json['behaviorId'] as String?,
       schemaVersion: schemaVersion,
+      // A template serialized before this field existed has no
+      // `isImportant` at all, not a `false` — same fallback
+      // `Task.fromJson` already applies for its own `isImportant`.
+      isImportant: json['isImportant'] as bool? ?? false,
     );
   }
 
@@ -140,6 +155,7 @@ class TaskTemplate extends HiveObject {
         durationMinutes == other.durationMinutes &&
         notes == other.notes &&
         behaviorId == other.behaviorId &&
-        schemaVersion == other.schemaVersion;
+        schemaVersion == other.schemaVersion &&
+        isImportant == other.isImportant;
   }
 }

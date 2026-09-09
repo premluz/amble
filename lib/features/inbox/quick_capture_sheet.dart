@@ -6,8 +6,10 @@ import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_mic_button.dart';
 import '../../core/widgets/app_sheet.dart';
+import '../../core/widgets/app_step_scaffold.dart' show HeaderCircleButton;
 import '../../core/widgets/app_undo_toast.dart';
 import '../../shared/models/category.dart';
+import '../../shared/models/task.dart';
 import '../../shared/providers/category_providers.dart';
 import '../../shared/providers/task_providers.dart';
 import '../../shared/services/quick_capture_parser.dart';
@@ -19,7 +21,27 @@ import '../../shared/services/quick_capture_parser.dart';
 /// fields, no confirmation step — see [parseQuickCapture] for exactly
 /// what "confident" means and docs/DECISIONS.md for why that threshold
 /// was chosen.
-Future<void> showQuickCaptureSheet(BuildContext context) {
+///
+/// [task] is null for a genuinely new capture ("New note"). Passing an
+/// existing (unscheduled) [task] switches this into an EDIT of that same
+/// note's title ("Edit note") — requested directly: tapping an existing
+/// Inbox card reuses this same sheet rather than a second, near-identical
+/// one, so the two states need to actually read as different (a title
+/// that names which one you're in, plus a Close button) rather than
+/// looking byte-for-byte identical. Editing only ever rewrites the
+/// existing task's title via [TaskList.updateTask] — it never re-parses
+/// the input as a natural-language quick capture (no auto-scheduling from
+/// typed text once a real task already exists), and never creates a
+/// second task.
+///
+/// Stays [AppSheetSize.small] (content-sized) — reversed back from a
+/// brief [AppSheetSize.half] attempt, confirmed directly: "since we added
+/// close add note sheet has scrolling shouldn't have should automatically
+/// push size to match content." The Close button (not a fixed height) is
+/// what makes the sheet feel appropriately roomy now; forcing a fixed
+/// half-viewport height on top of that just left dead space and an
+/// unnecessary scroll region for a form this short.
+Future<void> showQuickCaptureSheet(BuildContext context, {Task? task}) {
   return AppSheet.show<void>(
     context: context,
     // The CALLER's context (captured here, before the sheet route
@@ -28,24 +50,35 @@ Future<void> showQuickCaptureSheet(BuildContext context) {
     // route, but the screen underneath (whatever called
     // showQuickCaptureSheet) keeps its Overlay ancestor for the toast to
     // insert into.
-    builder: (sheetContext) => _QuickCaptureForm(rootContext: context),
+    builder: (sheetContext) =>
+        _QuickCaptureForm(rootContext: context, task: task),
   );
 }
 
 class _QuickCaptureForm extends ConsumerStatefulWidget {
-  const _QuickCaptureForm({required this.rootContext});
+  const _QuickCaptureForm({required this.rootContext, this.task});
 
   /// See [showQuickCaptureSheet]'s own doc comment on why this is the
   /// CALLER's context, not this widget's own `context`.
   final BuildContext rootContext;
+
+  /// Null for a new capture; the existing task being renamed otherwise —
+  /// see [showQuickCaptureSheet]'s own doc comment.
+  final Task? task;
 
   @override
   ConsumerState<_QuickCaptureForm> createState() => _QuickCaptureFormState();
 }
 
 class _QuickCaptureFormState extends ConsumerState<_QuickCaptureForm> {
-  late final _QuickCaptureTextEditingController _titleController;
+  late final TextEditingController _titleController;
   late final FocusNode _focusNode;
+
+  /// Whether this sheet is renaming an existing captured task rather than
+  /// creating a new one — drives the "New note"/"Edit note" title, the
+  /// Close button, and [_submit]'s branch. See [_QuickCaptureForm.task]'s
+  /// own doc comment.
+  bool get _isEditing => widget.task != null;
 
   /// True for the duration of an in-flight [_submit] — drives the Add
   /// button's spinner (see [AppButton.isLoading]) AND is the actual
@@ -65,10 +98,18 @@ class _QuickCaptureFormState extends ConsumerState<_QuickCaptureForm> {
   @override
   void initState() {
     super.initState();
-    _titleController = _QuickCaptureTextEditingController(
-      theme: () => Theme.of(context).extension<AmbleTheme>()!,
-      categories: () => ref.read(categoryListProvider),
-    );
+    // Editing an existing note's title is never re-parsed as natural
+    // language (see the class doc comment) — the live token highlighting
+    // `_QuickCaptureTextEditingController` does would be actively
+    // misleading here (highlighting a "tomorrow" or "3pm" that will never
+    // actually be scheduled from this field), so edit mode uses a plain
+    // controller instead, pre-filled with the task's current title.
+    _titleController = _isEditing
+        ? TextEditingController(text: widget.task!.title)
+        : _QuickCaptureTextEditingController(
+            theme: () => Theme.of(context).extension<AmbleTheme>()!,
+            categories: () => ref.read(categoryListProvider),
+          );
     _focusNode = FocusNode();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _focusNode.requestFocus();
@@ -133,6 +174,25 @@ class _QuickCaptureFormState extends ConsumerState<_QuickCaptureForm> {
     // this button from "Add" to "Done" to match that same semantic.
     if (rawInput.isEmpty) {
       Navigator.of(context).pop();
+      return;
+    }
+
+    if (_isEditing) {
+      // Editing an existing note only ever rewrites its title — never
+      // re-parsed as natural language (see the class doc comment: a
+      // second confident parse here could silently schedule/re-categorize
+      // a task the user only meant to rename), never creates a second
+      // task.
+      setState(() => _isSubmitting = true);
+      try {
+        final task = widget.task!;
+        task.title = rawInput;
+        await ref.read(taskListProvider.notifier).updateTask(task);
+        if (!mounted) return;
+        Navigator.of(context).pop();
+      } finally {
+        if (mounted) setState(() => _isSubmitting = false);
+      }
       return;
     }
 
@@ -210,14 +270,38 @@ class _QuickCaptureFormState extends ConsumerState<_QuickCaptureForm> {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
 
     return Padding(
+      // viewInsets.bottom clears the keyboard; spacingLg on top of that is
+      // real breathing room below the Save/Done button, so the sheet
+      // doesn't end flush against the keyboard's top edge or the screen
+      // bottom. Requested directly: "add padding bottom to that add/edit
+      // note sheet."
       padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
+        bottom: MediaQuery.of(context).viewInsets.bottom + theme.spacingLg,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Add to Inbox', style: theme.textTitle),
+          // Title switches by mode, plus a Close button — requested
+          // directly: creating and editing a note used to look byte-for-
+          // byte identical, with no way to tell which one you were in and
+          // no way to back out without either submitting or leaving a
+          // blank title to abandon.
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _isEditing ? 'Edit note' : 'New note',
+                  style: theme.textTitle,
+                ),
+              ),
+              HeaderCircleButton(
+                theme: theme,
+                icon: Icons.close_rounded,
+                onTap: () => Navigator.of(context).pop(),
+              ),
+            ],
+          ),
           SizedBox(height: theme.spacingMd),
           TextField(
             controller: _titleController,
@@ -226,7 +310,9 @@ class _QuickCaptureFormState extends ConsumerState<_QuickCaptureForm> {
             textInputAction: TextInputAction.done,
             onSubmitted: (_) => _submit(),
             decoration: InputDecoration(
-              hintText: 'What needs doing? Try "Call client tomorrow at 10:30"',
+              hintText: _isEditing
+                  ? 'What needs doing?'
+                  : 'What needs doing? Try "Call client tomorrow at 10:30"',
               hintStyle: theme.textBody.copyWith(
                 color: theme.colorTextSecondary,
               ),
@@ -252,15 +338,18 @@ class _QuickCaptureFormState extends ConsumerState<_QuickCaptureForm> {
               SizedBox(width: theme.spacingMd),
               Expanded(
                 child: AppButton(
-                  label: 'Done',
+                  label: _isEditing ? 'Save' : 'Done',
                   onPressed: _submit,
                   isLoading: _isSubmitting,
-                  // Pill, matching Task creation's own "Done" button
-                  // (StepScaffold's primary action) — reported directly as
-                  // a shape mismatch; AppButton's plain default is the
-                  // smaller-radius `rounded` shape, not the pill the other
-                  // Done uses.
+                  // Pill + large — matching Task creation's own "Done"
+                  // button (StepScaffold's primary action) exactly.
+                  // Reported directly, twice: first the shape (AppButton's
+                  // plain default is the smaller-radius `rounded` shape,
+                  // not the pill the other Done uses), then the size
+                  // (AppButton's default `AppButtonSize.regular`, not the
+                  // `large` StepScaffold's own primary button uses).
                   shape: AppButtonShape.pill,
+                  size: AppButtonSize.large,
                 ),
               ),
             ],

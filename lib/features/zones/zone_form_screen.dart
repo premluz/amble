@@ -19,6 +19,7 @@ import '../../shared/models/zone.dart';
 import '../../shared/providers/notification_providers.dart';
 import '../../shared/providers/zone_providers.dart';
 import '../../shared/services/zone_overlap_checker.dart';
+import '../timeline/selected_date_provider.dart';
 
 /// Opens the "add/edit zone" screen — near-full-screen, built on
 /// [StepScaffold] (the same chrome the real task-creation flow uses,
@@ -180,9 +181,23 @@ class _ZoneFormScreenState extends ConsumerState<_ZoneFormScreen> {
       startMinutes: _startMinutes!,
       endMinutes: _endMinutes!,
     );
+    // The day this instance actually occupies — the existing zone's own
+    // `anchorDate` when editing a materialized instance, or (for a new
+    // recurring series) the day the user was viewing when they opened
+    // "Add Zone" (see `_anchorDateForNewSeries`'s own doc comment). Only
+    // zones applying on THIS SAME day can genuinely overlap it — a Monday
+    // occurrence and a Wednesday occurrence of two different series were
+    // never a real conflict, per the Zone materialization session (see
+    // docs/DECISIONS.md); this is what "should get simpler, not more
+    // complex" meant for the overlap check.
+    final DateTime thisDay =
+        widget.zone?.anchorDate ?? ref.read(selectedDateProvider);
     final others = ref
         .read(zoneListProvider)
-        .where((z) => z.id != widget.zone?.id);
+        .where((z) => z.id != widget.zone?.id)
+        .where(
+          (z) => z.anchorDate == null || _isSameDay(z.anchorDate!, thisDay),
+        );
     final conflict = others.where((z) => zonesOverlap(draft, z)).firstOrNull;
     if (conflict != null) {
       setState(
@@ -209,6 +224,12 @@ class _ZoneFormScreenState extends ConsumerState<_ZoneFormScreen> {
           endMinutes: draft.endMinutes,
           recurrenceRule: recurrenceRule,
           notificationsEnabled: _notificationsEnabled,
+          // Only meaningful for a new recurring series — the day the
+          // template (and every materialized instance the generator walks
+          // forward from) anchors on. A non-recurring zone stays dateless,
+          // unaffected — `ZoneList.createZone` ignores this when
+          // `recurrenceRule` is null.
+          anchorDateForRecurrence: ref.read(selectedDateProvider),
         );
       } else {
         existing.title = draft.title;
@@ -385,6 +406,8 @@ class _ZoneFormScreenState extends ConsumerState<_ZoneFormScreen> {
       isPrimaryLoading: !_isNameStage && _isSaving,
       errorMessage: _isNameStage ? null : _overlapError,
       body: SingleChildScrollView(
+        // Top reverted to a plain spacingLg — the fade now lives inside
+        // StepScaffold's own header container, clipped to it.
         padding: EdgeInsets.fromLTRB(
           theme.spacingLg,
           theme.spacingLg,
@@ -492,6 +515,9 @@ class _ZoneRecurrencePanel extends StatelessWidget {
     );
   }
 }
+
+bool _isSameDay(DateTime a, DateTime b) =>
+    a.year == b.year && a.month == b.month && a.day == b.day;
 
 const _zoneWeekdayAbbreviations = [
   'MON',

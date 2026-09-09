@@ -21,6 +21,7 @@ class AppTextField extends StatefulWidget {
     this.textInputAction,
     this.onSubmitted,
     this.onFocusChanged,
+    this.selectAllOnFocus = false,
   });
 
   final TextEditingController controller;
@@ -41,6 +42,14 @@ class AppTextField extends StatefulWidget {
   /// wants to collapse itself back to a summary/link once the field is
   /// blurred (see the create flow's "Add description" reveal).
   final ValueChanged<bool>? onFocusChanged;
+
+  /// True selects the entire current value the instant this field gains
+  /// focus — for a field pre-filled with a placeholder-as-real-value
+  /// default (e.g. quick-create's "New task"), so the first keystroke
+  /// replaces the whole thing in one motion instead of the user having to
+  /// clear it manually first. Default false: every other caller's typed
+  /// text is left exactly where the user last put it.
+  final bool selectAllOnFocus;
 
   @override
   State<AppTextField> createState() => _AppTextFieldState();
@@ -67,6 +76,12 @@ class _AppTextFieldState extends State<AppTextField> {
   void _handleFocusChange() {
     if (_focusNode.hasFocus == _isFocused) return;
     setState(() => _isFocused = _focusNode.hasFocus);
+    if (_focusNode.hasFocus && widget.selectAllOnFocus) {
+      widget.controller.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: widget.controller.text.length,
+      );
+    }
     widget.onFocusChanged?.call(_focusNode.hasFocus);
   }
 

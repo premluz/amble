@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/dev_config.dart';
 import '../../core/feature_flags.dart';
 import '../../core/tokens/semantic_theme.dart';
-import '../../core/widgets/app_icon_button.dart';
+import '../../core/widgets/app_bottom_extension_bar.dart';
 import '../../shared/providers/preferences_providers.dart';
 import 'selected_date_provider.dart';
 
@@ -180,116 +180,85 @@ class _DayStripState extends ConsumerState<DayStrip> {
         ? TimelineViewMode.zone
         : (showHourLabels ? TimelineViewMode.task : TimelineViewMode.list);
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: theme.colorSurfacePrimary,
-        // A subtle shadow on the TOP edge only, separating this bar from
-        // the timeline content scrolling underneath it — the same
-        // "adjacent to nav" relationship the bottom nav bar itself has
-        // with the screen above it, just mirrored to the top of this bar.
-        boxShadow: [
-          BoxShadow(
-            color: theme.shadowPane.first.color,
-            blurRadius: theme.shadowPane.first.blurRadius,
-            offset: Offset(
-              theme.shadowPane.first.offset.dx,
-              -theme.shadowPane.first.offset.dy,
+    return AppBottomExtensionBar(
+      onCreatePressed: widget.onCreatePressed,
+      leading: Row(
+        children: [
+          // Cycles Zone → List → Task → Zone (skipping Zone when
+          // `zoneFeatureEnabled` above is false — either
+          // FeatureFlags.zoneEnabled itself, or the debug-only
+          // `devZoneViewInCycle` toggle, is off) — requested directly,
+          // from a mockup. Writes both existing settings together rather
+          // than introducing a new one of its own.
+          Padding(
+            padding: EdgeInsets.only(right: theme.spacingXs),
+            child: IconButton(
+              onPressed: () {
+                final nextMode = currentMode.next(
+                  zoneFeatureEnabled: zoneFeatureEnabled,
+                );
+                ref
+                    .read(zoneViewEnabledSettingProvider.notifier)
+                    .set(nextMode == TimelineViewMode.zone);
+                ref
+                    .read(showHourLabelsSettingProvider.notifier)
+                    .set(nextMode == TimelineViewMode.task);
+              },
+              icon: Icon(currentMode.icon),
+              color: theme.colorTextPrimary,
+              tooltip: switch (currentMode) {
+                TimelineViewMode.zone => 'Zone view',
+                TimelineViewMode.list => 'List view',
+                TimelineViewMode.task => 'Spatial view',
+              },
             ),
-            spreadRadius: theme.shadowPane.first.spreadRadius,
+          ),
+          // The "return to today" chevron — shown only once the strip has
+          // been scrolled away from today, replacing that space with a
+          // tap target back to it rather than sitting alongside the
+          // strip permanently.
+          if (_scrolledAwayFromToday)
+            Padding(
+              padding: EdgeInsets.only(right: theme.spacingXs),
+              child: IconButton(
+                onPressed: _returnToToday,
+                icon: const Icon(Icons.chevron_left_rounded),
+                color: theme.colorTaskAlert,
+                tooltip: 'Today',
+              ),
+            ),
+          Expanded(
+            child: SizedBox(
+              height: theme.spacingXl * 1.6,
+              child: ListView.separated(
+                controller: _scrollController,
+                scrollDirection: Axis.horizontal,
+                physics: const ClampingScrollPhysics(),
+                itemCount: _daysEitherSide * 2 + 1,
+                separatorBuilder: (context, index) =>
+                    SizedBox(width: _chipSpacing),
+                itemBuilder: (context, index) {
+                  final date = DateTime(
+                    today.year,
+                    today.month,
+                    today.day + (index - _daysEitherSide),
+                  );
+                  final isToday = _isSameDay(date, today);
+                  final isSelected = _isSameDay(date, selectedDate);
+                  return _DayChip(
+                    theme: theme,
+                    width: _chipWidth,
+                    date: date,
+                    isToday: isToday,
+                    isSelected: isSelected,
+                    onTap: () =>
+                        ref.read(selectedDateProvider.notifier).goTo(date),
+                  );
+                },
+              ),
+            ),
           ),
         ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: theme.spacingMd,
-            vertical: theme.spacingSm,
-          ),
-          child: Row(
-            children: [
-              // Cycles Zone → List → Task → Zone (skipping Zone when
-              // `zoneFeatureEnabled` above is false — either
-              // FeatureFlags.zoneEnabled itself, or the debug-only
-              // `devZoneViewInCycle` toggle, is off) — requested directly,
-              // from a mockup. Writes both existing settings together
-              // rather than introducing a new one of its own.
-              Padding(
-                padding: EdgeInsets.only(right: theme.spacingXs),
-                child: IconButton(
-                  onPressed: () {
-                    final nextMode = currentMode.next(
-                      zoneFeatureEnabled: zoneFeatureEnabled,
-                    );
-                    ref
-                        .read(zoneViewEnabledSettingProvider.notifier)
-                        .set(nextMode == TimelineViewMode.zone);
-                    ref
-                        .read(showHourLabelsSettingProvider.notifier)
-                        .set(nextMode == TimelineViewMode.task);
-                  },
-                  icon: Icon(currentMode.icon),
-                  color: theme.colorTextPrimary,
-                  tooltip: switch (currentMode) {
-                    TimelineViewMode.zone => 'Zone view',
-                    TimelineViewMode.list => 'List view',
-                    TimelineViewMode.task => 'Spatial view',
-                  },
-                ),
-              ),
-              // The "return to today" chevron — shown only once the strip
-              // has been scrolled away from today, replacing that space
-              // with a tap target back to it rather than sitting alongside
-              // the strip permanently.
-              if (_scrolledAwayFromToday)
-                Padding(
-                  padding: EdgeInsets.only(right: theme.spacingXs),
-                  child: IconButton(
-                    onPressed: _returnToToday,
-                    icon: const Icon(Icons.chevron_left_rounded),
-                    color: theme.colorTaskAlert,
-                    tooltip: 'Today',
-                  ),
-                ),
-              Expanded(
-                child: SizedBox(
-                  height: theme.spacingXl * 1.6,
-                  child: ListView.separated(
-                    controller: _scrollController,
-                    scrollDirection: Axis.horizontal,
-                    physics: const ClampingScrollPhysics(),
-                    itemCount: _daysEitherSide * 2 + 1,
-                    separatorBuilder: (context, index) =>
-                        SizedBox(width: _chipSpacing),
-                    itemBuilder: (context, index) {
-                      final date = DateTime(
-                        today.year,
-                        today.month,
-                        today.day + (index - _daysEitherSide),
-                      );
-                      final isToday = _isSameDay(date, today);
-                      final isSelected = _isSameDay(date, selectedDate);
-                      return _DayChip(
-                        theme: theme,
-                        width: _chipWidth,
-                        date: date,
-                        isToday: isToday,
-                        isSelected: isSelected,
-                        onTap: () =>
-                            ref.read(selectedDateProvider.notifier).goTo(date),
-                      );
-                    },
-                  ),
-                ),
-              ),
-              SizedBox(width: theme.spacingSm),
-              AppIconButton(
-                icon: Icons.add_rounded,
-                onPressed: widget.onCreatePressed,
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

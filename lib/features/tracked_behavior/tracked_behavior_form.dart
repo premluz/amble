@@ -2,29 +2,70 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
-import '../../core/widgets/app_button.dart';
-import '../../core/widgets/app_sheet.dart';
+import '../../core/widgets/app_pane.dart';
+import '../../core/widgets/app_staggered_entrance.dart';
+import '../../core/widgets/app_step_scaffold.dart';
+import '../../core/widgets/app_text_field.dart';
 import '../../shared/models/behavior_target_type.dart';
+import '../../shared/models/tracked_behavior.dart';
 import '../../shared/providers/tracked_behavior_providers.dart';
 
-/// Opens the "create tracked behavior" sheet.
+/// Opens the create/edit screen for a [TrackedBehavior] — [behavior] null
+/// to create, non-null to edit that row.
 ///
-/// Presented via [AppSheet] rather than Phase 4's near-full-screen modal:
-/// that pattern exists for the task detail screen's colored edge-to-edge
-/// header and wheel/slider controls, none of which this form has. Five
-/// short fields don't justify a full-screen takeover — see docs/DECISIONS.md.
+/// Near-full-screen, built on [StepScaffold] — the exact same chrome (and,
+/// on create, the exact same Name-only stage 1 that reveals everything
+/// else on "Done") the real task-creation flow and Zone's own add/edit
+/// screen already use. Requested directly: "add template and add tracked
+/// should follow same modal UI and interaction model as add task and add
+/// zone." Reverses this feature's own earlier choice of [AppSheet] (a
+/// half-height sheet, reasoned at the time as "five short fields don't
+/// justify a full-screen takeover") — that reasoning no longer holds once
+/// consistency with every other create flow in the app is the actual
+/// requirement.
 ///
 /// All writes go through `trackedBehaviorListProvider`; this UI never
 /// touches the repository or Hive directly.
-Future<void> showTrackedBehaviorForm(BuildContext context) {
-  return AppSheet.show(
-    context: context,
-    builder: (context) => const _TrackedBehaviorForm(),
+///
+/// Deliberately offers no delete — create/list/edit only, per SCOPE.md.
+/// Deleting a behavior that existing tasks reference via `Task.behaviorId`
+/// raises the same orphaned-reference question already deliberately
+/// deferred for `Category` and `Zone`, and is not resolved here either.
+/// (`TrackedBehaviorList.deleteBehavior` exists on the notifier from the
+/// Phase 10 data layer, but no UI reaches it.)
+Future<void> showTrackedBehaviorForm(
+  BuildContext context, {
+  TrackedBehavior? behavior,
+}) {
+  final theme = Theme.of(context).extension<AmbleTheme>()!;
+  return Navigator.of(context).push<void>(
+    PageRouteBuilder<void>(
+      opaque: false,
+      // Same slide-up, scrim-barrier presentation as
+      // `task_detail_sheet.dart`'s `_pushDetailRoute` and
+      // `zone_form_screen.dart`'s `showZoneFormScreen`.
+      barrierColor: theme.colorScrim,
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 1),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOut)),
+          child: child,
+        );
+      },
+      pageBuilder: (context, animation, secondaryAnimation) =>
+          _TrackedBehaviorForm(behavior: behavior),
+    ),
   );
 }
 
 class _TrackedBehaviorForm extends ConsumerStatefulWidget {
-  const _TrackedBehaviorForm();
+  const _TrackedBehaviorForm({this.behavior});
+
+  /// The row being edited, or null for a create. Save writes back to this
+  /// same id when set, rather than creating a second behavior.
+  final TrackedBehavior? behavior;
 
   @override
   ConsumerState<_TrackedBehaviorForm> createState() =>
@@ -32,12 +73,45 @@ class _TrackedBehaviorForm extends ConsumerStatefulWidget {
 }
 
 class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
-  final _titleController = TextEditingController();
-  final _targetController = TextEditingController();
-  final _minimumController = TextEditingController();
+  late final TextEditingController _titleController;
+  late final TextEditingController _targetController;
+  late final TextEditingController _minimumController;
 
-  BehaviorTargetType _targetType = BehaviorTargetType.duration;
-  int _timesPerWeek = 3;
+  late BehaviorTargetType _targetType;
+  late int _timesPerWeek;
+  bool _isSaving = false;
+
+  /// Stage 1 (Name only) vs. stage 2 (everything else) — matches
+  /// `task_detail_sheet.dart`/`zone_form_screen.dart`'s own create-flow
+  /// pattern exactly. Editing an existing behavior skips straight to
+  /// stage 2, same as "Edit task"/"Edit zone" do.
+  bool _isNameStage = false;
+
+  bool get _isEditing => widget.behavior != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final behavior = widget.behavior;
+    _titleController = TextEditingController(text: behavior?.title ?? '')
+      // Same fix `zone_form_screen.dart`'s own Name field needed: nothing
+      // here otherwise rebuilds on the controller's own text changing, so
+      // the stage-1 Done button stayed disabled while typing. AppTextField
+      // has no onChanged of its own, so this listens to the controller
+      // directly instead.
+      ..addListener(() => setState(() {}));
+    // Amounts are `num?` on the model but plain text here — rendered via
+    // toString() so an integer target reads "60", not "60.0".
+    _targetController = TextEditingController(
+      text: _amountText(behavior?.targetAmount),
+    );
+    _minimumController = TextEditingController(
+      text: _amountText(behavior?.minimumAmount),
+    );
+    _targetType = behavior?.targetType ?? BehaviorTargetType.duration;
+    _timesPerWeek = behavior?.timesPerWeek ?? 3;
+    _isNameStage = behavior == null;
+  }
 
   @override
   void dispose() {
@@ -53,53 +127,75 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
   bool get _isBinary => _targetType == BehaviorTargetType.binary;
 
   bool get _canSave {
+    if (_isSaving) return false;
     if (_titleController.text.trim().isEmpty) return false;
     if (_isBinary) return true;
     return num.tryParse(_targetController.text.trim()) != null;
   }
 
+  /// Confirms stage 1 (Name) and advances to stage 2 — fired by stage 1's
+  /// own Done button or the Name field's keyboard-complete action. Mirrors
+  /// `zone_form_screen.dart`'s own `_confirmNameStage` exactly: an empty
+  /// name at this point closes the whole screen instead of advancing to a
+  /// form with nothing in it.
+  void _confirmNameStage() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    if (_titleController.text.trim().isEmpty) {
+      Navigator.of(context).pop();
+      return;
+    }
+    setState(() => _isNameStage = false);
+  }
+
   Future<void> _save() async {
     if (!_canSave) return;
-    await ref
-        .read(trackedBehaviorListProvider.notifier)
-        .createBehavior(
-          title: _titleController.text.trim(),
+    setState(() => _isSaving = true);
+    try {
+      final notifier = ref.read(trackedBehaviorListProvider.notifier);
+      final title = _titleController.text.trim();
+      // A binary behavior has no amount to hit, so none is submitted —
+      // matching the model's own constructor invariant rather than writing
+      // a value the model would reject.
+      final targetAmount = _isBinary
+          ? null
+          : num.tryParse(_targetController.text.trim());
+      final minimumAmount = num.tryParse(_minimumController.text.trim());
+      final existing = widget.behavior;
+
+      if (existing == null) {
+        await notifier.createBehavior(
+          title: title,
           targetType: _targetType,
-          targetAmount: _isBinary
-              ? null
-              : num.tryParse(_targetController.text.trim()),
-          minimumAmount: num.tryParse(_minimumController.text.trim()),
+          targetAmount: targetAmount,
+          minimumAmount: minimumAmount,
           timesPerWeek: _timesPerWeek,
         );
-    if (mounted) Navigator.of(context).pop();
+      } else {
+        existing.title = title;
+        existing.targetType = _targetType;
+        existing.targetAmount = targetAmount;
+        existing.minimumAmount = minimumAmount;
+        existing.timesPerWeek = _timesPerWeek;
+        await notifier.updateBehavior(existing);
+      }
+      if (mounted) Navigator.of(context).pop();
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Track a behavior', style: theme.textTitle),
-        SizedBox(height: theme.spacingMd),
-
-        TextField(
-          controller: _titleController,
-          autofocus: true,
-          style: theme.textBody.copyWith(color: theme.colorTextPrimary),
-          decoration: const InputDecoration(
-            isDense: true,
-            hintText: 'What are you tracking?',
-          ),
-          onChanged: (_) => setState(() {}),
-        ),
-        SizedBox(height: theme.spacingLg),
-
-        Text('Measured in', style: theme.textCaption),
-        SizedBox(height: theme.spacingSm),
-        Row(
+    // Stage 2's panes, staggered in exactly like task_detail_sheet.dart/
+    // zone_form_screen.dart's own `staggeredPanes` — a plain list so the
+    // entrance index is each pane's position in it, not hand-numbered at
+    // each call site.
+    final staggeredPanes = [
+      AppPane(
+        title: 'Measured in',
+        child: Row(
           children: [
             for (final type in BehaviorTargetType.values) ...[
               _TypeChip(
@@ -108,14 +204,16 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
                 selected: type == _targetType,
                 onTap: () => setState(() => _targetType = type),
               ),
-              SizedBox(width: theme.spacingSm),
+              if (type != BehaviorTargetType.values.last)
+                SizedBox(width: theme.spacingSm),
             ],
           ],
         ),
-        SizedBox(height: theme.spacingLg),
-
-        if (!_isBinary) ...[
-          Row(
+      ),
+      if (!_isBinary)
+        AppPane(
+          title: 'Target',
+          child: Row(
             children: [
               Expanded(
                 child: _AmountField(
@@ -136,10 +234,9 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
               ),
             ],
           ),
-          SizedBox(height: theme.spacingLg),
-        ],
-
-        Row(
+        ),
+      AppPane(
+        child: Row(
           children: [
             Text('Times per week', style: theme.textBody),
             const Spacer(),
@@ -150,13 +247,58 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
             ),
           ],
         ),
-        SizedBox(height: theme.spacingLg),
+      ),
+    ];
 
-        SizedBox(
-          width: double.infinity,
-          child: AppButton(label: 'Save', onPressed: _canSave ? _save : null),
+    return StepScaffold(
+      theme: theme,
+      modalTitle: _isEditing ? 'Edit behavior' : 'Track a behavior',
+      titleAlignment: TextAlign.left,
+      headerColor: theme.colorAccent,
+      headerContent: null,
+      onClose: () => Navigator.of(context).pop(),
+      onBack: null,
+      primaryLabel: _isNameStage ? 'Done' : 'Save',
+      onPrimaryPressed: _isNameStage
+          ? _confirmNameStage
+          : (_canSave ? _save : null),
+      isPrimaryLoading: !_isNameStage && _isSaving,
+      body: SingleChildScrollView(
+        // Top reverted to a plain spacingLg — the fade this used to
+        // clear now lives INSIDE StepScaffold's own header container,
+        // clipped to it, so the body needs no extra top clearance.
+        padding: EdgeInsets.fromLTRB(
+          theme.spacingLg,
+          theme.spacingLg,
+          theme.spacingLg,
+          theme.spacingXl * 3,
         ),
-      ],
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Always in the tree, never rebuilt as a different instance —
+            // same reasoning as task_detail_sheet.dart/zone_form_screen.
+            // dart's own Name field: its Element (and any keyboard/focus
+            // state) must survive the stage 1 -> 2 transition untouched.
+            AppPane(
+              title: 'Name',
+              child: AppTextField(
+                controller: _titleController,
+                label: 'What are you tracking?',
+                autofocus: !_isEditing,
+                onSubmitted: (_) => _confirmNameStage(),
+              ),
+            ),
+            if (!_isNameStage) ...[
+              SizedBox(height: theme.spacingLg),
+              for (final (index, pane) in staggeredPanes.indexed) ...[
+                AppStaggeredEntrance(index: index, child: pane),
+                SizedBox(height: theme.spacingLg),
+              ],
+            ],
+          ],
+        ),
+      ),
     );
   }
 
@@ -165,6 +307,16 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
     BehaviorTargetType.count => 'Count',
     BehaviorTargetType.binary => 'Did it',
   };
+}
+
+/// Renders a `num?` amount for a text field: an integer-valued amount
+/// reads "60" rather than "60.0", so reopening an edit form shows the
+/// value back exactly as it was typed.
+String _amountText(num? amount) {
+  if (amount == null) return '';
+  if (amount is int) return amount.toString();
+  if (amount == amount.roundToDouble()) return amount.round().toString();
+  return amount.toString();
 }
 
 /// The unit a target amount is expressed in, for labels and prompts.
@@ -194,6 +346,11 @@ class _AmountField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // A raw TextField, not AppTextField — AppTextField has no
+    // keyboardType hook, and a numeric amount genuinely needs the
+    // numeric keypad rather than the default text one. Kept as its own
+    // small field (styled from Tier 2 tokens directly, same as before)
+    // rather than widening the shared component's API for one caller.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

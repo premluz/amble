@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 
@@ -9,6 +11,7 @@ import '../../shared/models/task.dart';
 import '../../shared/models/zone.dart';
 import '../../shared/services/zone_containment.dart';
 import 'current_time_indicator.dart';
+import 'edit_mode_wiggle.dart';
 import 'external_event_block.dart';
 import 'task_boundary_markers.dart';
 import 'task_capsule_block.dart';
@@ -80,6 +83,12 @@ class ZoneDayTimeline extends StatefulWidget {
     required this.onReassign,
     this.readViewedMinutes,
     this.onViewedMinutesChanged,
+    this.editModeEnabled = false,
+    this.onZoneResize,
+    this.onZoneMove,
+    this.multiTaskEditMode = false,
+    this.selectedZoneId,
+    this.onZoneHeaderTap,
   });
 
   final List<Task> tasks;
@@ -143,6 +152,70 @@ class ZoneDayTimeline extends StatefulWidget {
   /// this one) can resume from it.
   final ValueChanged<int>? onViewedMinutesChanged;
 
+  /// Whether Edit Mode is active — see `_DayTimeline.editModeEnabled`'s
+  /// own doc comment for why this is a plain field. Gates the resize
+  /// handles on every `ZoneContainerBlock` this view builds.
+  final bool editModeEnabled;
+
+  /// Commits a resize — called once a resize drag ends, with [zoneId],
+  /// its ORIGINAL `startMinutes` (before this drag), and its candidate
+  /// new `startMinutes`/`endMinutes` (only ONE edge actually changed from
+  /// the original — the other is passed through unchanged). A callback
+  /// rather than this widget writing through `zoneListProvider` itself:
+  /// `ZoneDayTimeline` isn't Riverpod-aware (same reason `onTaskTap`/
+  /// `onReassign` are callbacks too), and the caller (`TimelineScreen`) is
+  /// where the zone-to-zone CASCADE actually needs to run (requested
+  /// directly: "zones should never overlap... perhaps cascading... that
+  /// doesn't block user intention" — see
+  /// `shared/services/zone_cascade_reschedule.dart`), since only it has
+  /// `ref` to read `zoneListProvider`'s/`taskListProvider`'s current
+  /// state against.
+  final void Function(
+    String zoneId,
+    int originalStartMinutes,
+    int newStartMinutes,
+    int newEndMinutes,
+  )?
+  onZoneResize;
+
+  /// Commits a MOVE (the whole zone repositioned, duration unchanged) —
+  /// same shape and same cascade-computing caller as [onZoneResize], but
+  /// BOTH edges shift by the same delta rather than only one changing.
+  /// Requested directly, reversing CONSTITUTION.md's earlier "zone
+  /// reposition... remains deferred" lock — see docs/DECISIONS.md for the
+  /// full reasoning.
+  final void Function(
+    String zoneId,
+    int originalStartMinutes,
+    int newStartMinutes,
+    int newEndMinutes,
+  )?
+  onZoneMove;
+
+  /// Whether Edit Mode's multi-task route (`DevMultiTaskEditMode`) is
+  /// active — resolved once by `TimelineScreen` (the `ConsumerWidget`
+  /// root) and threaded down as a plain field, same pattern as
+  /// [editModeEnabled] itself (`ZoneDayTimeline` isn't Riverpod-aware).
+  /// **New 2026-09-06** (confirmed directly — zones should not
+  /// wiggle/be draggable in multi-task mode unless selected): flips what
+  /// [editModeEnabled] means for a `ZoneContainerBlock`'s own wiggle/
+  /// handles from "Edit Mode is on" (every zone) to "this zone is
+  /// [selectedZoneId]" — mirrors `_DraggableZoneBlockState._interactionEnabled`'s
+  /// exact reasoning on the Task view side of this same fix.
+  final bool multiTaskEditMode;
+
+  /// The single selected zone id under multi-task mode, if any — see
+  /// `zoneEditSelectionProvider` (`edit_selection_provider.dart`) for the
+  /// full contract (single-select only, unlike task selection's genuine
+  /// multi-select). Read once by `TimelineScreen` and threaded down,
+  /// same reasoning as [multiTaskEditMode].
+  final String? selectedZoneId;
+
+  /// Selects/deselects a zone under multi-task mode — see
+  /// `_DraggableZoneBlockState._effectiveOnHeaderTap`'s own doc comment
+  /// for the Task view's identical contract.
+  final ValueChanged<String>? onZoneHeaderTap;
+
   @override
   State<ZoneDayTimeline> createState() => _ZoneDayTimelineState();
 }
@@ -154,6 +227,30 @@ class _ZoneDayTimelineState extends State<ZoneDayTimeline> {
   /// START and END (never per pointer move), so the one `setState` it
   /// drives happens twice per drag rather than on every frame.
   String? _draggingTaskId;
+
+  /// The zone currently being resized, if any, and which edge — needed
+  /// because a resize rebuilds THIS view on every pointer move (unlike a
+  /// task drag's ghost-in-a-ValueNotifier trick above): a zone's height
+  /// change has to relayout every zone stacked after it on the same outer
+  /// axis, which only a real rebuild of this widget can do.
+  String? _resizingZoneId;
+  bool _resizingTopEdge = false;
+
+  /// Live delta in minutes (unsnapped pixel offset already divided down)
+  /// applied to whichever edge [_resizingZoneId] names. Zero whenever no
+  /// resize is in progress.
+  double _resizeMinutesDelta = 0;
+
+  /// Same shape as [_resizingZoneId]/[_resizeMinutesDelta], but for a
+  /// MOVE (the whole zone repositioned, both edges shifting together) —
+  /// requested directly, reversing the earlier "zone reposition remains
+  /// deferred" lock. A separate pair of fields rather than reusing the
+  /// resize ones: a resize only ever changes one edge, and conflating the
+  /// two gestures' state would make it ambiguous which rendering path
+  /// (one-edge-preview vs. whole-block-preview) a given rebuild should
+  /// take.
+  String? _movingZoneId;
+  double _moveMinutesDelta = 0;
 
   /// The live finger offset, held in a [ValueNotifier] rather than in
   /// `setState` state on purpose: only the floating drag visual listens to
@@ -316,6 +413,69 @@ class _ZoneDayTimelineState extends State<ZoneDayTimeline> {
     });
 
     await widget.onReassign(task, droppedZoneId, newScheduledAt);
+  }
+
+  /// Snap granularity for a zone resize — same 5-minute grid every other
+  /// resize/drag/duration surface in this codebase uses (see
+  /// `TaskCapsuleBlock`'s own resize handle and `TaskDurationModal`'s
+  /// wheel picker), not a new increment invented for this gesture.
+  static const _zoneResizeSnapMinutes = 5;
+
+  /// Commits the live resize preview: snaps [_resizeMinutesDelta] to
+  /// [_zoneResizeSnapMinutes], clears the local drag state (the preview
+  /// reverts to whatever the real [zone] renders as until the caller's
+  /// write lands and a new one arrives), and hands the caller
+  /// ([TimelineScreen], via [ZoneDayTimeline.onZoneResize]) [zone]'s own
+  /// id, its ORIGINAL start, and its candidate new start/end — only ONE
+  /// of which actually differs from the original, per which edge was
+  /// dragged. The caller (not this widget) computes and validates the
+  /// resulting cascade against every other zone.
+  void _commitZoneResize(Zone zone, {required bool isTopEdge}) {
+    final snappedDelta =
+        (_resizeMinutesDelta / _zoneResizeSnapMinutes).round() *
+        _zoneResizeSnapMinutes;
+    setState(() {
+      _resizingZoneId = null;
+      _resizeMinutesDelta = 0;
+    });
+    if (snappedDelta == 0 || widget.onZoneResize == null) return;
+
+    final newStart = isTopEdge
+        ? zone.startMinutes + snappedDelta
+        : zone.startMinutes;
+    final newEnd = isTopEdge ? zone.endMinutes : zone.endMinutes + snappedDelta;
+    // Mirrors Zone's own constructor invariant (endMinutes > startMinutes,
+    // both within a single day) — a resize that would violate it is
+    // silently dropped rather than handed to the caller to crash on. The
+    // work order specifies a minimum-DURATION floor for Task resize but
+    // says nothing about a Zone floor beyond its own existing model
+    // invariant, so this is the only floor enforced here. The caller's
+    // own cascade computation separately re-checks the 0-1440 day bound
+    // (this is just the resize's OWN duration/edge-order invariant).
+    if (newStart < 0 || newEnd > 24 * 60 || newEnd <= newStart) return;
+
+    widget.onZoneResize!(zone.id, zone.startMinutes, newStart, newEnd);
+  }
+
+  /// Same shape as [_commitZoneResize], but for a whole-block MOVE: BOTH
+  /// edges shift by [_moveMinutesDelta] (the zone's own duration is
+  /// preserved), rather than only one edge changing. See
+  /// [ZoneDayTimeline.onZoneMove]'s own doc comment.
+  void _commitZoneMove(Zone zone) {
+    final snappedDelta =
+        (_moveMinutesDelta / _zoneResizeSnapMinutes).round() *
+        _zoneResizeSnapMinutes;
+    setState(() {
+      _movingZoneId = null;
+      _moveMinutesDelta = 0;
+    });
+    if (snappedDelta == 0 || widget.onZoneMove == null) return;
+
+    final newStart = zone.startMinutes + snappedDelta;
+    final newEnd = zone.endMinutes + snappedDelta;
+    if (newStart < 0 || newEnd > 24 * 60) return;
+
+    widget.onZoneMove!(zone.id, zone.startMinutes, newStart, newEnd);
   }
 
   @override
@@ -536,37 +696,143 @@ class _ZoneDayTimelineState extends State<ZoneDayTimeline> {
                       theme.spacingScreenPadding * 2,
                 ),
               for (final containment in result.containments)
-                _PositionedContainer(
-                  theme: theme,
-                  containment: containment,
-                  categoriesById: widget.categoryById,
-                  stackAncestorKey: _stackKey,
-                  left: _hourGutterWidth,
-                  top: topForZoneStart(containment.zone),
-                  // Shrunk by zoneBackgroundGap — the same "always a gap,
-                  // even back-to-back" rule ZoneBackgroundBlock already
-                  // enforces on the Task view, reused here rather than a
-                  // second value invented for this view. This is only a
-                  // FLOOR: a genuinely overpacked short zone's real content
-                  // still grows past it via IntrinsicHeight (confirmed
-                  // directly — this container never clips a row), so the
-                  // gap holds in the ordinary case and is allowed to
-                  // collapse only when a zone truly has more tasks than fit.
-                  strictHeight:
-                      (containment.zone.endMinutes -
-                              containment.zone.startMinutes) *
-                          widget.pixelsPerMinute -
-                      zoneBackgroundGap,
-                  onTaskTap: widget.onTaskTap,
-                  onToggleComplete: widget.onToggleComplete,
-                  draggingTaskId: _draggingTaskId,
-                  onRowDragStart: (task, restingTop) =>
-                      _handleDragStart(task, restingTop: restingTop),
-                  onDragUpdate: _handleDragUpdate,
-                  onDragEnd: _handleDragEnd,
-                  hoveredZoneId: _hoveredZoneId,
-                  durationVisible: widget.devDurationVisible,
-                  showCompletionCheckbox: widget.showCompletionCheckbox,
+                Builder(
+                  builder: (context) {
+                    final zone = containment.zone;
+                    final isResizing = _resizingZoneId == zone.id;
+                    final isMoving = _movingZoneId == zone.id;
+                    // Live visual-only preview while THIS zone is the one
+                    // being resized OR moved — never mutates the real
+                    // Zone object mid-drag, mirroring
+                    // `_DraggableTaskBlockState`'s own "unsnapped offset
+                    // until release" pattern. A resize moves only the
+                    // dragged edge; a move shifts BOTH edges (and the
+                    // container's own top) by the same delta, preserving
+                    // its duration.
+                    final previewStartMinutes = isMoving
+                        ? zone.startMinutes + _moveMinutesDelta.round()
+                        : (isResizing && _resizingTopEdge
+                              ? zone.startMinutes + _resizeMinutesDelta.round()
+                              : zone.startMinutes);
+                    final previewEndMinutes = isMoving
+                        ? zone.endMinutes + _moveMinutesDelta.round()
+                        : (isResizing && !_resizingTopEdge
+                              ? zone.endMinutes + _resizeMinutesDelta.round()
+                              : zone.endMinutes);
+                    final previewTop =
+                        topForZoneStart(zone) +
+                        (isMoving
+                            ? _moveMinutesDelta * widget.pixelsPerMinute
+                            : (isResizing && _resizingTopEdge
+                                  ? _resizeMinutesDelta * widget.pixelsPerMinute
+                                  : 0));
+                    final previewHeight =
+                        (previewEndMinutes - previewStartMinutes) *
+                            widget.pixelsPerMinute -
+                        zoneBackgroundGap;
+
+                    // Mirrors `_DraggableZoneBlockState._interactionEnabled`
+                    // exactly (Task view's own copy of this same fix):
+                    // multi-task mode flips wiggle/handle visibility from
+                    // "Edit Mode is on" (every zone) to "this zone is
+                    // selected" (only `widget.selectedZoneId`).
+                    final isSelected = widget.selectedZoneId == zone.id;
+                    final interactionEnabled = !widget.editModeEnabled
+                        ? false
+                        : !widget.multiTaskEditMode
+                        ? true
+                        : isSelected;
+                    // Only ever non-null under multi-task mode — same
+                    // "tap becomes select" rule as the Task view's own
+                    // `ZoneBackgroundBlock.onHeaderTap`.
+                    final onHeaderTap =
+                        widget.editModeEnabled &&
+                            widget.multiTaskEditMode &&
+                            widget.onZoneHeaderTap != null
+                        ? () => widget.onZoneHeaderTap!(zone.id)
+                        : null;
+
+                    return _PositionedContainer(
+                      theme: theme,
+                      containment: containment,
+                      categoriesById: widget.categoryById,
+                      stackAncestorKey: _stackKey,
+                      left: _hourGutterWidth,
+                      top: previewTop,
+                      // Shrunk by zoneBackgroundGap — the same "always a
+                      // gap, even back-to-back" rule ZoneBackgroundBlock
+                      // already enforces on the Task view, reused here
+                      // rather than a second value invented for this view.
+                      // This is only a FLOOR: a genuinely overpacked short
+                      // zone's real content still grows past it via
+                      // IntrinsicHeight (confirmed directly — this
+                      // container never clips a row), so the gap holds in
+                      // the ordinary case and is allowed to collapse only
+                      // when a zone truly has more tasks than fit.
+                      strictHeight: math.max(previewHeight, 0),
+                      onTaskTap: widget.onTaskTap,
+                      onToggleComplete: widget.onToggleComplete,
+                      draggingTaskId: _draggingTaskId,
+                      onRowDragStart: (task, restingTop) =>
+                          _handleDragStart(task, restingTop: restingTop),
+                      onDragUpdate: _handleDragUpdate,
+                      onDragEnd: _handleDragEnd,
+                      hoveredZoneId: _hoveredZoneId,
+                      durationVisible: widget.devDurationVisible,
+                      showCompletionCheckbox: widget.showCompletionCheckbox,
+                      editModeEnabled: interactionEnabled,
+                      onHeaderTap: onHeaderTap,
+                      isBeingResized: isResizing,
+                      onResizeTopStart: !interactionEnabled
+                          ? null
+                          : (_) => setState(() {
+                              _resizingZoneId = zone.id;
+                              _resizingTopEdge = true;
+                              _resizeMinutesDelta = 0;
+                            }),
+                      onResizeTopUpdate: !interactionEnabled
+                          ? null
+                          : (details) => setState(() {
+                              _resizeMinutesDelta +=
+                                  details.delta.dy / widget.pixelsPerMinute;
+                            }),
+                      onResizeTopEnd: !interactionEnabled
+                          ? null
+                          : (_) => _commitZoneResize(zone, isTopEdge: true),
+                      onResizeBottomStart: !interactionEnabled
+                          ? null
+                          : (_) => setState(() {
+                              _resizingZoneId = zone.id;
+                              _resizingTopEdge = false;
+                              _resizeMinutesDelta = 0;
+                            }),
+                      onResizeBottomUpdate: !interactionEnabled
+                          ? null
+                          : (details) => setState(() {
+                              _resizeMinutesDelta +=
+                                  details.delta.dy / widget.pixelsPerMinute;
+                            }),
+                      onResizeBottomEnd: !interactionEnabled
+                          ? null
+                          : (_) => _commitZoneResize(zone, isTopEdge: false),
+                      isBeingMoved: isMoving,
+                      onMoveStart: !interactionEnabled
+                          ? null
+                          : (_) => setState(() {
+                              _movingZoneId = zone.id;
+                              _moveMinutesDelta = 0;
+                            }),
+                      onMoveUpdate: !interactionEnabled
+                          ? null
+                          : (details) => setState(() {
+                              _moveMinutesDelta +=
+                                  details.delta.dy / widget.pixelsPerMinute;
+                            }),
+                      onMoveEnd: !interactionEnabled
+                          ? null
+                          : (_) => _commitZoneMove(zone),
+                    );
+                  },
                 ),
               for (final task in result.unzonedTasks)
                 if (task.scheduledAt != null && task.durationMinutes != null)
@@ -717,6 +983,19 @@ class _PositionedContainer extends StatelessWidget {
     required this.hoveredZoneId,
     this.durationVisible = true,
     this.showCompletionCheckbox = true,
+    this.editModeEnabled = false,
+    this.isBeingResized = false,
+    this.onResizeTopStart,
+    this.onResizeTopUpdate,
+    this.onResizeTopEnd,
+    this.onResizeBottomStart,
+    this.onResizeBottomUpdate,
+    this.onResizeBottomEnd,
+    this.isBeingMoved = false,
+    this.onMoveStart,
+    this.onMoveUpdate,
+    this.onMoveEnd,
+    this.onHeaderTap,
   });
 
   final AmbleTheme theme;
@@ -750,6 +1029,32 @@ class _PositionedContainer extends StatelessWidget {
   /// comment.
   final bool showCompletionCheckbox;
 
+  /// All six threaded straight through to [ZoneContainerBlock] — see its
+  /// own doc comments for the full contract of each.
+  final bool editModeEnabled;
+
+  /// True while THIS zone is the one currently being resized — suppresses
+  /// its own wiggle so it doesn't fight the resize handle's live motion.
+  final bool isBeingResized;
+  final GestureDragStartCallback? onResizeTopStart;
+  final GestureDragUpdateCallback? onResizeTopUpdate;
+  final GestureDragEndCallback? onResizeTopEnd;
+  final GestureDragStartCallback? onResizeBottomStart;
+  final GestureDragUpdateCallback? onResizeBottomUpdate;
+  final GestureDragEndCallback? onResizeBottomEnd;
+
+  /// Same shape as [isBeingResized]/the resize callbacks above, but for a
+  /// whole-block MOVE — see [ZoneContainerBlock.onMoveStart]'s own doc
+  /// comment for the header-only touch target this attaches to.
+  final bool isBeingMoved;
+  final GestureDragStartCallback? onMoveStart;
+  final GestureDragUpdateCallback? onMoveUpdate;
+  final GestureDragEndCallback? onMoveEnd;
+
+  /// Threaded straight through to [ZoneContainerBlock.onHeaderTap] — see
+  /// its own doc comment.
+  final VoidCallback? onHeaderTap;
+
   @override
   Widget build(BuildContext context) {
     // Same insets ZoneBackgroundBlock applies on the Task view — reported
@@ -775,29 +1080,48 @@ class _PositionedContainer extends StatelessWidget {
       // is what made dragging janky (reported directly).
       child: ConstrainedBox(
         constraints: BoxConstraints(minHeight: strictHeight),
-        child: ValueListenableBuilder<String?>(
-          valueListenable: hoveredZoneId,
-          builder: (context, hoveredId, child) => ZoneContainerBlock(
-            theme: theme,
-            zone: containment.zone,
-            tasks: containment.tasks,
-            externalEvents: containment.externalEvents,
-            categoriesById: categoriesById,
-            stackAncestorKey: stackAncestorKey,
-            isDropTarget: hoveredId == containment.zone.id,
-            onTaskTap: onTaskTap,
-            onToggleComplete: onToggleComplete,
-            draggingTaskId: draggingTaskId,
-            onRowDragStart: onRowDragStart,
-            onRowDragUpdate: onDragUpdate,
-            // The resting top a row-originated drag needs is resolved
-            // once, at drag START, by the row itself (see
-            // `_ZoneTaskRow._handleDragStart`) and stored by
-            // `_ZoneDayTimelineState` — `onDragEnd` reads it back from
-            // there rather than needing it passed through here again.
-            onRowDragEnd: onDragEnd,
-            durationVisible: durationVisible,
-            showCompletionCheckbox: showCompletionCheckbox,
+        // Edit Mode's persistent visual signal — same widget TaskCapsuleBlock
+        // uses. Suppressed while THIS zone is the one being resized, same
+        // "don't fight the active gesture's own motion" reasoning as the
+        // Task capsule's own wiggle suppression during a drag.
+        child: EditModeWiggle(
+          enabled: editModeEnabled && !isBeingResized && !isBeingMoved,
+          phaseOffset: (containment.zone.id.hashCode % 1000) / 1000,
+          child: ValueListenableBuilder<String?>(
+            valueListenable: hoveredZoneId,
+            builder: (context, hoveredId, child) => ZoneContainerBlock(
+              theme: theme,
+              zone: containment.zone,
+              tasks: containment.tasks,
+              externalEvents: containment.externalEvents,
+              categoriesById: categoriesById,
+              stackAncestorKey: stackAncestorKey,
+              isDropTarget: hoveredId == containment.zone.id,
+              onTaskTap: onTaskTap,
+              onToggleComplete: onToggleComplete,
+              draggingTaskId: draggingTaskId,
+              onRowDragStart: onRowDragStart,
+              onRowDragUpdate: onDragUpdate,
+              // The resting top a row-originated drag needs is resolved
+              // once, at drag START, by the row itself (see
+              // `_ZoneTaskRow._handleDragStart`) and stored by
+              // `_ZoneDayTimelineState` — `onDragEnd` reads it back from
+              // there rather than needing it passed through here again.
+              onRowDragEnd: onDragEnd,
+              durationVisible: durationVisible,
+              showCompletionCheckbox: showCompletionCheckbox,
+              editModeEnabled: editModeEnabled,
+              onResizeTopStart: onResizeTopStart,
+              onResizeTopUpdate: onResizeTopUpdate,
+              onResizeTopEnd: onResizeTopEnd,
+              onResizeBottomStart: onResizeBottomStart,
+              onResizeBottomUpdate: onResizeBottomUpdate,
+              onResizeBottomEnd: onResizeBottomEnd,
+              onMoveStart: onMoveStart,
+              onMoveUpdate: onMoveUpdate,
+              onMoveEnd: onMoveEnd,
+              onHeaderTap: onHeaderTap,
+            ),
           ),
         ),
       ),

@@ -433,9 +433,21 @@ abstract class _$DevShowFreeWindowPrompt extends $Notifier<bool> {
 }
 
 /// Whether Zone view is reachable at all from the Timeline's own
-/// view-cycle button. Requested directly as a scratch toggle, default OFF:
-/// "that means that switch in timeline goes through task and list view
-/// only."
+/// view-cycle button.
+///
+/// **Default flipped back to OFF as of 2026-09-06** (confirmed directly,
+/// same day as the ON flip below): after Zone move/resize/selection work
+/// landed in the Spatial Task View too, Zone view was confirmed as frozen
+/// going forward ("zone view as default disabled > no further updates to
+/// this view") — it gets no further iteration, so it goes back to hidden
+/// by default rather than staying reachable as an unmaintained surface.
+///
+/// (Briefly flipped ON earlier the same day, after a real report — "can't
+/// move zones" — traced back to this toggle defaulting off at a point
+/// when Zone view's move/resize genuinely was the ONLY place zone editing
+/// existed. That's no longer true now that Task view has its own zone
+/// move/resize/selection, so the original reason to default this on no
+/// longer applies.)
 ///
 /// ANDs into the existing `FeatureFlags.zoneEnabled` gate rather than
 /// replacing it (see `day_strip.dart`), so it can only ever REMOVE Zone
@@ -448,9 +460,21 @@ abstract class _$DevShowFreeWindowPrompt extends $Notifier<bool> {
 final devZoneViewInCycleProvider = DevZoneViewInCycleProvider._();
 
 /// Whether Zone view is reachable at all from the Timeline's own
-/// view-cycle button. Requested directly as a scratch toggle, default OFF:
-/// "that means that switch in timeline goes through task and list view
-/// only."
+/// view-cycle button.
+///
+/// **Default flipped back to OFF as of 2026-09-06** (confirmed directly,
+/// same day as the ON flip below): after Zone move/resize/selection work
+/// landed in the Spatial Task View too, Zone view was confirmed as frozen
+/// going forward ("zone view as default disabled > no further updates to
+/// this view") — it gets no further iteration, so it goes back to hidden
+/// by default rather than staying reachable as an unmaintained surface.
+///
+/// (Briefly flipped ON earlier the same day, after a real report — "can't
+/// move zones" — traced back to this toggle defaulting off at a point
+/// when Zone view's move/resize genuinely was the ONLY place zone editing
+/// existed. That's no longer true now that Task view has its own zone
+/// move/resize/selection, so the original reason to default this on no
+/// longer applies.)
 ///
 /// ANDs into the existing `FeatureFlags.zoneEnabled` gate rather than
 /// replacing it (see `day_strip.dart`), so it can only ever REMOVE Zone
@@ -461,9 +485,21 @@ final devZoneViewInCycleProvider = DevZoneViewInCycleProvider._();
 final class DevZoneViewInCycleProvider
     extends $NotifierProvider<DevZoneViewInCycle, bool> {
   /// Whether Zone view is reachable at all from the Timeline's own
-  /// view-cycle button. Requested directly as a scratch toggle, default OFF:
-  /// "that means that switch in timeline goes through task and list view
-  /// only."
+  /// view-cycle button.
+  ///
+  /// **Default flipped back to OFF as of 2026-09-06** (confirmed directly,
+  /// same day as the ON flip below): after Zone move/resize/selection work
+  /// landed in the Spatial Task View too, Zone view was confirmed as frozen
+  /// going forward ("zone view as default disabled > no further updates to
+  /// this view") — it gets no further iteration, so it goes back to hidden
+  /// by default rather than staying reachable as an unmaintained surface.
+  ///
+  /// (Briefly flipped ON earlier the same day, after a real report — "can't
+  /// move zones" — traced back to this toggle defaulting off at a point
+  /// when Zone view's move/resize genuinely was the ONLY place zone editing
+  /// existed. That's no longer true now that Task view has its own zone
+  /// move/resize/selection, so the original reason to default this on no
+  /// longer applies.)
   ///
   /// ANDs into the existing `FeatureFlags.zoneEnabled` gate rather than
   /// replacing it (see `day_strip.dart`), so it can only ever REMOVE Zone
@@ -502,9 +538,21 @@ String _$devZoneViewInCycleHash() =>
     r'e6ab0e7d3bf37f7a0e267cc7737987834c493c1f';
 
 /// Whether Zone view is reachable at all from the Timeline's own
-/// view-cycle button. Requested directly as a scratch toggle, default OFF:
-/// "that means that switch in timeline goes through task and list view
-/// only."
+/// view-cycle button.
+///
+/// **Default flipped back to OFF as of 2026-09-06** (confirmed directly,
+/// same day as the ON flip below): after Zone move/resize/selection work
+/// landed in the Spatial Task View too, Zone view was confirmed as frozen
+/// going forward ("zone view as default disabled > no further updates to
+/// this view") — it gets no further iteration, so it goes back to hidden
+/// by default rather than staying reachable as an unmaintained surface.
+///
+/// (Briefly flipped ON earlier the same day, after a real report — "can't
+/// move zones" — traced back to this toggle defaulting off at a point
+/// when Zone view's move/resize genuinely was the ONLY place zone editing
+/// existed. That's no longer true now that Task view has its own zone
+/// move/resize/selection, so the original reason to default this on no
+/// longer applies.)
 ///
 /// ANDs into the existing `FeatureFlags.zoneEnabled` gate rather than
 /// replacing it (see `day_strip.dart`), so it can only ever REMOVE Zone
@@ -514,6 +562,252 @@ String _$devZoneViewInCycleHash() =>
 /// the button can no longer cycle out of.
 
 abstract class _$DevZoneViewInCycle extends $Notifier<bool> {
+  bool build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<bool, bool>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<bool, bool>,
+              bool,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
+
+/// Whether the "Tracked" bottom-nav tab is reachable at all. Mirrors
+/// [DevZoneViewInCycle] exactly: default ON (matching
+/// `FeatureFlags.trackedBehaviorEnabled`'s own new default), a debug-only
+/// escape hatch to hide the tab again at runtime without a rebuild —
+/// requested directly, alongside flipping the flag's default itself.
+///
+/// ANDs into the existing `FeatureFlags.trackedBehaviorEnabled` gate
+/// rather than replacing it (see `main.dart`), so it can only ever REMOVE
+/// the tab, never force it on where the flag itself says no. Turning it
+/// off while the Tracked tab happens to be the selected one falls back to
+/// a valid tab rather than stranding the user on an index that no longer
+/// exists — see `_AmbleHomeState`'s own handling.
+
+@ProviderFor(DevTrackedTabInCycle)
+final devTrackedTabInCycleProvider = DevTrackedTabInCycleProvider._();
+
+/// Whether the "Tracked" bottom-nav tab is reachable at all. Mirrors
+/// [DevZoneViewInCycle] exactly: default ON (matching
+/// `FeatureFlags.trackedBehaviorEnabled`'s own new default), a debug-only
+/// escape hatch to hide the tab again at runtime without a rebuild —
+/// requested directly, alongside flipping the flag's default itself.
+///
+/// ANDs into the existing `FeatureFlags.trackedBehaviorEnabled` gate
+/// rather than replacing it (see `main.dart`), so it can only ever REMOVE
+/// the tab, never force it on where the flag itself says no. Turning it
+/// off while the Tracked tab happens to be the selected one falls back to
+/// a valid tab rather than stranding the user on an index that no longer
+/// exists — see `_AmbleHomeState`'s own handling.
+final class DevTrackedTabInCycleProvider
+    extends $NotifierProvider<DevTrackedTabInCycle, bool> {
+  /// Whether the "Tracked" bottom-nav tab is reachable at all. Mirrors
+  /// [DevZoneViewInCycle] exactly: default ON (matching
+  /// `FeatureFlags.trackedBehaviorEnabled`'s own new default), a debug-only
+  /// escape hatch to hide the tab again at runtime without a rebuild —
+  /// requested directly, alongside flipping the flag's default itself.
+  ///
+  /// ANDs into the existing `FeatureFlags.trackedBehaviorEnabled` gate
+  /// rather than replacing it (see `main.dart`), so it can only ever REMOVE
+  /// the tab, never force it on where the flag itself says no. Turning it
+  /// off while the Tracked tab happens to be the selected one falls back to
+  /// a valid tab rather than stranding the user on an index that no longer
+  /// exists — see `_AmbleHomeState`'s own handling.
+  DevTrackedTabInCycleProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'devTrackedTabInCycleProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$devTrackedTabInCycleHash();
+
+  @$internal
+  @override
+  DevTrackedTabInCycle create() => DevTrackedTabInCycle();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(bool value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<bool>(value),
+    );
+  }
+}
+
+String _$devTrackedTabInCycleHash() =>
+    r'7588467130e5b1f0900fa78f8ba7e958ea185697';
+
+/// Whether the "Tracked" bottom-nav tab is reachable at all. Mirrors
+/// [DevZoneViewInCycle] exactly: default ON (matching
+/// `FeatureFlags.trackedBehaviorEnabled`'s own new default), a debug-only
+/// escape hatch to hide the tab again at runtime without a rebuild —
+/// requested directly, alongside flipping the flag's default itself.
+///
+/// ANDs into the existing `FeatureFlags.trackedBehaviorEnabled` gate
+/// rather than replacing it (see `main.dart`), so it can only ever REMOVE
+/// the tab, never force it on where the flag itself says no. Turning it
+/// off while the Tracked tab happens to be the selected one falls back to
+/// a valid tab rather than stranding the user on an index that no longer
+/// exists — see `_AmbleHomeState`'s own handling.
+
+abstract class _$DevTrackedTabInCycle extends $Notifier<bool> {
+  bool build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<bool, bool>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<bool, bool>,
+              bool,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
+
+/// Whether Edit Mode's multi-task selection route is active — requested
+/// directly as a "configurable" alternative to the single-task Edit Mode
+/// that already ships (see `edit_mode_provider.dart`/CONSTITUTION.md's
+/// "Edit Mode" section). With this on, tap becomes select/deselect
+/// (wiggle becomes the SELECTION indicator instead of the mode indicator
+/// — only selected blocks wiggle), and drag/resize/delete on any selected
+/// block acts on the whole selection. With it off, Edit Mode is
+/// byte-for-byte the existing single-task behavior (every block wiggles,
+/// tap opens the detail sheet, drag/resize/delete each act on one task).
+///
+/// **Default flipped to ON as of 2026-09-06** (confirmed directly — "turn
+/// on as default multi edit view"), reversing this provider's own
+/// original default-off launch decision.
+///
+/// Deliberately debug-only for now, same reasoning as
+/// [DevTimelineTaskTextLayout] above: this is a big, still-settling
+/// interaction model, not yet a finished product feature — promoting it
+/// to a real `PreferenceKeys` setting (or a `FeatureFlags` gate) is a
+/// separate, later decision once the model has been used for a while.
+/// Unlike [DevZoneViewInCycle]/[DevTrackedTabInCycle] (which AND into an
+/// already-shipped `FeatureFlags` gate), there is no such gate here to AND
+/// into — this provider IS the only on/off switch multi-task mode has.
+
+@ProviderFor(DevMultiTaskEditMode)
+final devMultiTaskEditModeProvider = DevMultiTaskEditModeProvider._();
+
+/// Whether Edit Mode's multi-task selection route is active — requested
+/// directly as a "configurable" alternative to the single-task Edit Mode
+/// that already ships (see `edit_mode_provider.dart`/CONSTITUTION.md's
+/// "Edit Mode" section). With this on, tap becomes select/deselect
+/// (wiggle becomes the SELECTION indicator instead of the mode indicator
+/// — only selected blocks wiggle), and drag/resize/delete on any selected
+/// block acts on the whole selection. With it off, Edit Mode is
+/// byte-for-byte the existing single-task behavior (every block wiggles,
+/// tap opens the detail sheet, drag/resize/delete each act on one task).
+///
+/// **Default flipped to ON as of 2026-09-06** (confirmed directly — "turn
+/// on as default multi edit view"), reversing this provider's own
+/// original default-off launch decision.
+///
+/// Deliberately debug-only for now, same reasoning as
+/// [DevTimelineTaskTextLayout] above: this is a big, still-settling
+/// interaction model, not yet a finished product feature — promoting it
+/// to a real `PreferenceKeys` setting (or a `FeatureFlags` gate) is a
+/// separate, later decision once the model has been used for a while.
+/// Unlike [DevZoneViewInCycle]/[DevTrackedTabInCycle] (which AND into an
+/// already-shipped `FeatureFlags` gate), there is no such gate here to AND
+/// into — this provider IS the only on/off switch multi-task mode has.
+final class DevMultiTaskEditModeProvider
+    extends $NotifierProvider<DevMultiTaskEditMode, bool> {
+  /// Whether Edit Mode's multi-task selection route is active — requested
+  /// directly as a "configurable" alternative to the single-task Edit Mode
+  /// that already ships (see `edit_mode_provider.dart`/CONSTITUTION.md's
+  /// "Edit Mode" section). With this on, tap becomes select/deselect
+  /// (wiggle becomes the SELECTION indicator instead of the mode indicator
+  /// — only selected blocks wiggle), and drag/resize/delete on any selected
+  /// block acts on the whole selection. With it off, Edit Mode is
+  /// byte-for-byte the existing single-task behavior (every block wiggles,
+  /// tap opens the detail sheet, drag/resize/delete each act on one task).
+  ///
+  /// **Default flipped to ON as of 2026-09-06** (confirmed directly — "turn
+  /// on as default multi edit view"), reversing this provider's own
+  /// original default-off launch decision.
+  ///
+  /// Deliberately debug-only for now, same reasoning as
+  /// [DevTimelineTaskTextLayout] above: this is a big, still-settling
+  /// interaction model, not yet a finished product feature — promoting it
+  /// to a real `PreferenceKeys` setting (or a `FeatureFlags` gate) is a
+  /// separate, later decision once the model has been used for a while.
+  /// Unlike [DevZoneViewInCycle]/[DevTrackedTabInCycle] (which AND into an
+  /// already-shipped `FeatureFlags` gate), there is no such gate here to AND
+  /// into — this provider IS the only on/off switch multi-task mode has.
+  DevMultiTaskEditModeProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'devMultiTaskEditModeProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$devMultiTaskEditModeHash();
+
+  @$internal
+  @override
+  DevMultiTaskEditMode create() => DevMultiTaskEditMode();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(bool value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<bool>(value),
+    );
+  }
+}
+
+String _$devMultiTaskEditModeHash() =>
+    r'3435149016cf7b5331f39b570b5df9cf5125be05';
+
+/// Whether Edit Mode's multi-task selection route is active — requested
+/// directly as a "configurable" alternative to the single-task Edit Mode
+/// that already ships (see `edit_mode_provider.dart`/CONSTITUTION.md's
+/// "Edit Mode" section). With this on, tap becomes select/deselect
+/// (wiggle becomes the SELECTION indicator instead of the mode indicator
+/// — only selected blocks wiggle), and drag/resize/delete on any selected
+/// block acts on the whole selection. With it off, Edit Mode is
+/// byte-for-byte the existing single-task behavior (every block wiggles,
+/// tap opens the detail sheet, drag/resize/delete each act on one task).
+///
+/// **Default flipped to ON as of 2026-09-06** (confirmed directly — "turn
+/// on as default multi edit view"), reversing this provider's own
+/// original default-off launch decision.
+///
+/// Deliberately debug-only for now, same reasoning as
+/// [DevTimelineTaskTextLayout] above: this is a big, still-settling
+/// interaction model, not yet a finished product feature — promoting it
+/// to a real `PreferenceKeys` setting (or a `FeatureFlags` gate) is a
+/// separate, later decision once the model has been used for a while.
+/// Unlike [DevZoneViewInCycle]/[DevTrackedTabInCycle] (which AND into an
+/// already-shipped `FeatureFlags` gate), there is no such gate here to AND
+/// into — this provider IS the only on/off switch multi-task mode has.
+
+abstract class _$DevMultiTaskEditMode extends $Notifier<bool> {
   bool build();
   @$mustCallSuper
   @override

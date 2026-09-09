@@ -309,4 +309,58 @@ void main() {
       expect(a.hasSameFieldsAs(b), isFalse);
     });
   });
+
+  group('isImportant', () {
+    test('survives a JSON round-trip', () {
+      final task = Task.create(
+        title: 'Take a walk',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.health,
+        isImportant: true,
+      );
+
+      final restored = Task.fromJson(task.toJson());
+
+      expect(restored.isImportant, isTrue);
+    });
+
+    test('a backup exported before the important flag existed still '
+        'imports — isImportant defaults to false, not required', () {
+      final legacyJson = Task.create(
+        title: 'Legacy task',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      ).toJson()..remove('isImportant');
+
+      final restored = Task.fromJson(legacyJson);
+
+      expect(restored.isImportant, isFalse);
+    });
+
+    test('an ordinary task is not important by default', () {
+      final task = Task.create(
+        title: 'Ordinary',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      );
+
+      expect(task.isImportant, isFalse);
+    });
+
+    test('hasSameFieldsAs distinguishes tasks differing only by '
+        'isImportant', () {
+      final a = Task.create(
+        title: 'Same',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      );
+      final b = Task.fromJson(a.toJson())..isImportant = true;
+
+      expect(a.hasSameFieldsAs(b), isFalse);
+    });
+  });
 }

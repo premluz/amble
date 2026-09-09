@@ -119,6 +119,7 @@ class TaskList extends _$TaskList {
     RecurrenceRule? recurrenceRule,
     String? behaviorId,
     bool notificationsEnabled = true,
+    bool isImportant = false,
     // Set only when this task was spawned from a TaskTemplate — recorded
     // for future frequency-ranking of the quick-drop drawer, never read
     // for cascade or validation. See Task.templateId's own doc comment.
@@ -135,6 +136,7 @@ class TaskList extends _$TaskList {
       recurrenceId: recurrenceRule == null ? null : _uuid.v4(),
       recurrenceRule: recurrenceRule,
       notificationsEnabled: notificationsEnabled,
+      isImportant: isImportant,
       templateId: templateId,
     )..behaviorId = behaviorId;
     await ref.read(taskRepositoryProvider).saveTask(task);
@@ -347,6 +349,58 @@ class TaskList extends _$TaskList {
     }
   }
 
+  /// The "all future occurrences" counterpart to
+  /// [_deleteUntouchedFutureInstances] — prunes every PENDING instance of
+  /// [template]'s series dated [from] or later, **including ones the user
+  /// previously moved individually**, so the series can be re-materialized
+  /// wholesale at its new time/duration.
+  ///
+  /// Confirmed directly (2026-09-07), reversing CONSTITUTION.md's earlier
+  /// "an individually-moved occurrence is never realigned by a series
+  /// edit" rule: "each day ocurrence could be changed indivudally unless
+  /// any change is with 'change all future' then they'd align with that."
+  /// So an individual move is no longer permanent protection — an explicit
+  /// "all future" edit is the stronger, later instruction and wins.
+  ///
+  /// `completed`/`skipped` instances are still spared, deliberately and
+  /// unlike moved ones (confirmed directly): those are a record of what
+  /// actually happened, not part of the plan going forward, and rewriting
+  /// their time would be rewriting history.
+  ///
+  /// [from] is the DATE of the occurrence the user actually edited, not
+  /// today — "this and all future occurrences" realigns from the edited
+  /// day forward and leaves the days between now and it alone (confirmed
+  /// directly, matching how the phrase reads in other calendar apps).
+  Future<void> _deleteFutureInstancesForRealign(
+    Task template, {
+    required DateTime from,
+    Task? alsoSpare,
+  }) async {
+    final repository = ref.read(taskRepositoryProvider);
+    final seriesId = template.recurrenceId;
+    final fromDay = DateTime(from.year, from.month, from.day);
+
+    final toDelete = repository
+        .getTasks()
+        .where(
+          (task) =>
+              task.recurrenceId == seriesId &&
+              task.id != template.id &&
+              task.id != alsoSpare?.id &&
+              // Pending only: completed/skipped occurrences are history.
+              task.status != TaskStatus.completed &&
+              task.status != TaskStatus.skipped &&
+              task.scheduledAt != null &&
+              !task.scheduledAt!.isBefore(fromDay),
+        )
+        .toList();
+
+    for (final task in toDelete) {
+      await repository.deleteTask(task.id);
+      await _cancelNotificationSafely(task.id);
+    }
+  }
+
   /// Changes an EXISTING series' rule (e.g. different days) from any of
   /// its instances — requested directly as the follow-up to
   /// [updateTaskWithNewRecurrence]. Resolves to the series' template
@@ -365,14 +419,138 @@ class TaskList extends _$TaskList {
       'updateTaskWithChangedRecurrence is for a task already part of a '
       'series — use updateTaskWithNewRecurrence to start one.',
     );
+
     await ref.read(taskRepositoryProvider).saveTask(task);
     _syncNotificationInBackground(task);
 
     final template = _findSeriesTemplate(task);
-    await _deleteUntouchedFutureInstances(template, alsoSpare: task);
+
+    // Did the edited instance move to a different time-of-day, or change
+    // duration, relative to what the series itself generates? That's a
+    // RE-ANCHOR, not just a rule change.
+    //
+    // Real bug, reported directly ("see duplicates, sometimes even 2") and
+    // confirmed from an exported backup: this method used to update only
+    // `template.recurrenceRule` and never `template.scheduledAt`, so an
+    // "all future occurrences" TIME edit left the template anchored at its
+    // old time. `_materializeSeries` then regenerated the whole window
+    // back at that old time while the edited instance stayed stranded at
+    // the new one — and because the generator matched exact `DateTime`s,
+    // none of the old rows looked occupied, so a complete parallel series
+    // was created. Three stacked generations of one daily series (56 rows
+    // each) were found in real data, 232 stranded rows total.
+    // Detected by comparing [task] against the series' OTHER untouched
+    // instances, not against the template's own stored fields: the
+    // repository hands back the same live object the caller already
+    // mutated (Hive `get` is not a copy), and [task] is very often the
+    // template itself, so any before/after comparison against it would
+    // trivially read "unchanged" and the realign would never fire.
+    // Sibling instances are the reliable witness of what the series
+    // currently generates.
+    final edited = task.scheduledAt;
+    final siblings = ref
+        .read(taskRepositoryProvider)
+        .getTasks()
+        .where(
+          (other) =>
+              other.recurrenceId == template.recurrenceId &&
+              other.id != task.id &&
+              other.status == TaskStatus.pending &&
+              other.originalScheduledAt == null &&
+              other.scheduledAt != null,
+        )
+        .toList();
+    final witness = siblings.isEmpty ? null : siblings.first;
+    final timeChanged =
+        witness != null &&
+        edited != null &&
+        (witness.scheduledAt!.hour != edited.hour ||
+            witness.scheduledAt!.minute != edited.minute);
+    final durationChanged =
+        witness != null &&
+        task.durationMinutes != null &&
+        witness.durationMinutes != task.durationMinutes;
+    final isRealign = timeChanged || durationChanged;
+
+    if (isRealign && edited != null) {
+      // Everything from the EDITED occurrence's day forward is rebuilt at
+      // the new time/duration — including instances the user had moved
+      // individually, per the confirmed "'change all future' wins" rule
+      // (see [_deleteFutureInstancesForRealign]).
+      await _deleteFutureInstancesForRealign(
+        template,
+        from: edited,
+        alsoSpare: task,
+      );
+
+      // Re-anchor the template's own time-of-day and duration, keeping its
+      // own DATE — the template is the series' start, and "all future"
+      // changes when occurrences happen, never which day the series began.
+      final templateDate = template.scheduledAt;
+      if (templateDate != null && timeChanged) {
+        template.scheduledAt = DateTime(
+          templateDate.year,
+          templateDate.month,
+          templateDate.day,
+          edited.hour,
+          edited.minute,
+        );
+      }
+      if (durationChanged) template.durationMinutes = task.durationMinutes;
+
+      // The edited instance now sits exactly where the series generates
+      // it, so any `originalScheduledAt`/`rescheduled` marker left over
+      // from an earlier individual move is stale — clearing it keeps it
+      // eligible for a future prune (and stops it rendering as "moved"
+      // when it no longer is). Only cleared when it genuinely realigns:
+      // an edit that moved it to a time the series does NOT generate is
+      // still a real individual move.
+      if (task.id != template.id && task.originalScheduledAt != null) {
+        task.originalScheduledAt = null;
+        if (task.status == TaskStatus.rescheduled) {
+          task.status = TaskStatus.pending;
+        }
+        await ref.read(taskRepositoryProvider).saveTask(task);
+      }
+    } else {
+      // Rule-only change (e.g. different days): keep the long-standing
+      // conservative prune, which spares anything the user completed,
+      // skipped, or moved.
+      await _deleteUntouchedFutureInstances(template, alsoSpare: task);
+    }
+
     template.recurrenceRule = recurrenceRule;
     await ref.read(taskRepositoryProvider).saveTask(template);
+    _syncNotificationInBackground(template);
     await _materializeSeries(template);
+    _refresh();
+  }
+
+  /// Saves [task]'s own field changes — including a moved `scheduledAt`
+  /// or a changed `durationMinutes` — without touching any other instance
+  /// in its series or the series' own template/rule. The "just this
+  /// occurrence" half of the recurring-edit scope choice requested
+  /// directly (the "this and all future occurrences" half is
+  /// [updateTaskWithChangedRecurrence], which already ran this exact
+  /// cascade for every recurring edit before this method existed).
+  ///
+  /// Sets `originalScheduledAt` the same way a drag-reschedule
+  /// ([rescheduleTask]) already does, if not already set — this is the
+  /// single signal [_deleteUntouchedFutureInstances] uses to tell an
+  /// intentionally-touched instance apart from one still sitting where
+  /// the series generated it; without it, the next rule change or rolling
+  /// materialization pass would treat this instance as untouched and
+  /// silently delete/regenerate over the very edit this method just made.
+  Future<void> updateTaskThisInstanceOnly(Task task) async {
+    assert(
+      task.isRecurring,
+      'updateTaskThisInstanceOnly is for a single instance of an existing '
+      'series — a plain task has no series to isolate the edit from, so '
+      'use updateTask instead.',
+    );
+    task.originalScheduledAt ??= task.scheduledAt;
+    await ref.read(taskRepositoryProvider).saveTask(task);
+    _syncNotificationInBackground(task);
     _refresh();
   }
 
@@ -481,6 +659,95 @@ class TaskList extends _$TaskList {
       task.originalScheduledAt ??= task.scheduledAt;
       task.scheduledAt = move.newScheduledAt;
       task.status = TaskStatus.rescheduled;
+      await repository.saveTask(task);
+      _syncNotificationInBackground(task);
+    }
+    _refresh();
+  }
+
+  /// Shifts every named task's `scheduledAt` by its own minutes delta —
+  /// Zone move/resize's own cascade committing alongside a zone
+  /// (`ZoneList`'s batch commit, `shared/providers/zone_providers.dart`),
+  /// requested directly: a zone's assigned tasks move WITH it by the same
+  /// delta the zone itself moved. Deliberately a MAP of per-task deltas,
+  /// not a single shared one or a list of absolute [TaskMove]s: different
+  /// tasks assigned to different zones in the same cascade chain can each
+  /// carry a different NET delta (see `computeZoneCascadeMoves`'s own doc
+  /// comment on why a chained zone's tasks use one net shift, not one per
+  /// intermediate push), and a delta (not an absolute time) is what a
+  /// zone's own minutes-since-midnight representation naturally produces
+  /// — the caller never has to reach back into a specific day's `DateTime`
+  /// to express "this zone moved 30 minutes later."
+  ///
+  /// Same reschedule bookkeeping as [rescheduleTask]/
+  /// [rescheduleTaskWithCascade] — confirmed via AskUserQuestion: a task
+  /// whose zone moved really did have its own time change, so its history
+  /// should reflect that the same way a direct drag would, regardless of
+  /// what caused the change. One [_refresh] at the end, not one per task.
+  Future<void> shiftTasksByMinutes(
+    Map<String, int> deltaMinutesByTaskId,
+  ) async {
+    final repository = ref.read(taskRepositoryProvider);
+    for (final entry in deltaMinutesByTaskId.entries) {
+      final task = repository.getTaskById(entry.key);
+      if (task == null || task.scheduledAt == null) continue;
+      task.originalScheduledAt ??= task.scheduledAt;
+      task.scheduledAt = task.scheduledAt!.add(Duration(minutes: entry.value));
+      task.status = TaskStatus.rescheduled;
+      await repository.saveTask(task);
+      _syncNotificationInBackground(task);
+    }
+    _refresh();
+  }
+
+  /// Applies the SAME duration delta (see `_snappedResizeDelta` in
+  /// `timeline_screen.dart`) to every task in [newDurationMinutesByTaskId]
+  /// in one call — Edit Mode's multi-task resize route, requested directly
+  /// ("resizing, all would resize, all selected"). Deliberately a
+  /// duration-only batch write, never touching `scheduledAt`/`status`: a
+  /// resize is not a reschedule, exactly the same distinction
+  /// [rescheduleTaskWithCascade] draws against `rescheduleTask` but for
+  /// the resize axis instead of the move axis. Mirrors
+  /// [rescheduleTaskWithCascade]'s own shape (looked up fresh by id, one
+  /// [_refresh] at the end rather than one per task) — the two are
+  /// intentionally structural twins, one per gesture.
+  Future<void> resizeTasksInBatch(
+    Map<String, int> newDurationMinutesByTaskId,
+  ) async {
+    final repository = ref.read(taskRepositoryProvider);
+    for (final entry in newDurationMinutesByTaskId.entries) {
+      final task = repository.getTaskById(entry.key);
+      if (task == null) continue;
+      task.durationMinutes = entry.value;
+      await repository.saveTask(task);
+      _syncNotificationInBackground(task);
+    }
+    _refresh();
+  }
+
+  /// The TOP-edge equivalent of [resizeTasksInBatch]: writes a new start
+  /// AND a new duration for every task in one call.
+  ///
+  /// A separate method rather than a flag on [resizeTasksInBatch] because
+  /// the two edges genuinely differ in what they touch — the bottom edge
+  /// changes duration alone, while the top edge moves the start and
+  /// compensates the duration so each task's END stays anchored. Folding
+  /// them together would mean a duration-only batch that sometimes
+  /// silently rewrites `scheduledAt`, which is exactly the conflation
+  /// [resizeTasksInBatch]'s own doc comment exists to prevent.
+  ///
+  /// Not a reschedule despite writing `scheduledAt`: no cascade runs, per
+  /// CONSTITUTION.md scoping the cascade to move/create. That matches the
+  /// single-task top-resize this batches over.
+  Future<void> resizeTasksFromTopInBatch(
+    Map<String, ({DateTime scheduledAt, int durationMinutes})> changesByTaskId,
+  ) async {
+    final repository = ref.read(taskRepositoryProvider);
+    for (final entry in changesByTaskId.entries) {
+      final task = repository.getTaskById(entry.key);
+      if (task == null) continue;
+      task.scheduledAt = entry.value.scheduledAt;
+      task.durationMinutes = entry.value.durationMinutes;
       await repository.saveTask(task);
       _syncNotificationInBackground(task);
     }

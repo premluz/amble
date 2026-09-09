@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
 import '../../shared/models/zone.dart';
+import 'edit_mode_wiggle.dart';
+import 'resize_handle.dart';
 
 /// How far a rendered [ZoneBackgroundBlock] extends to the LEFT of the
 /// pill column it sits behind, creating the appearance of padding around
@@ -53,13 +55,23 @@ const zoneBackgroundOffset = 4.0;
 /// `theme.spacingXs` (`SpacingPrimitives.space2`, 4.0).
 const zoneBackgroundGap = 4.0;
 
-/// The rendering-only background block for one [Zone] on the Spatial Task
-/// View (Timeline) — per CONSTITUTION.md's Zone section ("Zone is metadata
-/// on a Task, not a container that owns it") and the per-view-job design
-/// rule, this widget is PURELY decorative. It does not reposition, resize,
-/// or otherwise affect any [Task]'s rendering — the Spatial Zone View
-/// (where a Zone genuinely acts as a layout container) is separate,
-/// out-of-scope future work.
+/// The rendering background block for one [Zone] on the Spatial Task View
+/// (Timeline) — per CONSTITUTION.md's Zone section ("Zone is metadata on a
+/// Task, not a container that owns it"), this widget still never owns or
+/// repositions any [Task]'s rendering. It DOES support its own move/resize
+/// now (**reversed 2026-09-06**, confirmed directly — "we should be able to
+/// edit zones in any view ... in spatial task view also" — superseding the
+/// per-view-job rule's original "Task view organizes time, Zone view
+/// organizes meaning, don't blend them" read on zone editing specifically):
+/// Edit Mode gates the WHOLE FILL itself (no separate header/label — an
+/// earlier pass added a title+time text row here, removed per direct
+/// feedback: "the addition of a title inside the zone... we didn't ask
+/// for") as a whole-block tap-to-select/drag-to-MOVE target, plus two edge
+/// [ResizeHandle]s, mirroring [onMoveStart]/[onResizeTopStart]/
+/// [onResizeBottomStart]'s exact contract on `ZoneContainerBlock` (the Zone
+/// view's own container — frozen as of 2026-09-06, no further updates
+/// there), so the same shared commit path (`_commitZoneCascade` in
+/// `timeline_screen.dart`) applies here too.
 ///
 /// Positioned using the exact same time-to-pixel math the Timeline already
 /// uses for tasks ([pixelsPerMinute] against [rangeStart]), so it is
@@ -78,6 +90,20 @@ class ZoneBackgroundBlock extends StatelessWidget {
     required this.width,
     this.collapsedTop,
     this.collapsedHeight,
+    this.previewTop,
+    this.previewHeight,
+    this.editModeEnabled = false,
+    this.phaseOffset = 0,
+    this.onResizeTopStart,
+    this.onResizeTopUpdate,
+    this.onResizeTopEnd,
+    this.onResizeBottomStart,
+    this.onResizeBottomUpdate,
+    this.onResizeBottomEnd,
+    this.onMoveStart,
+    this.onMoveUpdate,
+    this.onMoveEnd,
+    this.onHeaderTap,
   });
 
   final AmbleTheme theme;
@@ -113,6 +139,69 @@ class ZoneBackgroundBlock extends StatelessWidget {
   final double? collapsedTop;
   final double? collapsedHeight;
 
+  /// Live drag-preview override — both null or both set, same "override
+  /// pair" contract as [collapsedTop]/[collapsedHeight] but for a
+  /// different reason: an in-progress move/resize renders at its
+  /// CANDIDATE geometry immediately, rather than waiting for the write to
+  /// land, matching every other drag surface in this codebase. Mutually
+  /// exclusive with [collapsedTop]/[collapsedHeight] in practice (List
+  /// mode never wires move/resize at all), but kept as its own pair rather
+  /// than overloading that one — the two express genuinely different
+  /// things ("this mode has no time axis at all" vs. "this is where a
+  /// live drag currently sits on the real one"). [zone]'s own
+  /// `startMinutes`/`endMinutes` stay UNCHANGED during a preview — only
+  /// geometry updates, matching `ZoneContainerBlock`'s own live-resize
+  /// precedent in Zone view (its header's displayed time range doesn't
+  /// preview either, only the container's bounds do).
+  final double? previewTop;
+  final double? previewHeight;
+
+  /// Edit Mode's persistent visual signal — see `edit_mode_wiggle.dart`.
+  /// Applied HERE, inside the `Positioned` this widget itself returns,
+  /// rather than by the caller wrapping this whole widget in
+  /// `EditModeWiggle`: that widget inserts a `Transform` between its child
+  /// and whatever comes after it, which breaks the `Positioned` below —
+  /// `Positioned` must be a direct `Stack` child (`ZoneContainerBlock`'s own
+  /// caller in `zone_day_timeline.dart` follows the same
+  /// `Positioned(child: EditModeWiggle(...))` order).
+  final bool editModeEnabled;
+  final double phaseOffset;
+
+  /// The TOP-edge handle's drag handlers — changes [Zone.startMinutes]
+  /// only. Null callbacks mean "no handle rendered here," matching
+  /// `ZoneContainerBlock.onResizeTopStart`'s own "null means not
+  /// resizable" contract. Collapsed (List) mode never wires these —
+  /// [collapsedTop]/[collapsedHeight] geometry has no time axis for a
+  /// resize to mean anything against.
+  final GestureDragStartCallback? onResizeTopStart;
+  final GestureDragUpdateCallback? onResizeTopUpdate;
+  final GestureDragEndCallback? onResizeTopEnd;
+
+  /// The BOTTOM-edge handle's drag handlers — changes [Zone.endMinutes]
+  /// only. See `ZoneContainerBlock.onResizeBottomStart`'s own doc comment.
+  final GestureDragStartCallback? onResizeBottomStart;
+  final GestureDragUpdateCallback? onResizeBottomUpdate;
+  final GestureDragEndCallback? onResizeBottomEnd;
+
+  /// Whole-block MOVE handlers — the entire fill is the drag target (no
+  /// separate header strip, unlike `ZoneContainerBlock`'s own header-only
+  /// touch target in Zone view, which avoids fighting a row-list scroll
+  /// gesture underneath it — nothing sits underneath THIS block, so
+  /// there's no equivalent reason to scope it down). Null means "not
+  /// draggable here," same "null means not draggable" contract every
+  /// other optional gesture in this codebase already uses.
+  final GestureDragStartCallback? onMoveStart;
+  final GestureDragUpdateCallback? onMoveUpdate;
+  final GestureDragEndCallback? onMoveEnd;
+
+  /// Selects this zone instead of moving it — only ever non-null under
+  /// multi-task mode (`DevMultiTaskEditMode`), mirroring
+  /// `_DraggableTaskBlockState._effectiveOnTap`'s exact contract. Null
+  /// under ordinary (single-task) Edit Mode, where the fill is
+  /// drag-to-move only — the two are mutually exclusive at any one time
+  /// (see [build]'s own gesture-wiring), never offered together.
+  final VoidCallback? onHeaderTap;
+
   @override
   Widget build(BuildContext context) {
     final zoneStart = DateTime(
@@ -127,9 +216,11 @@ class ZoneBackgroundBlock extends StatelessWidget {
     ).add(Duration(minutes: zone.endMinutes));
 
     final strictTop =
+        previewTop ??
         collapsedTop ??
         zoneStart.difference(rangeStart).inMinutes * pixelsPerMinute;
     final strictHeight =
+        previewHeight ??
         collapsedHeight ??
         zoneEnd.difference(zoneStart).inMinutes * pixelsPerMinute;
 
@@ -165,18 +256,81 @@ class ZoneBackgroundBlock extends StatelessWidget {
       // again here would just shave a few extra, unaccounted-for pixels
       // off a value that's already correct.
       height: collapsedHeight ?? strictHeight - zoneBackgroundGap,
-      child: IgnorePointer(
-        // Purely decorative — never intercepts a tap meant for a task
-        // pill, the placement line, or anything else already on the
-        // Timeline. Matches how `FreeWindowBlock` stays tappable (it
-        // isn't `IgnorePointer`) for a different, deliberate reason (it
-        // opens create-task); a Zone block has no interaction of its own
-        // this session, per the explicit "display-only" scope.
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: theme.colorZoneBackground,
-            borderRadius: BorderRadius.circular(theme.radiusMd),
-          ),
+      child: EditModeWiggle(
+        enabled: editModeEnabled,
+        phaseOffset: phaseOffset,
+        // A genuinely new Stack ancestor (same discipline as
+        // ZoneContainerBlock's own resize-handle wrap) so the two handles
+        // can overlay this block's top/bottom edges without disturbing the
+        // fill or the header's own drag detector beneath them.
+        // StackFit.expand: a bare (non-Positioned) child of a Stack sizes
+        // to its own intrinsic size by default (StackFit.loose), which
+        // collapsed the fill below to zero — the whole reason the zone
+        // background stopped rendering entirely after this Stack wrap was
+        // added. expand stretches it back to the outer Positioned's own
+        // tight top/left/width/height, matching what the plain DecoratedBox
+        // got for free before this Stack existed.
+        child: Stack(
+          fit: StackFit.expand,
+          clipBehavior: Clip.none,
+          children: [
+            // Fill — the WHOLE block is now the tap/drag target (not a
+            // header strip with its own title/time label). Requested
+            // directly — "What I see is the addition of a title inside the
+            // zone, which we didn't ask for. Let's remove this title, and
+            // let's make the zone editable on top so it wiggles" —
+            // reversing the earlier header-row design (which mirrored
+            // `ZoneContainerBlock`'s own header) in favor of the plain
+            // fill itself being the target, with no visible label added.
+            //
+            // IgnorePointer wraps the GestureDetector (not the reverse) so
+            // `ignoring: true` genuinely stops the detector from claiming
+            // the gesture at all, letting a tap meant for a task pill or
+            // the placement line underneath fall through — matches this
+            // block's original purely-decorative contract whenever
+            // there's nothing to select or move here (Edit Mode off, or on
+            // but this isn't a draggable/selectable zone).
+            IgnorePointer(
+              ignoring: onMoveEnd == null && onHeaderTap == null,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onHeaderTap,
+                onVerticalDragStart: onMoveStart,
+                onVerticalDragUpdate: onMoveUpdate,
+                onVerticalDragEnd: onMoveEnd,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: theme.colorZoneBackground,
+                    borderRadius: BorderRadius.circular(theme.radiusMd),
+                  ),
+                ),
+              ),
+            ),
+            if (editModeEnabled && onResizeTopEnd != null)
+              Positioned(
+                top: -theme.spacingXs,
+                left: 0,
+                right: 0,
+                child: ResizeHandle(
+                  theme: theme,
+                  onDragStart: onResizeTopStart,
+                  onDragUpdate: onResizeTopUpdate,
+                  onDragEnd: onResizeTopEnd,
+                ),
+              ),
+            if (editModeEnabled && onResizeBottomEnd != null)
+              Positioned(
+                bottom: -theme.spacingXs,
+                left: 0,
+                right: 0,
+                child: ResizeHandle(
+                  theme: theme,
+                  onDragStart: onResizeBottomStart,
+                  onDragUpdate: onResizeBottomUpdate,
+                  onDragEnd: onResizeBottomEnd,
+                ),
+              ),
+          ],
         ),
       ),
     );

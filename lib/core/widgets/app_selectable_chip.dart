@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../tokens/semantic_theme.dart';
+import 'app_press_feedback.dart';
 
 /// A small pill-shaped tap target with a filled/unfilled selected state —
 /// the shared shape behind both the Repeats day-of-week chips and the
@@ -25,9 +26,14 @@ class AppSelectableChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
 
-    return GestureDetector(
+    return AppPressFeedback(
       onTap: onTap,
-      behavior: HitTestBehavior.opaque,
+      borderRadius: BorderRadius.circular(theme.radiusMd),
+      // Selected chips are filled with the accent color, so the wash has
+      // to switch with the state or it would vanish against it.
+      rippleColor: selected
+          ? theme.colorSurfacePrimary
+          : theme.colorTextPrimary,
       child: Container(
         height: theme.spacingXl,
         alignment: Alignment.center,

@@ -1,7 +1,7 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../tokens/semantic_theme.dart';
+import 'app_press_feedback.dart';
 
 /// A circular, icon-only adaptive mic button — same shape as [AppIconButton]
 /// but with a second visual state for "actively listening," since a mic
@@ -30,38 +30,27 @@ class AppMicButton extends StatelessWidget {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     final size = theme.spacingXl * 1.5;
 
-    final platform = Theme.of(context).platform;
-    final isCupertino =
-        platform == TargetPlatform.iOS || platform == TargetPlatform.macOS;
-
-    final button = Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: isListening ? theme.colorTaskAlert : theme.colorAccent,
-        shape: BoxShape.circle,
-      ),
-      child: Icon(
-        isListening ? Icons.stop_rounded : Icons.mic_none_rounded,
-        color: theme.colorSurfacePrimary,
-      ),
-    );
-
-    if (isCupertino) {
-      return CupertinoButton(
-        padding: EdgeInsets.zero,
-        onPressed: onPressed,
-        child: button,
-      );
-    }
-
-    return Material(
-      color: Colors.transparent,
-      shape: const CircleBorder(),
-      child: InkWell(
-        onTap: onPressed,
-        customBorder: const CircleBorder(),
-        child: button,
+    // Same single-interaction treatment as [AppIconButton], whose shape
+    // this mirrors — see AppPressFeedback's doc comment for why the
+    // Cupertino/Material branch was dropped in favour of one wrapper.
+    return AppPressFeedback(
+      onTap: onPressed,
+      shape: BoxShape.circle,
+      // Both fills (accent, and the alert color while listening) are
+      // saturated, so the wash rides on the same light foreground the
+      // icon uses rather than a dark one that wouldn't register.
+      rippleColor: theme.colorSurfacePrimary,
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: isListening ? theme.colorTaskAlert : theme.colorAccent,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          isListening ? Icons.stop_rounded : Icons.mic_none_rounded,
+          color: theme.colorSurfacePrimary,
+        ),
       ),
     );
   }

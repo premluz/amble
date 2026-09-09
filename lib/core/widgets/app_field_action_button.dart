@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../tokens/semantic_theme.dart';
+import 'app_press_feedback.dart';
 
 /// A borderless, background-less icon button that sits inside a form
 /// field's right edge and opens an alternative way to enter that field's
@@ -37,9 +38,13 @@ class AppFieldActionButton extends StatelessWidget {
     return Semantics(
       button: true,
       label: semanticLabel,
-      child: InkResponse(
+      // Circular wash over the padded-out tap target, matching the round
+      // splash the `InkResponse` this replaced produced on Material —
+      // now identical on iOS too, where that splash never existed. See
+      // AppPressFeedback's own doc comment.
+      child: AppPressFeedback(
         onTap: onPressed,
-        radius: theme.spacingMinTapTarget / 2,
+        shape: BoxShape.circle,
         child: SizedBox(
           width: theme.spacingMinTapTarget,
           height: theme.spacingMinTapTarget,

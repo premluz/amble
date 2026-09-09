@@ -41,7 +41,21 @@ void main() {
     await templateBox.close();
   });
 
-  Future<void> pumpList(WidgetTester tester) async {
+  // Seeding writes to a real Hive box, so it runs inside runAsync — see
+  // docs/ERROR_LOG.md: Hive's disk I/O completes on the real event loop,
+  // which flutter_test's synchronous pump-based zone can starve
+  // indefinitely. Everything real-I/O stays inside ONE runAsync block,
+  // matching the established `_tapAndSettle` shape rather than
+  // reconstructing it.
+  Future<void> pumpList(
+    WidgetTester tester, {
+    List<TaskTemplate> templates = const [],
+  }) async {
+    await tester.runAsync(() async {
+      for (final template in templates) {
+        await templateBox.put(template.id, template);
+      }
+    });
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -62,11 +76,11 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(Duration.zero);
+      await tester.pumpAndSettle();
+    });
   }
-
-  Future<void> seed(TaskTemplate template) =>
-      templateBox.put(template.id, template);
 
   testWidgets('shows an empty state when no templates exist', (tester) async {
     await pumpList(tester);
@@ -76,45 +90,73 @@ void main() {
   });
 
   testWidgets('renders one row per template, with its title', (tester) async {
-    await seed(
-      TaskTemplate.create(
-        title: 'Take a walk',
-        categoryId: BuiltInCategoryIds.health,
-        durationMinutes: 30,
-      ),
+    await pumpList(
+      tester,
+      templates: [
+        TaskTemplate.create(
+          title: 'Take a walk',
+          categoryId: BuiltInCategoryIds.health,
+          durationMinutes: 30,
+        ),
+        TaskTemplate.create(
+          title: 'Review inbox',
+          categoryId: BuiltInCategoryIds.admin,
+        ),
+      ],
     );
-    await seed(
-      TaskTemplate.create(
-        title: 'Review inbox',
-        categoryId: BuiltInCategoryIds.admin,
-      ),
-    );
-
-    await pumpList(tester);
 
     expect(find.byType(TemplateRow), findsNWidgets(2));
     expect(find.text('Take a walk'), findsOneWidget);
     expect(find.text('Review inbox'), findsOneWidget);
   });
 
+  // Reported directly: template cards had a hard visible edge against the
+  // page background, same issue as the Inbox task cards — fixed with the
+  // same existing shadowPane token AppPane already uses for it.
+  testWidgets(
+    'a template card carries the shared shadowPane elevation, softening '
+    'its edge against the page background',
+    (tester) async {
+      await pumpList(
+        tester,
+        templates: [
+          TaskTemplate.create(
+            title: 'Take a walk',
+            categoryId: BuiltInCategoryIds.health,
+          ),
+        ],
+      );
+
+      final card = tester.widget<Container>(
+        find
+            .ancestor(
+              of: find.text('Take a walk'),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      final decoration = card.decoration! as BoxDecoration;
+      expect(decoration.boxShadow, AmbleTheme.light.shadowPane);
+    },
+  );
+
   testWidgets('shows the duration only when the template sets one', (
     tester,
   ) async {
-    await seed(
-      TaskTemplate.create(
-        title: 'Take a walk',
-        categoryId: BuiltInCategoryIds.health,
-        durationMinutes: 30,
-      ),
+    await pumpList(
+      tester,
+      templates: [
+        TaskTemplate.create(
+          title: 'Take a walk',
+          categoryId: BuiltInCategoryIds.health,
+          durationMinutes: 30,
+        ),
+        TaskTemplate.create(
+          title: 'Review inbox',
+          categoryId: BuiltInCategoryIds.admin,
+        ),
+      ],
     );
-    await seed(
-      TaskTemplate.create(
-        title: 'Review inbox',
-        categoryId: BuiltInCategoryIds.admin,
-      ),
-    );
-
-    await pumpList(tester);
 
     expect(find.text('30 min'), findsOneWidget);
     // The duration-less template contributes no second duration line —
@@ -126,11 +168,15 @@ void main() {
     'a template whose category no longer resolves still renders a row, '
     'so it can be deleted rather than becoming unreachable',
     (tester) async {
-      await seed(
-        TaskTemplate.create(title: 'Orphaned', categoryId: 'no-such-category'),
+      await pumpList(
+        tester,
+        templates: [
+          TaskTemplate.create(
+            title: 'Orphaned',
+            categoryId: 'no-such-category',
+          ),
+        ],
       );
-
-      await pumpList(tester);
 
       expect(find.byType(TemplateRow), findsOneWidget);
       expect(find.text('Orphaned'), findsOneWidget);

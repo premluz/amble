@@ -4,8 +4,44 @@ import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_pane.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_selectable_chip.dart';
+import '../../core/widgets/app_switch.dart';
 import '../../shared/models/category.dart';
 import '../../shared/models/tracked_behavior.dart';
+
+/// The template's `isImportant` flag — carries onto any task spawned from
+/// it, same as category/duration/notes. Same bare-pane, label+switch shape
+/// the task detail sheet's own Important/Repeats/Notifications panes use
+/// (`task_detail_sheet.dart`), so the two creation surfaces read
+/// identically. Requested directly: "under templates, add a checkbox...
+/// we already have this flag."
+class TemplateImportantPane extends StatelessWidget {
+  const TemplateImportantPane({
+    super.key,
+    required this.theme,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final AmbleTheme theme;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppPane(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            'Important',
+            style: theme.textBody.copyWith(color: theme.colorTextPrimary),
+          ),
+          AppSwitch(value: value, onChanged: onChanged),
+        ],
+      ),
+    );
+  }
+}
 
 /// The optional TrackedBehavior link. A local copy of the task detail
 /// sheet's own (private) behavior picker rather than a shared extraction —
@@ -39,16 +75,22 @@ class TemplateBehaviorPane extends StatelessWidget {
               spacing: theme.spacingSm,
               runSpacing: theme.spacingSm,
               children: [
-                AppSelectableChip(
-                  label: 'None',
-                  selected: selectedId == null,
-                  onTap: () => onChanged(null),
+                // IntrinsicWidth for the same reason the category chips
+                // above need it — see that comment.
+                IntrinsicWidth(
+                  child: AppSelectableChip(
+                    label: 'None',
+                    selected: selectedId == null,
+                    onTap: () => onChanged(null),
+                  ),
                 ),
                 for (final behavior in behaviors)
-                  AppSelectableChip(
-                    label: behavior.title,
-                    selected: behavior.id == selectedId,
-                    onTap: () => onChanged(behavior.id),
+                  IntrinsicWidth(
+                    child: AppSelectableChip(
+                      label: behavior.title,
+                      selected: behavior.id == selectedId,
+                      onTap: () => onChanged(behavior.id),
+                    ),
                   ),
               ],
             ),
@@ -82,10 +124,19 @@ class TemplateCategoryPane extends StatelessWidget {
         runSpacing: theme.spacingSm,
         children: [
           for (final category in categories)
-            AppSelectableChip(
-              label: '${category.emoji} ${category.name}',
-              selected: category.id == selectedId,
-              onTap: () => onChanged(category.id),
+            // IntrinsicWidth because AppSelectableChip's own Container has
+            // no width and centres its label, so under a Wrap's LOOSE
+            // constraints it expands to the full available width — every
+            // existing caller places it in a Row (day-of-week chips in
+            // Expanded, duration presets intrinsic), where that never
+            // happens. Sizing it to its label here is what lets the
+            // category chips actually wrap onto shared lines.
+            IntrinsicWidth(
+              child: AppSelectableChip(
+                label: '${category.emoji} ${category.name}',
+                selected: category.id == selectedId,
+                onTap: () => onChanged(category.id),
+              ),
             ),
         ],
       ),

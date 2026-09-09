@@ -42,6 +42,7 @@ class TaskTemplateList extends _$TaskTemplateList {
     int? durationMinutes,
     String? notes,
     String? behaviorId,
+    bool isImportant = false,
   }) async {
     final template = TaskTemplate.create(
       title: title,
@@ -49,6 +50,7 @@ class TaskTemplateList extends _$TaskTemplateList {
       durationMinutes: durationMinutes,
       notes: notes,
       behaviorId: behaviorId,
+      isImportant: isImportant,
     );
     await ref.read(taskTemplateRepositoryProvider).save(template);
     _refresh();

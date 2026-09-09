@@ -24,23 +24,24 @@ These apply to every persisted entity (Task, TrackedBehavior, and anything added
 - **`schemaVersion` is present on every persisted object and every export file.** Required for safe future migrations and for import validation.
 - **`scheduledAt` and `durationMinutes` are nullable** (added Phase 5, for Inbox capture). A task with both null is unscheduled (lives in the Inbox); a derived `isScheduled` getter treats these as a single atomic unit — the UI/detail form always sets both together via defaults, so a task is never persisted in a half-scheduled state. `Task.captured({title, notes})` is the factory for title-only Inbox items; `Task.create({...})` remains the factory for fully-specified tasks.
 
+## Important flag — a display-only priority marker
+
+`Task.isImportant: bool` (default `false`, `@HiveField(19)`), additive and inert exactly like `zoneId`/`behaviorId`/`templateId`: `false` on every existing row, and nothing changes until a task is actually marked. Marks the small set of tasks that matter most on a given day — not a general priority system, and deliberately not a ranking of everything.
+
+**Display-only, deliberately narrowed.** An earlier draft of this feature also gave important tasks cascade-anchor priority (an ordinary task colliding with one would be pushed instead) and a soft cap warning past 3 per day. Both were dropped, confirmed directly: "actually.. no restrictions. just icon in front of the task". So `isImportant` is **never consulted by `computeCascadeMoves`, by any overlap check, or by any validation** — an important task is pushed, moved, resized, and edited exactly like any other, and there is no limit on how many can be marked. If cascade-anchoring is ever revisited, it is a new decision, not a restoration of something this entry ever locked in.
+
+**Visual treatment stays calm, never alarm-coded** — a marker glyph in `colorTextSecondary` at the title's own optical size, rendered as a zero-width `WidgetSpan` that hangs in the margin *before* the title so a marked and an unmarked task's titles start at the identical x ("with negative margin so the task name remains aligned with all other tasks"). Never red, never a filled badge: per design principle 1, making a few tasks legible must not make every other task read as failing to matter. The alignment property is load-bearing — a marker that displaced its own title would break the shared text column every row lines up against — and is covered by a test asserting rendered x-positions.
+
+**Per-instance for recurring tasks**, like every other ordinary field edit: marking one materialized occurrence important does not mark its series, per the single-instance rule above. Toggled from the task action sheet via the plain `TaskList.updateTask`, so there is no "affect future instances" choice to offer.
+
+Orthogonal to `TrackedBehavior` — a tracked task can independently also be important, composing the same way every other independent dimension on `Task` already does.
+
 ## Recurring vs. tracked behavior — two different concepts, not one
 
 Easy to conflate; must stay architecturally separate:
 
 - **Recurring** is a scheduling property of an ordinary `Task` — "this repeats every Monday." It does not imply tracking, history, or a target, and stays a lightweight rule on `Task` itself, never its own entity.
 - **`TrackedBehavior`** is a genuinely different, persistent object — see below. A recurring task and a tracked behavior are independent concepts that often co-occur, but neither implies the other.
-**UI promotion (this round): a dedicated top-level nav destination**, not just
-inline creation during task/template save. Users create, list, and edit
-`TrackedBehavior` rows directly from this destination; they still also surface
-as quick-drop chips during task/template creation, same as before.
-`FeatureFlags.trackedBehaviorEnabled` stays the gating seam, and is intended as
-the actual pro/paid-tier boundary going forward — `Category` and
-`TaskTemplate` are explicitly NOT gated behind it; core planning stays free,
-the tracked-behavior/habit layer is the premium surface. No monetization logic
-is built this round, only keeping the flag load-bearing for it. History/
-rollup view remains deferred per SCOPE.md — this round adds the container and
-basic create/list/attach only.
 
 ## Recurring tasks — materialized instances, not virtual expansion
 
@@ -50,7 +51,7 @@ Model shape:
 - `RecurrenceRule` — not a persisted entity of its own for MVP, just a value object embedded on the originating `Task`: `frequency` (`daily | weekly`), `interval` (int, e.g. every 2 weeks), optional `daysOfWeek` (for weekly), optional `endDate`. Kept deliberately small — no monthly/yearly, no complex RRULE-style patterns, for MVP.
 - Every `Task` generated from a rule carries `recurrenceId` (the UUID of the originating rule/series) and `recurrenceRule` only on the first ("template") instance — later instances reference `recurrenceId` but don't repeat the full rule.
 - Generation is a **rolling window**: instances are materialized some fixed distance ahead (e.g. 8 weeks) whenever the app opens or a relevant screen loads, not all at once to `endDate`. This avoids generating years of rows for an open-ended recurrence.
-- **Editing scope for MVP**: editing or deleting a materialized instance only ever affects that single instance ("this one"), never the series. "Edit all future occurrences" is a real, deferred feature — not built in the first pass. This keeps the interaction model simple and matches design principle 3 (replanning should be faster than abandoning the plan) without introducing series-wide edit complexity before it's proven necessary.
+- **Editing scope (reversed 2026-09-06, confirmed directly)**: a recurring instance's start time/duration edit now asks — via an "Affect future instances" toggle, off by default — whether the change is "just this occurrence" (`TaskList.updateTaskThisInstanceOnly`, isolates the write, marks `originalScheduledAt` so later regeneration passes spare it) or "this and all future occurrences" (`TaskList.updateTaskWithChangedRecurrence`'s prune-and-regenerate cascade, which every recurring field edit already ran before this reversal — there was no prior "just this one" path at all for a plain time/duration change). **Amended 2026-09-07, confirmed directly**: "this and all future occurrences" now RE-ANCHORS the series — it rewrites the template's own time-of-day and duration and realigns every occurrence from the edited day forward, *including ones the user had previously moved individually* ("each day ocurrence could be changed indivudally unless any change is with 'change all future' then they'd align with that"). An individual move is therefore no longer permanent protection: it holds until an explicit "all future" edit overrides it, which is the later and stronger instruction. `completed`/`skipped` occurrences are still never realigned — those are a record of what happened, not part of the plan forward. Before this amendment the template's `scheduledAt` was never updated at all, so an "all future" time change silently failed to reach the series and instead produced a duplicate parallel generation — see docs/ERROR_LOG.md. Deleting a materialized instance already had its own separate scope choice before this reversal ("this occurrence" vs. "the whole series," via `removeTask`) and is unaffected by it. ~~The original MVP lock (editing/deleting only ever affects that single instance, "this one," never the series — "Edit all future occurrences" deferred, not built in the first pass) is superseded by the above.~~
 - A recurring task can independently also be linked to a `TrackedBehavior` via `behaviorId` (each materialized instance carries its own `behaviorId`/`actualAmount`, same as any task) — the two systems compose without special-casing.
 
 ## TrackedBehavior — persistent tracked objects (feature-flaggable)
@@ -63,6 +64,8 @@ A `TrackedBehavior` is a separate, persistent entity — its own model, own Hive
 
 Additive and inert when unused: with the feature flagged off, `behaviorId` simply stays null everywhere and `Task`'s existing lifecycle is unaffected. A feature flag only needs to gate UI entry points (creating a tracked behavior, a history view) — the data model itself is never "turned off," only left dormant. Same pattern as `Task.captured()` in Phase 5: extending the model to accommodate a new case without breaking the old one.
 
+**UI promotion (2026-09-06): a dedicated top-level nav destination**, not just inline creation during task/template save. Users create, list, and edit `TrackedBehavior` rows directly from this destination (bottom nav — see SCOPE.md's Navigation structure); they still also surface as quick-drop chips during task/template creation and in Edit Mode's drawer, same as before. `FeatureFlags.trackedBehaviorEnabled` stays the gating seam, and is intended as the actual pro/paid-tier boundary going forward — `Category` and `TaskTemplate` are explicitly NOT gated behind it; core planning stays free, the tracked-behavior/habit layer is the premium surface. No monetization logic is built this round, only keeping the flag load-bearing for it. History/rollup view remains deferred per SCOPE.md — this round adds the container and basic create/list/attach only.
+
 ## Category — persisted, user-extensible task categories
 
 `Category` is a separate, persistent entity — its own model, own Hive box (`categories`), own repository — replacing the old fixed 5-value `TaskCategory` enum (`shared/models/task_category.dart`) as the source of truth for a task's category. Built because a real "Add new category" flow needs categories to be user-creatable data, not a closed Dart enum.
@@ -73,7 +76,9 @@ Fields: `id` (client UUID), `name`, `colorToken` (an `int` index into the 12-swa
 
 **Seed + one-time migration, at launch**: gated by `PreferenceKeys.categoriesSeeded` (default-if-empty pattern, same as every other preference), `CategoryList.seedBuiltInsAndBackfillIfNeeded()` seeds the `categories` box with 5 built-in rows at fixed, hardcoded UUIDs (`BuiltInCategoryIds` — not randomly generated, so re-seeding is idempotent), then walks every existing `Task`: if `categoryId` is null and the old `category` enum is set, resolves it to the matching built-in's fixed id and saves. Runs once, from `main.dart`, alongside `TaskList.materializeDueRecurrences()`.
 
-**v1 scope is create + list only — no edit, no delete.** Confirmed directly rather than assumed. `CategoryRepository` has no `deleteCategory`; deleting a category that existing tasks reference (orphaned `categoryId`) is a real open question, deliberately deferred rather than resolved on the spot — same posture CONSTITUTION.md already takes on `TrackedBehavior` deletion.
+**v1 scope was create + list only — no edit, no delete.** `CategoryRepository` has no `deleteCategory`; deleting a category that existing tasks reference (orphaned `categoryId`) is a real open question, deliberately deferred rather than resolved on the spot — same posture this doc takes on `TrackedBehavior` deletion.
+
+**v2 (2026-09-06): rename, recolor, and reorder**, via a management screen in Settings — Settings → Categories → list → edit, mirroring the existing Settings → Zones pattern exactly. Recolor stays constrained to the existing 12-swatch palette (`ColorPrimitives.categoryPalette12`) — no free picker, same reasoning as the original "not free-pick" lock. Delete remains deferred — the orphaned-`categoryId` question above is still unresolved.
 
 Export/import carries categories alongside tasks: the backup JSON envelope gained a `categories` array (`Category.toJson`/`fromJson`, hand-written like `Task`'s own), so a user's custom categories survive a fresh-install restore, not just the 5 built-ins (which re-seed on their own regardless).
 
@@ -81,41 +86,29 @@ Additive and inert when unused, same guarantee as `TrackedBehavior`/`Zone`: `cat
 
 ## TaskTemplate — persisted, reusable task blueprints
 
-A `TaskTemplate` is a separate, persistent entity — its own model, own Hive box (`task_templates`), own repository, same shape as `Category`/`Zone` — representing a reusable blueprint for tasks a user creates repeatedly (e.g. "Take a walk").
-Deliberately task-shaped but never itself schedulable: no `scheduledAt`, no
-`durationMinutes` requirement, no `status`, no `completedAt`. It exists to be
-copied, not executed.
+A `TaskTemplate` is a separate, persistent entity — its own model, own Hive box (`task_templates`), own repository, same shape as `Category`/`Zone` — representing a reusable blueprint for tasks a user creates repeatedly (e.g. "Take a walk"). Deliberately task-shaped but never itself schedulable: no `scheduledAt`, no `durationMinutes` requirement, no `status`, no `completedAt`. It exists to be copied, not executed.
 
-Fields: `id` (client UUID), `title`, `categoryId` (required, same as `Task`),
-`durationMinutes` (nullable — a default to prefill, not enforced), `notes`
-(nullable), `behaviorId` (nullable — links the template to a `TrackedBehavior`,
-carried forward to any task spawned from it), `schemaVersion`.
+Fields: `id` (client UUID), `title`, `categoryId` (required, same as `Task`), `durationMinutes` (nullable — a default to prefill, not enforced), `notes` (nullable), `behaviorId` (nullable — links the template to a `TrackedBehavior`, carried forward to any task spawned from it), `isBuiltIn` (flags onboarding-seeded presets, same pattern as `Category.isBuiltIn` — see SCOPE.md's onboarding section), `schemaVersion`.
 
-**Copy semantics, not a reference.** Spawning a task from a template calls
-`Task.create()` populated from the template's fields — a real, independent
-`Task` row. `Task` gains one new nullable field, `templateId: String?`,
-recorded purely for frequency-ranking the quick-drop drawer (below) — it is
-never consulted for cascade logic. Editing or deleting a `TaskTemplate` never
-touches any `Task` already spawned from it, matching the "additive and inert"
-guarantee every other optional entity in this doc gets.
+**Copy semantics, not a reference.** Spawning a task from a template calls `Task.create()` populated from the template's fields — a real, independent `Task` row. `Task` gains one new nullable field, `templateId: String?`, recorded purely for frequency-ranking the quick-drop drawer (below) — it is never consulted for cascade logic. Editing or deleting a `TaskTemplate` never touches any `Task` already spawned from it, matching the "additive and inert" guarantee every other optional entity in this doc gets.
 
-**v1 scope: create, list, edit, delete — templates ARE deletable**, unlike
-`Category`/`Zone`, since nothing depends on a template's continued existence
-once it's been used to spawn a task (no orphaned-reference problem, because
-nothing points *back* to it).
+**v1 scope: create, list, edit, delete — templates ARE deletable**, unlike `Category`/`Zone`, since nothing depends on a template's continued existence once it's been used to spawn a task (no orphaned-reference problem, because nothing points *back* to it). This applies to built-in (`isBuiltIn`) templates too — a user can delete a preset that came with the app, no special protection.
 
-Surfaced in two places: a second Inbox tab ("Templates"), and a frequency-ranked
-quick-drop chip row beneath the task-creation title field, alongside
-`TrackedBehavior` chips (small icon distinguishes tracked from plain).
+Surfaced in three places: a second Inbox tab ("Templates"), a frequency-ranked quick-drop chip row beneath the task-creation title field (alongside `TrackedBehavior` chips, small icon distinguishing tracked from plain), and Edit Mode's persistent drawer (same data, same ranking, second entry point only).
 
-Ungated — free functionality, same tier as `Category`, not behind
-`FeatureFlags.trackedBehaviorEnabled`.
+**Add Task sheet browser (implemented, 2026-09-07)** — a fourth surface, and the first of these three still-open ones to actually ship: an inline list under the Name section, Name stage only, gone once the schedule fields reveal. Requested directly ("on the Add Task sheet, under Task Name, let's list the templates ... Templates just as they are rendered in the Template tab in Inbox, without these three dots"), then narrowed via a direct follow-up to templates only — no parallel Tasks list/tabs. A `TASK` row was deliberately ruled out: unlike a template (already a reusable blueprint, so "seed a new task from it" is its one unambiguous meaning, same as the Inbox's own "Use"), an inbox TASK is a specific existing row, and tapping it here would be genuinely ambiguous — copy its fields into the task being created (leaving the original duplicated) vs. switching this form to edit that task instead. Reuses `TemplateRow` (`inbox/template_list_view.dart`) with `onMore: null` — no Edit/Delete affordance, since this context only ever picks a template, never manages the list.
+
+Picking a template here does NOT push a second `showTaskDetailSheet` route (unlike the Inbox's own "Use", `useTemplate`) — a create flow is already open, so `_TaskDetailFlowState._seedFromTemplate` updates its live fields in place (title, notes, duration, category, `behaviorId`, `templateId`) and advances straight to the schedule stage, the same as tapping "Done" would. This is still a plain list in saved order, not the frequency-ranked chip row above — see SCOPE.md's own note on the gap.
+
+Ungated — free functionality, same tier as `Category`, not behind `FeatureFlags.trackedBehaviorEnabled`.
 
 ## Zone — a time-boxed container of tasks
 
-**Status: data layer, feature-flagged create/edit UI, and BOTH Timeline rendering modes (Spatial Task View and Spatial Zone View) are all implemented** (see `docs/PROGRESS_LOG.md`/`docs/DECISIONS.md` for the individual sessions: model+repository, first UI, ungating, simple recurrence+notifications, the Spatial Task View background rendering, and the Spatial Zone View container rendering covered in this section). This section's field/design notes below still describe the ORIGINAL 2026-09-01 design agreement and are mostly current, but treat any specific claim of "not yet built" elsewhere in this section as stale — check DECISIONS.md for what has actually shipped since. Still genuinely not built: per-occurrence-adjustable recurrence, capacity enforcement, zone drag/cascade, and any UI for assigning a `Task` to a zone.
+**Status: data layer, feature-flagged create/edit UI, and BOTH Timeline rendering modes (Spatial Task View and Spatial Zone View) are all implemented** (see `docs/PROGRESS_LOG.md`/`docs/DECISIONS.md` for the individual sessions: model+repository, first UI, ungating, simple recurrence+notifications, the Spatial Task View background rendering, and the Spatial Zone View container rendering covered in this section). This section's field/design notes below still describe the ORIGINAL 2026-09-01 design agreement and are mostly current, but treat any specific claim of "not yet built" elsewhere in this section as stale — check DECISIONS.md for what has actually shipped since. Still genuinely not built: per-occurrence-adjustable recurrence, capacity enforcement, zone reposition/cascade, and any UI for assigning a `Task` to a zone. **Zone resize is now built** — see below.
 
-**Spatial Task View rendering (implemented)**: on the existing Timeline (the *spatial task view*, per the per-view-job principle below), every persisted Zone renders as a light, low-chroma background block (`ZoneBackgroundBlock`, `AmbleTheme.colorZoneBackground`) behind the task capsules, positioned by the zone's own time range using the same time-to-pixel math tasks use. Purely decorative — it does not reposition, resize, or otherwise affect task rendering, matching "Zone is metadata on a Task, not a container that owns it" below.
+**Spatial Task View rendering (implemented)**: on the existing Timeline (the *spatial task view*, per the per-view-job principle below), every persisted Zone renders as a light, low-chroma background block (`ZoneBackgroundBlock`, `AmbleTheme.colorZoneBackground`) behind the task capsules, positioned by the zone's own time range using the same time-to-pixel math tasks use. It does not reposition, resize, or otherwise affect any TASK's rendering, matching "Zone is metadata on a Task, not a container that owns it" below — but the ZONE ITSELF is no longer purely decorative here: see "Zone move/resize now available in Task view too" below.
+
+**Zone move/resize now available in the Spatial Task View too (2026-09-06, reversed the same day).** Requested directly: "we should be able to edit zones in any view ... in spatial task view also." This reverses the per-view-job rule's original read on zone editing specifically (Task view was "purely decorative" for zones, resize/move lived only in Zone view) — confirmed as an intentional, deliberate reversal via AskUserQuestion before building, not assumed. `ZoneBackgroundBlock` gained a header (title + time range) as a whole-block move target and two edge resize handles, both Edit-Mode-gated, mirroring `ZoneContainerBlock`'s (Zone view's own container) exact gesture contract — same callback shape (`onMoveStart`/`onResizeTopStart`/`onResizeBottomStart`, null meaning "not draggable/resizable here"), same shared commit path (`_commitZoneCascade` in `timeline_screen.dart`, unchanged), so a zone dragged in either view resolves through the identical zone-to-zone cascade and moves its assigned tasks the same way. The wrapper widget (`_DraggableZoneBlock`, `timeline_screen.dart`) mirrors `_DraggableTaskBlock`'s own live-preview-then-commit-on-release shape; the underlying `Zone`'s `startMinutes`/`endMinutes` are never mutated mid-drag (no `copyWith` was added to the model for this) — only the block's own geometry (`ZoneBackgroundBlock.previewTop`/`previewHeight`) previews live, matching `ZoneContainerBlock`'s own precedent of not live-updating its header's displayed time range during a drag either. List (collapsed) mode's own zone bands are UNCHANGED — still purely decorative, out of scope (their geometry comes from a gap-collapsing stack cursor with no real time axis for a resize to mean anything against, and List view keeps its own "organizes action" job per the per-view-job rule below, unaffected by this reversal).
 
 **Spatial Zone View rendering (implemented, 2026-09-02)**: a second Timeline display mode, switched via a Settings toggle (`ZoneViewEnabledSetting`, only surfaced when `FeatureFlags.zoneEnabled` is on), where a Zone genuinely acts as a real layout container — `ZoneContainerBlock`, stacked chronologically on an outer time axis via `ZoneDayTimeline`. A task belongs inside a zone's container by **time whenever it has one**: if `scheduledAt` is set, the task renders in whichever zone's time window contains it, and in no zone at all if it falls outside every window — even when `zoneId` names one. Only a zone-only task (no `scheduledAt`, nothing to resolve against) places by its explicit `zoneId`. This resolution is read-only for display: it never writes, clears, or persists `zoneId` on any `Task`, preserving the "metadata, not ownership" rule below.
 
@@ -125,66 +118,9 @@ A `Zone` is a separate, persistent entity — its own model, own Hive box, own r
 
 **Zone is metadata on a Task, not a container that owns it.** A `Task` does not live "inside" a `Zone` structurally — `zoneId` is a reference, same shape as `behaviorId`, and a task remains fully valid and functional with it unset. Time (`scheduledAt`) and zone (`zoneId`) are independent dimensions on `Task`, not a hierarchy — a task can be precisely timed + zoned, precisely timed + unzoned, loosely timed (zone-only) + zoned, or neither. This independence is what makes multiple views over the same data possible without duplicating the model per view.
 
-**Each Timeline view has one job; views should not converge on answering the same question.** Confirmed as a design rule, not just an observation: a *Zone/spatial-zone view* organizes meaning (understand the shape of the day), a *spatial task view* organizes time (manipulate the schedule), and a *list/compact view* organizes action (execute the schedule — see the overlap-cluster feature's flat-list-inside-a-spatial-shell pattern as the existing precedent for this). If a future feature request would make one view start doing another view's job (e.g. list view growing zone-editing), that's a signal to push back or split it into the view whose job it actually is, not to blend the views.
+**Each Timeline view has one job; views should not converge on answering the same question.** Confirmed as a design rule, not just an observation: a *Zone/spatial-zone view* organizes meaning (understand the shape of the day), a *spatial task view* organizes time (manipulate the schedule), and a *list/compact view* organizes action (execute the schedule — see the overlap-cluster feature's flat-list-inside-a-spatial-shell pattern as the existing precedent for this). If a future feature request would make one view start doing another view's job (e.g. list view growing zone-editing), that's a signal to push back or split it into the view whose job it actually is, not to blend the views. **Exception, confirmed directly (2026-09-06):** zone move/resize is now available in BOTH the spatial task view and the Zone view (see "Zone move/resize now available in the Spatial Task View too" above) — the two views still each keep their own job for TASKS (Task view manipulates schedule, Zone view organizes meaning), this only lifts the restriction on editing a Zone's own window. List view remains untouched by this exception.
 
-- **`Zone` fields (draft)**: `id` (client UUID), `title`, `startTime`/`endTime` (time-of-day, not a specific date — see recurrence note below), `schemaVersion`. Duration is derived (`endTime - startTime`), not stored separately, so it can never drift from the two times that define it.
-**Zone resize — reversed 2026-09-06, now in scope (see "Edit Mode" section).**
-Originally grouped under "dragging a zone... are deferred" below; resize
-(changing `startTime`/`endTime` via a drag handle) and reposition (moving the
-whole zone earlier/later without changing its duration) are actually two
-different operations and are being un-bundled. **Resize is now in scope**,
-built as part of Edit Mode. **Reposition (dragging a zone's entire block to a
-new time, with its assigned tasks) remains deferred** — it's a strictly
-harder problem (deciding whether assigned tasks move by the same delta or
-re-anchor) than resize, which only ever changes one edge at a time and
-composes cleanly with the existing read-only, time-based containment
-resolution (`resolveZoneContainment`) with no new write path needed: a task
-that falls outside a zone's new, shrunk window simply stops rendering inside
-it on the next frame, same as it would for any other time-based mismatch
-today.
-
-Resize still enforces the existing zone-to-zone non-overlap rule (checked on
-release, reusing the add/edit form's existing validation) and recalculates
-`calculateZoneCapacity` live — consistent with "capacity is checked, not
-enforced," a resize that would push a zone over its assigned tasks' combined
-duration is still allowed, just reflected in the capacity indicator, not
-blocked.
-
-
-## Edit Mode — direct manipulation of the Timeline
-
-A toggleable mode on the real Timeline (not onboarding-only — onboarding
-introduces it on a pre-populated first day, per docs/DECISIONS.md, but it's a
-permanent, always-available Timeline feature). While active:
-
-- **Resize handles appear on both Task capsules and Zone containers.**
-  Dragging a handle changes `durationMinutes` (Task) or `startTime`/`endTime`
-  (Zone) — a deliberately separate gesture from the existing move-drag, since
-  move is a plain, non-long-press drag on the block body and needs a distinct
-  touch target to avoid gesture collision.
-- **Move (reschedule) is unchanged** — the existing drag-to-reschedule
-  interaction (Phase 4/11) already works exactly this way outside Edit Mode
-  too; Edit Mode doesn't alter it, only adds resize/delete/drawer alongside it.
-- **Delete via drag-to-target**: while dragging a Task, a delete target
-  appears on screen (bottom of viewport); dropping onto it deletes the task
-  instead of rescheduling it — same interaction shape as Android/YouTube's
-  drag-to-dismiss picture-in-picture pattern. This drop path must short-circuit
-  the existing cascade-push algorithm entirely (see SCOPE.md's "Cascade
-  replanning") — it is a different drop outcome, not a reschedule needing a
-  push-direction computed for it. **Zone delete is NOT included this round**
-  — no zone-delete UI exists anywhere in the app yet (Settings → Zones is
-  add/edit only), and deleting a zone raises the same orphaned-reference
-  question already on record for Category (what happens to tasks/zoneId
-  referencing a deleted zone) — deliberately deferred, not assumed.
-- **Presets/Templates drawer** — the same TaskTemplate/TrackedBehavior
-  quick-drop drawer already scoped for task creation, given a second entry
-  point here: persistently accessible as a sheet while Edit Mode is active,
-  same underlying data and ranking, not a second implementation.
-
-Additive and inert when off: Edit Mode is a UI-layer toggle only, no new
-persisted state — a Task or Zone looks and behaves identically whether it was
-last touched via Edit Mode's handles or the existing detail sheet/drag.
-
+- **`Zone` fields (draft)**: `id` (client UUID), `title`, `startTime`/`endTime` (time-of-day, not a specific date — see recurrence note below), `isBuiltIn` (flags onboarding-seeded presets, same pattern as `Category`/`TaskTemplate`), `schemaVersion`. Duration is derived (`endTime - startTime`), not stored separately, so it can never drift from the two times that define it.
 - **`Task` gains one nullable field: `zoneId: String?`** — same pattern as `behaviorId`: null for an ordinary task (unchanged default), non-null when assigned to a zone. Confirmed directly: this is a real relationship (`taskId` → `zoneId`), not something derived by checking whether `scheduledAt` falls inside a zone's time window — because a task can be assigned to a zone with **no `scheduledAt` at all**. That's the actual reason this can't be computed from overlap: a zone-only task has nothing to overlap against.
 - **A task may set a zone, a `scheduledAt`, or both.** Confirmed directly ("sufficient for task to set either zone or time for it, or both, but can set just zone and not a time"). This makes the resolved "when" of a task three-way rather than the current two-way (Inbox vs. scheduled): explicit time, zone-only (time implied by zone + capacity ordering), or neither (Inbox, unchanged). Every read site that currently treats `scheduledAt == null` as "this task is in the Inbox" needs to learn this third state — that is the single largest ripple from this feature and the main reason it's being spiked as a design pass first, not built directly.
 - **Zones cannot overlap each other.** Enforced the same shape as the existing "Prevent overlapping tasks" setting, but zone-to-zone, not task-to-task — needs its own check, since the existing `overlapsExistingTask` helper reasons over `Task.scheduledAt`/`durationMinutes`, which a `Zone` doesn't share a supertype with.
@@ -194,15 +130,53 @@ last touched via Edit Mode's handles or the existing detail sheet/drag.
   **The per-occurrence-adjustable-times version below is still NOT built and remains the deferred future fork** — e.g. a Monday zone at 07:00–08:00 and a Wednesday zone at 07:30–08:15 as one logical recurring series with different times per day. Be precise about which one "Zone recurrence" means in any future session: what's implemented is one uniform rule/uniform time; what's still open is per-occurrence overrides. If that harder version is ever built, it most likely means a `Zone` series needs its own, separately materialized-instance model (real per-day `Zone` rows, sharing a `recurrenceId`-style series link, each with its own `startTime`/`endTime`) rather than the shared `RecurrenceRule` value object now in place — same "materialized instances, not virtual expansion" philosophy as recurring tasks, but the rule itself would need to live per-instance instead of only on the template. Needs its own dedicated design pass before building.
 
 - **Notifications: implemented (2026-09-02).** `Zone.notificationsEnabled` (default `true`, same opt-out-not-opt-in default as `Task.notificationsEnabled`) gates a start-time alert via `NotificationService.scheduleForZone`/`cancelForZone`, mirroring `scheduleForTask`/`cancelForTask`'s shape and the same horizon/cap discipline (`isWithinSchedulingHorizon`, `notificationHorizonDays`). Because a recurring `Zone` has no materialized per-occurrence rows, a recurring zone's notification is a single ONE-SHOT alert for its next upcoming occurrence, re-resolved and re-scheduled whenever the zone is next saved — not a true recurring OS-level alarm. See docs/DECISIONS.md for the full reasoning and the known gap (no launch-time refresh for zone notifications yet, unlike `Task`'s `refreshScheduledNotifications`).
-- **Dragging a zone (with its contained tasks) and cascading zones are deferred, out of scope for the first build.** Structurally similar to the existing task-level cascade-push algorithm (see SCOPE.md), but not the same code: moving a zone has to move every assigned task in lockstep, decide what happens to a task's own explicit `scheduledAt` if it had one (move it by the same delta? re-anchor to the new zone-relative position?), and the non-overlap constraint applies at the zone level while the existing cascade reasons at the task level. Real future work, not assumed to fall out of the existing cascade code for free.
+
+- **Zone resize (2026-09-06) and Zone move/cascade (2026-09-06, reversed the same day) — both now in scope, both built as part of Edit Mode.** Resize (changing `startTime`/`endTime` via a top/bottom drag handle) and move/reposition (dragging the whole zone earlier/later, duration preserved) are two different operations, un-bundled at the gesture level (resize's handles vs. move's header-only drag target — see "Edit Mode" below) but sharing ONE commit path: `computeZoneCascadeMoves` (`shared/services/zone_cascade_reschedule.dart`). Requested directly ("zones should never overlap... perhaps cascading... that doesn't block user intention") — resize's original silent-drop-on-overlap behavior is superseded by the cascade described below, not a separate, still-blocking path.
+  - **The cascade**: structurally mirrors the existing task-level cascade-push algorithm (nearest-edge-push, chain, day-boundary abort — see SCOPE.md's "Cascade replanning") but is genuinely separate code, not a reused/generalized version of it: `Zone` operates in minutes-since-midnight with no date, `Task` in a specific day's `DateTime`. Resize's push direction is DETERMINED by which edge grew (never computed via nearest-edge, since only one edge moved and the other is a fixed anchor); move's push direction IS computed via nearest-edge, same as the task cascade. A chain that can't be satisfied within one day aborts wholesale (nothing partially applies), same contract as the task cascade.
+  - **Assigned tasks move WITH their zone** (confirmed directly) — ANY zone that shifts in a cascade, whether it's the one the user dragged or one pushed down the chain, carries every task assigned to it (`Task.zoneId` set, across EVERY day that zone has instances on — a Zone's own window is day-agnostic, so this isn't scoped to just the currently-viewed day) by that zone's own net delta. Each shifted task gets the same reschedule bookkeeping an ordinary drag gets (`originalScheduledAt` set once, `status` becomes `rescheduled`) — confirmed directly, since the task's own time genuinely did change, regardless of what caused it.
+  - Resize still recalculates `calculateZoneCapacity` live — consistent with "capacity is checked, not enforced," a resize/move that would push a zone over its assigned tasks' combined duration is still allowed, just reflected in the capacity indicator, not blocked.
 
 Additive and inert when unused, same guarantee as `TrackedBehavior`: `zoneId` stays null everywhere until a Zone UI exists, and `Task`'s existing lifecycle (Inbox, scheduling, recurrence, notifications) is unaffected by an unset `zoneId`.
+
+## Edit Mode — direct manipulation of the Timeline
+
+A toggleable mode on the real Timeline — **not onboarding-only.** Onboarding introduces it on a pre-populated first day (see SCOPE.md's onboarding section), but it's a permanent, always-available Timeline feature a returning user can enter any time.
+
+**Entry points (two, converging on the same state):**
+- **Two-finger long-press anywhere on the Timeline** (empty space or on a task — doesn't matter, since two fingers is a fully separate gesture channel from move-drag or create-task's existing single-finger long-press-on-empty-space interaction, needing no disambiguation against either).
+- **A visible "Edit" text link**, top-right of the Timeline, positioned above the day's first hour marker — same margin column already used for hour labels (consistent with the existing hour-marker-in-margin pattern), styled as a link (accent/primary color text, not a button/icon) so it reads as a mode switch, not an action.
+
+Both trigger the same wiggle-in animation on entry (same visual language as iOS/Android home-screen rearrange mode) — this doubles as the active-state indicator, since Edit Mode has no other persistent chrome distinguishing it from the normal Timeline. Exiting mirrors entry: the link (now reading "Done" — default label, flag before silently improvising anything else) or the same two-finger long-press again.
+
+**While active:**
+- **Resize handles appear on both Task capsules and Zone containers.** Dragging a handle changes `durationMinutes` (Task) or `startTime`/`endTime` (Zone) — a deliberately separate gesture from the existing move-drag, since move is a plain, non-long-press drag on the block body and needs a distinct touch target to avoid gesture collision.
+  - **Tasks now have BOTH a top and a bottom resize handle (2026-09-08) — this REVERSES the original "Task resize does NOT touch `scheduledAt`/start time" rule**, confirmed directly before building ("let's include resize up (so resize handle on top) both in this scenario and edit mode — we already have that in zone resize"). The two edges are semantically different and deliberately so: the **bottom** edge changes `durationMinutes` only (start fixed — unchanged from the original rule), while the **top** edge moves the START and leaves the END anchored, so it necessarily writes BOTH `scheduledAt` and `durationMinutes`. Zones never had this tension (they carry `startMinutes`/`endMinutes` with no `scheduledAt`), which is why their own two-handle shape long predates this and is exactly what this mirrors — same `onResizeTopStart`/`onResizeBottomStart` callback shape, same null-means-not-resizable contract, same Edit-Mode gating per handle.
+  - **Top-edge resize still skips the cascade**, confirmed directly — consistent with the bottom edge and with "cascade is scoped to move/create" below, even though this edge does move a start time. It is clamped only by the task's own minimum duration (the two edges can never cross) and by the day boundary.
+  - **Top-edge resize applies to the whole selection**, exactly like group move and group bottom-resize. This REVERSES the rule recorded here on 2026-09-08 ("top-edge resize is single-task only... group top-resize is a separate future decision, not an omission") — reversed later the same day, confirmed directly, after the single-task behaviour was reported as a bug: "top resize in multi select not resizing all selected like bottom does." The earlier rule is kept visible here rather than deleted, because it was itself confirmed at the time and the reversal is the more useful record.
+    - Semantics, confirmed: the same snapped delta moves EVERY selected task's start and compensates its duration, so each task keeps its own END anchored. Each is clamped independently at its own minimum duration (a short task stops rather than inverting) and skipped if it would leave its own day — matching the per-task independence group bottom-resize already applies.
+    - Still no cascade, matching both other resize paths.
+  - The same two-handle shape applies to the quick-create placeholder pill (`PendingTaskPill`), which is not a persisted `Task` at all — it writes to the draft provider rather than the repository, but the top/bottom semantics are identical.
+- **Move (reschedule) is unchanged** — the existing drag-to-reschedule interaction (Phase 4/11) already works exactly this way outside Edit Mode too; Edit Mode doesn't alter it, only adds resize/delete/drawer alongside it.
+- **Delete via drag-to-target**: while dragging a Task, a delete target appears on screen (bottom of viewport); dropping onto it deletes the task instead of rescheduling it — same interaction shape as Android/YouTube's drag-to-dismiss picture-in-picture pattern. This drop path must short-circuit the existing cascade-push algorithm entirely (see SCOPE.md's "Cascade replanning") — it is a different drop outcome, not a reschedule needing a push-direction computed for it. **Zone delete is NOT included this round** — no zone-delete UI exists anywhere in the app yet (Settings → Zones is add/edit only), and deleting a zone raises the same orphaned-reference question already on record for Category (what happens to tasks/zoneId referencing a deleted zone) — deliberately deferred, not assumed.
+- **Presets/Templates drawer** — the same TaskTemplate/TrackedBehavior quick-drop drawer already scoped for task creation, given a second entry point here: persistently accessible as a sheet while Edit Mode is active, same underlying data and ranking, not a second implementation.
+
+Additive and inert when off: Edit Mode is a UI-layer toggle only, no new persisted state — a Task or Zone looks and behaves identically whether it was last touched via Edit Mode's handles or the existing detail sheet/drag.
+
+**Multi-task route (2026-09-06, Tasks only — Zones deferred to a follow-up round, requested directly).** A second, debug-only-for-now Edit Mode configuration (`DevMultiTaskEditMode`, default OFF — `core/dev_config.dart`), toggled from Settings → Developer. With it off, Edit Mode is byte-for-byte the single-task behavior described above. With it on:
+- **Tap selects instead of opening the detail sheet.** Wiggle stops being the mode-active indicator (every block) and becomes the SELECTION indicator instead — only selected blocks wiggle. The detail sheet becomes unreachable from a tap while multi-task mode is on; turning it back off is how you get back to it (confirmed via AskUserQuestion).
+- **Move, resize, and delete-by-drag-to-target all act on the WHOLE selection**, not just the dragged block: any selected block's gesture applies the same delta to every other selected block. Move and resize skip the existing cascade-push algorithm entirely for a group gesture (confirmed via AskUserQuestion — the cascade math was derived for one dragged task against others and has no concept of a locked group); a group delete removes every selected task via the plain single-instance path (never the recurring-scope dialog, which would otherwise stack once per selected recurring task).
+- **A group move clamps** (not rejects) at each member's own day boundary if the requested delta would carry it past midnight — the whole group still moves by whatever the tightest member allows. **A group resize applies the SAME raw delta to every member**, each floored independently at its own minimum — a shorter member hitting its floor doesn't cap what a longer one does.
+- The live gesture is broadcast through an ephemeral, screen-local provider (`edit_selection_provider.dart`'s `EditGroupGestureState`) so every non-dragged selected block can render itself "following" the one actual finger-down gesture — see that file's own doc comments for why this is architecturally necessary (per-block drag/resize state was otherwise invisible to sibling blocks). Selection itself (`EditSelection`) is equally ephemeral, matching the "no new persisted state" guarantee above — it clears on Edit Mode exit or on multi-task mode being switched off mid-session.
+
+**Zone selection under multi-task mode (2026-09-06)**, the "Zones deferred to a follow-up round" line above, resolved: reported directly — zones wiggled/were fully draggable under multi-task mode regardless of any selection, unlike the task rule above. Fixed with `ZoneEditSelection` (`edit_selection_provider.dart`) — a SEPARATE provider from `EditSelection` (task ids never share a set with zone ids), and deliberately SINGLE-select (`String?`, not a `Set<String>`) since there is no group-zone-move feature: the group-gesture broadcast machinery above remains tasks-only, only ever one zone at a time is the thing a drag acts on. Both `ZoneBackgroundBlock` (Task view) and `ZoneContainerBlock` (Zone view) gate wiggle/resize-handles/move-drag by `editModeEnabled && (!multiTaskEditMode || isSelected)`, and their header's tap toggles selection when NOT already the selected one (mutually exclusive with the header's own drag-to-move at any moment — an unselected zone's header is tap-only, the selected one's is drag-only). Cleared by the same Edit-Mode-exit/multi-task-off `ref.listen` wiring as `EditSelection`.
 
 ## Calendar — two architecturally distinct features, one dependency
 
 Reverses the earlier "Calendar import/sync: explicitly out of scope" lock above — confirmed directly by the user, not assumed. Both features share `device_calendar` and a lazy permission-request flow, and are housed together in one "Calendar" Settings section, but the two directions of data flow **must stay cleanly separated in code and behavior**: reading external events never writes anything back to them, and sync-out never reads or modifies an event it didn't create itself.
 
-**Feature 1 — read-only display of external calendar events on the Timeline.** `ExternalCalendarEvent` is a plain, non-Hive, non-persisted value type (title, start, end, source calendar name/color) — NOT a `Task`, never stored in any repository. Fetched fresh via `device_calendar` each time the Timeline loads/refreshes for the visible day(s), scoped to whichever device calendars the user selected to *display* in Settings. Any fetch failure (permission denied, no calendars selected, device error) degrades to "no external events shown" — it never blocks or degrades ordinary Amble task rendering. Rendered read-only, reusing the Zone background block's visual language (light, low-chroma, non-interactive-feeling) — never a `TaskCapsuleBlock`; tapping one shows basic info only (title/time), never edit/complete/drag/delete/category. **Excluded from overlap-cluster detection entirely** (confirmed directly, not guessed) — `detectOverlapClusters`/`layoutOverlappingTasks`/`OverlapClusterBlock` all assume real `Task` objects with status/category/completion, and folding a read-only foreign type into that machinery would be a disproportionate amount of architecture for a decorative feature; external events render as their own always-visible layer, independent of what's clustering underneath.
+**Feature 1 — read-only display of external calendar events on the Timeline.** `ExternalCalendarEvent` is a plain, non-Hive, non-persisted value type (title, start, end, source calendar name/color) — NOT a `Task`, never stored in any repository. Fetched fresh via `device_calendar` each time the Timeline loads/refreshes for the visible day(s), scoped to whichever device calendars the user selected to *display* in Settings. Any fetch failure (permission denied, no calendars selected, device error) degrades to "no external events shown" — it never blocks or degrades ordinary Amble task rendering. Tapping one shows basic info only (title/time), never edit/complete/drag/delete/category. **Excluded from overlap-cluster detection entirely** (confirmed directly, not guessed) — `detectOverlapClusters`/`layoutOverlappingTasks`/`OverlapClusterBlock` all assume real `Task` objects with status/category/completion, and folding a read-only foreign type into that machinery would be a disproportionate amount of architecture; external events render as their own always-visible layer, always at lane 0, independent of what's clustering underneath.
+
+**Visual shape — reversed 2026-09-06 (Task view + List view only), confirmed directly.** Originally "reusing the Zone background block's visual language (light, low-chroma, non-interactive-feeling) — never a `TaskCapsuleBlock`." Requested directly: "the importend tasks sohuld also be same format as amble tasks... pill in zones and text outside same positioned x and same format on task view and list view. The only difference is that the pill of important task border is dotted and has icon calendar subtle color icon." Confirmed via AskUserQuestion as look-only — still no move/resize/completion. `ExternalEventCapsuleBlock` (`external_event_capsule_block.dart`) is a genuinely separate widget from `TaskCapsuleBlock` (not that widget reused with a fake `Task` wrapper — the coupling to real status/category/completion/drag/resize has no meaning for a read-only event, and a wrapper risks an accidental write path) that mirrors the real pill's exact geometry and `TaskCapsuleTextRow`'s exact text format/position, with a dashed-rectangle border (hand-rolled `CustomPainter`, no new dependency) and a subtle calendar icon in place of the category fill/emoji. **Zone view's own `ExternalEventBlock`/`_ZoneExternalEventRow` are unchanged** — Zone view is frozen (confirmed directly, no further updates there), so this reversal applies to Task view + List view only; the original background-block widget still exists and still renders there.
 
 **Feature 2 — manual, one-directional sync of Amble tasks OUT to a device calendar.** Every scheduled `Task` (has `scheduledAt`) can optionally be pushed to a single user-chosen *target* device calendar, distinct from Feature 1's *display* calendar selection. `Task.externalEventId: String?` (nullable, additive) links a task to the device event it created. Sync is manual only (a "Sync to Calendar" button) — no automatic/background sync, no inbound import, no conflict resolution (Amble always overwrites on next sync). Unscheduled (Inbox) tasks are never synced. A previously-synced event whose source `Task` has since been deleted is removed from the device calendar on the next sync — this requires tracking synced event ids independent of the `Task` row itself once deleted; see docs/DECISIONS.md for the chosen storage shape.
 
@@ -227,3 +201,49 @@ The one rule genuinely worth automated enforcement — "no direct Hive calls out
 ## What this document is not
 
 It is not the architecture doc (see `ARCHITECTURE.md`), not the feature scope (see `SCOPE.md`), and not a running decision log (see `DECISIONS.md`). Keep it short enough to actually be re-read every session.
+
+## Siri / Google Assistant integration — on-device, no server
+
+Native platform-level voice/assistant integration via iOS App Intents and
+Android App Actions/App Functions. Both run as code inside the app itself,
+invoked locally by the OS — no network call, no hosted component, fully
+consistent with local-only architecture. Not a new capability so much as a
+new *entry point* into things that already exist: intent handlers call
+directly into the existing repository layer (`TaskRepository`,
+`ZoneRepository`, etc.), and free-text intents ("add a task: walk the dog at
+3pm") hand off to the already-scoped on-device NLP quick-capture parser
+rather than parsing anything new.
+
+**Reuses a proven pattern, not a new risk**: iOS App Intents can fire while
+the app isn't in the foreground, which means the handler needs to run
+somewhat independently of the main Flutter UI — the same constraint the
+Slack morning-summary background task already solved (`workmanager`,
+Hive-in-background-isolate initialization). Same shape, different trigger.
+
+**Intent set**: Add Task (title + optional time/duration via the NLP
+parser), Add Note (`Task.captured`), Add Zone, Read Day Summary (a
+*templated* string built from today's Task list — "5 tasks today, starting
+with Walk at 9am" — not open-ended natural-language generation; that
+capability belongs to the MCP track below, not this one), and Remove Task.
+
+**Remove Task — fuzzy match by spoken title.** Matches against scheduled
+Tasks in the near-term window (today + upcoming, not the entire task
+history — bounding the search space matters for both relevance and
+performance), case-insensitive substring/token match rather than requiring
+an exact title. Two real platform mechanics worth using rather than
+building custom: **iOS App Intents has native parameter disambiguation** —
+when multiple candidates match ("walk" matching both "Walk the dog" and
+"Walk to store"), the system itself can prompt the user to pick one via its
+own disambiguation UI, no custom dialog needed. **Android's equivalent
+needs verifying separately, not assumed symmetric** — App Actions/App
+Functions' disambiguation support should be confirmed during
+implementation rather than assumed to match iOS's capability. Exact-match-
+first-then-fuzzy-fallback is the likely resolution order (an exact title
+match should never trigger disambiguation if one exists), but the actual
+matching algorithm is an implementation decision, not specified here — flag
+if a new dependency seems warranted for it rather than reaching for one by
+default.
+
+**Real cost worth naming**: this is genuine native Swift/Kotlin work per
+platform, not Dart — a different skill surface than most of what's been
+built, even though no new Flutter package dependency is involved.

@@ -84,6 +84,18 @@ class TaskBoundaryMarkers extends StatelessWidget {
     );
 
     return Stack(
+      // The 00:00 label at the range's very first tick is translated UP
+      // by half its own line height (see the FractionalTranslation
+      // below), so it extends above THIS Stack's own top edge — Clip.none
+      // is what stops that half-label from being clipped to nothing by
+      // the Stack's default hardEdge behaviour. The outer padding
+      // reserved for it (`timeline_screen.dart`'s own `spacingLg` around
+      // this widget) only makes room in the SCROLL viewport; it can't
+      // undo a hard clip happening one layer further in. Reported
+      // directly, a second time, after the first fix (that outer
+      // padding) turned out not to be the actual clip boundary: "00:00
+      // hours on top and bottom are cut off."
+      clipBehavior: Clip.none,
       children: [
         for (final tick in ticks)
           if (!_isHiddenByNowLabel(tick.time, theme))

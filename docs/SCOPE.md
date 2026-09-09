@@ -24,13 +24,21 @@ This is the authoritative feature list. If a work order or a session's output do
 
 Two related but separate features, sequenced deliberately:
 
-**Splash/landing + carousel** (building first): acquisition-focused first-launch screen — logo/background image, a swipeable carousel of key value-prop messages, CTA into the app/onboarding. Presentational only, no data-model impact. Relevant both for real first-launch on mobile and for the portfolio/web-deploy context.
+**Splash/landing + carousel** (building first): acquisition-focused first-launch screen — logo/background image, a swipeable carousel of key value-prop messages, CTA into the app/onboarding. Presentational only, no data-model impact. Relevant both for real first-launch on mobile and for the portfolio/web-deploy context. Both the carousel and the personalization step below are independently skippable — skipping either (or both) never results in an empty app; see pre-population below.
 
-**Onboarding flow** (scoped, not yet started): a short question flow after the splash — wake-up time and wind-down/sleep time (each paired with a short "science tip" explaining why, e.g. regular wake times regulate hormones), a goals question (multi-select from preset options), and a preset-activities picker (curated list, filtered/ordered by the goal selections) the user can add to their schedule immediately.
+**Onboarding flow — question steps** (scoped, not yet started): a short question flow after the splash — wake-up time and wind-down/sleep time (each paired with a short "science tip" explaining why, e.g. regular wake times regulate hormones), and a goals question (multi-select from preset options, e.g. health/work/personal — mapped to `Category`/`Category`-tagged presets, not a separate taxonomy).
 
 Wake-up/wind-down answers create special anchor tasks with a confirmed but not-yet-fully-specified lock behavior: **time is editable, duration is not shown, category icon is not shown** (a distinct visual treatment from an ordinary capsule block — more like a marker than a task pill). These should ride on the existing recurring-task architecture (daily recurrence, materialized instances) rather than a new persistence system. Still open, to be settled when this phase actually starts: whether these anchor tasks are deletable at all, or permanent-but-hideable via Settings.
 
-Architecturally: onboarding completion state and goal selections belong in `PreferencesRepository` (Phase 13a) — built generically for exactly this. The preset-activity list is static content (code/assets), not user data — selecting one just calls the existing `Task.create()` path.
+**Onboarding flow — pre-population (2026-09-06, new)**: the goal of onboarding is to reach a populated, usable day immediately, not an empty Timeline the user has to fill themselves.
+
+- **Built-in presets, seeded like `Category`'s built-ins**: a curated set of `TaskTemplate` rows (`isBuiltIn: true`, fixed UUIDs, idempotent re-seed — same pattern as `BuiltInCategoryIds`) framed around the product's actual positioning — things that make someone leave more of their life, not just do more tasks (e.g. "Take a walk," "Relax"). A parallel curated set of built-in `Zone` rows (`isBuiltIn: true`), deliberately coarse, covering the routines that are close to universal — Morning routine, Work, Evening wind-down — not granular enough to need personalization to feel right.
+- **Personalization filters, doesn't gate to empty**: the goals question filters which built-in presets/zones are *offered* by `categoryId` — skip health goals, don't show health-tagged presets. A baseline subset of presets/zones (not goal-dependent) is always included regardless of any answer.
+- **Skipping onboarding or personalization still seeds the baseline default set.** Confirmed directly: never an empty Timeline on first open, regardless of how much the user skips. This is the anchor requirement — personalization only adds to or narrows the offered set beyond this baseline, it never subtracts down to nothing.
+- **Whether tapping a preset during onboarding spawns a live Task immediately (in addition to being available as a Template) versus only adding it to the Templates tab for the user to place themselves is still an open brainstorm, not decided.** Do not build against either assumption without confirming first.
+- **The last onboarding step doubles as Edit Mode's introduction**: rather than a separate tutorial screen explaining drag/resize/remove, onboarding lands the user on their own pre-populated day already in Edit Mode (see `docs/CONSTITUTION.md`'s "Edit Mode" section) — discovery happens through direct manipulation of real (if generated) content, not an explanation screen in front of it.
+
+Architecturally: onboarding completion state and goal selections belong in `PreferencesRepository` (Phase 13a) — built generically for exactly this.
 
 ## Deferred beyond MVP, explicitly
 
@@ -45,46 +53,43 @@ A `Zone` is a named time window (e.g. "Morning ritual," 07:00–08:00) that task
 
 **Simple recurrence + notifications implemented (2026-09-02)**: a Zone can optionally repeat via the same `RecurrenceRule` shape `Task` uses (one rule, same start/end time on every occurrence — no per-occurrence override), and can optionally fire a start-time alert (`notificationsEnabled`, default on) via `NotificationService.scheduleForZone`, a one-shot next-occurrence alert re-resolved on every save rather than a true recurring OS alarm. See CONSTITUTION.md's Zone section and docs/DECISIONS.md for the full shape and judgment calls.
 
-Three real forks remain open, deliberately not resolved yet: (1) what happens when a zone's assigned-task durations exceed its own capacity — hard block, warning, or silent overflow; (2) zone recurrence needs per-occurrence-adjustable start/end times (a Monday zone and a Wednesday zone in the same series can differ) — the simple, uniform-rule version above is implemented, but this harder per-occurrence version is still deferred and likely needs its own per-instance model rather than the one shared `RecurrenceRule`; (3) dragging a zone with its contained tasks, and cascading zones, are structurally similar to the existing task-level cascade-push but not the same code, and are explicitly deferred. Each of these needs its own confirm-first pass before implementation. There is also currently no UI for *assigning* a task to a zone (setting `Task.zoneId`) — only creating/editing zones themselves.
+**Resize implemented as of Edit Mode (2026-09-06)** — see `docs/CONSTITUTION.md`'s "Edit Mode" section. Reposition (dragging a whole zone, with contained tasks, to a new time) and zone-to-zone cascading remain deferred.
+
+Real forks remain open, deliberately not resolved yet: (1) what happens when a zone's assigned-task durations exceed its own capacity — hard block, warning, or silent overflow; (2) zone recurrence needs per-occurrence-adjustable start/end times (a Monday zone and a Wednesday zone in the same series can differ) — the simple, uniform-rule version above is implemented, but this harder per-occurrence version is still deferred and likely needs its own per-instance model rather than the one shared `RecurrenceRule`. Each of these needs its own confirm-first pass before implementation. There is also currently no UI for *assigning* a task to a zone (setting `Task.zoneId`) — only creating/editing zones themselves, and no zone-delete UI anywhere.
 
 ## TaskTemplate (reusable task blueprints) — new, ungated
 
-A `TaskTemplate` is a reusable blueprint for tasks created repeatedly (e.g.
-"Take a walk") — title, category, optional default duration, optional link to
-a `TrackedBehavior`. Never itself schedulable or completable; exists only to
-be copied into a real `Task` via `Task.create()`. See `docs/CONSTITUTION.md`'s
-"TaskTemplate" section for the full model shape.
+A `TaskTemplate` is a reusable blueprint for tasks created repeatedly (e.g. "Take a walk") — title, category, optional default duration, optional link to a `TrackedBehavior`. Never itself schedulable or completable; exists only to be copied into a real `Task` via `Task.create()`. See `docs/CONSTITUTION.md`'s "TaskTemplate" section for the full model shape.
 
-**v1 scope: create, list, edit, delete** — unlike `Category`/`Zone`, templates
-are freely deletable since nothing depends on a template's continued existence
-once it has spawned a task (no orphaned-reference problem). Surfaced via a
-second Inbox tab ("Templates") and a frequency-ranked quick-drop chip row
-below the task-creation title field, alongside `TrackedBehavior` chips.
+**v1 scope: create, list, edit, delete** — unlike `Category`/`Zone`, templates are freely deletable since nothing depends on a template's continued existence once it has spawned a task (no orphaned-reference problem). Surfaced via a second Inbox tab ("Templates"), a frequency-ranked quick-drop chip row below the task-creation title field, and Edit Mode's drawer (same data, second entry point).
 
-Ungated — free functionality, same tier as `Category`, not behind
-`FeatureFlags.trackedBehaviorEnabled`.
+**Add Task sheet's own template browser (implemented, 2026-09-07)** is the first of these three to ship — a plain list under the Name section (stage 1 only), each row the same `TemplateRow` the Inbox's own Templates tab uses, minus its Edit/Delete affordance. Requested directly: "let's list the templates ... under Task Name." Confirmed via direct follow-up as templates only, not a second Tasks tab (see `docs/CONSTITUTION.md`'s own entry for why). **Not yet the frequency-ranked chip row** described above — this is a straightforward list in saved order, and `Task.templateId` (recorded on save) is what a future frequency-ranking pass would read.
+
+A curated built-in subset (`isBuiltIn: true`) is seeded at first launch for onboarding pre-population — see the onboarding section above.
+
+Ungated — free functionality, same tier as `Category`, not behind `FeatureFlags.trackedBehaviorEnabled`.
 
 ## TrackedBehavior (persistent tracked objects) — model implemented, UI scoped this round
 
-A separate architectural layer — persistent objects with a target that
-accumulates evidence across many scheduled `Task` instances over time (e.g.
-"Exercise, 60 min, 3x/week"). See `CONSTITUTION.md` for the data-model shape
-(`TrackedBehavior` entity, `Task.behaviorId`/`Task.actualAmount`).
+A separate architectural layer — persistent objects with a target that accumulates evidence across many scheduled `Task` instances over time (e.g. "Exercise, 60 min, 3x/week"). See `CONSTITUTION.md` for the data-model shape (`TrackedBehavior` entity, `Task.behaviorId`/`Task.actualAmount`).
 
-**This round adds real UI**: a dedicated 4th bottom-nav tab ("Tracked") for
-create/list/edit of `TrackedBehavior` rows directly, plus the same quick-drop
-chip surfacing `TaskTemplate` gets. `FeatureFlags.trackedBehaviorEnabled`
-remains the gating seam and is the intended future pro/paid-tier boundary —
-`Category` and `TaskTemplate` are explicitly NOT gated behind it.
+**This round adds real UI**: a dedicated 4th bottom-nav tab ("Tracked") for create/list/edit of `TrackedBehavior` rows directly, plus the same quick-drop chip surfacing `TaskTemplate` gets, including in Edit Mode's drawer. `FeatureFlags.trackedBehaviorEnabled` remains the gating seam and is the intended future pro/paid-tier boundary — `Category` and `TaskTemplate` are explicitly NOT gated behind it.
 
-**Still explicitly deferred**: history view, calibration suggestions, weekly
-review screen. This round is container + basic create/list/attach only — no
-rollup/analytics UI yet, unchanged from the original MVP posture.
+**Still explicitly deferred**: history view, calibration suggestions, weekly review screen. This round is container + basic create/list/attach only — no rollup/analytics UI yet, unchanged from the original MVP posture.
 
+## Edit Mode — direct Timeline manipulation (new, 2026-09-06)
+
+A permanent, toggleable Timeline mode — not onboarding-only, though onboarding's last step introduces it on a pre-populated first day (see onboarding section above). Full spec in `docs/CONSTITUTION.md`'s "Edit Mode" section: entry via two-finger long-press or a top-right "Edit" link, resize handles on both Tasks and Zones, unchanged move-drag, drag-to-delete-target for Tasks (YouTube-PiP-dismiss style, bypasses the cascade-push algorithm entirely), and the same Templates/TrackedBehavior quick-drop drawer as a second entry point. Zone delete and zone reposition are explicitly not included this round.
 
 ## Cascade replanning — drag-to-reschedule push (implemented)
 
-When "Prevent overlapping tasks" (Settings) is on and a task is dragged onto a slot that overlaps another scheduled task, the drop no longer rejects — it pushes. The overlapped task's nearer edge (start or end) to the dragged task's new start decides direction: if the dragged task's new start is closer to the existing task's end, the existing task shifts earlier so its end touches the dragged task's new start; if closer to the existing task's start, it shifts later so its start touches the dragged task's new end — in both cases the pushed task keeps its own original duration. If that push in turn overlaps a third task, that task is pushed the same way, chaining in whichever direction the cascade extends (capped at the day's task count as a cycle guard). If applying the full chain would push any task's start before 00:00 or end after 24:00 of the day being viewed, the entire cascade aborts and the drag snaps back as if it never happened — nothing partially applies. Every pushed task (not just the dragged one) goes through the same reschedule semantics as an ordinary drag (`originalScheduledAt` set once, `status` becomes `rescheduled`). Scope is drag-only: the create wizard and edit-time modal still reject-and-show-inline-error on overlap, since neither has a drag context to compute a push direction from. Implemented this session — see `docs/DECISIONS.md` for the algorithm and worked examples.
+When "Prevent overlapping tasks" (Settings) is on and a task is dragged onto a slot that overlaps another scheduled task, the drop no longer rejects — it pushes. The overlapped task's nearer edge (start or end) to the dragged task's new start decides direction: if the dragged task's new start is closer to the existing task's end, the existing task shifts earlier so its end touches the dragged task's new start; if closer to the existing task's start, it shifts later so its start touches the dragged task's new end — in both cases the pushed task keeps its own original duration. If that push in turn overlaps a third task, that task is pushed the same way, chaining in whichever direction the cascade extends (capped at the day's task count as a cycle guard). If applying the full chain would push any task's start before 00:00 or end after 24:00 of the day being viewed, the entire cascade aborts and the drag snaps back as if it never happened — nothing partially applies. Every pushed task (not just the dragged one) goes through the same reschedule semantics as an ordinary drag (`originalScheduledAt` set once, `status` becomes `rescheduled`). Scope is drag-only: the create wizard and edit-time modal still reject-and-show-inline-error on overlap, since neither has a drag context to compute a push direction from. Edit Mode's drag-to-delete drop path explicitly bypasses this algorithm entirely — see `docs/CONSTITUTION.md`'s "Edit Mode" section.
+
+## Important flag (display-only) — implemented
+
+`Task.isImportant` marks a handful of tasks as mattering most on a given day. **Purely visual**: a calm marker glyph before the task's title, with no effect on cascade, overlap, validation, or any limit on how many can be marked. Toggled from the task action sheet ("Mark important" / "Remove important"). Per-instance for recurring tasks, like every other single-instance edit.
+
+Confirmed directly as narrower than its first draft, which also proposed cascade-anchor priority and a soft cap warning past 3 per day — both dropped ("actually.. no restrictions"). See `docs/CONSTITUTION.md`'s "Important flag" section.
 
 ## Explicitly out of scope for MVP
 
@@ -94,10 +99,42 @@ When "Prevent overlapping tasks" (Settings) is on and a task is dragged onto a s
 - Apple Watch app, home/lock screen widgets
 - Energy/rhythm/capacity features
 - Any analytics dashboard UI (data fields exist for this per the Constitution; no screen yet)
-- TrackedBehavior UI surfaces (history view, calibration suggestions, weekly review) — model exists, UI is flagged off by default; see above
+- TrackedBehavior UI surfaces (history view, calibration suggestions, weekly review) — model exists, basic UI is in scope this round; see above
+- Zone delete
+- ~~Zone reposition/cascade~~ — reversed 2026-09-06 (confirmed directly, "zones should never overlap... perhaps cascading... that doesn't block user intention"); see docs/CONSTITUTION.md's "Edit Mode" section and docs/DECISIONS.md for the shipped design.
 
 ## Navigation structure
 
-## Navigation structure
+Bottom nav: **Inbox / Timeline / Tracked / Settings** (4 tabs, updated 2026-09-06 from the original 3 — "Tracked" is the new TrackedBehavior nav destination; see CONSTITUTION.md). No separate "Places," "Saved," or "Notes" sections — if these appear anywhere in the codebase or a work order, they're a scaffold mismatch, not a planned Amble feature.
 
-Bottom nav: **Inbox / Timeline / Tracked / Settings** (4 tabs, updated this round from the original 3 — "Tracked" is the new TrackedBehavior nav destination; see CONSTITUTION.md). No separate "Places," "Saved," or "Notes" sections — if these appear anywhere in the codebase or a work order, they're a scaffold mismatch, not a planned Amble feature.
+## Siri / Google Assistant integration — scoped, ready to build
+
+On-device voice-assistant integration (iOS App Intents, Android App
+Actions/App Functions) — add task, add note, add zone, read a templated
+day summary, and remove task via fuzzy title match. No server, no new
+architecture; reuses the existing repository layer and the already-scoped
+NLP quick-capture parser. Full spec in `docs/CONSTITUTION.md`'s "Siri /
+Google Assistant integration" section. Real native Swift/Kotlin work
+required per platform, distinct from most of the app's Dart-only build so
+far.
+
+
+## MCP server — deferred, depends on the (still undecided) desktop build
+
+Not scoped for implementation. MCP doesn't strictly require a hosted cloud
+backend — it supports a local stdio transport — but it does need a
+persistent running process for an AI client to connect to, which a
+sandboxed mobile OS doesn't offer. Amble's real data lives on the phone
+today; there is no desktop build. This isn't really "build an MCP server,"
+it's "build the desktop app, and an MCP server becomes possible once it
+exists" — the same open fork already on record from the earlier
+desktop/web discussion, not a new decision.
+
+What it would add once unblocked, worth remembering rather than re-deriving
+later: unlike Siri/Assistant's fixed intent slots, an MCP-connected LLM can
+reason open-endedly over real data ("what's a good 30-minute gap for a walk
+today") — a genuinely different capability from the Track 1 integration
+above, not a redundant second path to the same thing.
+
+
+

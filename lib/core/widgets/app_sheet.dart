@@ -104,6 +104,16 @@ class AppSheet {
       context: context,
       barrierColor: theme.colorScrim,
       backgroundColor: theme.colorSurfaceBase,
+      // Without this, Material caps the sheet at a fixed fraction of the
+      // screen (9/16) regardless of the keyboard — a content-sized sheet
+      // with a focused TextField would then overflow the instant the
+      // keyboard opened, since the sheet had no room left to grow into.
+      // `isScrollControlled: true` lets it grow to fit (up to the full
+      // screen height), so `MediaQuery.viewInsets.bottom` padding inside
+      // the content actually has somewhere to go. Reported directly as a
+      // "bottom overflowed by N pixels" dev banner on the quick-capture
+      // sheet.
+      isScrollControlled: true,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
           top: Radius.circular(theme.radiusModal),

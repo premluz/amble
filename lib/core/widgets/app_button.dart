@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../tokens/semantic_theme.dart';
+import 'app_press_feedback.dart';
 
 enum AppButtonVariant { primary, secondary }
 
@@ -103,46 +104,91 @@ class AppButton extends StatelessWidget {
           )
         : Text(label, style: textStyle);
 
-    if (isCupertino) {
-      return CupertinoButton(
-        onPressed: isDisabled ? null : onPressed,
-        color: background,
-        // CupertinoButton ignores `color` once disabled and falls back to
-        // its own washed-out default — `disabledColor` is the parameter
-        // that actually governs the disabled fill, so it has to repeat
-        // the same `background` explicitly or the platform default wins.
-        disabledColor: background,
-        borderRadius: BorderRadius.circular(cornerRadius),
-        padding: EdgeInsets.symmetric(
-          horizontal: theme.spacingLg,
-          vertical: verticalPadding,
-        ),
-        child: content,
-      );
-    }
+    // The platform button is kept for its shape, disabled palette,
+    // semantics and platform-adaptiveness (design principle 4) — but its
+    // OWN tap handling is switched off and the wrapper drives the action
+    // instead. Reported directly: "buttons became less responsive, as in
+    // tap and nothing happens for some time (and action after a
+    // moment)." Both `ElevatedButton` and `CupertinoButton` fire
+    // `onPressed` only once the GESTURE ARENA declares a winner, and
+    // inside a scrollable the arena holds the tap open to see whether the
+    // pointer becomes a scroll — that wait is the delay that was felt.
+    // AppPressFeedback fires from `onTapUp` (the instant the finger
+    // lifts), the same responsiveness fix `place_task_line.dart` already
+    // applies to the Timeline's own tap-to-place gesture.
+    //
+    // `onPressed` stays NON-NULL (a no-op) rather than null: null would
+    // switch both platform buttons to their disabled rendering even for
+    // an enabled button. AbsorbPointer below is what actually stops them
+    // handling the tap.
+    const noop = _noop;
+    final button = isCupertino
+        ? CupertinoButton(
+            onPressed: isDisabled ? null : noop,
+            color: background,
+            // CupertinoButton ignores `color` once disabled and falls back
+            // to its own washed-out default — `disabledColor` is the
+            // parameter that actually governs the disabled fill, so it has
+            // to repeat the same `background` explicitly or the platform
+            // default wins.
+            disabledColor: background,
+            borderRadius: BorderRadius.circular(cornerRadius),
+            padding: EdgeInsets.symmetric(
+              horizontal: theme.spacingLg,
+              vertical: verticalPadding,
+            ),
+            child: content,
+          )
+        : ElevatedButton(
+            onPressed: isDisabled ? null : noop,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: background,
+              foregroundColor: foreground,
+              // Same reasoning as CupertinoButton's `disabledColor` above:
+              // ElevatedButton's default disabled state is Material's own
+              // low-alpha grey, layered on top of whatever
+              // `backgroundColor` says. These two make the explicit
+              // disabled palette the actual disabled palette, not just the
+              // enabled one.
+              disabledBackgroundColor: background,
+              disabledForegroundColor: foreground,
+              elevation: 0,
+              // Material's own ink splash is suppressed — AppPressFeedback
+              // paints the wash instead, so leaving this on would show two
+              // overlapping ripples with different origins and timings.
+              splashFactory: NoSplash.splashFactory,
+              padding: EdgeInsets.symmetric(
+                horizontal: theme.spacingLg,
+                vertical: verticalPadding,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(cornerRadius),
+              ),
+            ),
+            child: content,
+          );
 
-    return ElevatedButton(
-      onPressed: isDisabled ? null : onPressed,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: background,
-        foregroundColor: foreground,
-        // Same reasoning as CupertinoButton's `disabledColor` above:
-        // ElevatedButton's default disabled state is Material's own
-        // low-alpha grey, layered on top of whatever `backgroundColor`
-        // says. These two make the explicit disabled palette the actual
-        // disabled palette, not just the enabled one.
-        disabledBackgroundColor: background,
-        disabledForegroundColor: foreground,
-        elevation: 0,
-        padding: EdgeInsets.symmetric(
-          horizontal: theme.spacingLg,
-          vertical: verticalPadding,
-        ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(cornerRadius),
-        ),
-      ),
-      child: content,
+    return AppPressFeedback(
+      onTap: isDisabled ? null : onPressed,
+      borderRadius: BorderRadius.circular(cornerRadius),
+      // The wash rides on the button's own foreground color: against a
+      // filled accent primary a dark wash would be nearly invisible,
+      // while the light foreground reads correctly on it — and on the
+      // secondary variant that same foreground is the dark text color,
+      // which is exactly what a light fill needs.
+      rippleColor: foreground,
+      // AbsorbPointer, NOT IgnorePointer: both stop the platform button
+      // handling the tap, but IgnorePointer also removes it from hit
+      // testing entirely — which left 40 existing tests (which target
+      // `find.byType(ElevatedButton)`) tapping a non-hit-testable node.
+      // AbsorbPointer keeps the button hit-testable and simply swallows
+      // the event, so those finders still resolve while the wrapper above
+      // still receives the pointer.
+      child: AbsorbPointer(child: button),
     );
   }
 }
+
+/// A no-op passed as the platform buttons' `onPressed` — see the note in
+/// [AppButton.build] on why it can't simply be null.
+void _noop() {}

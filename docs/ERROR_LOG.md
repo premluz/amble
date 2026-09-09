@@ -698,3 +698,255 @@ Note this was *latent* until the same-day fix earlier that day, which started se
 **Fix:** Added a separate `alwaysShowTime` param to `TaskCapsuleTextRow` (default false, preserving Task view's existing behavior exactly) that forces the time range visible regardless of `durationVisible` — the duration suffix itself stays independently gated by `durationVisible` alone, now correctly split into its own `if` rather than sharing the outer one. Wired `alwaysShowTime: widget.compactText` at the one call site in `timeline_screen.dart` (`compactText` is `_DraggableTaskBlock`'s own existing "true in List mode" signal), rather than changing `durationVisible`'s meaning for both views — confirmed directly, since Task view's split layout should keep its current dev-toggle-driven look unchanged.
 
 **Prevent next time:** A boolean parameter's name ("durationVisible") can quietly mean something broader than it says ("also hides the time it's supposedly independent of") when it was written for one specific caller/mock and later reused by a different one with different requirements. Before wiring an existing shared widget into a NEW context, read what each of its flags actually gates in the widget's own body — not just what its name and doc comment claim at a glance — especially when that widget's doc comment cross-references "the mock" as the source of truth for a design choice that may not apply to the new caller at all.
+
+## `AppSelectableChip` stretches to full width inside a `Wrap`
+
+**Symptom** (found on-device, not by any test): the TaskTemplate form's category chips rendered one per row, each spanning the full pane width, instead of flowing onto shared lines — even though the task detail sheet's own Category pane, using the same `Wrap` inside the same `AppPane`, wraps correctly.
+
+**Cause**: `AppSelectableChip`'s inner `Container` sets a height and `alignment: Alignment.center` but no width. Under LOOSE constraints — which is exactly what a `Wrap` hands its children — an aligned `Container` expands to the full available width. Every pre-existing caller places the chip inside a `Row` (day-of-week chips wrapped in `Expanded`, duration presets intrinsic), where that never happens, so the component's own doc comment ("no fixed width … leave it intrinsic") is true for `Row` and misleading for `Wrap`. The task detail sheet's Category pane does not hit this because it uses its own `_CategoryTag`, not `AppSelectableChip`.
+
+**Fix**: wrap each chip in `IntrinsicWidth` at the `Wrap` call site (`features/inbox/task_template_form_panes.dart`), sizing it to its label. Deliberately fixed at the call site rather than by changing `AppSelectableChip` itself — every existing `Row` caller depends on the current expand-to-fill behaviour, and altering the shared component to suit one new caller would have been a change well outside this session's scope.
+
+**Lesson**: a shared widget verified only in one layout parent is not verified for a different one. Constraint behaviour (`Row` tight/flex vs. `Wrap` loose) is exactly the kind of assumption that survives the first dataset and breaks on the second — the same pattern CLAUDE.md's "verify against a SECOND, genuinely different dataset" rule names.
+
+**Also noted, not a bug**: an early attempt at this blamed a nested `SingleChildScrollView` (the form added one inside `AppSheetSize.half`, which already provides its own). Removing the redundant nesting was correct on its own merits and was kept, but it was not the cause — the chips still stretched afterwards. Recorded so a future session doesn't re-chase that explanation.
+
+## `AppSheet` does not account for the keyboard — a focused field or the Save button can sit under the IME
+
+**Symptom** (found on-device while verifying the TrackedBehavior form): with the soft keyboard up, the sheet's lower fields ("Minimum", "Times per week") and the Save button are covered by the IME, with no way to scroll them into view. On a form long enough to reach under the keyboard, it cannot be completed without dismissing the keyboard first — and dismissing it via the system back gesture closes the whole sheet, losing the entry.
+
+**Cause**: `AppSheet.show` sizes its content purely from `MediaQuery.sizeOf(context).height` (`* 0.5` for `AppSheetSize.half`, `- spacingXl` for `nearFull`) and never reads `MediaQuery.viewInsets.bottom`. The sheet therefore keeps its full height while the keyboard overlays the bottom of it, and `AppSheetSize.small` — which sizes to its child with no scroll view at all — has no way to reveal the covered part either.
+
+**Status: NOT fixed.** `AppSheet` is a shared core widget with many callers (the tracked-behavior form, the TaskTemplate form, the category picker, the duration modal, the remove-scope sheet), so changing its sizing affects every one of them and is a change well outside the scope of the session that found it. Flagged for a dedicated pass rather than patched as a drive-by.
+
+**Whoever fixes it**: the shape is a `viewInsets.bottom` padding on the sheet's content plus a scroll view for the `small` size, verified against every existing caller — a short sheet must not gain a scrollbar or change height when the keyboard is closed. Worth checking the TaskTemplate form (`features/inbox/task_template_form.dart`) at the same time: it has the same field-count profile and almost certainly the same problem.
+
+**Lesson**: a form verified only with pre-seeded data, or only in a widget test, is not verified for real entry — the keyboard is part of the layout on a device and part of nothing in a test. This one was invisible until a real typing pass on a real emulator.
+
+## Timeline widget tests with fixed-hour task fixtures are time-of-day flaky
+
+**Symptom**: `multi_task_selection_test.dart`, `multi_task_group_move_test.dart`, and `multi_task_group_resize_test.dart` (10 tests total) fail with `tester.tap()`/`tester.drag()` hit-test misses, or wrong-value assertions, depending on what real wall-clock time the suite happens to run at (first observed failing at 16:54 local time; passes at other times of day).
+
+**Cause**: these tests build fixture tasks at hardcoded hours (`hour: 9`, `12`, `13`) and never supply `readViewedMinutes` to pin the timeline's scroll position. `TimelineScreen`'s real `_scrollToCurrentHourCentered` (`timeline_screen.dart`) centers the initial scroll on `DateTime.now()`'s time of day, by design ("should always lead to the current hour being in the center" for a fresh day). When "now" is far from the fixture hours, the fixture tasks land off-screen and any tap/drag against them misses.
+
+**Not caused by** the same-day `DevZoneViewInCycle`/`DevMultiTaskEditMode` default flips (see DECISIONS.md) — confirmed by temporarily shifting the fixture hours to near the real current time, which made all 6 `multi_task_selection_test.dart` cases pass unchanged otherwise, then reverting that probe edit. These tests would have failed identically at this same time of day with both flags at their old defaults too.
+
+**Status: NOT fixed.** Pre-existing test-fixture bug, out of scope for the session that found it (a two-line default flip). Whoever picks this up should have `pumpTimeline` supply a fixed `readViewedMinutes` (or an injectable "now") so fixture hours and scroll-centering can't drift apart — same shape as `zone_move_end_to_end_test.dart`'s own zone, which sidesteps this by anchoring to the current real hour instead of a fixed one.
+
+**Prevent next time:** a widget test asserting on-screen visibility of a fixture built at a fixed clock hour is implicitly asserting something about the real wall-clock time the suite runs at, whenever the screen under test has any "scroll/center on now" behavior. Either anchor fixtures to `DateTime.now()` (like the zone test does) or pin whatever reads "now" for that screen.
+
+**Wider than first scoped**: recurred again later the same day, running at 23:44 local time instead of 16:54 — this time hitting `zone_move_end_to_end_test.dart`/`zone_task_view_move_resize_test.dart` (both anchor their own zone to the CURRENT real hour, `now.hour * 60`, specifically to avoid the fixed-hour version of this bug — but `+ 60 minutes` off a zone anchored at 23:00 overflows past `24 * 60`, the day's own hard boundary, and the move/resize commit's existing "never past midnight" guard silently rejects it) and `notification_service_test.dart`'s `scheduleForZone` "upcoming" cases (a fixed hour assumed to be later than "now" stops being true once that hour has already passed today). Same root cause family — a fixture's relationship to "now" was assumed stable but isn't — just a different collision (day-boundary overflow, "upcoming" no longer being upcoming) than the original scroll-centering one. None of these are caused by whatever feature work happened to be running when the clock crossed the trigger point; each is a pre-existing, dormant bug in the fixture's own assumptions about wall-clock time, confirmed by checking the exact failing values (e.g. `startMinutes: 1380`/`endMinutes: 1440` — 23:00/midnight) against the real system clock at run time.
+
+## Changing a recurring task's TIME silently created a whole parallel series
+
+**Symptom** (reported directly, found on-device): "see duplicates, sometimes even 2" — the same recurring task appearing two or three times on a single day, despite Duplicate being a hidden feature. Reported triggers: "perhaps restarting app", "used to hapepen after saving", "perhps moving things around".
+
+**Diagnosed from a real exported backup** (`amble-backup-2026-09-07T01-50-30-105345.json`), not reproduced by guesswork:
+- 651 tasks, all IDs unique — genuinely distinct rows, so not a rendering bug.
+- 117 groups sharing one `recurrenceId` on one calendar day; 232 extra rows.
+- One daily series ("Stretching", a single `recurrenceId`) held **three complete parallel 56-day generations** at 05:00 / 06:30 / 07:05, all spanning the same date range. "Walk" likewise, at 04:25 / 05:00 / 05:15.
+- Every stranded row was `pending` with `originalScheduledAt == null` — i.e. fully prunable, so the prune simply never ran on the path that created them.
+- Simulating the generator against the real data: one 07:05 → 08:00 template edit yields **59 occurrences, 59 unclaimed → 59 brand-new rows**, zero overlap with the existing 175.
+
+**Cause — two faults compounding:**
+
+1. `generateRecurrenceInstances` (`recurrence_generator.dart`) decided "is this occurrence already materialized?" by matching an exact `DateTime` against a `Set` of existing `scheduledAt`/`originalScheduledAt` values, while the occurrence grid itself is anchored to `template.scheduledAt`'s **time of day**. Move that time and every slot shifts, so *none* of the already-materialized rows match any more and the entire window regenerates.
+
+2. `updateTaskWithChangedRecurrence` (`task_providers.dart`) updated `template.recurrenceRule` but **never `template.scheduledAt`**. So an "all future occurrences" time edit never reached the series: the template stayed at the old time, `_materializeSeries` regenerated the window back at that old time, and the edited instance was left stranded at the new one. Its own doc comment even claimed a same-days save "round-trips harmlessly" — true only if the time hadn't changed.
+
+`materializeDueRecurrences` (called from `main.dart` on every launch) then re-ran `_materializeSeries` with **no prune at all**, so any anchor drift refilled the whole window again on each restart — which is why it looked like restarting caused it.
+
+A third, smaller fault fed the same machine: `_EditScheduleFormState._save` overwrote `existing.scheduledAt` with no prior capture, so `updateTaskThisInstanceOnly`'s `originalScheduledAt ??= scheduledAt` recorded the **new** time as the "original". The vacated slot then went unclaimed and got refilled. Three rows in the backup carry this signature (`originalScheduledAt == scheduledAt`). The other save path (`_TaskDetailFlowState`) already had the correct guard — the two copies of this logic had drifted apart.
+
+**Fix:**
+- Generator now matches occupancy **per calendar day per series**, not per exact `DateTime`. A day already occupied by any instance can never be refilled, whatever time its occupant sits at — which also makes the prune-free launch top-up structurally safe. Valid because `RecurrenceFrequency` is only `daily | weekly` and sub-daily is deferred in SCOPE.md; flagged in-code that a future twice-daily rule would need `(day, occurrence-index)` instead.
+- `updateTaskWithChangedRecurrence` now detects a re-anchor (time-of-day or duration differing from what the series currently generates) and rewrites the template's own time/duration, then realigns every occurrence from the edited day forward via `_deleteFutureInstancesForRealign`.
+- Re-anchor detection compares against **sibling instances**, not the template's own stored fields: Hive's `get` returns the same live object the caller already mutated, and the edited task is very often the template itself — so any before/after comparison against it trivially reads "unchanged" and the realign would never fire. This was caught by a test that failed for exactly this reason, not by inspection.
+- `_EditScheduleFormState._save` gained the missing capture guard.
+
+**Data repair**: `tool/dedupe_recurring_backup.py` repairs an exported backup (dry-run by default). Keeps completed/skipped rows first, then genuinely moved ones, then the row matching the template's anchor. On the real backup: 651 → 419 tasks, 232 removed, 0 duplicates left, all 14 non-recurring tasks and all categories/zones preserved.
+
+**Prevent next time:** a dedup key must be as coarse as the thing it protects against. Keying occupancy on an exact `DateTime` silently assumes the occurrence grid never moves — but the grid is derived from a field the user can edit, so the key and the generator disagreed the moment anyone changed a time. When a "does this already exist?" check is derived from mutable input, the check has to be invariant to the mutations that input actually undergoes. Equally: two copies of the same save logic (`_TaskDetailFlowState` and `_EditScheduleFormState`) drifted apart, and only one had the guard — the duplicated logic is itself the defect.
+
+## Imported-event titles sat 56px left of native task titles — a test that agreed with the bug
+
+**Symptom** (reported directly, from an on-device screenshot): imported calendar events' titles and pills did not line up with native tasks' on the Spatial Task View, despite the widget having been built specifically to match them.
+
+**Cause**: `ExternalEventCapsuleBlock` returned an outer `Positioned(left: 0, right: 0)` spanning the full row, then placed the rail at an absolute `left` and the text at a bare `textColumnLeft`. The native path (`_DraggableTaskBlock._buildSplit`) instead uses ONE outer box at `left` (the hour gutter's width, 56) with both the rail and the text column positioned *relative* to it. So the rail landed correctly by coincidence — `0 + left` happens to equal `left` — while every title lost the gutter offset entirely and rendered 56px too far left.
+
+**Why the existing test missed it**: the cross-widget alignment test pumped `TaskCapsuleTextRow` at a bare `Positioned(left: textColumnLeft)` — i.e. it reproduced the *same wrong origin* on the native side too. Both sides were 56px off, they agreed, and the test passed. It was asserting that the widget honours the value handed to it, never what the real caller actually supplies. The other positioning test was weaker still: it asserted on `Positioned.left` **widget properties** rather than rendered geometry, which cannot see a wrong parent origin at all.
+
+**Fix**: `ExternalEventCapsuleBlock` now mirrors the native structure — outer `Positioned(left: left, right: 0)`, rail at `left: 0`, text at `left: textColumnLeft`. Both tests were rewritten to assert **absolute on-screen positions** via `tester.getTopLeft`, and the cross-widget one now replicates the native path's real nesting. Verified by reverting the fix: both tests fail without it, pass with it.
+
+**Prevent next time:** a test that constructs both sides of a comparison by hand can encode the same mistake into both and still pass. When asserting that two widgets agree, at least one side must be built the way production actually builds it — otherwise the test proves only that the two fixtures match each other. And assert on rendered geometry (`getTopLeft`), not on layout-widget properties: `Positioned.left` is an input to layout, not the result of it, so it says nothing about where a subtree's origin actually is.
+
+## [2026-09-07] External calendar events had their own parallel positioning pipeline, hiding a stacking-parity gap
+
+**Symptom:** Reported directly: "the imported tasks should also stack in the same way as native tasks... They just can't be moved, changed, or have their duration, time, or name updated, but otherwise exactly the same, with different styling." An overlapping task and imported event rendered independently, each unaware of the other — no shared lane, no shared cluster — even though the pure layout algorithms (`layoutOverlappingTasks`, `detectOverlapClusters`) looked like the obvious place stacking already happened.
+**Cause:** Earlier in this project's Calendar feature work, external events were deliberately routed around those two algorithms via a second, fully independent pipeline inside `timeline_screen.dart`: their own top/height computation, their own List-mode stacking-cursor entries, their own render loop (`for (final event in widget.externalEvents) ExternalEventCapsuleBlock(...)`). That was a reasonable choice at the time (events needed no lane/cluster awareness, since nothing required them to interact with tasks positionally) — but it meant the two pure algorithms being `Task`-only was never actually the whole story; genuine parity required deleting that second pipeline outright, not just generalizing the algorithms' input type.
+**Fix:** Introduced a minimal `ScheduledBlock` interface (`id`, `scheduledStart`, `scheduledEnd`) implemented by both `Task` and `ExternalCalendarEvent` — deliberately narrow (positioning only, no status/category/completion), so implementing it does not make an event editable. Generalized `TaskLayoutSlot`/`layoutOverlappingTasks` and `OverlapCluster`/`detectOverlapClusters` from `List<Task>` to `List<ScheduledBlock>` (keeping `.task`/`.tasks` as nullable/filtered convenience getters so every task-only call site kept compiling). Then deleted the old parallel event pipeline entirely and routed events through the same `slots`/`clusters` tasks use — including `_collapsedTops`, which changed from returning two separate maps (`taskTops`/`externalEventTops`) to one unified map, since a shared stacking cursor can no longer be split back apart after the fact.
+**Prevent next time:** When a new block type is added to Timeline that deliberately reuses only PART of a task's behavior (styling but not interaction, e.g.), check whether it was given its own parallel pipeline for positioning rather than sharing the real one — a working "position it independently" implementation can look complete while quietly excluding that type from every task-only layout algorithm. If two types are ever asked to visually coexist (shared lanes, shared clusters), a parallel pipeline is the wrong shape from the start; a shared interface covering only the properties actually needed (here, just start/end/id) is safer than either duplicating the algorithm or wrapping the foreign type in a fake `Task`.
+
+## [2026-09-07] A test's `Positioned` wrapper duplicated a widget's own internal positioning, colliding two different `top` computations
+
+**Symptom:** Self-caught before running: the first draft of the unified event-slot render branch in `timeline_screen.dart` wrapped `ExternalEventCapsuleBlock` in an outer `Positioned(top: blockTops[event.id]!, ...)`.
+**Cause:** `ExternalEventCapsuleBlock` already builds its own outer `Positioned` internally, computing `top` from either `collapsedTop` (List mode) or real elapsed-time math (Task view) — never from the caller-supplied `blockTops` map at all. The redundant outer wrapper's `top` and the widget's own internal `top` disagreed silently (no error, no exception — just two nested `Positioned`s, the inner one winning), which would have been very hard to notice from a screenshot alone since the values are close for a normally-scheduled event.
+**Fix:** Removed the outer `Positioned`; the render branch now configures `ExternalEventCapsuleBlock` directly (key, `left`, `collapsedTop`, etc.) and lets it position itself, exactly like every other caller already does.
+**Prevent next time:** Before wrapping any widget in a fresh `Positioned`/layout wrapper "to be safe," read that widget's own `build()` first — a widget that already returns its own top-level `Positioned` (common for anything absolutely placed inside a `Stack`) should never be wrapped in a second one; pass position data through its own parameters instead.
+
+## [2026-09-07] An event's lane offset baked into the outer box shifted its title too, not just its rail
+
+**Symptom:** Reported directly from a screenshot after shipping task/event lane-sharing parity: "text not aligned wit hnative tasks. all tasks text should be aligned to same x." A task's title and an overlapping event's title, both meant to share one text column, landed at visibly different x positions.
+**Cause:** `ExternalEventCapsuleBlock`'s `left` parameter was computed as `hourGutterWidth + pillBoxLeftForColumn(column: slot.column, ...)` — the lane offset baked directly into the outer box's position. Since the widget's text column (`textColumnLeft`) is positioned RELATIVE to that same outer box, an event landing in a non-zero lane (e.g. because it now overlaps a task, per the new stacking parity) dragged its title along with it. `_DraggableTaskBlock` (the real task's own equivalent) never has this problem: its outer box's `left` is always the FIXED day-column origin (`hourGutterWidth`), and the lane offset is applied only to the inner rail via a separate `columnOffset`, leaving the text column's absolute x untouched regardless of lane.
+**Fix:** Added a `columnOffset` parameter to `ExternalEventCapsuleBlock`, applied only to the rail's own `Positioned`, and reverted `left` to the fixed day-column origin — mirroring `_DraggableTaskBlock`'s own `left`/`columnOffset` split exactly. `timeline_screen.dart`'s call site updated to pass the two separately instead of pre-combining them.
+**Prevent next time:** When a widget's box carries both a "shared, lane-independent" child (a text column meant to line up with every sibling regardless of overlap) and a "per-lane" child (a rail/pill that must shift with its own column), the lane offset must be applied to ONLY the per-lane child's own position — never folded into the outer box's origin, even though that looks equivalent for a lane-0 item. The existing alignment tests for this widget passed throughout, because every one of them used `columnOffset`-equivalent 0 (an unclustered event) — a test asserting title-x invariance specifically across DIFFERENT lane offsets (not just different `textColumnLeft` values) is the only kind that would have caught this before a screenshot did.
+
+## [2026-09-07] A pushed Navigator route can never leave the route below it interactive, no matter how it's configured
+
+**Symptom:** Building the tap-empty-space quick-create feature, a small (~25%-height) sheet was pushed as a `Navigator` route with `barrierColor: null` (no scrim), reasoning that with no barrier, Timeline underneath — including a draggable placeholder pill — should stay interactive. It didn't: a widget test driving a drag on the pill while the small sheet was "open" silently did nothing (`onVerticalDragUpdate`/`onPanUpdate` never fired), with no error or warning.
+**Cause:** Confirmed via a real hit-test trace (`tester.tap(..., warnIfMissed: true)` reporting a hit-test miss with the render chain printed): a `RenderAbsorbPointer` was swallowing the pointer at the pill's exact location. This is `ModalRoute`/`_ModalScopeState`'s own machinery — every route below the topmost one in the `Navigator`'s stack is unconditionally wrapped in an `AbsorbPointer`, entirely independent of that route's own `barrierColor`/`opaque`/`barrierDismissible` settings. There is no route-level configuration that opts out of it — `opaque: false` only affects whether the route paints behind it (visually see-through), not whether pointer events reach behind it.
+**Fix:** The small sheet was rewritten as a plain in-tree overlay widget (`QuickCreateOverlay`) living directly inside the same widget subtree as the pill (Timeline's own `Stack`), with no `Navigator.push` involved at all until the user actually expands it — at which point a REAL route push is correct and wanted (matching every other entry point into that flow). Only once promoted does `AbsorbPointer` correctly kick in.
+**Prevent next time:** If a design ever calls for "a modal-looking panel that still lets you interact with what's behind it," that is fundamentally incompatible with `Navigator.push`/`ModalRoute` — pick a plain overlay (a `Stack` child, an `OverlayEntry`, or app state gating what renders) instead, regardless of how tempting it is to reach for a route with a transparent/null barrier. A widget test asserting a gesture doesn't fire is easy to misread as "my callback logic is wrong" — when a drag/tap genuinely produces zero effect with zero errors, check `tester.tap(..., warnIfMissed: true)`'s hit-test trace for an unexpected `AbsorbPointer`/`IgnorePointer` before suspecting the gesture-handling code itself.
+
+## [2026-09-07] A move-drag GestureDetector missing `onVerticalDragStart` didn't reliably win the gesture arena against a scrollable ancestor
+
+**Symptom:** `PendingTaskPill`'s own move-drag `GestureDetector` (`onVerticalDragUpdate`/`onVerticalDragEnd`, no `onVerticalDragStart`) worked fine in an isolated widget test, but inside the real `TimelineScreen` (where the pill sits inside a `SingleChildScrollView`, the scrollable day column), a manual test gesture sequence (`startGesture`/`moveBy`/`up`) produced `onVerticalDragEnd` but NEVER `onVerticalDragUpdate` — no error, the callback simply never fired, even though the exact same gesture shape worked in isolation.
+**Cause:** The real `_DraggableTaskBlock` (dragging an actual task) wires all three — `onDragStart`/`onDragUpdate`/`onDragEnd` — onto its own move detector. `PendingTaskPill`'s detector had only update/end. Missing `onVerticalDragStart` changed how the `GestureDetector`'s underlying `VerticalDragGestureRecognizer` claimed the gesture arena early against the `Scrollable`'s own competing vertical-drag recognizer (the day column it's nested inside) — without a start callback, the recognizer didn't accept the drag decisively enough, and the scrollable effectively absorbed the move phase while still allowing the end event through.
+**Fix:** Added `onMoveStart` (even a no-op `(_) {}` at the call site) to `PendingTaskPill`, wired to `onVerticalDragStart` on the same detector — matching `_DraggableTaskBlock`'s own three-callback shape exactly.
+**Prevent next time:** Any new draggable widget nested inside a `Scrollable`/`SingleChildScrollView` should wire all three vertical-drag callbacks (`start`/`update`/`end`), not just update/end, even if `start` has nothing to do — omitting it is a silent, hard-to-diagnose gesture-arena loss against the scrollable ancestor, not a compile-time or runtime error.
+
+## [2026-09-07] `flutter test`'s synthetic gesture sequence needs a `pump()` between EVERY step against a live TimelineScreen, not just before release
+
+**Symptom:** A widget test driving a manual drag (`tester.startGesture` → `gesture.moveBy` → `gesture.up`) against the real `TimelineScreen` produced `onVerticalDragStart`/`onVerticalDragEnd` but never `onVerticalDragUpdate` — even after fixing the missing-`onVerticalDragStart` gotcha above. The identical sequence against an isolated single-widget test (no surrounding `TimelineScreen` tree) worked correctly with just one `pump()` between the move and the release.
+**Cause:** Not fully root-caused, but empirically: in the full `TimelineScreen` tree (many more concurrently-ticking things — `EditModeWiggle`'s continuous animation, a `Timer.periodic` for the current-time indicator, multiple nested scrollables/`AnimatedBuilder`s), a single `moveBy` call without an interleaved `pump()` immediately after it did not get processed into a delivered `onVerticalDragUpdate` before the subsequent `up()` call effectively finished the gesture out from under it.
+**Fix:** Interleave `await tester.pump()` after `startGesture`, after every individual `moveBy` call, and after `up()` — not just once before checking assertions. Splitting one large `moveBy` into a few smaller ones (each followed by its own `pump()`) made the fix reliable; a single big `moveBy` even with a pump immediately after did not.
+**Prevent next time:** When writing a new widget test that manually drives a drag gesture against the real, full `TimelineScreen` (not an isolated single-widget harness), default to pumping after every single gesture call (down, each move, up) rather than assuming the isolated-widget-test pattern (one `pump()` before release) will transfer unchanged — it doesn't reliably. `tester.drag()`'s own internal implementation has this same gap (no pumps between its internal steps), so it isn't automatically safer than a manual sequence in this specific context.
+
+## Geometry assertions are meaningless on a zero-inset test viewport
+
+**Symptom**: a regression test for "the mini sheet doesn't reach the bottom edge" passed both with AND without the fix.
+
+**Cause**: the default `flutter_test` viewport has a zero bottom safe-area inset. The bug was a doubled `SafeArea` on the bottom edge, so with no inset it added zero padding and the sheet was flush either way. The bug only reproduces on a device with a home indicator.
+
+**Fix**: set a real inset before pumping, and reset it after:
+```dart
+tester.view.viewPadding = const FakeViewPadding(bottom: 34);
+tester.view.padding = const FakeViewPadding(bottom: 34);
+addTearDown(() { tester.view.resetViewPadding(); tester.view.resetPadding(); });
+```
+
+**Rule**: any assertion about safe areas, insets, or bottom/top-edge geometry must run against a viewport that actually has the inset. Always confirm such a test fails with the fix reverted — a geometry test that has never been seen red is not evidence.
+
+## "Known flaky" absorbed a real regression for two sessions
+
+**Symptom**: two `multi_task_group_resize_test.dart` tests failed every run; two consecutive PROGRESS_LOG entries recorded them as "pre-existing flaky `multi_task_group_*` failures, zero regressions."
+
+**Cause**: they were a genuine break introduced by the top-edge resize handle. `handleFor()` found a handle via `find.byType(ResizeHandle)`, which matched one widget until a second (top) handle began rendering; `tester.drag` then threw on the ambiguity before any resize ran. The failures showed as durations simply never changing — which reads like "the feature did nothing," not like flake.
+
+**Fix**: target `.last` (the bottom handle — `TaskCapsuleBlock` renders top-first); group resize is bottom-edge-only by decision.
+
+**Rule**: re-verify a "known flaky" label whenever the code beneath it changes, and read the failure before reusing the label. A test failing identically across sessions is a real defect until someone actually reads the output. When adding a second instance of an existing widget, grep the suite for `byType(<Widget>)` finders that assumed exactly one.
+
+## A Hive write inside a widget test hangs the test — or its teardown
+
+**Symptom**: a widget test that seeded a template produced no output and never returned. No exception, no failure — just a hang, which reads as a stuck runner rather than a test bug.
+
+**Cause**: a Hive write started inside a widget test's own fake-async zone never completes. `await box.put(...)` in the test body hangs on the spot. Dropping the await (`unawaited(...)`) does NOT fix it — it just relocates the hang to teardown, where `box.close()` waits on that same pending write. Both were observed here, one after the other.
+
+**Fix**: wrap the write in `tester.runAsync`, which escapes the fake clock:
+```dart
+await tester.runAsync(() => templateBox.put(template.id, template));
+```
+`create_flow_template_browser_test.dart` already did exactly this; `template_list_view_test.dart` gets away with a bare `await` only because it seeds outside a `testWidgets` body.
+
+**Rule**: any real async I/O inside `testWidgets` goes through `tester.runAsync`. Also: seed providers that read at build time (`taskTemplateListProvider` calls `getAll()` in `build()`) BEFORE pumping — a row written afterwards never appears.
+
+## The meta-lesson: accepting evidence that can't distinguish working from broken
+
+Four separate defects in the quick-create work traced to one root cause — a check was run, it came back green, and the green could not have gone red even if the code were wrong. Recorded together because the individual entries below each read as unrelated bad luck, and they are not.
+
+The instances:
+1. **A pushed route was assumed non-modal** because it was configured to look that way. One hit-test trace disproved it (`AbsorbPointer`, see that entry). Reasoning about framework behaviour stood in for testing it.
+2. **A bottom-inset regression test passed with the fix reverted** — the default test viewport has a zero bottom inset, so the doubled `SafeArea` added zero padding either way.
+3. **Two genuinely-broken tests were labelled "known flaky" for two sessions** and written up that way in PROGRESS_LOG twice, without the failure output being read once.
+4. **Suite results were written into PROGRESS_LOG before the suite exited**, twice, and had to be corrected.
+
+The rule, in the order worth applying it:
+- **Before trusting a test, make it fail.** Revert the fix, watch it go red, restore. A test that has only ever been green is an assertion about nothing. This is cheap and catches (2) and most of (1).
+- **An environment-dependent assertion must run in an environment that has the thing.** Insets, safe areas, keyboards, time zones, device pixel ratios — the default test surface has none of them.
+- **"Known flaky" expires whenever the code under it changes.** A test failing *identically* every run is a defect; flake is random. Read the output before reusing the label.
+- **Never write a verification result before the command exits.** Not "it'll pass," not "it passed last time."
+
+Related: CLAUDE.md's rule about verifying an inferred rule against a second, genuinely different dataset. Same shape — a check that has only ever seen one environment is not yet a check.
+
+## A widget test's own save-reveal timers outlive the save
+
+**Symptom**: a test that triggers a real task creation fails with "A Timer is still pending" even though the task saved correctly and every assertion about it passes.
+
+**Cause**: creating a task starts Timeline's reveal animations — `_DayTimelineState._revealSavedTask` (900ms) and `_DraggableTaskBlockState._scheduleReveal` (500ms). They outlive the save itself, so a test that pumps only enough for the write to land still ends with timers queued.
+
+**Fix**: pump past both after the save completes:
+```dart
+await tester.pump(const Duration(milliseconds: 1000));
+await tester.pump(const Duration(milliseconds: 600));
+```
+
+**Rule**: read the pending-timer stack trace — it names the widget and duration that queued it. The failure is about teardown, not about the assertion immediately above it, so debugging the assertion is wasted effort.
+
+## Adding a second instance of a widget breaks every `byType` finder that assumed one
+
+**Symptom**: `tester.drag(find.byType(ResizeHandle))` throws on ambiguity, so the drag never runs, and the test fails with the value it was supposed to change simply unchanged — which reads as "the feature silently does nothing," not as a finder problem.
+
+**Cause**: the finder matched exactly one widget until a second (top-edge) handle started rendering.
+
+**Fix**: disambiguate with `.first`/`.last`, and comment which is which and why — here group resize is bottom-edge-only by decision, so `.last` is load-bearing, not cosmetic.
+
+**Rule**: when adding a second instance of an existing widget, grep the whole suite for `byType(<Widget>)` before running anything. It's one command and it finds every site at once.
+
+## `multi_task_group_resize_test`'s floor case is load-sensitive (2026-09-08)
+
+**Symptom**: "a selected task already at the resize floor stays there..." failed once in a full-suite run (`Expected: a value less than <60>, Actual: <60>` — the resize did not happen), then passed on an immediate re-run of the identical code, and passes in isolation.
+
+**What is known**: the test drags the handle of a 5-minute task. That is exactly the case where `resizeHandleHeightFor` shrinks the handle to preserve a move band, so the hit target is at its smallest. A synthetic drag landing on a small target under full-suite scheduling pressure is a plausible cause, but this has NOT been proven — one observed failure is not a diagnosis.
+
+**Deliberately NOT labelled "known flaky" and moved on from.** This project has already had a real regression hide under that label for two sessions (see the entry above). What is recorded here is the observation, not a conclusion. If it recurs: check whether the drag is landing on the handle at all (assert the callback fired, not just the resulting duration) before assuming timing.
+
+## An isolated-widget test can confirm a layout formula the real screen contradicts
+
+**Symptom**: the quick-add placeholder's title rendered one hour-gutter width (56px) left of every real task's name, and a widget test asserting "the title sits at the shared text column" passed anyway.
+
+**Cause, two layers.** The code used `left: textColumnLeft - left`, double-correcting: `textColumnLeft` is expressed relative to the block's own box (which already starts at `left`), exactly as `_buildSplit` uses it for a real task. The test then supplied BOTH values itself (`left: 56`, `textColumnLeft: 120`) and asserted the result equalled a bare `120` — which the buggy formula also satisfies, since 56 + (120 − 56) = 120. **Both formulas agreed at that single point**, so the test could not tell them apart.
+
+**Fix**: assert the SUM (`left + textColumnLeft` = 176), which the two formulas disagree on — and, more importantly, add the assertion in a real `TimelineScreen` comparing the placeholder's name x against an actual task's name x. That version fails with 80.0 vs 136.0, i.e. the exact 56px the user reported.
+
+**Rule**: a geometry test whose inputs are supplied by the test itself can encode the same arithmetic error as the code. For anything positioned relative to shared layout, assert against a REAL sibling that uses the same layout ("the draft's name is at the same x as a task's name"), not against a number the test chose. A relationship between two real things cannot be satisfied by a wrong formula the way a hand-picked constant can.
+
+## `edit_schedule_repeats_test.dart`/`affect_future_instances_test.dart` fail intermittently, with a different specific test each run
+
+**Symptom**: running these two files (alone, or as part of `test/features/task_detail/`) fails 0-3 tests per run, with the SPECIFIC failing test changing between otherwise-identical runs of unmodified code. Traced to `HiveError: Box has already been closed`, thrown asynchronously "after the test had completed" — i.e. the test's own teardown closed the box while a still-in-flight write from `TaskList._materializeSeries`/`updateTaskWithChangedRecurrence` was mid-`putAll`.
+
+**Cause**: the same family as the already-documented "Hive write inside a widget test hangs" entry above — real async Hive I/O racing the test framework's own fake-async/teardown timing — but manifesting as a race lost sometimes rather than a deterministic hang. Confirmed NOT caused by any of this session's changes (adding `Task.isImportant`'s create/edit-flow UI, `TaskTemplate.isImportant`): re-ran these two files back-to-back four times, watched a different specific test fail each time (or none), and every failure carried the identical "Box has already been closed" stack trace regardless of which test it landed on.
+
+**Status: pre-existing, NOT fixed.** Whoever picks this up should look at whether these two files' own recurrence-materialization tests need the same `tester.runAsync` + poll-until-settled pattern the quick-create suite already adopted for its own Hive writes (see the entry above), rather than a fixed-duration `pump()` budget racing real disk I/O.
+
+**Rule for this session and future ones**: before attributing directory-wide test failures to a change just made, re-run the SAME files against the SAME (or even prior) code more than once. A failure that moves to a different test name between identical runs is infrastructure flakiness, not a regression — and confirming that takes one extra run, not a revert-and-diff.
+
+## `tap_empty_space_quick_create_test.dart`'s overlap-refusal test failed only after ~19:00
+
+**Symptom**: "Schedule refuses to create an overlapping task..." failed both in the full gate and standalone, with `taskBox.values` holding 2 tasks instead of the expected 1 — i.e. the overlap it was supposed to test wasn't happening, so the create went through unrefused.
+
+**Cause**: the test hardcoded its "existing task" to a fixed `9:00`-`19:00` clock span, but the tap position it uses (`Offset(220, 400)`, same fixed offset every test in this file uses) lands wherever the Timeline's initial scroll — which centres on `DateTime.now()` — happens to place it. The two only overlapped when the suite ran before 19:00; run at 19:48, the tap landed at 19:15, just past the fixed task's end, so no overlap existed and the second task was correctly created rather than refused.
+
+**Fix**: anchor the existing task at `now.subtract(Duration(hours: 5))` (same 10h span) instead of a fixed clock hour, so it always covers wherever `now` — and therefore the tap — actually lands, regardless of wall-clock time.
+
+**Rule**: this is a 4th member of the time-of-day-dependent fixture family (alongside the three already documented above) — but a different flavor: the earlier three vary in whether they pass, this one varies in whether it tests what it claims to. Any test in this file that hardcodes a task's clock time rather than anchoring it off `DateTime.now()` (the way the tap position already implicitly does) is a latent version of this same bug waiting for the right time of day to expose it.
+
+## `armed_edit_task_test.dart` — even a `DateTime.now()`-relative offset can wrap past midnight
+
+**Symptom**: `makeTask('Standup', hourOffset: 1)` (relative to `now`) produced a task that never appeared on the Timeline at all — `tap(find.text('Standup'))` found 0 widgets — even though the fixture was already anchored off `DateTime.now()`, the fix pattern from the entry just above.
+
+**Cause**: anchoring off `now` fixes the "is this task inside the visible SCROLL window" problem, but not a second, different problem: the Timeline always opens on TODAY's calendar day. `DateTime.now().add(Duration(hours: 1))` run at 23:48 doesn't just move the clock time forward — it also rolls the DATE over to tomorrow, so the resulting task is scheduled on a day the Timeline isn't even showing. Confirmed empirically: a plain `+40 minutes` at 23:48 landed at 00:28 the *next* day.
+
+**Fix**: compute minutes-since-midnight from `now`, apply the offset, then `clamp(0, 24*60 - 1)` before converting back to a `DateTime` built from `now`'s own year/month/day — the offset shrinks near either edge of the day instead of ever carrying the date over.
+
+**Rule**: "anchor relative to `now`" is necessary but not sufficient near a day boundary — any test that also needs the result to stay on `now`'s own CALENDAR DAY (not just near `now`'s clock time) needs the day-boundary clamp too, not just the anchor.

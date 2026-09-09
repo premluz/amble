@@ -13,6 +13,14 @@ abstract final class SpacingPrimitives {
   /// the "lg" rung of the task-size scale (`AmbleTheme.sizeTaskBadgeLg`),
   /// confirmed directly at 28 rather than either neighbouring rung.
   static const space7Point5 = 28.0;
+
+  /// Sits between [space7Point5] (28) and [space8] (32) — the shared
+  /// "content clears the top scroll-fade/heading" offset (`AmbleTheme`'s
+  /// own `spacingContentTop`), confirmed directly: "as in templates
+  /// current position +30 becomes NEW for all" — Tasks, Templates,
+  /// Tracked, and every modal's own first pane all start at this one
+  /// value now, per docs/DECISIONS.md.
+  static const space7Point75 = 30.0;
   static const space8 = 32.0;
   static const space9 = 40.0;
   static const space10 = 56.0;

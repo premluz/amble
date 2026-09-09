@@ -24,13 +24,15 @@ class ZoneAdapter extends TypeAdapter<Zone> {
       schemaVersion: fields[4] == null ? 1 : (fields[4] as num).toInt(),
       recurrenceRule: fields[5] as RecurrenceRule?,
       notificationsEnabled: fields[6] == null ? true : fields[6] as bool,
+      recurrenceId: fields[7] as String?,
+      anchorDate: fields[8] as DateTime?,
     );
   }
 
   @override
   void write(BinaryWriter writer, Zone obj) {
     writer
-      ..writeByte(7)
+      ..writeByte(9)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -44,7 +46,11 @@ class ZoneAdapter extends TypeAdapter<Zone> {
       ..writeByte(5)
       ..write(obj.recurrenceRule)
       ..writeByte(6)
-      ..write(obj.notificationsEnabled);
+      ..write(obj.notificationsEnabled)
+      ..writeByte(7)
+      ..write(obj.recurrenceId)
+      ..writeByte(8)
+      ..write(obj.anchorDate);
   }
 
   @override

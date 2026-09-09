@@ -1,8 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/models/external_calendar_event.dart';
-import 'package:amble/shared/models/recurrence_frequency.dart';
-import 'package:amble/shared/models/recurrence_rule.dart';
 import 'package:amble/shared/models/task.dart';
 import 'package:amble/shared/models/zone.dart';
 import 'package:amble/shared/services/zone_containment.dart';
@@ -24,13 +22,13 @@ Zone _zone({
   required String id,
   required int startMinutes,
   required int endMinutes,
-  RecurrenceRule? recurrenceRule,
+  DateTime? anchorDate,
 }) => Zone(
   id: id,
   title: id,
   startMinutes: startMinutes,
   endMinutes: endMinutes,
-  recurrenceRule: recurrenceRule,
+  anchorDate: anchorDate,
 );
 
 ExternalCalendarEvent _event({
@@ -197,26 +195,42 @@ void main() {
       expect(result.containments, hasLength(1));
     });
 
-    test('a recurring (weekly) zone only applies on its matching '
-        'weekdays', () {
-      // day is a Wednesday (2026-09-02); rule matches Monday only.
-      final zone = _zone(
+    test('a materialized recurring instance only applies on its own '
+        'anchorDate', () {
+      // day is a Wednesday (2026-09-02); the instance is anchored to the
+      // Monday before it, so it must not apply on this Wednesday.
+      final mondayInstance = _zone(
         id: 'z1',
         startMinutes: 7 * 60,
         endMinutes: 8 * 60,
-        recurrenceRule: RecurrenceRule(
-          frequency: RecurrenceFrequency.weekly,
-          daysOfWeek: const [DateTime.monday],
-        ),
+        anchorDate: DateTime(2026, 8, 31), // a Monday
       );
 
       final result = resolveZoneContainment(
         tasks: const [],
-        zones: [zone],
+        zones: [mondayInstance],
         day: day,
       );
 
       expect(result.containments, isEmpty);
+    });
+
+    test('a materialized recurring instance applies on its own '
+        'anchorDate', () {
+      final wednesdayInstance = _zone(
+        id: 'z1',
+        startMinutes: 7 * 60,
+        endMinutes: 8 * 60,
+        anchorDate: day,
+      );
+
+      final result = resolveZoneContainment(
+        tasks: const [],
+        zones: [wednesdayInstance],
+        day: day,
+      );
+
+      expect(result.containments, hasLength(1));
     });
 
     test('containments are chronological by the zone\'s own startMinutes', () {

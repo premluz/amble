@@ -8,14 +8,20 @@ import 'package:amble/features/task_detail/task_detail_sheet.dart';
 import 'package:amble/shared/models/recurrence_frequency.dart';
 import 'package:amble/shared/models/recurrence_rule.dart';
 import 'package:amble/shared/models/category.dart';
+import 'package:amble/shared/models/task_template.dart';
+import 'package:amble/shared/models/tracked_behavior.dart';
 import 'package:amble/shared/models/task.dart';
 import 'package:amble/shared/models/task_status.dart';
 import 'package:amble/shared/providers/category_providers.dart';
 import 'package:amble/shared/providers/notification_providers.dart';
 import 'package:amble/shared/providers/preferences_providers.dart';
 import 'package:amble/shared/providers/task_providers.dart';
+import 'package:amble/shared/providers/task_template_providers.dart';
+import 'package:amble/shared/providers/tracked_behavior_providers.dart';
 import 'package:amble/shared/repositories/hive_category_repository.dart';
 import 'package:amble/shared/repositories/hive_task_repository.dart';
+import 'package:amble/shared/repositories/hive_task_template_repository.dart';
+import 'package:amble/shared/repositories/hive_tracked_behavior_repository.dart';
 
 import '../../support/fake_notification_service.dart';
 import '../../support/seeded_category_box.dart';
@@ -33,11 +39,18 @@ DateTime _daysFromToday(int days, {int hour = 9, int minute = 0}) {
   return DateTime(now.year, now.month, now.day + days, hour, minute);
 }
 
-/// The Repeats switch specifically — the schedule screen now also shows a
-/// Notifications switch, so a bare `find.byType(Switch)` matches two
-/// widgets. The Repeats switch is the FIRST `Switch` in the tree (it sits
-/// in the Date pane, above the separate Notifications pane below it).
-Finder _repeatsSwitch() => find.byType(Switch).first;
+/// The Repeats switch specifically — `find.byType(Switch)` alone now
+/// matches THREE widgets (Important, Repeats, Notifications, added
+/// 2026-09-08), so tree order is no longer a safe way to pick one out.
+/// `_RecurrencePanel` (private, unreachable by name from this test file)
+/// is the one label+switch pane whose own label reads "Repeat" — found
+/// via its nearest `Row` ancestor, then the one `Switch` inside THAT row,
+/// which excludes the day-of-week chips below it that also live in this
+/// same panel.
+Finder _repeatsSwitch() => find.descendant(
+  of: find.ancestor(of: find.text('Repeat'), matching: find.byType(Row)).first,
+  matching: find.byType(Switch),
+);
 
 // Same real-time-I/O-vs-pump-loop race as exit_confirmation_test.dart's own
 // helper — see its comment and docs/ERROR_LOG.md.
@@ -81,6 +94,8 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
   WidgetTester tester, {
   required Box<Task> box,
   required Box<Category> categoryBox,
+  required Box<TrackedBehavior> trackedBehaviorBox,
+  required Box<TaskTemplate> templateBox,
 }) async {
   // The default flutter_test surface (800x600 LOGICAL, i.e. quite short)
   // is enough for exit_confirmation_test.dart's forms, but the schedule
@@ -100,6 +115,12 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
         taskRepositoryProvider.overrideWithValue(HiveTaskRepository(box)),
         categoryRepositoryProvider.overrideWithValue(
           HiveCategoryRepository(categoryBox),
+        ),
+        trackedBehaviorRepositoryProvider.overrideWithValue(
+          HiveTrackedBehaviorRepository(trackedBehaviorBox),
+        ),
+        taskTemplateRepositoryProvider.overrideWithValue(
+          HiveTaskTemplateRepository(templateBox),
         ),
         notificationServiceProvider.overrideWithValue(
           FakeNotificationService(),
@@ -130,12 +151,16 @@ Future<GlobalKey<NavigatorState>> _pumpEditScheduleForm(
   WidgetTester tester, {
   required Box<Task> box,
   required Box<Category> categoryBox,
+  required Box<TrackedBehavior> trackedBehaviorBox,
+  required Box<TaskTemplate> templateBox,
   required Task task,
 }) async {
   final navigatorKey = await _pumpHost(
     tester,
     box: box,
     categoryBox: categoryBox,
+    trackedBehaviorBox: trackedBehaviorBox,
+    templateBox: templateBox,
   );
   showTaskDetailSheet(navigatorKey.currentContext!, task: task);
   await tester.pumpAndSettle();
@@ -145,6 +170,8 @@ Future<GlobalKey<NavigatorState>> _pumpEditScheduleForm(
 void main() {
   late Box<Task> box;
   late Box<Category> categoryBox;
+  late Box<TrackedBehavior> trackedBehaviorBox;
+  late Box<TaskTemplate> templateBox;
 
   setUp(() async {
     Hive.init('./.dart_tool/test_hive_edit_schedule_repeats');
@@ -157,11 +184,24 @@ void main() {
     categoryBox = await openSeededCategoryBox(
       'test_categories_${DateTime.now().microsecondsSinceEpoch}',
     );
+    // The task detail sheet's tracked-behavior link section is now
+    // unconditionally compiled in (FeatureFlags.trackedBehaviorEnabled
+    // defaults true as of 2026-09-06) — this box just needs to exist
+    // so trackedBehaviorRepositoryProvider resolves; nothing here
+    // exercises linking, so it's never seeded.
+    trackedBehaviorBox = await Hive.openBox<TrackedBehavior>(
+      'test_tracked_behaviors_${DateTime.now().microsecondsSinceEpoch}',
+    );
+    templateBox = await Hive.openBox<TaskTemplate>(
+      'test_templates_${DateTime.now().microsecondsSinceEpoch}',
+    );
   });
 
   tearDown(() async {
     await box.close();
     await categoryBox.close();
+    await trackedBehaviorBox.close();
+    await templateBox.close();
   });
 
   testWidgets('a plain (non-recurring) task shows the Repeats panel, enabled', (
@@ -179,6 +219,8 @@ void main() {
       tester,
       box: box,
       categoryBox: categoryBox,
+      trackedBehaviorBox: trackedBehaviorBox,
+      templateBox: templateBox,
       task: task,
     );
 
@@ -205,6 +247,8 @@ void main() {
         tester,
         box: box,
         categoryBox: categoryBox,
+        trackedBehaviorBox: trackedBehaviorBox,
+        templateBox: templateBox,
         task: task,
       );
 
@@ -259,6 +303,8 @@ void main() {
         tester,
         box: box,
         categoryBox: categoryBox,
+        trackedBehaviorBox: trackedBehaviorBox,
+        templateBox: templateBox,
         task: template,
       );
 
@@ -322,6 +368,8 @@ void main() {
         tester,
         box: box,
         categoryBox: categoryBox,
+        trackedBehaviorBox: trackedBehaviorBox,
+        templateBox: templateBox,
         task: template,
       );
 
@@ -381,6 +429,8 @@ void main() {
         tester,
         box: box,
         categoryBox: categoryBox,
+        trackedBehaviorBox: trackedBehaviorBox,
+        templateBox: templateBox,
         task: instance,
       );
       await _tapAndSettle(tester, find.text('MON'));
@@ -433,6 +483,8 @@ void main() {
         tester,
         box: box,
         categoryBox: categoryBox,
+        trackedBehaviorBox: trackedBehaviorBox,
+        templateBox: templateBox,
         task: template,
       );
       await _tapAndSettle(tester, _repeatsSwitch());
@@ -479,6 +531,8 @@ void main() {
         tester,
         box: box,
         categoryBox: categoryBox,
+        trackedBehaviorBox: trackedBehaviorBox,
+        templateBox: templateBox,
         task: template,
       );
       await _tapAndSettle(tester, find.text('Save'));
@@ -518,6 +572,8 @@ void main() {
         tester,
         box: box,
         categoryBox: categoryBox,
+        trackedBehaviorBox: trackedBehaviorBox,
+        templateBox: templateBox,
       );
       showTaskDetailSheet(
         navigatorKey.currentContext!,
@@ -575,6 +631,8 @@ void main() {
       tester,
       box: box,
       categoryBox: categoryBox,
+      trackedBehaviorBox: trackedBehaviorBox,
+      templateBox: templateBox,
     );
     showTaskDetailSheet(
       navigatorKey.currentContext!,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/app_press_feedback.dart';
 
 /// Snap granularity for the placement line's dropped time — matches the
 /// task-drag reschedule's own snap (see `timeline_screen.dart`'s
@@ -64,6 +65,7 @@ class PlaceTaskLineLayer extends StatefulWidget {
     required this.pixelsPerMinute,
     required this.controller,
     required this.onPlaced,
+    this.onTapAt,
   });
 
   final AmbleTheme theme;
@@ -78,6 +80,16 @@ class PlaceTaskLineLayer extends StatefulWidget {
   /// Fired on release with the dropped instant, already snapped to
   /// [_snapMinutes] and clamped inside [rangeStart]/[rangeEnd].
   final ValueChanged<DateTime> onPlaced;
+
+  /// Fired on a plain TAP (not a hold-and-drag) on empty Timeline
+  /// background — requested directly: "tap on an empty space in timeline
+  /// view... puts a wiggly gray default task and opens a small sheet."
+  /// A quick tap and a long-press-drag resolve independently in Flutter's
+  /// gesture arena (this widget's own `GestureDetector.onTapUp` alongside
+  /// [LongPressDraggable]'s recognizer below), so both interactions coexist
+  /// without custom arbitration. Optional — null leaves plain taps
+  /// unhandled, same as before this parameter existed.
+  final ValueChanged<DateTime>? onTapAt;
 
   @override
   State<PlaceTaskLineLayer> createState() => _PlaceTaskLineLayerState();
@@ -158,37 +170,69 @@ class _PlaceTaskLineLayerState extends State<PlaceTaskLineLayer> {
         // same one PlaceTaskLineOverlay positions the line in.
         child: SizedBox.expand(
           key: _anchorKey,
-          child: LongPressDraggable<Object>(
-            // OPAQUE, not the default deferToChild — fixed directly after
-            // this stopped firing entirely: `deferToChild` hit-tests
-            // against the child's own painted content, and the child here
-            // paints nothing, so there was literally nothing to hit and
-            // the pointer passed straight through without the recognizer
-            // ever seeing it. Opaque makes this layer claim its whole area
-            // regardless of what its child paints.
-            hitTestBehavior: HitTestBehavior.opaque,
-            // Invisible: the real line is drawn by PlaceTaskLineOverlay,
-            // in the timeline's own coordinate space, rather than the
-            // app-wide Overlay this feedback would otherwise float in.
-            feedback: const SizedBox.shrink(),
-            onDragStarted: () {
-              final position = _lastPointerPosition;
-              if (position != null) _updateFromGlobal(position);
-            },
-            onDragUpdate: (details) =>
-                _updateFromGlobal(details.globalPosition),
-            onDragEnd: (details) {
-              final top = _lineTop;
-              _lineTop = null;
-              if (top != null) widget.onPlaced(_instantAt(top));
-            },
-            child: const SizedBox.expand(),
+          // decorationOnly: this layer's own GestureDetector below (and
+          // LongPressDraggable beside it) must keep owning the gesture
+          // arena exactly as documented there — AppPressFeedback here
+          // only OBSERVES pointers to paint the wash, so neither the tap
+          // nor the hold-to-drag interaction changes at all.
+          //
+          // maxRippleRadius, unlike every other caller: this layer covers
+          // the whole day column, so an uncapped wash would flood the
+          // entire Timeline instead of marking the spot the finger landed
+          // on. Confirmed directly as a "small ripple at the tap point."
+          // No scale-down either — there is no control here to dip, only
+          // empty background.
+          child: AppPressFeedback(
+            decorationOnly: true,
+            maxRippleRadius: _tapRippleRadius,
+            onTap: widget.onTapAt == null ? null : () {},
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapUp: widget.onTapAt == null
+                  ? null
+                  : (details) {
+                      final y = _localY(details.globalPosition);
+                      if (y == null) return;
+                      widget.onTapAt!(_instantAt(y.clamp(0.0, _maxTop)));
+                    },
+              child: LongPressDraggable<Object>(
+                // OPAQUE, not the default deferToChild — fixed directly after
+                // this stopped firing entirely: `deferToChild` hit-tests
+                // against the child's own painted content, and the child
+                // here paints nothing, so there was literally nothing to hit
+                // and the pointer passed straight through without the
+                // recognizer ever seeing it. Opaque makes this layer claim
+                // its whole area regardless of what its child paints.
+                hitTestBehavior: HitTestBehavior.opaque,
+                // Invisible: the real line is drawn by PlaceTaskLineOverlay,
+                // in the timeline's own coordinate space, rather than the
+                // app-wide Overlay this feedback would otherwise float in.
+                feedback: const SizedBox.shrink(),
+                onDragStarted: () {
+                  final position = _lastPointerPosition;
+                  if (position != null) _updateFromGlobal(position);
+                },
+                onDragUpdate: (details) =>
+                    _updateFromGlobal(details.globalPosition),
+                onDragEnd: (details) {
+                  final top = _lineTop;
+                  _lineTop = null;
+                  if (top != null) widget.onPlaced(_instantAt(top));
+                },
+                child: const SizedBox.expand(),
+              ),
+            ),
           ),
         ),
       ),
     );
   }
 }
+
+/// How far the tap-to-create wash spreads from the finger. A small fixed
+/// radius rather than this layer's own (full-day-column) bounds — see the
+/// `maxRippleRadius` note at its call site above.
+const double _tapRippleRadius = 48;
 
 /// Draws the placement line, and nothing else. Rendered as the LAST child
 /// of the timeline's Stack so it paints above every task — requested

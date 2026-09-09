@@ -132,3 +132,30 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+  #
+  # App-wide font — JetBrains Mono (OFL-1.1, bundled locally in
+  # assets/fonts/, see assets/fonts/OFL.txt). Referenced by name via
+  # TypePrimitives.fontFamily (lib/core/tokens/type_primitives.dart) rather
+  # than hardcoded at call sites, so a future font swap is one constant.
+  fonts:
+    - family: JetBrains Mono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono-Thin.ttf
+          weight: 100
+        - asset: assets/fonts/JetBrainsMono-ExtraLight.ttf
+          weight: 200
+        - asset: assets/fonts/JetBrainsMono-Light.ttf
+          weight: 300
+        - asset: assets/fonts/JetBrainsMono-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/JetBrainsMono-Italic.ttf
+          weight: 400
+          style: italic
+        - asset: assets/fonts/JetBrainsMono-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/JetBrainsMono-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/JetBrainsMono-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/JetBrainsMono-ExtraBold.ttf
+          weight: 800

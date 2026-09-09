@@ -579,12 +579,127 @@ void main() {
       expect(refreshed.categoryId, BuiltInCategoryIds.work);
       expect(refreshed.durationMinutes, 45);
 
-      // The template's own fields are untouched by editing an instance.
       final refreshedTemplate = container
           .read(taskListProvider)
           .firstWhere((t) => t.id == template.id);
+      // Category stays LOCAL to the edited instance — only time and
+      // duration are series-level fields under "all future occurrences".
       expect(refreshedTemplate.categoryId, BuiltInCategoryIds.personal);
+      // DURATION propagates to the template — updated 2026-09-07, per the
+      // confirmed rule: "unless changed time or duration with option
+      // 'update all future occurences' [they] would remain as originally
+      // set". This assertion previously expected 10 (the template keeping
+      // its own duration), which is the behavior that let a duration/time
+      // edit silently fail to reach the series at all — the same missing
+      // re-anchor that produced the duplicate-series bug. See
+      // `updateTaskWithChangedRecurrence`'s own doc comment.
+      expect(refreshedTemplate.durationMinutes, 45);
+    });
+
+    test('updateTaskThisInstanceOnly saves only the edited instance — the '
+        'series template and every other instance are untouched', () async {
+      // The "just this occurrence" half of the recurring-edit scope
+      // choice — see docs/CONSTITUTION.md's reversal and
+      // updateTaskWithChangedRecurrence's own tests above for the
+      // "this and future" half, which already ran this same cascade
+      // for every recurring field edit before this method existed.
+      final notifier = container.read(taskListProvider.notifier);
+      final today = DateTime.now();
+      final anchor = DateTime(today.year, today.month, today.day, 8);
+      final template = await notifier.createTask(
+        title: 'Journal',
+        scheduledAt: anchor,
+        durationMinutes: 10,
+        categoryId: BuiltInCategoryIds.personal,
+        recurrenceRule: RecurrenceRule(frequency: RecurrenceFrequency.daily),
+      );
+
+      final beforeEdit = container.read(taskListProvider);
+      final futureInstance = beforeEdit.firstWhere(
+        (t) =>
+            t.recurrenceId == template.recurrenceId &&
+            t.id != template.id &&
+            t.scheduledAt!.isAfter(DateTime.now()),
+      );
+      final otherFutureInstanceIds = beforeEdit
+          .where(
+            (t) =>
+                t.recurrenceId == template.recurrenceId &&
+                t.id != template.id &&
+                t.id != futureInstance.id,
+          )
+          .map((t) => t.id)
+          .toSet();
+      expect(
+        otherFutureInstanceIds,
+        isNotEmpty,
+        reason:
+            'sanity check: the daily series really did generate more '
+            'than one future instance to prove untouched',
+      );
+
+      final newTime = futureInstance.scheduledAt!.add(const Duration(hours: 2));
+      futureInstance.scheduledAt = newTime;
+      futureInstance.durationMinutes = 45;
+      await notifier.updateTaskThisInstanceOnly(futureInstance);
+
+      final afterEdit = container.read(taskListProvider);
+      final refreshed = afterEdit.firstWhere((t) => t.id == futureInstance.id);
+      expect(refreshed.scheduledAt, newTime);
+      expect(refreshed.durationMinutes, 45);
+
+      // Marked as touched, same signal a drag-reschedule already sets —
+      // this is what spares it from a later rule change's prune pass.
+      expect(refreshed.originalScheduledAt, isNotNull);
+
+      // The template and every other instance survive under their own,
+      // unregenerated ids — no prune, no re-materialize.
+      final refreshedTemplate = afterEdit.firstWhere(
+        (t) => t.id == template.id,
+      );
       expect(refreshedTemplate.durationMinutes, 10);
+      final afterEditIds = afterEdit.map((t) => t.id).toSet();
+      expect(afterEditIds.containsAll(otherFutureInstanceIds), isTrue);
+    });
+
+    test('updateTaskThisInstanceOnly does not overwrite an already-set '
+        'originalScheduledAt with the just-moved value', () async {
+      final notifier = container.read(taskListProvider.notifier);
+      final today = DateTime.now();
+      final anchor = DateTime(today.year, today.month, today.day, 8);
+      final template = await notifier.createTask(
+        title: 'Journal',
+        scheduledAt: anchor,
+        durationMinutes: 10,
+        categoryId: BuiltInCategoryIds.personal,
+        recurrenceRule: RecurrenceRule(frequency: RecurrenceFrequency.daily),
+      );
+      final futureInstance = container
+          .read(taskListProvider)
+          .firstWhere(
+            (t) =>
+                t.recurrenceId == template.recurrenceId &&
+                t.id != template.id &&
+                t.scheduledAt!.isAfter(DateTime.now()),
+          );
+      final firstMoveOriginal = futureInstance.scheduledAt;
+      futureInstance.originalScheduledAt = firstMoveOriginal;
+      futureInstance.scheduledAt = firstMoveOriginal!.add(
+        const Duration(hours: 1),
+      );
+      await notifier.updateTaskThisInstanceOnly(futureInstance);
+
+      // A second edit, moving it again — originalScheduledAt must keep
+      // recording the FIRST real slot, not the intermediate one.
+      futureInstance.scheduledAt = firstMoveOriginal.add(
+        const Duration(hours: 3),
+      );
+      await notifier.updateTaskThisInstanceOnly(futureInstance);
+
+      final refreshed = container
+          .read(taskListProvider)
+          .firstWhere((t) => t.id == futureInstance.id);
+      expect(refreshed.originalScheduledAt, firstMoveOriginal);
     });
 
     test('updateTaskWithChangedRecurrence on TODAY\'s own instance, with its '
@@ -946,6 +1061,166 @@ void main() {
     });
   });
 
+  group('resizeTasksInBatch', () {
+    test('applies each task\'s own new duration and leaves scheduledAt/status '
+        'untouched — a resize is never a reschedule', () async {
+      final notifier = container.read(taskListProvider.notifier);
+      final a = await notifier.createTask(
+        title: 'A',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      );
+      final b = await notifier.createTask(
+        title: 'B',
+        scheduledAt: DateTime(2026, 8, 20, 11),
+        durationMinutes: 60,
+        categoryId: BuiltInCategoryIds.personal,
+      );
+
+      await notifier.resizeTasksInBatch({a.id: 45, b.id: 75});
+
+      final tasks = container.read(taskListProvider);
+      final savedA = tasks.firstWhere((t) => t.id == a.id);
+      final savedB = tasks.firstWhere((t) => t.id == b.id);
+      expect(savedA.durationMinutes, 45);
+      expect(savedB.durationMinutes, 75);
+      expect(savedA.scheduledAt, DateTime(2026, 8, 20, 9));
+      expect(savedB.scheduledAt, DateTime(2026, 8, 20, 11));
+      expect(savedA.status, TaskStatus.pending);
+      expect(savedB.status, TaskStatus.pending);
+      expect(savedA.originalScheduledAt, isNull);
+      expect(savedB.originalScheduledAt, isNull);
+    });
+
+    test('an id with no matching task is silently skipped, other entries '
+        'still apply', () async {
+      final notifier = container.read(taskListProvider.notifier);
+      final a = await notifier.createTask(
+        title: 'A',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      );
+
+      await notifier.resizeTasksInBatch({a.id: 50, 'no-such-id': 999});
+
+      final saved = container
+          .read(taskListProvider)
+          .firstWhere((t) => t.id == a.id);
+      expect(saved.durationMinutes, 50);
+    });
+
+    test('one _refresh at the end — taskListProvider reflects every write '
+        'without a manual reload', () async {
+      final notifier = container.read(taskListProvider.notifier);
+      final a = await notifier.createTask(
+        title: 'A',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      );
+      final b = await notifier.createTask(
+        title: 'B',
+        scheduledAt: DateTime(2026, 8, 20, 11),
+        durationMinutes: 60,
+        categoryId: BuiltInCategoryIds.personal,
+      );
+
+      await notifier.resizeTasksInBatch({a.id: 45, b.id: 75});
+
+      // Read straight from taskListProvider (not the repository) — this
+      // is exactly what would fail if resizeTasksInBatch forgot the
+      // trailing _refresh() call.
+      final tasks = container.read(taskListProvider);
+      expect(tasks.firstWhere((t) => t.id == a.id).durationMinutes, 45);
+      expect(tasks.firstWhere((t) => t.id == b.id).durationMinutes, 75);
+    });
+  });
+
+  group('shiftTasksByMinutes', () {
+    test('shifts scheduledAt by each task\'s own delta and applies the same '
+        'reschedule bookkeeping as an ordinary drag', () async {
+      final notifier = container.read(taskListProvider.notifier);
+      final a = await notifier.createTask(
+        title: 'A',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      );
+      final b = await notifier.createTask(
+        title: 'B',
+        scheduledAt: DateTime(2026, 8, 20, 11),
+        durationMinutes: 60,
+        categoryId: BuiltInCategoryIds.personal,
+      );
+
+      await notifier.shiftTasksByMinutes({a.id: 30, b.id: -15});
+
+      final tasks = container.read(taskListProvider);
+      final savedA = tasks.firstWhere((t) => t.id == a.id);
+      final savedB = tasks.firstWhere((t) => t.id == b.id);
+      expect(savedA.scheduledAt, DateTime(2026, 8, 20, 9, 30));
+      expect(savedB.scheduledAt, DateTime(2026, 8, 20, 10, 45));
+      // Same bookkeeping rescheduleTask itself gives — confirmed via
+      // AskUserQuestion: a task whose zone moved really did have its
+      // own time change.
+      expect(savedA.status, TaskStatus.rescheduled);
+      expect(savedA.originalScheduledAt, DateTime(2026, 8, 20, 9));
+      expect(savedB.status, TaskStatus.rescheduled);
+      expect(savedB.originalScheduledAt, DateTime(2026, 8, 20, 11));
+    });
+
+    test('a second shift does not overwrite an already-set '
+        'originalScheduledAt', () async {
+      final notifier = container.read(taskListProvider.notifier);
+      final a = await notifier.createTask(
+        title: 'A',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      );
+
+      await notifier.shiftTasksByMinutes({a.id: 30});
+      await notifier.shiftTasksByMinutes({a.id: 15});
+
+      final saved = container
+          .read(taskListProvider)
+          .firstWhere((t) => t.id == a.id);
+      expect(saved.scheduledAt, DateTime(2026, 8, 20, 9, 45));
+      expect(saved.originalScheduledAt, DateTime(2026, 8, 20, 9));
+    });
+
+    test('an id with no matching task, or a task with no scheduledAt at all, '
+        'is silently skipped', () async {
+      final notifier = container.read(taskListProvider.notifier);
+      final unscheduled = Task.captured(title: 'Inbox item');
+      await notifier.updateTask(unscheduled);
+      final a = await notifier.createTask(
+        title: 'A',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      );
+
+      await notifier.shiftTasksByMinutes({
+        'no-such-id': 60,
+        unscheduled.id: 60,
+        a.id: 30,
+      });
+
+      final tasks = container.read(taskListProvider);
+      expect(
+        tasks.firstWhere((t) => t.id == unscheduled.id).scheduledAt,
+        isNull,
+      );
+      expect(
+        tasks.firstWhere((t) => t.id == a.id).scheduledAt,
+        DateTime(2026, 8, 20, 9, 30),
+      );
+    });
+  });
+
   group('findOrphanedRecurringTaskIds', () {
     test('a task with no recurrenceId is never orphaned', () {
       final plain = Task.create(
@@ -1122,6 +1397,251 @@ void main() {
 
       expect(created.templateId, isNull);
       expect(box.get(created.id)?.templateId, isNull);
+    });
+  });
+
+  /// Regression coverage for the duplicate-series bug reported directly
+  /// ("see duplicates, sometimes even 2") and diagnosed from a real
+  /// exported backup: 651 tasks, 117 same-`recurrenceId`-same-day groups,
+  /// 232 stranded rows. One daily series had THREE complete parallel
+  /// 56-day generations (05:00 / 06:30 / 07:05) under a single
+  /// `recurrenceId`, one per time-of-day the series had ever been edited
+  /// to. See docs/ERROR_LOG.md for the full root-cause writeup.
+  group('recurring time change must not duplicate the series', () {
+    /// Every instance of [seriesId], grouped by calendar day — the shape
+    /// the bug actually manifested in (more than one row per day).
+    Map<DateTime, List<Task>> byDay(
+      ProviderContainer container,
+      String seriesId,
+    ) {
+      final result = <DateTime, List<Task>>{};
+      for (final task in container.read(taskListProvider)) {
+        if (task.recurrenceId != seriesId || task.scheduledAt == null) {
+          continue;
+        }
+        final day = DateTime(
+          task.scheduledAt!.year,
+          task.scheduledAt!.month,
+          task.scheduledAt!.day,
+        );
+        (result[day] ??= []).add(task);
+      }
+      return result;
+    }
+
+    test('changing the time via "all future occurrences" leaves exactly one '
+        'instance per day — not a second parallel generation', () async {
+      final notifier = container.read(taskListProvider.notifier);
+      final today = DateTime.now();
+      final anchor = DateTime(today.year, today.month, today.day, 7, 5);
+      final template = await notifier.createTask(
+        title: 'Stretching',
+        scheduledAt: anchor,
+        durationMinutes: 15,
+        categoryId: BuiltInCategoryIds.health,
+        recurrenceRule: RecurrenceRule(frequency: RecurrenceFrequency.daily),
+      );
+      final seriesId = template.recurrenceId!;
+      final before = byDay(container, seriesId);
+      expect(
+        before.values.every((day) => day.length == 1),
+        isTrue,
+        reason: 'precondition: a freshly materialized series is one per day',
+      );
+
+      // The exact user action: change the series' time of day, choosing
+      // "all future occurrences".
+      template.scheduledAt = DateTime(anchor.year, anchor.month, anchor.day, 8);
+      await notifier.updateTaskWithChangedRecurrence(
+        template,
+        template.recurrenceRule!,
+      );
+
+      final after = byDay(container, seriesId);
+      final duplicated = after.entries
+          .where((entry) => entry.value.length > 1)
+          .toList();
+      expect(
+        duplicated,
+        isEmpty,
+        reason:
+            'a time change must re-anchor the series, not generate a '
+            'second generation alongside the old one — this is the exact '
+            'shape found in the real backup (3 parallel 56-day series '
+            'under one recurrenceId)',
+      );
+      // And the series actually MOVED — the whole point of the edit.
+      expect(
+        after.values
+            .expand((day) => day)
+            .every((t) => t.scheduledAt!.hour == 8),
+        isTrue,
+        reason: 'every future occurrence realigns to the new 08:00 anchor',
+      );
+    });
+
+    test('repeating the time change three times still leaves one instance '
+        'per day — the real backup had three stacked generations', () async {
+      final notifier = container.read(taskListProvider.notifier);
+      final today = DateTime.now();
+      final anchor = DateTime(today.year, today.month, today.day, 5);
+      final template = await notifier.createTask(
+        title: 'Walk',
+        scheduledAt: anchor,
+        durationMinutes: 120,
+        categoryId: BuiltInCategoryIds.health,
+        recurrenceRule: RecurrenceRule(frequency: RecurrenceFrequency.daily),
+      );
+      final seriesId = template.recurrenceId!;
+
+      for (final hour in [6, 7, 9]) {
+        final current = container
+            .read(taskListProvider)
+            .firstWhere((t) => t.id == template.id);
+        current.scheduledAt = DateTime(
+          anchor.year,
+          anchor.month,
+          anchor.day,
+          hour,
+        );
+        await notifier.updateTaskWithChangedRecurrence(
+          current,
+          current.recurrenceRule!,
+        );
+      }
+
+      final after = byDay(container, seriesId);
+      expect(
+        after.entries.where((entry) => entry.value.length > 1),
+        isEmpty,
+        reason: 'three successive time edits must not stack three series',
+      );
+      expect(
+        after.values
+            .expand((day) => day)
+            .every((t) => t.scheduledAt!.hour == 9),
+        isTrue,
+        reason: 'the series ends up at the LAST time chosen',
+      );
+    });
+
+    test('a re-run of the launch top-up after a time change adds nothing — '
+        'the prune-free materialize path must stay idempotent', () async {
+      final notifier = container.read(taskListProvider.notifier);
+      final today = DateTime.now();
+      final anchor = DateTime(today.year, today.month, today.day, 7);
+      final template = await notifier.createTask(
+        title: 'Meditation',
+        scheduledAt: anchor,
+        durationMinutes: 60,
+        categoryId: BuiltInCategoryIds.personal,
+        recurrenceRule: RecurrenceRule(frequency: RecurrenceFrequency.daily),
+      );
+      final seriesId = template.recurrenceId!;
+
+      template.scheduledAt = DateTime(
+        anchor.year,
+        anchor.month,
+        anchor.day,
+        10,
+      );
+      await notifier.updateTaskWithChangedRecurrence(
+        template,
+        template.recurrenceRule!,
+      );
+      final afterEdit = container.read(taskListProvider).length;
+
+      // Simulates restarting the app — reported directly as a trigger
+      // ("perhaps restarting app"). This path never prunes, so before the
+      // per-day dedup fix any anchor drift refilled the whole window here.
+      await notifier.materializeDueRecurrences();
+      await notifier.materializeDueRecurrences();
+
+      expect(
+        container.read(taskListProvider).length,
+        afterEdit,
+        reason: 'launch top-ups must be idempotent after a time change',
+      );
+      expect(
+        byDay(container, seriesId).entries.where((e) => e.value.length > 1),
+        isEmpty,
+      );
+    });
+
+    test('"all future" realigns an occurrence the user had moved '
+        'individually, but never a completed or skipped one', () async {
+      final notifier = container.read(taskListProvider.notifier);
+      final today = DateTime.now();
+      final anchor = DateTime(today.year, today.month, today.day, 7);
+      final template = await notifier.createTask(
+        title: 'Journal',
+        scheduledAt: anchor,
+        durationMinutes: 15,
+        categoryId: BuiltInCategoryIds.personal,
+        recurrenceRule: RecurrenceRule(frequency: RecurrenceFrequency.daily),
+      );
+      final seriesId = template.recurrenceId!;
+
+      final future =
+          container
+              .read(taskListProvider)
+              .where(
+                (t) =>
+                    t.recurrenceId == seriesId &&
+                    t.id != template.id &&
+                    t.scheduledAt!.isAfter(DateTime.now()),
+              )
+              .toList()
+            ..sort((a, b) => a.scheduledAt!.compareTo(b.scheduledAt!));
+
+      // One occurrence individually moved, one completed.
+      final moved = future[0];
+      await notifier.rescheduleTask(
+        moved,
+        moved.scheduledAt!.add(const Duration(hours: 5)),
+      );
+      final done = future[1];
+      done.status = TaskStatus.completed;
+      await notifier.updateTask(done);
+
+      final current = container
+          .read(taskListProvider)
+          .firstWhere((t) => t.id == template.id);
+      current.scheduledAt = DateTime(anchor.year, anchor.month, anchor.day, 11);
+      await notifier.updateTaskWithChangedRecurrence(
+        current,
+        current.recurrenceRule!,
+      );
+
+      final tasks = container.read(taskListProvider);
+      // The completed one is untouched — history is never rewritten.
+      final refreshedDone = tasks.firstWhere((t) => t.id == done.id);
+      expect(refreshedDone.status, TaskStatus.completed);
+      expect(refreshedDone.scheduledAt, done.scheduledAt);
+
+      // The individually-moved one is gone, replaced by a realigned
+      // occurrence on its day — "change all future" wins (confirmed
+      // directly), reversing the old permanent-protection rule.
+      final movedDay = DateTime(
+        moved.scheduledAt!.year,
+        moved.scheduledAt!.month,
+        moved.scheduledAt!.day,
+      );
+      final onMovedDay = tasks
+          .where(
+            (t) =>
+                t.recurrenceId == seriesId &&
+                t.scheduledAt != null &&
+                DateTime(
+                      t.scheduledAt!.year,
+                      t.scheduledAt!.month,
+                      t.scheduledAt!.day,
+                    ) ==
+                    movedDay,
+          )
+          .toList();
+      expect(onMovedDay, hasLength(1));
+      expect(onMovedDay.single.scheduledAt!.hour, 11);
     });
   });
 }

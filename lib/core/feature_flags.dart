@@ -11,20 +11,26 @@ abstract final class FeatureFlags {
   /// Gates every TrackedBehavior UI surface: creating a tracked behavior,
   /// linking a task to one, and recording an outcome on completion.
   ///
-  /// **Still default off**, per SCOPE.md — an ordinary build (including any
-  /// release build) behaves exactly as it did before the TrackedBehavior UI
-  /// existed. A build-time override makes it reachable for testing without
-  /// editing this file, so the shipped default can't drift on by accident:
+  /// **Default ON as of 2026-09-06, confirmed directly** — reverses the
+  /// earlier default-off decision (see docs/DECISIONS.md's Phase 12 entry
+  /// and the 2026-09-06 "confirmed as OFF" entry that preceded this one):
+  /// an ordinary build, including release, now ships with the Tracked tab
+  /// live, same shape `zoneEnabled` already uses below. Still overridable
+  /// off for testing:
   ///
   /// ```
-  /// flutter run --dart-define=trackedBehavior=true
+  /// flutter run --dart-define=trackedBehavior=false
   /// ```
   ///
-  /// `bool.fromEnvironment` defaults to `false` when the define is absent,
-  /// and is const-evaluated, so gated UI still dead-code-eliminates in
-  /// builds that don't opt in.
+  /// A DEBUG-only Settings → Developer toggle (`DevTrackedTabInCycle`, see
+  /// `core/dev_config.dart`) can additionally hide the tab again at
+  /// runtime without a rebuild — same "ANDs into this flag, never
+  /// overrides it on" relationship `DevZoneViewInCycle` has with
+  /// `zoneEnabled`. `bool.fromEnvironment` is const-evaluated, so the
+  /// gated UI still dead-code-eliminates in a build that opts back off.
   static const bool trackedBehaviorEnabled = bool.fromEnvironment(
     'trackedBehavior',
+    defaultValue: true,
   );
 
   /// Gates every Zone UI surface: Settings' "Zones" section, the zone list,

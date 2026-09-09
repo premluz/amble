@@ -1,6 +1,4 @@
 import '../models/external_calendar_event.dart';
-import '../models/recurrence_frequency.dart';
-import '../models/recurrence_rule.dart';
 import '../models/task.dart';
 import '../models/zone.dart';
 
@@ -88,11 +86,12 @@ class ZoneContainmentResult {
 ///    [ZoneContainmentResult.unzonedTasks].
 ///
 /// Only zones that actually apply on [day] are considered — a
-/// non-recurring zone (`recurrenceRule == null`) applies to every day (it
-/// has no date field of its own to restrict it to one), while a
-/// recurring zone only applies on days its rule matches (mirroring
-/// `NotificationService`'s own `_ruleMatchesDay` day-match rule, not a
-/// new one invented here).
+/// non-recurring zone (`anchorDate == null`) applies to every day (it has
+/// no date field of its own to restrict it to one), while a materialized
+/// recurring instance applies only on its own `anchorDate` — a plain field
+/// check now that every occurrence is a real row, replacing the former
+/// live rule evaluation (`_ruleMatchesDay`), per the Zone materialization
+/// session (see docs/DECISIONS.md).
 ///
 /// [externalEvents] (Feature 1's read-only device-calendar events — see
 /// CONSTITUTION.md's "Calendar" section) follow ONLY rule 2 above, since
@@ -202,17 +201,11 @@ Zone? _zoneContainingTime(List<Zone> zones, DateTime time) {
 }
 
 bool _zoneAppliesOnDay(Zone zone, DateTime day) {
-  final rule = zone.recurrenceRule;
-  if (rule == null) return true;
-  return _ruleMatchesDay(rule, day);
-}
-
-/// Mirrors `NotificationService`'s own private day-match rule exactly
-/// (not re-derived) — daily always matches, weekly matches whichever
-/// weekdays the rule names.
-bool _ruleMatchesDay(RecurrenceRule rule, DateTime day) {
-  if (rule.frequency == RecurrenceFrequency.daily) return true;
-  return rule.daysOfWeek?.contains(day.weekday) ?? false;
+  final anchorDate = zone.anchorDate;
+  if (anchorDate == null) return true;
+  return anchorDate.year == day.year &&
+      anchorDate.month == day.month &&
+      anchorDate.day == day.day;
 }
 
 List<Task> _sortedByScheduledAt(List<Task> tasks) {

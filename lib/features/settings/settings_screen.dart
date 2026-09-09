@@ -18,14 +18,18 @@ import '../../shared/providers/category_providers.dart';
 import '../../shared/providers/notification_providers.dart';
 import '../../shared/providers/preferences_providers.dart';
 import '../../shared/providers/task_providers.dart';
+import '../../shared/models/category.dart';
 import '../../shared/models/task_size.dart';
+import '../../shared/models/task_template.dart';
 import '../../shared/models/tracked_behavior.dart';
 import '../../shared/models/zone.dart';
+import '../../shared/providers/task_template_providers.dart';
 import '../../shared/providers/tracked_behavior_providers.dart';
 import '../../shared/providers/zone_providers.dart';
 import '../../shared/services/backup_service.dart';
 import '../../shared/services/slack_summary_service.dart';
-import '../tracked_behavior/tracked_behavior_form.dart';
+import '../inbox/template_list_screen.dart';
+import '../task_detail/category_list_screen.dart';
 import '../zones/zone_list_screen.dart';
 import 'theme_mode_selector.dart';
 
@@ -763,44 +767,80 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         ),
                       ),
                       SizedBox(height: theme.spacingMd),
-                      AppButton(
-                        label: 'Track a behavior',
-                        variant: AppButtonVariant.secondary,
-                        onPressed: () => showTrackedBehaviorForm(context),
+                      // Points at the new "Tracked" nav tab rather than
+                      // opening the create form inline: with a real
+                      // top-level destination for this entity, a second
+                      // creation entry point here would be two places to
+                      // learn instead of one. The summary line stays, so
+                      // Settings still reports what exists.
+                      Text(
+                        'Manage tracked behaviors from the Tracked tab.',
+                        style: theme.textBody.copyWith(
+                          color: theme.colorTextSecondary,
+                        ),
                       ),
                     ],
                   ),
                 ),
               ],
 
-              // Zones — gated, same pattern as Tracked behaviors above. With
-              // the flag off this subtree is const-eliminated, so Settings
-              // looks exactly as it did. Unlike Tracked behaviors' inline
-              // create-form button, this opens a real page (the list) —
-              // requested directly: Zones is a place to browse/manage a
-              // list, not a single focused action.
-              if (FeatureFlags.zoneEnabled) ...[
-                SizedBox(height: theme.spacingLg),
-                Text('Zones', style: theme.textTitle),
-                SizedBox(height: theme.spacingSm),
-                _SettingsPanel(
-                  theme: theme,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _zoneSummary(ref.watch(zoneListProvider)),
-                        style: theme.textBody.copyWith(
-                          color: theme.colorTextSecondary,
-                        ),
+              // Manage — Zones (gated), Templates, and Categories
+              // consolidated into ONE section with three link rows,
+              // replacing the previously separate "Zones" and "Categories"
+              // sections. Requested directly: "what we have in Manage in
+              // main menu let's create also in settings in a single
+              // section Manage... currently mange zones" — mirrors the
+              // existing "Manage zones"/"Manage categories" push-a-list-
+              // screen pattern exactly, just gathered under one heading
+              // with a third row (Templates, which previously had no
+              // Settings entry point at all) added alongside it. Each row
+              // still pushes its own full page (back button + "+" to add),
+              // unchanged from how "Manage zones"/"Manage categories"
+              // already worked — no new list UI, just one shared heading.
+              SizedBox(height: theme.spacingLg),
+              Text('Manage', style: theme.textTitle),
+              SizedBox(height: theme.spacingSm),
+              _SettingsPanel(
+                theme: theme,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Zones stays gated — with the flag off, this single
+                    // row is the only part of the Manage panel affected;
+                    // Templates/Categories are core, not opt-in.
+                    if (FeatureFlags.zoneEnabled) ...[
+                      _ManageLinkRow(
+                        theme: theme,
+                        label: 'Zones',
+                        summary: _zoneSummary(ref.watch(zoneListProvider)),
+                        onTap: () => showZoneListScreen(context),
                       ),
                       SizedBox(height: theme.spacingMd),
-                      AppButton(
-                        label: 'Manage zones',
-                        variant: AppButtonVariant.secondary,
-                        onPressed: () => showZoneListScreen(context),
+                    ],
+                    _ManageLinkRow(
+                      theme: theme,
+                      label: 'Templates',
+                      summary: _templateSummary(
+                        ref.watch(taskTemplateListProvider),
                       ),
-                      SizedBox(height: theme.spacingMd),
+                      onTap: () => showTemplateListScreen(context),
+                    ),
+                    SizedBox(height: theme.spacingMd),
+                    _ManageLinkRow(
+                      theme: theme,
+                      label: 'Categories',
+                      summary: _categorySummary(
+                        ref.watch(categoryListProvider),
+                      ),
+                      onTap: () => showCategoryListScreen(context),
+                    ),
+                    // Zone view — a Timeline DISPLAY preference, not zone
+                    // list management, so it stays out of the three link
+                    // rows above but keeps living in this same Manage
+                    // panel (confirmed directly) rather than gaining its
+                    // own section.
+                    if (FeatureFlags.zoneEnabled) ...[
+                      SizedBox(height: theme.spacingLg),
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -839,9 +879,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         ],
                       ),
                     ],
-                  ),
+                  ],
                 ),
-              ],
+              ),
 
               SizedBox(height: theme.spacingLg),
               Text('Backup', style: theme.textTitle),
@@ -1225,6 +1265,81 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             value: ref.watch(devZoneViewInCycleProvider),
                             onChanged: (value) => ref
                                 .read(devZoneViewInCycleProvider.notifier)
+                                .set(value),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: theme.spacingMd),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Tracked tab',
+                                  style: theme.textBody.copyWith(
+                                    color: theme.colorTextPrimary,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                SizedBox(height: theme.spacingXs),
+                                Text(
+                                  'When off, the bottom nav\'s "Tracked" '
+                                  'tab is hidden. Debug builds only — '
+                                  'FeatureFlags.trackedBehaviorEnabled '
+                                  'stays the real on/off switch.',
+                                  style: theme.textBody.copyWith(
+                                    color: theme.colorTextSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          SizedBox(width: theme.spacingMd),
+                          AppSwitch(
+                            value: ref.watch(devTrackedTabInCycleProvider),
+                            onChanged: (value) => ref
+                                .read(devTrackedTabInCycleProvider.notifier)
+                                .set(value),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: theme.spacingMd),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Multi-task Edit Mode',
+                                  style: theme.textBody.copyWith(
+                                    color: theme.colorTextPrimary,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                SizedBox(height: theme.spacingXs),
+                                Text(
+                                  'When on (default), tapping a task in '
+                                  'Edit Mode selects it (wiggle becomes '
+                                  'the selection indicator) instead of '
+                                  'opening its detail sheet — drag/'
+                                  'resize/delete then act on every '
+                                  'selected task together. Turn off for '
+                                  'the original single-task Edit Mode.',
+                                  style: theme.textBody.copyWith(
+                                    color: theme.colorTextSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          SizedBox(width: theme.spacingMd),
+                          AppSwitch(
+                            value: ref.watch(devMultiTaskEditModeProvider),
+                            onChanged: (value) => ref
+                                .read(devMultiTaskEditModeProvider.notifier)
                                 .set(value),
                           ),
                         ],
@@ -1649,11 +1764,99 @@ String _behaviorSummary(List<TrackedBehavior> behaviors) {
 }
 
 /// One-line summary of how many zones exist, mirroring [_behaviorSummary].
+///
+/// Counts one row per SERIES, not per materialized instance — same filter
+/// as `zone_list_screen.dart`'s own list (`!isRecurring ||
+/// isRecurrenceTemplate`): a recurring zone now generates up to ~56 real
+/// rows (8-week rolling window), and a raw `zones.length` here would
+/// report that count instead of how many zones the user actually created.
 String _zoneSummary(List<Zone> zones) {
-  if (zones.isEmpty) {
+  final series = zones
+      .where((zone) => !zone.isRecurring || zone.isRecurrenceTemplate)
+      .toList();
+  if (series.isEmpty) {
     return 'No zones yet. A zone is a named time window tasks can be '
         'assigned into.';
   }
-  return '${zones.length} zone${zones.length == 1 ? '' : 's'}: '
-      '${zones.map((zone) => zone.title).join(', ')}';
+  return '${series.length} zone${series.length == 1 ? '' : 's'}: '
+      '${series.map((zone) => zone.title).join(', ')}';
+}
+
+/// One-line summary of how many categories exist, mirroring [_zoneSummary].
+/// Never actually empty in practice (5 built-ins are seeded at launch —
+/// see [CategoryList.seedBuiltInsAndBackfillIfNeeded]), but handled anyway
+/// rather than assuming that invariant holds for every possible caller.
+String _categorySummary(List<Category> categories) {
+  if (categories.isEmpty) {
+    return 'No categories yet.';
+  }
+  return '${categories.length} categor${categories.length == 1 ? 'y' : 'ies'}: '
+      '${categories.map((category) => category.name).join(', ')}';
+}
+
+/// One-line summary of how many templates exist, mirroring [_zoneSummary].
+String _templateSummary(List<TaskTemplate> templates) {
+  if (templates.isEmpty) {
+    return 'No templates yet. A template is a reusable task blueprint.';
+  }
+  return '${templates.length} template${templates.length == 1 ? '' : 's'}: '
+      '${templates.map((template) => template.title).join(', ')}';
+}
+
+/// One row inside the "Manage" panel — a label, a one-line summary
+/// underneath, and a chevron, tapping through to that entity's own list
+/// screen (Zones/Templates/Categories each already have one, pushed via
+/// `showZoneListScreen`/`showTemplateListScreen`/`showCategoryListScreen`).
+/// Mirrors `zone_list_screen.dart`'s own `_ZoneRow` layout, adapted from a
+/// card-per-item list row to a plain settings-panel row (no card
+/// background/shadow of its own — the panel already provides that).
+class _ManageLinkRow extends StatelessWidget {
+  const _ManageLinkRow({
+    required this.theme,
+    required this.label,
+    required this.summary,
+    required this.onTap,
+  });
+
+  final AmbleTheme theme;
+  final String label;
+  final String summary;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: theme.textBody.copyWith(
+                    color: theme.colorTextPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                SizedBox(height: theme.spacingXs),
+                Text(
+                  summary,
+                  style: theme.textBody.copyWith(
+                    color: theme.colorTextSecondary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          SizedBox(width: theme.spacingMd),
+          Icon(Icons.chevron_right_rounded, color: theme.colorTextSecondary),
+        ],
+      ),
+    );
+  }
 }

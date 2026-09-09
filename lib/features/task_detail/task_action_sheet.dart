@@ -47,6 +47,24 @@ class _TaskActionSheetContent extends ConsumerWidget {
     await showTaskDetailSheet(context, duplicateFrom: task);
   }
 
+  /// Toggles the task's `isImportant` marker (see `Task.isImportant`).
+  ///
+  /// Uses the plain [TaskList.updateTask] even for a recurring instance,
+  /// deliberately: `isImportant` is a per-occurrence field like any other
+  /// ordinary edit, so marking one instance never marks its series — the
+  /// single-instance rule CONSTITUTION.md already sets for recurring
+  /// edits. There is no "affect future instances" choice to offer here.
+  ///
+  /// No cap and no confirmation: confirmed directly ("actually.. no
+  /// restrictions"), narrowing an earlier draft that warned past 3 marked
+  /// tasks in a day.
+  Future<void> _toggleImportant(BuildContext context, WidgetRef ref) async {
+    final notifier = ref.read(taskListProvider.notifier);
+    Navigator.of(context).pop();
+    task.isImportant = !task.isImportant;
+    await notifier.updateTask(task);
+  }
+
   /// Pops this action sheet, then defers to the shared [removeTask] flow
   /// (`task_remove.dart`). `context`/`ref` are captured before the pop,
   /// for the same reason [removeTask]'s own doc comment gives: this
@@ -71,6 +89,17 @@ class _TaskActionSheetContent extends ConsumerWidget {
           icon: Icons.edit_outlined,
           label: 'Edit task',
           onTap: () => _editTask(context),
+        ),
+        ActionRow(
+          theme: theme,
+          // Filled when marked, outlined when not — the same
+          // state-in-the-glyph convention the completion checkbox already
+          // uses, rather than a separate switch control.
+          icon: task.isImportant
+              ? Icons.star_rounded
+              : Icons.star_outline_rounded,
+          label: task.isImportant ? 'Remove important' : 'Mark important',
+          onTap: () => _toggleImportant(context, ref),
         ),
         ActionRow(
           theme: theme,

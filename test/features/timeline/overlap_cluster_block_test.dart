@@ -5,6 +5,7 @@ import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/features/timeline/completion_checkbox.dart';
 import 'package:amble/features/timeline/overlap_cluster_block.dart';
 import 'package:amble/shared/models/category.dart';
+import 'package:amble/shared/models/external_calendar_event.dart';
 import 'package:amble/shared/models/task.dart';
 import 'package:amble/shared/services/overlap_cluster.dart';
 
@@ -32,7 +33,7 @@ void main() {
   final cluster = OverlapCluster(
     start: tasks.first.scheduledAt!,
     end: tasks.first.scheduledAt!.add(const Duration(minutes: 90)),
-    tasks: tasks,
+    blocks: tasks,
   );
 
   Future<void> pump(
@@ -196,4 +197,82 @@ void main() {
       expect(combined, isNot(contains('9:00')));
     },
   );
+
+  // Reported directly: "the imported tasks should also stack in the same
+  // way as native tasks... They just can't be moved, changed, or have
+  // their duration, time, or name updated, but otherwise exactly the
+  // same, with different styling." A cluster can now mix a real task and
+  // an imported event; this covers that the event's row renders (title +
+  // time, same shape) but stays read-only.
+  group('a cluster mixing a task and an external event (2026-09-07)', () {
+    final task = Task.create(
+      title: 'Standup',
+      scheduledAt: DateTime(2026, 9, 4, 9),
+      durationMinutes: 60,
+      categoryId: BuiltInCategoryIds.work,
+    );
+    final event = ExternalCalendarEvent(
+      id: 'evt-1',
+      title: 'Dentist',
+      start: DateTime(2026, 9, 4, 9, 30),
+      end: DateTime(2026, 9, 4, 10, 30),
+      sourceCalendarId: 'cal-1',
+    );
+    final mixedCluster = OverlapCluster(
+      start: task.scheduledAt!,
+      end: event.end,
+      blocks: [task, event],
+    );
+
+    Future<void> pumpMixed(WidgetTester tester) => tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
+        home: Scaffold(body: OverlapClusterBlock(cluster: mixedCluster)),
+      ),
+    );
+
+    testWidgets('both the task title and the event title render', (
+      tester,
+    ) async {
+      await pumpMixed(tester);
+
+      expect(find.text('Standup'), findsOneWidget);
+      expect(find.text('Dentist'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets(
+      'the event row has no completion checkbox — only the task row does',
+      (tester) async {
+        await pumpMixed(tester);
+
+        expect(find.byType(CompletionCheckbox), findsOneWidget);
+      },
+    );
+
+    testWidgets('tapping the event row does not fire onTaskTap (it opens the '
+        'read-only info sheet instead)', (tester) async {
+      Task? tapped;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
+          home: Scaffold(
+            body: OverlapClusterBlock(
+              cluster: mixedCluster,
+              onTaskTap: (t) => tapped = t,
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Dentist'));
+      await tester.pumpAndSettle();
+
+      expect(tapped, isNull);
+      // The read-only info sheet opened instead — its own title text
+      // now appears a second time (once on the row behind it, once in
+      // the sheet).
+      expect(find.text('Dentist'), findsNWidgets(2));
+    });
+  });
 }

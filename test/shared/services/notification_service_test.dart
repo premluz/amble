@@ -1,8 +1,6 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:amble/shared/models/category.dart';
-import 'package:amble/shared/models/recurrence_frequency.dart';
-import 'package:amble/shared/models/recurrence_rule.dart';
 import 'package:amble/shared/models/task.dart';
 import 'package:amble/shared/models/zone.dart';
 import 'package:amble/shared/services/notification_service.dart';
@@ -194,36 +192,43 @@ void main() {
       expect(now.hour, isNot(23));
     });
 
-    test('a recurring zone matching today resolves to today\'s occurrence '
-        'and attempts to schedule (reaches the platform channel)', () async {
+    test('a materialized recurring instance anchored on TODAY, still '
+        'upcoming, resolves directly to its own anchorDate and attempts to '
+        'schedule (reaches the platform channel)', () async {
       final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
       final zone = Zone.create(
         title: 'Recurring later today',
         startMinutes: 23 * 60 + 40,
         endMinutes: 1439,
-        recurrenceRule: RecurrenceRule(frequency: RecurrenceFrequency.daily),
+        recurrenceId: 'series-1',
+        anchorDate: today,
       );
       await expectLater(service.scheduleForZone(zone), throwsA(anything));
       expect(now.hour, isNot(23));
     });
 
-    test('a recurring zone whose only matching weekday is not today '
-        'still no-ops today rather than throwing for the wrong day '
-        '(proven indirectly: a rule matching NO day ever no-ops)', () async {
-      // A recurring zone whose daysOfWeek can never match resolves no
-      // occurrence at all within the 7-day lookahead — this is the
-      // "recurring, but nothing to schedule" no-op path, distinct from
-      // the non-recurring "already passed today" no-op above. Modeled by
-      // constructing a rule with every weekday selected is unavoidable
-      // (daysOfWeek must be non-empty per RecurrenceRule's own
-      // constructor invariant), so this instead confirms turning
-      // notifications off short-circuits before occurrence resolution
-      // even for a recurring rule — the two guards are independent.
+    test('a materialized recurring instance anchored on a PAST day '
+        'no-ops rather than resolving to any other day — no rule left to '
+        'walk forward through', () async {
+      final zone = Zone.create(
+        title: 'Recurring, already happened',
+        startMinutes: 0,
+        endMinutes: 60,
+        recurrenceId: 'series-1',
+        anchorDate: DateTime.now().subtract(const Duration(days: 1)),
+      );
+      await service.scheduleForZone(zone);
+    });
+
+    test('notificationsEnabled false short-circuits before occurrence '
+        'resolution even for a materialized recurring instance', () async {
       final zone = Zone.create(
         title: 'Recurring but silenced',
         startMinutes: 0,
         endMinutes: 60,
-        recurrenceRule: RecurrenceRule(frequency: RecurrenceFrequency.daily),
+        recurrenceId: 'series-1',
+        anchorDate: DateTime.now().add(const Duration(days: 1)),
         notificationsEnabled: false,
       );
       await service.scheduleForZone(zone);

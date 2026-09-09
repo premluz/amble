@@ -12,6 +12,7 @@ import '../../shared/models/task_status.dart';
 import '../task_detail/category_visual.dart';
 import 'completion_checkbox.dart';
 import 'duration_label.dart';
+import 'resize_handle.dart';
 import 'task_category_token_mapping.dart';
 
 /// The capsule-shaped timeline task block — the product's signature visual
@@ -49,6 +50,7 @@ class TaskCapsuleBlock extends StatelessWidget {
     required this.task,
     this.pixelsPerMinute = 1.5,
     this.onTap,
+    this.onLongPress,
     this.onToggleComplete,
     this.dragPreviewStartsAt,
     this.maxTextWidth,
@@ -71,6 +73,13 @@ class TaskCapsuleBlock extends StatelessWidget {
     this.liftedTextInline = false,
     this.bottomTrim = 0,
     this.maxPillHeight,
+    this.editModeEnabled = false,
+    this.onResizeStart,
+    this.onResizeUpdate,
+    this.onResizeEnd,
+    this.onResizeTopStart,
+    this.onResizeTopUpdate,
+    this.onResizeTopEnd,
   });
 
   final Task task;
@@ -85,6 +94,14 @@ class TaskCapsuleBlock extends StatelessWidget {
   final Category? category;
   final double pixelsPerMinute;
   final VoidCallback? onTap;
+
+  /// Long-press anywhere on the pill or the time/title area — requested
+  /// directly: "long press on task should enable its edit mode (duration)
+  /// wiggle." Mirrors [onTap]'s own "tap anywhere on either region" shape
+  /// exactly, wired to the same two `GestureDetector`s below. Null renders
+  /// no long-press behavior (e.g. the drag preview's static ghost copy,
+  /// which shouldn't itself be armable).
+  final VoidCallback? onLongPress;
   final VoidCallback? onToggleComplete;
 
   /// Vertical drag-to-reschedule handlers — deliberately scoped to only the
@@ -96,6 +113,47 @@ class TaskCapsuleBlock extends StatelessWidget {
   final GestureDragStartCallback? onDragStart;
   final GestureDragUpdateCallback? onDragUpdate;
   final GestureDragEndCallback? onDragEnd;
+
+  /// Whether Edit Mode is active — see `edit_mode_provider.dart`. Gates
+  /// the resize handle's visibility only; drag-to-reschedule and tap stay
+  /// available regardless (per CONSTITUTION.md, move is unchanged by Edit
+  /// Mode). Plain `bool`, not a Riverpod watch — this is a
+  /// `StatelessWidget` with no provider access, same reasoning as
+  /// [category] above; the caller resolves it once and passes it down.
+  final bool editModeEnabled;
+
+  /// The bottom-edge resize handle's own vertical drag handlers — a
+  /// deliberately SEPARATE gesture channel from [onDragStart]/
+  /// [onDragUpdate]/[onDragEnd] above (move), scoped to a small always-
+  /// present hit target at the pill's bottom edge rather than the whole
+  /// pill, so resize and move never compete for the same touch. Null
+  /// (the default) renders no visible handle at all — callers pass these
+  /// only when [editModeEnabled] is true, mirroring how [onDragStart] etc.
+  /// are null in collapsed (List) mode to mean "not draggable there."
+  ///
+  /// Changes `durationMinutes` only, leaving the start time alone —
+  /// unlike [onResizeTopStart] below, which moves the START and leaves
+  /// the END fixed.
+  final GestureDragStartCallback? onResizeStart;
+  final GestureDragUpdateCallback? onResizeUpdate;
+  final GestureDragEndCallback? onResizeEnd;
+
+  /// The TOP-edge resize handle's own drag handlers — same separate-
+  /// gesture-channel contract as [onResizeStart] above, mirroring
+  /// `ZoneBackgroundBlock`/`ZoneContainerBlock`'s own long-standing
+  /// two-handle shape (`onResizeTopStart`/`onResizeBottomStart`).
+  /// Requested directly: "let's include resize up (so resize handle on
+  /// top) ... we already have that in zone resize."
+  ///
+  /// Semantically the mirror of the bottom handle: dragging this edge
+  /// moves the task's START (`scheduledAt`) while its END stays put, so
+  /// it necessarily changes BOTH `scheduledAt` and `durationMinutes`.
+  /// That is a deliberate, confirmed reversal of CONSTITUTION.md's
+  /// earlier "Task resize does NOT touch scheduledAt" rule — see that
+  /// document's own Edit Mode section for the recorded reversal.
+  final GestureDragStartCallback? onResizeTopStart;
+  final GestureDragUpdateCallback? onResizeTopUpdate;
+  final GestureDragEndCallback? onResizeTopEnd;
 
   /// While a drag is in progress, the start time the task would land on if
   /// released now. Non-null only mid-drag: the block's own time/duration
@@ -405,87 +463,151 @@ class TaskCapsuleBlock extends StatelessWidget {
           Opacity(
             // Step 0 of the entrance stagger — the pill leads.
             opacity: _staggeredOpacity(entranceProgress, 0),
-            child: GestureDetector(
-              onTap: onTap,
-              onVerticalDragStart: onDragStart,
-              onVerticalDragUpdate: onDragUpdate,
-              onVerticalDragEnd: onDragEnd,
-              behavior: HitTestBehavior.opaque,
-              // Animated so a duration change GROWS or shrinks the pill
-              // into its new height instead of snapping — requested
-              // directly ("extends pill (change duration case) so user can
-              // see it happening"). No state plumbing needed: the height
-              // already derives from the task's own duration, so animating
-              // this container covers every path that can change it (the
-              // edit modal, a cascade reschedule, anything future).
-              child: AnimatedContainer(
-                // motionSlow, matching the entrance stagger's own pace:
-                // both are "watch this happen" beats rather than responses
-                // to a gesture, and at motionNormal the resize was over
-                // almost as soon as it started (reported directly).
-                duration: theme.motionSlow,
-                curve: theme.curveStandard,
-                width: badgeSize,
-                height: pillHeight,
-                alignment: Alignment.topCenter,
-                // Flush with the pill's own top edge — nudged up a
-                // further 2px per direct feedback (second alignment
-                // pass): spacingXs/2 (2px) still read as slightly low
-                // next to the title.
-                padding: EdgeInsets.zero,
-                decoration: BoxDecoration(
-                  color: badgeColor,
-                  // radiusSm (4px), not radiusTaskPill (fully round) —
-                  // requested directly. Kept scoped to this one rail rather
-                  // than repointing radiusTaskPill itself, which every
-                  // pill-SHAPED button across the app (AppButton, the theme
-                  // selector, the tracked-behavior form) also reads —
-                  // changing that token's value would have flattened all of
-                  // those too, confirmed via AskUserQuestion as the wrong
-                  // scope. radiusSm already equals 4 and is a real Tier 2
-                  // token, so this reuses it rather than adding a duplicate.
-                  borderRadius: BorderRadius.circular(theme.radiusSm),
-                  // No shadow here any more while lifted — the shadow now
-                  // belongs to the outer frosted card (see the wrapping
-                  // below), matching how every other pane in the app
-                  // carries its OWN elevation rather than one of its
-                  // children carrying it. Requested directly: "the
-                  // draggable coloured icon pane would not have shadow
-                  // instead the pane has shadow."
-                ),
-                // Deliberately NOT faded while lifted — corrected
-                // directly after a first pass hid it: this glyph is the
-                // pill's identity and stays visible the whole time,
-                // including mid-drag. Also stays visible for
-                // `contentHidden` (a resting cluster member) — reversing
-                // an earlier decision that faded it there too, per direct
-                // feedback: the cluster's own row list has no icon of its
-                // own (see `OverlapClusterBlock`'s doc comment), so the
-                // pill is the only place a clustered task's category
-                // reads at all. Only the title/time text and checkbox
-                // still fade for `contentHidden` (see the row further
-                // down) — those genuinely duplicate the cluster's own row
-                // list, but the emoji does not.
-                //
-                // Emoji, not `Icon(task.category.icon)` — matches the
-                // emoji already shown on the category picker's chips
-                // during create/edit (see `.emoji`'s own doc comment).
-                // Requested directly, reversing an earlier decision that
-                // deliberately kept the pill on the monochrome `.icon`
-                // glyph specifically because it could be tinted
-                // (`iconColor`) for contrast against the pale category
-                // fill — an emoji carries its own fixed color, so no
-                // tinting is applied or needed here any more.
-                // `glyphHidden` (the drag ghost) is the ONE case that also
-                // drops the emoji — see its own doc comment.
-                child: Opacity(
-                  opacity: glyphHidden ? 0 : 1,
-                  child: Text(
-                    categoryVisual.emoji,
-                    style: TextStyle(fontSize: badgeSize * 0.55),
+            // Wrapped in a Stack (a genuinely NEW, always-present
+            // ancestor, not a conditional swap) so the resize handle can
+            // overlay the pill's bottom edge as a SIBLING of the move-drag
+            // GestureDetector below, never a descendant of it — real bug,
+            // caught by a widget test: nesting the handle's own
+            // GestureDetector INSIDE the pill's move-drag detector put
+            // both vertical-drag recognizers in the same gesture arena,
+            // and a drag starting on the handle also fired the pill's own
+            // onDragStart. Siblings never share an arena the same way.
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                GestureDetector(
+                  onTap: onTap,
+                  onLongPress: onLongPress,
+                  onVerticalDragStart: onDragStart,
+                  onVerticalDragUpdate: onDragUpdate,
+                  onVerticalDragEnd: onDragEnd,
+                  behavior: HitTestBehavior.opaque,
+                  // Animated so a duration change GROWS or shrinks the pill
+                  // into its new height instead of snapping — requested
+                  // directly ("extends pill (change duration case) so user can
+                  // see it happening"). No state plumbing needed: the height
+                  // already derives from the task's own duration, so animating
+                  // this container covers every path that can change it (the
+                  // edit modal, a cascade reschedule, anything future).
+                  child: AnimatedContainer(
+                    // motionSlow, matching the entrance stagger's own pace:
+                    // both are "watch this happen" beats rather than responses
+                    // to a gesture, and at motionNormal the resize was over
+                    // almost as soon as it started (reported directly).
+                    duration: theme.motionSlow,
+                    curve: theme.curveStandard,
+                    width: badgeSize,
+                    height: pillHeight,
+                    alignment: Alignment.topCenter,
+                    // Flush with the pill's own top edge — nudged up a
+                    // further 2px per direct feedback (second alignment
+                    // pass): spacingXs/2 (2px) still read as slightly low
+                    // next to the title.
+                    padding: EdgeInsets.zero,
+                    decoration: BoxDecoration(
+                      color: badgeColor,
+                      // radiusSm (4px), not radiusTaskPill (fully round) —
+                      // requested directly. Kept scoped to this one rail rather
+                      // than repointing radiusTaskPill itself, which every
+                      // pill-SHAPED button across the app (AppButton, the theme
+                      // selector, the tracked-behavior form) also reads —
+                      // changing that token's value would have flattened all of
+                      // those too, confirmed via AskUserQuestion as the wrong
+                      // scope. radiusSm already equals 4 and is a real Tier 2
+                      // token, so this reuses it rather than adding a duplicate.
+                      borderRadius: BorderRadius.circular(theme.radiusSm),
+                      // No shadow here any more while lifted — the shadow now
+                      // belongs to the outer frosted card (see the wrapping
+                      // below), matching how every other pane in the app
+                      // carries its OWN elevation rather than one of its
+                      // children carrying it. Requested directly: "the
+                      // draggable coloured icon pane would not have shadow
+                      // instead the pane has shadow."
+                    ),
+                    // Deliberately NOT faded while lifted — corrected
+                    // directly after a first pass hid it: this glyph is the
+                    // pill's identity and stays visible the whole time,
+                    // including mid-drag. Also stays visible for
+                    // `contentHidden` (a resting cluster member) — reversing
+                    // an earlier decision that faded it there too, per direct
+                    // feedback: the cluster's own row list has no icon of its
+                    // own (see `OverlapClusterBlock`'s doc comment), so the
+                    // pill is the only place a clustered task's category
+                    // reads at all. Only the title/time text and checkbox
+                    // still fade for `contentHidden` (see the row further
+                    // down) — those genuinely duplicate the cluster's own row
+                    // list, but the emoji does not.
+                    //
+                    // Emoji, not `Icon(task.category.icon)` — matches the
+                    // emoji already shown on the category picker's chips
+                    // during create/edit (see `.emoji`'s own doc comment).
+                    // Requested directly, reversing an earlier decision that
+                    // deliberately kept the pill on the monochrome `.icon`
+                    // glyph specifically because it could be tinted
+                    // (`iconColor`) for contrast against the pale category
+                    // fill — an emoji carries its own fixed color, so no
+                    // tinting is applied or needed here any more.
+                    // `glyphHidden` (the drag ghost) is the ONE case that also
+                    // drops the emoji — see its own doc comment.
+                    child: Opacity(
+                      opacity: glyphHidden ? 0 : 1,
+                      child: Text(
+                        categoryVisual.emoji,
+                        style: TextStyle(fontSize: badgeSize * 0.55),
+                      ),
+                    ),
                   ),
                 ),
-              ),
+                // The resize handle — visible only in Edit Mode, and only
+                // when the caller actually wired resize callbacks (both
+                // conditions must hold; see [onResizeStart]'s own doc
+                // comment for why null callbacks mean "not resizable
+                // here"). A small dedicated hit target at the pill's own
+                // bottom edge — deliberately NOT the whole pill (that's
+                // the move-drag's territory) and a genuine SIBLING of the
+                // pill's GestureDetector above (both are direct children
+                // of this Stack), never nested inside it — see the doc
+                // comment on the outer Opacity/Stack wrap for the bug that
+                // ordering fixes.
+                if (editModeEnabled && onResizeTopEnd != null)
+                  Positioned(
+                    top: -theme.spacingXs,
+                    left: 0,
+                    right: 0,
+                    child: ResizeHandle(
+                      theme: theme,
+                      // Shrinks on a short pill so the two handles never
+                      // consume the whole block, leaving no move-only
+                      // band — see resizeHandleHeightFor.
+                      height: resizeHandleHeightFor(
+                        theme: theme,
+                        blockHeight: pillHeight,
+                      ),
+                      onDragStart: onResizeTopStart,
+                      onDragUpdate: onResizeTopUpdate,
+                      onDragEnd: onResizeTopEnd,
+                    ),
+                  ),
+                if (editModeEnabled && onResizeEnd != null)
+                  Positioned(
+                    bottom: -theme.spacingXs,
+                    left: 0,
+                    right: 0,
+                    child: ResizeHandle(
+                      theme: theme,
+                      // Shrinks on a short pill so the two handles never
+                      // consume the whole block, leaving no move-only
+                      // band — see resizeHandleHeightFor.
+                      height: resizeHandleHeightFor(
+                        theme: theme,
+                        blockHeight: pillHeight,
+                      ),
+                      onDragStart: onResizeStart,
+                      onDragUpdate: onResizeUpdate,
+                      onDragEnd: onResizeEnd,
+                    ),
+                  ),
+              ],
             ),
           ),
           // Zero-width in split layout, where the whole row is exactly one
@@ -516,6 +638,7 @@ class TaskCapsuleBlock extends StatelessWidget {
             fit: textCollapsed ? FlexFit.loose : FlexFit.tight,
             child: GestureDetector(
               onTap: onTap,
+              onLongPress: onLongPress,
               behavior: HitTestBehavior.opaque,
               // ClipRect + a height cap for `contentHidden`: the title/time
               // text is faded to opacity 0 below (not removed from the
@@ -927,11 +1050,13 @@ class TaskCapsuleTextRow extends StatelessWidget {
     required this.durationColumnWidth,
     this.dragPreviewStartsAt,
     this.onTap,
+    this.onLongPress,
     this.onToggleComplete,
     this.durationVisible = true,
     this.alwaysShowTime = false,
     this.showCompletionCheckbox = true,
     this.isFaded = false,
+    this.compactInlineLayout = false,
   });
 
   final Task task;
@@ -948,6 +1073,12 @@ class TaskCapsuleTextRow extends StatelessWidget {
   final DateTime? dragPreviewStartsAt;
 
   final VoidCallback? onTap;
+
+  /// See [TaskCapsuleBlock.onLongPress]'s own doc comment — same
+  /// "long-press anywhere on the task arms it" contract, wired to this
+  /// row's own `GestureDetector`s since split-layout mode renders the text
+  /// separately from the pill.
+  final VoidCallback? onLongPress;
   final VoidCallback? onToggleComplete;
 
   /// Historically hid the ENTIRE time column alongside the duration
@@ -970,6 +1101,20 @@ class TaskCapsuleTextRow extends StatelessWidget {
   /// combined layout fades its text region mid-drag.
   final bool isFaded;
 
+  /// List mode's own layout, matching `OverlapClusterBlock`'s inline
+  /// cluster row exactly — requested directly: "There is a space between
+  /// the hyphen on both sides ... and there is no large space, just a
+  /// single space for the task name. That should be the same ... applied
+  /// also for non-stacked items." Off (the default), this row keeps its
+  /// original fixed-width [timeColumnWidth]/[durationColumnWidth] columns
+  /// (Task view's split layout, where every row's title must start at the
+  /// same x regardless of lane — see this class's own doc comment). On,
+  /// the time/duration/title collapse into ONE inline `Text.rich` run —
+  /// `'$start - $end  '` (spaced dash, two trailing spaces) then the
+  /// title — with no column alignment at all, since List mode's rows
+  /// don't share lanes to align across in the first place.
+  final bool compactInlineLayout;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
@@ -978,6 +1123,52 @@ class TaskCapsuleTextRow extends StatelessWidget {
     final start = TimeOfDay.fromDateTime(effectiveStart);
     final end = TimeOfDay.fromDateTime(
       effectiveStart.add(Duration(minutes: task.durationMinutes!)),
+    );
+
+    // Matches `OverlapClusterBlock`'s own timeLabel construction exactly
+    // (spaced dash, duration suffix in parens) — only actually used when
+    // `compactInlineLayout` is on; the fixed-column branch below builds
+    // its own (unspaced-dash) string independently, unchanged.
+    final timeRange = '${start.format(context)} - ${end.format(context)}';
+    final withSuffix =
+        '$timeRange (${formatDurationLabel(task.durationMinutes!)})';
+    final timeLabel = !alwaysShowTime && !durationVisible
+        ? null
+        : durationVisible
+        ? withSuffix
+        : timeRange;
+
+    final titleStyle = theme.textTaskTitle.copyWith(
+      color: isCompleted ? theme.colorTextSecondary : theme.colorTextPrimary,
+      fontWeight: FontWeight.w700,
+      decoration: isCompleted
+          ? TextDecoration.lineThrough
+          : TextDecoration.none,
+      decorationColor: theme.colorTextSecondary,
+    );
+    // The important marker hangs in the margin BEFORE the title rather
+    // than displacing it — requested directly: "just icon in front of the
+    // task (with negative margin so the task name remains aligned with all
+    // other tasks)". A zero-width `WidgetSpan` whose child is translated
+    // left by its own width is what achieves that: it contributes nothing
+    // to the line's layout, so a marked task's title starts at exactly the
+    // same x as an unmarked one's, on both this row's layouts and in every
+    // view that shares this span (see [titleSpan]'s two call sites below).
+    //
+    // Deliberately calm, not alarm-coded (per CONSTITUTION.md's design
+    // principle 1): the existing secondary text color at the title's own
+    // size, never red, never a filled badge. Making important tasks
+    // legible must not make every other task read as failing to matter.
+    final titleSpan = TextSpan(
+      children: [
+        if (task.isImportant)
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: _ImportantMarker(theme: theme),
+          ),
+        TextSpan(text: task.title, style: titleStyle),
+      ],
+      style: titleStyle,
     );
 
     return AnimatedOpacity(
@@ -989,23 +1180,36 @@ class TaskCapsuleTextRow extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (alwaysShowTime || durationVisible) ...[
-              SizedBox(
-                width: timeColumnWidth,
-                child: Text(
-                  '${start.format(context)}-${end.format(context)}',
-                  style: theme.textTaskTitle.copyWith(
-                    color: theme.colorTextSecondary,
+            if (compactInlineLayout) ...[
+              Expanded(
+                child: GestureDetector(
+                  onTap: onTap,
+                  onLongPress: onLongPress,
+                  behavior: HitTestBehavior.opaque,
+                  child: Text.rich(
+                    TextSpan(
+                      children: [
+                        if (timeLabel != null)
+                          TextSpan(
+                            text: '$timeLabel  ',
+                            style: theme.textTaskTitle.copyWith(
+                              color: theme.colorTextSecondary,
+                            ),
+                          ),
+                        titleSpan,
+                      ],
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (durationVisible)
+            ] else ...[
+              if (alwaysShowTime || durationVisible) ...[
                 SizedBox(
-                  width: durationColumnWidth,
+                  width: timeColumnWidth,
                   child: Text(
-                    formatDurationLabel(task.durationMinutes!),
+                    '${start.format(context)}-${end.format(context)}',
                     style: theme.textTaskTitle.copyWith(
                       color: theme.colorTextSecondary,
                     ),
@@ -1013,28 +1217,32 @@ class TaskCapsuleTextRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-            ],
-            Expanded(
-              child: GestureDetector(
-                onTap: onTap,
-                behavior: HitTestBehavior.opaque,
-                child: Text(
-                  task.title,
-                  style: theme.textTaskTitle.copyWith(
-                    color: isCompleted
-                        ? theme.colorTextSecondary
-                        : theme.colorTextPrimary,
-                    fontWeight: FontWeight.w700,
-                    decoration: isCompleted
-                        ? TextDecoration.lineThrough
-                        : TextDecoration.none,
-                    decorationColor: theme.colorTextSecondary,
+                if (durationVisible)
+                  SizedBox(
+                    width: durationColumnWidth,
+                    child: Text(
+                      formatDurationLabel(task.durationMinutes!),
+                      style: theme.textTaskTitle.copyWith(
+                        color: theme.colorTextSecondary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+              ],
+              Expanded(
+                child: GestureDetector(
+                  onTap: onTap,
+                  onLongPress: onLongPress,
+                  behavior: HitTestBehavior.opaque,
+                  child: Text.rich(
+                    titleSpan,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ),
-            ),
+            ],
             if (showCompletionCheckbox) ...[
               SizedBox(width: theme.spacingSm),
               CompletionCheckbox(
@@ -1044,6 +1252,52 @@ class TaskCapsuleTextRow extends StatelessWidget {
               ),
             ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The `isImportant` marker that hangs in the margin immediately before a
+/// task's title, without displacing it.
+///
+/// Occupies ZERO layout width (a `SizedBox.shrink` with the glyph painted
+/// via a non-clipping `OverflowBox`, shifted left by its own size) — so a
+/// marked and an unmarked task's titles start at the identical x, which is
+/// the whole requirement: "with negative margin so the task name remains
+/// aligned with all other tasks".
+///
+/// Visual language is deliberately quiet — [AmbleTheme.colorTextSecondary]
+/// at the title's own optical size, the same treatment every other ambient
+/// annotation in this codebase uses. Never red, never a filled badge: per
+/// CONSTITUTION.md's design principle 1, marking a few tasks important must
+/// not make the rest look like they're failing.
+class _ImportantMarker extends StatelessWidget {
+  const _ImportantMarker({required this.theme});
+
+  final AmbleTheme theme;
+
+  @override
+  Widget build(BuildContext context) {
+    final size = theme.textTaskTitle.fontSize!;
+    return SizedBox(
+      width: 0,
+      height: size,
+      child: OverflowBox(
+        // Unbounded on the left so the glyph can paint outside this
+        // zero-width box rather than being clipped to nothing.
+        alignment: Alignment.centerRight,
+        maxWidth: double.infinity,
+        child: Padding(
+          // The gap between the marker and the title it precedes. Applied
+          // as trailing padding INSIDE the overflowing child, so it pushes
+          // the glyph further left rather than moving the title right.
+          padding: EdgeInsets.only(right: theme.spacingXs),
+          child: Icon(
+            Icons.star_rounded,
+            size: size,
+            color: theme.colorTextSecondary,
+          ),
         ),
       ),
     );

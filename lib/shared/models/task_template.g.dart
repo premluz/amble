@@ -24,13 +24,14 @@ class TaskTemplateAdapter extends TypeAdapter<TaskTemplate> {
       notes: fields[4] as String?,
       behaviorId: fields[5] as String?,
       schemaVersion: fields[6] == null ? 1 : (fields[6] as num).toInt(),
+      isImportant: fields[7] == null ? false : fields[7] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, TaskTemplate obj) {
     writer
-      ..writeByte(7)
+      ..writeByte(8)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -44,7 +45,9 @@ class TaskTemplateAdapter extends TypeAdapter<TaskTemplate> {
       ..writeByte(5)
       ..write(obj.behaviorId)
       ..writeByte(6)
-      ..write(obj.schemaVersion);
+      ..write(obj.schemaVersion)
+      ..writeByte(7)
+      ..write(obj.isImportant);
   }
 
   @override

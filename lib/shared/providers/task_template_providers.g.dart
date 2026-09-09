@@ -123,7 +123,7 @@ final class TaskTemplateListProvider
   }
 }
 
-String _$taskTemplateListHash() => r'5bc69220328d704308c5a7a40ded5aa672142c13';
+String _$taskTemplateListHash() => r'247697d416473ac54902986548ad81e709a063f1';
 
 /// CRUD state over [TaskTemplateRepository], mirroring [ZoneList]'s shape —
 /// the closest existing precedent, since both entities support the full

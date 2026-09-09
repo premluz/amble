@@ -1,15 +1,21 @@
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:uuid/uuid.dart';
 
 import '../models/recurrence_rule.dart';
 import '../models/zone.dart';
 import '../repositories/hive_zone_repository.dart';
 import '../repositories/zone_repository.dart';
+import '../services/zone_cascade_reschedule.dart';
+import '../services/zone_recurrence_generator.dart';
 import 'notification_providers.dart';
+import 'task_providers.dart';
 
 part 'zone_providers.g.dart';
 
 const zoneBoxName = 'zones';
+
+const _uuid = Uuid();
 
 @Riverpod(keepAlive: true)
 ZoneRepository zoneRepository(Ref ref) {
@@ -34,12 +40,24 @@ class ZoneList extends _$ZoneList {
     return ref.watch(zoneRepositoryProvider).getAll();
   }
 
+  /// Creates a zone. Passing [recurrenceRule] makes it the template of a
+  /// new recurring series — mirrors [TaskList.createTask]'s exact shape:
+  /// the template is saved, then the rest of the rolling window is
+  /// materialized immediately so the series is visible on the Timeline
+  /// right away rather than only after the next launch.
+  ///
+  /// [anchorDateForRecurrence] is the day the series (and every instance
+  /// [zone_recurrence_generator.dart] walks forward from) anchors on —
+  /// required to mean anything only when [recurrenceRule] is non-null;
+  /// ignored for a non-recurring zone, which stays dateless (applies to
+  /// every day, unaffected by this session's changes).
   Future<Zone> createZone({
     required String title,
     required int startMinutes,
     required int endMinutes,
     RecurrenceRule? recurrenceRule,
     bool notificationsEnabled = true,
+    DateTime? anchorDateForRecurrence,
   }) async {
     final zone = Zone.create(
       title: title,
@@ -47,8 +65,16 @@ class ZoneList extends _$ZoneList {
       endMinutes: endMinutes,
       recurrenceRule: recurrenceRule,
       notificationsEnabled: notificationsEnabled,
+      // A series is identified by its template's own id — no second
+      // identifier to keep in sync, mirroring TaskList.createTask exactly.
+      recurrenceId: recurrenceRule == null ? null : _uuid.v4(),
+      anchorDate: recurrenceRule == null ? null : anchorDateForRecurrence,
     );
     await ref.read(zoneRepositoryProvider).save(zone);
+
+    if (recurrenceRule != null) {
+      await _materializeSeries(zone);
+    }
     _refresh();
     return zone;
   }
@@ -58,8 +84,102 @@ class ZoneList extends _$ZoneList {
     _refresh();
   }
 
+  /// Generates and persists any missing instances for [template]'s series.
+  /// Writes go through [ZoneRepository] like every other mutation — the
+  /// generator itself only computes, it never persists. Mirrors
+  /// `TaskList._materializeSeries` exactly, including its notification
+  /// discipline: deliberately NOT scheduling a notification per instance
+  /// here — materialization can write up to 8 weeks of rows at once, and
+  /// scheduling an OS alarm for each is what drove the app past Android's
+  /// 500-alarm cap for Task (see docs/ERROR_LOG.md). In-horizon instances
+  /// pick up their alarm from [refreshScheduledNotifications] instead.
+  Future<void> _materializeSeries(Zone template) async {
+    final repository = ref.read(zoneRepositoryProvider);
+    final seriesId = template.recurrenceId;
+    if (seriesId == null) return;
+
+    final existing = repository
+        .getAll()
+        .where((zone) => zone.recurrenceId == seriesId)
+        .toList();
+
+    final generated = generateZoneRecurrenceInstances(
+      template: template,
+      existingInstances: existing,
+      now: DateTime.now(),
+    );
+
+    for (final instance in generated) {
+      await repository.save(instance);
+    }
+  }
+
+  /// Tops up every recurring series' rolling window. Called once at app
+  /// launch (see main.dart), alongside `TaskList.materializeDueRecurrences`
+  /// — mirrors it exactly, including idempotency (instances already
+  /// covering an occurrence are skipped by the generator, so repeat calls
+  /// create no duplicates).
+  Future<void> materializeDueRecurrences() async {
+    final templates = ref
+        .read(zoneRepositoryProvider)
+        .getAll()
+        .where((zone) => zone.isRecurrenceTemplate)
+        .toList();
+
+    for (final template in templates) {
+      await _materializeSeries(template);
+    }
+    if (templates.isNotEmpty) _refresh();
+  }
+
+  /// Applies a full zone-to-zone cascade (`computeZoneCascadeMoves`,
+  /// `shared/services/zone_cascade_reschedule.dart`) in one call —
+  /// requested directly: "zones should never overlap... perhaps
+  /// cascading... that doesn't block user intention." Every zone in
+  /// [moves] gets its own new window written (looked up fresh by id, same
+  /// "resolve immediately before writing" discipline as
+  /// [TaskList.rescheduleTaskWithCascade]), and every [ZoneMove.taskMoves]
+  /// entry is forwarded to [TaskList.shiftTasksByMinutes] in one combined
+  /// batch — a single cross-provider call rather than one per zone, so
+  /// `taskListProvider` refreshes once for the whole cascade, not once
+  /// per zone that happened to carry tasks.
+  ///
+  /// [ref.read]s `taskListProvider.notifier` directly — the one place in
+  /// this file that reaches into `task_providers.dart`, justified by the
+  /// same "a zone's assigned tasks move with it" rule CONSTITUTION.md now
+  /// records as in scope; nothing else here depends on Task at all.
+  Future<void> commitZoneCascade(List<ZoneMove> moves) async {
+    final repository = ref.read(zoneRepositoryProvider);
+    final combinedTaskDeltas = <String, int>{};
+
+    for (final move in moves) {
+      final zone = repository.getById(move.zoneId);
+      if (zone != null) {
+        zone.startMinutes = move.newStartMinutes;
+        zone.endMinutes = move.newEndMinutes;
+        await repository.save(zone);
+      }
+      for (final taskMove in move.taskMoves) {
+        combinedTaskDeltas[taskMove.taskId] = taskMove.deltaMinutes;
+      }
+    }
+
+    if (combinedTaskDeltas.isNotEmpty) {
+      await ref
+          .read(taskListProvider.notifier)
+          .shiftTasksByMinutes(combinedTaskDeltas);
+    }
+    _refresh();
+  }
+
+  /// Deletes [id] and cancels its own notification (if any) — matching
+  /// `TaskList`'s deletion contract. Pre-existing gap fixed as part of this
+  /// session: per-instance deletion becomes a routine operation once a
+  /// recurring zone materializes into many real rows, so a stale alarm for
+  /// a deleted instance is no longer an edge case worth leaving unhandled.
   Future<void> deleteZone(String id) async {
     await ref.read(zoneRepositoryProvider).delete(id);
+    await ref.read(notificationServiceProvider).cancelForZone(id);
     _refresh();
   }
 

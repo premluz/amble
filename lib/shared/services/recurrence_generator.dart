@@ -40,25 +40,42 @@ List<Task> generateRecurrenceInstances({
 
   final windowEnd = now.add(Duration(days: windowWeeks * 7));
 
-  // An occurrence is "already materialized" if some instance claims that
-  // slot. A moved instance claims BOTH slots:
+  // An occurrence is "already materialized" if some instance of this
+  // series already occupies that CALENDAR DAY — matched per-day, not per
+  // exact `DateTime`.
   //
-  //  - `originalScheduledAt`, the slot the series generated it for, so the
-  //    time it VACATED is not mistaken for an unfilled occurrence and
-  //    refilled with a duplicate (see CONSTITUTION.md);
-  //  - `scheduledAt`, the slot it now actually occupies.
+  // Per-day rather than exact-slot is what makes generation safe against
+  // the series' anchor time-of-day moving. Real bug, reported directly
+  // ("see duplicates, sometimes even 2") and confirmed from an exported
+  // backup: matching exact `DateTime`s meant that changing a series' time
+  // (07:05 -> 08:00) shifted every occurrence slot, so NONE of the
+  // already-materialized instances matched any longer and the generator
+  // produced a complete parallel 8-week series on top of the existing one.
+  // Repeated edits stacked up three full generations of the same daily
+  // series (56 rows each, one `recurrenceId`, at 05:00 / 06:30 / 07:05),
+  // 232 stranded rows in total. Per-day matching makes that structurally
+  // impossible: the day is already claimed regardless of what time the
+  // occupant sits at, so no second row can be fabricated for it — including
+  // via the launch top-up (`materializeDueRecurrences`), which deliberately
+  // does not prune and so previously refilled the whole window on every
+  // restart after any anchor drift.
   //
-  // Claiming only the first is a real bug, reported directly as a task
-  // duplicating at the SAME time after an edit: move a daily instance onto
-  // the following day's own occurrence slot and that slot still read as
-  // empty, so a fresh instance was generated straight on top of the task
-  // the user had just moved there. An unmoved instance has
-  // `originalScheduledAt == null` and simply claims its own `scheduledAt`
-  // twice over, which the Set collapses.
-  final takenStarts = <DateTime>{
+  // A moved instance claims BOTH the day it VACATED
+  // (`originalScheduledAt`) and the day it now occupies (`scheduledAt`),
+  // so moving one onto another day never leaves its old day looking
+  // unfilled. An unmoved instance has `originalScheduledAt == null` and
+  // simply claims its own day twice over, which the Set collapses.
+  //
+  // Safe because one-occurrence-per-day-per-series is a real invariant of
+  // the current model, not an assumption: [RecurrenceFrequency] is only
+  // `daily | weekly`, and sub-daily/RRULE-style patterns are explicitly
+  // deferred in SCOPE.md. A future twice-daily rule would need this keyed
+  // on (day, occurrence-index) instead — flagged here so it can't be
+  // missed if that ever ships.
+  final takenDays = <DateTime>{
     for (final task in existingInstances) ...[
-      ?task.originalScheduledAt,
-      ?task.scheduledAt,
+      ?_dayOf(task.originalScheduledAt),
+      ?_dayOf(task.scheduledAt),
     ],
   };
 
@@ -68,7 +85,7 @@ List<Task> generateRecurrenceInstances({
     anchor: anchor,
     windowEnd: windowEnd,
   )) {
-    if (takenStarts.contains(occurrence)) continue;
+    if (takenDays.contains(_dayOf(occurrence))) continue;
     generated.add(
       Task.create(
           title: template.title,
@@ -89,6 +106,12 @@ List<Task> generateRecurrenceInstances({
   }
   return generated;
 }
+
+/// The calendar day [at] falls on, with its time-of-day discarded — the
+/// key [generateRecurrenceInstances] matches occupancy on. Null in, null
+/// out, so an unscheduled task simply claims no day at all.
+DateTime? _dayOf(DateTime? at) =>
+    at == null ? null : DateTime(at.year, at.month, at.day);
 
 /// Duration used if a template somehow lacks one. Templates are always
 /// created scheduled (the detail form sets time and duration together), so

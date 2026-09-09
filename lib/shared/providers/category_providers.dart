@@ -54,6 +54,19 @@ class CategoryList extends _$CategoryList {
     return category;
   }
 
+  /// Renames/recolors an existing category (built-in or user-defined) —
+  /// per CONSTITUTION.md's "v2: rename, recolor, and reorder" section
+  /// (reorder itself confirmed out of scope for now). Mirrors
+  /// [ZoneList.updateZone]'s exact shape: the caller mutates a fetched
+  /// [Category]'s fields directly (both are plain mutable fields, not
+  /// `final`) and passes the same object back in — `saveCategory` is a
+  /// Hive `put` keyed by id, so this overwrites the existing row rather
+  /// than creating a second one.
+  Future<void> updateCategory(Category category) async {
+    await ref.read(categoryRepositoryProvider).saveCategory(category);
+    _refresh();
+  }
+
   /// One-time, at-launch seed + backfill (see `main.dart`, called the same
   /// way `TaskList.materializeDueRecurrences` is): seeds the 5 built-in
   /// [Category] rows at their fixed [BuiltInCategoryIds] (idempotent by

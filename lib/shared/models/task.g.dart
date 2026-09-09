@@ -38,13 +38,14 @@ class TaskAdapter extends TypeAdapter<Task> {
       zoneId: fields[16] as String?,
       externalEventId: fields[17] as String?,
       templateId: fields[18] as String?,
+      isImportant: fields[19] == null ? false : fields[19] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, Task obj) {
     writer
-      ..writeByte(19)
+      ..writeByte(20)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -82,7 +83,9 @@ class TaskAdapter extends TypeAdapter<Task> {
       ..writeByte(17)
       ..write(obj.externalEventId)
       ..writeByte(18)
-      ..write(obj.templateId);
+      ..write(obj.templateId)
+      ..writeByte(19)
+      ..write(obj.isImportant);
   }
 
   @override

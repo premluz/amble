@@ -9,6 +9,10 @@
 //   link    — task detail form showing the behavior picker
 //   outcome — the outcome prompt, as shown when completing a linked task
 //   ordinary — an ORDINARY task's detail form, to show no added friction
+//   list    — the new "Tracked" nav destination's list screen, seeded with
+//             two contrasting behaviors (a duration target with a minimum,
+//             and a binary one), to verify the row's target wording
+//   edit    — the same list, with the edit form open on the first behavior
 //   timeline — Timeline seeded with four contrasting tasks, to verify the
 //              tracked-behavior indicator renders (and coexists with the
 //              recurring indicator). Headless goldens draw icons as blank
@@ -34,6 +38,7 @@ import '../timeline/timeline_screen.dart';
 import '../task_detail/task_detail_sheet.dart';
 import 'behavior_outcome_prompt.dart';
 import 'tracked_behavior_form.dart';
+import 'tracked_behavior_list_screen.dart';
 
 const _mode = String.fromEnvironment('mode', defaultValue: 'create');
 
@@ -66,6 +71,19 @@ Future<void> main() async {
           targetAmount: 60,
           minimumAmount: 15,
           timesPerWeek: 3,
+        );
+  }
+
+  // A second, deliberately contrasting behavior for the list modes: a
+  // binary target (no amount at all) alongside the duration one above, so
+  // one screenshot shows both wordings the row can produce.
+  if (_mode == 'list' || _mode == 'edit') {
+    await container
+        .read(trackedBehaviorListProvider.notifier)
+        .createBehavior(
+          title: 'Meditate',
+          targetType: BehaviorTargetType.binary,
+          timesPerWeek: 7,
         );
   }
 
@@ -197,6 +215,15 @@ class _LauncherState extends ConsumerState<_Launcher> {
             ),
           );
 
+        case 'list':
+          // Nothing to open — the seeded list screen is the subject itself.
+          break;
+
+        case 'edit':
+          final first = ref.read(trackedBehaviorListProvider).first;
+          if (!mounted) return;
+          await showTrackedBehaviorForm(context, behavior: first);
+
         case 'timeline':
           // Nothing to open — the seeded Timeline is the subject itself.
           break;
@@ -214,6 +241,9 @@ class _LauncherState extends ConsumerState<_Launcher> {
     // The timeline mode is verifying the Timeline itself; every other mode
     // shows Settings, the real home of the create entry point.
     if (_mode == 'timeline') return const Scaffold(body: TimelineScreen());
+    if (_mode == 'list' || _mode == 'edit') {
+      return const Scaffold(body: TrackedBehaviorListScreen());
+    }
     return const Scaffold(body: SettingsScreen());
   }
 }

@@ -7,8 +7,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/dev_config.dart';
 import '../../core/feature_flags.dart';
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/app_top_scroll_fade.dart';
 import '../../shared/models/category.dart';
 import '../../shared/models/external_calendar_event.dart';
+import '../../shared/models/scheduled_block.dart';
 import '../../shared/models/task.dart';
 import '../../shared/models/task_status.dart';
 import '../../shared/models/zone.dart';
@@ -19,24 +21,39 @@ import '../../shared/providers/task_providers.dart';
 import '../../shared/providers/tracked_behavior_providers.dart';
 import '../../shared/providers/zone_providers.dart';
 import '../../shared/services/cascade_reschedule.dart';
+import '../../shared/services/group_reschedule.dart';
 import '../../shared/services/overlap_checker.dart';
 import '../../shared/services/overlap_cluster.dart';
+import '../../shared/services/zone_cascade_reschedule.dart';
 import '../../shared/services/zone_containment.dart';
 import '../tracked_behavior/behavior_outcome_prompt.dart';
 import '../task_detail/task_detail_sheet.dart';
+import '../task_detail/task_remove.dart';
 import 'collapsed_stack_layout.dart';
 import 'current_time_indicator.dart';
 import 'day_strip.dart';
+import 'armed_edit_task_provider.dart';
+import 'edit_mode_delete_target.dart';
+import 'edit_mode_provider.dart';
+import 'edit_mode_wiggle.dart';
+import 'edit_selection_provider.dart';
 import 'external_event_block.dart';
+import 'external_event_capsule_block.dart';
 import 'free_window_block.dart';
 import 'overlap_cluster_block.dart';
+import '../task_detail/quick_create_sheet_shell.dart';
+import 'pending_task_draft_provider.dart';
+import 'quick_create_overlay.dart';
+import 'pending_task_pill.dart';
 import 'place_task_line.dart';
+import 'timeline_drag_math.dart';
 import 'recently_saved_task_provider.dart';
 import 'selected_date_provider.dart';
 import 'viewed_time_provider.dart';
 import 'task_boundary_markers.dart';
 import 'task_capsule_block.dart';
 import 'task_overlap_layout.dart';
+import 'two_finger_long_press.dart';
 import 'tasks_for_selected_day_provider.dart';
 import 'zone_background_block.dart';
 import 'zone_day_timeline.dart';
@@ -130,6 +147,64 @@ double _textColumnLeft(AmbleTheme theme, List<TaskLayoutSlot> slots) =>
 bool _isSameDay(DateTime a, DateTime b) =>
     a.year == b.year && a.month == b.month && a.day == b.day;
 
+/// Shared commit path for both [ZoneDayTimeline.onZoneResize] and
+/// [ZoneDayTimeline.onZoneMove] — the two gestures differ only in HOW
+/// [newStartMinutes]/[newEndMinutes] were derived (one edge grown vs.
+/// both shifted together), not in what happens once a candidate window
+/// exists. Requested directly: "zones should never overlap... perhaps
+/// cascading... that doesn't block user intention" — computes the full
+/// zone-to-zone cascade (`computeZoneCascadeMoves`,
+/// `shared/services/zone_cascade_reschedule.dart`) and, if satisfiable,
+/// commits every affected zone (and its own assigned tasks) in one write
+/// via `ZoneList.commitZoneCascade`. A cascade that can't be satisfied
+/// (the day genuinely has no room) is silently dropped — the container
+/// snaps back to its real position on the next frame, same "no form/field
+/// here for an error message to attach to" reasoning the original
+/// silent-drop behavior already established.
+///
+/// [day] scopes the candidate zone set to whichever instances actually
+/// apply on the day being viewed — per the Zone materialization session
+/// (see docs/DECISIONS.md): a recurring zone is now real per-day rows
+/// sharing a `recurrenceId`, each with its own id, so resizing/moving
+/// Monday's instance must only ever compete against zones that ALSO apply
+/// on Monday, never a sibling instance on a different day. This is the
+/// change that makes editing one occurrence leave every other occurrence
+/// in its series untouched — `computeZoneCascadeMoves` itself needed no
+/// change, only which rows are fed into it.
+void _commitZoneCascade(
+  WidgetRef ref, {
+  required String zoneId,
+  required int originalStartMinutes,
+  required int newStartMinutes,
+  required int newEndMinutes,
+  required DateTime day,
+}) {
+  final allZones = ref.read(zoneListProvider);
+  final allTasks = ref.read(taskListProvider);
+  final otherZones = allZones
+      .where((z) => z.id != zoneId)
+      .where((z) => z.anchorDate == null || _isSameDay(z.anchorDate!, day))
+      .toList();
+  final tasksByZoneId = <String, List<Task>>{};
+  for (final task in allTasks) {
+    final taskZoneId = task.zoneId;
+    if (taskZoneId == null) continue;
+    (tasksByZoneId[taskZoneId] ??= []).add(task);
+  }
+
+  final moves = computeZoneCascadeMoves(
+    draggedZoneId: zoneId,
+    draggedZoneOriginalStartMinutes: originalStartMinutes,
+    zoneStartOverride: newStartMinutes,
+    zoneEndOverride: newEndMinutes,
+    otherZones: otherZones,
+    tasksByZoneId: tasksByZoneId,
+  );
+  if (moves == null) return;
+
+  ref.read(zoneListProvider.notifier).commitZoneCascade(moves);
+}
+
 /// [TaskCapsuleBlock]'s pill height for a given task, mirrored here for the
 /// same reason as [_pillWidth] — needed to find where one task's pill ends
 /// so the connector line (see [_TimelineConnectors]) can start there.
@@ -159,8 +234,25 @@ class TimelineScreen extends ConsumerWidget {
     // any task actually references it via zoneId — that filtering would be
     // Zone/spatial-zone-VIEW behavior, explicitly out of scope here.
     // Gated behind the same feature flag every other Zone UI surface uses.
+    //
+    // Filtered to zones that actually APPLY on `selectedDate` — per the
+    // Zone materialization session (see docs/DECISIONS.md): a recurring
+    // zone is now real per-day rows sharing a `recurrenceId`, so without
+    // this filter every materialized instance of a series (up to ~56 for
+    // an 8-week daily series) would render simultaneously on top of each
+    // other on any single day, since they all share the same time-of-day
+    // window. Same day-membership rule `_commitZoneCascade` and
+    // `resolveZoneContainment` already use — a non-recurring zone
+    // (`anchorDate == null`) still applies to every day, unaffected.
     final zones = FeatureFlags.zoneEnabled
-        ? ref.watch(zoneListProvider)
+        ? ref
+              .watch(zoneListProvider)
+              .where(
+                (zone) =>
+                    zone.anchorDate == null ||
+                    _isSameDay(zone.anchorDate!, selectedDate),
+              )
+              .toList()
         : const <Zone>[];
     final categoryById = {
       for (final category in ref.watch(categoryListProvider))
@@ -211,6 +303,31 @@ class TimelineScreen extends ConsumerWidget {
     // gesture is reinstated.
     // final dayNotifier = ref.read(selectedDateProvider.notifier);
     final taskNotifier = ref.read(taskListProvider.notifier);
+    // Watched here (the ConsumerWidget root) and threaded down as a plain
+    // field, same pattern as every other setting/flag this screen already
+    // resolves once and passes to its non-Riverpod-aware descendants
+    // (_DayTimeline, ZoneDayTimeline, TaskCapsuleBlock).
+    final editModeEnabled = ref.watch(editModeEnabledProvider);
+
+    // Clears any leftover multi-task selection the moment either toggle
+    // that made it meaningful goes away — Edit Mode itself exiting, or
+    // multi-task mode being switched off while Edit Mode stays on. Without
+    // this a stale selection would silently reappear (still wiggling,
+    // still armed for a group gesture) the next time either was switched
+    // back on, which reads as a bug rather than the deliberately ephemeral
+    // state `edit_selection_provider.dart` documents itself as. Listened
+    // here (not inside `EditSelection` itself) since a provider clearing
+    // itself in reaction to two OTHER providers is backwards coupling —
+    // this screen already watches both and is where they're meant to
+    // compose.
+    ref.listen(editModeEnabledProvider, (previous, next) {
+      if (!next) ref.read(editSelectionProvider.notifier).clear();
+      if (!next) ref.read(zoneEditSelectionProvider.notifier).clear();
+    });
+    ref.listen(devMultiTaskEditModeProvider, (previous, next) {
+      if (!next) ref.read(editSelectionProvider.notifier).clear();
+      if (!next) ref.read(zoneEditSelectionProvider.notifier).clear();
+    });
 
     return Container(
       color: theme.colorSurfaceTimeline,
@@ -242,264 +359,465 @@ class TimelineScreen extends ConsumerWidget {
               //   },
               //   child: ...,
               // ),
-              child: AnimatedSwitcher(
-                // Task<->Zone view switch: outgoing view slides left+fades
-                // out, incoming view slides in from the right+fades in —
-                // requested directly. motionRouteSettle/curveStandard
-                // (500ms, Material standard ease) since this is a
-                // route-level view change, not a small in-place UI tweak.
-                duration: theme.motionRouteSettle,
-                switchInCurve: theme.curveStandard,
-                switchOutCurve: theme.curveStandard,
-                transitionBuilder: (child, animation) {
-                  // Every view switch must read right-to-left, both
-                  // directions — reported directly, twice: first that the
-                  // outgoing view slid right instead of left, then (after
-                  // an attempted fix using animation.status) that the
-                  // Task view stopped animating in at all, plus real
-                  // clipping ("left side cut off").
-                  //
-                  // Root cause of the SECOND attempt's failure:
-                  // AnimatedSwitcher calls transitionBuilder(child,
-                  // animation) ONCE, synchronously, at the moment an entry
-                  // is CREATED — before its controller.forward()/.reverse()
-                  // has actually been called (see _addEntryForNewChild in
-                  // the framework source: _newEntry builds the transition
-                  // BEFORE forward()/reverse() runs). So `animation.status`
-                  // read at that instant is always still `dismissed`, for
-                  // BOTH the incoming and outgoing entry — never `forward`.
-                  // That's why the Task view (whichever entry happened to
-                  // build second) silently took the wrong branch and never
-                  // animated in.
-                  //
-                  // The reliable signal instead: `child` is the ACTUAL
-                  // widget passed in for THIS entry, and its `key` is
-                  // known — compare it against which view is CURRENTLY
-                  // selected (the enclosing build's own `zoneViewEnabled`,
-                  // captured by this closure) rather than the animation's
-                  // own transient status. This entry is "entering" if and
-                  // only if its key matches the view that's actually
-                  // selected right now.
-                  final isEntering =
-                      child.key ==
-                      (zoneViewEnabled
-                          ? const ValueKey('zone-view')
-                          : const ValueKey('task-view'));
-                  final slide = Tween<Offset>(
-                    begin: isEntering ? const Offset(0.15, 0) : Offset.zero,
-                    end: isEntering ? Offset.zero : const Offset(-0.15, 0),
-                  ).animate(animation);
-                  return FadeTransition(
-                    opacity: animation,
-                    child: SlideTransition(position: slide, child: child),
+              child: TwoFingerLongPress(
+                onTwoFingerLongPress: () =>
+                    ref.read(editModeEnabledProvider.notifier).toggle(),
+                child: Stack(
+                  children: [
+                    AnimatedSwitcher(
+                      // Task<->Zone view switch: outgoing view slides left+fades
+                      // out, incoming view slides in from the right+fades in —
+                      // requested directly. motionRouteSettle/curveStandard
+                      // (500ms, Material standard ease) since this is a
+                      // route-level view change, not a small in-place UI tweak.
+                      duration: theme.motionRouteSettle,
+                      switchInCurve: theme.curveStandard,
+                      switchOutCurve: theme.curveStandard,
+                      transitionBuilder: (child, animation) {
+                        // Every view switch must read right-to-left, both
+                        // directions — reported directly, twice: first that the
+                        // outgoing view slid right instead of left, then (after
+                        // an attempted fix using animation.status) that the
+                        // Task view stopped animating in at all, plus real
+                        // clipping ("left side cut off").
+                        //
+                        // Root cause of the SECOND attempt's failure:
+                        // AnimatedSwitcher calls transitionBuilder(child,
+                        // animation) ONCE, synchronously, at the moment an entry
+                        // is CREATED — before its controller.forward()/.reverse()
+                        // has actually been called (see _addEntryForNewChild in
+                        // the framework source: _newEntry builds the transition
+                        // BEFORE forward()/reverse() runs). So `animation.status`
+                        // read at that instant is always still `dismissed`, for
+                        // BOTH the incoming and outgoing entry — never `forward`.
+                        // That's why the Task view (whichever entry happened to
+                        // build second) silently took the wrong branch and never
+                        // animated in.
+                        //
+                        // The reliable signal instead: `child` is the ACTUAL
+                        // widget passed in for THIS entry, and its `key` is
+                        // known — compare it against which view is CURRENTLY
+                        // selected (the enclosing build's own `zoneViewEnabled`,
+                        // captured by this closure) rather than the animation's
+                        // own transient status. This entry is "entering" if and
+                        // only if its key matches the view that's actually
+                        // selected right now.
+                        final isEntering =
+                            child.key ==
+                            (zoneViewEnabled
+                                ? const ValueKey('zone-view')
+                                : const ValueKey('task-view'));
+                        final slide = Tween<Offset>(
+                          begin: isEntering
+                              ? const Offset(0.15, 0)
+                              : Offset.zero,
+                          end: isEntering
+                              ? Offset.zero
+                              : const Offset(-0.15, 0),
+                        ).animate(animation);
+                        return FadeTransition(
+                          opacity: animation,
+                          child: SlideTransition(position: slide, child: child),
+                        );
+                      },
+                      // clipBehavior: Clip.none — real bug, reported directly
+                      // ("list and zone screens are positioned off screen, left
+                      // side is cut off"): Stack's OWN default is
+                      // Clip.hardEdge, and the custom layoutBuilder below
+                      // (needed so both the outgoing and incoming full-width
+                      // views can slide past the Stack's own bounds mid-
+                      // transition) inherited that default silently. Also
+                      // switched alignment to center, matching
+                      // AnimatedSwitcher.defaultLayoutBuilder's own choice —
+                      // topLeft mis-aligned a translated child against a
+                      // Stack that isn't naturally sized to its own top-left
+                      // corner once children can slide outside its bounds.
+                      layoutBuilder: (currentChild, previousChildren) => Stack(
+                        alignment: Alignment.center,
+                        clipBehavior: Clip.none,
+                        children: [...previousChildren, ?currentChild],
+                      ),
+                      child: zoneViewEnabled
+                          // Same empty-day treatment as the Task view below: the
+                          // timeline still renders and scrolls, with the message
+                          // floating over it.
+                          ? Stack(
+                              key: const ValueKey('zone-view'),
+                              children: [
+                                ZoneDayTimeline(
+                                  tasks: tasks,
+                                  zones: zones,
+                                  externalEvents: externalEvents,
+                                  theme: theme,
+                                  categoryById: categoryById,
+                                  selectedDate: selectedDate,
+                                  // Dev-only capsule display toggles (Settings'
+                                  // "Developer" section) — read once here, same
+                                  // as showHourLabels/disableClustering, and
+                                  // threaded down as plain fields since
+                                  // ZoneDayTimeline isn't Riverpod-aware.
+                                  // Requested directly: these already applied to
+                                  // the Task view's own capsules but not to Zone
+                                  // view's outer-axis ones.
+                                  devTextLayout: ref.watch(
+                                    devTimelineTaskTextLayoutProvider,
+                                  ),
+                                  // A real user setting (not a dev toggle) —
+                                  // one toggle across all three views.
+                                  showCompletionCheckbox: ref.watch(
+                                    showCompletionCheckboxSettingProvider,
+                                  ),
+                                  devIconsVisible: ref.watch(
+                                    devTimelineTaskIconsVisibleProvider,
+                                  ),
+                                  devDurationVisible: ref.watch(
+                                    devTimelineTaskDurationVisibleProvider,
+                                  ),
+                                  // Independently configurable from the Task
+                                  // view's own scale below — requested directly
+                                  // (see DevZoneViewPixelsPerMinute's own doc
+                                  // comment for why the 2x default was needed).
+                                  pixelsPerMinute: ref.watch(
+                                    devZoneViewPixelsPerMinuteProvider,
+                                  ),
+                                  // Opens Edit directly, skipping the action
+                                  // sheet (Edit/Duplicate/Remove) — requested
+                                  // directly. The sheet stays in the codebase,
+                                  // unused for now, in case it's wanted again.
+                                  onTaskTap: (task) =>
+                                      showTaskDetailSheet(context, task: task),
+                                  onToggleComplete: (task) =>
+                                      _completeTask(context, ref, task),
+                                  onReassign: (task, zoneId, newScheduledAt) =>
+                                      ref
+                                          .read(taskListProvider.notifier)
+                                          .rescheduleTaskWithZone(
+                                            task,
+                                            newScheduledAt,
+                                            zoneId,
+                                          ),
+                                  // Shared with the Task view below via
+                                  // viewed_time_provider.dart — see its own doc
+                                  // comment. Lets switching Zone<->Task resume the
+                                  // same scroll position instead of always
+                                  // re-centering on "now".
+                                  //
+                                  // `read`, NOT `watch`, deliberately: this is a
+                                  // START position, consumed once when the view
+                                  // mounts or a switch happens, not live state to
+                                  // track. Watching it created a feedback loop —
+                                  // every scroll wrote the provider, which rebuilt
+                                  // this whole screen, which pushed a new
+                                  // `readViewedMinutes` down and re-ran
+                                  // `didUpdateWidget` mid-scroll. That loop is what
+                                  // caused the reported scroll-position reset, the
+                                  // "flash" on switching to Zone view, and the
+                                  // capsules animating in from the top.
+                                  readViewedMinutes: () =>
+                                      ref.read(viewedTimeProvider),
+                                  onViewedMinutesChanged: (minutes) => ref
+                                      .read(viewedTimeProvider.notifier)
+                                      .set(minutes),
+                                  editModeEnabled: editModeEnabled,
+                                  // Zone-to-zone overlap resolved via a
+                                  // cascade-push, not a silent reject —
+                                  // requested directly (see
+                                  // `_commitZoneCascade`'s own doc
+                                  // comment for the full reasoning; both
+                                  // gestures share the identical commit
+                                  // path).
+                                  onZoneResize:
+                                      (
+                                        zoneId,
+                                        originalStartMinutes,
+                                        newStartMinutes,
+                                        newEndMinutes,
+                                      ) => _commitZoneCascade(
+                                        ref,
+                                        zoneId: zoneId,
+                                        originalStartMinutes:
+                                            originalStartMinutes,
+                                        newStartMinutes: newStartMinutes,
+                                        newEndMinutes: newEndMinutes,
+                                        day: selectedDate,
+                                      ),
+                                  onZoneMove:
+                                      (
+                                        zoneId,
+                                        originalStartMinutes,
+                                        newStartMinutes,
+                                        newEndMinutes,
+                                      ) => _commitZoneCascade(
+                                        ref,
+                                        zoneId: zoneId,
+                                        originalStartMinutes:
+                                            originalStartMinutes,
+                                        newStartMinutes: newStartMinutes,
+                                        newEndMinutes: newEndMinutes,
+                                        day: selectedDate,
+                                      ),
+                                  // Zones should not wiggle/be draggable
+                                  // in multi-task mode unless selected —
+                                  // requested directly, mirroring the
+                                  // Task view's own identical fix (see
+                                  // `_DraggableZoneBlockState`'s doc
+                                  // comment).
+                                  multiTaskEditMode:
+                                      editModeEnabled &&
+                                      ref.watch(devMultiTaskEditModeProvider),
+                                  selectedZoneId: ref.watch(
+                                    zoneEditSelectionProvider,
+                                  ),
+                                  onZoneHeaderTap: (zoneId) => ref
+                                      .read(zoneEditSelectionProvider.notifier)
+                                      .toggle(zoneId),
+                                ),
+                                if (tasks.isEmpty && zones.isEmpty)
+                                  IgnorePointer(
+                                    child: _EmptyDayState(theme: theme),
+                                  ),
+                              ],
+                            )
+                          // An empty day still renders the full scrollable
+                          // timeline — the "nothing scheduled" message floats
+                          // OVER it rather than replacing it, confirmed directly.
+                          // Previously an empty day short-circuited to a centered
+                          // message with nothing to scroll at all.
+                          : Stack(
+                              key: const ValueKey('task-view'),
+                              children: [
+                                _DayTimeline(
+                                  tasks: tasks,
+                                  theme: theme,
+                                  categoryById: categoryById,
+                                  zones: zones,
+                                  externalEvents: externalEvents,
+                                  selectedDate: selectedDate,
+                                  showHourLabels: ref.watch(
+                                    showHourLabelsSettingProvider,
+                                  ),
+                                  showTimelineConnectors: ref.watch(
+                                    showTimelineConnectorsSettingProvider,
+                                  ),
+                                  // Opens Edit directly, skipping the action sheet
+                                  // (Edit/Duplicate/Remove) — requested directly.
+                                  // The sheet stays in the codebase, unused for
+                                  // now, in case it's wanted again.
+                                  onTaskTap: (task) =>
+                                      showTaskDetailSheet(context, task: task),
+                                  onToggleComplete: (task) =>
+                                      _completeTask(context, ref, task),
+                                  onReschedule: (task, newScheduledAt) =>
+                                      taskNotifier.rescheduleTask(
+                                        task,
+                                        newScheduledAt,
+                                      ),
+                                  onCreateAt: (startAt) => showTaskDetailSheet(
+                                    context,
+                                    initialScheduledAt: startAt,
+                                    initialTimeOfDay: TimeOfDay.fromDateTime(
+                                      startAt,
+                                    ),
+                                  ),
+                                  // Tap-empty-space quick-create, requested
+                                  // directly: drops the wiggly placeholder
+                                  // pill immediately (so it's visible the
+                                  // instant the tap lands). QuickCreateOverlay
+                                  // (rendered below, gated on pendingDraft)
+                                  // owns the small sheet AND the eventual
+                                  // promotion to the real showTaskDetailSheet
+                                  // route once the user expands it — nothing
+                                  // pushed from here.
+                                  onEmptyTap: (tappedAt) {
+                                    // Tapping outside a long-press-armed
+                                    // task closes its edit/wiggle state —
+                                    // requested directly, the other half of
+                                    // "long press on task should enable its
+                                    // edit mode... tapping outside closes
+                                    // that mode." See _effectiveOnLongPress
+                                    // for the arming side.
+                                    ref
+                                        .read(armedEditTaskProvider.notifier)
+                                        .clear();
+                                    ref
+                                        .read(pendingTaskDraftProvider.notifier)
+                                        .start(
+                                          scheduledAt: tappedAt,
+                                          durationMinutes:
+                                              quickAddDefaultMinutes,
+                                        );
+                                  },
+                                  pendingDraft: ref.watch(
+                                    pendingTaskDraftProvider,
+                                  ),
+                                  recentlySaved: ref.watch(
+                                    recentlySavedTaskProvider,
+                                  ),
+                                  onSavedTaskConsumed: () => ref
+                                      .read(recentlySavedTaskProvider.notifier)
+                                      .clear(),
+                                  disableClustering: ref.watch(
+                                    disableOverlapClusteringSettingProvider,
+                                  ),
+                                  // Independently configurable from the Zone
+                                  // view's own scale above — see
+                                  // DevZoneViewPixelsPerMinute's doc comment.
+                                  pixelsPerMinute: ref.watch(
+                                    devTaskViewPixelsPerMinuteProvider,
+                                  ),
+                                  showFreeWindowPrompt: ref.watch(
+                                    devShowFreeWindowPromptProvider,
+                                  ),
+                                  // Read here (not just inside
+                                  // _DraggableTaskBlockState, which independently
+                                  // watches its own copy for TaskCapsuleBlock) so
+                                  // OverlapClusterBlock's cluster rows — built by
+                                  // this plain (non-Riverpod) _DayTimelineState —
+                                  // can respect the same setting. Real parity gap,
+                                  // fixed here: a clustered task's row previously
+                                  // never showed the duration suffix at all.
+                                  devDurationVisible: ref.watch(
+                                    devTimelineTaskDurationVisibleProvider,
+                                  ),
+                                  // Same threading, same reason — see
+                                  // _DayTimeline.devTextLayout's own doc comment.
+                                  devTextLayout: ref.watch(
+                                    devTimelineTaskTextLayoutProvider,
+                                  ),
+                                  // A real user setting (not a dev toggle) —
+                                  // one toggle across all three views.
+                                  showCompletionCheckbox: ref.watch(
+                                    showCompletionCheckboxSettingProvider,
+                                  ),
+                                  // Shared with Zone view above via
+                                  // viewed_time_provider.dart. `read`, not `watch`
+                                  // — see the Zone view's own copy of this above
+                                  // for why watching it was a feedback loop.
+                                  readViewedMinutes: () =>
+                                      ref.read(viewedTimeProvider),
+                                  onViewedMinutesChanged: (minutes) => ref
+                                      .read(viewedTimeProvider.notifier)
+                                      .set(minutes),
+                                  editModeEnabled: editModeEnabled,
+                                  onDeleteTask: (task) =>
+                                      removeTask(context, taskNotifier, task),
+                                  // Same shared commit path Zone view's own
+                                  // resize/move already use — see
+                                  // `_commitZoneCascade`'s own doc comment.
+                                  onZoneResize:
+                                      (
+                                        zoneId,
+                                        originalStartMinutes,
+                                        newStartMinutes,
+                                        newEndMinutes,
+                                      ) => _commitZoneCascade(
+                                        ref,
+                                        zoneId: zoneId,
+                                        originalStartMinutes:
+                                            originalStartMinutes,
+                                        newStartMinutes: newStartMinutes,
+                                        newEndMinutes: newEndMinutes,
+                                        day: selectedDate,
+                                      ),
+                                  onZoneMove:
+                                      (
+                                        zoneId,
+                                        originalStartMinutes,
+                                        newStartMinutes,
+                                        newEndMinutes,
+                                      ) => _commitZoneCascade(
+                                        ref,
+                                        zoneId: zoneId,
+                                        originalStartMinutes:
+                                            originalStartMinutes,
+                                        newStartMinutes: newStartMinutes,
+                                        newEndMinutes: newEndMinutes,
+                                        day: selectedDate,
+                                      ),
+                                ),
+                                // IgnorePointer so the message never blocks a tap
+                                // on the timeline underneath (creating a task by
+                                // tapping a free window still works through it).
+                                if (tasks.isEmpty)
+                                  IgnorePointer(
+                                    child: _EmptyDayState(theme: theme),
+                                  ),
+                              ],
+                            ),
+                    ),
+                    // Edit Mode's second entry point — see
+                    // `edit_mode_provider.dart` and CONSTITUTION.md's "Edit
+                    // Mode" section. Top-right, above the scrollable day
+                    // (confirmed directly: this codebase's hour-label
+                    // gutter is a LEFT-side column, so "same margin column
+                    // as the hour labels" has no literal right-side
+                    // equivalent to match — placed top-right, above the
+                    // first hour marker, per the clearer half of the
+                    // instruction).
+                    Positioned(
+                      top: theme.spacingSm,
+                      right: theme.spacingScreenPadding,
+                      child: _EditModeLink(theme: theme),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            // Hidden entirely while Edit Mode is active — requested
+            // directly: "in edit mode we don't see main menu and days and
+            // view switching... let's skip Plus." Day chips, the Task/
+            // Zone/List view-cycle button, and the "+" create button all
+            // live inside DayStrip, so removing it from the tree covers
+            // all three at once rather than threading a suppression flag
+            // through each of its own controls individually.
+            //
+            // Hidden for the same reason while a quick-create draft is
+            // live (the tap-empty-space mini sheet) — requested directly:
+            // "we don't show main nav, we should not show also the days
+            // with view switch and + button section, only the minisheet
+            // is visible in this scenario." The bottom NavigationBar is
+            // already suppressed for this case in `main.dart`'s own
+            // `hideBottomNav`; this is the other half of that same
+            // "only the mini sheet" rule.
+            if (ref.watch(pendingTaskDraftProvider) != null)
+              // NOTHING here for the quick-create case — deliberately not
+              // even the SafeArea stand-in Edit Mode gets below. The mini
+              // sheet is bottom-anchored inside the Expanded above and
+              // applies its OWN bottom SafeArea internally, so a second
+              // one out here just pushes the sheet up off the screen edge
+              // by the inset's height. Reported directly: "still there is
+              // some padding from bottom of screen.. sheet is not
+              // starting from edge bottom."
+              const SizedBox.shrink()
+            else if (editModeEnabled)
+              // DayStrip normally owns the bottom SafeArea guard itself
+              // (see the outer SafeArea's own `bottom: false` above) —
+              // removing it from the tree entirely while Edit Mode is on
+              // would leave the bottom edge unguarded, so this stands in
+              // for exactly that one job with nothing else in it.
+              const SafeArea(top: false, child: SizedBox.shrink())
+            else
+              DayStrip(
+                // Defaults to whatever time is vertically centered in the
+                // current scroll position, not real "now" — requested
+                // directly. `viewedTimeProvider` already tracks this (kept
+                // in sync by both spatial views as the user scrolls); null
+                // only for a fresh, never-scrolled session, where "now" is
+                // still the right fallback.
+                onCreatePressed: () {
+                  final viewedMinutes =
+                      ref.read(viewedTimeProvider) ??
+                      (DateTime.now().hour * 60 + DateTime.now().minute);
+                  showTaskDetailSheet(
+                    context,
+                    initialScheduledAt: DateTime(
+                      selectedDate.year,
+                      selectedDate.month,
+                      selectedDate.day,
+                    ).add(Duration(minutes: viewedMinutes)),
                   );
                 },
-                // clipBehavior: Clip.none — real bug, reported directly
-                // ("list and zone screens are positioned off screen, left
-                // side is cut off"): Stack's OWN default is
-                // Clip.hardEdge, and the custom layoutBuilder below
-                // (needed so both the outgoing and incoming full-width
-                // views can slide past the Stack's own bounds mid-
-                // transition) inherited that default silently. Also
-                // switched alignment to center, matching
-                // AnimatedSwitcher.defaultLayoutBuilder's own choice —
-                // topLeft mis-aligned a translated child against a
-                // Stack that isn't naturally sized to its own top-left
-                // corner once children can slide outside its bounds.
-                layoutBuilder: (currentChild, previousChildren) => Stack(
-                  alignment: Alignment.center,
-                  clipBehavior: Clip.none,
-                  children: [...previousChildren, ?currentChild],
-                ),
-                child: zoneViewEnabled
-                    // Same empty-day treatment as the Task view below: the
-                    // timeline still renders and scrolls, with the message
-                    // floating over it.
-                    ? Stack(
-                        key: const ValueKey('zone-view'),
-                        children: [
-                          ZoneDayTimeline(
-                            tasks: tasks,
-                            zones: zones,
-                            externalEvents: externalEvents,
-                            theme: theme,
-                            categoryById: categoryById,
-                            selectedDate: selectedDate,
-                            // Dev-only capsule display toggles (Settings'
-                            // "Developer" section) — read once here, same
-                            // as showHourLabels/disableClustering, and
-                            // threaded down as plain fields since
-                            // ZoneDayTimeline isn't Riverpod-aware.
-                            // Requested directly: these already applied to
-                            // the Task view's own capsules but not to Zone
-                            // view's outer-axis ones.
-                            devTextLayout: ref.watch(
-                              devTimelineTaskTextLayoutProvider,
-                            ),
-                            // A real user setting (not a dev toggle) —
-                            // one toggle across all three views.
-                            showCompletionCheckbox: ref.watch(
-                              showCompletionCheckboxSettingProvider,
-                            ),
-                            devIconsVisible: ref.watch(
-                              devTimelineTaskIconsVisibleProvider,
-                            ),
-                            devDurationVisible: ref.watch(
-                              devTimelineTaskDurationVisibleProvider,
-                            ),
-                            // Independently configurable from the Task
-                            // view's own scale below — requested directly
-                            // (see DevZoneViewPixelsPerMinute's own doc
-                            // comment for why the 2x default was needed).
-                            pixelsPerMinute: ref.watch(
-                              devZoneViewPixelsPerMinuteProvider,
-                            ),
-                            // Opens Edit directly, skipping the action
-                            // sheet (Edit/Duplicate/Remove) — requested
-                            // directly. The sheet stays in the codebase,
-                            // unused for now, in case it's wanted again.
-                            onTaskTap: (task) =>
-                                showTaskDetailSheet(context, task: task),
-                            onToggleComplete: (task) =>
-                                _completeTask(context, ref, task),
-                            onReassign: (task, zoneId, newScheduledAt) => ref
-                                .read(taskListProvider.notifier)
-                                .rescheduleTaskWithZone(
-                                  task,
-                                  newScheduledAt,
-                                  zoneId,
-                                ),
-                            // Shared with the Task view below via
-                            // viewed_time_provider.dart — see its own doc
-                            // comment. Lets switching Zone<->Task resume the
-                            // same scroll position instead of always
-                            // re-centering on "now".
-                            //
-                            // `read`, NOT `watch`, deliberately: this is a
-                            // START position, consumed once when the view
-                            // mounts or a switch happens, not live state to
-                            // track. Watching it created a feedback loop —
-                            // every scroll wrote the provider, which rebuilt
-                            // this whole screen, which pushed a new
-                            // `readViewedMinutes` down and re-ran
-                            // `didUpdateWidget` mid-scroll. That loop is what
-                            // caused the reported scroll-position reset, the
-                            // "flash" on switching to Zone view, and the
-                            // capsules animating in from the top.
-                            readViewedMinutes: () =>
-                                ref.read(viewedTimeProvider),
-                            onViewedMinutesChanged: (minutes) => ref
-                                .read(viewedTimeProvider.notifier)
-                                .set(minutes),
-                          ),
-                          if (tasks.isEmpty && zones.isEmpty)
-                            IgnorePointer(child: _EmptyDayState(theme: theme)),
-                        ],
-                      )
-                    // An empty day still renders the full scrollable
-                    // timeline — the "nothing scheduled" message floats
-                    // OVER it rather than replacing it, confirmed directly.
-                    // Previously an empty day short-circuited to a centered
-                    // message with nothing to scroll at all.
-                    : Stack(
-                        key: const ValueKey('task-view'),
-                        children: [
-                          _DayTimeline(
-                            tasks: tasks,
-                            theme: theme,
-                            categoryById: categoryById,
-                            zones: zones,
-                            externalEvents: externalEvents,
-                            selectedDate: selectedDate,
-                            showHourLabels: ref.watch(
-                              showHourLabelsSettingProvider,
-                            ),
-                            showTimelineConnectors: ref.watch(
-                              showTimelineConnectorsSettingProvider,
-                            ),
-                            // Opens Edit directly, skipping the action sheet
-                            // (Edit/Duplicate/Remove) — requested directly.
-                            // The sheet stays in the codebase, unused for
-                            // now, in case it's wanted again.
-                            onTaskTap: (task) =>
-                                showTaskDetailSheet(context, task: task),
-                            onToggleComplete: (task) =>
-                                _completeTask(context, ref, task),
-                            onReschedule: (task, newScheduledAt) => taskNotifier
-                                .rescheduleTask(task, newScheduledAt),
-                            onCreateAt: (startAt) => showTaskDetailSheet(
-                              context,
-                              initialScheduledAt: startAt,
-                              initialTimeOfDay: TimeOfDay.fromDateTime(startAt),
-                            ),
-                            recentlySaved: ref.watch(recentlySavedTaskProvider),
-                            onSavedTaskConsumed: () => ref
-                                .read(recentlySavedTaskProvider.notifier)
-                                .clear(),
-                            disableClustering: ref.watch(
-                              disableOverlapClusteringSettingProvider,
-                            ),
-                            // Independently configurable from the Zone
-                            // view's own scale above — see
-                            // DevZoneViewPixelsPerMinute's doc comment.
-                            pixelsPerMinute: ref.watch(
-                              devTaskViewPixelsPerMinuteProvider,
-                            ),
-                            showFreeWindowPrompt: ref.watch(
-                              devShowFreeWindowPromptProvider,
-                            ),
-                            // Read here (not just inside
-                            // _DraggableTaskBlockState, which independently
-                            // watches its own copy for TaskCapsuleBlock) so
-                            // OverlapClusterBlock's cluster rows — built by
-                            // this plain (non-Riverpod) _DayTimelineState —
-                            // can respect the same setting. Real parity gap,
-                            // fixed here: a clustered task's row previously
-                            // never showed the duration suffix at all.
-                            devDurationVisible: ref.watch(
-                              devTimelineTaskDurationVisibleProvider,
-                            ),
-                            // Same threading, same reason — see
-                            // _DayTimeline.devTextLayout's own doc comment.
-                            devTextLayout: ref.watch(
-                              devTimelineTaskTextLayoutProvider,
-                            ),
-                            // A real user setting (not a dev toggle) —
-                            // one toggle across all three views.
-                            showCompletionCheckbox: ref.watch(
-                              showCompletionCheckboxSettingProvider,
-                            ),
-                            // Shared with Zone view above via
-                            // viewed_time_provider.dart. `read`, not `watch`
-                            // — see the Zone view's own copy of this above
-                            // for why watching it was a feedback loop.
-                            readViewedMinutes: () =>
-                                ref.read(viewedTimeProvider),
-                            onViewedMinutesChanged: (minutes) => ref
-                                .read(viewedTimeProvider.notifier)
-                                .set(minutes),
-                          ),
-                          // IgnorePointer so the message never blocks a tap
-                          // on the timeline underneath (creating a task by
-                          // tapping a free window still works through it).
-                          if (tasks.isEmpty)
-                            IgnorePointer(child: _EmptyDayState(theme: theme)),
-                        ],
-                      ),
               ),
-            ),
-            DayStrip(
-              onCreatePressed: () => showTaskDetailSheet(
-                context,
-                initialScheduledAt: DateTime(
-                  selectedDate.year,
-                  selectedDate.month,
-                  selectedDate.day,
-                  DateTime.now().hour,
-                  DateTime.now().minute,
-                ),
-              ),
-            ),
           ],
         ),
       ),
@@ -568,6 +886,8 @@ class _DayTimeline extends StatefulWidget {
     required this.onToggleComplete,
     required this.onReschedule,
     required this.onCreateAt,
+    required this.onEmptyTap,
+    this.pendingDraft,
     required this.recentlySaved,
     required this.onSavedTaskConsumed,
     required this.disableClustering,
@@ -578,6 +898,10 @@ class _DayTimeline extends StatefulWidget {
     this.showCompletionCheckbox = true,
     this.readViewedMinutes,
     this.onViewedMinutesChanged,
+    this.editModeEnabled = false,
+    this.onDeleteTask,
+    this.onZoneResize,
+    this.onZoneMove,
   });
 
   final List<Task> tasks;
@@ -632,9 +956,20 @@ class _DayTimeline extends StatefulWidget {
   final VoidCallback onSavedTaskConsumed;
 
   /// Opens the create-task flow seeded to start at the given instant —
-  /// used by a free window's block (start of that gap) and, coming next,
-  /// the hold-and-drag placement line (wherever it's released).
+  /// used by a free window's block (start of that gap) and the
+  /// hold-and-drag placement line (wherever it's released).
   final ValueChanged<DateTime> onCreateAt;
+
+  /// A plain TAP (not hold-and-drag) on empty Timeline background —
+  /// requested directly: drops the wiggly placeholder pill and opens the
+  /// small quick-create sheet. See `PlaceTaskLineLayer.onTapAt`.
+  final ValueChanged<DateTime> onEmptyTap;
+
+  /// The in-progress, not-yet-persisted task created by [onEmptyTap], if
+  /// any — null whenever nothing is being quick-created. Threaded down as
+  /// a plain field (like [recentlySaved]) rather than making this
+  /// StatefulWidget itself Riverpod-aware.
+  final PendingTaskDraft? pendingDraft;
 
   /// The Settings opt-out (`DisableOverlapClusteringSetting`) — when true,
   /// Overlapping tasks stay individual capsules (naive spatial
@@ -706,6 +1041,50 @@ class _DayTimeline extends StatefulWidget {
   /// `_DayTimelineState` isn't Riverpod-aware.
   final ValueChanged<int>? onViewedMinutesChanged;
 
+  /// Whether Edit Mode is active — resolved once by [TimelineScreen] (the
+  /// `ConsumerWidget` root) via `editModeEnabledProvider` and threaded
+  /// down as a plain field, same pattern as [showHourLabels]/
+  /// [disableClustering] above. Gates the resize handles and the
+  /// drag-to-delete target on every [_DraggableTaskBlock] this view
+  /// builds.
+  final bool editModeEnabled;
+
+  /// Deletes a task via drag-to-delete-target — see
+  /// `edit_mode_delete_target.dart`. Deliberately a SEPARATE callback from
+  /// [onReschedule], not a special case inside it: a delete-drop is a
+  /// genuinely different outcome (bypassing the cascade-push algorithm
+  /// entirely, per CONSTITUTION.md), not a reschedule to a particular
+  /// place.
+  final Future<void> Function(Task task)? onDeleteTask;
+
+  /// Commits a zone resize on this (Spatial Task) view — same shape and
+  /// same cascade-computing caller (`_commitZoneCascade`) as
+  /// `ZoneDayTimeline.onZoneResize`. **New 2026-09-06** (confirmed
+  /// directly — "we should be able to edit zones in any view ... in
+  /// spatial task view also"), reversing the earlier "Task view zones are
+  /// purely decorative" scope. A callback rather than `_DayTimelineState`
+  /// writing through `zoneListProvider` itself: this widget isn't
+  /// Riverpod-aware, same reason `onReschedule`/`onDeleteTask` are
+  /// callbacks too.
+  final void Function(
+    String zoneId,
+    int originalStartMinutes,
+    int newStartMinutes,
+    int newEndMinutes,
+  )?
+  onZoneResize;
+
+  /// Commits a zone MOVE (whole block repositioned, duration unchanged) —
+  /// same shape and same cascade-computing caller as [onZoneResize]. See
+  /// `ZoneDayTimeline.onZoneMove`'s own doc comment.
+  final void Function(
+    String zoneId,
+    int originalStartMinutes,
+    int newStartMinutes,
+    int newEndMinutes,
+  )?
+  onZoneMove;
+
   @override
   State<_DayTimeline> createState() => _DayTimelineState();
 }
@@ -740,6 +1119,20 @@ class _DayTimelineState extends State<_DayTimeline> {
   /// gesture-arena artifact from every task block's oversized hit region
   /// stacking on top of its neighbours. See docs/DECISIONS.md.
   String? _draggingTaskId;
+
+  /// The delete-drag-target's own hit-testable `GlobalKey` — one shared
+  /// instance for the whole day view, since only one target is ever
+  /// rendered on screen (see `_DraggableTaskBlock.deleteTargetKey`'s own
+  /// doc comment).
+  final _deleteTargetKey = GlobalKey();
+
+  /// True while ANY task is being dragged with Edit Mode active — drives
+  /// the delete target's fade-in/out. A count rather than a bool so two
+  /// blocks reporting drag-start/drag-end slightly out of order (which
+  /// shouldn't happen — only one drag is ever active — but costs nothing
+  /// to guard against) can't leave this stuck open or closed.
+  int _deleteTargetVisibleCount = 0;
+  bool _deleteTargetArmed = false;
 
   /// The task most recently dragged, kept until its drop has fully settled
   /// (the block clears it via `onDraggingChanged` only after its own
@@ -918,6 +1311,18 @@ class _DayTimelineState extends State<_DayTimeline> {
       _revealSavedTask(saved);
       return;
     }
+    // A fresh quick-create draft needs the SAME "scroll it into view"
+    // treatment a saved task gets — reported directly: tapping empty
+    // space after 20:00 dropped the draft and opened the mini sheet
+    // right on top of it, with the sheet's own bottom ~34% of the screen
+    // (`quickCreateSheetMinFraction`) covering exactly the hour range the
+    // user just tapped. Keyed on the draft's id (like `saved.taskId`
+    // above) so this fires once per NEW draft, not on every rebuild while
+    // one is being dragged/resized.
+    final draft = widget.pendingDraft;
+    if (draft != null && draft.id != oldWidget.pendingDraft?.id) {
+      _revealPendingDraft(draft);
+    }
     // Re-centers when the day being viewed changes (fresh day -> open on
     // "now"), and when hour labels come back ON — i.e. a List -> Task
     // switch.
@@ -997,6 +1402,62 @@ class _DayTimelineState extends State<_DayTimeline> {
     );
   }
 
+  /// Scrolls a freshly-tapped quick-create draft into the space ABOVE the
+  /// mini sheet, not the whole viewport — the bug this exists to fix.
+  /// [_scrollToSavedTask] centres in the FULL screen height because
+  /// nothing else is covering it once the sheet that created that task
+  /// has closed; the quick-create sheet is still open and pinned to the
+  /// bottom `quickCreateSheetMinFraction` of the screen the whole time
+  /// its own pill is meant to stay visible, so centring against the full
+  /// height still hides anything tapped in roughly the bottom third
+  /// (reported directly: tapping after 20:00 put the draft under the
+  /// sheet with "can't see").
+  void _revealPendingDraft(PendingTaskDraft draft) {
+    // Post-frame, like `_revealSavedTask` — and load-bearing here for a
+    // second reason beyond that method's own (layout not being ready
+    // yet): the SCROLLABLE'S OWN CONTENT HEIGHT changes in this same
+    // rebuild (the bottom padding reserved for the mini sheet, see the
+    // SingleChildScrollView above), so `maxScrollExtent` read
+    // synchronously here — mid-`didUpdateWidget`, before that new padding
+    // has been laid out — is still the OLD, smaller value. Reading it
+    // clamped the target back down to roughly where it started, which is
+    // exactly the bug this method exists to fix: confirmed by a failing
+    // test that only started passing once this moved past a frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _scrollToPendingDraft(draft);
+    });
+  }
+
+  void _scrollToPendingDraft(PendingTaskDraft draft) {
+    if (!widget.showHourLabels) return;
+    if (!_scrollController.hasClients) return;
+
+    final (rangeStart, _) = _visibleRange(widget.tasks);
+    final minutesSinceStart = draft.scheduledAt
+        .difference(rangeStart)
+        .inMinutes;
+    // The sheet's own height is `quickCreateSheetMinFraction` of the
+    // PHYSICAL SCREEN (see QuickCreateOverlay/quick_create_sheet_shell.dart),
+    // not of this scroll viewport — the two differ by whatever chrome
+    // (day header, nav bar) sits outside the scrollable. Computing the
+    // sheet's pixel height against the wrong dimension undershoots it,
+    // which is exactly why an earlier version of this method left the
+    // pill just a few pixels short of clearing the sheet instead of
+    // clearly above it.
+    final sheetHeight =
+        MediaQuery.sizeOf(context).height * quickCreateSheetMinFraction;
+    final visibleHeight =
+        _scrollController.position.viewportDimension - sheetHeight;
+    final target =
+        (minutesSinceStart * widget.pixelsPerMinute) - (visibleHeight / 2);
+    _scrollController.animateTo(
+      target.clamp(0.0, _scrollController.position.maxScrollExtent),
+      duration: widget.theme.motionNormal,
+      curve: Curves.easeOut,
+    );
+  }
+
   @override
   void dispose() {
     _minuteTimer?.cancel();
@@ -1014,6 +1475,32 @@ class _DayTimelineState extends State<_DayTimeline> {
     // than replacing it — see TimelineScreen's own build. _visibleRange
     // no longer derives from the task list, so an empty list is fine.
     final (rangeStart, rangeEnd) = _visibleRange(tasks);
+    // Every task AND every imported calendar event, as one list of
+    // [ScheduledBlock]s — **2026-09-07** (confirmed directly: "the
+    // imported tasks should also stack in the same way as native
+    // tasks... otherwise exactly the same, with different styling"),
+    // reversing the earlier "events position independently, no lane/
+    // cluster awareness" design. Feeding both into the SAME
+    // `layoutOverlappingTasks`/`detectOverlapClusters` calls below is
+    // what lets an event share a lane with a task, or join a cluster's
+    // row list — a separate parallel computation for events (the
+    // previous design) could never make the two agree on who's
+    // colliding with whom.
+    //
+    // The quick-add placeholder joins this list too — **2026-09-08**,
+    // reversing its original "positioned absolutely, invisible to the
+    // layout" treatment after that was questioned directly. Same
+    // precedent as events: a block positioning itself outside this
+    // pipeline can never agree with it about who is colliding with whom,
+    // and the draft was painting over tasks in positions the Schedule
+    // button would then refuse to save. Cascade remains save-time only —
+    // sharing a lane is layout, not cascade.
+    final blocks = <ScheduledBlock>[
+      ...tasks,
+      ...widget.externalEvents,
+      if (widget.showHourLabels && widget.pendingDraft != null)
+        widget.pendingDraft!,
+    ];
     // Applies in BOTH Timeline mode and collapsed (List) mode — requested
     // directly: List mode should follow the same overlap-clustering
     // behavior Task view already has, not just its own plain
@@ -1027,18 +1514,20 @@ class _DayTimelineState extends State<_DayTimeline> {
     // `_draggingTaskId` exclusion here is simply always null in List mode,
     // not a separate branch.)
     //
-    // The task actively being dragged is excluded from the tasks clusters
+    // The task actively being dragged is excluded from the set clusters
     // are computed FROM: per direct requirement, a dragged task renders
     // completely normally — its own full capsule — regardless of what's
-    // underneath it, and the tasks it would otherwise cluster with must
+    // underneath it, and the blocks it would otherwise cluster with must
     // likewise stay as their own ordinary capsules while it's away, not
-    // silently form a smaller cluster among themselves mid-drag.
+    // silently form a smaller cluster among themselves mid-drag. An
+    // event's id never matches `_draggingTaskId` (events are never
+    // draggable), so this exclusion is a no-op for them, same as always.
     final clusters = widget.disableClustering
         ? const <OverlapCluster>[]
         : detectOverlapClusters(
             _draggingTaskId == null
-                ? tasks
-                : tasks.where((task) => task.id != _draggingTaskId).toList(),
+                ? blocks
+                : blocks.where((b) => b.id != _draggingTaskId).toList(),
           );
     final clusteredIds = clusteredTaskIds(clusters);
     // The dragged block's ghost (left behind at its ORIGINAL slot, see the
@@ -1050,9 +1539,9 @@ class _DayTimelineState extends State<_DayTimeline> {
     // Computed WITHOUT the drag exclusion above, purely for this purpose.
     final restingClusters = widget.disableClustering
         ? const <OverlapCluster>[]
-        : detectOverlapClusters(tasks);
+        : detectOverlapClusters(blocks);
     final slots = _dragLastOrder(
-      _withClusterLanes(layoutOverlappingTasks(tasks), clusters),
+      _withClusterLanes(layoutOverlappingTasks(blocks), clusters),
     );
     // The RESTING lane layout — computed from `restingClusters`, i.e.
     // WITHOUT the drag exclusion above, so it is stable for the whole
@@ -1068,46 +1557,65 @@ class _DayTimelineState extends State<_DayTimeline> {
     // the duration of the drag. The ghost occupies its lane visually, so
     // the layout has to reserve it too.
     final ghostSlots = _withClusterLanes(
-      layoutOverlappingTasks(tasks),
+      layoutOverlappingTasks(blocks),
       restingClusters,
     );
+    // The quick-add placeholder's own slot, pulled out of the shared
+    // layout so its (separately-stateful, drag-tracking) widget can be
+    // positioned with the lane the layout assigned it. It is rendered by
+    // `_DraggablePendingTaskPill` below rather than by the ordinary slot
+    // loop, because unlike a real task it writes to the draft provider
+    // rather than the repository — but it occupies a real lane either way.
+    final draftId = widget.pendingDraft?.id;
+    final draftSlot = draftId == null
+        ? null
+        : slots.where((s) => s.block.id == draftId).firstOrNull;
     // In Timeline mode, task tops are real elapsed-time math and external
     // events already position independently via the same math — no shared
     // cursor needed, since real time-to-pixel positions can't collide by
     // construction the way an arbitrary stacking cursor can. Collapsed
     // (List) mode is the one case needing ONE shared cursor across both —
     // see _collapsedTops' own doc comment for why.
-    final Map<String, double> blockTops;
-    final Map<String, double> externalEventTops;
-    if (widget.showHourLabels) {
-      blockTops = _blockTops(slots, rangeStart, theme);
-      externalEventTops = const {};
-    } else {
-      final collapsed = _collapsedTops(slots, restingClusters, theme);
-      blockTops = collapsed.taskTops;
-      externalEventTops = collapsed.externalEventTops;
-    }
+    // One map for every block's `top`, task or event alike — see
+    // `_collapsedTops`'s own doc comment for why the old two-map split
+    // (`taskTops`/`externalEventTops`) no longer matches reality now that
+    // an event can share a lane/cluster with tasks. In Task view an
+    // event's own `top` is still computed independently inside
+    // `ExternalEventCapsuleBlock` from real elapsed time (`_blockTops`
+    // only ever populates task ids there), so this map is genuinely
+    // task-only in that mode and genuinely mixed in List mode — every
+    // *caller* reads it the same way regardless.
+    final blockTops = widget.showHourLabels
+        ? _blockTops(slots, rangeStart, theme)
+        : _collapsedTops(slots, restingClusters, theme);
     // List mode only — Task view's zone bands are positioned by
     // `ZoneBackgroundBlock`'s own real-time math directly from
     // `widget.zones`, with no equivalent precomputed geometry needed here.
     final collapsedZoneBandsList = widget.showHourLabels
         ? const <CollapsedZoneBand>[]
-        : _collapsedZoneBands(tasks, blockTops, externalEventTops, theme);
+        : _collapsedZoneBands(tasks, blockTops, theme);
 
     // Task view: each task's NAME wants to sit level with its own pill's
     // icon (i.e. at the pill's own top), and only gets pushed down when it
     // would collide with the label above it — requested directly. Computed
     // once here for the whole day so every label agrees, the same way the
     // shared text column's x is.
+    // Event slots are excluded: an ExternalEventCapsuleBlock has no
+    // "name label pushed below the icon on collision" mechanism at all
+    // (unlike TaskCapsuleBlock's own split layout) — its title sits
+    // fixed in the shared text column, so there is nothing for this
+    // collision-avoidance pass to compute FOR an event slot in the first
+    // place.
     final labelTops = widget.showHourLabels
         ? computeLabelTops(
             anchors: [
               for (final slot in slots)
-                LabelAnchor(
-                  id: slot.task.id,
-                  preferredTop: blockTops[slot.task.id]!,
-                  height: _labelHeight(theme),
-                ),
+                if (slot.task != null)
+                  LabelAnchor(
+                    id: slot.block.id,
+                    preferredTop: blockTops[slot.block.id]!,
+                    height: _labelHeight(theme),
+                  ),
             ],
             gap: theme.spacingXs,
           )
@@ -1119,20 +1627,24 @@ class _DayTimelineState extends State<_DayTimeline> {
     final contentHeight = widget.showHourLabels
         ? rangeEnd.difference(rangeStart).inMinutes * widget.pixelsPerMinute
         : math.max(
-            slots.fold<double>(
-              0,
-              (tallest, slot) => math.max(
+            slots.fold<double>(0, (tallest, slot) {
+              // Only task slots here — an event slot's own height is
+              // folded separately just below, via `widget.externalEvents`
+              // and `_collapsedExternalEventHeight` (that math is
+              // event-specific and unrelated to lane/cluster sharing).
+              final task = slot.task;
+              if (task == null) return tallest;
+              return math.max(
                 tallest,
-                blockTops[slot.task.id]! +
-                    _collapsedBlockHeight(slot.task, theme),
-              ),
-            ),
+                blockTops[slot.block.id]! + _collapsedBlockHeight(task, theme),
+              );
+            }),
             math.max(
               widget.externalEvents.fold<double>(
                 0,
                 (tallest, event) => math.max(
                   tallest,
-                  (externalEventTops[event.id] ?? 0) +
+                  (blockTops[event.id] ?? 0) +
                       _collapsedExternalEventHeight(event, theme),
                 ),
               ),
@@ -1171,552 +1683,748 @@ class _DayTimelineState extends State<_DayTimeline> {
           constraints.maxHeight - theme.spacingLg * 2,
         );
 
-        return SingleChildScrollView(
-          controller: _scrollController,
-          // Deliberately CLIPPED (the framework default) — reported directly:
-          // with Clip.none the scrolled day painted straight over the header
-          // (day nav arrows, date, Today button) as it moved past, since a
-          // Column sibling that paints outside its own bounds isn't contained
-          // by anything. Clipping here is what keeps the header visually on
-          // top.
-          //
-          // This was briefly Clip.none to stop the drag lift shadow being
-          // trimmed at the viewport edge. That trade isn't needed: the inner
-          // Stack below stays unclipped, so a lifted block's shadow still
-          // spills freely over its neighbours (the case that actually
-          // mattered) — only the shadow of a block dragged hard against the
-          // very top/bottom of the scroll viewport gets cut, which is the
-          // same edge behaviour every scrollable surface has.
-          // spacingLg vertically, not spacingMd: every hour label is
-          // centered ON its own tick line (TaskBoundaryMarkers applies a
-          // -0.5 FractionalTranslation), so the label at the range's very
-          // first tick extends half its own height ABOVE the content box,
-          // and the one at the last tick sits flush against the bottom.
-          // With the range now a full calendar day, those are the 00:00
-          // labels at both ends — reported directly as being clipped.
-          // spacingMd (12px) wasn't enough to clear half a caption line.
-          padding: EdgeInsets.symmetric(
-            horizontal: theme.spacingScreenPadding,
-            vertical: theme.spacingLg,
-          ),
-          child: SizedBox(
-            height: dayHeight,
-            child: Stack(
-              // A dragged block's lift shadow extends well beyond the block's
-              // own bounds, and a Stack clips to its bounds by default — which
-              // silently cut the shadow off. Reported as "can't see it on
-              // iPhone": clipping and shadow rasterisation differ between
-              // Impeller (iOS) and the Android renderer, so the same clip made
-              // the shadow invisible on one platform and merely trimmed on the
-              // other.
-              clipBehavior: Clip.none,
-              children: [
-                // FIRST child, deliberately — see PlaceTaskLineLayer's own doc
-                // comment for why its position in this list (not just its
-                // hit-test behaviour) is what keeps it from intercepting
-                // presses meant for a task pill or a free-window block.
-                // Timeline mode only: the placement line's whole job is
-                // converting a Y position into a real time, which collapsed
-                // mode's stacking layout has no meaningful mapping for.
-                if (widget.showHourLabels)
-                  PlaceTaskLineLayer(
-                    theme: theme,
-                    rangeStart: rangeStart,
-                    rangeEnd: rangeEnd,
-                    pixelsPerMinute: widget.pixelsPerMinute,
-                    controller: _placeLineController,
-                    onPlaced: widget.onCreateAt,
-                  ),
-                if (widget.showHourLabels)
-                  TaskBoundaryMarkers(
-                    rangeStart: rangeStart,
-                    rangeEnd: rangeEnd,
-                    pixelsPerMinute: widget.pixelsPerMinute,
-                    hideLabelNear: _now,
-                  ),
-                // Zone background blocks — purely decorative, rendered
-                // BEHIND every task capsule (this Stack paints in child-
-                // list order, and every task-rendering child comes later
-                // in this same list). Timeline mode only, same reasoning
-                // as every other time-positioned background element here:
-                // collapsed mode has no time axis for a zone's start/end
-                // to mean anything against. Per CONSTITUTION.md's Zone
-                // section, this does NOT filter by whether any task
-                // actually references the zone — every persisted zone
-                // renders for its time range regardless.
-                if (widget.showHourLabels)
-                  for (final zone in widget.zones)
-                    ZoneBackgroundBlock(
-                      theme: theme,
-                      zone: zone,
-                      day: widget.selectedDate,
-                      rangeStart: rangeStart,
-                      pixelsPerMinute: widget.pixelsPerMinute,
-                      left: hourGutterWidth,
-                      // Hugs the PILL COLUMN rather than spanning the whole
-                      // row — the time and task-name columns sit outside
-                      // the zone band, on the plain page. Sized to THIS
-                      // zone's own occupied lanes so the space right of
-                      // its pills matches the space left of them; see
-                      // `_zoneBackgroundWidth` for why that beat the
-                      // earlier uniform-width rule where the two clashed.
-                      width: _zoneBackgroundWidth(ghostSlots, theme),
-                    ),
-                // The zone's name, rotated down the RIGHT edge of the day
-                // — requested directly ("can't see vertical zone name on
-                // task view"), styled like the hour labels on the opposite
-                // edge so the two frame the day as the same kind of
-                // ambient annotation. A sibling of the band above, not a
-                // child: the band hugs the pill column on the left, while
-                // this belongs at the far right.
-                if (widget.showHourLabels)
-                  for (final zone in widget.zones)
-                    ZoneNameLabel(
-                      theme: theme,
-                      zone: zone,
-                      day: widget.selectedDate,
-                      rangeStart: rangeStart,
-                      pixelsPerMinute: widget.pixelsPerMinute,
-                      width: theme.spacingLg,
-                    ),
-                // List mode's own zone bands — same widgets, but positioned
-                // from `_collapsedZoneBands`' member-task-derived geometry
-                // instead of real time-to-pixel math (which has nothing to
-                // measure against here — see that method's own doc
-                // comment). `rangeStart`/`pixelsPerMinute` are still passed
-                // (required params) but ignored whenever `collapsedTop`/
-                // `collapsedHeight` are set.
-                if (!widget.showHourLabels)
-                  for (final band in collapsedZoneBandsList)
-                    ZoneBackgroundBlock(
-                      theme: theme,
-                      zone: band.zone,
-                      day: widget.selectedDate,
-                      rangeStart: rangeStart,
-                      pixelsPerMinute: widget.pixelsPerMinute,
-                      left: hourGutterWidth,
-                      width: _zoneBackgroundWidth(ghostSlots, theme),
-                      collapsedTop: band.top,
-                      collapsedHeight: band.height,
-                    ),
-                if (!widget.showHourLabels)
-                  for (final band in collapsedZoneBandsList)
-                    ZoneNameLabel(
-                      theme: theme,
-                      zone: band.zone,
-                      day: widget.selectedDate,
-                      rangeStart: rangeStart,
-                      pixelsPerMinute: widget.pixelsPerMinute,
-                      width: theme.spacingLg,
-                      collapsedTop: band.top,
-                      collapsedHeight: band.height,
-                    ),
-                // Read-only external calendar events (Feature 1) — same
-                // time-positioned-background-layer treatment as Zone blocks
-                // just above, but NOT IgnorePointer'd (tapping one shows a
-                // read-only info sheet — see ExternalEventBlock). Rendered
-                // after Zone blocks so an external event visually sits on
-                // top of a zone background if their times happen to
-                // overlap, and before task capsules/connectors below, same
-                // "decorative background, tasks always paint on top" order
-                // Zone blocks already established. Deliberately excluded
-                // from overlap-cluster detection — see CONSTITUTION.md's
-                // "Calendar" section for the reasoning — so this list is
-                // never touched by clustering and always renders in full.
-                //
-                // Shown in BOTH Timeline and List (collapsed) mode —
-                // requested directly, alongside the same coverage in Zone
-                // view. Collapsed mode uses `externalEventTops`' own
-                // stacking-cursor position (see `_externalEventTops`)
-                // instead of real time-to-pixel math, matching how task
-                // rows already switch positioning schemes between modes.
-                for (final event in widget.externalEvents)
-                  ExternalEventBlock(
-                    theme: theme,
-                    event: event,
-                    rangeStart: rangeStart,
-                    pixelsPerMinute: widget.showHourLabels
-                        ? widget.pixelsPerMinute
-                        : _collapsedPixelsPerMinute(theme),
-                    left: hourGutterWidth,
-                    width:
-                        MediaQuery.sizeOf(context).width -
-                        hourGutterWidth -
-                        theme.spacingScreenPadding * 2,
-                    collapsedTop: widget.showHourLabels
-                        ? null
-                        : externalEventTops[event.id],
-                    collapsedHeight: widget.showHourLabels
-                        ? null
-                        : _collapsedExternalEventHeight(event, theme),
-                    // Inline in List mode always, and in Task view whenever
-                    // the dev layout toggle says so — matching the capsule
-                    // and cluster rows beside it. Reported directly:
-                    // "important tasks" stayed 2-line in Task view.
-                    compactText:
-                        !widget.showHourLabels ||
-                        widget.devTextLayout == TimelineTaskTextLayout.inline,
-                  ),
-                // A visible gray thread connecting every consecutive pair of
-                // tasks, matching a reference design — requested directly.
-                // Painted before the task blocks so the blocks sit on top.
-                // Timeline mode only: the connector's whole job is to show
-                // the run of real time between two tasks, which collapsed
-                // mode deliberately doesn't represent. Further gated by its
-                // own Settings toggle (show/hide, Task view only) —
-                // requested directly.
-                if (widget.showHourLabels && widget.showTimelineConnectors)
-                  _TimelineConnectors(
-                    tasks: tasks,
-                    theme: theme,
-                    rangeStart: rangeStart,
-                    pixelsPerMinute: widget.pixelsPerMinute,
-                    hourGutterWidth: hourGutterWidth,
-                  ),
-                // A subtle labeled block for any gap of freeWindowThreshold or
-                // longer between two tasks — requested directly: "no indicator
-                // for small/normal gaps... a labeled, size-appropriate compact
-                // block only for large gaps." Timeline mode only, same
-                // reasoning as the connectors above: collapsed mode has no
-                // time axis for a gap's size to mean anything against.
-                if (widget.showHourLabels && widget.showFreeWindowPrompt)
-                  for (final window in findFreeWindows(
-                    tasks,
-                    // Mirrors the pill-height floor TaskCapsuleBlock applies
-                    // (see _pillHeight above) — without this, a free window
-                    // computed from raw scheduled times could start before a
-                    // short task's actual RENDERED pill has finished, and the
-                    // two visually overlapped. Reported directly.
-                    minPillMinutes: _pillWidth(theme) / widget.pixelsPerMinute,
-                  ))
-                    FreeWindowBlock(
-                      theme: theme,
-                      window: window,
-                      // Inset top/bottom by spacingSm so the block never
-                      // touches the task immediately before/after it —
-                      // reported directly: "should have gap from top and
-                      // bottom so not fully adjacent [to the] tasks between
-                      // which it indicates the gap." Symmetric: shrinking the
-                      // window by the inset on BOTH ends, not just padding
-                      // visually inside a full-height box, is what actually
-                      // creates real empty space above and below.
-                      top:
-                          _minutesSinceStart(rangeStart, window.start) *
-                              widget.pixelsPerMinute +
-                          theme.spacingSm,
-                      height:
-                          window.duration.inMinutes * widget.pixelsPerMinute -
-                          theme.spacingSm * 2,
-                      // Aligned with task NAMES, not the icon-pill column —
-                      // corrected directly: "left indent[should be] of size
-                      // of the pill of tasks + padding/gap between pill and
-                      // description... the window container is [a]ligned up
-                      // with names of tasks." pillWidth + spacingSm mirrors
-                      // exactly the SizedBox TaskCapsuleBlock puts between
-                      // its icon pill and its title/time column.
-                      left:
-                          hourGutterWidth + _pillWidth(theme) + theme.spacingSm,
-                      onTap: () => widget.onCreateAt(window.start),
-                    ),
-                // Overlapping tasks are laid out side by side rather than
-                // stacked on top of each other — Amble never moves a task the
-                // user didn't drag (cascade replanning is out of MVP scope,
-                // see docs/SCOPE.md), so a clash stays visible instead.
-                //
-                // The dragged block is emitted LAST so it paints above every
-                // other block — reported directly: a block being dragged past
-                // its neighbours slid underneath the ones that happened to
-                // come later in layout order. A Stack paints in child order
-                // and has no z-index, so "always on top" has to be an
-                // ordering change, not a property. Only the dragged block
-                // moves in the list; everything else keeps its existing
-                // relative order, so nothing else's stacking changes.
-                //
-                // Clustered tasks now render THROUGH this same loop, not a
-                // separate one — requested directly ("should be able to still
-                // drag and move around the clustered items"). Each clustered
-                // slot already carries its fixed cluster lane (see
-                // _withClusterLanes) and renders with `contentHidden: true`
-                // while resting (icon/title/time hidden, checkbox and drag
-                // still live — see TaskCapsuleBlock.contentHidden), falling
-                // back to full content automatically the moment it's the one
-                // being dragged (_DraggableTaskBlock forces contentHidden off
-                // while _isDragging is true). The cluster's own flat list
-                // (rendered separately, below) is what still shows title/time
-                // for a resting member.
-                for (final slot in slots) ...[
-                  // The dragged block's faded "ghost", left behind at its
-                  // original slot for the duration of the drag — a direct
-                  // sibling here (not nested inside _DraggableTaskBlock's own
-                  // Stack) so it can't inflate that block's hit-test region.
-                  // Non-interactive (IgnorePointer) so it never intercepts the
-                  // drag/tap gestures meant for the real block on top of it.
-                  if (_draggingTaskId == slot.task.id)
-                    Positioned(
-                      // Keyed so its insertion/removal can't disturb element
-                      // matching for the keyed sibling block right after it.
-                      // Without this, releasing a drag (which removes the
-                      // ghost) could make Flutter re-create the real block's
-                      // element instead of updating it, resetting its
-                      // AnimatedPositioned to animate from the GHOST's
-                      // position — reported as the block jumping to a higher
-                      // spot and then easing back down to the actual drop.
-                      key: ValueKey('ghost-${slot.task.id}'),
-                      top: blockTops[slot.task.id]!,
-                      left:
-                          hourGutterWidth +
-                          _ghostSlotFor(ghostSlots, slot.task.id).column *
-                              (_pillWidth(theme) + _columnGap(theme)),
-                      right: 0,
-                      child: IgnorePointer(
-                        child: Opacity(
-                          opacity: 0.2,
-                          child: TaskCapsuleBlock(
-                            task: slot.task,
-                            category: widget.categoryById[slot.task.categoryId],
-                            pixelsPerMinute: pixelsPerMinute,
-                            compactText: !widget.showHourLabels,
-                            showCompletionCheckbox:
-                                widget.showCompletionCheckbox,
-                            // The ghost is a plain shape marking the slot
-                            // the task came FROM — no title, time, icon or
-                            // checkbox. Requested directly: "in ghost
-                            // state we shouldn't have title and time and
-                            // not icon when moving." The task's own text
-                            // travels with the lifted pill instead (see
-                            // `liftedTextInline`), so repeating it here
-                            // would show the same task's name twice
-                            // mid-drag. `glyphHidden` additionally drops
-                            // the category emoji, which `contentHidden`
-                            // alone deliberately keeps (it is a resting
-                            // cluster member's only category cue) — the
-                            // ghost wants none of it.
-                            contentHidden: true,
-                            glyphHidden: true,
-                            bottomTrim: _zoneTaskBottomTrim(slot.task),
-                            maxPillHeight: _maxPillHeight(
-                              slot.task,
-                              ghostSlots,
-                              blockTops,
-                            ),
-                            maxTextWidth:
-                                _ghostSlotFor(ghostSlots, slot.task.id).column <
+        // Wraps the scrollable day in a Stack so the delete target (Edit
+        // Mode's drag-to-delete drop zone) can be pinned to the VIEWPORT'S
+        // own bottom edge, fixed regardless of scroll position — it must
+        // not be a child of the SingleChildScrollView below, or it would
+        // scroll away with the content instead of staying reachable
+        // throughout a drag. `IgnorePointer` inside `EditModeDeleteTarget`
+        // itself means this overlay never blocks a scroll/tap on the
+        // content underneath even while visible.
+        return Stack(
+          children: [
+            SingleChildScrollView(
+              controller: _scrollController,
+              // Deliberately CLIPPED (the framework default) — reported directly:
+              // with Clip.none the scrolled day painted straight over the header
+              // (day nav arrows, date, Today button) as it moved past, since a
+              // Column sibling that paints outside its own bounds isn't contained
+              // by anything. Clipping here is what keeps the header visually on
+              // top.
+              //
+              // This was briefly Clip.none to stop the drag lift shadow being
+              // trimmed at the viewport edge. That trade isn't needed: the inner
+              // Stack below stays unclipped, so a lifted block's shadow still
+              // spills freely over its neighbours (the case that actually
+              // mattered) — only the shadow of a block dragged hard against the
+              // very top/bottom of the scroll viewport gets cut, which is the
+              // same edge behaviour every scrollable surface has.
+              // spacingLg vertically, not spacingMd: every hour label is
+              // centered ON its own tick line (TaskBoundaryMarkers applies a
+              // -0.5 FractionalTranslation), so the label at the range's very
+              // first tick extends half its own height ABOVE the content box,
+              // and the one at the last tick sits flush against the bottom.
+              // With the range now a full calendar day, those are the 00:00
+              // labels at both ends — reported directly as being clipped.
+              // spacingMd (12px) wasn't enough to clear half a caption line.
+              // Bottom padding grows to reserve room for the mini sheet
+              // while a quick-create draft is active — otherwise the
+              // scroll content's own natural end (midnight) sits at the
+              // bottom of the FULL viewport with nothing extra to scroll
+              // past, so `_revealPendingDraft`'s target gets clamped to a
+              // `maxScrollExtent` that still leaves the sheet covering
+              // whatever was tapped. Reported directly: tapping after
+              // 20:00 put the draft under the sheet with "can't see."
+              // `quickCreateSheetMinFraction` is the sheet's own
+              // proportion of the SCREEN, not of this scroll viewport, so
+              // it's applied against the physical screen height via
+              // MediaQuery, matching how the sheet itself sizes.
+              padding: EdgeInsets.only(
+                left: theme.spacingScreenPadding,
+                right: theme.spacingScreenPadding,
+                top: theme.spacingLg,
+                bottom:
+                    theme.spacingLg +
+                    (widget.pendingDraft != null
+                        ? MediaQuery.sizeOf(context).height *
+                              quickCreateSheetMinFraction
+                        : 0),
+              ),
+              child: SizedBox(
+                height: dayHeight,
+                child: Stack(
+                  // A dragged block's lift shadow extends well beyond the block's
+                  // own bounds, and a Stack clips to its bounds by default — which
+                  // silently cut the shadow off. Reported as "can't see it on
+                  // iPhone": clipping and shadow rasterisation differ between
+                  // Impeller (iOS) and the Android renderer, so the same clip made
+                  // the shadow invisible on one platform and merely trimmed on the
+                  // other.
+                  clipBehavior: Clip.none,
+                  children: [
+                    // FIRST child, deliberately — see PlaceTaskLineLayer's own doc
+                    // comment for why its position in this list (not just its
+                    // hit-test behaviour) is what keeps it from intercepting
+                    // presses meant for a task pill or a free-window block.
+                    // Timeline mode only: the placement line's whole job is
+                    // converting a Y position into a real time, which collapsed
+                    // mode's stacking layout has no meaningful mapping for.
+                    if (widget.showHourLabels)
+                      PlaceTaskLineLayer(
+                        theme: theme,
+                        rangeStart: rangeStart,
+                        rangeEnd: rangeEnd,
+                        pixelsPerMinute: widget.pixelsPerMinute,
+                        controller: _placeLineController,
+                        onPlaced: widget.onCreateAt,
+                        onTapAt: widget.onEmptyTap,
+                      ),
+                    if (widget.showHourLabels)
+                      TaskBoundaryMarkers(
+                        rangeStart: rangeStart,
+                        rangeEnd: rangeEnd,
+                        pixelsPerMinute: widget.pixelsPerMinute,
+                        hideLabelNear: _now,
+                      ),
+                    // Zone background blocks — purely decorative, rendered
+                    // BEHIND every task capsule (this Stack paints in child-
+                    // list order, and every task-rendering child comes later
+                    // in this same list). Timeline mode only, same reasoning
+                    // as every other time-positioned background element here:
+                    // collapsed mode has no time axis for a zone's start/end
+                    // to mean anything against. Per CONSTITUTION.md's Zone
+                    // section, this does NOT filter by whether any task
+                    // actually references the zone — every persisted zone
+                    // renders for its time range regardless.
+                    if (widget.showHourLabels)
+                      for (final zone in widget.zones)
+                        // Wiggle applies here too — Edit Mode's persistent
+                        // signal covers every visible Zone rendering.
+                        // Move/resize now live here too (**2026-09-06**,
+                        // reversed from the earlier purely-decorative
+                        // scope — see `_DraggableZoneBlock`'s own doc
+                        // comment), via the same `_commitZoneCascade`
+                        // path `ZoneContainerBlock` (Zone view) uses.
+                        _DraggableZoneBlock(
+                          key: ValueKey(zone.id),
+                          theme: theme,
+                          zone: zone,
+                          day: widget.selectedDate,
+                          rangeStart: rangeStart,
+                          pixelsPerMinute: widget.pixelsPerMinute,
+                          left: hourGutterWidth,
+                          // Hugs the PILL COLUMN rather than spanning the
+                          // whole row — the time and task-name columns
+                          // sit outside the zone band, on the plain page.
+                          // Sized to THIS zone's own occupied lanes so the
+                          // space right of its pills matches the space
+                          // left of them; see `_zoneBackgroundWidth` for
+                          // why that beat the earlier uniform-width rule
+                          // where the two clashed.
+                          width: _zoneBackgroundWidth(ghostSlots, theme),
+                          editModeEnabled: widget.editModeEnabled,
+                          phaseOffset: (zone.id.hashCode % 1000) / 1000,
+                          onZoneResize: widget.onZoneResize,
+                          onZoneMove: widget.onZoneMove,
+                        ),
+                    // The zone's name, rotated down the RIGHT edge of the day
+                    // — requested directly ("can't see vertical zone name on
+                    // task view"), styled like the hour labels on the opposite
+                    // edge so the two frame the day as the same kind of
+                    // ambient annotation. A sibling of the band above, not a
+                    // child: the band hugs the pill column on the left, while
+                    // this belongs at the far right.
+                    if (widget.showHourLabels)
+                      for (final zone in widget.zones)
+                        ZoneNameLabel(
+                          theme: theme,
+                          zone: zone,
+                          day: widget.selectedDate,
+                          rangeStart: rangeStart,
+                          pixelsPerMinute: widget.pixelsPerMinute,
+                          width: theme.spacingLg,
+                        ),
+                    // List mode's own zone bands — same widgets, but positioned
+                    // from `_collapsedZoneBands`' member-task-derived geometry
+                    // instead of real time-to-pixel math (which has nothing to
+                    // measure against here — see that method's own doc
+                    // comment). `rangeStart`/`pixelsPerMinute` are still passed
+                    // (required params) but ignored whenever `collapsedTop`/
+                    // `collapsedHeight` are set.
+                    if (!widget.showHourLabels)
+                      for (final band in collapsedZoneBandsList)
+                        ZoneBackgroundBlock(
+                          theme: theme,
+                          zone: band.zone,
+                          day: widget.selectedDate,
+                          rangeStart: rangeStart,
+                          pixelsPerMinute: widget.pixelsPerMinute,
+                          left: hourGutterWidth,
+                          width: _zoneBackgroundWidth(ghostSlots, theme),
+                          collapsedTop: band.top,
+                          collapsedHeight: band.height,
+                        ),
+                    if (!widget.showHourLabels)
+                      for (final band in collapsedZoneBandsList)
+                        ZoneNameLabel(
+                          theme: theme,
+                          zone: band.zone,
+                          day: widget.selectedDate,
+                          rangeStart: rangeStart,
+                          pixelsPerMinute: widget.pixelsPerMinute,
+                          width: theme.spacingLg,
+                          collapsedTop: band.top,
+                          collapsedHeight: band.height,
+                        ),
+                    // Read-only external calendar events (Feature 1) no
+                    // longer render in a separate loop here — **2026-09-07**
+                    // (confirmed directly: "the imported tasks should also
+                    // stack in the same way as native tasks... otherwise
+                    // exactly the same, with different styling"), reversing
+                    // the "always lane 0, excluded from clustering" design
+                    // this comment used to describe. An event is now one
+                    // more entry in `blocks` (see this build method's own
+                    // top), flows through the SAME `layoutOverlappingTasks`/
+                    // `detectOverlapClusters` calls tasks do, and renders
+                    // through the `for (final slot in slots)` loop below —
+                    // see that loop's own `else if (slot.block case final
+                    // ExternalCalendarEvent event)` branch. Still NOT
+                    // draggable/resizable/completable — only the existing
+                    // tap-for-info sheet stays (see `ExternalEventCapsuleBlock`'s
+                    // own doc comment for why it's a separate widget, not
+                    // `TaskCapsuleBlock` reused with a fake `Task` wrapper).
+                    // A cluster containing an event renders that event's row
+                    // in `OverlapClusterBlock`'s own flat list too — see that
+                    // widget's own updated doc comment.
+                    //
+                    // A visible gray thread connecting every consecutive pair of
+                    // tasks, matching a reference design — requested directly.
+                    // Painted before the task blocks so the blocks sit on top.
+                    // Timeline mode only: the connector's whole job is to show
+                    // the run of real time between two tasks, which collapsed
+                    // mode deliberately doesn't represent. Further gated by its
+                    // own Settings toggle (show/hide, Task view only) —
+                    // requested directly.
+                    if (widget.showHourLabels && widget.showTimelineConnectors)
+                      _TimelineConnectors(
+                        tasks: tasks,
+                        theme: theme,
+                        rangeStart: rangeStart,
+                        pixelsPerMinute: widget.pixelsPerMinute,
+                        hourGutterWidth: hourGutterWidth,
+                      ),
+                    // A subtle labeled block for any gap of freeWindowThreshold or
+                    // longer between two tasks — requested directly: "no indicator
+                    // for small/normal gaps... a labeled, size-appropriate compact
+                    // block only for large gaps." Timeline mode only, same
+                    // reasoning as the connectors above: collapsed mode has no
+                    // time axis for a gap's size to mean anything against.
+                    if (widget.showHourLabels && widget.showFreeWindowPrompt)
+                      for (final window in findFreeWindows(
+                        tasks,
+                        // Mirrors the pill-height floor TaskCapsuleBlock applies
+                        // (see _pillHeight above) — without this, a free window
+                        // computed from raw scheduled times could start before a
+                        // short task's actual RENDERED pill has finished, and the
+                        // two visually overlapped. Reported directly.
+                        minPillMinutes:
+                            _pillWidth(theme) / widget.pixelsPerMinute,
+                      ))
+                        FreeWindowBlock(
+                          theme: theme,
+                          window: window,
+                          // Inset top/bottom by spacingSm so the block never
+                          // touches the task immediately before/after it —
+                          // reported directly: "should have gap from top and
+                          // bottom so not fully adjacent [to the] tasks between
+                          // which it indicates the gap." Symmetric: shrinking the
+                          // window by the inset on BOTH ends, not just padding
+                          // visually inside a full-height box, is what actually
+                          // creates real empty space above and below.
+                          top:
+                              _minutesSinceStart(rangeStart, window.start) *
+                                  widget.pixelsPerMinute +
+                              theme.spacingSm,
+                          height:
+                              window.duration.inMinutes *
+                                  widget.pixelsPerMinute -
+                              theme.spacingSm * 2,
+                          // Aligned with task NAMES, not the icon-pill column —
+                          // corrected directly: "left indent[should be] of size
+                          // of the pill of tasks + padding/gap between pill and
+                          // description... the window container is [a]ligned up
+                          // with names of tasks." pillWidth + spacingSm mirrors
+                          // exactly the SizedBox TaskCapsuleBlock puts between
+                          // its icon pill and its title/time column.
+                          left:
+                              hourGutterWidth +
+                              _pillWidth(theme) +
+                              theme.spacingSm,
+                          onTap: () => widget.onCreateAt(window.start),
+                        ),
+                    // Overlapping tasks are laid out side by side rather than
+                    // stacked on top of each other — Amble never moves a task the
+                    // user didn't drag (cascade replanning is out of MVP scope,
+                    // see docs/SCOPE.md), so a clash stays visible instead.
+                    //
+                    // The dragged block is emitted LAST so it paints above every
+                    // other block — reported directly: a block being dragged past
+                    // its neighbours slid underneath the ones that happened to
+                    // come later in layout order. A Stack paints in child order
+                    // and has no z-index, so "always on top" has to be an
+                    // ordering change, not a property. Only the dragged block
+                    // moves in the list; everything else keeps its existing
+                    // relative order, so nothing else's stacking changes.
+                    //
+                    // Clustered tasks now render THROUGH this same loop, not a
+                    // separate one — requested directly ("should be able to still
+                    // drag and move around the clustered items"). Each clustered
+                    // slot already carries its fixed cluster lane (see
+                    // _withClusterLanes) and renders with `contentHidden: true`
+                    // while resting (icon/title/time hidden, checkbox and drag
+                    // still live — see TaskCapsuleBlock.contentHidden), falling
+                    // back to full content automatically the moment it's the one
+                    // being dragged (_DraggableTaskBlock forces contentHidden off
+                    // while _isDragging is true). The cluster's own flat list
+                    // (rendered separately, below) is what still shows title/time
+                    // for a resting member.
+                    for (final slot in slots) ...[
+                      // The dragged block's faded "ghost", left behind at its
+                      // original slot for the duration of the drag — a direct
+                      // sibling here (not nested inside _DraggableTaskBlock's own
+                      // Stack) so it can't inflate that block's hit-test region.
+                      // Non-interactive (IgnorePointer) so it never intercepts the
+                      // drag/tap gestures meant for the real block on top of it.
+                      //
+                      // `slot.task` (not `slot.block`) — a ghost only ever
+                      // exists for the actively-dragged item, and an
+                      // ExternalCalendarEvent is never draggable at all, so
+                      // `_draggingTaskId` can never equal an event's id. This
+                      // whole branch is naturally a no-op for an event slot.
+                      if (slot.task case final draggedTask?
+                          when _draggingTaskId == draggedTask.id)
+                        Positioned(
+                          // Keyed so its insertion/removal can't disturb element
+                          // matching for the keyed sibling block right after it.
+                          // Without this, releasing a drag (which removes the
+                          // ghost) could make Flutter re-create the real block's
+                          // element instead of updating it, resetting its
+                          // AnimatedPositioned to animate from the GHOST's
+                          // position — reported as the block jumping to a higher
+                          // spot and then easing back down to the actual drop.
+                          key: ValueKey('ghost-${draggedTask.id}'),
+                          top: blockTops[draggedTask.id]!,
+                          left:
+                              hourGutterWidth +
+                              _ghostSlotFor(ghostSlots, draggedTask.id).column *
+                                  (_pillWidth(theme) + _columnGap(theme)),
+                          right: 0,
+                          child: IgnorePointer(
+                            child: Opacity(
+                              opacity: 0.2,
+                              child: TaskCapsuleBlock(
+                                task: draggedTask,
+                                category:
+                                    widget.categoryById[draggedTask.categoryId],
+                                pixelsPerMinute: pixelsPerMinute,
+                                compactText: !widget.showHourLabels,
+                                showCompletionCheckbox:
+                                    widget.showCompletionCheckbox,
+                                // The ghost is a plain shape marking the slot
+                                // the task came FROM — no title, time, icon or
+                                // checkbox. Requested directly: "in ghost
+                                // state we shouldn't have title and time and
+                                // not icon when moving." The task's own text
+                                // travels with the lifted pill instead (see
+                                // `liftedTextInline`), so repeating it here
+                                // would show the same task's name twice
+                                // mid-drag. `glyphHidden` additionally drops
+                                // the category emoji, which `contentHidden`
+                                // alone deliberately keeps (it is a resting
+                                // cluster member's only category cue) — the
+                                // ghost wants none of it.
+                                contentHidden: true,
+                                glyphHidden: true,
+                                bottomTrim: _zoneTaskBottomTrim(draggedTask),
+                                maxPillHeight: _maxPillHeight(
+                                  draggedTask,
+                                  ghostSlots,
+                                  blockTops,
+                                ),
+                                maxTextWidth:
                                     _ghostSlotFor(
                                           ghostSlots,
-                                          slot.task.id,
-                                        ).columnCount -
-                                        1
-                                ? _pillWidth(theme)
-                                : null,
+                                          draggedTask.id,
+                                        ).column <
+                                        _ghostSlotFor(
+                                              ghostSlots,
+                                              draggedTask.id,
+                                            ).columnCount -
+                                            1
+                                    ? _pillWidth(theme)
+                                    : null,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                  _DraggableTaskBlock(
-                    key: ValueKey(slot.task.id),
-                    task: slot.task,
-                    theme: theme,
-                    baseTop: blockTops[slot.task.id]!,
-                    left: hourGutterWidth,
-                    slot: slot,
-                    pixelsPerMinute: pixelsPerMinute,
-                    // Only in List mode does a clustered task surrender its
-                    // text to the cluster's own row list. In Task view
-                    // every task keeps its own label (aligned to its pill's
-                    // icon — see `labelTops`), so there is nothing to
-                    // suppress and no duplicate to avoid.
-                    contentHidden:
-                        !widget.showHourLabels &&
-                        clusteredIds.contains(slot.task.id),
-                    // Drag-to-reschedule needs a pixel->minute mapping, which
-                    // collapsed mode doesn't have: vertical position there is
-                    // stacking order, not time. Disabled rather than given a
-                    // second, inconsistent meaning — confirmed via
-                    // AskUserQuestion. "Edit time and duration" still works,
-                    // and dragging returns as soon as hour labels are back on.
-                    isDraggable: widget.showHourLabels,
-                    compactText: !widget.showHourLabels,
-                    showCompletionCheckbox: widget.showCompletionCheckbox,
-                    // Both modes now: icon-only pill at its own lane x,
-                    // name/time in the shared text column — requested
-                    // directly, so List mode's names line up the same way
-                    // Task view's already do regardless of lane depth.
-                    splitLayout: true,
-                    textColumnLeft: _textColumnLeft(theme, ghostSlots),
-                    // How far the label sits BELOW its own pill's top —
-                    // zero when nothing collides (perfectly icon-aligned),
-                    // positive when the label above pushed it down. Passed
-                    // as an offset rather than an absolute top so it rides
-                    // the block's own drag/settle animation unchanged.
-                    labelOffset:
-                        (labelTops[slot.task.id] ?? blockTops[slot.task.id]!) -
-                        blockTops[slot.task.id]!,
-                    textColumnRight: widget.zones.isEmpty
-                        ? 0
-                        : _zoneLabelGutterWidth(theme),
-                    bottomTrim: _zoneTaskBottomTrim(slot.task),
-                    maxPillHeight: _maxPillHeight(slot.task, slots, blockTops),
-                    // Only the block for the task the modal just CREATED
-                    // fades in. A duration change animates via the pill's own
-                    // AnimatedContainer instead (see TaskCapsuleBlock) — that
-                    // block is already on screen, so fading it would read as
-                    // it disappearing and coming back rather than growing.
-                    fadeInOnFirstBuild:
-                        widget.recentlySaved?.taskId == slot.task.id &&
-                        widget.recentlySaved?.change == SavedTaskChange.created,
-                    growFromMinutes:
-                        widget.recentlySaved?.taskId == slot.task.id &&
-                            widget.recentlySaved?.change ==
-                                SavedTaskChange.durationChanged
-                        ? widget.recentlySaved?.previousDurationMinutes
-                        : null,
-                    onTap: () => widget.onTaskTap(slot.task),
-                    onToggleComplete: () => widget.onToggleComplete(slot.task),
-                    onReschedule: (newScheduledAt) =>
-                        widget.onReschedule(slot.task, newScheduledAt),
-                    onDraggingChanged: (isDragging) {
-                      setState(() {
-                        _draggingTaskId = isDragging ? slot.task.id : null;
-                        // Ordering starts with the drag and is only released
-                        // by onSettled below, deliberately outliving the
-                        // ghost.
-                        if (isDragging) _settlingTaskId = slot.task.id;
-                      });
-                    },
-                    onSettled: () {
-                      // Ignore a stale settle: either a different task now
-                      // holds the pin, or this same task has been picked up
-                      // again before its previous drop finished animating.
-                      if (_settlingTaskId != slot.task.id) return;
-                      if (_draggingTaskId != null) return;
-                      setState(() => _settlingTaskId = null);
-                    },
-                  ),
-                ],
-                // The cluster's own flat title+time list — the member pills
-                // themselves now render through the ordinary slot loop above
-                // (each carrying its fixed cluster lane, see _withClusterLanes)
-                // rather than a separate non-interactive layer, since a
-                // clustered task must stay draggable (requested directly).
-                // This list is top-anchored at the cluster's start and
-                // positioned beside the fixed lane group — `cluster.tasks
-                // .length` IS the lane count now (one lane per task, always),
-                // so no separate layout call is needed to find where the pills
-                // end. Row order (earliest first) matches lane order
-                // (leftmost = earliest) exactly, per direct instruction — this
-                // is a real positional guarantee now, not just an incidental
-                // one, since _withClusterLanes assigns both from the same
-                // chronological index.
-                //
-                // AnimatedSwitcher gives the crossfade the work order asked
-                // for: each cluster's Positioned is keyed by its member ids,
-                // so a drop that changes cluster MEMBERSHIP (not just
-                // position) is a genuinely different widget to Flutter, and
-                // AnimatedSwitcher fades between old and new automatically. A
-                // cluster DISSOLVING back to individual capsules is the same
-                // mechanism from the other side: clusteredIds stops containing
-                // those tasks, so their pills (above) regain full content
-                // while this switcher fades its old list out.
-                //
-                // Rendered from `restingClusters` (NOT the drag-excluded
-                // `clusters`), so the list keeps showing every member —
-                // structure held — for the whole duration of a drag, with
-                // only the actively-dragged member's own row fading (via
-                // `fadedTaskId` on OverlapClusterBlock, same "still there,
-                // just lifted" treatment TaskCapsuleBlock already gives a
-                // dragged task's own name/time/checkbox). Requested directly:
-                // the list used to crossfade to a shorter version the INSTANT
-                // a drag started (since `clusters` already excludes the
-                // dragged task), which read as the row vanishing rather than
-                // the task being lifted. The crossfade to a genuinely
-                // different list (drop creates/dissolves a cluster) still
-                // happens — the key is derived from `clusters` (the settled,
-                // post-drop membership), which only changes once the drag
-                // actually commits.
-                // LIST MODE ONLY. Task view now gives every task its own
-                // label, aligned to its own pill's icon and pushed down
-                // only on collision (see `labelTops` / computeLabelTops) —
-                // requested directly: "position the task name so it's
-                // always lined up with the icon ... only if two tasks are
-                // starting at the same time or too close would they
-                // stack." This block's Column packs a cluster's names
-                // sequentially from the cluster's own top instead, which
-                // severs that alignment. List mode has no time axis to
-                // align to, so it keeps this treatment.
-                if (!widget.showHourLabels)
-                  for (final cluster in restingClusters)
-                    Positioned(
-                      key: ValueKey(
-                        'cluster-list-${cluster.tasks.map((task) => task.id).join('-')}',
-                      ),
-                      top: blockTops[cluster.tasks.first.id]!,
-                      // The SHARED text column, not this cluster's own member
-                      // count — corrected directly ("all text ... always lined
-                      // up"). Sizing it per cluster meant a 4-task cluster's
-                      // rows started further right than a 2-task one's, and
-                      // than every unclustered task's name.
-                      left:
-                          hourGutterWidth + _textColumnLeft(theme, ghostSlots),
-                      // Same zone-label gutter the ordinary task rows leave
-                      // — see _zoneLabelGutterWidth.
-                      right: widget.zones.isEmpty
-                          ? 0
-                          : _zoneLabelGutterWidth(theme),
-                      child: AnimatedSwitcher(
-                        duration: theme.motionNormal,
-                        child: OverlapClusterBlock(
-                          // Keyed off `restingClusters`' own membership — which
-                          // stays fixed for the whole duration of a drag (it's
-                          // computed WITHOUT excluding the dragged task) and
-                          // only changes once the drop actually commits a new
-                          // schedule and `restingClusters` is recomputed from
-                          // the updated task list. So this key does NOT change
-                          // mid-drag, and the crossfade only fires on a genuine
-                          // membership change, not a drag in progress.
-                          key: ValueKey(
-                            cluster.tasks.map((task) => task.id).join('-'),
+                      // A task slot renders through the real, interactive
+                      // pipeline; an event slot (see the `else` branch
+                      // below) renders a non-interactive
+                      // ExternalEventCapsuleBlock at the SAME lane instead
+                      // — **2026-09-07** (confirmed directly: "the imported
+                      // tasks should also stack in the same way as native
+                      // tasks... They just can't be moved, changed, or have
+                      // their duration, time, or name updated, but
+                      // otherwise exactly the same, with different
+                      // styling").
+                      if (slot.task case final task?)
+                        _DraggableTaskBlock(
+                          key: ValueKey(task.id),
+                          task: task,
+                          theme: theme,
+                          baseTop: blockTops[task.id]!,
+                          left: hourGutterWidth,
+                          slot: slot,
+                          pixelsPerMinute: pixelsPerMinute,
+                          // Only in List mode does a clustered task surrender its
+                          // text to the cluster's own row list. In Task view
+                          // every task keeps its own label (aligned to its pill's
+                          // icon — see `labelTops`), so there is nothing to
+                          // suppress and no duplicate to avoid.
+                          contentHidden:
+                              !widget.showHourLabels &&
+                              clusteredIds.contains(task.id),
+                          // Drag-to-reschedule needs a pixel->minute mapping, which
+                          // collapsed mode doesn't have: vertical position there is
+                          // stacking order, not time. Disabled rather than given a
+                          // second, inconsistent meaning — confirmed via
+                          // AskUserQuestion. "Edit time and duration" still works,
+                          // and dragging returns as soon as hour labels are back on.
+                          isDraggable: widget.showHourLabels,
+                          compactText: !widget.showHourLabels,
+                          showCompletionCheckbox: widget.showCompletionCheckbox,
+                          // Both modes now: icon-only pill at its own lane x,
+                          // name/time in the shared text column — requested
+                          // directly, so List mode's names line up the same way
+                          // Task view's already do regardless of lane depth.
+                          splitLayout: true,
+                          textColumnLeft: _textColumnLeft(theme, ghostSlots),
+                          // How far the label sits BELOW its own pill's top —
+                          // zero when nothing collides (perfectly icon-aligned),
+                          // positive when the label above pushed it down. Passed
+                          // as an offset rather than an absolute top so it rides
+                          // the block's own drag/settle animation unchanged.
+                          labelOffset:
+                              (labelTops[task.id] ?? blockTops[task.id]!) -
+                              blockTops[task.id]!,
+                          textColumnRight: widget.zones.isEmpty
+                              ? 0
+                              : _zoneLabelGutterWidth(theme),
+                          bottomTrim: _zoneTaskBottomTrim(task),
+                          maxPillHeight: _maxPillHeight(task, slots, blockTops),
+                          // Only the block for the task the modal just CREATED
+                          // fades in. A duration change animates via the pill's own
+                          // AnimatedContainer instead (see TaskCapsuleBlock) — that
+                          // block is already on screen, so fading it would read as
+                          // it disappearing and coming back rather than growing.
+                          fadeInOnFirstBuild:
+                              widget.recentlySaved?.taskId == task.id &&
+                              widget.recentlySaved?.change ==
+                                  SavedTaskChange.created,
+                          growFromMinutes:
+                              widget.recentlySaved?.taskId == task.id &&
+                                  widget.recentlySaved?.change ==
+                                      SavedTaskChange.durationChanged
+                              ? widget.recentlySaved?.previousDurationMinutes
+                              : null,
+                          onTap: () => widget.onTaskTap(task),
+                          onToggleComplete: () => widget.onToggleComplete(task),
+                          onReschedule: (newScheduledAt) =>
+                              widget.onReschedule(task, newScheduledAt),
+                          onDraggingChanged: (isDragging) {
+                            setState(() {
+                              _draggingTaskId = isDragging ? task.id : null;
+                              // Ordering starts with the drag and is only released
+                              // by onSettled below, deliberately outliving the
+                              // ghost.
+                              if (isDragging) _settlingTaskId = task.id;
+                            });
+                          },
+                          onSettled: () {
+                            // Ignore a stale settle: either a different task now
+                            // holds the pin, or this same task has been picked up
+                            // again before its previous drop finished animating.
+                            if (_settlingTaskId != task.id) return;
+                            if (_draggingTaskId != null) return;
+                            setState(() => _settlingTaskId = null);
+                          },
+                          editModeEnabled: widget.editModeEnabled,
+                          onDeleteTask: widget.onDeleteTask,
+                          deleteTargetKey: widget.editModeEnabled
+                              ? _deleteTargetKey
+                              : null,
+                          onDeleteTargetVisibilityChanged: (visible) =>
+                              setState(
+                                () => _deleteTargetVisibleCount += visible
+                                    ? 1
+                                    : -1,
+                              ),
+                          onDeleteTargetArmedChanged: (armed) =>
+                              setState(() => _deleteTargetArmed = armed),
+                        )
+                      else if (slot.block
+                          case final ExternalCalendarEvent event)
+                        // ExternalEventCapsuleBlock builds its own outer
+                        // `Positioned` (see its own doc comment on why —
+                        // matching `_DraggableTaskBlock._buildSplit`'s
+                        // structure exactly), so this is used directly, not
+                        // wrapped in a second one.
+                        ExternalEventCapsuleBlock(
+                          key: ValueKey(event.id),
+                          theme: theme,
+                          event: event,
+                          rangeStart: rangeStart,
+                          pixelsPerMinute: pixelsPerMinute,
+                          // Fixed at the day column's own origin, same as
+                          // `_DraggableTaskBlock.left` — NOT lane-shifted,
+                          // so the text column (relative to this same
+                          // origin) never moves when the event lands in a
+                          // deeper lane. The lane offset lives entirely in
+                          // `columnOffset` below, applied only to the
+                          // rail.
+                          left: hourGutterWidth,
+                          // The rail's own lane x — `pillBoxLeftForColumn`,
+                          // the SAME formula a task's own rail uses, so an
+                          // event sharing a lane group with tasks lines up
+                          // exactly like one of them would. Ignored when
+                          // `collapsedTop` is set (List mode has no lane
+                          // concept horizontally either — see that
+                          // widget's own contract), same as a task's own
+                          // rail is.
+                          columnOffset: pillBoxLeftForColumn(
+                            column: slot.column,
+                            pillWidth: _pillWidth(theme),
+                            columnGap: _columnGap(theme),
                           ),
-                          cluster: cluster,
-                          onTaskTap: widget.onTaskTap,
-                          onToggleComplete: widget.onToggleComplete,
-                          fadedTaskId: _draggingTaskId,
+                          textColumnLeft: _textColumnLeft(theme, ghostSlots),
+                          textColumnRight: widget.zones.isEmpty
+                              ? 0
+                              : _zoneLabelGutterWidth(theme),
+                          collapsedTop: widget.showHourLabels
+                              ? null
+                              : blockTops[event.id],
+                          collapsedHeight: widget.showHourLabels
+                              ? null
+                              : _collapsedExternalEventHeight(event, theme),
                           compactText: !widget.showHourLabels,
                           durationVisible: widget.devDurationVisible,
-                          // This whole render block is List-mode-only (see
-                          // the outer `if (!widget.showHourLabels)` above)
-                          // — always true here, matching the non-clustered
-                          // row's own `alwaysShowTime: widget.compactText`.
-                          alwaysShowTime: true,
-                          textLayout: widget.devTextLayout,
-                          showCompletionCheckbox: widget.showCompletionCheckbox,
+                          onTap: () => showExternalCalendarEventInfo(
+                            context: context,
+                            theme: theme,
+                            event: event,
+                          ),
                         ),
+                    ],
+                    // The wiggly placeholder pill dropped by tapping empty
+                    // Timeline space — requested directly. Task view only
+                    // (this whole `_DayTimeline` widget is only ever
+                    // mounted in the Task-view branch of TimelineScreen's
+                    // own view-switch ternary). Now part of `slots`/the
+                    // lane/cluster system above — it shares lanes and
+                    // joins clusters exactly as a real task does, so the
+                    // slot it was assigned supplies its column, and only
+                    // its `top` still comes from its own live drag state.
+                    if (widget.showHourLabels &&
+                        widget.pendingDraft != null &&
+                        draftSlot != null)
+                      _DraggablePendingTaskPill(
+                        key: ValueKey('pending-${widget.pendingDraft!.id}'),
+                        theme: theme,
+                        draft: widget.pendingDraft!,
+                        rangeStart: rangeStart,
+                        pixelsPerMinute: pixelsPerMinute,
+                        left: hourGutterWidth,
+                        width: _pillWidth(theme),
+                        slot: draftSlot,
+                        // Same shared text column every real task's name
+                        // sits in — requested directly ("the task name
+                        // should also be aligned as other text").
+                        textColumnLeft: _textColumnLeft(theme, ghostSlots),
+                        textColumnRight: widget.zones.isEmpty
+                            ? 0
+                            : _zoneLabelGutterWidth(theme),
                       ),
-                    ),
-                // Timeline mode only: the now-line's position is meaningless
-                // without a time axis to place it against — in collapsed mode
-                // it would sit at an arbitrary point between two stacked
-                // blocks and imply a scale that isn't there.
-                if (widget.showHourLabels)
-                  CurrentTimeIndicator(
-                    rangeStart: rangeStart,
-                    rangeEnd: rangeEnd,
-                    pixelsPerMinute: widget.pixelsPerMinute,
-                    gutterWidth: hourGutterWidth,
-                  ),
-                // LAST, deliberately — the placement line has to paint above
-                // every task (reported directly: it was rendering underneath
-                // them). Its press surface stays first in this list; see
-                // PlaceTaskLineLayer's doc comment for why they're split.
-                if (widget.showHourLabels)
-                  PlaceTaskLineOverlay(
-                    theme: theme,
-                    rangeStart: rangeStart,
-                    pixelsPerMinute: widget.pixelsPerMinute,
-                    controller: _placeLineController,
-                  ),
-              ],
+                    // The cluster's own flat title+time list — the member pills
+                    // themselves now render through the ordinary slot loop above
+                    // (each carrying its fixed cluster lane, see _withClusterLanes)
+                    // rather than a separate non-interactive layer, since a
+                    // clustered task must stay draggable (requested directly).
+                    // This list is top-anchored at the cluster's start and
+                    // positioned beside the fixed lane group — `cluster.tasks
+                    // .length` IS the lane count now (one lane per task, always),
+                    // so no separate layout call is needed to find where the pills
+                    // end. Row order (earliest first) matches lane order
+                    // (leftmost = earliest) exactly, per direct instruction — this
+                    // is a real positional guarantee now, not just an incidental
+                    // one, since _withClusterLanes assigns both from the same
+                    // chronological index.
+                    //
+                    // AnimatedSwitcher gives the crossfade the work order asked
+                    // for: each cluster's Positioned is keyed by its member ids,
+                    // so a drop that changes cluster MEMBERSHIP (not just
+                    // position) is a genuinely different widget to Flutter, and
+                    // AnimatedSwitcher fades between old and new automatically. A
+                    // cluster DISSOLVING back to individual capsules is the same
+                    // mechanism from the other side: clusteredIds stops containing
+                    // those tasks, so their pills (above) regain full content
+                    // while this switcher fades its old list out.
+                    //
+                    // Rendered from `restingClusters` (NOT the drag-excluded
+                    // `clusters`), so the list keeps showing every member —
+                    // structure held — for the whole duration of a drag, with
+                    // only the actively-dragged member's own row fading (via
+                    // `fadedTaskId` on OverlapClusterBlock, same "still there,
+                    // just lifted" treatment TaskCapsuleBlock already gives a
+                    // dragged task's own name/time/checkbox). Requested directly:
+                    // the list used to crossfade to a shorter version the INSTANT
+                    // a drag started (since `clusters` already excludes the
+                    // dragged task), which read as the row vanishing rather than
+                    // the task being lifted. The crossfade to a genuinely
+                    // different list (drop creates/dissolves a cluster) still
+                    // happens — the key is derived from `clusters` (the settled,
+                    // post-drop membership), which only changes once the drag
+                    // actually commits.
+                    // LIST MODE ONLY. Task view now gives every task its own
+                    // label, aligned to its own pill's icon and pushed down
+                    // only on collision (see `labelTops` / computeLabelTops) —
+                    // requested directly: "position the task name so it's
+                    // always lined up with the icon ... only if two tasks are
+                    // starting at the same time or too close would they
+                    // stack." This block's Column packs a cluster's names
+                    // sequentially from the cluster's own top instead, which
+                    // severs that alignment. List mode has no time axis to
+                    // align to, so it keeps this treatment.
+                    if (!widget.showHourLabels)
+                      for (final cluster in restingClusters)
+                        Positioned(
+                          key: ValueKey(
+                            'cluster-list-${cluster.tasks.map((task) => task.id).join('-')}',
+                          ),
+                          top: blockTops[cluster.tasks.first.id]!,
+                          // The SHARED text column, not this cluster's own member
+                          // count — corrected directly ("all text ... always lined
+                          // up"). Sizing it per cluster meant a 4-task cluster's
+                          // rows started further right than a 2-task one's, and
+                          // than every unclustered task's name.
+                          left:
+                              hourGutterWidth +
+                              _textColumnLeft(theme, ghostSlots),
+                          // Same zone-label gutter the ordinary task rows leave
+                          // — see _zoneLabelGutterWidth.
+                          right: widget.zones.isEmpty
+                              ? 0
+                              : _zoneLabelGutterWidth(theme),
+                          child: AnimatedSwitcher(
+                            duration: theme.motionNormal,
+                            child: OverlapClusterBlock(
+                              // Keyed off `restingClusters`' own membership — which
+                              // stays fixed for the whole duration of a drag (it's
+                              // computed WITHOUT excluding the dragged task) and
+                              // only changes once the drop actually commits a new
+                              // schedule and `restingClusters` is recomputed from
+                              // the updated task list. So this key does NOT change
+                              // mid-drag, and the crossfade only fires on a genuine
+                              // membership change, not a drag in progress.
+                              key: ValueKey(
+                                cluster.tasks.map((task) => task.id).join('-'),
+                              ),
+                              cluster: cluster,
+                              onTaskTap: widget.onTaskTap,
+                              onToggleComplete: widget.onToggleComplete,
+                              fadedTaskId: _draggingTaskId,
+                              compactText: !widget.showHourLabels,
+                              durationVisible: widget.devDurationVisible,
+                              // This whole render block is List-mode-only (see
+                              // the outer `if (!widget.showHourLabels)` above)
+                              // — always true here, matching the non-clustered
+                              // row's own `alwaysShowTime: widget.compactText`.
+                              alwaysShowTime: true,
+                              textLayout: widget.devTextLayout,
+                              showCompletionCheckbox:
+                                  widget.showCompletionCheckbox,
+                            ),
+                          ),
+                        ),
+                    // Timeline mode only: the now-line's position is meaningless
+                    // without a time axis to place it against — in collapsed mode
+                    // it would sit at an arbitrary point between two stacked
+                    // blocks and imply a scale that isn't there.
+                    if (widget.showHourLabels)
+                      CurrentTimeIndicator(
+                        rangeStart: rangeStart,
+                        rangeEnd: rangeEnd,
+                        pixelsPerMinute: widget.pixelsPerMinute,
+                        gutterWidth: hourGutterWidth,
+                      ),
+                    // LAST, deliberately — the placement line has to paint above
+                    // every task (reported directly: it was rendering underneath
+                    // them). Its press surface stays first in this list; see
+                    // PlaceTaskLineLayer's doc comment for why they're split.
+                    if (widget.showHourLabels)
+                      PlaceTaskLineOverlay(
+                        theme: theme,
+                        rangeStart: rangeStart,
+                        pixelsPerMinute: widget.pixelsPerMinute,
+                        controller: _placeLineController,
+                      ),
+                  ],
+                ),
+              ),
             ),
-          ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: EditModeDeleteTarget(
+                theme: theme,
+                visible:
+                    widget.editModeEnabled && _deleteTargetVisibleCount > 0,
+                isArmed: _deleteTargetArmed,
+                targetKey: _deleteTargetKey,
+              ),
+            ),
+            // The small quick-create panel — a sibling of the scrollable
+            // day (not a child of it, same reasoning as
+            // EditModeDeleteTarget above: it must stay pinned to the
+            // VIEWPORT'S own bottom edge, fixed regardless of scroll
+            // position, not scroll away with the day's content). See
+            // QuickCreateOverlay's own doc comment for why this can't be
+            // a pushed Navigator route.
+            if (widget.showHourLabels && widget.pendingDraft != null)
+              QuickCreateOverlay(
+                key: ValueKey('quick-create-${widget.pendingDraft!.id}'),
+                draft: widget.pendingDraft!,
+              ),
+            // Top scroll-fade — requested directly: "give gradient of
+            // the color of bg to create that effect of content smoothly
+            // fading... so there is not a hard line when content scrolls
+            // underneath." A sibling of the scroll view (same reasoning
+            // as EditModeDeleteTarget/QuickCreateOverlay above), so it
+            // stays fixed at the viewport's own top edge rather than
+            // scrolling away with the content it's meant to fade against.
+            // Extracted into AppTopScrollFade (2026-09-08) once the same
+            // fade turned out to be needed on Inbox/Tracked/every sheet
+            // header too — see that widget's own doc comment.
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: AppTopScrollFade(color: theme.colorSurfaceTimeline),
+            ),
+            // Mirrored bottom fade — requested directly: "use same at
+            // the bottom." Same reasoning as the top one: content
+            // scrolling out at the viewport's bottom edge disappears
+            // smoothly instead of hitting a hard line.
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: AppTopScrollFade(
+                color: theme.colorSurfaceTimeline,
+                fromBottom: true,
+              ),
+            ),
+          ],
         );
       },
     );
@@ -1729,12 +2437,13 @@ class _DayTimelineState extends State<_DayTimeline> {
   /// so every place a `top` is needed reads the same values rather than
   /// re-deriving them.
   ///
-  /// Timeline mode maps real elapsed time to pixels (external events
-  /// position independently via that same real math — see the render
-  /// site — so no shared cursor is needed there). Collapsed (List) mode
-  /// delegates to [_collapsedTops]' unified stacking cursor, which also
-  /// positions external events in the SAME pass — see its own doc comment
-  /// for why that has to be one merged walk, not two independent ones.
+  /// Timeline mode maps real elapsed time to pixels. An event's OWN top in
+  /// this mode is computed independently, inside `ExternalEventCapsuleBlock`
+  /// itself from that same real-time math (`collapsedTop: null` at the
+  /// render site) — so this map only ever needs task ids here; an event
+  /// slot is simply skipped. Collapsed (List) mode instead delegates
+  /// entirely to [_collapsedTops]' unified stacking cursor, which already
+  /// covers both kinds of block in one pass — see its own doc comment.
   Map<String, double> _blockTops(
     List<TaskLayoutSlot> slots,
     DateTime rangeStart,
@@ -1743,10 +2452,11 @@ class _DayTimelineState extends State<_DayTimeline> {
     if (widget.showHourLabels) {
       return {
         for (final slot in slots)
-          slot.task.id:
-              _minutesSinceStart(rangeStart, slot.task.scheduledAt!) *
-                  widget.pixelsPerMinute +
-              _zoneTaskTopInset(slot.task),
+          if (slot.task case final task?)
+            task.id:
+                _minutesSinceStart(rangeStart, task.scheduledAt!) *
+                    widget.pixelsPerMinute +
+                _zoneTaskTopInset(task),
       };
     }
     // Unreachable in practice — this whole method is only ever called from
@@ -1754,7 +2464,7 @@ class _DayTimelineState extends State<_DayTimeline> {
     // this branch can never actually run. `clusters` isn't in scope here;
     // an empty list keeps this compiling without expanding this fix's
     // scope to a pre-existing dead branch.
-    return _collapsedTops(slots, const [], theme).taskTops;
+    return _collapsedTops(slots, const [], theme);
   }
 
   /// How far to nudge [task] down so it isn't flush against the top edge of
@@ -1844,6 +2554,9 @@ class _DayTimelineState extends State<_DayTimeline> {
   /// Returns null (no cap) when there's no same-column task after this one
   /// close enough to matter, or when [task] isn't in [slots] at all (the
   /// ghost/ ancestor-less cases some call sites pass through).
+  // `slot.block.id` throughout (not `slot.task.id`) — the "next occupant"
+  // in [task]'s own column can now be an ExternalCalendarEvent slot, and
+  // finding/comparing by id works identically for either.
   double? _maxPillHeight(
     Task task,
     List<TaskLayoutSlot> slots,
@@ -1851,7 +2564,7 @@ class _DayTimelineState extends State<_DayTimeline> {
   ) {
     TaskLayoutSlot? ownSlot;
     for (final slot in slots) {
-      if (slot.task.id == task.id) {
+      if (slot.block.id == task.id) {
         ownSlot = slot;
         break;
       }
@@ -1862,8 +2575,8 @@ class _DayTimelineState extends State<_DayTimeline> {
     TaskLayoutSlot? next;
     double? nextTop;
     for (final slot in slots) {
-      if (slot.column != ownSlot.column || slot.task.id == task.id) continue;
-      final top = blockTops[slot.task.id];
+      if (slot.column != ownSlot.column || slot.block.id == task.id) continue;
+      final top = blockTops[slot.block.id];
       if (top == null || top <= ownTop) continue;
       if (nextTop == null || top < nextTop) {
         next = slot;
@@ -1875,21 +2588,29 @@ class _DayTimelineState extends State<_DayTimeline> {
     return nextTop - ownTop - _minPillGap;
   }
 
-  /// Collapsed (List) mode's ONE unified stacking pass over BOTH task rows
-  /// and external-calendar-event rows, keyed apart in two returned maps but
-  /// walked with a single shared cursor — real bug, reported directly:
-  /// "tasks on list view should not overlap (the app tasks with the
-  /// imported tasks should be one by one." A prior version computed task
-  /// tops via [_blockTops] FIRST, entirely unaware external events existed,
-  /// then positioned external events in a second pass that only read those
-  /// already-fixed task tops — so an external event landing chronologically
-  /// BETWEEN two tasks could never push the later task's row down to make
-  /// room; it just overlapped it. Merging both sequences into one cursor
-  /// walk (ordered by each row's own start time) is what actually
-  /// guarantees "one by one": whichever row comes next in time is the one
-  /// that advances the cursor, task or external, every time.
-  ({Map<String, double> taskTops, Map<String, double> externalEventTops})
-  _collapsedTops(
+  /// Collapsed (List) mode's ONE unified stacking pass over every block —
+  /// task or external-calendar-event — walked with a single shared cursor.
+  /// Real bug, reported directly: "tasks on list view should not overlap
+  /// (the app tasks with the imported tasks should be one by one." A prior
+  /// version computed task tops FIRST, entirely unaware external events
+  /// existed, then positioned external events in a second pass that only
+  /// read those already-fixed task tops — so an external event landing
+  /// chronologically BETWEEN two tasks could never push the later task's
+  /// row down to make room; it just overlapped it. Merging both sequences
+  /// into one cursor walk (ordered by each row's own start time) is what
+  /// actually guarantees "one by one": whichever row comes next in time is
+  /// the one that advances the cursor, task or external, every time.
+  ///
+  /// **2026-09-07**: [slots] now already contains BOTH tasks and events as
+  /// one merged list (see this build method's own `blocks`), so this no
+  /// longer needs a separate pass over `widget.externalEvents` at all — one
+  /// slot walk covers every block, keyed generically by `slot.block.id`
+  /// rather than the narrower `slot.task.id`. Returns one map (was two,
+  /// `taskTops`/`externalEventTops`, an artificial split that no longer
+  /// matched reality once a block's KIND stopped determining how it's
+  /// positioned) — every caller reads it the same way regardless of what
+  /// kind of block an id belongs to.
+  Map<String, double> _collapsedTops(
     List<TaskLayoutSlot> slots,
     List<OverlapCluster> clusters,
     AmbleTheme theme,
@@ -1899,34 +2620,42 @@ class _DayTimelineState extends State<_DayTimeline> {
     // ordinary combined pill+text row — so its real height is nothing
     // like a single task's badge-floored pill height. Keyed by cluster
     // SIZE (member count), not identity: every member of the same cluster
-    // needs the same height value once looked up by task id below.
-    final clusterSizeByTaskId = {
+    // needs the same height value once looked up by id below. Reads
+    // [OverlapCluster.blocks] (not the narrower `.tasks`) so an event
+    // pulled into a cluster gets the cluster's own height too.
+    final clusterSizeById = {
       for (final cluster in clusters)
-        for (final task in cluster.tasks) task.id: cluster.tasks.length,
+        for (final block in cluster.blocks) block.id: cluster.blocks.length,
     };
 
-    // Task rows: one entry per overlap GROUP (column 0 starts a new group —
-    // see layoutOverlappingTasks), carrying the group's start time and the
+    // One row per overlap GROUP (column 0 starts a new group — see
+    // layoutOverlappingTasks), carrying the group's start time and the
     // tallest member's height. The actual merge (this function's whole
     // point) lives in the pure, unit-tested computeCollapsedStackTops.
-    final taskRows = <CollapsedStackRow>[];
+    final rows = <CollapsedStackRow>[];
     for (final slot in slots) {
-      final height = clusterSizeByTaskId[slot.task.id] != null
-          ? _collapsedClusterHeight(clusterSizeByTaskId[slot.task.id]!, theme)
-          : _collapsedBlockHeight(slot.task, theme);
-      if (slot.column == 0 || taskRows.isEmpty) {
-        taskRows.add(
+      final task = slot.task;
+      final height = clusterSizeById[slot.block.id] != null
+          ? _collapsedClusterHeight(clusterSizeById[slot.block.id]!, theme)
+          : task != null
+          ? _collapsedBlockHeight(task, theme)
+          : _collapsedExternalEventHeight(
+              slot.block as ExternalCalendarEvent,
+              theme,
+            );
+      if (slot.column == 0 || rows.isEmpty) {
+        rows.add(
           CollapsedStackRow(
-            ids: [slot.task.id],
-            start: slot.task.scheduledAt!,
+            ids: [slot.block.id],
+            start: slot.block.scheduledStart,
             height: height,
           ),
         );
       } else {
-        final last = taskRows.removeLast();
-        taskRows.add(
+        final last = rows.removeLast();
+        rows.add(
           CollapsedStackRow(
-            ids: [...last.ids, slot.task.id],
+            ids: [...last.ids, slot.block.id],
             start: last.start,
             height: math.max(last.height, height),
           ),
@@ -1934,31 +2663,10 @@ class _DayTimelineState extends State<_DayTimeline> {
       }
     }
 
-    final eventRows = [
-      for (final event in widget.externalEvents)
-        CollapsedStackRow(
-          ids: [event.id],
-          start: event.start,
-          height: _collapsedExternalEventHeight(event, theme),
-        ),
-    ];
-
-    final allTops = computeCollapsedStackTops(
-      taskRows: taskRows,
-      externalEventRows: eventRows,
+    return computeCollapsedStackTops(
+      taskRows: rows,
+      externalEventRows: const [],
       gap: _collapsedBlockGap(theme),
-    );
-
-    final taskIds = {for (final row in taskRows) ...row.ids};
-    return (
-      taskTops: {
-        for (final entry in allTops.entries)
-          if (taskIds.contains(entry.key)) entry.key: entry.value,
-      },
-      externalEventTops: {
-        for (final entry in allTops.entries)
-          if (!taskIds.contains(entry.key)) entry.key: entry.value,
-      },
     );
   }
 
@@ -1982,10 +2690,14 @@ class _DayTimelineState extends State<_DayTimeline> {
   /// are. Reuses [resolveZoneContainment] (already shared with the
   /// separate Zone View) for "which tasks/events belong to which zone" —
   /// this is the one place in `timeline_screen.dart` that calls it.
+  ///
+  /// [blockTops] is [_collapsedTops]' single unified map (task AND event
+  /// ids together, as of 2026-09-07) — passed once and read by both id
+  /// spaces below, since `taskTops[task.id]`/`externalEventTops[event.id]`
+  /// now genuinely come from the same source map.
   List<CollapsedZoneBand> _collapsedZoneBands(
     List<Task> tasks,
-    Map<String, double> taskTops,
-    Map<String, double> externalEventTops,
+    Map<String, double> blockTops,
     AmbleTheme theme,
   ) {
     if (widget.zones.isEmpty) return const [];
@@ -2000,35 +2712,35 @@ class _DayTimelineState extends State<_DayTimeline> {
     return collapsedZoneBands(
       containments: result.containments,
       day: widget.selectedDate,
-      taskTops: taskTops,
+      taskTops: blockTops,
       taskHeights: {
         for (final task in tasks) task.id: _collapsedBlockHeight(task, theme),
       },
-      externalEventTops: externalEventTops,
+      externalEventTops: blockTops,
       externalEventHeights: {
         for (final event in widget.externalEvents)
           event.id: _collapsedExternalEventHeight(event, theme),
       },
       rowTopsByStartTime: [
         for (final task in tasks)
-          if (taskTops[task.id] != null)
-            MapEntry(task.scheduledAt!, taskTops[task.id]!),
+          if (blockTops[task.id] != null)
+            MapEntry(task.scheduledAt!, blockTops[task.id]!),
         for (final event in widget.externalEvents)
-          if (externalEventTops[event.id] != null)
-            MapEntry(event.start, externalEventTops[event.id]!),
+          if (blockTops[event.id] != null)
+            MapEntry(event.start, blockTops[event.id]!),
       ],
       rowExtents: [
         for (final task in tasks)
-          if (taskTops[task.id] != null)
+          if (blockTops[task.id] != null)
             (
-              taskTops[task.id]!,
-              taskTops[task.id]! + _collapsedBlockHeight(task, theme),
+              blockTops[task.id]!,
+              blockTops[task.id]! + _collapsedBlockHeight(task, theme),
             ),
         for (final event in widget.externalEvents)
-          if (externalEventTops[event.id] != null)
+          if (blockTops[event.id] != null)
             (
-              externalEventTops[event.id]!,
-              externalEventTops[event.id]! +
+              blockTops[event.id]!,
+              blockTops[event.id]! +
                   _collapsedExternalEventHeight(event, theme),
             ),
       ],
@@ -2112,26 +2824,24 @@ class _DayTimelineState extends State<_DayTimeline> {
   double _labelHeight(AmbleTheme theme) =>
       theme.textTaskTitle.fontSize! * theme.textTaskTitle.height!;
 
-  /// [ExternalCalendarEvent] counterpart to [_collapsedBlockHeight] — same
-  /// duration-proportional floor, plus [externalEventBlockMinHeight]'s own
-  /// two-lines-of-text floor (real bug, reported directly: "but same
-  /// line" — the stacking cursor previously only reserved
-  /// `_pillWidth(theme)` worth of space, which could be shorter than what
-  /// the block's own two text lines actually need, so the NEXT row landed
-  /// close enough to visually compress this block's title under its time
-  /// line). Both callers of this value — the cursor's own advance here,
-  /// and [ExternalEventBlock.collapsedHeight] passed to the widget — must
-  /// agree, or the cursor reserves less space than the widget renders.
+  /// [ExternalCalendarEvent] counterpart to [_collapsedBlockHeight] — now
+  /// byte-for-byte the same duration-proportional floor, since
+  /// `ExternalEventCapsuleBlock` renders as a real capsule pill (single-
+  /// line text, same geometry as a task's own pill) rather than the old
+  /// two-stacked-text-lines background block — the previous
+  /// `externalEventBlockMinHeight` text-height floor no longer applies
+  /// (**2026-09-06**, alongside the pill-format reversal). Both callers of
+  /// this value — the cursor's own advance here, and
+  /// `ExternalEventCapsuleBlock.collapsedHeight` passed to the widget —
+  /// must agree, or the cursor reserves less space than the widget
+  /// renders.
   double _collapsedExternalEventHeight(
     ExternalCalendarEvent event,
     AmbleTheme theme,
   ) => math.max(
     event.end.difference(event.start).inMinutes *
         _collapsedPixelsPerMinute(theme),
-    math.max(
-      _pillWidth(theme),
-      externalEventBlockMinHeight(theme, compactText: true),
-    ),
+    _pillWidth(theme),
   );
 
   /// [slots] with the dragged task moved to the end, so it's the last
@@ -2162,33 +2872,41 @@ class _DayTimelineState extends State<_DayTimeline> {
   /// ago — but this keeps the lookup total rather than partial).
   TaskLayoutSlot _ghostSlotFor(List<TaskLayoutSlot> ghostSlots, String taskId) {
     return ghostSlots.firstWhere(
-      (slot) => slot.task.id == taskId,
+      (slot) => slot.block.id == taskId,
       orElse: () => ghostSlots.first,
     );
   }
 
+  /// Reads [cluster]'s member ids/count from [OverlapCluster.blocks], NOT
+  /// the narrower [OverlapCluster.tasks] getter — **2026-09-07** (see this
+  /// file's own doc comment on event/task parity): an
+  /// [ExternalCalendarEvent] pulled into a cluster needs the exact same
+  /// fixed, one-lane-per-member treatment a task does, or it would keep
+  /// whatever column `layoutOverlappingTasks`' packed-column algorithm
+  /// happened to assign it — breaking the "leftmost pill/row = topmost
+  /// row" guarantee this function exists for.
   List<TaskLayoutSlot> _withClusterLanes(
     List<TaskLayoutSlot> slots,
     List<OverlapCluster> clusters,
   ) {
     if (clusters.isEmpty) return slots;
 
-    final laneByTaskId = <String, int>{};
-    final countByTaskId = <String, int>{};
+    final laneById = <String, int>{};
+    final countById = <String, int>{};
     for (final cluster in clusters) {
-      for (final (index, task) in cluster.tasks.indexed) {
-        laneByTaskId[task.id] = index;
-        countByTaskId[task.id] = cluster.tasks.length;
+      for (final (index, block) in cluster.blocks.indexed) {
+        laneById[block.id] = index;
+        countById[block.id] = cluster.blocks.length;
       }
     }
 
     return [
       for (final slot in slots)
-        if (laneByTaskId.containsKey(slot.task.id))
+        if (laneById.containsKey(slot.block.id))
           TaskLayoutSlot(
-            task: slot.task,
-            column: laneByTaskId[slot.task.id]!,
-            columnCount: countByTaskId[slot.task.id]!,
+            block: slot.block,
+            column: laneById[slot.block.id]!,
+            columnCount: countById[slot.block.id]!,
           )
         else
           slot,
@@ -2199,13 +2917,477 @@ class _DayTimelineState extends State<_DayTimeline> {
     final draggingId = _settlingTaskId;
     if (draggingId == null) return slots;
 
-    final index = slots.indexWhere((slot) => slot.task.id == draggingId);
+    final index = slots.indexWhere((slot) => slot.block.id == draggingId);
     if (index == -1) return slots;
 
     // Copy first — `slots` is the caller's list and must not be mutated.
     final reordered = [...slots];
     reordered.add(reordered.removeAt(index));
     return reordered;
+  }
+}
+
+/// Wraps a [ZoneBackgroundBlock] with vertical drag-to-move and top/bottom
+/// drag-to-resize, on the Spatial Task View — mirrors [_DraggableTaskBlock]'s
+/// own shape (tracks live drag deltas for visual feedback; commits only on
+/// release) and, on the Zone view side, `_ZoneDayTimelineState`'s own
+/// `_commitZoneResize`/`_commitZoneMove`. **New 2026-09-06** (confirmed
+/// directly — "we should be able to edit zones in any view ... in spatial
+/// task view also"), reversing the earlier "Task view zones are purely
+/// decorative" scope: both gestures resolve to the SAME shared cascade
+/// commit path (`_commitZoneCascade`) Zone view's own container already
+/// uses, via [widget.onZoneResize]/[widget.onZoneMove] — this widget itself
+/// computes nothing about overlap or capacity, only the candidate window.
+///
+/// A [ConsumerStatefulWidget] living inside `_DayTimelineState` (a plain,
+/// non-Riverpod-aware `StatefulWidget`) for the exact same reason
+/// [_DraggableTaskBlock] already is: reading `ref` here, locally, is
+/// simpler than threading a second layer of plain callbacks through
+/// `_DayTimeline` for state this widget alone needs to own frame-to-frame
+/// (the live delta) — [onZoneResize]/[onZoneMove] themselves ARE the plain
+/// callback contract already used everywhere else in this widget tree.
+class _DraggableZoneBlock extends ConsumerStatefulWidget {
+  const _DraggableZoneBlock({
+    super.key,
+    required this.theme,
+    required this.zone,
+    required this.day,
+    required this.rangeStart,
+    required this.pixelsPerMinute,
+    required this.left,
+    required this.width,
+    required this.editModeEnabled,
+    required this.phaseOffset,
+    this.onZoneResize,
+    this.onZoneMove,
+  });
+
+  final AmbleTheme theme;
+  final Zone zone;
+  final DateTime day;
+  final DateTime rangeStart;
+  final double pixelsPerMinute;
+  final double left;
+  final double width;
+  final bool editModeEnabled;
+  final double phaseOffset;
+
+  /// See [_DayTimeline.onZoneResize]/[_DayTimeline.onZoneMove] — passed
+  /// straight through from there.
+  final void Function(
+    String zoneId,
+    int originalStartMinutes,
+    int newStartMinutes,
+    int newEndMinutes,
+  )?
+  onZoneResize;
+  final void Function(
+    String zoneId,
+    int originalStartMinutes,
+    int newStartMinutes,
+    int newEndMinutes,
+  )?
+  onZoneMove;
+
+  @override
+  ConsumerState<_DraggableZoneBlock> createState() =>
+      _DraggableZoneBlockState();
+}
+
+class _DraggableZoneBlockState extends ConsumerState<_DraggableZoneBlock> {
+  /// Snap granularity — matches `_ZoneDayTimelineState._zoneResizeSnapMinutes`
+  /// (the Zone view's own equivalent gesture), not a new increment invented
+  /// for this view.
+  static const _snapMinutes = 5;
+
+  bool _resizingTopEdge = false;
+  double _resizeMinutesDelta = 0;
+  bool _isResizing = false;
+  double _moveMinutesDelta = 0;
+  bool _isMoving = false;
+
+  /// Mirrors `_DraggableTaskBlockState._effectiveOnTap`'s own exact
+  /// reasoning: off (the default), the header has no tap of its own here
+  /// (its move-drag still works via `onVerticalDrag*`, unaffected). On,
+  /// tapping the header toggles this zone's selection instead of starting
+  /// a move — the same "tap becomes select/deselect" rule multi-task mode
+  /// already gives tasks. **New 2026-09-06** (confirmed directly — zones
+  /// should not wiggle/be draggable in multi-task mode unless selected).
+  VoidCallback? get _effectiveOnHeaderTap {
+    if (!widget.editModeEnabled || !ref.watch(devMultiTaskEditModeProvider)) {
+      return null;
+    }
+    return () =>
+        ref.read(zoneEditSelectionProvider.notifier).toggle(widget.zone.id);
+  }
+
+  bool get _isSelected =>
+      ref.watch(zoneEditSelectionProvider) == widget.zone.id;
+
+  /// Whether wiggle/handles/the move-header actually render right now —
+  /// mirrors `_DraggableTaskBlockState`'s own `wiggleEnabled` exactly:
+  /// multi-task mode flips what "active" means from "Edit Mode is on" (every
+  /// zone) to "this zone is selected" (only the selected one), since
+  /// otherwise Edit Mode's own active-state signal would be indistinguishable
+  /// from the selection signal if both used the same motion on every zone at
+  /// once.
+  bool get _interactionEnabled {
+    if (!widget.editModeEnabled) return false;
+    if (!ref.watch(devMultiTaskEditModeProvider)) return true;
+    return _isSelected;
+  }
+
+  void _commitResize() {
+    final snappedDelta =
+        (_resizeMinutesDelta / _snapMinutes).round() * _snapMinutes;
+    setState(() {
+      _isResizing = false;
+      _resizeMinutesDelta = 0;
+    });
+    if (snappedDelta == 0 || widget.onZoneResize == null) return;
+
+    final zone = widget.zone;
+    final newStart = _resizingTopEdge
+        ? zone.startMinutes + snappedDelta
+        : zone.startMinutes;
+    final newEnd = _resizingTopEdge
+        ? zone.endMinutes
+        : zone.endMinutes + snappedDelta;
+    // Mirrors Zone's own constructor invariant, same guard
+    // `_commitZoneResize` (Zone view) already applies before ever handing a
+    // candidate window to the caller's cascade computation.
+    if (newStart < 0 || newEnd > 24 * 60 || newEnd <= newStart) return;
+
+    widget.onZoneResize!(zone.id, zone.startMinutes, newStart, newEnd);
+  }
+
+  void _commitMove() {
+    final snappedDelta =
+        (_moveMinutesDelta / _snapMinutes).round() * _snapMinutes;
+    setState(() {
+      _isMoving = false;
+      _moveMinutesDelta = 0;
+    });
+    if (snappedDelta == 0 || widget.onZoneMove == null) return;
+
+    final zone = widget.zone;
+    final newStart = zone.startMinutes + snappedDelta;
+    final newEnd = zone.endMinutes + snappedDelta;
+    if (newStart < 0 || newEnd > 24 * 60) return;
+
+    widget.onZoneMove!(zone.id, zone.startMinutes, newStart, newEnd);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Live preview: an in-progress resize/move renders at its candidate
+    // GEOMETRY rather than waiting for the write to land, matching every
+    // other drag surface in this codebase (`_DraggableTaskBlock`'s own
+    // `_dragOffset`/`_resizeOffset`). `zone` itself is passed through
+    // UNCHANGED — only `previewTop`/`previewHeight` override where this
+    // renders, mirroring `ZoneContainerBlock`'s own live-resize precedent
+    // in Zone view (see `ZoneBackgroundBlock.previewTop`'s own doc
+    // comment for why this beat giving `Zone` a `copyWith`).
+    final dayStart = DateTime(
+      widget.day.year,
+      widget.day.month,
+      widget.day.day,
+    );
+    final zoneStart = dayStart.add(Duration(minutes: widget.zone.startMinutes));
+    final strictTop =
+        zoneStart.difference(widget.rangeStart).inMinutes *
+        widget.pixelsPerMinute;
+    final strictHeight = widget.zone.durationMinutes * widget.pixelsPerMinute;
+    final isPreviewing = _isMoving || _isResizing;
+    final previewTop = !isPreviewing
+        ? null
+        : _isMoving
+        ? strictTop + _moveMinutesDelta * widget.pixelsPerMinute
+        : (_resizingTopEdge
+              ? strictTop + _resizeMinutesDelta * widget.pixelsPerMinute
+              // Bottom-edge resize doesn't move the top edge at all —
+              // still passed through (not left null) so the pair stays
+              // both-set, per `ZoneBackgroundBlock.previewTop`'s contract.
+              : strictTop);
+    final previewHeight = !isPreviewing
+        ? null
+        : _isMoving
+        ? strictHeight
+        : strictHeight +
+              (_resizingTopEdge ? -1 : 1) *
+                  _resizeMinutesDelta *
+                  widget.pixelsPerMinute;
+
+    final interactionEnabled = _interactionEnabled;
+
+    return ZoneBackgroundBlock(
+      theme: widget.theme,
+      zone: widget.zone,
+      day: widget.day,
+      rangeStart: widget.rangeStart,
+      pixelsPerMinute: widget.pixelsPerMinute,
+      left: widget.left,
+      width: widget.width,
+      previewTop: previewTop,
+      previewHeight: previewHeight,
+      // Drives wiggle/handle/header visibility — see `_interactionEnabled`'s
+      // own doc comment for why this differs from plain
+      // `widget.editModeEnabled` under multi-task mode.
+      editModeEnabled: interactionEnabled,
+      phaseOffset: widget.phaseOffset,
+      onHeaderTap: _effectiveOnHeaderTap,
+      onResizeTopStart: !interactionEnabled
+          ? null
+          : (_) => setState(() {
+              _isResizing = true;
+              _resizingTopEdge = true;
+              _resizeMinutesDelta = 0;
+            }),
+      onResizeTopUpdate: !interactionEnabled
+          ? null
+          : (details) => setState(() {
+              _resizeMinutesDelta += details.delta.dy / widget.pixelsPerMinute;
+            }),
+      onResizeTopEnd: !interactionEnabled ? null : (_) => _commitResize(),
+      onResizeBottomStart: !interactionEnabled
+          ? null
+          : (_) => setState(() {
+              _isResizing = true;
+              _resizingTopEdge = false;
+              _resizeMinutesDelta = 0;
+            }),
+      onResizeBottomUpdate: !interactionEnabled
+          ? null
+          : (details) => setState(() {
+              _resizeMinutesDelta += details.delta.dy / widget.pixelsPerMinute;
+            }),
+      onResizeBottomEnd: !interactionEnabled ? null : (_) => _commitResize(),
+      // Gated identically to the resize handlers: an unselected zone under
+      // multi-task mode has no move drag (only the header's tap-to-select
+      // is live there — see `ZoneBackgroundBlock`'s own header, which
+      // renders tap-to-select XOR drag-to-move, never both at once).
+      onMoveStart: !interactionEnabled
+          ? null
+          : (_) => setState(() {
+              _isMoving = true;
+              _moveMinutesDelta = 0;
+            }),
+      onMoveUpdate: !interactionEnabled
+          ? null
+          : (details) => setState(() {
+              _moveMinutesDelta += details.delta.dy / widget.pixelsPerMinute;
+            }),
+      onMoveEnd: !interactionEnabled ? null : (_) => _commitMove(),
+    );
+  }
+}
+
+/// Wraps [PendingTaskPill] with the same drag-to-move/drag-to-resize
+/// physics real tasks get — confirmed scope: the wiggly placeholder
+/// pill's own drag/resize reuses Edit Mode's snap-to-5min rule and
+/// cascade-push (if "Prevent overlapping tasks" is on), computed and
+/// applied only at Save (not live during this drag — confirmed scope),
+/// so this widget only ever writes to [pendingTaskDraftProvider], never
+/// the task repository. A [ConsumerStatefulWidget] living inside
+/// `_DayTimelineState` for the same reason [_DraggableZoneBlock] already
+/// is: reading `ref` locally here is simpler than threading a second
+/// layer of plain callbacks through `_DayTimeline` for state this widget
+/// alone owns frame-to-frame (the live drag/resize preview).
+class _DraggablePendingTaskPill extends ConsumerStatefulWidget {
+  const _DraggablePendingTaskPill({
+    super.key,
+    required this.theme,
+    required this.draft,
+    required this.rangeStart,
+    required this.pixelsPerMinute,
+    required this.left,
+    required this.width,
+    required this.slot,
+    required this.textColumnLeft,
+    required this.textColumnRight,
+  });
+
+  final AmbleTheme theme;
+  final PendingTaskDraft draft;
+  final DateTime rangeStart;
+  final double pixelsPerMinute;
+  final double left;
+  final double width;
+
+  /// The lane the shared overlap layout assigned this draft — the draft
+  /// participates in that layout exactly as a real task does, so an
+  /// overlapping placeholder sits BESIDE what it collides with rather
+  /// than painting over it.
+  final TaskLayoutSlot slot;
+
+  /// The shared text column every task's name is aligned to, and the
+  /// gutter reserved on its right — passed through so the placeholder's
+  /// own name lines up with the real ones instead of sitting wherever its
+  /// own rail happens to end.
+  final double textColumnLeft;
+  final double textColumnRight;
+
+  @override
+  ConsumerState<_DraggablePendingTaskPill> createState() =>
+      _DraggablePendingTaskPillState();
+}
+
+class _DraggablePendingTaskPillState
+    extends ConsumerState<_DraggablePendingTaskPill> {
+  double _dragOffset = 0;
+  double _resizeOffset = 0;
+
+  /// Live TOP-edge resize delta, the mirror of [_resizeOffset] — see
+  /// [_commitResizeTop].
+  double _resizeTopOffset = 0;
+
+  double get _baseTop =>
+      widget.draft.scheduledAt.difference(widget.rangeStart).inMinutes *
+      widget.pixelsPerMinute;
+
+  double get _baseHeight =>
+      widget.draft.durationMinutes * widget.pixelsPerMinute;
+
+  void _commitMove() {
+    final delta = snappedMinutesDelta(_dragOffset, widget.pixelsPerMinute);
+    setState(() => _dragOffset = 0);
+    if (delta == 0) return;
+
+    final newScheduledAt = widget.draft.scheduledAt.add(
+      Duration(minutes: delta),
+    );
+    // A day-boundary/cascade-feasibility check only — per confirmed scope,
+    // the cascade itself is computed and applied at Save, never live here.
+    // A synthetic in-memory Task (never persisted, never touching a
+    // repository) stands in for the draft so computeCascadeMoves' own
+    // signature — which needs a real Task's id/durationMinutes — can be
+    // reused as-is rather than duplicating its logic for a second shape.
+    if (ref.read(preventOverlappingTasksSettingProvider)) {
+      final tasks = ref.read(taskListProvider);
+      final overlaps = overlapsExistingTask(
+        scheduledAt: newScheduledAt,
+        durationMinutes: widget.draft.durationMinutes,
+        existingTasks: tasks,
+      );
+      if (overlaps) {
+        final draggedTask = Task(
+          id: widget.draft.id,
+          title: '',
+          scheduledAt: newScheduledAt,
+          durationMinutes: widget.draft.durationMinutes,
+        );
+        final sameDayTasks = tasks
+            .where(
+              (t) =>
+                  t.isScheduled &&
+                  t.scheduledAt!.year == newScheduledAt.year &&
+                  t.scheduledAt!.month == newScheduledAt.month &&
+                  t.scheduledAt!.day == newScheduledAt.day,
+            )
+            .toList();
+        final moves = computeCascadeMoves(
+          draggedTask: draggedTask,
+          newStart: newScheduledAt,
+          sameDayTasks: sameDayTasks,
+        );
+        // Day-boundary guard failed (or, in principle, some other
+        // infeasibility computeCascadeMoves might report) — snap back
+        // rather than commit a move that Save could never actually apply.
+        if (moves == null) return;
+      }
+    }
+
+    ref.read(pendingTaskDraftProvider.notifier).updatePosition(newScheduledAt);
+  }
+
+  void _commitResize() {
+    final delta = snappedDurationDelta(_resizeOffset, widget.pixelsPerMinute);
+    setState(() => _resizeOffset = 0);
+    if (delta == 0) return;
+
+    final newDuration = math.max(
+      minTaskDurationMinutes,
+      widget.draft.durationMinutes + delta,
+    );
+    ref.read(pendingTaskDraftProvider.notifier).updateDuration(newDuration);
+  }
+
+  /// Top-edge resize — the draft's START moves while its END stays put,
+  /// so this commits BOTH position and duration, unlike [_commitResize]'s
+  /// duration-only bottom edge. Mirrors `_DraggableTaskBlockState`'s own
+  /// top-edge commit for real tasks.
+  void _commitResizeTop() {
+    final rawDelta = snappedDurationDelta(
+      _resizeTopOffset,
+      widget.pixelsPerMinute,
+    );
+    setState(() => _resizeTopOffset = 0);
+    if (rawDelta == 0) return;
+
+    // Clamped so the start can never cross the (fixed) end — the same
+    // floor the bottom edge gets from its own `math.max`, expressed here
+    // against the start because this is the edge that moves.
+    final startDelta = math.min(
+      rawDelta,
+      widget.draft.durationMinutes - minTaskDurationMinutes,
+    );
+    if (startDelta == 0) return;
+
+    final newScheduledAt = widget.draft.scheduledAt.add(
+      Duration(minutes: startDelta),
+    );
+    final dayStart = DateTime(
+      newScheduledAt.year,
+      newScheduledAt.month,
+      newScheduledAt.day,
+    );
+    if (newScheduledAt.isBefore(dayStart)) return;
+
+    final notifier = ref.read(pendingTaskDraftProvider.notifier);
+    notifier.updatePosition(newScheduledAt);
+    notifier.updateDuration(widget.draft.durationMinutes - startDelta);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final top = _baseTop + _dragOffset + _resizeTopOffset;
+    final height = math.max(
+      _baseHeight + _resizeOffset - _resizeTopOffset,
+      widget.theme.sizeTaskBadge,
+    );
+
+    // A top-edge drag moves the pill's own top as it goes (the end is
+    // anchored), so it shifts `top` AND shrinks `height` — the bottom
+    // edge only does the latter.
+    // The lane the shared overlap layout assigned — identical math to
+    // `_DraggableTaskBlock`'s own, so a placeholder and a real task in
+    // the same overlap group land in genuinely the same lanes rather
+    // than two schemes that happen to agree most of the time.
+    final columnOffset = pillBoxLeftForColumn(
+      column: widget.slot.column,
+      pillWidth: _pillWidth(widget.theme),
+      columnGap: _columnGap(widget.theme),
+    );
+
+    return PendingTaskPill(
+      theme: widget.theme,
+      top: top,
+      left: widget.left,
+      columnOffset: columnOffset,
+      width: widget.width,
+      height: height,
+      textColumnLeft: widget.textColumnLeft,
+      textColumnRight: widget.textColumnRight,
+      onMoveStart: (_) {},
+      onMoveUpdate: (delta) => setState(() => _dragOffset += delta),
+      onMoveEnd: _commitMove,
+      onResizeStart: (_) {},
+      onResizeUpdate: (delta) => setState(() => _resizeOffset += delta),
+      onResizeEnd: _commitResize,
+      onResizeTopStart: (_) {},
+      onResizeTopUpdate: (delta) => setState(() => _resizeTopOffset += delta),
+      onResizeTopEnd: _commitResizeTop,
+    );
   }
 }
 
@@ -2240,12 +3422,49 @@ class _DraggableTaskBlock extends ConsumerStatefulWidget {
     this.labelOffset = 0,
     this.bottomTrim = 0,
     this.maxPillHeight,
+    this.editModeEnabled = false,
+    this.onDeleteTask,
+    this.deleteTargetKey,
+    this.onDeleteTargetVisibilityChanged,
+    this.onDeleteTargetArmedChanged,
   });
 
   final Task task;
   final AmbleTheme theme;
   final double baseTop;
   final double left;
+
+  /// Whether Edit Mode is active — see [_DayTimeline.editModeEnabled]'s
+  /// own doc comment for why this is a plain field, not a Riverpod watch,
+  /// on every widget between here and `TimelineScreen`.
+  final bool editModeEnabled;
+
+  /// See [_DayTimeline.onDeleteTask].
+  final Future<void> Function(Task task)? onDeleteTask;
+
+  /// The delete-drag-target's own `GlobalKey` — one shared instance owned
+  /// by `_DayTimelineState` (there is only ever one delete target visible
+  /// on screen at a time, regardless of how many draggable blocks exist),
+  /// passed down so a drop can test its position against the target's
+  /// resolved bounds via [isInsideDeleteTarget]. Null whenever Edit Mode
+  /// is off, since the target itself never renders then.
+  final GlobalKey? deleteTargetKey;
+
+  /// Reported true for the duration of a move-drag while Edit Mode is
+  /// active, so the parent can fade the delete target in/out — see
+  /// `_DayTimelineState`'s own `_showDeleteTarget`. Distinct from
+  /// [onDraggingChanged] (which drives the ghost) because the two are
+  /// conceptually different signals that happen to fire at the same
+  /// moments; kept separate rather than overloading one callback for two
+  /// meanings.
+  final ValueChanged<bool>? onDeleteTargetVisibilityChanged;
+
+  /// Whether a move-drag is CURRENTLY positioned inside the delete
+  /// target's bounds — drives the target's own armed/unarmed highlight.
+  /// Reported on every drag update while Edit Mode is on, mirroring
+  /// [onDeleteTargetVisibilityChanged]'s "own callback per distinct
+  /// signal" reasoning.
+  final ValueChanged<bool>? onDeleteTargetArmedChanged;
 
   /// This task's horizontal share of the timeline — full width when it
   /// overlaps nothing, a narrowed column when it clashes with others.
@@ -2352,6 +3571,67 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
   double _dragOffset = 0;
   bool _isDragging = false;
 
+  /// Routes a tap to selection instead of the detail sheet while Edit
+  /// Mode's multi-task route is on (`DevMultiTaskEditMode`,
+  /// `core/dev_config.dart`) — requested directly. Off (the default),
+  /// this is exactly `widget.onTap` with nothing in between, so ordinary
+  /// (single-task) Edit Mode and the non-Edit-Mode Timeline are both
+  /// completely unaffected by any of this file's multi-task code. On, the
+  /// detail sheet becomes unreachable from a tap — confirmed via
+  /// AskUserQuestion: leaving multi-task mode is how you get back to it,
+  /// same as leaving Edit Mode entirely already was the only way to reach
+  /// resize handles before this feature existed.
+  VoidCallback get _effectiveOnTap {
+    if (!widget.editModeEnabled || !ref.watch(devMultiTaskEditModeProvider)) {
+      // A tap always still opens the detail sheet, armed or not — per the
+      // work order ("keep single tap to open edit sheet"). It also clears
+      // any long-press-armed task (this one or another one), same as
+      // tapping empty background does — see `onEmptyTap`'s own wiring for
+      // the "tapping outside closes that mode" half of the same request.
+      return () {
+        ref.read(armedEditTaskProvider.notifier).clear();
+        widget.onTap();
+      };
+    }
+    return () =>
+        ref.read(editSelectionProvider.notifier).toggle(widget.task.id);
+  }
+
+  /// See [_effectiveOnTap]'s doc comment. Only meaningful while multi-task
+  /// mode is actually on — every other read site already guards on that,
+  /// so this doesn't re-check it itself.
+  bool get _isSelected =>
+      ref.watch(editSelectionProvider).contains(widget.task.id);
+
+  /// Long-press arms THIS task for editing — requested directly: "long
+  /// press on task should enable its edit mode (duration) wiggle." Null
+  /// (no-op) while multi-task select mode's own tap-to-select is active,
+  /// same guard as [_effectiveOnTap]: that mode already repurposes a tap on
+  /// this block for a different meaning (selection), so a long-press
+  /// arming a single task on top of that would be a second, conflicting
+  /// gesture contract in the same mode.
+  VoidCallback? get _effectiveOnLongPress {
+    if (widget.editModeEnabled && ref.watch(devMultiTaskEditModeProvider)) {
+      return null;
+    }
+    return () => ref.read(armedEditTaskProvider.notifier).arm(widget.task.id);
+  }
+
+  /// True while THIS task specifically is long-press-armed — requested
+  /// directly: "long press on task should enable its edit mode (duration)
+  /// wiggle." Independent of [_DayTimeline.editModeEnabled] (the existing
+  /// global toggle): a task can be armed with the global mode off, and the
+  /// global mode being on doesn't imply any one task is armed.
+  bool get _isArmed => ref.watch(armedEditTaskProvider) == widget.task.id;
+
+  /// Drives THIS block's own wiggle/resize-handle visibility — either the
+  /// existing global Edit Mode is on, or this one task is long-press-armed.
+  /// Deliberately NOT used for the drag-to-delete-target machinery (that
+  /// stays gated on `widget.editModeEnabled` alone, unchanged) — delete via
+  /// drag-to-target is a whole-Edit-Mode feature per CONSTITUTION.md, not
+  /// part of this per-task arming.
+  bool get _editActive => widget.editModeEnabled || _isArmed;
+
   /// True for exactly the build in which the view MODE changed (List's
   /// collapsed stack <-> Task view's real time axis, tracked via
   /// [_DraggableTaskBlock.isDraggable]). Suppresses this block's own
@@ -2450,6 +3730,85 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
   /// size of the slot it's being dropped into.
   static const _liftScale = 1.04;
 
+  /// Live duration delta (minutes) while a resize drag is in progress —
+  /// the resize-drag counterpart to [_dragOffset], unsnapped while the
+  /// finger is down, applied to `task.durationMinutes` only at release.
+  /// Zero whenever no resize is in progress.
+  double _resizeOffset = 0;
+  bool _isResizing = false;
+
+  /// Live TOP-edge resize delta (pixels) — the mirror of [_resizeOffset],
+  /// but for the handle that moves the task's START while its END stays
+  /// fixed. Dragging DOWN (positive) shortens the task from the top and
+  /// pushes its start later; dragging UP (negative) lengthens it earlier.
+  /// Zero whenever no top-edge resize is in progress. Requested directly:
+  /// "let's include resize up (so resize handle on top) ... we already
+  /// have that in zone resize."
+  double _resizeTopOffset = 0;
+  bool _isResizingTop = false;
+
+  /// The task's own snap granularity — matches `TaskDurationModal`'s wheel
+  /// picker (`minuteStep: 5`), which is the existing duration-entry
+  /// surface this resize handle needs to feel consistent with, and also
+  /// matches drag-to-reschedule's own `_snapMinutes` above. Not a new
+  /// increment invented for this gesture.
+  static const _durationSnapMinutes = 5;
+
+  /// The floor a Task resize can shrink `durationMinutes` to. No existing
+  /// constant enforces a real minimum anywhere in the codebase —
+  /// `TaskDurationModal` only floors at 1 minute to avoid a literal zero.
+  /// Chosen here as [_durationSnapMinutes] itself (5) rather than 1: a
+  /// drag gesture's own granularity already can't express anything finer
+  /// than one snap step, so a 1-minute floor could never actually be
+  /// reached by dragging in the first place, and 5 minutes is still a
+  /// materially real duration a task can usefully have (unlike 1).
+  /// Flagged in docs/DECISIONS.md as a judgment call, not a discovered
+  /// existing rule.
+  static const _minDurationMinutes = _durationSnapMinutes;
+
+  int get _snappedResizeDelta =>
+      (_resizeOffset / widget.pixelsPerMinute / _durationSnapMinutes).round() *
+      _durationSnapMinutes;
+
+  /// The duration this resize would commit to if released right now —
+  /// floored at [_minDurationMinutes], mirroring [_previewStartsAt]'s own
+  /// "what the drop would actually commit" contract for move-drag.
+  int get _previewDurationMinutes => math.max(
+    widget.task.durationMinutes! + _snappedResizeDelta,
+    _minDurationMinutes,
+  );
+
+  /// [_snappedResizeDelta]'s top-edge counterpart — how far (in snapped
+  /// minutes) the START would move if the top-edge drag were released
+  /// now. Positive shortens from the top (start moves later).
+  int get _snappedResizeTopDelta =>
+      (_resizeTopOffset / widget.pixelsPerMinute / _durationSnapMinutes)
+          .round() *
+      _durationSnapMinutes;
+
+  /// How far the start ACTUALLY moves for the current top-edge drag,
+  /// after the minimum-duration floor is applied. A top-edge drag that
+  /// would shrink the task past [_minDurationMinutes] stops moving the
+  /// start at exactly the point that floor is hit, so the two previewed
+  /// edges never cross — the same clamping the bottom edge gets from
+  /// [_previewDurationMinutes]'s own `math.max`, expressed here as a
+  /// start-offset because this edge is the one that moves.
+  int get _previewTopStartDelta => math.min(
+    _snappedResizeTopDelta,
+    widget.task.durationMinutes! - _minDurationMinutes,
+  );
+
+  /// The duration a top-edge resize would commit to — the end stays put,
+  /// so the duration shrinks by exactly however far the start moved.
+  int get _previewTopDurationMinutes =>
+      widget.task.durationMinutes! - _previewTopStartDelta;
+
+  /// The last global pointer position reported by the active move-drag —
+  /// needed at drop time to test against the delete target's bounds
+  /// (`DragEndDetails` carries velocity only, no position). Null whenever
+  /// no drag is in progress.
+  Offset? _lastDragGlobalPosition;
+
   /// The start time this drag would commit to if released right now —
   /// derived from the same snapped offset the drop itself uses, so the
   /// time shown mid-drag can never disagree with the time actually saved.
@@ -2462,15 +3821,100 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
 
   @override
   Widget build(BuildContext context) {
+    // Edit Mode's multi-task group-move follow — see
+    // `edit_selection_provider.dart`'s own doc comment on
+    // `EditGroupGesture` for why this broadcast exists at all (every
+    // block's own drag state is otherwise invisible to its siblings).
+    // Only a SELECTED block that ISN'T the one actually under the finger
+    // follows this: the dragged block already tracks the finger directly
+    // via its own `_dragOffset`, and applying the broadcast on top of that
+    // would double the offset.
+    final multiTaskEditMode =
+        widget.editModeEnabled && ref.watch(devMultiTaskEditModeProvider);
+    final groupGesture = multiTaskEditMode
+        ? ref.watch(editGroupGestureStateProvider)
+        : null;
+    final isGroupFollower =
+        multiTaskEditMode &&
+        !_isDragging &&
+        _isSelected &&
+        groupGesture?.kind == EditGroupGestureKind.move;
+    final groupFollowOffsetPixels = isGroupFollower
+        ? groupGesture!.deltaPixels
+        : 0.0;
+
+    // Same follow relationship, resize axis — a SELECTED block that isn't
+    // the one under the finger previews the group's live resize delta via
+    // `durationMinutesOverride` below, floored at its OWN
+    // `_minDurationMinutes` independently (a short follower can't shrink
+    // past its own floor just because a longer one still has room to).
+    final isGroupResizeFollower =
+        multiTaskEditMode &&
+        !_isResizing &&
+        _isSelected &&
+        groupGesture?.kind == EditGroupGestureKind.resize;
+    final groupResizeDeltaPixels = isGroupResizeFollower
+        ? groupGesture!.deltaPixels
+        : 0.0;
+    final groupPreviewDurationMinutes = isGroupResizeFollower
+        ? math.max(
+            widget.task.durationMinutes! +
+                (groupResizeDeltaPixels /
+                            widget.pixelsPerMinute /
+                            _durationSnapMinutes)
+                        .round() *
+                    _durationSnapMinutes,
+            _minDurationMinutes,
+          )
+        : null;
+
+    // Same follow relationship again, TOP-resize axis. Unlike the bottom
+    // edge this shifts the follower's own top as well as its duration,
+    // because a top-edge resize moves the start and keeps the END
+    // anchored — so a follower that only changed height would visibly
+    // disagree with what the gesture is doing to the block under the
+    // finger.
+    final isGroupResizeTopFollower =
+        multiTaskEditMode &&
+        !_isResizingTop &&
+        _isSelected &&
+        groupGesture?.kind == EditGroupGestureKind.resizeTop;
+    // Clamped so a follower already at its own floor stops shrinking
+    // rather than inverting — the same per-task independence the bottom
+    // edge's own follower preview applies.
+    final groupTopStartDelta = isGroupResizeTopFollower
+        ? math.min(
+            (groupGesture!.deltaPixels /
+                        widget.pixelsPerMinute /
+                        _durationSnapMinutes)
+                    .round() *
+                _durationSnapMinutes,
+            widget.task.durationMinutes! - _minDurationMinutes,
+          )
+        : 0;
+    final groupPreviewTopDurationMinutes = isGroupResizeTopFollower
+        ? widget.task.durationMinutes! - groupTopStartDelta
+        : null;
+
     // While dragging, follow the finger exactly (unsnapped) — confirmed
     // via AskUserQuestion over the alternative of snapping every 5 minutes
     // mid-drag. Once released, switch to the SNAPPED offset so the block
     // animates into the slot it actually commits to, closing the gap that
     // previously showed as a flicker.
-    final effectiveOffset = _isSettling
-        ? _snappedMinutesDelta * widget.pixelsPerMinute
-        : _dragOffset;
-    final top = widget.baseTop + effectiveOffset;
+    final effectiveOffset =
+        (_isSettling
+            ? _snappedMinutesDelta * widget.pixelsPerMinute
+            : _dragOffset) +
+        groupFollowOffsetPixels;
+    // A top-edge resize moves the block's own TOP as it drags (the end
+    // stays anchored), so unlike the bottom edge — which only changes
+    // the previewed duration/height — this one has to shift `top` too,
+    // clamped by the same minimum-duration floor the commit applies so
+    // the preview can never show the edges crossed.
+    final topResizeOffset =
+        (_previewTopStartDelta + groupTopStartDelta) *
+        widget.pixelsPerMinute.toDouble();
+    final top = widget.baseTop + effectiveOffset + topResizeOffset;
     final slot = widget.slot;
 
     // Dev-only layout experiment (see core/dev_config.dart) — always the
@@ -2524,7 +3968,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
     // Slower than the lift/settle motions around it: this is a "here is
     // the thing you just made" beat, not a response to a gesture, so it
     // wants to be seen rather than to get out of the way.
-    final capsule = TweenAnimationBuilder<double>(
+    final capsuleCore = TweenAnimationBuilder<double>(
       // Only `end` matters on rebuild — TweenAnimationBuilder animates
       // from wherever it currently is toward the new end value, so
       // flipping _entranceProgress 0 -> 1 is what plays the sequence.
@@ -2550,10 +3994,17 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
               .where((c) => c.id == widget.task.categoryId)
               .firstOrNull,
           pixelsPerMinute: widget.pixelsPerMinute,
-          onTap: widget.onTap,
+          onTap: _effectiveOnTap,
+          onLongPress: _effectiveOnLongPress,
           onToggleComplete: widget.onToggleComplete,
           dragPreviewStartsAt: _isDragging ? _previewStartsAt : null,
-          durationMinutesOverride: _heldDurationMinutes,
+          durationMinutesOverride: _isResizing
+              ? _previewDurationMinutes
+              : _isResizingTop
+              ? _previewTopDurationMinutes
+              : (groupPreviewTopDurationMinutes ??
+                    groupPreviewDurationMinutes ??
+                    _heldDurationMinutes),
           entranceProgress: entranceProgress,
           isLifted: _isDragging,
           // A dragged cluster member always shows full content — only
@@ -2583,33 +4034,155 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
           // not draggable — see _DraggableTaskBlock.isDraggable.
           onDragStart: !widget.isDraggable
               ? null
-              : (_) {
+              : (details) {
                   setState(() => _isDragging = true);
                   widget.onDraggingChanged(true);
+                  _lastDragGlobalPosition = details.globalPosition;
+                  // Edit Mode only — outside it there is no delete target
+                  // to show at all, per CONSTITUTION.md ("delete via
+                  // drag-to-target ... only active while Edit Mode is
+                  // on").
+                  if (widget.editModeEnabled) {
+                    widget.onDeleteTargetVisibilityChanged?.call(true);
+                  }
                 },
           onDragUpdate: !widget.isDraggable
               ? null
               : (details) {
                   setState(() => _dragOffset += details.delta.dy);
+                  _lastDragGlobalPosition = details.globalPosition;
+                  // Broadcast this drag's live offset to every OTHER
+                  // selected block — see `build()`'s own
+                  // `groupFollowOffsetPixels` for the read side. Only
+                  // meaningful (and only ever watched) while multi-task
+                  // mode is on and this block is itself selected;
+                  // otherwise this is a single-task drag and nothing
+                  // reads the broadcast.
+                  if (multiTaskEditMode && _isSelected) {
+                    ref
+                        .read(editGroupGestureStateProvider.notifier)
+                        .update(
+                          EditGroupGesture(
+                            kind: EditGroupGestureKind.move,
+                            deltaPixels: _dragOffset,
+                          ),
+                        );
+                  }
+                  if (widget.editModeEnabled &&
+                      widget.deleteTargetKey != null) {
+                    widget.onDeleteTargetArmedChanged?.call(
+                      isInsideDeleteTarget(
+                        widget.deleteTargetKey!,
+                        details.globalPosition,
+                      ),
+                    );
+                  }
                 },
           onDragEnd: !widget.isDraggable
               ? null
               : (_) async {
+                  // Drop the lift (shadow/scale) immediately regardless of
+                  // outcome — that's the tactile "released" feedback and
+                  // shouldn't wait on I/O.
+                  setState(() => _isDragging = false);
+                  widget.onDraggingChanged(false);
+                  if (widget.editModeEnabled) {
+                    widget.onDeleteTargetVisibilityChanged?.call(false);
+                    widget.onDeleteTargetArmedChanged?.call(false);
+                  }
+
+                  // Delete-drop short-circuit — checked FIRST, before any
+                  // snap/overlap/cascade/group logic below even runs. Per
+                  // the work order: "this path MUST bypass the existing
+                  // cascade-push algorithm entirely ... the delete-drop
+                  // handler should short-circuit before that logic is
+                  // ever reached, not call it and discard the result."
+                  // `_isSettling` is deliberately never set true here —
+                  // there is no slot to settle into; the block is about
+                  // to be removed from the list entirely once the delete
+                  // completes and the provider refreshes.
+                  //
+                  // Group delete — confirmed via AskUserQuestion during
+                  // planning ("delete moves whole group"): dropping any
+                  // SELECTED task on the target removes every selected
+                  // task, not just the one dragged. Each removal goes
+                  // through the plain `deleteTask(id)` path (never
+                  // `removeTask`'s own recurring-scope dialog) — asking
+                  // that question once per selected recurring task would
+                  // stack N sequential dialogs, so a group delete always
+                  // means "this occurrence only" for every member,
+                  // matching how group move/resize already treat each
+                  // selected task as its own single instance rather than
+                  // opening a series-wide question. Flagged in
+                  // docs/DECISIONS.md as a judgment call.
+                  final dropPosition = _lastDragGlobalPosition;
+                  final droppedOnTarget =
+                      widget.editModeEnabled &&
+                      widget.deleteTargetKey != null &&
+                      dropPosition != null &&
+                      isInsideDeleteTarget(
+                        widget.deleteTargetKey!,
+                        dropPosition,
+                      );
+
+                  if (droppedOnTarget && multiTaskEditMode && _isSelected) {
+                    ref
+                        .read(editGroupGestureStateProvider.notifier)
+                        .update(null);
+                    setState(() => _dragOffset = 0);
+                    final selectedIds = ref.read(editSelectionProvider);
+                    final notifier = ref.read(taskListProvider.notifier);
+                    for (final id in selectedIds) {
+                      await notifier.deleteTask(id);
+                    }
+                    ref.read(editSelectionProvider.notifier).clear();
+                    return;
+                  }
+
+                  if (droppedOnTarget) {
+                    setState(() => _dragOffset = 0);
+                    await widget.onDeleteTask?.call(widget.task);
+                    return;
+                  }
+
+                  // Group move — this drag was broadcasting to selected
+                  // siblings (see onDragUpdate above), so this drop
+                  // commits the WHOLE selection rather than falling
+                  // through to the single-task overlap/cascade path
+                  // below, which was derived for one dragged task against
+                  // others and has no concept of a locked group (per
+                  // AskUserQuestion: skip cascade entirely for group
+                  // moves). Clears the broadcast in every exit path (the
+                  // clamped-to-zero case included) so no other block goes
+                  // on reading a stale gesture.
+                  if (multiTaskEditMode && _isSelected) {
+                    final delta = _snappedMinutesDelta;
+                    ref
+                        .read(editGroupGestureStateProvider.notifier)
+                        .update(null);
+                    setState(() => _dragOffset = 0);
+                    if (delta == 0) return;
+
+                    final selectedIds = ref.read(editSelectionProvider);
+                    final selectedTasks = ref
+                        .read(taskListProvider)
+                        .where((t) => selectedIds.contains(t.id))
+                        .toList();
+                    final moves = computeGroupMoves(
+                      selectedTasks: selectedTasks,
+                      deltaMinutes: delta,
+                    );
+                    if (moves.isEmpty) return;
+                    await ref
+                        .read(taskListProvider.notifier)
+                        .rescheduleTaskWithCascade(moves);
+                    return;
+                  }
+
+                  setState(() => _isSettling = true);
+
                   final minutesDelta = _snappedMinutesDelta;
                   final newScheduledAt = _previewStartsAt;
-
-                  // Drop the lift (shadow/scale) immediately — that's the
-                  // tactile "released" feedback and shouldn't wait on I/O. This
-                  // also clears the ghost (via onDraggingChanged), since the
-                  // parent only shows it while this task's id is the dragging
-                  // one. `_isSettling` turns on in the same frame so the block
-                  // eases from the raw finger position into its snapped slot
-                  // rather than jumping there.
-                  setState(() {
-                    _isDragging = false;
-                    _isSettling = true;
-                  });
-                  widget.onDraggingChanged(false);
 
                   if (minutesDelta == 0) {
                     // Released within the snap threshold of where it started —
@@ -2686,8 +4259,245 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                   if (mounted) setState(() => _dragOffset = 0);
                   await _endSettle();
                 },
+          editModeEnabled: _editActive,
+          // TOP-edge resize — moves the task's START, end stays anchored,
+          // so it commits BOTH scheduledAt and durationMinutes. Mirrors
+          // the zone blocks' own long-standing top handle; requested
+          // directly ("let's include resize up ... we already have that
+          // in zone resize"). Broadcasts to the whole selection under
+          // multi-task mode, exactly like the bottom edge below —
+          // reversing an earlier single-task-only rule after it was
+          // reported as a bug ("top resize in multi select not resizing
+          // all selected like bottom does"). See CONSTITUTION.md.
+          onResizeTopStart: _editActive
+              ? (_) => setState(() => _isResizingTop = true)
+              : null,
+          onResizeTopUpdate: _editActive
+              ? (details) {
+                  setState(() => _resizeTopOffset += details.delta.dy);
+                  // Broadcast to every OTHER selected block — same
+                  // mechanism as the bottom edge, but its own gesture
+                  // kind so followers know to move their top edge too
+                  // and not just their height.
+                  if (multiTaskEditMode && _isSelected) {
+                    ref
+                        .read(editGroupGestureStateProvider.notifier)
+                        .update(
+                          EditGroupGesture(
+                            kind: EditGroupGestureKind.resizeTop,
+                            deltaPixels: _resizeTopOffset,
+                          ),
+                        );
+                  }
+                }
+              : null,
+          onResizeTopEnd: _editActive
+              ? (_) async {
+                  final startDelta = _previewTopStartDelta;
+                  final newDuration = _previewTopDurationMinutes;
+                  setState(() {
+                    _isResizingTop = false;
+                    _resizeTopOffset = 0;
+                  });
+
+                  // Group top-resize — this drag was broadcasting to
+                  // selected siblings, so this release commits the WHOLE
+                  // selection: the same snapped delta moves every
+                  // member's start and compensates its duration, so each
+                  // task keeps its OWN end anchored (confirmed via
+                  // AskUserQuestion). Each is clamped independently at
+                  // its own floor so a short task stops rather than
+                  // inverting, matching the bottom edge's own rule.
+                  // Clears the broadcast on every exit path, including
+                  // the zero-delta one, so no block reads a stale
+                  // gesture.
+                  if (multiTaskEditMode && _isSelected) {
+                    ref
+                        .read(editGroupGestureStateProvider.notifier)
+                        .update(null);
+                    if (startDelta == 0) return;
+
+                    final selectedIds = ref.read(editSelectionProvider);
+                    final selectedTasks = ref
+                        .read(taskListProvider)
+                        .where((t) => selectedIds.contains(t.id))
+                        .toList();
+                    final changes =
+                        <
+                          String,
+                          ({DateTime scheduledAt, int durationMinutes})
+                        >{};
+                    for (final task in selectedTasks) {
+                      final clamped = math.min(
+                        startDelta,
+                        task.durationMinutes! - _minDurationMinutes,
+                      );
+                      if (clamped == 0) continue;
+                      final newStart = task.scheduledAt!.add(
+                        Duration(minutes: clamped),
+                      );
+                      // Same day-boundary guard the single-task path
+                      // applies, per task: a member that would leave its
+                      // own day is skipped rather than dragging the
+                      // whole group's write down with it.
+                      final dayStart = DateTime(
+                        newStart.year,
+                        newStart.month,
+                        newStart.day,
+                      );
+                      if (newStart.isBefore(dayStart)) continue;
+                      changes[task.id] = (
+                        scheduledAt: newStart,
+                        durationMinutes: task.durationMinutes! - clamped,
+                      );
+                    }
+                    if (changes.isEmpty) return;
+                    await ref
+                        .read(taskListProvider.notifier)
+                        .resizeTasksFromTopInBatch(changes);
+                    return;
+                  }
+
+                  // Snapped back to where it started — nothing to write,
+                  // same short-circuit the bottom edge and move-drag both
+                  // already use.
+                  if (startDelta == 0) return;
+
+                  final newScheduledAt = widget.task.scheduledAt!.add(
+                    Duration(minutes: startDelta),
+                  );
+                  // Day-boundary guard, mirroring the zone top-resize's
+                  // own `newStart < 0` check: a task may not be dragged
+                  // out of the day it belongs to.
+                  final dayStart = DateTime(
+                    newScheduledAt.year,
+                    newScheduledAt.month,
+                    newScheduledAt.day,
+                  );
+                  if (newScheduledAt.isBefore(dayStart)) return;
+
+                  // No cascade/overlap check — confirmed, matching the
+                  // bottom edge's own rule (CONSTITUTION.md scopes the
+                  // cascade to move/create, not resize) even though this
+                  // edge does move the start time.
+                  widget.task.scheduledAt = newScheduledAt;
+                  widget.task.durationMinutes = newDuration;
+                  await ref
+                      .read(taskListProvider.notifier)
+                      .updateTask(widget.task);
+                }
+              : null,
+          onResizeStart: _editActive
+              ? (_) => setState(() => _isResizing = true)
+              : null,
+          onResizeUpdate: _editActive
+              ? (details) {
+                  setState(() => _resizeOffset += details.delta.dy);
+                  // Broadcast to every OTHER selected block — see the
+                  // move-drag broadcast just above for the same reasoning
+                  // and the read side (`groupPreviewDurationMinutes`).
+                  if (multiTaskEditMode && _isSelected) {
+                    ref
+                        .read(editGroupGestureStateProvider.notifier)
+                        .update(
+                          EditGroupGesture(
+                            kind: EditGroupGestureKind.resize,
+                            deltaPixels: _resizeOffset,
+                          ),
+                        );
+                  }
+                }
+              : null,
+          onResizeEnd: _editActive
+              ? (_) async {
+                  final newDuration = _previewDurationMinutes;
+                  final resizeDelta = _snappedResizeDelta;
+                  setState(() {
+                    _isResizing = false;
+                    _resizeOffset = 0;
+                  });
+
+                  // Group resize — this drag was broadcasting to selected
+                  // siblings, so this release commits the WHOLE
+                  // selection: the SAME delta applied to every member's
+                  // own duration (confirmed via AskUserQuestion), each
+                  // floored independently at its own
+                  // [_minDurationMinutes] rather than one shared floor.
+                  if (multiTaskEditMode && _isSelected) {
+                    ref
+                        .read(editGroupGestureStateProvider.notifier)
+                        .update(null);
+                    if (resizeDelta == 0) return;
+
+                    final selectedIds = ref.read(editSelectionProvider);
+                    final selectedTasks = ref
+                        .read(taskListProvider)
+                        .where((t) => selectedIds.contains(t.id))
+                        .toList();
+                    final newDurations = <String, int>{
+                      for (final task in selectedTasks)
+                        task.id: math.max(
+                          task.durationMinutes! + resizeDelta,
+                          _minDurationMinutes,
+                        ),
+                    };
+                    await ref
+                        .read(taskListProvider.notifier)
+                        .resizeTasksInBatch(newDurations);
+                    return;
+                  }
+
+                  // No-op resize (snapped back to the same duration it
+                  // started at) writes nothing — matches move-drag's own
+                  // "released within the snap threshold" short-circuit
+                  // just above.
+                  if (newDuration == widget.task.durationMinutes) return;
+                  // BOTTOM-edge resize changes ONLY durationMinutes —
+                  // scheduledAt is never touched here. (The TOP edge,
+                  // added 2026-09-08, is the one that moves the start;
+                  // see its own handler above and CONSTITUTION.md's
+                  // recorded reversal for why the two edges differ.)
+                  // Plain
+                  // updateTask, not a dedicated resize method: this is
+                  // exactly the same shape as any other single-field
+                  // edit-and-save (the task detail sheet's own duration
+                  // field), and no cascade/overlap check applies to
+                  // resize — that's scoped to move/create only, per the
+                  // work order.
+                  widget.task.durationMinutes = newDuration;
+                  await ref
+                      .read(taskListProvider.notifier)
+                      .updateTask(widget.task);
+                }
+              : null,
         ),
       ),
+    );
+
+    // Edit Mode's own persistent visual signal — see
+    // `edit_mode_wiggle.dart`. Suppressed while THIS block is actively
+    // being manipulated (dragged or resized): a block already tracking
+    // the finger has its own, more specific motion, and adding the
+    // independent wiggle rotation on top of that would fight it rather
+    // than read as "also editable." Phase offset derived from the task's
+    // own id hash — stable across rebuilds, and different per task so a
+    // day full of blocks doesn't wiggle in lockstep.
+    //
+    // Multi-task mode (`DevMultiTaskEditMode`) flips what wiggle MEANS —
+    // requested directly: with it on, wiggle stops being "Edit Mode is
+    // active" (every block) and becomes "this block is selected" (only
+    // selected ones), since Edit Mode's own active-state signal would
+    // otherwise be indistinguishable from the selection signal if both
+    // used the same motion on every block at once. `multiTaskEditMode`
+    // itself is computed once, up top in `build()` (see the group-move
+    // follow logic there), not redeclared here.
+    final wiggleEnabled = multiTaskEditMode
+        ? (_isSelected && !_isDragging && !_isResizing && !_isResizingTop)
+        : (_editActive && !_isDragging && !_isResizing && !_isResizingTop);
+    final capsule = EditModeWiggle(
+      enabled: wiggleEnabled,
+      phaseOffset: (widget.task.id.hashCode % 1000) / 1000,
+      child: capsuleCore,
     );
 
     if (widget.splitLayout) {
@@ -2821,7 +4631,8 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
               timeColumnWidth: taskTimeColumnWidth(widget.theme),
               durationColumnWidth: taskDurationColumnWidth(widget.theme),
               dragPreviewStartsAt: _isDragging ? _previewStartsAt : null,
-              onTap: widget.onTap,
+              onTap: _effectiveOnTap,
+              onLongPress: _effectiveOnLongPress,
               onToggleComplete: widget.onToggleComplete,
               durationVisible: devDurationVisible,
               // List mode has no timeline axis at all, so the time is the
@@ -2832,6 +4643,12 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
               // comment); Task view's split layout keeps its existing,
               // dev-toggle-driven behavior unchanged.
               alwaysShowTime: widget.compactText,
+              // List mode's layout should match the cluster row's own
+              // exactly — requested directly (see
+              // `TaskCapsuleTextRow.compactInlineLayout`'s own doc
+              // comment). Task view's split layout (compactText: false)
+              // keeps its existing fixed-column behavior unchanged.
+              compactInlineLayout: widget.compactText,
               showCompletionCheckbox: widget.showCompletionCheckbox,
               // Hidden while this task is the one being dragged: the
               // lifted pill carries its own name/time inside the frosted
@@ -2900,8 +4717,12 @@ class _TimelineConnectors extends StatelessWidget {
   Widget build(BuildContext context) {
     if (tasks.length < 2) return const SizedBox.shrink();
 
+    // `tasks` here is genuinely `List<Task>` (connectors are a task-only
+    // thread, unrelated to event stacking) — `layoutOverlappingTasks` is
+    // now generic over `ScheduledBlock`, but every slot it returns for a
+    // Task-only input is guaranteed to carry a non-null `.task`.
     final slots = layoutOverlappingTasks(tasks);
-    final slotByTaskId = {for (final slot in slots) slot.task.id: slot};
+    final slotByTaskId = {for (final slot in slots) slot.task!.id: slot};
     final sorted = [...tasks]
       ..sort((a, b) => a.scheduledAt!.compareTo(b.scheduledAt!));
 
@@ -2946,6 +4767,44 @@ class _TimelineConnectors extends StatelessWidget {
       width: theme.borderWidthConnector,
       height: height,
       child: ColoredBox(color: theme.colorBorder),
+    );
+  }
+}
+
+/// Edit Mode's other entry point — a text link, styled as accent-colored
+/// link text rather than a button/icon (per CONSTITUTION.md: "so it reads
+/// as a mode switch, not an action"), reading "Edit" when off and "Done"
+/// when on. Tapping toggles `editModeEnabledProvider` — the exact same
+/// state the two-finger long-press gesture toggles, per the "two entry
+/// points, converging on the same state" contract.
+class _EditModeLink extends ConsumerWidget {
+  const _EditModeLink({required this.theme});
+
+  final AmbleTheme theme;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final enabled = ref.watch(editModeEnabledProvider);
+    return GestureDetector(
+      onTap: () => ref.read(editModeEnabledProvider.notifier).toggle(),
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        // A real tap target around otherwise-small link text, matching
+        // how every other small tappable label in this codebase (e.g.
+        // AppSheet's own text buttons) gets breathing room rather than a
+        // hitbox that's exactly its glyph bounds.
+        padding: EdgeInsets.symmetric(
+          horizontal: theme.spacingSm,
+          vertical: theme.spacingXs,
+        ),
+        child: Text(
+          enabled ? 'Done' : 'Edit',
+          style: theme.textBody.copyWith(
+            color: theme.colorAccent,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
     );
   }
 }

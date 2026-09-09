@@ -78,21 +78,26 @@ void main() {
     await categoryBox.close();
   });
 
-  testWidgets('the primary button reads "Done" and is pill-shaped, matching '
-      "Task creation's own Done button", (tester) async {
-    final navigatorKey = await _pumpHost(
-      tester,
-      box: box,
-      categoryBox: categoryBox,
-    );
-    showQuickCaptureSheet(navigatorKey.currentContext!);
-    await tester.pumpAndSettle();
+  testWidgets(
+    'the primary button reads "Done", is pill-shaped and large, matching '
+    "Task creation's own Done button (StepScaffold's primary action) "
+    'exactly',
+    (tester) async {
+      final navigatorKey = await _pumpHost(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+      );
+      showQuickCaptureSheet(navigatorKey.currentContext!);
+      await tester.pumpAndSettle();
 
-    expect(find.text('Add'), findsNothing);
-    final button = tester.widget<AppButton>(find.byType(AppButton));
-    expect(button.label, 'Done');
-    expect(button.shape, AppButtonShape.pill);
-  });
+      expect(find.text('Add'), findsNothing);
+      final button = tester.widget<AppButton>(find.byType(AppButton));
+      expect(button.label, 'Done');
+      expect(button.shape, AppButtonShape.pill);
+      expect(button.size, AppButtonSize.large);
+    },
+  );
 
   testWidgets(
     'tapping Done with empty input closes the sheet without capturing '
@@ -108,7 +113,7 @@ void main() {
 
       await _tapAndSettle(tester, find.text('Done'));
 
-      expect(find.text('Add to Inbox'), findsNothing);
+      expect(find.text('New note'), findsNothing);
       expect(box.values, isEmpty);
     },
   );
@@ -127,7 +132,139 @@ void main() {
     await tester.enterText(find.byType(TextField), 'Buy milk');
     await _tapAndSettle(tester, find.text('Done'));
 
-    expect(find.text('Add to Inbox'), findsNothing);
+    expect(find.text('New note'), findsNothing);
     expect(box.values.single.title, 'Buy milk');
   });
+
+  testWidgets('a fresh capture titles the sheet "New note"', (tester) async {
+    final navigatorKey = await _pumpHost(
+      tester,
+      box: box,
+      categoryBox: categoryBox,
+    );
+    showQuickCaptureSheet(navigatorKey.currentContext!);
+    await tester.pumpAndSettle();
+
+    expect(find.text('New note'), findsOneWidget);
+    expect(find.text('Edit note'), findsNothing);
+  });
+
+  // Requested directly: tapping an existing Inbox card reuses this same
+  // sheet, but in an EDIT mode that must actually read as different from
+  // creating a new one — "New note"/"Edit note" plus pre-filled text.
+  testWidgets(
+    'editing an existing task titles the sheet "Edit note" and pre-fills '
+    "its current title",
+    (tester) async {
+      final existing = Task(id: 'existing-1', title: 'Buy milk');
+      await tester.runAsync(() => box.put(existing.id, existing));
+      final navigatorKey = await _pumpHost(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+      );
+
+      showQuickCaptureSheet(navigatorKey.currentContext!, task: existing);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Edit note'), findsOneWidget);
+      expect(find.text('New note'), findsNothing);
+      expect(find.text('Buy milk'), findsOneWidget);
+      final button = tester.widget<AppButton>(find.byType(AppButton));
+      expect(button.label, 'Save');
+    },
+  );
+
+  testWidgets(
+    'saving an edit renames the SAME task — no second task is created',
+    (tester) async {
+      final existing = Task(id: 'existing-1', title: 'Buy milk');
+      await tester.runAsync(() => box.put(existing.id, existing));
+      final navigatorKey = await _pumpHost(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+      );
+
+      showQuickCaptureSheet(navigatorKey.currentContext!, task: existing);
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'Buy oat milk');
+      await _tapAndSettle(tester, find.text('Save'));
+
+      expect(find.text('Edit note'), findsNothing);
+      expect(box.values, hasLength(1));
+      expect(box.values.single.id, 'existing-1');
+      expect(box.values.single.title, 'Buy oat milk');
+    },
+  );
+
+  // Requested directly: "add to inbox should be larger and should include
+  // Close in the top right."
+  testWidgets('the Close button dismisses the sheet without saving', (
+    tester,
+  ) async {
+    final navigatorKey = await _pumpHost(
+      tester,
+      box: box,
+      categoryBox: categoryBox,
+    );
+    showQuickCaptureSheet(navigatorKey.currentContext!);
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'Should not be saved');
+    await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
+
+    expect(find.text('New note'), findsNothing);
+    expect(box.values, isEmpty);
+  });
+
+  // Reversed back (2026-09-09), requested directly: "since we added close
+  // add note sheet has scrolling shouldn't have should automatically push
+  // size to match content" — a brief AppSheetSize.half attempt (fixed
+  // half-viewport height, always scrollable) was replaced back with the
+  // original content-sized AppSheetSize.small once the Close button gave
+  // the sheet its own way to feel roomy without a fixed height.
+  testWidgets(
+    'the sheet sizes to its own content — no fixed-height scroll wrapper',
+    (tester) async {
+      final navigatorKey = await _pumpHost(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+      );
+      showQuickCaptureSheet(navigatorKey.currentContext!);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SingleChildScrollView), findsNothing);
+    },
+  );
+
+  // Reported directly: "bottom overflowed" dev banner on this sheet.
+  // Root cause: `showModalBottomSheet` caps a sheet at a fixed fraction
+  // of the screen by default, regardless of the keyboard — a
+  // content-sized sheet had no room left to grow into once the keyboard
+  // opened, so the form's own `viewInsets.bottom` padding pushed it past
+  // that cap. Simulates a real on-screen keyboard via `viewInsets` to
+  // reproduce the exact reported condition.
+  testWidgets(
+    'opening the sheet with a keyboard-sized bottom inset does not overflow',
+    (tester) async {
+      // Simulates the OS keyboard's viewInsets — the real-world condition
+      // that triggered the reported overflow (focusing the text field
+      // pushes this inset in, on device).
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.resetViewInsets);
+
+      final navigatorKey = await _pumpHost(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+      );
+      showQuickCaptureSheet(navigatorKey.currentContext!);
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
