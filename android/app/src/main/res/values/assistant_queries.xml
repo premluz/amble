@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="assistant_add_task">
+        <item>add a task $text</item>
+        <item>add task $text</item>
+    </string-array>
+    <string-array name="assistant_add_note">
+        <item>add a note $text</item>
+        <item>take a note $text</item>
+    </string-array>
+    <string-array name="assistant_add_zone">
+        <item>add a zone $title from $start to $end</item>
+    </string-array>
+    <string-array name="assistant_day_summary">
+        <item>read my day</item>
+        <item>read my day summary</item>
+    </string-array>
+    <string-array name="assistant_remove_task">
+        <item>remove task $text</item>
+        <item>remove a task $text</item>
+    </string-array>
+</resources>

@@ -7,8 +7,8 @@ import '../../shared/services/notification_service.dart';
 
 const appIntentsChannel = MethodChannel('com.amble/app_intents');
 
-/// iOS bootstrap adapter: foreground permission behavior stays unchanged.
-/// A scene-less Siri launch may only use permission already granted, never
+/// Mobile bootstrap adapter: foreground permission behavior stays unchanged.
+/// An assistant background launch may only use permission already granted, never
 /// try to present a permission sheet. No changes to NotificationService.
 class IntentNotificationService extends NotificationService {
   IntentNotificationService() : super(FlutterLocalNotificationsPlugin());

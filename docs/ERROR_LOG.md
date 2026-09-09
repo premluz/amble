@@ -950,3 +950,7 @@ await tester.pump(const Duration(milliseconds: 600));
 **Fix**: compute minutes-since-midnight from `now`, apply the offset, then `clamp(0, 24*60 - 1)` before converting back to a `DateTime` built from `now`'s own year/month/day — the offset shrinks near either edge of the day instead of ever carrying the date over.
 
 **Rule**: "anchor relative to `now`" is necessary but not sufficient near a day boundary — any test that also needs the result to stay on `now`'s own CALENDAR DAY (not just near `now`'s clock time) needs the day-boundary clamp too, not just the anchor.
+
+## [2026-09-09] Restored Android emulator Activity is not a cold-launch test
+
+During App Actions verification, `adb shell am start -W` reported delivery to an already running top-most Activity after the emulator restored its snapshot. That does not verify process startup or Hive initialization. Used `am force-stop com.example.amble` before the next action and confirmed `LaunchState: COLD`; the persisted survivor of an earlier deletion was still offered. Do not use `pm clear` for this check: it would erase the data whose persistence is being tested. Android's existing exact-alarm permission screen can also cover the result during startup notification refresh; return to Amble before inspecting its picker or treating the action as missing.

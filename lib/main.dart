@@ -73,7 +73,8 @@ void main() async {
 
   final container = ProviderContainer(
     overrides: [
-      if (defaultTargetPlatform == TargetPlatform.iOS)
+      if (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.android)
         notificationServiceProvider.overrideWithValue(
           IntentNotificationService(),
         ),

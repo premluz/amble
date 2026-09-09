@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <capability android:name="custom.actions.intent.AMBLE_ADD_TASK"
+        app:queryPatterns="@array/assistant_add_task">
+        <intent android:action="com.example.amble.assistant.ADD_TASK"
+            android:targetPackage="com.example.amble"
+            android:targetClass="com.example.amble.MainActivity">
+            <parameter android:name="text" android:key="text"
+                android:mimeType="https://schema.org/Text" />
+        </intent>
+    </capability>
+    <capability android:name="custom.actions.intent.AMBLE_ADD_NOTE"
+        app:queryPatterns="@array/assistant_add_note">
+        <intent android:action="com.example.amble.assistant.ADD_NOTE"
+            android:targetPackage="com.example.amble"
+            android:targetClass="com.example.amble.MainActivity">
+            <parameter android:name="text" android:key="text"
+                android:mimeType="https://schema.org/Text" />
+        </intent>
+    </capability>
+    <capability android:name="custom.actions.intent.AMBLE_ADD_ZONE"
+        app:queryPatterns="@array/assistant_add_zone">
+        <intent android:action="com.example.amble.assistant.ADD_ZONE"
+            android:targetPackage="com.example.amble"
+            android:targetClass="com.example.amble.MainActivity">
+            <parameter android:name="title" android:key="title"
+                android:mimeType="https://schema.org/Text" />
+            <parameter android:name="start" android:key="start"
+                android:mimeType="https://schema.org/Time" />
+            <parameter android:name="end" android:key="end"
+                android:mimeType="https://schema.org/Time" />
+        </intent>
+    </capability>
+    <capability android:name="custom.actions.intent.AMBLE_DAY_SUMMARY"
+        app:queryPatterns="@array/assistant_day_summary">
+        <intent android:action="com.example.amble.assistant.DAY_SUMMARY"
+            android:targetPackage="com.example.amble"
+            android:targetClass="com.example.amble.MainActivity">
+        </intent>
+    </capability>
+    <capability android:name="custom.actions.intent.AMBLE_REMOVE_TASK"
+        app:queryPatterns="@array/assistant_remove_task">
+        <intent android:action="com.example.amble.assistant.REMOVE_TASK"
+            android:targetPackage="com.example.amble"
+            android:targetClass="com.example.amble.MainActivity">
+            <parameter android:name="text" android:key="text"
+                android:mimeType="https://schema.org/Text" />
+        </intent>
+    </capability>
+</shortcuts>

@@ -80,6 +80,27 @@ void main() {
     },
   );
 
+  test('Android background checks permission, foreground can request both permissions', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    AndroidFlutterLocalNotificationsPlugin.registerWith();
+    service = IntentNotificationService();
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(notifications, (
+      call,
+    ) async {
+      calls.add(call.method);
+      return true;
+    });
+    expect(await service.requestPermissionIfNeeded(), isTrue);
+    expect(calls, ['areNotificationsEnabled']);
+    foreground = true;
+    expect(await service.requestPermissionIfNeeded(), isTrue);
+    expect(calls, [
+      'areNotificationsEnabled',
+      'requestNotificationsPermission',
+      'requestExactAlarmsPermission',
+    ]);
+  });
+
   test(
     'notification failure releases drain and remains visible to its caller',
     () async {

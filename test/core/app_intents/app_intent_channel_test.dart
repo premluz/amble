@@ -61,6 +61,23 @@ void main() {
     expect(store.tasks.values.single.title, 'Siri bridge note');
   });
 
+  test(
+    'Android registers the same bridge and uses the existing parser',
+    () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      appIntentsChannel.setMethodCallHandler(null);
+      await registerAppIntentChannel(store.container);
+      expect(readySignals, 2);
+      await invoke('addTask', {
+        'text': 'Android walk tomorrow at 9am for 45 minutes',
+      });
+      final task = store.tasks.values.single;
+      expect(task.title, 'Android walk');
+      expect(task.scheduledAt!.hour, 9);
+      expect(task.durationMinutes, 45);
+    },
+  );
+
   test('simultaneous overlapping zone requests serialize; failure does not poison queue', () async {
     final first = invoke('addZone', {
       'title': 'First',

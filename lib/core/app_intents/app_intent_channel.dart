@@ -10,7 +10,10 @@ import 'intent_notification_service.dart';
 /// opened boxes and seeded categories. Native code starts that bootstrap even
 /// without a FlutterViewController; no Workmanager/second Hive isolate is used.
 Future<void> registerAppIntentChannel(ProviderContainer container) async {
-  if (defaultTargetPlatform != TargetPlatform.iOS) return;
+  if (defaultTargetPlatform != TargetPlatform.iOS &&
+      defaultTargetPlatform != TargetPlatform.android) {
+    return;
+  }
   final service = AppIntentService(container);
   final notifications = container.read(notificationServiceProvider);
   Future<void> queue = Future.value();
