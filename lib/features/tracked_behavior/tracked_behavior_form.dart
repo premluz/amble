@@ -10,6 +10,7 @@ import '../../core/widgets/app_text_field.dart';
 import '../../shared/models/behavior_target_type.dart';
 import '../../shared/models/tracked_behavior.dart';
 import '../../shared/providers/tracked_behavior_providers.dart';
+import 'custom_unit_sheet.dart';
 
 /// Opens the create/edit screen for a [TrackedBehavior] — [behavior] null
 /// to create, non-null to edit that row.
@@ -65,6 +66,12 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
   late int _timesPerWeek;
   bool _isSaving = false;
 
+  /// Set only when [_targetType] is [BehaviorTargetType.custom] — the
+  /// user-defined label/unit pair from [showCustomUnitSheet]. Null
+  /// whenever a non-custom type is selected, mirroring the model's own
+  /// `customUnitLabel`/`customUnitName` nullability.
+  CustomUnit? _customUnit;
+
   /// Stage 1 (Name only) vs. stage 2 (everything else) — matches
   /// `task_detail_sheet.dart`/`zone_form_screen.dart`'s own create-flow
   /// pattern exactly. Editing an existing behavior skips straight to
@@ -95,6 +102,12 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
     _targetType = behavior?.targetType ?? BehaviorTargetType.duration;
     _timesPerWeek = behavior?.timesPerWeek ?? 3;
     _isNameStage = behavior == null;
+    if (behavior?.customUnitLabel != null && behavior?.customUnitName != null) {
+      _customUnit = CustomUnit(
+        label: behavior!.customUnitLabel!,
+        name: behavior.customUnitName!,
+      );
+    }
   }
 
   @override
@@ -110,11 +123,29 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
   /// (`targetAmount` is required unless the type is binary).
   bool get _isBinary => _targetType == BehaviorTargetType.binary;
 
+  /// A custom target type has no meaningful unit until the sheet has been
+  /// filled in — matching the model's own assert (`customUnitLabel`/
+  /// `customUnitName` are required whenever `targetType` is custom).
+  bool get _isCustom => _targetType == BehaviorTargetType.custom;
+
   bool get _canSave {
     if (_isSaving) return false;
     if (_titleController.text.trim().isEmpty) return false;
+    if (_isCustom && _customUnit == null) return false;
     if (_isBinary) return true;
     return num.tryParse(_targetController.text.trim()) != null;
+  }
+
+  /// Opens [showCustomUnitSheet] and applies its result — fired by tapping
+  /// the "Custom" chip itself (not just once, at selection time: reopening
+  /// it lets an already-custom behavior's unit be edited without switching
+  /// away and back). Selecting Custom without completing the sheet leaves
+  /// [_targetType] set but [_customUnit] null, which [_canSave] blocks on.
+  Future<void> _pickCustomUnit() async {
+    final result = await showCustomUnitSheet(context, initial: _customUnit);
+    if (result != null && mounted) {
+      setState(() => _customUnit = result);
+    }
   }
 
   /// Confirms stage 1 (Name) and advances to stage 2 — fired by stage 1's
@@ -144,6 +175,11 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
           ? null
           : num.tryParse(_targetController.text.trim());
       final minimumAmount = num.tryParse(_minimumController.text.trim());
+      // Only ever set for a custom target type — matching the model's own
+      // constructor invariant, and clearing them out if a behavior is
+      // edited AWAY from custom to something else.
+      final customUnitLabel = _isCustom ? _customUnit?.label : null;
+      final customUnitName = _isCustom ? _customUnit?.name : null;
       final existing = widget.behavior;
 
       if (existing == null) {
@@ -153,6 +189,8 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
           targetAmount: targetAmount,
           minimumAmount: minimumAmount,
           timesPerWeek: _timesPerWeek,
+          customUnitLabel: customUnitLabel,
+          customUnitName: customUnitName,
         );
       } else {
         existing.title = title;
@@ -160,6 +198,8 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
         existing.targetAmount = targetAmount;
         existing.minimumAmount = minimumAmount;
         existing.timesPerWeek = _timesPerWeek;
+        existing.customUnitLabel = customUnitLabel;
+        existing.customUnitName = customUnitName;
         await notifier.updateBehavior(existing);
       }
       if (mounted) Navigator.of(context).pop();
@@ -179,18 +219,26 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
     final staggeredPanes = [
       AppPane(
         title: 'Measured in',
-        child: Row(
+        child: Wrap(
+          spacing: theme.spacingSm,
+          runSpacing: theme.spacingSm,
           children: [
-            for (final type in BehaviorTargetType.values) ...[
+            // Explicit display order — requested directly: "Time,
+            // Distance, Reps, Count[, Custom]" plus "Did it" (binary)
+            // kept as a 6th option (confirmed via AskUserQuestion), NOT
+            // BehaviorTargetType.values' own declaration order (which has
+            // binary third, for backward-compatible Hive field indices —
+            // see that enum's own doc comment).
+            for (final type in _measuredInOrder)
               _TypeChip(
                 theme: theme,
                 label: _labelFor(type),
                 selected: type == _targetType,
-                onTap: () => setState(() => _targetType = type),
+                onTap: () {
+                  setState(() => _targetType = type);
+                  if (type == BehaviorTargetType.custom) _pickCustomUnit();
+                },
               ),
-              if (type != BehaviorTargetType.values.last)
-                SizedBox(width: theme.spacingSm),
-            ],
           ],
         ),
       ),
@@ -203,7 +251,8 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
                 child: _AmountField(
                   theme: theme,
                   controller: _targetController,
-                  label: 'Target (${_unitFor(_targetType)})',
+                  label:
+                      'Target (${_unitFor(_targetType, customUnitName: _customUnit?.name)})',
                   onChanged: () => setState(() {}),
                 ),
               ),
@@ -287,11 +336,29 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
   }
 
   String _labelFor(BehaviorTargetType type) => switch (type) {
-    BehaviorTargetType.duration => 'Duration',
+    BehaviorTargetType.duration => 'Time',
+    BehaviorTargetType.distance => 'Distance',
+    BehaviorTargetType.reps => 'Reps',
     BehaviorTargetType.count => 'Count',
+    BehaviorTargetType.custom => _customUnit?.label ?? 'Custom',
     BehaviorTargetType.binary => 'Did it',
   };
 }
+
+/// Explicit "Measured in" chip order — requested directly: "Unit of
+/// measure: Time, Distance, Reps, Count[, Custom]", with "Did it" kept as
+/// a 6th option (confirmed via AskUserQuestion) rather than
+/// [BehaviorTargetType.values]' own declaration order, which exists only
+/// to keep old Hive field indices stable. Reps and Count are two distinct
+/// options (confirmed via AskUserQuestion), not one relabeled variant.
+const _measuredInOrder = [
+  BehaviorTargetType.duration,
+  BehaviorTargetType.distance,
+  BehaviorTargetType.reps,
+  BehaviorTargetType.count,
+  BehaviorTargetType.custom,
+  BehaviorTargetType.binary,
+];
 
 /// Renders a `num?` amount for a text field: an integer-valued amount
 /// reads "60" rather than "60.0", so reopening an edit form shows the
@@ -304,16 +371,26 @@ String _amountText(num? amount) {
 }
 
 /// The unit a target amount is expressed in, for labels and prompts.
-String _unitFor(BehaviorTargetType type) => switch (type) {
-  BehaviorTargetType.duration => 'min',
-  BehaviorTargetType.count => 'reps',
-  BehaviorTargetType.binary => '',
-};
+/// [customUnitName] is required only for [BehaviorTargetType.custom] — a
+/// custom behavior's own real unit (e.g. "glasses"), never a placeholder,
+/// per the model's own invariant that `customUnitName` is always set
+/// whenever `targetType` is custom.
+String _unitFor(BehaviorTargetType type, {String? customUnitName}) =>
+    switch (type) {
+      BehaviorTargetType.duration => 'min',
+      BehaviorTargetType.distance => 'km',
+      BehaviorTargetType.reps => 'reps',
+      BehaviorTargetType.count => 'times',
+      BehaviorTargetType.custom => customUnitName ?? '',
+      BehaviorTargetType.binary => '',
+    };
 
-/// Shared so the outcome prompt labels its field the same way the create
+/// Shared so the outcome prompt/row labels read the same unit the create
 /// form did — a "60 min" target should read back as minutes, not a bare
-/// number.
-String unitLabelFor(BehaviorTargetType type) => _unitFor(type);
+/// number, and a custom behavior's own unit (e.g. "glasses") rather than
+/// a generic placeholder.
+String unitLabelFor(BehaviorTargetType type, {String? customUnitName}) =>
+    _unitFor(type, customUnitName: customUnitName);
 
 class _AmountField extends StatelessWidget {
   const _AmountField({

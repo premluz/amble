@@ -106,15 +106,27 @@ void main() {
     },
   );
 
-  testWidgets(
-    'compactText renders one inline spaced-dash run, matching List view\'s '
-    'task/cluster row format',
-    (tester) async {
-      await pump(tester, compactText: true);
+  // Reversed — requested directly: "no time no duration would apply to
+  // imported tasks." List view now never shows an imported event's time
+  // or duration at all, regardless of `durationVisible` — unlike Task
+  // view (compactText: false), which keeps showing it by default.
+  testWidgets('compactText hides the time entirely — List view never shows an '
+      'imported event\'s time or duration', (tester) async {
+    await pump(tester, compactText: true);
 
-      final richTexts = tester.widgetList<RichText>(find.byType(RichText));
-      final combined = richTexts.map((rt) => rt.text.toPlainText()).join(' | ');
-      expect(combined, contains('7:00 AM - 8:00 AM  Dentist'));
+    expect(find.textContaining('7:00'), findsNothing);
+    final richTexts = tester.widgetList<RichText>(find.byType(RichText));
+    final combined = richTexts.map((rt) => rt.text.toPlainText()).join(' | ');
+    expect(combined, contains('Dentist'));
+  });
+
+  testWidgets(
+    'compactText with durationVisible: true still hides the time — the '
+    'List-view override is absolute, not just the default',
+    (tester) async {
+      await pump(tester, compactText: true, durationVisible: true);
+
+      expect(find.textContaining('7:00'), findsNothing);
     },
   );
 

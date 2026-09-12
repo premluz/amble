@@ -102,13 +102,21 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+
+    // Slack now lives on its own pushed page (Settings restructured into
+    // grouped buttons, each opening its own screen) rather than being an
+    // inline section on the top-level Settings screen.
+    await tester.ensureVisible(find.text('Slack'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Slack'));
+    await tester.pumpAndSettle();
   }
 
   testWidgets('renders the webhook URL, display name, icon emoji fields, '
       'the enable toggle, and the test-send button', (tester) async {
     await pumpSettings(tester);
 
-    expect(find.text('Morning summary (Slack)'), findsOneWidget);
+    expect(find.text('Slack'), findsOneWidget);
     expect(find.text('Slack webhook URL'), findsOneWidget);
     expect(find.text('Display name (optional)'), findsOneWidget);
     expect(find.text('Icon emoji (optional, e.g. :sunrise:)'), findsOneWidget);

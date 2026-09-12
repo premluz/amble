@@ -4,8 +4,13 @@ import 'package:amble/features/tracked_behavior/tracked_behavior_list_screen.dar
 import 'package:amble/features/tracked_behavior/tracked_behavior_row.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/shared/models/behavior_target_type.dart';
+import 'package:amble/shared/models/task.dart';
 import 'package:amble/shared/models/tracked_behavior.dart';
+import 'package:amble/shared/providers/preferences_providers.dart';
+import 'package:amble/shared/providers/task_providers.dart';
 import 'package:amble/shared/providers/tracked_behavior_providers.dart';
+import 'package:amble/shared/repositories/hive_preferences_repository.dart';
+import 'package:amble/shared/repositories/hive_task_repository.dart';
 import 'package:amble/shared/repositories/hive_tracked_behavior_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,19 +19,24 @@ import 'package:hive_ce/hive_ce.dart';
 
 void main() {
   late Box<TrackedBehavior> box;
+  late Box<Task> taskBox;
+  late Box<dynamic> preferencesBox;
 
   setUp(() async {
     Hive.init('./.dart_tool/test_hive_tracked_list');
     if (!Hive.isAdapterRegistered(0)) {
       Hive.registerAdapters();
     }
-    box = await Hive.openBox<TrackedBehavior>(
-      'test_behaviors_${DateTime.now().microsecondsSinceEpoch}',
-    );
+    final suffix = DateTime.now().microsecondsSinceEpoch;
+    box = await Hive.openBox<TrackedBehavior>('test_behaviors_$suffix');
+    taskBox = await Hive.openBox<Task>('test_tasks_$suffix');
+    preferencesBox = await Hive.openBox<dynamic>('test_preferences_$suffix');
   });
 
   tearDown(() async {
     await box.close();
+    await taskBox.close();
+    await preferencesBox.close();
   });
 
   // Seeding writes to a real Hive box, so it runs inside runAsync — see
@@ -47,6 +57,10 @@ void main() {
         overrides: [
           trackedBehaviorRepositoryProvider.overrideWithValue(
             HiveTrackedBehaviorRepository(box),
+          ),
+          taskRepositoryProvider.overrideWithValue(HiveTaskRepository(taskBox)),
+          preferencesRepositoryProvider.overrideWithValue(
+            HivePreferencesRepository(preferencesBox),
           ),
         ],
         child: MaterialApp(
@@ -243,10 +257,24 @@ void main() {
       expect(describeBehaviorTarget(behavior), 'Did it · 7x a week');
     });
 
+    // "reps" is a distinct unit type as of 2026-09-10 (Unit of measure:
+    // Time, Distance, Reps, Count) — count itself now reads "times", not
+    // "reps".
     test('uses the count unit for a count target', () {
       final behavior = TrackedBehavior.create(
         title: 'Read',
         targetType: BehaviorTargetType.count,
+        targetAmount: 20,
+        timesPerWeek: 5,
+      );
+
+      expect(describeBehaviorTarget(behavior), '20 times · 5x a week');
+    });
+
+    test('uses the reps unit for a reps target', () {
+      final behavior = TrackedBehavior.create(
+        title: 'Push-ups',
+        targetType: BehaviorTargetType.reps,
         targetAmount: 20,
         timesPerWeek: 5,
       );

@@ -151,6 +151,26 @@ class _AddCategoryScreenState extends ConsumerState<_AddCategoryScreen> {
     setState(() => _isNameStage = false);
   }
 
+  /// Removes the category being edited — requested directly: "Edit
+  /// category also [remove icon button]." Never offered for a built-in
+  /// category (see [_canDelete] and `CategoryList.deleteCategory`'s own
+  /// "built-in can never be deleted" floor). No confirmation dialog,
+  /// matching the task/zone/template edit flows' identical delete
+  /// buttons — reassignment of any task currently using this category
+  /// happens inside the notifier, not here.
+  Future<void> _delete() async {
+    final category = widget.category;
+    if (category == null || category.isBuiltIn) return;
+
+    final navigator = Navigator.of(context);
+    final notifier = ref.read(categoryListProvider.notifier);
+    navigator.pop();
+    await notifier.deleteCategory(category.id);
+  }
+
+  bool get _canDelete =>
+      _isEditing && !_isNameStage && widget.category!.isBuiltIn == false;
+
   Future<void> _save() async {
     if (!_canSave) return;
     setState(() => _isSaving = true);
@@ -235,6 +255,10 @@ class _AddCategoryScreenState extends ConsumerState<_AddCategoryScreen> {
           ? _confirmNameStage
           : (_canSave ? _save : null),
       isPrimaryLoading: !_isNameStage && _isSaving,
+      // Edit only, and never for a built-in category — same "remove icon
+      // button" the task/zone/template edit flows already have.
+      onSecondaryAction: _canDelete ? _delete : null,
+      secondaryActionIcon: Icons.delete_outline_rounded,
       body: SingleChildScrollView(
         // Top reverted to a plain spacingLg — the fade now lives inside
         // StepScaffold's own header container, clipped to it.

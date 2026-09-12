@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../haptics.dart';
 import '../tokens/semantic_theme.dart';
 
 /// Wraps a tap target so pressing it feels answered: a soft circular wash
@@ -44,7 +45,27 @@ class AppPressFeedback extends StatefulWidget {
     this.behavior = HitTestBehavior.opaque,
     this.decorationOnly = false,
     this.maxRippleRadius,
+    this.haptic = AmbleHaptic.tap,
+    this.haptics = const PlatformHaptics(),
   });
+
+  /// Which [AmbleHaptic] fires when the press lands, or null for a
+  /// silent control. Defaults to [AmbleHaptic.tap] so every existing
+  /// caller — buttons, icon buttons, chips, cards, rows — gets the
+  /// standard tap feel with no change at its own call site, which is the
+  /// whole reason the haptic lives here rather than in each of them.
+  ///
+  /// Controls whose tap *is* a state change worth distinguishing (a
+  /// completion toggle, a destructive confirm) pass their own instead.
+  final AmbleHaptic? haptic;
+
+  /// Injected rather than resolved from a provider: this is a leaf
+  /// presentational widget used in tests that pump it with no
+  /// `ProviderScope` at all (see `app_press_feedback_test.dart`), and a
+  /// `ref.watch` here would turn a missing scope into a runtime crash for
+  /// every one of them. A const default keeps every existing call site
+  /// untouched while still letting a test pass a recording fake.
+  final Haptics haptics;
 
   final Widget child;
 
@@ -144,6 +165,19 @@ class _AppPressFeedbackState extends State<AppPressFeedback>
   /// gesture-owning and the decoration-only ([Listener]) paths, so the
   /// two produce an identical animation from an identical origin.
   void _startPress(Offset localPosition, AmbleTheme theme) {
+    // On press-DOWN, not on the `onTapUp` that actually invokes `onTap`.
+    // The haptic's job is to answer the finger landing, in the same
+    // instant the ripple and the scale dip do — deferring it to release
+    // would put the one non-visual cue out of step with the two visual
+    // ones, and read as lag on exactly the interaction this widget
+    // exists to make feel immediate.
+    //
+    // The trade: a press that slides off and cancels still buzzed. That
+    // matches physical buttons (a key clicks on the way down whether or
+    // not you follow through) and both platforms' own native controls.
+    final haptic = widget.haptic;
+    if (haptic != null) widget.haptics.play(haptic);
+
     setState(() => _tapPosition = localPosition);
     _rippleController
       ..duration = theme.motionNormal

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_press_feedback.dart';
+import 'task_edge_time_label.dart';
 
 /// Snap granularity for the placement line's dropped time — matches the
 /// task-drag reschedule's own snap (see `timeline_screen.dart`'s
@@ -233,6 +234,14 @@ class _PlaceTaskLineLayerState extends State<PlaceTaskLineLayer> {
           child: AppPressFeedback(
             decorationOnly: true,
             maxRippleRadius: _tapRippleRadius,
+            // Silent, unlike every other AppPressFeedback: this layer is
+            // the whole empty day column, so it sees the first touch of
+            // every scroll and every drag that merely *starts* on blank
+            // background. A tap haptic here would fire constantly while
+            // just moving around the Timeline. The real placement
+            // interactions this layer hosts (long-press to place, tap to
+            // create) carry their own haptics at their own commit points.
+            haptic: null,
             onTap: widget.onTapAt == null ? null : () {},
             child: LongPressDraggable<Object>(
               // OPAQUE, not the default deferToChild — fixed directly after
@@ -341,6 +350,12 @@ class PlaceTaskLineOverlay extends StatelessWidget {
 /// right edge, per direct request ("line shows with time on the right"),
 /// matching [CurrentTimeIndicator]'s own shape but in the accent colour
 /// rather than red — this is a task being PLACED, not the current time.
+/// The actual hairline+pill visual now lives in [TaskEdgeTimeLabel],
+/// promoted so it can be reused wherever else a task's own start/end
+/// needs this same treatment (the pending draft pill, Edit Mode's
+/// wiggling selected task) — this class only keeps this call site's own
+/// positioning (a `FractionalTranslation` centering the line on its
+/// dropped instant, unique to the placement-line use case).
 class _PlacementLine extends StatelessWidget {
   const _PlacementLine({
     required this.theme,
@@ -360,44 +375,9 @@ class _PlacementLine extends StatelessWidget {
       right: 0,
       child: FractionalTranslation(
         translation: const Offset(0, -0.5),
-        child: IgnorePointer(
-          // Purely visual — every pointer event on this row still needs
-          // to reach the LongPressDraggable underneath it (the same one
-          // that's driving this line's own position), not get eaten by
-          // the label/line themselves.
-          child: Row(
-            children: [
-              Expanded(
-                child: Container(
-                  // Same hairline weight CurrentTimeIndicator's own line
-                  // uses — requested directly. The two lines mean
-                  // different things (now vs. a task being placed) and
-                  // differ only in colour, so any weight difference would
-                  // read as unintentional.
-                  height: theme.borderWidthHairline,
-                  color: theme.colorAccent,
-                ),
-              ),
-              SizedBox(width: theme.spacingSm),
-              Container(
-                padding: EdgeInsets.symmetric(
-                  horizontal: theme.spacingSm,
-                  vertical: theme.spacingXs,
-                ),
-                decoration: BoxDecoration(
-                  color: theme.colorAccent,
-                  borderRadius: BorderRadius.circular(theme.radiusMd),
-                ),
-                child: Text(
-                  TimeOfDay.fromDateTime(time).format(context),
-                  style: theme.textCaption.copyWith(
-                    color: theme.colorSurfacePrimary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
+        child: TaskEdgeTimeLabel(
+          theme: theme,
+          time: TimeOfDay.fromDateTime(time),
         ),
       ),
     );

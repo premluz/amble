@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
 
+import '../../core/haptics.dart';
 import '../../core/tokens/semantic_theme.dart';
 
 /// Animated Noto emoji shown briefly over the checkbox on completion — one
@@ -49,9 +50,15 @@ class CompletionCheckbox extends StatefulWidget {
     required this.isCompleted,
     required this.onToggle,
     this.useMutedCompletedColor = false,
+    this.haptics = const PlatformHaptics(),
   });
 
   final AmbleTheme theme;
+
+  /// Injected rather than read from a provider, matching `AppSwitch` and
+  /// `AppPressFeedback` — several Timeline tests pump the blocks that own
+  /// this checkbox without a `ProviderScope`.
+  final Haptics haptics;
 
   /// The ring's border color while unchecked, and its fill color while
   /// checked — unless [useMutedCompletedColor] overrides the checked case.
@@ -129,6 +136,13 @@ class _CompletionCheckboxState extends State<CompletionCheckbox>
 
   void _handleTap() {
     final wasCompleted = widget.isCompleted;
+    // Asymmetric on purpose, for the same reason the celebration below is:
+    // finishing something earns the heavier `success`, while undoing it
+    // gets the plain `selection` tick — an undo is a correction, not an
+    // achievement, and should not feel like one.
+    widget.haptics.play(
+      wasCompleted ? AmbleHaptic.selection : AmbleHaptic.success,
+    );
     widget.onToggle?.call();
     // Celebration only plays on the completing tap, not on un-completing —
     // confirmed via AskUserQuestion rather than assumed; celebrating an
@@ -146,7 +160,13 @@ class _CompletionCheckboxState extends State<CompletionCheckbox>
   @override
   Widget build(BuildContext context) {
     final theme = widget.theme;
-    final ringDiameter = theme.spacingLg;
+    // Requested directly ("size of checkbox to 18px from 20") — a
+    // dedicated literal, not `theme.spacingLg` (24px, still used
+    // elsewhere for unrelated spacing), since the checkbox's own visual
+    // ring size is a distinct design decision from the generic spacing
+    // scale. The 48px tap target below is unaffected — only the visible
+    // ring shrinks.
+    const ringDiameter = 18.0;
     final ringColor = widget.ringColor ?? theme.colorTextSecondary;
     final checkedFillColor = widget.useMutedCompletedColor
         ? theme.colorTextSecondary

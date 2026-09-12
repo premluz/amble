@@ -34,46 +34,64 @@ class AppBottomExtensionBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
 
-    return ClipRRect(
-      borderRadius: BorderRadius.vertical(
-        top: Radius.circular(theme.radiusModal),
-      ),
+    // Part of the same floating unit as the bottom nav directly below,
+    // not a slab welded to the screen edge: same `colorSurfaceOverlay`
+    // fill, same `radiusXl` corners, rounded on ALL four sides. Requested
+    // directly — "not just nav.. the entire pane 'nav + adjacent rounded
+    // pane (with calendar)'". No border on either half, also per direct
+    // request; in dark mode the overlay surface is already the lightest
+    // step in the ramp, which is what separates it from the page without
+    // one being drawn.
+    return Padding(
+      // The same side insets and inter-pane gap the nav below uses, owned
+      // here rather than repeated at all three call sites (Timeline,
+      // Inbox, Tracked) — so the two panes line up as one stacked unit on
+      // every tab without each screen having to know the measurements.
+      // No bottom gap: this pane and the nav directly below it are one
+      // connected object, so nothing separates them. Requested directly —
+      // "this should be connected visually as one connected pane, no gap
+      // between."
+      padding: EdgeInsets.symmetric(horizontal: theme.spacingMd),
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: theme.colorSurfacePrimary,
-          // A subtle shadow on the TOP edge only, separating this bar
-          // from the content scrolling underneath it — mirrors the bottom
-          // nav bar's own relationship with the screen above it, just
-          // flipped to the top of this bar. Same shape [DayStrip]
-          // originated this from.
-          boxShadow: [
-            BoxShadow(
-              color: theme.shadowPane.first.color,
-              blurRadius: theme.shadowPane.first.blurRadius,
-              offset: Offset(
-                theme.shadowPane.first.offset.dx,
-                -theme.shadowPane.first.offset.dy,
-              ),
-              spreadRadius: theme.shadowPane.first.spreadRadius,
-            ),
-          ],
+          color: theme.colorSurfaceOverlay,
+          // TOP corners only — the nav below rounds its own bottom pair,
+          // so the two halves meet on a shared square seam and read as a
+          // single pane rather than two stacked pills.
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(theme.radiusXl),
+          ),
+          // No shadow of its own: `shadowPane` offsets DOWNWARD (+2y), so
+          // this half would cast onto the nav directly beneath it and draw
+          // a visible seam through the middle of what is meant to read as
+          // one object. The nav below carries the shadow for the whole
+          // unit.
         ),
-        child: SafeArea(
-          top: false,
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: theme.spacingMd,
-              vertical: theme.spacingSm,
-            ),
-            child: Row(
-              children: [
-                Expanded(child: leading),
-                SizedBox(width: theme.spacingSm),
-                AppIconButton(
-                  icon: Icons.add_rounded,
-                  onPressed: onCreatePressed,
-                ),
-              ],
+        child: ClipRRect(
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(theme.radiusXl),
+          ),
+          child: SafeArea(
+            top: false,
+            // The nav pane below now owns the bottom SafeArea inset for the
+            // whole stacked unit — this half must not add a second one, or
+            // the two panes separate by the inset's height.
+            bottom: false,
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: theme.spacingMd,
+                vertical: theme.spacingSm,
+              ),
+              child: Row(
+                children: [
+                  Expanded(child: leading),
+                  SizedBox(width: theme.spacingSm),
+                  AppIconButton(
+                    icon: Icons.add_rounded,
+                    onPressed: onCreatePressed,
+                  ),
+                ],
+              ),
             ),
           ),
         ),

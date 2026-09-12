@@ -15,6 +15,7 @@ import 'package:amble/shared/models/task_size.dart';
 import 'package:amble/shared/models/task_status.dart';
 import 'package:amble/shared/models/task_template.dart';
 import 'package:amble/shared/models/tracked_behavior.dart';
+import 'package:amble/shared/models/tracked_behavior_view_mode.dart';
 import 'package:amble/shared/models/zone.dart';
 
 extension HiveRegistrar on HiveInterface {
@@ -31,6 +32,7 @@ extension HiveRegistrar on HiveInterface {
     registerAdapter(TaskStatusAdapter());
     registerAdapter(TaskTemplateAdapter());
     registerAdapter(TrackedBehaviorAdapter());
+    registerAdapter(TrackedBehaviorViewModeAdapter());
     registerAdapter(ZoneAdapter());
   }
 }
@@ -49,6 +51,7 @@ extension IsolatedHiveRegistrar on IsolatedHiveInterface {
     registerAdapter(TaskStatusAdapter());
     registerAdapter(TaskTemplateAdapter());
     registerAdapter(TrackedBehaviorAdapter());
+    registerAdapter(TrackedBehaviorViewModeAdapter());
     registerAdapter(ZoneAdapter());
   }
 }

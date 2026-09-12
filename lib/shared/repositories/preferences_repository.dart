@@ -88,6 +88,15 @@ abstract final class PreferenceKeys {
   /// [TaskSizeSetting].
   static const String taskSize = 'taskSize';
 
+  /// How the "Tracked" screen's cards render a behavior's completion
+  /// history — see `TrackedBehaviorViewMode`. One global setting for the
+  /// whole screen, cycled by a single switcher button, mirroring
+  /// `ShowHourLabelsSetting`/`ZoneViewEnabledSetting`'s own role in the
+  /// Timeline's view-cycle button. Absent (null) defaults to
+  /// `TrackedBehaviorViewMode.weekly` — see
+  /// [TrackedBehaviorViewModeSetting].
+  static const String trackedBehaviorViewMode = 'trackedBehaviorViewMode';
+
   /// The user-pasted Slack Incoming Webhook URL for the automatic morning
   /// summary. Absent (null) means no webhook is configured — see
   /// [SlackWebhookUrlSetting]. A plain user-managed webhook URL, not an

@@ -152,4 +152,91 @@ void main() {
       }
     },
   );
+
+  // Requested directly: "on task view time on left too big padding[;] make
+  // same as on right hand side" — the gutter is sized for the WIDEST
+  // label, so a shorter one left-aligned at the screen edge left a
+  // ragged, oversized gap before the first pill. `columnWidth` right-
+  // aligns every label against the pill column's own edge instead.
+  group('columnWidth (right-aligned labels)', () {
+    testWidgets(
+      'a short label ("1:00 AM") sits flush against the column\'s right '
+      'edge, not left-anchored at the screen edge',
+      (tester) async {
+        const leftInset = 24.0;
+        const columnWidth = 56.0;
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(
+              useMaterial3: true,
+              extensions: [AmbleTheme.light],
+            ),
+            home: Scaffold(
+              body: SizedBox(
+                width: 200,
+                height: 200,
+                child: TaskBoundaryMarkers(
+                  rangeStart: DateTime(2026, 9, 8),
+                  rangeEnd: DateTime(2026, 9, 8, 1),
+                  pixelsPerMinute: 1.0,
+                  leftInset: leftInset,
+                  columnWidth: columnWidth,
+                ),
+              ),
+            ),
+          ),
+        );
+
+        // Checked via the Align widget's own alignment property, not
+        // measured pixel position — the test environment's fallback font
+        // (JetBrains Mono isn't loaded in `flutter test`) happens to
+        // render "1:00 AM" wide enough to fill the whole 56px column
+        // regardless of alignment, which would make a pixel-position
+        // assertion pass even with the OLD (left-aligned) behavior. The
+        // structural property under test is the alignment itself.
+        final align = tester.widget<Align>(
+          find
+              .descendant(
+                of: find.byType(TaskBoundaryMarkers),
+                matching: find.byType(Align),
+              )
+              .first,
+        );
+        expect(align.alignment, Alignment.centerRight);
+      },
+    );
+
+    testWidgets('without columnWidth (default), a label stays left-anchored at '
+        'leftInset — unchanged from before this parameter existed', (
+      tester,
+    ) async {
+      const leftInset = 24.0;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
+          home: Scaffold(
+            body: SizedBox(
+              width: 200,
+              height: 200,
+              child: TaskBoundaryMarkers(
+                rangeStart: DateTime(2026, 9, 8),
+                rangeEnd: DateTime(2026, 9, 8, 1),
+                pixelsPerMinute: 1.0,
+                leftInset: leftInset,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final label = find
+          .descendant(
+            of: find.byType(TaskBoundaryMarkers),
+            matching: find.byType(Text),
+          )
+          .first;
+      final labelLeft = tester.getTopLeft(label).dx;
+      expect(labelLeft, closeTo(leftInset, 0.5));
+    });
+  });
 }

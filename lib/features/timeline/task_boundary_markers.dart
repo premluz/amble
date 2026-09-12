@@ -54,6 +54,7 @@ class TaskBoundaryMarkers extends StatelessWidget {
     required this.rangeEnd,
     required this.pixelsPerMinute,
     this.leftInset = 0,
+    this.columnWidth,
     this.intervalHours = 1,
     this.hideLabelNear,
   });
@@ -72,6 +73,20 @@ class TaskBoundaryMarkers extends StatelessWidget {
   /// labels carry that inset themselves rather than sitting flush against
   /// the physical edge.
   final double leftInset;
+
+  /// The gutter's own width, from [leftInset] to where task pills start —
+  /// when set, each label right-aligns within `[leftInset, leftInset +
+  /// columnWidth]` instead of left-aligning at [leftInset] and growing
+  /// rightward. Requested directly: "on task view time on left too big
+  /// padding[;] make same as on right hand side" — the gutter is sized for
+  /// the WIDEST label ("12:00 PM"), so a shorter one ("9 AM") left-aligned
+  /// at the screen edge left a ragged, oversized gap before the first
+  /// pill; right-aligning instead puts every label flush against the pill
+  /// column regardless of its own text width, matching the tight inset
+  /// already used on the timeline's right edge. Null keeps the original
+  /// left-aligned behavior (e.g. for a caller with no fixed column to
+  /// align within).
+  final double? columnWidth;
 
   /// Spacing between ticks, in hours. Default 1 (every hour); the
   /// configurable-interval seam mentioned for a later pass.
@@ -110,12 +125,23 @@ class TaskBoundaryMarkers extends StatelessWidget {
             Positioned(
               top: _minutesSinceStart(tick.time) * pixelsPerMinute,
               left: leftInset,
+              width: columnWidth,
               child: FractionalTranslation(
                 translation: const Offset(0, -0.5),
-                child: Text(
-                  TimeOfDay.fromDateTime(tick.time).format(context),
-                  style: theme.textCaption.copyWith(
-                    color: theme.colorTextSecondary,
+                child: Align(
+                  // Right-aligned within the reserved column when
+                  // [columnWidth] is set — see that field's own doc
+                  // comment. `Alignment.centerLeft` (the default a bare
+                  // Text would occupy) is what produced the original
+                  // left-anchored, ragged-gap layout.
+                  alignment: columnWidth == null
+                      ? Alignment.centerLeft
+                      : Alignment.centerRight,
+                  child: Text(
+                    TimeOfDay.fromDateTime(tick.time).format(context),
+                    style: theme.textCaption.copyWith(
+                      color: theme.colorTextSecondary,
+                    ),
                   ),
                 ),
               ),

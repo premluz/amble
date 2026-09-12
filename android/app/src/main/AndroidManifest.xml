@@ -77,6 +77,11 @@
          two). Taken directly from the plugin's own README, not guessed. -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+    <!-- HapticFeedback (core/haptics.dart): Android silently no-ops every
+         vibration without this. Install-time only, never runtime-requested,
+         and it is the one reason haptics can appear to "work on iOS but do
+         nothing on Android". iOS needs no equivalent entry. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
          https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.

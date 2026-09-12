@@ -54,6 +54,7 @@ class OverlapClusterBlock extends StatelessWidget {
     this.compactText = false,
     this.durationVisible = true,
     this.alwaysShowTime = false,
+    this.timeRangeVisible = true,
     this.textLayout = TimelineTaskTextLayout.stacked,
     this.showCompletionCheckbox = true,
   });
@@ -104,6 +105,12 @@ class OverlapClusterBlock extends StatelessWidget {
   /// up.
   final bool alwaysShowTime;
 
+  /// List mode's own from-to time range, independent of [durationVisible]
+  /// — matches [TaskCapsuleTextRow.timeRangeVisible] exactly. Requested
+  /// directly: "show duration dev setting should only show duration, we
+  /// should add setting show time from to." Defaults to true.
+  final bool timeRangeVisible;
+
   /// Dev-only layout toggle (`DevTimelineTaskTextLayout`) — matches
   /// [TaskCapsuleBlock.textLayout] exactly. Real gap, reported directly:
   /// with `inline` set, an ordinary capsule put time+title on one line
@@ -146,6 +153,7 @@ class OverlapClusterBlock extends StatelessWidget {
                 isInline: isInline,
                 durationVisible: durationVisible,
                 alwaysShowTime: alwaysShowTime,
+                timeRangeVisible: timeRangeVisible,
                 showCompletionCheckbox: showCompletionCheckbox,
                 task: task,
                 onTap: onTaskTap == null ? null : () => onTaskTap!(task),
@@ -161,6 +169,7 @@ class OverlapClusterBlock extends StatelessWidget {
                 isInline: isInline,
                 durationVisible: durationVisible,
                 alwaysShowTime: alwaysShowTime,
+                timeRangeVisible: timeRangeVisible,
                 event: event,
               ),
           ],
@@ -187,6 +196,7 @@ class _ClusterTaskRow extends StatelessWidget {
     this.isInline = false,
     this.durationVisible = true,
     this.alwaysShowTime = false,
+    this.timeRangeVisible = true,
     this.showCompletionCheckbox = true,
   });
 
@@ -210,6 +220,9 @@ class _ClusterTaskRow extends StatelessWidget {
 
   /// See [OverlapClusterBlock.alwaysShowTime].
   final bool alwaysShowTime;
+
+  /// See [OverlapClusterBlock.timeRangeVisible].
+  final bool timeRangeVisible;
 
   /// See [OverlapClusterBlock.showCompletionCheckbox].
   final bool showCompletionCheckbox;
@@ -241,26 +254,27 @@ class _ClusterTaskRow extends StatelessWidget {
   }
 
   Widget _rowContent(BuildContext context, TimeOfDay start, TimeOfDay end) {
-    // `durationVisible: false` drops the time ENTIRELY here, not just the
-    // `(45m)` suffix — corrected directly ("cluster mode time from-to
-    // should also react to setting so not showing if disabled"). Matches
-    // the Task view's own split-layout row, which hides its whole
-    // time+duration columns under the same setting; leaving the range
-    // behind meant a clustered task still showed "04:00 - 05:00" beside
-    // an ordinary capsule showing no time at all.
-    //
-    // `alwaysShowTime` (List mode only — see its own doc comment) forces
-    // the time range back on regardless, WITHOUT the `(45m)` suffix, which
-    // still depends on `durationVisible` alone — matching
-    // `TaskCapsuleTextRow.alwaysShowTime`'s identical split.
-    final timeRange = '${start.format(context)} - ${end.format(context)}';
-    final withSuffix =
-        '$timeRange (${formatDurationLabel(task.durationMinutes!)})';
-    final timeLabel = !alwaysShowTime && !durationVisible
-        ? null
-        : durationVisible
-        ? withSuffix
-        : timeRange;
+    // `alwaysShowTime` (List mode only — see its own doc comment) is what
+    // distinguishes this row's two real callers: Task view's own cluster
+    // row (alwaysShowTime: false), where `durationVisible` alone still
+    // hides the whole time+duration column when off (unchanged — matches
+    // the Task-view split layout's existing meaning), versus List view
+    // (alwaysShowTime: true), where [timeRangeVisible] and
+    // [durationVisible] are now two INDEPENDENT pieces — requested
+    // directly: "show duration dev setting should only show duration, we
+    // should add setting show time from to." Task view's own path is
+    // deliberately untouched: it never reads `timeRangeVisible` at all.
+    final timeRange = alwaysShowTime
+        ? (timeRangeVisible
+              ? '${start.format(context)} - ${end.format(context)}'
+              : null)
+        : (durationVisible
+              ? '${start.format(context)} - ${end.format(context)}'
+              : null);
+    final durationLabel = durationVisible
+        ? '(${formatDurationLabel(task.durationMinutes!)})'
+        : null;
+    final timeLabel = [?timeRange, ?durationLabel].join(' ');
     final indicatorIcons = [
       if (task.isRecurring) ...[
         SizedBox(width: theme.spacingXs),
@@ -294,7 +308,7 @@ class _ClusterTaskRow extends StatelessWidget {
                 child: Text.rich(
                   TextSpan(
                     children: [
-                      if (timeLabel != null)
+                      if (timeLabel.isNotEmpty)
                         TextSpan(
                           text: '$timeLabel  ',
                           style: titleTextStyle.copyWith(
@@ -336,7 +350,7 @@ class _ClusterTaskRow extends StatelessWidget {
                   ...indicatorIcons,
                 ],
               ),
-              if (timeLabel != null)
+              if (timeLabel.isNotEmpty)
                 Text(
                   timeLabel,
                   style: titleTextStyle.copyWith(
@@ -403,6 +417,7 @@ class _ClusterEventRow extends StatelessWidget {
     this.isInline = false,
     this.durationVisible = true,
     this.alwaysShowTime = false,
+    this.timeRangeVisible = true,
   });
 
   final AmbleTheme theme;
@@ -420,6 +435,9 @@ class _ClusterEventRow extends StatelessWidget {
   /// See [OverlapClusterBlock.alwaysShowTime].
   final bool alwaysShowTime;
 
+  /// See [OverlapClusterBlock.timeRangeVisible].
+  final bool timeRangeVisible;
+
   final ExternalCalendarEvent event;
 
   @override
@@ -427,22 +445,32 @@ class _ClusterEventRow extends StatelessWidget {
     final start = TimeOfDay.fromDateTime(event.start);
     final end = TimeOfDay.fromDateTime(event.end);
 
-    // Same durationVisible/alwaysShowTime split as _ClusterTaskRow — see
-    // that row's own doc comment for the full reasoning.
-    final timeRange = '${start.format(context)} - ${end.format(context)}';
+    // List mode (alwaysShowTime: true) never shows an imported event's
+    // time or duration at all, regardless of either dev toggle — requested
+    // directly: "no time no duration would apply to imported tasks."
+    // Unlike a real Task, an event's "duration" is only ever a computed
+    // span (event.end - event.start), not a concept the user set, so the
+    // duration toggle in particular never had anything meaningful to show
+    // here. Task view (alwaysShowTime: false) keeps its own prior
+    // behavior unchanged — durationVisible alone still gates the whole
+    // time+duration line there, same as before this row had independent
+    // timeRangeVisible/durationVisible pieces at all.
     final durationMinutes = event.end.difference(event.start).inMinutes;
-    final withSuffix = '$timeRange (${formatDurationLabel(durationMinutes)})';
-    final timeLabel = !alwaysShowTime && !durationVisible
+    final timeRange = alwaysShowTime
         ? null
-        : durationVisible
-        ? withSuffix
-        : timeRange;
+        : (durationVisible
+              ? '${start.format(context)} - ${end.format(context)}'
+              : null);
+    final durationLabel = alwaysShowTime || !durationVisible
+        ? null
+        : '(${formatDurationLabel(durationMinutes)})';
+    final timeLabel = [?timeRange, ?durationLabel].join(' ');
 
     final content = isInline
         ? Text.rich(
             TextSpan(
               children: [
-                if (timeLabel != null)
+                if (timeLabel.isNotEmpty)
                   TextSpan(
                     text: '$timeLabel  ',
                     style: titleTextStyle.copyWith(
@@ -469,7 +497,7 @@ class _ClusterEventRow extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-              if (timeLabel != null)
+              if (timeLabel.isNotEmpty)
                 Text(
                   timeLabel,
                   style: titleTextStyle.copyWith(

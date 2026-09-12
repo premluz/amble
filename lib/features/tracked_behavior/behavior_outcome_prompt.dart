@@ -62,7 +62,10 @@ class _BehaviorOutcomePromptState extends State<_BehaviorOutcomePrompt> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     final behavior = widget.behavior;
-    final unit = unitLabelFor(behavior.targetType);
+    final unit = unitLabelFor(
+      behavior.targetType,
+      customUnitName: behavior.customUnitName,
+    );
     final target = behavior.targetAmount;
     final minimum = behavior.minimumAmount;
 

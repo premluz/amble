@@ -67,6 +67,46 @@ class CategoryList extends _$CategoryList {
     _refresh();
   }
 
+  /// Deletes [id] — requested directly ("Edit category also [add a
+  /// remove icon button]"), reversing the earlier "v1 scope is create +
+  /// list only, no delete" decision (docs/DECISIONS.md). A built-in
+  /// category (the 5 seeded rows, [Category.isBuiltIn]) can never be
+  /// deleted — confirmed as the only sane floor, since
+  /// [BuiltInCategoryIds.general] in particular is the fallback every
+  /// reassignment below depends on existing. Callers must check
+  /// [Category.isBuiltIn] before offering this at all (see
+  /// `add_category_modal.dart`'s own gating).
+  ///
+  /// Every [Task] currently referencing [id] is reassigned to
+  /// [BuiltInCategoryIds.general] FIRST, before the row itself is
+  /// deleted — confirmed directly as the chosen behavior (over blocking
+  /// the delete outright, or leaving tasks with a dangling `categoryId`
+  /// the way `templateId`/Zone's `zoneId` are deliberately left to go
+  /// stale): unlike those two fields, `categoryId` drives real, currently
+  /// visible UI (the capsule's own color/emoji) for every affected task,
+  /// so silently orphaning it would make already-scheduled tasks render
+  /// with no resolvable category. One bulk pass, one [_refresh] at the
+  /// end — mirrors `TaskList.deleteTaskSeries`'s own "loop then refresh
+  /// once" shape rather than an individual write (and its own repository
+  /// round-trip) per affected task.
+  Future<void> deleteCategory(String id) async {
+    final category = ref.read(categoryRepositoryProvider).getCategoryById(id);
+    if (category == null || category.isBuiltIn) return;
+
+    final taskRepository = ref.read(taskRepositoryProvider);
+    final affected = taskRepository
+        .getTasks()
+        .where((task) => task.categoryId == id)
+        .toList();
+    for (final task in affected) {
+      task.categoryId = BuiltInCategoryIds.general;
+      await taskRepository.saveTask(task);
+    }
+
+    await ref.read(categoryRepositoryProvider).deleteCategory(id);
+    _refresh();
+  }
+
   /// One-time, at-launch seed + backfill (see `main.dart`, called the same
   /// way `TaskList.materializeDueRecurrences` is): seeds the 5 built-in
   /// [Category] rows at their fixed [BuiltInCategoryIds] (idempotent by

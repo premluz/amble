@@ -8,8 +8,11 @@ import 'package:amble/core/widgets/app_text_field.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/zones/zone_form_screen.dart';
 import 'package:amble/shared/models/zone.dart';
+import 'package:amble/shared/providers/notification_providers.dart';
 import 'package:amble/shared/providers/zone_providers.dart';
 import 'package:amble/shared/repositories/hive_zone_repository.dart';
+
+import '../../support/fake_notification_service.dart';
 
 /// The real, typeable `TextField` inside the "Zone name" `AppTextField` —
 /// same reasoning as `add_category_modal_test.dart`'s `_nameField`.
@@ -31,6 +34,15 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
     ProviderScope(
       overrides: [
         zoneRepositoryProvider.overrideWithValue(HiveZoneRepository(box)),
+        // Real Save/Delete both reach NotificationService
+        // (scheduleForZone/cancelForZone) — Save fires it unawaited so a
+        // plugin exception there never surfaces synchronously in a test,
+        // but ZoneList.deleteZone awaits it directly, so the new
+        // delete-button tests below need a real fake here rather than
+        // hitting the real (unavailable-in-test) platform channel.
+        notificationServiceProvider.overrideWithValue(
+          FakeNotificationService(),
+        ),
       ],
       child: MaterialApp(
         navigatorKey: navigatorKey,
@@ -290,6 +302,55 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(box.get('existing')!.startMinutes, 420); // 07:00
+    },
+  );
+
+  // Requested directly: "Edit zone screen should have remove icon button
+  // same as w[ith] edit t[a]sk."
+  testWidgets(
+    'editing an existing zone shows a remove icon button that deletes it '
+    'and closes the screen',
+    (tester) async {
+      final zone = Zone(
+        id: 'existing',
+        title: 'Focus block',
+        startMinutes: 540,
+        endMinutes: 600,
+      );
+      await tester.runAsync(() => box.put(zone.id, zone));
+
+      final navigatorKey = await _pumpHost(tester, box: box);
+      unawaited(showZoneFormScreen(navigatorKey.currentContext!, zone: zone));
+      await tester.pumpAndSettle();
+
+      final deleteButton = find.byIcon(Icons.delete_outline_rounded);
+      expect(deleteButton, findsOneWidget);
+
+      await tester.runAsync(() async {
+        await tester.tap(deleteButton);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pumpAndSettle();
+
+      expect(box.get('existing'), isNull);
+      // The screen itself closed — back to the empty host.
+      expect(find.text('Edit zone'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'the create flow (no existing zone) shows no remove icon button',
+    (tester) async {
+      final navigatorKey = await _pumpHost(tester, box: box);
+      unawaited(showZoneFormScreen(navigatorKey.currentContext!));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(_nameField(), 'Morning ritual');
+      await tester.pump();
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Done'));
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(Icons.delete_outline_rounded), findsNothing);
     },
   );
 }

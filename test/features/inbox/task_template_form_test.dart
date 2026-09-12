@@ -172,4 +172,59 @@ void main() {
     expect(find.text('Category'), findsOneWidget);
     expect(find.text('Default duration'), findsOneWidget);
   });
+
+  // Requested directly: "Edit template also remove icon b[u]tton add."
+  testWidgets('editing an existing template shows a remove icon button that '
+      'deletes it and closes the screen', (tester) async {
+    final template = TaskTemplate.create(
+      title: 'Take a walk',
+      categoryId: BuiltInCategoryIds.general,
+      durationMinutes: 30,
+    );
+    await tester.runAsync(() async {
+      await box.put(template.id, template);
+    });
+
+    final navigatorKey = await _pumpHost(
+      tester,
+      box: box,
+      categoryBox: categoryBox,
+      trackedBehaviorBox: trackedBehaviorBox,
+    );
+    showTaskTemplateForm(navigatorKey.currentContext!, template: template);
+    await tester.pumpAndSettle();
+
+    final deleteButton = find.byIcon(Icons.delete_outline_rounded);
+    expect(deleteButton, findsOneWidget);
+
+    await tester.runAsync(() async {
+      await tester.tap(deleteButton);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pumpAndSettle();
+
+    expect(box.get(template.id), isNull);
+    expect(find.text('Edit template'), findsNothing);
+  });
+
+  testWidgets(
+    'the create flow (no existing template) shows no remove icon button',
+    (tester) async {
+      final navigatorKey = await _pumpHost(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+        trackedBehaviorBox: trackedBehaviorBox,
+      );
+      showTaskTemplateForm(navigatorKey.currentContext!);
+      await tester.pumpAndSettle();
+
+      await tester.enterText(_nameField(), 'Take a walk');
+      await tester.pump();
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Done'));
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(Icons.delete_outline_rounded), findsNothing);
+    },
+  );
 }

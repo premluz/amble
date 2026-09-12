@@ -48,10 +48,109 @@ class DevTimelineTaskIconsVisible extends _$DevTimelineTaskIconsVisible {
   void set(bool value) => state = value;
 }
 
-/// The `(45m)`-style duration suffix on a task's time line.
+/// List view only — a standalone `1h`-style duration label per row (see
+/// [DevTimelineTaskTimeRangeVisible] for the separate from-to time
+/// setting). The two are independent: either, both, or neither can be on.
+///
+/// Task view's own split-layout duration column
+/// (`TaskCapsuleTextRow.durationVisible`'s non-`compactInlineLayout`
+/// branch) is untouched by this provider — confirmed directly: "these
+/// should affect list view only and should not affect task spatial view
+/// (on this view we'd never show this)." Previously this same provider
+/// fed BOTH a List-view duration suffix appended onto the time string AND
+/// Task view's split-layout column, conflating two different views'
+/// concerns in one flag; the List-view half of that is what this
+/// doc comment (and `TaskCapsuleTextRow`'s own `compactInlineLayout`
+/// branch) now describes — the Task-view half is unchanged.
 @Riverpod(keepAlive: true)
 class DevTimelineTaskDurationVisible extends _$DevTimelineTaskDurationVisible {
   // Default changed to false (no duration shown) — requested directly.
+  @override
+  bool build() => false;
+
+  void set(bool value) => state = value;
+}
+
+/// List view only — the `04:20 - 05:20`-style time range per row.
+/// Independent of [DevTimelineTaskDurationVisible] — see that provider's
+/// own doc comment. Requested directly: "we should add setting show time
+/// from to (should then show time)... these should affect list view only
+/// and should not affect task spatial view."
+///
+/// **Default flipped to OFF as of 2026-09-10** (confirmed directly —
+/// "show time off as default"), reversing its original launch default
+/// (which matched List view's previous always-shown time range before
+/// this toggle existed).
+@Riverpod(keepAlive: true)
+class DevTimelineTaskTimeRangeVisible
+    extends _$DevTimelineTaskTimeRangeVisible {
+  @override
+  bool build() => false;
+
+  void set(bool value) => state = value;
+}
+
+/// List view AND Zone view — when on, hides every imported calendar event
+/// (`ExternalCalendarEvent`) from both, showing only native Amble [Task]s.
+/// Originally "Only Amble tasks", List-view-only — **replaced 2026-09-10**
+/// (requested directly: "add hide imported tasks control in dev mode and
+/// that'd be affecting zone and list view and replace switch (amble tasks
+/// only)"): renamed to describe what it actually does (hides imports,
+/// rather than a positive "only these") and widened to also apply to Zone
+/// view. Task view is still unaffected — it keeps mixing imported events
+/// into its own layout exactly as today.
+///
+/// Defaults to false (current shipped behavior: both views already mix
+/// imported events in, same as Task view) — this toggle only ever REMOVES
+/// events, never adds a display mode that didn't exist.
+@Riverpod(keepAlive: true)
+class DevHideImportedTasks extends _$DevHideImportedTasks {
+  @override
+  bool build() => false;
+
+  void set(bool value) => state = value;
+}
+
+/// Zone (grid) view only — when on, strips [ZoneContainerBlock]'s own
+/// background fill/border AND its padding, leaving just the bare title +
+/// duration header directly above its flat list of member task/event
+/// rows, with no card chrome around either. Requested directly: "add a
+/// control in admin that affects the grid zone view and removes the
+/// background from zones and[,] uh, padding as well[;] so what's left is
+/// a title[,] and underneath the tasks related inside this zone[,] and
+/// duration[,] of course, also stays."
+///
+/// Task view's `ZoneBackgroundBlock` (the purely decorative fill on the
+/// Spatial Task View) is unaffected — this only touches the Zone view's
+/// own real layout container, which is the one actually described as a
+/// "card" with a background/padding to remove.
+///
+/// Defaults to false (current shipped behavior: the card fill/padding
+/// stays) — this toggle only ever REMOVES chrome, never adds a display
+/// mode that didn't exist.
+@Riverpod(keepAlive: true)
+class DevZoneCardFlat extends _$DevZoneCardFlat {
+  @override
+  bool build() => false;
+
+  void set(bool value) => state = value;
+}
+
+/// List view only — when on, hides every [Task] with `isImportant == false`
+/// from the row list. Requested directly as "config (only important)",
+/// alongside [DevHideImportedTasks] above. Task view and Zone view
+/// are unaffected — both show every task regardless of this toggle.
+///
+/// Imported calendar events have no `isImportant` concept at all, so this
+/// toggle never touches them either way — it only filters [Task] rows.
+/// Independent of [DevHideImportedTasks]: both, either, or neither
+/// can be on, same "independent toggles" shape as the duration/time-range
+/// pair above.
+///
+/// Defaults to false (current shipped behavior: List view shows every
+/// task, important or not).
+@Riverpod(keepAlive: true)
+class DevTimelineListOnlyImportant extends _$DevTimelineListOnlyImportant {
   @override
   bool build() => false;
 
@@ -62,7 +161,7 @@ class DevTimelineTaskDurationVisible extends _$DevTimelineTaskDurationVisible {
 /// View. Requested directly as a scratch config so the right value can be
 /// dialed in live, separate from the Zone view's own scale below: at the
 /// Task view's original fixed 1.5, a short (e.g. 30-minute) Zone-view
-/// container barely fit its own header, let alone a task row, which is
+/// container barely fit itsS own header, let alone a task row, which is
 /// what caused the reported "missing gap between adjacent zones" (the
 /// container was forced to grow past its gap-shrunk floor on nearly every
 /// zone, not just unusually packed ones).
@@ -102,31 +201,26 @@ class DevShowFreeWindowPrompt extends _$DevShowFreeWindowPrompt {
   void set(bool value) => state = value;
 }
 
-/// Whether Zone view is reachable at all from the Timeline's own
-/// view-cycle button.
+/// Whether List view is reachable at all from the Timeline's own
+/// view-cycle button — **replaces the old `DevZoneViewInCycle`**
+/// (2026-09-10, requested directly: "we have setting zone view off in dev
+/// switching timeline cycles, but actually that'd be list view off now,
+/// zone view and task view are on always, and list view as default off").
+/// Zone view no longer has a debug-only way to be hidden from the cycle
+/// at all — its reachability now depends purely on
+/// `FeatureFlags.zoneEnabled`, same as a release build. Task view is
+/// never skippable either (see `day_strip.dart`'s own `next()`). List
+/// view is the only mode this toggle can remove, and it defaults to
+/// OFF — the opposite of Zone view's own old on-by-default-then-off
+/// history, since List view is the one being newly excluded by default
+/// here, not Zone view being newly frozen.
 ///
-/// **Default flipped back to OFF as of 2026-09-06** (confirmed directly,
-/// same day as the ON flip below): after Zone move/resize/selection work
-/// landed in the Spatial Task View too, Zone view was confirmed as frozen
-/// going forward ("zone view as default disabled > no further updates to
-/// this view") — it gets no further iteration, so it goes back to hidden
-/// by default rather than staying reachable as an unmaintained surface.
-///
-/// (Briefly flipped ON earlier the same day, after a real report — "can't
-/// move zones" — traced back to this toggle defaulting off at a point
-/// when Zone view's move/resize genuinely was the ONLY place zone editing
-/// existed. That's no longer true now that Task view has its own zone
-/// move/resize/selection, so the original reason to default this on no
-/// longer applies.)
-///
-/// ANDs into the existing `FeatureFlags.zoneEnabled` gate rather than
-/// replacing it (see `day_strip.dart`), so it can only ever REMOVE Zone
-/// view from the cycle, never force it on where the feature flag itself
-/// says no. Turning it off while Zone view happens to be the active mode
-/// also falls back to Task view, rather than stranding the user in a mode
-/// the button can no longer cycle out of.
+/// Turning it off while List view happens to be the active mode falls
+/// back to Task view, rather than stranding the user in a mode the
+/// button can no longer cycle out of — same "don't strand the user"
+/// contract the old Zone toggle had.
 @Riverpod(keepAlive: true)
-class DevZoneViewInCycle extends _$DevZoneViewInCycle {
+class DevListViewInCycle extends _$DevListViewInCycle {
   @override
   bool build() => false;
 

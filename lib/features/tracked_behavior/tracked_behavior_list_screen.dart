@@ -5,9 +5,34 @@ import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_bottom_extension_bar.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
 import '../../shared/models/tracked_behavior.dart';
+import '../../shared/models/tracked_behavior_view_mode.dart';
+import '../../shared/providers/preferences_providers.dart';
 import '../../shared/providers/tracked_behavior_providers.dart';
 import 'tracked_behavior_form.dart';
 import 'tracked_behavior_row.dart';
+
+extension on TrackedBehaviorViewMode {
+  /// Weekly → Monthly → Six-monthly → Weekly — mirrors
+  /// `TimelineViewMode.next()`'s exact cycling shape, one global setting
+  /// for the whole screen (confirmed directly, over a per-card switcher).
+  TrackedBehaviorViewMode get next => switch (this) {
+    TrackedBehaviorViewMode.weekly => TrackedBehaviorViewMode.monthly,
+    TrackedBehaviorViewMode.monthly => TrackedBehaviorViewMode.sixMonthly,
+    TrackedBehaviorViewMode.sixMonthly => TrackedBehaviorViewMode.weekly,
+  };
+
+  IconData get icon => switch (this) {
+    TrackedBehaviorViewMode.weekly => Icons.view_week_outlined,
+    TrackedBehaviorViewMode.monthly => Icons.calendar_view_month_outlined,
+    TrackedBehaviorViewMode.sixMonthly => Icons.grid_view_rounded,
+  };
+
+  String get label => switch (this) {
+    TrackedBehaviorViewMode.weekly => 'Weekly view',
+    TrackedBehaviorViewMode.monthly => 'Monthly view',
+    TrackedBehaviorViewMode.sixMonthly => 'Six-month view',
+  };
+}
 
 /// The "Tracked" bottom-nav destination — every saved [TrackedBehavior],
 /// tap to edit, "+" to add.
@@ -38,6 +63,7 @@ class TrackedBehaviorListScreen extends ConsumerWidget {
     // position. A behavior has no such natural ordering, so imposing one
     // would be an invented rule rather than a reflection of the data.
     final behaviors = ref.watch(trackedBehaviorListProvider);
+    final viewMode = ref.watch(trackedBehaviorViewModeSettingProvider);
 
     return Container(
       // Matches the Timeline's own background — requested directly:
@@ -99,6 +125,7 @@ class TrackedBehaviorListScreen extends ConsumerWidget {
                               key: ValueKey(behavior.id),
                               theme: theme,
                               behavior: behavior,
+                              viewMode: viewMode,
                               onTap: () => showTrackedBehaviorForm(
                                 context,
                                 behavior: behavior,
@@ -129,12 +156,21 @@ class TrackedBehaviorListScreen extends ConsumerWidget {
             // Same bottom "extension" bar the Timeline's DayStrip and the
             // Inbox use — requested directly, so the "+" sits at the
             // exact same screen position on every tab rather than
-            // floating at a per-screen spot. No tab switcher here (this
-            // screen has only one view), so [leading] is empty space —
-            // still gives the create button the shared bar's rounded-top,
-            // shadowed chrome instead of floating loose over the list.
+            // floating at a per-screen spot. [leading] now carries the
+            // weekly/monthly/six-monthly view-cycle switcher, in the same
+            // leading slot `DayStrip`'s own view-cycle button occupies —
+            // requested directly: "in the same way like in timeline we
+            // have view switcher, in the same positions there will be
+            // view switcher for each of these."
             AppBottomExtensionBar(
-              leading: const SizedBox.shrink(),
+              leading: IconButton(
+                onPressed: () => ref
+                    .read(trackedBehaviorViewModeSettingProvider.notifier)
+                    .set(viewMode.next),
+                icon: Icon(viewMode.icon),
+                color: theme.colorTextPrimary,
+                tooltip: viewMode.label,
+              ),
               onCreatePressed: () => showTrackedBehaviorForm(context),
             ),
           ],

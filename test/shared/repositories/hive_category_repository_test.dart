@@ -136,4 +136,25 @@ void main() {
     expect(a.id, isNotEmpty);
     expect(a.id, isNot(equals(b.id)));
   });
+
+  // Requested directly: "Edit category also [remove icon button]" —
+  // reversing the earlier "no delete method at all" v1 scope decision.
+  test('deleteCategory removes the row', () async {
+    final category = Category.create(
+      name: 'Gardening',
+      colorToken: 0,
+      emoji: '🌱',
+    );
+    await repository.saveCategory(category);
+    expect(repository.getCategoryById(category.id), isNotNull);
+
+    await repository.deleteCategory(category.id);
+
+    expect(repository.getCategoryById(category.id), isNull);
+  });
+
+  test('deleteCategory on an unknown id is a no-op, not an error', () async {
+    await repository.deleteCategory('never-saved');
+    expect(repository.getCategories(), isEmpty);
+  });
 }

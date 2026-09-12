@@ -10,6 +10,13 @@ abstract final class TypePrimitives {
   /// font app-wide by editing this one constant.
   static const fontFamily = 'JetBrains Mono';
 
+  // **2026-09-12 — new smallest rung.** Added so the task-size scale's own
+  // "sm" setting could shift one step down (see AmbleTheme.textTaskTitleSm)
+  // — nothing below `size1` existed until this. 11, not a full 2px step
+  // like every other rung here: a genuine 2px drop from the already-small
+  // 12px would risk legibility at the smallest task-size setting, so this
+  // one step is intentionally half the usual gap.
+  static const size0 = 11.0;
   static const size1 = 12.0;
   static const size2 = 14.0;
   static const size3 = 16.0;

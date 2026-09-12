@@ -1,5 +1,6 @@
-// SCAFFOLDING entry point — seeds a few real tasks, boots SettingsScreen,
-// and calls the real export handler via SettingsScreen.debugAutoTriggerExport
+// SCAFFOLDING entry point — seeds a few real tasks, boots
+// BackupSettingsScreen, and calls the real export handler via
+// BackupSettingsScreen.debugAutoTriggerExport
 // (no tap-injection tool available on iOS Simulator — see
 // docs/ERROR_LOG.md), so the resulting share sheet can be screenshotted.
 // Not part of the real app. Run with:
@@ -14,7 +15,7 @@ import '../../shared/models/task.dart';
 import '../../shared/models/category.dart';
 import '../../shared/models/task_status.dart';
 import '../../shared/providers/task_providers.dart';
-import 'settings_screen.dart';
+import 'backup_settings_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -53,7 +54,7 @@ class _PreviewApp extends StatelessWidget {
       child: MaterialApp(
         theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
         home: const Scaffold(
-          body: SettingsScreen(debugAutoTriggerExport: true),
+          body: BackupSettingsScreen(debugAutoTriggerExport: true),
         ),
       ),
     );

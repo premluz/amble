@@ -710,6 +710,88 @@ abstract class _$TaskSizeSetting extends $Notifier<TaskSize> {
   }
 }
 
+/// How the "Tracked" screen's cards render a behavior's completion
+/// history (weekly row / monthly grid / six-month heatmap) — one global
+/// setting for the whole screen, cycled by a single switcher button in
+/// its own bottom bar, mirroring the Timeline's `TimelineViewMode` cycle
+/// button exactly. Defaults to `TrackedBehaviorViewMode.weekly`.
+
+@ProviderFor(TrackedBehaviorViewModeSetting)
+final trackedBehaviorViewModeSettingProvider =
+    TrackedBehaviorViewModeSettingProvider._();
+
+/// How the "Tracked" screen's cards render a behavior's completion
+/// history (weekly row / monthly grid / six-month heatmap) — one global
+/// setting for the whole screen, cycled by a single switcher button in
+/// its own bottom bar, mirroring the Timeline's `TimelineViewMode` cycle
+/// button exactly. Defaults to `TrackedBehaviorViewMode.weekly`.
+final class TrackedBehaviorViewModeSettingProvider
+    extends
+        $NotifierProvider<
+          TrackedBehaviorViewModeSetting,
+          TrackedBehaviorViewMode
+        > {
+  /// How the "Tracked" screen's cards render a behavior's completion
+  /// history (weekly row / monthly grid / six-month heatmap) — one global
+  /// setting for the whole screen, cycled by a single switcher button in
+  /// its own bottom bar, mirroring the Timeline's `TimelineViewMode` cycle
+  /// button exactly. Defaults to `TrackedBehaviorViewMode.weekly`.
+  TrackedBehaviorViewModeSettingProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'trackedBehaviorViewModeSettingProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$trackedBehaviorViewModeSettingHash();
+
+  @$internal
+  @override
+  TrackedBehaviorViewModeSetting create() => TrackedBehaviorViewModeSetting();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(TrackedBehaviorViewMode value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<TrackedBehaviorViewMode>(value),
+    );
+  }
+}
+
+String _$trackedBehaviorViewModeSettingHash() =>
+    r'9db87f71482c279df49a811828126a1638c5edac';
+
+/// How the "Tracked" screen's cards render a behavior's completion
+/// history (weekly row / monthly grid / six-month heatmap) — one global
+/// setting for the whole screen, cycled by a single switcher button in
+/// its own bottom bar, mirroring the Timeline's `TimelineViewMode` cycle
+/// button exactly. Defaults to `TrackedBehaviorViewMode.weekly`.
+
+abstract class _$TrackedBehaviorViewModeSetting
+    extends $Notifier<TrackedBehaviorViewMode> {
+  TrackedBehaviorViewMode build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref =
+        this.ref as $Ref<TrackedBehaviorViewMode, TrackedBehaviorViewMode>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<TrackedBehaviorViewMode, TrackedBehaviorViewMode>,
+              TrackedBehaviorViewMode,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
+
 /// Whether the Timeline renders in Zone view — Zones as real layout
 /// containers owning their child tasks' positions (see
 /// `ZoneContainerBlock`) — instead of the default Task view (where Zones

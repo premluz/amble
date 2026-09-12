@@ -7,55 +7,29 @@ import '../../core/widgets/app_press_feedback.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
 import '../../shared/models/task.dart';
 import '../../shared/providers/task_providers.dart';
-import '../task_detail/add_category_modal.dart';
-import '../task_detail/category_list_screen.dart';
 import '../task_detail/task_detail_sheet.dart';
+import '../timeline/duration_label.dart';
 import '../timeline/task_category_token_mapping.dart';
-import '../zones/zone_form_screen.dart';
-import '../zones/zone_list_screen.dart';
-import 'inbox_tab_switcher.dart';
 import 'inbox_tasks_provider.dart';
 import 'quick_capture_sheet.dart';
-import 'task_template_form.dart';
-import 'template_list_view.dart';
 
-/// "Manage" — unscheduled tasks awaiting prioritization, plus the app's
-/// other standing-definition lists (Templates, Zones, Categories), all
-/// under one tab. Tapping a task opens the existing task detail screen
-/// ([showTaskDetailSheet]) to give it a schedule, moving it onto the
-/// Timeline; no separate scheduling UI is built for this. Wired to
-/// [inboxTasksProvider], derived from [taskListProvider] (Phase 1).
+/// "Manage" — unscheduled tasks awaiting prioritization. Tapping a task
+/// opens the existing task detail screen ([showTaskDetailSheet]) to give
+/// it a schedule, moving it onto the Timeline; no separate scheduling UI
+/// is built for this. Wired to [inboxTasksProvider], derived from
+/// [taskListProvider] (Phase 1).
 ///
-/// Four sub-tabs — requested directly: "The first tab will be 'Inbox
-/// Manage,' and it will have: Tasks, Templates, Zones (list + add + edit),
-/// Categories (list + add + edit)." Zones and Categories reuse their
-/// existing list/form screens verbatim ([ZoneListBody]/
-/// [showZoneFormScreen], [CategoryListBody]/[showAddCategoryModal]) —
-/// Settings → Zones/Categories keep their own separate entry points to the
-/// same underlying screens, confirmed directly as a second path rather
-/// than a replacement.
-///
-/// Templates — reusable blueprints (see CONSTITUTION.md's "TaskTemplate"
-/// section) — stay deliberately NOT mixed into the Tasks list: a template
-/// is never itself schedulable or completable, so folding it into a list
-/// whose every row can be ticked off or opened for scheduling would blur
-/// two genuinely different kinds of row.
-class InboxScreen extends ConsumerStatefulWidget {
+/// **2026-09-12 — the Templates/Zones/Categories sub-tabs were removed.**
+/// Requested directly: "remove tabs tasks templates zones categories...
+/// only keep tasks." Confirmed those three stay reachable — Settings
+/// already has its own separate entry points (`showTemplateListScreen`/
+/// `showZoneListScreen`/`showCategoryListScreen`), so nothing becomes a
+/// dead end; this screen just stops being a second path to them.
+class InboxScreen extends ConsumerWidget {
   const InboxScreen({super.key});
 
   @override
-  ConsumerState<InboxScreen> createState() => _InboxScreenState();
-}
-
-class _InboxScreenState extends ConsumerState<InboxScreen> {
-  /// Which sub-tab is showing. Plain local state rather than a provider —
-  /// no other screen needs to read or set it, and it is deliberately not
-  /// persisted across launches (this tab opens on Tasks every time, its
-  /// primary job).
-  InboxManageTab _tab = InboxManageTab.tasks;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     final tasks = ref.watch(inboxTasksProvider);
     final taskNotifier = ref.read(taskListProvider.notifier);
@@ -82,9 +56,6 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
                 theme.spacingScreenPadding,
                 theme.spacingMd,
               ),
-              // "Inbox" -> "Manage" — requested directly, alongside
-              // adding the Zones/Categories sub-tabs: this screen's
-              // job broadened beyond just task capture.
               child: Text('Manage', style: theme.textHeadline),
             ),
             Expanded(
@@ -109,53 +80,41 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
               // correctly in this exact Stack.
               child: Stack(
                 children: [
-                  switch (_tab) {
-                    InboxManageTab.tasks =>
-                      tasks.isEmpty
-                          ? _EmptyInboxState(theme: theme)
-                          : ListView.separated(
-                              padding: EdgeInsets.fromLTRB(
-                                theme.spacingScreenPadding,
-                                // spacingContentTop — the shared value
-                                // every list/sheet's own first row uses,
-                                // confirmed directly at 30px: "tasks
-                                // templates tracked cards should all
-                                // start at same y level." Unrelated to
-                                // the fade above now that the fade lives
-                                // in the header, not over this list —
-                                // this is purely the card-alignment fix.
-                                theme.spacingContentTop,
-                                theme.spacingScreenPadding,
-                                0,
-                              ),
-                              itemCount: tasks.length,
-                              separatorBuilder: (context, _) =>
-                                  SizedBox(height: theme.spacingSm),
-                              itemBuilder: (context, index) {
-                                final task = tasks[index];
-                                return _InboxListItem(
-                                  key: ValueKey(task.id),
-                                  task: task,
-                                  theme: theme,
-                                  onTap: () => showQuickCaptureSheet(
-                                    context,
-                                    task: task,
-                                  ),
-                                  onToggleComplete: () =>
-                                      taskNotifier.toggleComplete(task),
-                                  onSchedule: () =>
-                                      showTaskDetailSheet(context, task: task),
-                                );
-                              },
-                            ),
-                    InboxManageTab.templates => const TemplateListView(),
-                    // Zones/Categories reuse their existing list bodies
-                    // verbatim — same widgets Settings -> Zones/Categories
-                    // push inside a Scaffold of their own, embedded here
-                    // with none of that page chrome.
-                    InboxManageTab.zones => const ZoneListBody(),
-                    InboxManageTab.categories => const CategoryListBody(),
-                  },
+                  tasks.isEmpty
+                      ? _EmptyInboxState(theme: theme)
+                      : ListView.separated(
+                          padding: EdgeInsets.fromLTRB(
+                            theme.spacingScreenPadding,
+                            // spacingContentTop — the shared value
+                            // every list/sheet's own first row uses,
+                            // confirmed directly at 30px: "tasks
+                            // templates tracked cards should all
+                            // start at same y level." Unrelated to
+                            // the fade above now that the fade lives
+                            // in the header, not over this list —
+                            // this is purely the card-alignment fix.
+                            theme.spacingContentTop,
+                            theme.spacingScreenPadding,
+                            0,
+                          ),
+                          itemCount: tasks.length,
+                          separatorBuilder: (context, _) =>
+                              SizedBox(height: theme.spacingSm),
+                          itemBuilder: (context, index) {
+                            final task = tasks[index];
+                            return _InboxListItem(
+                              key: ValueKey(task.id),
+                              task: task,
+                              theme: theme,
+                              onTap: () =>
+                                  showQuickCaptureSheet(context, task: task),
+                              onToggleComplete: () =>
+                                  taskNotifier.toggleComplete(task),
+                              onSchedule: () =>
+                                  showTaskDetailSheet(context, task: task),
+                            );
+                          },
+                        ),
                   Positioned(
                     top: 0,
                     left: 0,
@@ -174,24 +133,15 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
                 ],
               ),
             ),
-            // The sub-tab switch and the "+" now live in the same bottom
-            // "extension" bar the Timeline's DayStrip established —
-            // requested directly, so the create button sits at the exact
-            // same screen position on every tab instead of floating at a
-            // different spot per screen. One "+" still acts on whichever
-            // sub-tab is showing, rather than a second button per tab.
+            // The "+" lives in the same bottom "extension" bar the
+            // Timeline's DayStrip established — requested directly, so the
+            // create button sits at the exact same screen position on
+            // every tab. No `leading` content now that the sub-tab switch
+            // is gone — matches the Tracked tab's own "create button
+            // alone" shape (see AppBottomExtensionBar's own doc comment).
             AppBottomExtensionBar(
-              leading: InboxTabSwitcher(
-                theme: theme,
-                selected: _tab,
-                onChanged: (value) => setState(() => _tab = value),
-              ),
-              onCreatePressed: () => switch (_tab) {
-                InboxManageTab.tasks => showQuickCaptureSheet(context),
-                InboxManageTab.templates => showTaskTemplateForm(context),
-                InboxManageTab.zones => showZoneFormScreen(context),
-                InboxManageTab.categories => showAddCategoryModal(context),
-              },
+              leading: const SizedBox.shrink(),
+              onCreatePressed: () => showQuickCaptureSheet(context),
             ),
           ],
         ),
@@ -253,20 +203,17 @@ class _InboxListItem extends StatelessWidget {
     final categoryColor = theme.categoryColors[task.category.token]!;
     final badgeSize = theme.spacingXl;
 
+    // **2026-09-12 — the card is gone.** Requested directly: "remove cards
+    // from Manage." No fill, no shadow, no rounded corners — a plain row,
+    // separated from its neighbours by the list's own `separatorBuilder`
+    // gap rather than by a card edge. `spacingMd` vertical padding is kept
+    // (the card's own padding, minus its horizontal half — the list
+    // already carries the horizontal screen inset) so the row still has a
+    // real tap target height, not just its own text's tight line box.
     return AppPressFeedback(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(theme.radiusXl),
-      child: Container(
-        padding: EdgeInsets.all(theme.spacingMd),
-        decoration: BoxDecoration(
-          color: theme.colorSurfaceSecondary,
-          borderRadius: BorderRadius.circular(theme.radiusXl),
-          // No border. Matches AppPane's own reasoning: the card and page
-          // background are too close in lightness for a flat edge to read
-          // softly, so a shadow carries it instead of a border. Reported
-          // directly as a hard edge on task/template cards.
-          boxShadow: theme.shadowPane,
-        ),
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: theme.spacingMd),
         child: Row(
           children: [
             AppPressFeedback(
@@ -298,6 +245,16 @@ class _InboxListItem extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
+            // The duration badge — requested directly: "duration in tasks
+            // move to the right but text size 10px (smallest scale) in a
+            // 'badge' surface color next to current bg." Null-safe: an
+            // Inbox task is unscheduled and may genuinely have no
+            // duration set yet (Task.durationMinutes is nullable), so the
+            // badge only renders once one exists.
+            if (task.durationMinutes case final minutes?) ...[
+              SizedBox(width: theme.spacingSm),
+              _DurationBadge(theme: theme, minutes: minutes),
+            ],
             // A separate tap target from the card's own onTap above — same
             // "own GestureDetector, own hit area" pattern the category
             // badge (toggle-complete) already uses on this row, so tapping
@@ -312,6 +269,45 @@ class _InboxListItem extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The Manage-screen task row's duration pill — requested directly:
+/// "duration in tasks move to the right but text size 10px (smallest
+/// scale) in a 'badge' surface color next to current bg."
+///
+/// `textTaskTitleSm` (the smallest rung of the task-title scale,
+/// confirmed via AskUserQuestion to mean the existing token rather than a
+/// new literal 10px primitive) at [AmbleTheme.colorSurfaceSecondary] — one
+/// step up from this screen's own `colorSurfaceTimeline` background (see
+/// [InboxScreen]'s own `color:`), the same "next to current bg" surface
+/// direction every other nested badge in this app already uses.
+class _DurationBadge extends StatelessWidget {
+  const _DurationBadge({required this.theme, required this.minutes});
+
+  final AmbleTheme theme;
+  final int minutes;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorSurfaceSecondary,
+        borderRadius: BorderRadius.circular(theme.radiusSm),
+      ),
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: theme.spacingXs,
+          vertical: theme.spacingXs / 2,
+        ),
+        child: Text(
+          formatDurationLabel(minutes),
+          style: theme.textTaskTitleSm.copyWith(
+            color: theme.colorTextSecondary,
+          ),
         ),
       ),
     );

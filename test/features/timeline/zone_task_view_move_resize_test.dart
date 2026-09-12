@@ -5,7 +5,9 @@ import 'package:hive_ce/hive_ce.dart';
 import 'package:amble/core/dev_config.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/hive_registrar.g.dart';
+import 'package:amble/features/timeline/edit_mode_delete_target.dart';
 import 'package:amble/features/timeline/edit_mode_provider.dart';
+import 'package:amble/features/timeline/task_edge_time_label.dart';
 import 'package:amble/features/timeline/timeline_screen.dart';
 import 'package:amble/features/timeline/zone_background_block.dart';
 import 'package:amble/shared/models/category.dart';
@@ -230,6 +232,103 @@ void main() {
     },
   );
 
+  // "also should be show for zones" — the same left-pinned accent time
+  // badge tasks get during a move/resize, extended to zones. These
+  // gestures are driven directly via the block's own callbacks (matching
+  // this file's established pattern above) rather than real pointer
+  // events, so `onMoveEnd`/`onResizeBottomEnd` are deliberately NOT
+  // called yet when the mid-gesture assertion runs.
+  testWidgets(
+    'moving a zone in the Spatial Task View shows its own live start/end '
+    'time, pinned over the hour gutter',
+    (tester) async {
+      final zone = await pumpTaskViewWithZone(tester);
+      final block = findZoneBlock();
+
+      block.onMoveStart!(DragStartDetails());
+      block.onMoveUpdate!(
+        DragUpdateDetails(globalPosition: Offset.zero, delta: Offset(0, 60)),
+      );
+      await tester.pump();
+
+      expect(find.byType(TaskEdgeTimeLabel), findsNWidgets(2));
+      final labels = tester
+          .widgetList<TaskEdgeTimeLabel>(find.byType(TaskEdgeTimeLabel))
+          .toList();
+      final originalStart = TimeOfDay(
+        hour: zone.startMinutes ~/ 60,
+        minute: zone.startMinutes % 60,
+      );
+      for (final label in labels) {
+        expect(
+          label.time,
+          isNot(originalStart),
+          reason:
+              'the label should track the LIVE moved time, not the '
+              'zone\'s original resting startMinutes',
+        );
+      }
+
+      // Cleans up the still-in-progress gesture so it doesn't leak into
+      // the next test via a dangling drag-callback state. `onMoveEnd`
+      // calls `_commitMove`, real `Future<void>` repository I/O — same
+      // `runAsync` requirement every other commit in this file already
+      // observes (see docs/ERROR_LOG.md: real Hive I/O off `runAsync`
+      // hangs `flutter test` indefinitely).
+      await tester.runAsync(() async {
+        block.onMoveEnd!(DragEndDetails());
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+    },
+  );
+
+  testWidgets(
+    'resizing a zone\'s bottom handle in the Spatial Task View shows its '
+    'own live END time, pinned over the hour gutter',
+    (tester) async {
+      final zone = await pumpTaskViewWithZone(tester);
+      final block = findZoneBlock();
+
+      block.onResizeBottomStart!(DragStartDetails());
+      block.onResizeBottomUpdate!(
+        DragUpdateDetails(globalPosition: Offset.zero, delta: Offset(0, 60)),
+      );
+      await tester.pump();
+
+      // Only ONE live label during a resize — the other edge is
+      // anchored, mirroring `_liveEdgeTimeLabels`' own "only the edge
+      // that moves" contract for tasks.
+      expect(find.byType(TaskEdgeTimeLabel), findsOneWidget);
+      final label = tester.widget<TaskEdgeTimeLabel>(
+        find.byType(TaskEdgeTimeLabel),
+      );
+      final originalEnd = TimeOfDay(
+        hour: zone.endMinutes ~/ 60,
+        minute: zone.endMinutes % 60,
+      );
+      expect(label.time, isNot(originalEnd));
+
+      // `onResizeBottomEnd` calls `_commitResize`, real repository I/O —
+      // same `runAsync` requirement as the move test above.
+      await tester.runAsync(() async {
+        block.onResizeBottomEnd!(DragEndDetails());
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+    },
+  );
+
+  testWidgets('a zone with no active move/resize shows no live time label', (
+    tester,
+  ) async {
+    await pumpTaskViewWithZone(tester);
+
+    expect(find.byType(TaskEdgeTimeLabel), findsNothing);
+  });
+
   testWidgets(
     'resizing TODAY\'s materialized instance of a recurring series leaves '
     'a DIFFERENT day\'s instance of the same series completely untouched',
@@ -343,6 +442,87 @@ void main() {
             'untouched by resizing a different day\'s instance.',
       );
       expect(savedOtherDay.startMinutes, originalOtherDayStart);
+    },
+  );
+
+  // Reported directly: "What about zones cant see remove? when in edt
+  // move dragging zone should remove zone appear like with tasks." There
+  // was previously no way to delete a zone from the Timeline at all —
+  // `ZoneList.deleteZone` existed but had zero UI call sites.
+  testWidgets(
+    'dropping a zone move-drag on the shared delete target deletes the '
+    'zone, same as a dragged task',
+    (tester) async {
+      final zone = await pumpTaskViewWithZone(tester);
+      final block = findZoneBlock();
+
+      await tester.runAsync(() async {
+        block.onMoveStart!(DragStartDetails());
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      });
+      await tester.pump();
+
+      // The move-drag starting is what makes the shared delete target
+      // visible at all — confirms this zone drag reaches the same
+      // target every task drag already renders, not a separate one.
+      expect(
+        find.byType(EditModeDeleteTarget),
+        findsOneWidget,
+        reason:
+            'Starting a zone move-drag under Edit Mode should reveal the '
+            'shared delete target, exactly like a task drag does.',
+      );
+
+      final targetCenter = tester.getCenter(find.byType(EditModeDeleteTarget));
+
+      await tester.runAsync(() async {
+        block.onMoveUpdate!(
+          DragUpdateDetails(globalPosition: targetCenter, delta: Offset.zero),
+        );
+        block.onMoveEnd!(DragEndDetails());
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(
+        zoneBox.get(zone.id),
+        isNull,
+        reason:
+            'Dropping the zone drag on the delete target should delete '
+            'it, mirroring _DraggableTaskBlock\'s own delete-drop path.',
+      );
+    },
+  );
+
+  testWidgets(
+    'a zone move-drag that ends OFF the delete target does not delete '
+    'the zone',
+    (tester) async {
+      final zone = await pumpTaskViewWithZone(tester);
+      final block = findZoneBlock();
+
+      await tester.runAsync(() async {
+        block.onMoveStart!(DragStartDetails());
+        block.onMoveUpdate!(
+          DragUpdateDetails(
+            globalPosition: const Offset(1, 1),
+            delta: const Offset(0, 60),
+          ),
+        );
+        block.onMoveEnd!(DragEndDetails());
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(
+        zoneBox.get(zone.id),
+        isNotNull,
+        reason:
+            'An ordinary move (not dropped on the delete target) must '
+            'never delete the zone.',
+      );
     },
   );
 }

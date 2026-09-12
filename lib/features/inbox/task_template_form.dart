@@ -134,6 +134,23 @@ class _TaskTemplateFormState extends ConsumerState<_TaskTemplateForm> {
     setState(() => _isNameStage = false);
   }
 
+  /// Removes the template being edited — requested directly: "Edit
+  /// template also remove icon b[u]tton add." Mirrors
+  /// `task_template_action_sheet.dart`'s own `_delete` and
+  /// `task_detail_sheet.dart`'s `_delete`: deletes immediately with no
+  /// confirmation dialog (a template has no recurring-scope question to
+  /// ask, and nothing references it once it has spawned a task), edit
+  /// path only (there is nothing to delete from the create flow).
+  Future<void> _delete() async {
+    final template = widget.template;
+    if (template == null) return;
+
+    final navigator = Navigator.of(context);
+    final notifier = ref.read(taskTemplateListProvider.notifier);
+    navigator.pop();
+    await notifier.deleteTemplate(template.id);
+  }
+
   Future<void> _save() async {
     if (!_canSave) return;
     setState(() => _isSaving = true);
@@ -223,6 +240,10 @@ class _TaskTemplateFormState extends ConsumerState<_TaskTemplateForm> {
           ? _confirmNameStage
           : (_canSave ? _save : null),
       isPrimaryLoading: !_isNameStage && _isSaving,
+      // Edit only, requested directly — same "remove icon button" the
+      // task edit flow and Zone's own edit screen already have.
+      onSecondaryAction: _isEditing && !_isNameStage ? _delete : null,
+      secondaryActionIcon: Icons.delete_outline_rounded,
       body: SingleChildScrollView(
         // Top reverted to a plain spacingLg — the fade now lives inside
         // StepScaffold's own header container, clipped to it.

@@ -39,6 +39,8 @@ class TrackedBehaviorList extends _$TrackedBehaviorList {
     num? targetAmount,
     num? minimumAmount,
     required int timesPerWeek,
+    String? customUnitLabel,
+    String? customUnitName,
   }) async {
     final behavior = TrackedBehavior.create(
       title: title,
@@ -46,6 +48,8 @@ class TrackedBehaviorList extends _$TrackedBehaviorList {
       targetAmount: targetAmount,
       minimumAmount: minimumAmount,
       timesPerWeek: timesPerWeek,
+      customUnitLabel: customUnitLabel,
+      customUnitName: customUnitName,
     );
     await ref.read(trackedBehaviorRepositoryProvider).saveBehavior(behavior);
     _refresh();

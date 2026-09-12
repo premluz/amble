@@ -17,7 +17,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 
-import '../../core/dev_config.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../hive_registrar.g.dart';
 import '../../shared/models/category.dart';
@@ -105,11 +104,6 @@ class _StartsOnEditModeEnabled extends EditModeEnabled {
   bool build() => true;
 }
 
-class _ZoneViewInCycleOn extends DevZoneViewInCycle {
-  @override
-  bool build() => true;
-}
-
 class _PreviewApp extends StatelessWidget {
   const _PreviewApp();
 
@@ -120,14 +114,10 @@ class _PreviewApp extends StatelessWidget {
       // it, so starting there skips a manual tap on every run.
       overrides: [
         editModeEnabledProvider.overrideWith(() => _StartsOnEditModeEnabled()),
-        // Zone view is additionally gated by a debug-only dev toggle (see
-        // core/dev_config.dart's DevZoneViewInCycle, default false) on top
-        // of the persisted zoneViewEnabled preference this scaffold
-        // already sets — both gates must be on for Zone view to actually
-        // be reachable in a debug build, which is what `flutter run`
-        // always is.
-        if (_mode == 'zone')
-          devZoneViewInCycleProvider.overrideWith(() => _ZoneViewInCycleOn()),
+        // Zone view no longer needs a dev-toggle override (2026-09-10 —
+        // it's reachable purely off FeatureFlags.zoneEnabled now, same as
+        // a release build); the persisted zoneViewEnabled preference this
+        // scaffold already sets is the only gate left.
       ],
       child: MaterialApp(
         theme: ThemeData(

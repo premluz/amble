@@ -64,6 +64,7 @@ class TaskCapsuleBlock extends StatelessWidget {
     this.textLayout = TimelineTaskTextLayout.stacked,
     this.iconsVisible = true,
     this.durationVisible = true,
+    this.timeRangeVisible = true,
     this.durationIndicatedBySize = true,
     this.category,
     this.compactText = false,
@@ -218,7 +219,25 @@ class TaskCapsuleBlock extends StatelessWidget {
   /// Dev-only toggle (`DevTimelineTaskDurationVisible`) for the
   /// `(45m)`-style suffix on the time line. Defaults to true (current
   /// shipped behavior).
+  ///
+  /// Only independent of [timeRangeVisible] in List (collapsed) mode
+  /// (`compactText == true`) — see that field's own doc comment. In Task
+  /// view (`compactText == false`), this flag alone still hides the whole
+  /// time+duration line, unchanged from before [timeRangeVisible] existed:
+  /// requested directly, "should not affect task spatial view (on this
+  /// view we'd never show this)."
   final bool durationVisible;
+
+  /// List (collapsed) mode only — the `04:20 - 05:20`-style time range,
+  /// independent of [durationVisible]'s `(45m)` duration suffix. Requested
+  /// directly: "we should add setting show time from to... these should
+  /// affect list view only and should not affect task spatial view."
+  ///
+  /// Has no effect at all when [compactText] is false (Task view): that
+  /// branch's time+duration line is governed solely by [durationVisible],
+  /// exactly as it was before this field existed. Defaults to true,
+  /// matching List view's existing always-shown time range.
+  final bool timeRangeVisible;
 
   /// True in List (collapsed) mode. Previously also switched the title/
   /// time text down to a separate, smaller `textTaskTitleCompact` style —
@@ -417,6 +436,15 @@ class TaskCapsuleBlock extends StatelessWidget {
       effectiveStart.add(Duration(minutes: task.durationMinutes!)),
     );
     final durationLabel = formatDurationLabel(task.durationMinutes!);
+    // List mode only: [timeRangeVisible]/[durationVisible] are independent
+    // toggles there (see their own doc comments). Task view keeps its
+    // original, unchanged behavior — [durationVisible] alone gates the
+    // whole line, and the time range itself is always shown when it does.
+    final showTimeRange = compactText ? timeRangeVisible : true;
+    final timeRangeText =
+        '${startTime.format(context)} - ${endTime.format(context)}';
+    final durationSuffix = durationVisible ? ' ($durationLabel)' : '';
+    final timeLine = showTimeRange ? '$timeRangeText$durationSuffix' : '';
 
     // The cluster-member case: only the pill's real category-colored shape
     // (color, height, position) reads visually — no icon, no title/time
@@ -714,12 +742,7 @@ class TaskCapsuleBlock extends StatelessWidget {
                                 ? 0
                                 : _staggeredOpacity(entranceProgress, 2),
                             child: Text(
-                              durationVisible
-                                  ? '${startTime.format(context)} - '
-                                        '${endTime.format(context)} '
-                                        '($durationLabel)'
-                                  : '${startTime.format(context)} - '
-                                        '${endTime.format(context)}',
+                              timeLine,
                               style: titleTextStyle.copyWith(
                                 color: theme.colorTextSecondary,
                               ),
@@ -745,12 +768,7 @@ class TaskCapsuleBlock extends StatelessWidget {
                               TextSpan(
                                 children: [
                                   TextSpan(
-                                    text: durationVisible
-                                        ? '${startTime.format(context)} - '
-                                              '${endTime.format(context)} '
-                                              '($durationLabel)  '
-                                        : '${startTime.format(context)} - '
-                                              '${endTime.format(context)}  ',
+                                    text: timeLine.isEmpty ? '' : '$timeLine  ',
                                     style: titleTextStyle.copyWith(
                                       color: theme.colorTextSecondary,
                                     ),
@@ -1054,6 +1072,7 @@ class TaskCapsuleTextRow extends StatelessWidget {
     this.onToggleComplete,
     this.durationVisible = true,
     this.alwaysShowTime = false,
+    this.timeRangeVisible = true,
     this.showCompletionCheckbox = true,
     this.isFaded = false,
     this.compactInlineLayout = false,
@@ -1095,6 +1114,15 @@ class TaskCapsuleTextRow extends StatelessWidget {
   /// confirmation that Task view's split layout should keep its current
   /// (dev-toggle-driven) behavior unchanged.
   final bool alwaysShowTime;
+
+  /// List mode's own from-to time range (`04:20 - 05:20`), independent of
+  /// [durationVisible]'s duration label — requested directly: "show
+  /// duration dev setting should only show duration, we should add
+  /// setting show time from to." Only consulted in [compactInlineLayout]
+  /// mode; Task view's split layout is unaffected (it always shows its
+  /// own time column via [alwaysShowTime]/[durationVisible], per that
+  /// field's own doc comment on the non-`compactInlineLayout` branch).
+  final bool timeRangeVisible;
   final bool showCompletionCheckbox;
 
   /// Fades this row out while its own pill is lifted, matching how the
@@ -1125,18 +1153,20 @@ class TaskCapsuleTextRow extends StatelessWidget {
       effectiveStart.add(Duration(minutes: task.durationMinutes!)),
     );
 
-    // Matches `OverlapClusterBlock`'s own timeLabel construction exactly
-    // (spaced dash, duration suffix in parens) — only actually used when
-    // `compactInlineLayout` is on; the fixed-column branch below builds
-    // its own (unspaced-dash) string independently, unchanged.
-    final timeRange = '${start.format(context)} - ${end.format(context)}';
-    final withSuffix =
-        '$timeRange (${formatDurationLabel(task.durationMinutes!)})';
-    final timeLabel = !alwaysShowTime && !durationVisible
-        ? null
-        : durationVisible
-        ? withSuffix
-        : timeRange;
+    // Two INDEPENDENT pieces, only actually used when `compactInlineLayout`
+    // is on (List view) — the fixed-column branch below builds its own
+    // (unspaced-dash) string independently, unchanged. Requested directly:
+    // "show duration dev setting should only show duration, we should add
+    // setting show time from to (should then show time)" — either, both,
+    // or neither can be on, rather than duration being a suffix baked onto
+    // the time string.
+    final timeRange = timeRangeVisible
+        ? '${start.format(context)} - ${end.format(context)}'
+        : null;
+    final durationLabel = durationVisible
+        ? '(${formatDurationLabel(task.durationMinutes!)})'
+        : null;
+    final timeLabel = [?timeRange, ?durationLabel].join(' ');
 
     final titleStyle = theme.textTaskTitle.copyWith(
       color: isCompleted ? theme.colorTextSecondary : theme.colorTextPrimary,
@@ -1146,6 +1176,11 @@ class TaskCapsuleTextRow extends StatelessWidget {
           : TextDecoration.none,
       decorationColor: theme.colorTextSecondary,
     );
+    // One rendered line of the title, derived from the type tokens rather
+    // than hardcoded — the trailing completion checkbox centres itself on
+    // this so it lines up with the text instead of with the row.
+    final titleLineHeight =
+        (titleStyle.fontSize ?? 0) * (titleStyle.height ?? 1);
     // The important marker hangs in the margin BEFORE the title rather
     // than displacing it — requested directly: "just icon in front of the
     // task (with negative margin so the task name remains aligned with all
@@ -1189,7 +1224,7 @@ class TaskCapsuleTextRow extends StatelessWidget {
                   child: Text.rich(
                     TextSpan(
                       children: [
-                        if (timeLabel != null)
+                        if (timeLabel.isNotEmpty)
                           TextSpan(
                             text: '$timeLabel  ',
                             style: theme.textTaskTitle.copyWith(
@@ -1245,10 +1280,36 @@ class TaskCapsuleTextRow extends StatelessWidget {
             ],
             if (showCompletionCheckbox) ...[
               SizedBox(width: theme.spacingSm),
-              CompletionCheckbox(
-                theme: theme,
-                isCompleted: isCompleted,
-                onToggle: onToggleComplete,
+              // Centred on the FIRST LINE of the title, not on the row.
+              // The checkbox's 48px tap target is taller than the ~18px
+              // text, and under the Row's `CrossAxisAlignment.start` it
+              // was the checkbox that defined the row height while the
+              // text sat at the top — measured 15px apart, which reads as
+              // the checkbox floating below its own task (reported
+              // directly: "not in the same line as task"). Collapsing the
+              // tap target's own height out of the cross-axis calculation
+              // and re-centring it on one text line puts the two back on
+              // the same line, at any title length and in a stacked
+              // overlap cluster alike.
+              SizedBox(
+                height: titleLineHeight,
+                width: theme.spacingMinTapTarget,
+                // The 48px target still renders and still receives taps —
+                // it simply stops contributing its height to the Row.
+                // `OverflowBox` lets it paint outside the one-line slot
+                // above/below, so WCAG 2.5.8's minimum target size is
+                // preserved while the visible ring stays on the text's
+                // line. Collapsing the SizedBox alone would have shrunk
+                // the real tap area to ~18px.
+                child: OverflowBox(
+                  maxHeight: theme.spacingMinTapTarget,
+                  minHeight: theme.spacingMinTapTarget,
+                  child: CompletionCheckbox(
+                    theme: theme,
+                    isCompleted: isCompleted,
+                    onToggle: onToggleComplete,
+                  ),
+                ),
               ),
             ],
           ],

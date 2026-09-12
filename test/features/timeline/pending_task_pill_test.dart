@@ -5,6 +5,7 @@ import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/features/timeline/edit_mode_wiggle.dart';
 import 'package:amble/features/timeline/pending_task_pill.dart';
 import 'package:amble/features/timeline/resize_handle.dart';
+import 'package:amble/features/timeline/task_edge_time_label.dart';
 
 void main() {
   Future<void> pump(
@@ -15,6 +16,8 @@ void main() {
     VoidCallback? onResizeEnd,
     ValueChanged<double>? onResizeTopUpdate,
     VoidCallback? onResizeTopEnd,
+    TimeOfDay startTime = const TimeOfDay(hour: 9, minute: 0),
+    TimeOfDay endTime = const TimeOfDay(hour: 10, minute: 0),
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -31,6 +34,8 @@ void main() {
                 textColumnLeft: 120,
                 textColumnRight: 0,
                 height: 80,
+                startTime: startTime,
+                endTime: endTime,
                 onMoveStart: (_) {},
                 onMoveUpdate: onMoveUpdate ?? (_) {},
                 onMoveEnd: onMoveEnd ?? () {},
@@ -203,5 +208,49 @@ void main() {
       // ...while the rail's own wiggle is still present and enabled.
       expect(find.byType(EditModeWiggle), findsOneWidget);
     });
+  });
+
+  // Requested directly: "when quick new add task is dropped and wiggly
+  // showing start and end of task ... until it's scheduled or closed" —
+  // the same accent "time on the right" treatment the long-press
+  // placement line already uses (`PlaceTaskLineLayer`).
+  group('start/end time labels (2026-09-10)', () {
+    testWidgets('shows both the start and end time', (tester) async {
+      await pump(
+        tester,
+        startTime: const TimeOfDay(hour: 9, minute: 0),
+        endTime: const TimeOfDay(hour: 10, minute: 30),
+      );
+
+      expect(find.text('9:00 AM'), findsOneWidget);
+      expect(find.text('10:30 AM'), findsOneWidget);
+    });
+
+    testWidgets('renders exactly two TaskEdgeTimeLabels — one per edge', (
+      tester,
+    ) async {
+      await pump(tester);
+
+      expect(find.byType(TaskEdgeTimeLabel), findsNWidgets(2));
+    });
+
+    testWidgets(
+      'the start label sits at the pill\'s own top, the end label below it',
+      (tester) async {
+        await pump(tester);
+
+        final labels = tester
+            .widgetList<TaskEdgeTimeLabel>(find.byType(TaskEdgeTimeLabel))
+            .toList();
+        final tops = [
+          for (final label in labels)
+            tester.getTopLeft(find.byWidget(label)).dy,
+        ]..sort();
+
+        // top: 100, height: 80 in this file's own harness — the start
+        // label centres on 100, the end label on 180 (100 + 80).
+        expect(tops.first, lessThan(tops.last));
+      },
+    );
   });
 }

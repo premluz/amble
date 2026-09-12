@@ -121,7 +121,7 @@ final class TrackedBehaviorListProvider
 }
 
 String _$trackedBehaviorListHash() =>
-    r'868670e11b1084cee528bde2dd46f1fe0b84decf';
+    r'ea833547438517c25b2a53420acff095987035be';
 
 /// CRUD state over [TrackedBehaviorRepository], mirroring [TaskList].
 ///

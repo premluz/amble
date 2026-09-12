@@ -4,14 +4,11 @@ import 'package:amble/features/inbox/inbox_screen.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/models/task.dart';
-import 'package:amble/shared/models/task_template.dart';
 import 'package:amble/shared/providers/category_providers.dart';
 import 'package:amble/shared/providers/notification_providers.dart';
 import 'package:amble/shared/providers/task_providers.dart';
-import 'package:amble/shared/providers/task_template_providers.dart';
 import 'package:amble/shared/repositories/hive_category_repository.dart';
 import 'package:amble/shared/repositories/hive_task_repository.dart';
-import 'package:amble/shared/repositories/hive_task_template_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -21,15 +18,17 @@ import 'package:uuid/uuid.dart';
 import '../../support/fake_notification_service.dart';
 import '../../support/seeded_category_box.dart';
 
-/// The real bug reported directly: "tasks templates tracked cards should
-/// all start at same y level, currently templates are higher." The
-/// Templates tab's own `ListView` had NO top padding at all, so its first
-/// row sat flush under the heading while the Tasks tab's own first row
-/// (padded) started lower — visibly misaligned when switching tabs.
+/// **2026-09-12 — the Manage screen's sub-tabs (Tasks/Templates/Zones/
+/// Categories) were removed**, requested directly: "remove tabs tasks
+/// templates zones categories... only keep tasks." This file's own
+/// tab-alignment test was removed with them (`inbox_manage_tabs_test.dart`
+/// covered the rest of that removed feature and was deleted outright).
+/// The remaining tests here — background/fade color, fade-vs-heading
+/// layout — are unaffected by the tab removal and still apply to the
+/// tasks-only screen.
 void main() {
   late Box<Task> taskBox;
   late Box<Category> categoryBox;
-  late Box<TaskTemplate> templateBox;
 
   setUp(() async {
     Hive.init('./.dart_tool/test_hive_inbox_card_alignment');
@@ -39,13 +38,11 @@ void main() {
     final stamp = DateTime.now().microsecondsSinceEpoch;
     taskBox = await Hive.openBox<Task>('test_tasks_$stamp');
     categoryBox = await openSeededCategoryBox('test_categories_$stamp');
-    templateBox = await Hive.openBox<TaskTemplate>('test_templates_$stamp');
   });
 
   tearDown(() async {
     await taskBox.close();
     await categoryBox.close();
-    await templateBox.close();
   });
 
   Future<void> pumpInbox(WidgetTester tester) async {
@@ -59,12 +56,6 @@ void main() {
         categoryId: BuiltInCategoryIds.general,
       );
       await taskBox.put(task.id, task);
-
-      final template = TaskTemplate.create(
-        title: 'Take a walk',
-        categoryId: BuiltInCategoryIds.general,
-      );
-      await templateBox.put(template.id, template);
     });
 
     await tester.pumpWidget(
@@ -73,9 +64,6 @@ void main() {
           taskRepositoryProvider.overrideWithValue(HiveTaskRepository(taskBox)),
           categoryRepositoryProvider.overrideWithValue(
             HiveCategoryRepository(categoryBox),
-          ),
-          taskTemplateRepositoryProvider.overrideWithValue(
-            HiveTaskTemplateRepository(templateBox),
           ),
           notificationServiceProvider.overrideWithValue(
             FakeNotificationService(),
@@ -90,32 +78,6 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
   }
-
-  testWidgets(
-    "the Tasks tab's first card and the Templates tab's first card start "
-    'at the same y position',
-    (tester) async {
-      await pumpInbox(tester);
-
-      // Tasks tab is the default — capture its first card's top.
-      final taskCardTop = tester.getTopLeft(find.text('Buy milk')).dy;
-
-      // Switch to Templates.
-      await tester.tap(find.text('Templates'));
-      await tester.pump();
-
-      final templateCardTop = tester.getTopLeft(find.text('Take a walk')).dy;
-
-      expect(
-        templateCardTop,
-        closeTo(taskCardTop, 0.5),
-        reason:
-            'both tabs must start their first card at the same y — a '
-            'mismatch here is exactly the reported bug ("templates are '
-            'higher")',
-      );
-    },
-  );
 
   // Reversed back (2026-09-09), requested directly: "the header cuts the
   // content with a hard edge... the content slides through underneath."
@@ -204,29 +166,34 @@ void main() {
     },
   );
 
-  // Reported directly: task cards had a hard visible edge against the
-  // page background — no border in the code, so the two flat fills (card
-  // vs. page) were just close enough in lightness to read as a hard
-  // line. Matches AppPane's own existing fix for the identical problem:
-  // a shadow instead of a border.
-  testWidgets(
-    'a task card carries the shared shadowPane elevation, softening its '
-    'edge against the page background',
-    (tester) async {
-      await pumpInbox(tester);
+  // **2026-09-12 — reversed.** Requested directly: "remove cards from
+  // Manage." Was: "a task card carries the shared shadowPane elevation" —
+  // the row is now a plain, undecorated Row (no fill, no shadow, no
+  // rounded corners), separated from its neighbours by the list's own
+  // separator gap rather than by a card edge.
+  testWidgets('a task row carries no card decoration — no fill, no shadow', (
+    tester,
+  ) async {
+    await pumpInbox(tester);
 
-      final card = tester.widget<Container>(
-        find
-            .ancestor(
-              of: find.text('Buy milk'),
-              matching: find.byType(Container),
-            )
-            .first,
+    // No ancestor Container between the row's own title and the
+    // ListView at all — the old card wrapper is gone entirely, not just
+    // stripped of its shadow.
+    final rowContainers = find.ancestor(
+      of: find.text('Buy milk'),
+      matching: find.byType(Container),
+    );
+    for (final element in rowContainers.evaluate()) {
+      final decoration = (element.widget as Container).decoration;
+      expect(
+        decoration,
+        isNull,
+        reason:
+            'no Container between the row and the list should carry '
+            'a card decoration any more',
       );
-      final decoration = card.decoration! as BoxDecoration;
-      expect(decoration.boxShadow, AmbleTheme.light.shadowPane);
-    },
-  );
+    }
+  });
 
   // Reversed back (2026-09-09) alongside the fade-overlays-the-list fix
   // above: originally "the heading in the inbox is also being covered by

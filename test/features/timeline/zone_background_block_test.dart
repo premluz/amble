@@ -587,4 +587,15 @@ void _zoneNameLabelTests() {
       findsOneWidget,
     );
   });
+
+  // Requested directly: "Make zone names even subtler color (add new
+  // subtler semantic token)." Was colorTextSecondary.
+  testWidgets('renders in colorTextTertiary, not colorTextSecondary', (
+    tester,
+  ) async {
+    await pump(tester);
+    final text = tester.widget<Text>(find.text('Morning ritual'));
+    expect(text.style?.color, AmbleTheme.light.colorTextTertiary);
+    expect(text.style?.color, isNot(AmbleTheme.light.colorTextSecondary));
+  });
 }

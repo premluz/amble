@@ -297,10 +297,19 @@ class _ExternalEventTextRow extends StatelessWidget {
   /// "no time start end for importend tasks, like native amble tasks."
   final bool durationVisible;
 
-  /// Mirrors `TaskCapsuleTextRow.alwaysShowTime`'s exact contract — List
-  /// mode's own override, forcing the time back on regardless of
-  /// [durationVisible] (List mode has no timeline axis, so time is the
-  /// only place a schedule reads at all).
+  /// **Reversed — List mode now means the OPPOSITE of "always show."**
+  /// `true` here still means List mode (mirrors
+  /// `TaskCapsuleTextRow.alwaysShowTime`'s "is this List mode" contract
+  /// exactly, and this widget is only ever constructed with
+  /// `alwaysShowTime: compactText`), but requested directly: "no time no
+  /// duration would apply to imported tasks" — List view never shows an
+  /// imported event's time or duration at all now, regardless of either
+  /// dev toggle. An event's "duration" is only ever a computed span
+  /// (`event.end - event.start`), never a concept the user actually set,
+  /// so there was nothing meaningful for the duration toggle to show here
+  /// in the first place. Task view (`alwaysShowTime: false`) is unchanged
+  /// — [durationVisible] alone still gates the whole time+duration line
+  /// there, same as before.
   final bool alwaysShowTime;
 
   @override
@@ -312,7 +321,7 @@ class _ExternalEventTextRow extends StatelessWidget {
       color: theme.colorTextSecondary,
     );
     final titleSpan = TextSpan(text: event.title, style: textStyle);
-    final showTime = alwaysShowTime || durationVisible;
+    final showTime = !alwaysShowTime && durationVisible;
 
     if (compactInlineLayout) {
       final timeLabel =

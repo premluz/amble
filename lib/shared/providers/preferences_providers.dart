@@ -4,6 +4,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../models/app_theme_mode.dart';
 import '../models/task_size.dart';
+import '../models/tracked_behavior_view_mode.dart';
 import '../repositories/hive_preferences_repository.dart';
 import '../repositories/preferences_repository.dart';
 
@@ -217,6 +218,31 @@ class TaskSizeSetting extends _$TaskSizeSetting {
     await ref
         .read(preferencesRepositoryProvider)
         .setValue(PreferenceKeys.taskSize, value);
+    state = value;
+  }
+}
+
+/// How the "Tracked" screen's cards render a behavior's completion
+/// history (weekly row / monthly grid / six-month heatmap) — one global
+/// setting for the whole screen, cycled by a single switcher button in
+/// its own bottom bar, mirroring the Timeline's `TimelineViewMode` cycle
+/// button exactly. Defaults to `TrackedBehaviorViewMode.weekly`.
+@Riverpod(keepAlive: true)
+class TrackedBehaviorViewModeSetting extends _$TrackedBehaviorViewModeSetting {
+  @override
+  TrackedBehaviorViewMode build() {
+    return ref
+            .read(preferencesRepositoryProvider)
+            .getValue<TrackedBehaviorViewMode>(
+              PreferenceKeys.trackedBehaviorViewMode,
+            ) ??
+        TrackedBehaviorViewMode.weekly;
+  }
+
+  Future<void> set(TrackedBehaviorViewMode value) async {
+    await ref
+        .read(preferencesRepositoryProvider)
+        .setValue(PreferenceKeys.trackedBehaviorViewMode, value);
     state = value;
   }
 }

@@ -248,19 +248,48 @@ SystemUiOverlayStyle _overlayStyleFor(Brightness surface) {
 /// doc comment. Every real call site reads `theme.sizeTaskBadge`/
 /// `theme.textTaskTitle` directly and has no idea this setting exists;
 /// this is the one place the mapping happens.
+///
+/// **Decoupled 2026-09-10** (requested directly): each named option now
+/// pairs a badge rung with a font rung ONE STEP SMALLER, rather than the
+/// matching-named rung — "Current medium size but with font size from
+/// small should be small... Current large but with the font size medium
+/// should be medium... large should be larger task pill but font size
+/// same as medium." Exact pairing:
+/// - sm: badge md (24) + font sm (12) — was badge sm (20) + font sm (12).
+/// - md: badge lg (28) + font md (14) — was badge md (24) + font md (14).
+/// - lg: badge xl (32, new) + font md (14) — was badge lg (28) + font lg
+///   (16); lg's own font rung is no longer used by this mapping at all,
+///   kept only as a named token in case a future rung needs it.
 AmbleTheme _resolveTaskSize(AmbleTheme palette, TaskSize size) {
   return switch (size) {
     TaskSize.sm => palette.copyWith(
-      sizeTaskBadge: palette.sizeTaskBadgeSm,
+      sizeTaskBadge: palette.sizeTaskBadgeMd,
       textTaskTitle: palette.textTaskTitleSm,
+      // Zone view's own title font is always one rung up from the active
+      // one — see AmbleTheme.textTaskTitleZone's own doc comment.
+      // Requested directly: "Size of text in zone view (task name one
+      // scale up)."
+      textTaskTitleZone: palette.textTaskTitleMd,
     ),
     TaskSize.md => palette.copyWith(
-      sizeTaskBadge: palette.sizeTaskBadgeMd,
-      textTaskTitle: palette.textTaskTitleMd,
-    ),
-    TaskSize.lg => palette.copyWith(
       sizeTaskBadge: palette.sizeTaskBadgeLg,
+      textTaskTitle: palette.textTaskTitleMd,
+      textTaskTitleZone: palette.textTaskTitleLg,
+    ),
+    // **2026-09-12** — was `textTaskTitleMd` (a deliberate "large should
+    // be a larger pill but font size same as medium" decision, confirmed
+    // directly at the time). Reversed on THIS session's own direct
+    // request ("reduce 1 scale down" across all 3 settings, confirmed via
+    // AskUserQuestion that lg should get its own genuine one-step
+    // reduction rather than stay paired with md): `textTaskTitleLg` now
+    // renders at its own size (14, one step down from its old 16) instead
+    // of borrowing md's.
+    TaskSize.lg => palette.copyWith(
+      sizeTaskBadge: palette.sizeTaskBadgeXl,
       textTaskTitle: palette.textTaskTitleLg,
+      // No rung larger than lg exists, so Zone view stays at lg's own
+      // size too — it simply can't go any further up.
+      textTaskTitleZone: palette.textTaskTitleLg,
     ),
   };
 }
@@ -282,7 +311,15 @@ ThemeData _themeDataFor(AmbleTheme palette, Brightness brightness) {
       seedColor: palette.colorAccent,
       brightness: brightness,
     ),
-    scaffoldBackgroundColor: palette.colorSurfacePrimary,
+    // `colorSurfaceBase`, NOT `colorSurfacePrimary` — the page background
+    // is level 0, the ground panes sit on; `colorSurfacePrimary` is a
+    // raised pane (pure white in light mode). Painting the page with the
+    // pane color made the light-mode scaffold and the white floating nav
+    // BYTE-IDENTICAL (#FFFFFF vs #FFFFFF, ratio 1.000), which is the
+    // reported "bg and menu same color" — and it is why deepening
+    // `cream0` alone changed nothing on screen: nothing painted that
+    // token. See the elevation tests in test/core/tokens/.
+    scaffoldBackgroundColor: palette.colorSurfaceBase,
     // App-wide font fallback — every text style built from `AmbleTheme`'s
     // own tokens already carries `TypePrimitives.fontFamily` explicitly
     // (see semantic_theme.dart), but this covers default Material text
@@ -424,31 +461,85 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
         (ref.watch(editModeEnabledProvider) ||
             ref.watch(pendingTaskDraftProvider) != null);
 
+    // Which elevation direction the floating nav pane below uses — dark
+    // mode separates by getting lighter than the page, light mode by
+    // casting a shadow onto it.
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
       body: IndexedStack(
         index: _selectedIndex < screens.length ? _selectedIndex : 1,
         children: screens,
       ),
+      // A floating rounded pane rather than a full-bleed bar welded to the
+      // screen edge — it reads as an element hovering above the page, which
+      // is what lets the elevation ramp below actually mean something.
+      //
+      // Dark mode paints `colorSurfaceOverlay` (ink700, the LIGHTEST
+      // surface in the ramp) plus a hairline border. This corrects a real
+      // inversion: the bar used to paint `colorSurfacePrimary`, which in
+      // dark mode is `ink900` — the same value as the page background —
+      // so the topmost floating element was simultaneously the darkest
+      // thing on screen. Light mode keeps a white fill and separates with
+      // `shadowPane` instead, since its base is already near-white and
+      // "lighter" isn't available as a depth cue there.
       bottomNavigationBar: hideBottomNav
           ? null
-          : NavigationBar(
-              selectedIndex: _selectedIndex < screens.length
-                  ? _selectedIndex
-                  : 1,
-              onDestinationSelected: (index) =>
-                  setState(() => _selectedIndex = index),
-              backgroundColor: theme.colorSurfacePrimary,
-              // Material 3's NavigationBar applies its own surfaceTintColor
-              // overlay by default (derived from ColorScheme.fromSeed), which
-              // paints OVER an explicit backgroundColor rather than being
-              // overridden by it — a real, pre-existing dark-mode bug found
-              // while verifying this session's splash screen: the nav bar
-              // stayed white in dark mode despite backgroundColor already being
-              // wired to theme.colorSurfacePrimary at Phase 5. Zeroing the tint
-              // out makes backgroundColor the only thing that paints. See
-              // docs/DECISIONS.md.
-              surfaceTintColor: ColorPrimitives.transparent,
-              destinations: _destinations(trackedTabVisible),
+          : SafeArea(
+              top: false,
+              child: Padding(
+                // No bottom margin, per direct request — the pane sits
+                // flush to the screen's safe-area edge rather than
+                // floating above it.
+                padding: EdgeInsets.symmetric(horizontal: theme.spacingMd),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: theme.colorSurfaceOverlay,
+                    // BOTTOM corners only — AppBottomExtensionBar above
+                    // rounds the top pair. Together they form one pane.
+                    borderRadius: BorderRadius.vertical(
+                      bottom: Radius.circular(theme.radiusXl),
+                    ),
+                    // No border, per direct request. The earlier hairline
+                    // is gone: with the re-anchored ink ramp the overlay
+                    // surface is already the lightest step, and that
+                    // lightness difference against a near-black page is
+                    // what separates the pane — a drawn edge on top of it
+                    // read as a hard box rather than a floating surface.
+                    // Light mode still gets the shadow, which is its only
+                    // available depth cue on a near-white base.
+                    boxShadow: isDark ? null : theme.shadowPane,
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.vertical(
+                      bottom: Radius.circular(theme.radiusXl),
+                    ),
+                    child: NavigationBar(
+                      selectedIndex: _selectedIndex < screens.length
+                          ? _selectedIndex
+                          : 1,
+                      onDestinationSelected: (index) =>
+                          setState(() => _selectedIndex = index),
+                      // Transparent so the DecoratedBox above is what
+                      // paints — the pane owns its own fill now.
+                      backgroundColor: ColorPrimitives.transparent,
+                      // Material 3's NavigationBar applies its own
+                      // surfaceTintColor overlay by default (derived from
+                      // ColorScheme.fromSeed), which paints OVER an
+                      // explicit backgroundColor rather than being
+                      // overridden by it — a real, pre-existing dark-mode
+                      // bug found while verifying the splash screen: the
+                      // nav bar stayed white in dark mode despite
+                      // backgroundColor already being wired to a theme
+                      // token at Phase 5. Zeroing the tint out is still
+                      // required, now so the transparent fill stays
+                      // genuinely transparent. See docs/DECISIONS.md.
+                      surfaceTintColor: ColorPrimitives.transparent,
+                      destinations: _destinations(trackedTabVisible),
+                    ),
+                  ),
+                ),
+              ),
             ),
     );
   }

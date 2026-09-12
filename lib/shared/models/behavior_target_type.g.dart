@@ -19,6 +19,12 @@ class BehaviorTargetTypeAdapter extends TypeAdapter<BehaviorTargetType> {
         return BehaviorTargetType.count;
       case 2:
         return BehaviorTargetType.binary;
+      case 3:
+        return BehaviorTargetType.distance;
+      case 4:
+        return BehaviorTargetType.custom;
+      case 5:
+        return BehaviorTargetType.reps;
       default:
         return BehaviorTargetType.duration;
     }
@@ -33,6 +39,12 @@ class BehaviorTargetTypeAdapter extends TypeAdapter<BehaviorTargetType> {
         writer.writeByte(1);
       case BehaviorTargetType.binary:
         writer.writeByte(2);
+      case BehaviorTargetType.distance:
+        writer.writeByte(3);
+      case BehaviorTargetType.custom:
+        writer.writeByte(4);
+      case BehaviorTargetType.reps:
+        writer.writeByte(5);
     }
   }
 

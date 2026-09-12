@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/tokens/semantic_theme.dart';
 import 'edit_mode_wiggle.dart';
 import 'resize_handle.dart';
+import 'task_edge_time_label.dart';
 
 /// The "wiggly gray default task" dropped on Timeline by tapping empty
 /// space — requested directly. Not a real `Task`: no category, no status,
@@ -30,6 +31,8 @@ class PendingTaskPill extends StatelessWidget {
     required this.columnOffset,
     required this.width,
     required this.height,
+    required this.startTime,
+    required this.endTime,
     required this.textColumnLeft,
     required this.textColumnRight,
     this.title = 'New task',
@@ -59,6 +62,17 @@ class PendingTaskPill extends StatelessWidget {
 
   final double width;
   final double height;
+
+  /// The draft's own live start/end — requested directly: "when quick
+  /// new add task is dropped and wiggly showing start and end of task...
+  /// until it's scheduled or closed." Rendered as two accent-coloured
+  /// [TaskEdgeTimeLabel]s, one hanging off each edge, matching the
+  /// long-press placement line's own "time on the right, accent bg"
+  /// treatment (`PlaceTaskLineLayer`). Tracks every live drag/resize this
+  /// pill's own handles drive — the caller recomputes both on each frame
+  /// from its running offset, the same way `top`/`height` already do.
+  final TimeOfDay startTime;
+  final TimeOfDay endTime;
 
   /// The shared text column the title is aligned to, and the gutter kept
   /// clear on its right — the same values every real task's name uses, so
@@ -247,6 +261,44 @@ class PendingTaskPill extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+          ),
+          // The draft's own start/end, one accent label per edge — see
+          // this field's own doc comment. Full row width (like the title
+          // above), centred on each edge via the same -0.5
+          // FractionalTranslation the placement line itself uses, and
+          // last in this Stack's child list so they paint above the rail
+          // and the resize handles rather than underneath them.
+          //
+          // showLine: false — reported directly: unlike the long-press
+          // placement line (which marks a drop point on otherwise-empty
+          // background), this pill already IS a visible block, so a
+          // second full-width line reads as noise rather than a
+          // placement aid. Just the accent time badge.
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: FractionalTranslation(
+              translation: const Offset(0, -0.5),
+              child: TaskEdgeTimeLabel(
+                theme: theme,
+                time: startTime,
+                showLine: false,
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: FractionalTranslation(
+              translation: const Offset(0, 0.5),
+              child: TaskEdgeTimeLabel(
+                theme: theme,
+                time: endTime,
+                showLine: false,
+              ),
             ),
           ),
         ],

@@ -32,9 +32,17 @@ class TrackedBehavior extends HiveObject {
     this.minimumAmount,
     required this.timesPerWeek,
     this.schemaVersion = 1,
+    this.customUnitLabel,
+    this.customUnitName,
   }) : assert(
          targetType == BehaviorTargetType.binary || targetAmount != null,
          'targetAmount is required unless targetType is binary',
+       ),
+       assert(
+         targetType != BehaviorTargetType.custom ||
+             (customUnitLabel != null && customUnitName != null),
+         'customUnitLabel/customUnitName are required when targetType is '
+         'custom',
        );
 
   /// Creates a new tracked behavior with a client-generated UUID — same
@@ -46,6 +54,8 @@ class TrackedBehavior extends HiveObject {
     num? targetAmount,
     num? minimumAmount,
     required int timesPerWeek,
+    String? customUnitLabel,
+    String? customUnitName,
   }) : this(
          id: _uuid.v4(),
          title: title,
@@ -53,6 +63,8 @@ class TrackedBehavior extends HiveObject {
          targetAmount: targetAmount,
          minimumAmount: minimumAmount,
          timesPerWeek: timesPerWeek,
+         customUnitLabel: customUnitLabel,
+         customUnitName: customUnitName,
        );
 
   @HiveField(0)
@@ -83,6 +95,19 @@ class TrackedBehavior extends HiveObject {
 
   @HiveField(6)
   int schemaVersion;
+
+  /// The custom unit's own display name, e.g. "Water" — set only when
+  /// [targetType] is [BehaviorTargetType.custom]. Purely descriptive; the
+  /// short suffix shown next to amounts is [customUnitName] instead.
+  @HiveField(7)
+  String? customUnitLabel;
+
+  /// The custom unit's short suffix, e.g. "glasses" — set only when
+  /// [targetType] is [BehaviorTargetType.custom]. Shown next to a target
+  /// amount the same way "min"/"reps"/"km" are for the built-in unit
+  /// types (see `unitLabelFor` in `tracked_behavior_form.dart`).
+  @HiveField(8)
+  String? customUnitName;
 
   /// True when this behavior is simply "did it happen," with no amount.
   bool get isBinary => targetType == BehaviorTargetType.binary;

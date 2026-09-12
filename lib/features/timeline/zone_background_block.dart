@@ -4,6 +4,7 @@ import '../../core/tokens/semantic_theme.dart';
 import '../../shared/models/zone.dart';
 import 'edit_mode_wiggle.dart';
 import 'resize_handle.dart';
+import 'task_edge_time_label.dart';
 
 /// How far a rendered [ZoneBackgroundBlock] extends to the LEFT of the
 /// pill column it sits behind, creating the appearance of padding around
@@ -92,6 +93,8 @@ class ZoneBackgroundBlock extends StatelessWidget {
     this.collapsedHeight,
     this.previewTop,
     this.previewHeight,
+    this.liveStartMinutes,
+    this.liveEndMinutes,
     this.editModeEnabled = false,
     this.phaseOffset = 0,
     this.onResizeTopStart,
@@ -155,6 +158,16 @@ class ZoneBackgroundBlock extends StatelessWidget {
   /// preview either, only the container's bounds do).
   final double? previewTop;
   final double? previewHeight;
+
+  /// Live move/resize minute overrides — set together, mirroring
+  /// [previewTop]/[previewHeight]'s own "both or neither" pair contract.
+  /// While a move/resize is in progress, these carry the CANDIDATE
+  /// `startMinutes`/`endMinutes` (matching [previewTop]/[previewHeight]'s
+  /// own geometry), driving a left-pinned accent time badge over the hour
+  /// gutter — the same "always on left" treatment task blocks use.
+  /// Requested directly: "also should be show for zones."
+  final int? liveStartMinutes;
+  final int? liveEndMinutes;
 
   /// Edit Mode's persistent visual signal — see `edit_mode_wiggle.dart`.
   /// Applied HERE, inside the `Positioned` this widget itself returns,
@@ -299,8 +312,14 @@ class ZoneBackgroundBlock extends StatelessWidget {
                 onVerticalDragUpdate: onMoveUpdate,
                 onVerticalDragEnd: onMoveEnd,
                 child: DecoratedBox(
+                  // Plain, non-colored surface — matches the Zone list
+                  // row (Settings → Manage → Zones) and the Tracked
+                  // behavior card, requested directly: "the zone card
+                  // make the color of the card [same as] on manage...
+                  // as card on tracked... non colored." Was
+                  // `colorZoneBackground`, a distinct zone-tint fill.
                   decoration: BoxDecoration(
-                    color: theme.colorZoneBackground,
+                    color: theme.colorSurfaceSecondary,
                     borderRadius: BorderRadius.circular(theme.radiusMd),
                   ),
                 ),
@@ -330,10 +349,70 @@ class ZoneBackgroundBlock extends StatelessWidget {
                   onDragEnd: onResizeBottomEnd,
                 ),
               ),
+            // Live move/resize time badges, pinned over the hour gutter
+            // on the LEFT — same "always on left" treatment
+            // `_DraggableTaskBlock` uses for tasks, extended to zones:
+            // "also should be show for zones." `-(left - gutterWidth's
+            // own offset)` walks this Positioned back from the block's
+            // local origin (`left - zoneBackgroundOffset`, this widget's
+            // own outer `Positioned.left`) to the day column's true x=0.
+            // Each edge renders independently — a resize sets only the
+            // edge that's actually moving (the other stays null), while
+            // a move sets both (they shift together).
+            ..._liveZoneEdgeLabels(
+              gutterOffset: -(left - zoneBackgroundOffset),
+              height: strictHeight - zoneBackgroundGap,
+            ),
           ],
         ),
       ),
     );
+  }
+
+  List<Widget> _liveZoneEdgeLabels({
+    required double gutterOffset,
+    required double height,
+  }) {
+    return [
+      if (liveStartMinutes != null)
+        Positioned(
+          top: 0,
+          left: gutterOffset,
+          child: FractionalTranslation(
+            translation: const Offset(0, -0.5),
+            child: TaskEdgeTimeLabel(
+              theme: theme,
+              time: TimeOfDay.fromDateTime(
+                DateTime(
+                  day.year,
+                  day.month,
+                  day.day,
+                ).add(Duration(minutes: liveStartMinutes!)),
+              ),
+              showLine: false,
+            ),
+          ),
+        ),
+      if (liveEndMinutes != null)
+        Positioned(
+          top: height,
+          left: gutterOffset,
+          child: FractionalTranslation(
+            translation: const Offset(0, -0.5),
+            child: TaskEdgeTimeLabel(
+              theme: theme,
+              time: TimeOfDay.fromDateTime(
+                DateTime(
+                  day.year,
+                  day.month,
+                  day.day,
+                ).add(Duration(minutes: liveEndMinutes!)),
+              ),
+              showLine: false,
+            ),
+          ),
+        ),
+    ];
   }
 }
 
@@ -341,8 +420,10 @@ class ZoneBackgroundBlock extends StatelessWidget {
 /// column, spanning the zone's own vertical extent.
 ///
 /// Requested directly ("can't see vertical zone name on task view"), and
-/// styled to match the hour labels on the opposite edge — `textCaption` in
-/// `colorTextSecondary` — so the two read as the same class of ambient
+/// styled to match the hour labels on the opposite edge — `textCaption`.
+/// **2026-09-12**: color moved to `colorTextTertiary`, subtler than
+/// `colorTextSecondary` — requested directly ("make zone names even
+/// subtler color"), so the two read as the same class of ambient
 /// annotation framing the day rather than as content.
 ///
 /// A separate widget from [ZoneBackgroundBlock] rather than a child of it:
@@ -416,9 +497,7 @@ class ZoneNameLabel extends StatelessWidget {
           child: Center(
             child: Text(
               zone.title,
-              style: theme.textCaption.copyWith(
-                color: theme.colorTextSecondary,
-              ),
+              style: theme.textCaption.copyWith(color: theme.colorTextTertiary),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),

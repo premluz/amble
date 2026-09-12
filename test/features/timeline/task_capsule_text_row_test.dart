@@ -236,4 +236,68 @@ void main() {
     expect(find.byIcon(Icons.star_rounded), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  // Reported directly: "on task spatial view also not in the same line as
+  // task and not on right."
+  //
+  // The checkbox's 48px tap target is far taller than the ~18px title
+  // line. Under the Row's `CrossAxisAlignment.start` the target defined
+  // the row height while the text sat at the top, leaving the two 15px
+  // apart — the checkbox reading as floating below its own task.
+  group('checkbox alignment', () {
+    testWidgets('the checkbox centres on the title line, not the row', (
+      tester,
+    ) async {
+      await pumpRow(tester, taskAt(9));
+
+      final checkbox = tester.getRect(find.byType(CompletionCheckbox));
+      final title = tester.getRect(find.text('Stretching'));
+
+      expect(
+        (checkbox.center.dy - title.center.dy).abs(),
+        lessThan(1.0),
+        reason:
+            'checkbox centre ${checkbox.center.dy} vs title '
+            '${title.center.dy}',
+      );
+    });
+
+    testWidgets('aligning it does not shrink the 48px tap target', (
+      tester,
+    ) async {
+      await pumpRow(tester, taskAt(9));
+
+      // The naive fix (a one-line-tall SizedBox) aligned the ring but cut
+      // the real tap area to ~18px, below WCAG 2.5.8's minimum. The target
+      // must keep its full size while only its LAYOUT height collapses.
+      final checkbox = tester.getRect(find.byType(CompletionCheckbox));
+      expect(checkbox.height, AmbleTheme.light.spacingMinTapTarget);
+      expect(checkbox.width, AmbleTheme.light.spacingMinTapTarget);
+    });
+
+    testWidgets('the full-size target still receives taps', (tester) async {
+      var toggled = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
+          home: Scaffold(
+            body: TaskCapsuleTextRow(
+              task: taskAt(9),
+              timeColumnWidth: taskTimeColumnWidth(AmbleTheme.light),
+              durationColumnWidth: taskDurationColumnWidth(AmbleTheme.light),
+              onToggleComplete: () => toggled = true,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // warnIfMissed: the target deliberately paints outside its layout
+      // slot via OverflowBox, which the hit-test warning doesn't model.
+      await tester.tap(find.byType(CompletionCheckbox), warnIfMissed: false);
+      await tester.pump();
+
+      expect(toggled, isTrue);
+    });
+  });
 }

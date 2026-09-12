@@ -17,4 +17,7 @@ class HiveCategoryRepository implements CategoryRepository {
   @override
   Future<void> saveCategory(Category category) =>
       _box.put(category.id, category);
+
+  @override
+  Future<void> deleteCategory(String id) => _box.delete(id);
 }

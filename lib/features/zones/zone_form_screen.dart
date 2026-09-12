@@ -239,6 +239,26 @@ class _ZoneFormScreenState extends ConsumerState<_ZoneFormScreen> {
     }
   }
 
+  /// Removes the zone being edited — requested directly: "Edit zone
+  /// screen should have remove icon button same as w[ith] edit t[a]sk."
+  /// Mirrors `task_detail_sheet.dart`'s own `_delete` exactly: no
+  /// confirmation dialog (matches this app's existing "Remove deletes
+  /// immediately" convention), edit path only (there is nothing to
+  /// delete from the create flow). Unlike `removeTask`, `deleteZone` has
+  /// no recurring-scope disambiguation to defer to — a materialized
+  /// recurring instance deletes the same single row a plain zone does,
+  /// per that provider method's own existing, deliberate design (see
+  /// `ZoneList.deleteZone`'s own doc comment).
+  Future<void> _delete() async {
+    final zone = widget.zone;
+    if (zone == null) return;
+
+    final navigator = Navigator.of(context);
+    final notifier = ref.read(zoneListProvider.notifier);
+    navigator.pop();
+    await notifier.deleteZone(zone.id);
+  }
+
   /// Confirms stage 1 (Name) and advances to stage 2 — fired by stage 1's
   /// own Done button or the Name field's keyboard-complete action. Mirrors
   /// `task_detail_sheet.dart`'s own `_confirmNameStage` exactly: an empty
@@ -389,6 +409,10 @@ class _ZoneFormScreenState extends ConsumerState<_ZoneFormScreen> {
           : (_canSave ? _save : null),
       isPrimaryLoading: !_isNameStage && _isSaving,
       errorMessage: _isNameStage ? null : _overlapError,
+      // Edit only, requested directly — same "remove icon button" the
+      // task edit flow already has.
+      onSecondaryAction: _isEditing && !_isNameStage ? _delete : null,
+      secondaryActionIcon: Icons.delete_outline_rounded,
       body: SingleChildScrollView(
         // Top reverted to a plain spacingLg — the fade now lives inside
         // StepScaffold's own header container, clipped to it.

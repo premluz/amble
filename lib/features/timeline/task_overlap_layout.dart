@@ -379,12 +379,20 @@ List<CollapsedZoneBand> collapsedZoneBands({
         )
       else
         _rawMemberBand(
-          containment,
-          taskTops,
-          taskHeights,
-          externalEventTops,
-          externalEventHeights,
-        ),
+              containment,
+              taskTops,
+              taskHeights,
+              externalEventTops,
+              externalEventHeights,
+            ) ??
+            // Every member this containment lists was filtered out of the
+            // top/height maps (see _rawMemberBand's own doc comment) — the
+            // same placeholder treatment a genuinely empty zone gets above.
+            (
+              zone: containment.zone,
+              top: placeholderTop(containment.zone),
+              bottom: placeholderTop(containment.zone) + placeholderHeight,
+            ),
   ];
 
   // Pass 2: clamp each edge to at most half the gap to its nearest
@@ -473,7 +481,17 @@ List<CollapsedZoneBand> collapsedZoneBands({
   ];
 }
 
-({Zone zone, double top, double bottom}) _rawMemberBand(
+/// Null when NONE of [containment]'s members actually appear in the
+/// top/height maps — not the same as `containment.tasks`/`externalEvents`
+/// both being empty (that's the placeholder case, handled by the caller
+/// before this is ever called). A List-view-only dev filter (see
+/// `DevHideImportedTasks`/`DevTimelineListOnlyImportant` in
+/// `core/dev_config.dart`) can hide every one of a zone's members from
+/// `blockTops` while [containment] itself, computed from the unfiltered
+/// task/event lists, still lists them — this is the caller's own signal
+/// to fall back to the placeholder band instead, exactly like a genuinely
+/// empty zone does.
+({Zone zone, double top, double bottom})? _rawMemberBand(
   ZoneContainment containment,
   Map<String, double> taskTops,
   Map<String, double> taskHeights,
@@ -500,5 +518,6 @@ List<CollapsedZoneBand> collapsedZoneBands({
     if (top != null && height != null) consider(top, height);
   }
 
+  if (minTop == null || maxBottom == null) return null;
   return (zone: containment.zone, top: minTop!, bottom: maxBottom!);
 }

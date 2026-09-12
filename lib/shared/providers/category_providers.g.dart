@@ -117,7 +117,7 @@ final class CategoryListProvider
   }
 }
 
-String _$categoryListHash() => r'ba41c65d3d655f8a18986790d2fc228be4abb475';
+String _$categoryListHash() => r'b005fce850d52c985d9ce5dc3523a543af9369d2';
 
 /// CRUD state over [CategoryRepository], mirroring [TaskList]/
 /// [TrackedBehaviorList]'s shape.

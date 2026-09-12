@@ -14,29 +14,39 @@ import 'selected_date_provider.dart';
 /// controlled Zone view and hour-labels/collapsed mode; this is a new,
 /// coordinated way to move between them, not a new setting of its own.
 enum TimelineViewMode {
-  /// `ZoneViewEnabledSetting` on. Only reachable when
-  /// `FeatureFlags.zoneEnabled` is also true, AND (debug builds only) the
-  /// `devZoneViewInCycle` dev-config toggle isn't switched off — see
-  /// [TimelineViewMode.next].
+  /// `ZoneViewEnabledSetting` on. Reachable whenever
+  /// `FeatureFlags.zoneEnabled` is true — **2026-09-10**: no longer has a
+  /// debug-only way to be hidden from the cycle (the old
+  /// `devZoneViewInCycle` toggle was repurposed into
+  /// [DevListViewInCycle] instead — "zone view and task view are on
+  /// always").
   zone,
 
   /// `ZoneViewEnabledSetting` off, `ShowHourLabelsSetting` off — tasks
-  /// stack one after another, sized by duration, no time axis.
+  /// stack one after another, sized by duration, no time axis. Only
+  /// reachable (debug builds) when [DevListViewInCycle] isn't switched
+  /// off — see [TimelineViewMode.next]. Defaults to OFF, i.e. excluded
+  /// from the cycle by default — requested directly ("list view as
+  /// default off").
   list,
 
   /// `ZoneViewEnabledSetting` off, `ShowHourLabelsSetting` on — the
   /// original spatial Timeline, tasks positioned against a real time
-  /// axis.
+  /// axis. Never skippable — always in the cycle.
   task,
 }
 
 extension on TimelineViewMode {
   /// Zone → List → Task → Zone — confirmed directly. Skips [zone] when
-  /// [zoneFeatureEnabled] is false, since that mode isn't reachable at
-  /// all with the feature flag off (matches every other Zone UI surface's
-  /// own gating).
-  TimelineViewMode next({required bool zoneFeatureEnabled}) => switch (this) {
-    TimelineViewMode.zone => TimelineViewMode.list,
+  /// [zoneFeatureEnabled] is false (matches every other Zone UI surface's
+  /// own gating) and skips [list] when [listViewEnabled] is false (the
+  /// debug-only [DevListViewInCycle] toggle, defaulting off).
+  TimelineViewMode next({
+    required bool zoneFeatureEnabled,
+    required bool listViewEnabled,
+  }) => switch (this) {
+    TimelineViewMode.zone =>
+      listViewEnabled ? TimelineViewMode.list : TimelineViewMode.task,
     TimelineViewMode.list => TimelineViewMode.task,
     TimelineViewMode.task =>
       zoneFeatureEnabled ? TimelineViewMode.zone : TimelineViewMode.list,
@@ -158,17 +168,20 @@ class _DayStripState extends ConsumerState<DayStrip> {
     final selectedDate = ref.watch(selectedDateProvider);
     final today = DateTime.now();
 
-    // The dev toggle only ever REMOVES Zone view from the cycle, and only
-    // in a debug build: `isDevConfigAvailable` is a plain `kDebugMode`
-    // re-export, so this whole term is a compile-time `true` in release
-    // and the expression collapses back to `FeatureFlags.zoneEnabled`
-    // alone. That guard matters here specifically because this toggle
-    // defaults to FALSE — unlike every other dev-config default, which is
-    // the safe production value — so reading it unguarded would silently
-    // disable a shipped feature (`zoneEnabled` is true in release builds).
-    final zoneFeatureEnabled =
-        FeatureFlags.zoneEnabled &&
-        (!isDevConfigAvailable || ref.watch(devZoneViewInCycleProvider));
+    // Zone view is reachable purely off `FeatureFlags.zoneEnabled` now —
+    // 2026-09-10, "zone view and task view are on always" — no debug-only
+    // override left for it.
+    final zoneFeatureEnabled = FeatureFlags.zoneEnabled;
+    // List view's own dev toggle only ever REMOVES it from the cycle, and
+    // only in a debug build: `isDevConfigAvailable` is a plain
+    // `kDebugMode` re-export, so this whole term is a compile-time `true`
+    // in release and the expression collapses to always-reachable. That
+    // guard matters here specifically because this toggle defaults to
+    // FALSE — unlike every other dev-config default, which is the safe
+    // production value — so reading it unguarded would silently disable
+    // List view in release builds too.
+    final listViewEnabled =
+        !isDevConfigAvailable || ref.watch(devListViewInCycleProvider);
     final zoneViewEnabled =
         zoneFeatureEnabled && ref.watch(zoneViewEnabledSettingProvider);
     final showHourLabels = ref.watch(showHourLabelsSettingProvider);
@@ -185,17 +198,17 @@ class _DayStripState extends ConsumerState<DayStrip> {
       leading: Row(
         children: [
           // Cycles Zone → List → Task → Zone (skipping Zone when
-          // `zoneFeatureEnabled` above is false — either
-          // FeatureFlags.zoneEnabled itself, or the debug-only
-          // `devZoneViewInCycle` toggle, is off) — requested directly,
-          // from a mockup. Writes both existing settings together rather
-          // than introducing a new one of its own.
+          // `FeatureFlags.zoneEnabled` is off, skipping List when the
+          // debug-only `devListViewInCycle` toggle is off) — requested
+          // directly, from a mockup. Writes both existing settings
+          // together rather than introducing a new one of its own.
           Padding(
             padding: EdgeInsets.only(right: theme.spacingXs),
             child: IconButton(
               onPressed: () {
                 final nextMode = currentMode.next(
                   zoneFeatureEnabled: zoneFeatureEnabled,
+                  listViewEnabled: listViewEnabled,
                 );
                 ref
                     .read(zoneViewEnabledSettingProvider.notifier)
@@ -213,20 +226,34 @@ class _DayStripState extends ConsumerState<DayStrip> {
               },
             ),
           ),
-          // The "return to today" chevron — shown only once the strip has
-          // been scrolled away from today, replacing that space with a
-          // tap target back to it rather than sitting alongside the
-          // strip permanently.
-          if (_scrolledAwayFromToday)
-            Padding(
-              padding: EdgeInsets.only(right: theme.spacingXs),
-              child: IconButton(
-                onPressed: _returnToToday,
-                icon: const Icon(Icons.chevron_left_rounded),
-                color: theme.colorTaskAlert,
-                tooltip: 'Today',
+          // The "return to today" chevron — appears once the strip has
+          // been scrolled away from today.
+          //
+          // Its slot is ALWAYS in the layout, and only its contents fade.
+          // Reported directly: "the adjacent pane with calendar still
+          // jumps a little on timeline." It used to be added to and
+          // removed from this Row outright, so every time the user
+          // scrolled across today's date the day strip beside it shifted
+          // sideways by the chevron's full width. Reserving the space
+          // unconditionally is what makes the pane hold still; the fade
+          // is what keeps the control from appearing abruptly.
+          IgnorePointer(
+            ignoring: !_scrolledAwayFromToday,
+            child: AnimatedOpacity(
+              opacity: _scrolledAwayFromToday ? 1 : 0,
+              duration: theme.motionFast,
+              curve: theme.curveStandard,
+              child: Padding(
+                padding: EdgeInsets.only(right: theme.spacingXs),
+                child: IconButton(
+                  onPressed: _returnToToday,
+                  icon: const Icon(Icons.chevron_left_rounded),
+                  color: theme.colorTaskAlert,
+                  tooltip: 'Today',
+                ),
               ),
             ),
+          ),
           Expanded(
             child: SizedBox(
               height: theme.spacingXl * 1.6,
