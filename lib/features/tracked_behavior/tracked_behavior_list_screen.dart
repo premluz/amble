@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
-import '../../core/widgets/app_bottom_extension_bar.dart';
+import '../../core/widgets/app_floating_create_button.dart';
+import '../../core/widgets/app_subtle_icon_button.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
 import '../../shared/models/tracked_behavior.dart';
 import '../../shared/models/tracked_behavior_view_mode.dart';
@@ -71,107 +72,121 @@ class TrackedBehaviorListScreen extends ConsumerWidget {
       color: theme.colorSurfaceTimeline,
       child: SafeArea(
         bottom: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Stack(
           children: [
-            // Same bump as the Inbox screen's identical header —
-            // requested directly, together.
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                theme.spacingScreenPadding,
-                theme.spacingLg,
-                theme.spacingScreenPadding,
-                theme.spacingMd,
-              ),
-              child: Text('Tracked', style: theme.textHeadline),
-            ),
-            Expanded(
-              // Stack, so top/bottom fades overlay the list's own
-              // scrolling content directly — reversed back from an
-              // earlier attempt that moved the top fade INTO the fixed
-              // heading above instead (a separate, non-scrolling sibling
-              // box, never actually behind any real content). Reported
-              // directly, matching the Inbox screen's identical fix and
-              // reasoning: a fade living in its own static header can
-              // only ever blend against that header's own flat
-              // background, never the list sliding past underneath it —
-              // the hard-cut-at-the-header-boundary bug this reverses.
-              // The title above stays clear of the fade by construction:
-              // the fade is confined to this Expanded's own bounds, which
-              // start below the fixed heading, so it can never paint over
-              // the title text (the original problem the header-embedded
-              // fade was built to solve).
-              child: Stack(
-                children: [
-                  behaviors.isEmpty
-                      ? _EmptyState(theme: theme)
-                      : ListView.separated(
-                          padding: EdgeInsets.fromLTRB(
-                            theme.spacingScreenPadding,
-                            // spacingContentTop — the shared value every
-                            // list/sheet uses now, confirmed directly at
-                            // 30px so Tasks/Templates/Tracked all start
-                            // at the same y level.
-                            theme.spacingContentTop,
-                            theme.spacingScreenPadding,
-                            0,
-                          ),
-                          itemCount: behaviors.length,
-                          separatorBuilder: (context, _) =>
-                              SizedBox(height: theme.spacingSm),
-                          itemBuilder: (context, index) {
-                            final behavior = behaviors[index];
-                            return TrackedBehaviorRow(
-                              key: ValueKey(behavior.id),
-                              theme: theme,
-                              behavior: behavior,
-                              viewMode: viewMode,
-                              onTap: () => showTrackedBehaviorForm(
-                                context,
-                                behavior: behavior,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Same bump as the Inbox screen's identical header —
+                // requested directly, together. The view-cycle switcher
+                // moved up here (2026-09-12, "move to the top right
+                // functional icons like we do on timeline") from the old
+                // bottom extension bar's own `leading` slot, styled with
+                // the same subtle-outline circle `AppCalendarHeader`'s
+                // utility icons use rather than a plain `IconButton`.
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    theme.spacingScreenPadding,
+                    theme.spacingLg,
+                    theme.spacingScreenPadding,
+                    theme.spacingMd,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text('Tracked', style: theme.textHeadline),
+                      ),
+                      AppSubtleIconButton(
+                        icon: viewMode.icon,
+                        tooltip: viewMode.label,
+                        onTap: () => ref
+                            .read(
+                              trackedBehaviorViewModeSettingProvider.notifier,
+                            )
+                            .set(viewMode.next),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  // Stack, so top/bottom fades overlay the list's own
+                  // scrolling content directly — reversed back from an
+                  // earlier attempt that moved the top fade INTO the fixed
+                  // heading above instead (a separate, non-scrolling sibling
+                  // box, never actually behind any real content). Reported
+                  // directly, matching the Inbox screen's identical fix and
+                  // reasoning: a fade living in its own static header can
+                  // only ever blend against that header's own flat
+                  // background, never the list sliding past underneath it —
+                  // the hard-cut-at-the-header-boundary bug this reverses.
+                  // The title above stays clear of the fade by construction:
+                  // the fade is confined to this Expanded's own bounds, which
+                  // start below the fixed heading, so it can never paint over
+                  // the title text (the original problem the header-embedded
+                  // fade was built to solve).
+                  child: Stack(
+                    children: [
+                      behaviors.isEmpty
+                          ? _EmptyState(theme: theme)
+                          : ListView.separated(
+                              padding: EdgeInsets.fromLTRB(
+                                theme.spacingScreenPadding,
+                                // spacingContentTop — the shared value every
+                                // list/sheet uses now, confirmed directly at
+                                // 30px so Tasks/Templates/Tracked all start
+                                // at the same y level.
+                                theme.spacingContentTop,
+                                theme.spacingScreenPadding,
+                                0,
                               ),
-                            );
-                          },
+                              itemCount: behaviors.length,
+                              separatorBuilder: (context, _) =>
+                                  SizedBox(height: theme.spacingSm),
+                              itemBuilder: (context, index) {
+                                final behavior = behaviors[index];
+                                return TrackedBehaviorRow(
+                                  key: ValueKey(behavior.id),
+                                  theme: theme,
+                                  behavior: behavior,
+                                  viewMode: viewMode,
+                                  onTap: () => showTrackedBehaviorForm(
+                                    context,
+                                    behavior: behavior,
+                                  ),
+                                );
+                              },
+                            ),
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        child: AppTopScrollFade(
+                          color: theme.colorSurfaceTimeline,
                         ),
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    child: AppTopScrollFade(color: theme.colorSurfaceTimeline),
+                      ),
+                      // Mirrored bottom fade — requested directly: "use same
+                      // at the bottom."
+                      Positioned(
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        child: AppTopScrollFade(
+                          color: theme.colorSurfaceTimeline,
+                          fromBottom: true,
+                        ),
+                      ),
+                    ],
                   ),
-                  // Mirrored bottom fade — requested directly: "use same
-                  // at the bottom."
-                  Positioned(
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    child: AppTopScrollFade(
-                      color: theme.colorSurfaceTimeline,
-                      fromBottom: true,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-            // Same bottom "extension" bar the Timeline's DayStrip and the
-            // Inbox use — requested directly, so the "+" sits at the
-            // exact same screen position on every tab rather than
-            // floating at a per-screen spot. [leading] now carries the
-            // weekly/monthly/six-monthly view-cycle switcher, in the same
-            // leading slot `DayStrip`'s own view-cycle button occupies —
-            // requested directly: "in the same way like in timeline we
-            // have view switcher, in the same positions there will be
-            // view switcher for each of these."
-            AppBottomExtensionBar(
-              leading: IconButton(
-                onPressed: () => ref
-                    .read(trackedBehaviorViewModeSettingProvider.notifier)
-                    .set(viewMode.next),
-                icon: Icon(viewMode.icon),
-                color: theme.colorTextPrimary,
-                tooltip: viewMode.label,
-              ),
-              onCreatePressed: () => showTrackedBehaviorForm(context),
+            // Floating independently above the bottom nav pill now
+            // (2026-09-12, matching every other screen's own
+            // `AppFloatingCreateButton`), rather than sharing a bottom bar
+            // with the view-cycle switcher (which moved to the top-right
+            // header row above).
+            AppFloatingCreateButton(
+              onPressed: () => showTrackedBehaviorForm(context),
             ),
           ],
         ),

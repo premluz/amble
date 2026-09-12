@@ -90,7 +90,7 @@ class _PreviewAppState extends ConsumerState<_PreviewApp> {
             WidgetsBinding.instance.addPostFrameCallback(
               (_) => _runSequence(context),
             );
-            return const TimelineScreen();
+            return const TimelineScreen(mode: TimelineDisplayMode.spatial);
           },
         ),
       ),

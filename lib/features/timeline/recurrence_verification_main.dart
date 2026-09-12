@@ -112,7 +112,9 @@ class _App extends StatelessWidget {
       theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
       home: _mode == 'form'
           ? const _FormLauncher()
-          : const Scaffold(body: TimelineScreen()),
+          : const Scaffold(
+              body: TimelineScreen(mode: TimelineDisplayMode.spatial),
+            ),
     );
   }
 }

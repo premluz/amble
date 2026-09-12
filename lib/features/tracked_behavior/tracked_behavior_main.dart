@@ -240,7 +240,11 @@ class _LauncherState extends ConsumerState<_Launcher> {
   Widget build(BuildContext context) {
     // The timeline mode is verifying the Timeline itself; every other mode
     // shows Settings, the real home of the create entry point.
-    if (_mode == 'timeline') return const Scaffold(body: TimelineScreen());
+    if (_mode == 'timeline') {
+      return const Scaffold(
+        body: TimelineScreen(mode: TimelineDisplayMode.spatial),
+      );
+    }
     if (_mode == 'list' || _mode == 'edit') {
       return const Scaffold(body: TrackedBehaviorListScreen());
     }

@@ -130,7 +130,9 @@ void main() {
                 useMaterial3: true,
                 extensions: [AmbleTheme.light],
               ),
-              home: const Scaffold(body: TimelineScreen()),
+              home: const Scaffold(
+                body: TimelineScreen(mode: TimelineDisplayMode.spatial),
+              ),
             );
           },
         ),

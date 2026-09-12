@@ -115,7 +115,9 @@ void main() {
                 useMaterial3: true,
                 extensions: [AmbleTheme.light],
               ),
-              home: const Scaffold(body: TimelineScreen()),
+              home: const Scaffold(
+                body: TimelineScreen(mode: TimelineDisplayMode.spatial),
+              ),
             );
           },
         ),
@@ -129,11 +131,32 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
   }
 
+  // **2026-09-12 — anchored off `now`, was a fixed clock hour.** The
+  // Timeline scrolls to centre on `DateTime.now()`, so a fixture pinned to
+  // a literal 9:00/12:00/13:00 only landed on screen when the suite
+  // happened to run near those hours — off-screen at any other time, and
+  // every tap/drag against it then missed. This is the same
+  // time-of-day-dependent fixture bug already documented several times in
+  // docs/ERROR_LOG.md; these four files were the last holdouts, and were
+  // failing for exactly that reason.
+  //
+  // `hour` is kept as the parameter so call sites read unchanged, but it
+  // now means "this many half-hours apart from the others" rather than a
+  // wall-clock time — the tests only ever needed the fixtures to be
+  // distinguishable and simultaneously visible, never a specific hour.
+  // Clamped to stay inside `now`'s own calendar day, since the Timeline
+  // always opens on today (see the same clamp in armed_edit_task_test).
   Task makeTask(String title, {int hour = 9, int minutes = 30}) {
     final now = DateTime.now();
+    final base = (now.hour * 60 + now.minute).clamp(60, 24 * 60 - 120);
+    final spread = (hour - 9) * 30;
     return Task.create(
       title: title,
-      scheduledAt: DateTime(now.year, now.month, now.day, hour),
+      scheduledAt: DateTime(
+        now.year,
+        now.month,
+        now.day,
+      ).add(Duration(minutes: (base + spread).clamp(0, 24 * 60 - 1))),
       durationMinutes: minutes,
       categoryId: BuiltInCategoryIds.work,
     );

@@ -116,7 +116,9 @@ class _PreviewApp extends StatelessWidget {
           scaffoldBackgroundColor: AmbleTheme.dark.colorSurfacePrimary,
           extensions: [AmbleTheme.dark],
         ),
-        home: const Scaffold(body: TimelineScreen()),
+        home: const Scaffold(
+          body: TimelineScreen(mode: TimelineDisplayMode.spatial),
+        ),
       ),
     );
   }

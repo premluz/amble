@@ -60,4 +60,60 @@ void main() {
       previousBand = band;
     }
   });
+
+  /// The TASK pill's own (larger) variant — 2026-09-12, reported directly:
+  /// "handle hit/active area should be larger outward (but not inward,
+  /// bear in mind smallest pill size has also drag as move the entire pill
+  /// interaction so we need affordance for all resize and move 3 different
+  /// interactive hotspots)."
+  group('taskResizeHandleHeightFor', () {
+    test('a tall pill gets a genuinely larger target than the old default', () {
+      final handle = taskResizeHandleHeightFor(theme: theme, blockHeight: 200);
+      expect(
+        handle,
+        greaterThan(theme.spacingMd),
+        reason:
+            'the whole point of the report — spacingMd was the cramped '
+            'value being complained about',
+      );
+      expect(handle, theme.spacingLg);
+    });
+
+    test('all three hotspots survive on the shortest possible pill', () {
+      // The badge-floored 5-minute pill, where the three interactions
+      // compete hardest.
+      const badgeFloored = 24.0;
+      final handle = taskResizeHandleHeightFor(
+        theme: theme,
+        blockHeight: badgeFloored,
+      );
+
+      expect(handle, greaterThanOrEqualTo(8.0), reason: 'still grabbable');
+      expect(
+        badgeFloored - handle * 2,
+        greaterThan(0),
+        reason:
+            'move must not be squeezed out of existence — it is the '
+            'only one of the three with no alternative entry point',
+      );
+    });
+
+    test('move is preferred over resize when the pill cannot fit both', () {
+      // A pill too short for two generous handles must shrink the
+      // HANDLES, never the move band below its floor.
+      final handle = taskResizeHandleHeightFor(theme: theme, blockHeight: 40);
+      expect(handle, lessThan(theme.spacingLg));
+      expect(40.0 - handle * 2, greaterThanOrEqualTo(0));
+    });
+
+    test('the move band never shrinks as the pill grows', () {
+      var previousBand = double.negativeInfinity;
+      for (var h = 24.0; h <= 200.0; h += 4) {
+        final band =
+            h - taskResizeHandleHeightFor(theme: theme, blockHeight: h) * 2;
+        expect(band, greaterThanOrEqualTo(previousBand));
+        previousBand = band;
+      }
+    });
+  });
 }

@@ -107,7 +107,9 @@ void main() {
         ],
         child: MaterialApp(
           theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
-          home: const Scaffold(body: TimelineScreen()),
+          home: const Scaffold(
+            body: TimelineScreen(mode: TimelineDisplayMode.spatial),
+          ),
         ),
       ),
     );
@@ -265,56 +267,71 @@ void main() {
     },
   );
 
-  testWidgets('dragging the BOTTOM resize handle also shows the left-edge time '
-      'label — the live END time, not the start', (tester) async {
-    final task = makeTask('Focus block');
-    await pumpTimeline(tester, task: task);
+  testWidgets(
+    'dragging the BOTTOM resize handle shows BOTH edge labels — the live '
+    'END time (moving) AND the unchanged START (reported directly: both '
+    'edges must stay visible during either resize, not just the moving '
+    'one)',
+    (tester) async {
+      final task = makeTask('Focus block');
+      await pumpTimeline(tester, task: task);
 
-    // Long-press arms the task, revealing its resize handles — same
-    // precondition armed_edit_task_test.dart's own handle tests use.
-    await tester.longPress(find.text('Focus block'));
-    await tester.pump();
+      // Long-press arms the task, revealing its resize handles — same
+      // precondition armed_edit_task_test.dart's own handle tests use.
+      await tester.longPress(find.text('Focus block'));
+      await tester.pump();
 
-    await tester.runAsync(() async {
-      final handleCenter = tester.getCenter(bottomHandleFor('Focus block'));
-      final gesture = await tester.startGesture(handleCenter);
-      // Several small moves rather than one big jump: a real drag
-      // reports incremental per-frame deltas, and the gesture arena
-      // needs to actually resolve the vertical-drag recognizer before
-      // `onDragUpdate`'s delta accumulates — one large `moveBy` can
-      // land entirely inside that unresolved window and never fire.
-      for (var i = 0; i < 8; i++) {
-        await gesture.moveBy(const Offset(0, 5));
-        await tester.pump();
-      }
+      await tester.runAsync(() async {
+        final handleCenter = tester.getCenter(bottomHandleFor('Focus block'));
+        final gesture = await tester.startGesture(handleCenter);
+        // Several small moves rather than one big jump: a real drag
+        // reports incremental per-frame deltas, and the gesture arena
+        // needs to actually resolve the vertical-drag recognizer before
+        // `onDragUpdate`'s delta accumulates — one large `moveBy` can
+        // land entirely inside that unresolved window and never fire.
+        for (var i = 0; i < 8; i++) {
+          await gesture.moveBy(const Offset(0, 5));
+          await tester.pump();
+        }
 
-      expect(find.byType(TaskEdgeTimeLabel), findsOneWidget);
-      final label = tester.widget<TaskEdgeTimeLabel>(
-        find.byType(TaskEdgeTimeLabel),
-      );
-      final expectedEnd = task.scheduledAt!.add(
-        Duration(minutes: task.durationMinutes!),
-      );
-      // A generous window rather than an exact snapped-minute match:
-      // this only needs to prove the label tracks the END (a later
-      // time than the unchanged start), not the drag's exact snap
-      // arithmetic (already covered by _previewDurationMinutes'
-      // own unit coverage elsewhere).
-      expect(
-        label.time.hour * 60 + label.time.minute,
-        greaterThan(expectedEnd.hour * 60 + expectedEnd.minute - 5),
-      );
+        expect(find.byType(TaskEdgeTimeLabel), findsNWidgets(2));
+        final labels = tester
+            .widgetList<TaskEdgeTimeLabel>(find.byType(TaskEdgeTimeLabel))
+            .toList();
+        final originalStart = task.scheduledAt!;
+        final expectedEnd = originalStart.add(
+          Duration(minutes: task.durationMinutes!),
+        );
 
-      await gesture.up();
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-    });
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-  });
+        final startLabel = labels.firstWhere(
+          (l) =>
+              l.time.hour * 60 + l.time.minute ==
+              originalStart.hour * 60 + originalStart.minute,
+        );
+        expect(startLabel.time.hour, originalStart.hour);
+
+        final endLabel = labels.firstWhere((l) => l != startLabel);
+        // A generous window rather than an exact snapped-minute match:
+        // this only needs to prove the label tracks the END (a later
+        // time than the unchanged start), not the drag's exact snap
+        // arithmetic (already covered by _previewDurationMinutes'
+        // own unit coverage elsewhere).
+        expect(
+          endLabel.time.hour * 60 + endLabel.time.minute,
+          greaterThan(expectedEnd.hour * 60 + expectedEnd.minute - 5),
+        );
+
+        await gesture.up();
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+    },
+  );
 
   testWidgets(
-    'dragging the TOP resize handle shows the left-edge time label — the '
-    'live START time, which is the edge actually moving',
+    'dragging the TOP resize handle shows BOTH edge labels — the live '
+    'START time (moving) AND the unchanged END',
     (tester) async {
       final task = makeTask('Focus block');
       await pumpTimeline(tester, task: task);
@@ -335,13 +352,25 @@ void main() {
           await tester.pump();
         }
 
-        expect(find.byType(TaskEdgeTimeLabel), findsOneWidget);
-        final label = tester.widget<TaskEdgeTimeLabel>(
-          find.byType(TaskEdgeTimeLabel),
-        );
+        expect(find.byType(TaskEdgeTimeLabel), findsNWidgets(2));
+        final labels = tester
+            .widgetList<TaskEdgeTimeLabel>(find.byType(TaskEdgeTimeLabel))
+            .toList();
         final originalStart = task.scheduledAt!;
+        final originalEnd = originalStart.add(
+          Duration(minutes: task.durationMinutes!),
+        );
+
+        final endLabel = labels.firstWhere(
+          (l) =>
+              l.time.hour * 60 + l.time.minute ==
+              originalEnd.hour * 60 + originalEnd.minute,
+        );
+        expect(endLabel.time.hour, originalEnd.hour);
+
+        final startLabel = labels.firstWhere((l) => l != endLabel);
         expect(
-          label.time.hour * 60 + label.time.minute,
+          startLabel.time.hour * 60 + startLabel.time.minute,
           greaterThan(originalStart.hour * 60 + originalStart.minute),
         );
 
@@ -354,9 +383,9 @@ void main() {
   );
 
   testWidgets(
-    'resizing hides the left-edge label once released — the task stays '
-    'armed afterward, so its own wiggle-driven edge labels take over '
-    'instead of vanishing entirely',
+    'resizing keeps both labels visible through release — the task stays '
+    'armed afterward, so wiggle\'s own resting pair simply takes over '
+    'with no gap where neither renders',
     (tester) async {
       final task = makeTask('Focus block');
       await pumpTimeline(tester, task: task);
@@ -371,11 +400,9 @@ void main() {
           await gesture.moveBy(const Offset(0, 5));
           await tester.pump();
         }
-        // Exactly one label while the resize is live — wiggle's own pair
-        // is suppressed during `_isResizing` (see `wiggleEnabled`), so
-        // this new left-edge one is the only `TaskEdgeTimeLabel` in the
-        // tree at this point.
-        expect(find.byType(TaskEdgeTimeLabel), findsOneWidget);
+        // Both labels while the resize is live now (2026-09-12 — was
+        // exactly one, the moving edge only; corrected directly).
+        expect(find.byType(TaskEdgeTimeLabel), findsNWidgets(2));
 
         await gesture.up();
         await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -383,14 +410,11 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
 
-      // The left-edge (resize-only) label itself is gone...
+      // Still armed and wiggling after release (a resize's release does
+      // NOT close the arm) — wiggle's own resting pair (`_edgeTimeLabels`)
+      // has taken over from the live resize pair, so the count stays at
+      // 2 rather than dropping to 0.
       expect(find.byType(TaskEdgeTimeLabel), findsNWidgets(2));
-      // ...replaced by wiggle's own pair, since a resize's release does
-      // NOT close the arm — matching how a move-drag's own release also
-      // leaves the task selected/wiggling in Edit Mode.
-      await tester.tap(find.text('Focus block'));
-      await tester.pumpAndSettle();
-      expect(find.byType(TaskEdgeTimeLabel), findsNothing);
     },
   );
 }

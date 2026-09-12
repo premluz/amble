@@ -954,3 +954,29 @@ await tester.pump(const Duration(milliseconds: 600));
 ## [2026-09-09] Restored Android emulator Activity is not a cold-launch test
 
 During App Actions verification, `adb shell am start -W` reported delivery to an already running top-most Activity after the emulator restored its snapshot. That does not verify process startup or Hive initialization. Used `am force-stop com.example.amble` before the next action and confirmed `LaunchState: COLD`; the persisted survivor of an earlier deletion was still offered. Do not use `pm clear` for this check: it would erase the data whose persistence is being tested. Android's existing exact-alarm permission screen can also cover the result during startup notification refresh; return to Amble before inspecting its picker or treating the action as missing.
+
+## [2026-09-12] A gesture target cannot extend OUTSIDE its parent's bounds — `Clip.none` only affects painting
+
+**Symptom**: asked to make Edit Mode's resize handles "larger outward (but not inward)" so that the three task-pill hotspots (top-resize / move / bottom-resize) stop competing for a 24px-tall pill. The obvious implementation — `Positioned(top: -8)` with a widened, horizontally-overhanging gesture box, inside a `Stack(clipBehavior: Clip.none)` — looked correct on screen.
+
+**Cause**: `Clip.none` stops Flutter clipping the PAINT of an out-of-bounds child; it does nothing for hit testing. `RenderBox.hitTest` rejects any position outside `size` before it ever reaches a child, so the overhanging strip rendered perfectly and silently swallowed nothing — every tap in it fell through to whatever was behind.
+
+**Confirmed, not assumed**: written as a throwaway probe widget test with two cases — a child at `top: -20` of a `Clip.none` `Stack`, and a child translated horizontally past a narrow `Row` cell. An in-bounds control tapped fine in the same tree (the sanity case passed); BOTH overhanging children recorded zero taps. The probe was deleted once it had answered the question.
+
+**Fix**: grow the hit area INWARD from the edge and pin the visible bar to the outer edge instead (`ResizeHandle.barAlignment`), so the target genuinely gets bigger while the grab affordance stays where the user aims. Since every pixel then comes out of the pill's interior, `taskResizeHandleHeightFor` resolves the three-way contention explicitly: generous handles whenever the pill can afford them, and on a short pill the HANDLES yield rather than the move band — move is the only one of the three with no alternative entry point (duration is also editable from the detail sheet; position is not).
+
+**Rule**: before designing any interaction around a control that overhangs its parent, verify hit testing, not appearance. "It shows up in the right place" is not evidence that it can be touched — and the failure is invisible, because the thing you can see is exactly the thing that doesn't work.
+
+## [2026-09-12] A widget test measured the wrong render box, so it passed while the reported bug was still there
+
+**Symptom**: resize-drag fixes shipped with three widget tests that passed, and the user immediately reported the same lag and drift again — "the blue badge with time responds immediately to the movement, but the pill takes time to animate."
+
+**Cause**: the tests asserted on `tester.getRect(find.byWidgetPredicate((w) => w is TaskCapsuleBlock ...))` — the capsule's ROOT render box. That root is an `IntrinsicHeight` `Row` holding the rail, the title column and the checkbox, so its height is driven by the TEXT column, not by the task's duration. The thing a resize actually changes is the rail's own `AnimatedContainer` (`height: pillHeight`), several layers in. The root barely moves during a resize, so assertions like "height grew" and "top stayed put" were measuring a box that was nearly constant either way, and passed regardless of whether the fix worked.
+
+**How it was caught**: only by the user reporting the bug a second time. A test that passes on the first run proves nothing about whether it would catch the bug — the revert-and-confirm-it-fails step was run, but against the same invalid measurement, so the revert ALSO passed and the check silently rubber-stamped itself.
+
+**Fix**: measure the rail directly — `find.descendant(of: pillFor(title), matching: find.byType(AnimatedContainer)).first` — in both `resize_tracks_finger_test.dart` and the new `resize_anchored_edge_test.dart`. With the correct box, reverting each fix now genuinely fails the corresponding test.
+
+**Rule**: when a widget test asserts on geometry, confirm WHICH render object it is measuring before trusting a pass — a root finder usually resolves to a layout wrapper, not the box whose size the feature changes. And when verifying a test by reverting the fix, check that the revert fails for the RIGHT reason; a revert that still passes means the assertion is inert, not that the fix is unnecessary.
+
+**Second gotcha in the same file**: a drag smaller than `kTouchSlop` (18 logical px) never fires `onVerticalDragUpdate` at all, because the gesture arena has not yet resolved the recognizer. A test probing sub-snap continuity with a 3px move measured exactly 0.0 change no matter what the code did. Cross the slop threshold first, then sample the small delta.

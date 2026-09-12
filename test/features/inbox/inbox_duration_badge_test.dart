@@ -164,6 +164,32 @@ void main() {
   );
 
   testWidgets(
+    'the row\'s category badge and title track the shared "Task size" '
+    'tokens (theme.sizeTaskBadge/theme.textTaskTitle) — reported '
+    'directly: "manage items should have same size as zone view"',
+    (tester) async {
+      await pumpInbox(tester);
+
+      final theme = AmbleTheme.light;
+      final titleText = tester.widget<Text>(find.text('Buy milk'));
+      expect(titleText.style?.fontSize, theme.textTaskTitle.fontSize);
+
+      // The row's own circular category badge — the ONE Container that
+      // builds a BoxShape.circle decoration when no duration badge is
+      // present (see the "renders nothing extra" case above for the same
+      // "only the category badge" premise).
+      final circleContainer = tester
+          .widgetList<Container>(find.byType(Container))
+          .firstWhere(
+            (c) => (c.decoration as BoxDecoration?)?.shape == BoxShape.circle,
+          );
+
+      expect(circleContainer.constraints?.maxWidth, theme.sizeTaskBadge);
+      expect(circleContainer.constraints?.maxHeight, theme.sizeTaskBadge);
+    },
+  );
+
+  testWidgets(
     'the duration badge sits between the title and the trailing + button, '
     'to the right of the row',
     (tester) async {

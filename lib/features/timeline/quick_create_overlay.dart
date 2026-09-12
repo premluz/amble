@@ -555,28 +555,25 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay> {
   }
 
   /// The backdrop's own height — reaches from the screen's bottom up to
-  /// (approximately) the TOP of where DayStrip used to sit, so the sheet
-  /// visually replaces BOTH bars that a live draft hides: the bottom
-  /// NavigationBar and the DayStrip above it (day chips, view-switch
-  /// button, "+" button). Requested directly: "it should cover also the
-  /// days 'adjacent to main nav' with plus and view switch."
+  /// (approximately) the top of the bottom nav pill, so the sheet visually
+  /// replaces it while a draft is live. Requested directly: "it should
+  /// cover also the days 'adjacent to main nav' with plus and view
+  /// switch."
   ///
-  /// Composed from the same tokens those two widgets build themselves
-  /// from, rather than a hard dependency on either one's private layout:
-  /// DayStrip is `AppBottomExtensionBar`'s `spacingSm` vertical padding
-  /// (×2) around a `spacingXl * 1.6` chip row, and Material's own
-  /// `NavigationBar` defaults to [kBottomNavigationBarHeight]. The
-  /// device's own bottom safe-area inset sits under both and is added on
-  /// top, since both bars wrap themselves in a `SafeArea`.
+  /// **2026-09-12** — the day-navigation/view-switch/"+" bar this used to
+  /// also cover (`DayStrip`, then briefly `AppBottomExtensionBar`) is gone
+  /// entirely: day navigation moved to the top `AppCalendarHeader`, and
+  /// the "+" is now an independently floating button (already hidden
+  /// while a draft is live via its own `pendingTaskDraftProvider` check,
+  /// same as before) rather than sharing a bar with the nav. So this only
+  /// needs to reach Material's own `NavigationBar` height
+  /// ([kBottomNavigationBarHeight]) plus the device's bottom safe-area
+  /// inset, which the nav wraps itself in a `SafeArea` to guard.
   double _backdropHeight(
     AmbleTheme theme,
     double viewport,
     double bottomInset,
   ) {
-    final dayStripHeight = theme.spacingXl * 1.6 + theme.spacingSm * 2;
-    return math.min(
-      viewport,
-      dayStripHeight + kBottomNavigationBarHeight + bottomInset,
-    );
+    return math.min(viewport, kBottomNavigationBarHeight + bottomInset);
   }
 }

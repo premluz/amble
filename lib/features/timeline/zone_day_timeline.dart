@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/dev_config.dart';
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/app_top_scroll_fade.dart';
 import '../../shared/models/category.dart';
 import '../../shared/models/external_calendar_event.dart';
 import '../../shared/models/task.dart';
@@ -171,80 +172,97 @@ class ZoneDayTimeline extends StatelessWidget {
     // frame to ease from; an abrupt swap otherwise reads as a rendering
     // glitch rather than a real content change (unchanged reasoning from
     // this view's earlier spatial version).
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0, end: 1),
-      duration: theme.motionNormal,
-      curve: Curves.easeOut,
-      builder: (context, opacity, child) =>
-          Opacity(opacity: opacity, child: child),
-      child: ListView.separated(
-        padding: EdgeInsets.symmetric(
-          horizontal: theme.spacingScreenPadding,
-          vertical: theme.spacingLg,
+    return Stack(
+      children: [
+        TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: 1),
+          duration: theme.motionNormal,
+          curve: Curves.easeOut,
+          builder: (context, opacity, child) =>
+              Opacity(opacity: opacity, child: child),
+          child: ListView.separated(
+            padding: EdgeInsets.symmetric(
+              horizontal: theme.spacingScreenPadding,
+              vertical: theme.spacingLg,
+            ),
+            itemCount: rows.length,
+            // A larger gap in flat style specifically — requested directly:
+            // "add gap between zones zone view (flat style)." With the
+            // zone's own card background/border gone (see `flatStyle` on
+            // `ZoneContainerBlock`), the original 4px separator reads as too
+            // tight with nothing left to visually separate one zone from the
+            // next; normal style keeps the original 4px, since its own card
+            // edges already do that job.
+            separatorBuilder: (_, _) => SizedBox(
+              height: devZoneCardFlat ? theme.spacingMd : theme.spacingXs,
+            ),
+            itemBuilder: (context, index) {
+              final row = rows[index];
+              return switch (row) {
+                ZoneContainment() => ZoneContainerBlock(
+                  theme: theme,
+                  zone: row.zone,
+                  tasks: row.tasks,
+                  externalEvents: row.externalEvents,
+                  categoriesById: categoryById,
+                  // Drag-and-drop is gone in the non-spatial list — every row
+                  // this container renders is read-only aside from tap, so
+                  // this key is never actually consulted (only reached from
+                  // `onRowDragStart`, which is never wired below).
+                  stackAncestorKey: _unusedStackKey,
+                  onTaskTap: onTaskTap,
+                  onToggleComplete: onToggleComplete,
+                  durationVisible: devDurationVisible,
+                  timeRangeVisible: devTimeRangeVisible,
+                  showCompletionCheckbox: showCompletionCheckbox,
+                  flatStyle: devZoneCardFlat,
+                  onHeaderTap: onZoneHeaderTap == null
+                      ? null
+                      : () => onZoneHeaderTap!(row.zone),
+                ),
+                Task() => TaskCapsuleBlock(
+                  task: row,
+                  category: row.categoryId == null
+                      ? null
+                      : categoryById[row.categoryId],
+                  // Fixed badge size, matching List view's own individual-row
+                  // look — a flat list has no time axis for a proportional
+                  // pill height to read against.
+                  durationIndicatedBySize: false,
+                  compactText: true,
+                  textLayout: devTextLayout,
+                  iconsVisible: devIconsVisible,
+                  durationVisible: devDurationVisible,
+                  timeRangeVisible: devTimeRangeVisible,
+                  showCompletionCheckbox: showCompletionCheckbox,
+                  onTap: () => onTaskTap(row),
+                  onToggleComplete: () => onToggleComplete(row),
+                ),
+                ExternalCalendarEvent() => _UnzonedEventRow(
+                  theme: theme,
+                  event: row,
+                  durationVisible: devDurationVisible,
+                  timeRangeVisible: devTimeRangeVisible,
+                ),
+                _ => const SizedBox.shrink(),
+              };
+            },
+          ),
         ),
-        itemCount: rows.length,
-        // A larger gap in flat style specifically — requested directly:
-        // "add gap between zones zone view (flat style)." With the
-        // zone's own card background/border gone (see `flatStyle` on
-        // `ZoneContainerBlock`), the original 4px separator reads as too
-        // tight with nothing left to visually separate one zone from the
-        // next; normal style keeps the original 4px, since its own card
-        // edges already do that job.
-        separatorBuilder: (_, _) => SizedBox(
-          height: devZoneCardFlat ? theme.spacingMd : theme.spacingXs,
+        // Fades the list's own top row out under `AppCalendarHeader`
+        // instead of a hard cut — reported directly against the same
+        // reference screenshot the header itself came from: "hard edge
+        // here... should be gradient that fades under it." Mirrors
+        // `_DayTimeline`'s own identical top fade (the spatial/Task-view
+        // side of this same screen already had one; this view had none
+        // at all).
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: AppTopScrollFade(color: theme.colorSurfaceTimeline),
         ),
-        itemBuilder: (context, index) {
-          final row = rows[index];
-          return switch (row) {
-            ZoneContainment() => ZoneContainerBlock(
-              theme: theme,
-              zone: row.zone,
-              tasks: row.tasks,
-              externalEvents: row.externalEvents,
-              categoriesById: categoryById,
-              // Drag-and-drop is gone in the non-spatial list — every row
-              // this container renders is read-only aside from tap, so
-              // this key is never actually consulted (only reached from
-              // `onRowDragStart`, which is never wired below).
-              stackAncestorKey: _unusedStackKey,
-              onTaskTap: onTaskTap,
-              onToggleComplete: onToggleComplete,
-              durationVisible: devDurationVisible,
-              timeRangeVisible: devTimeRangeVisible,
-              showCompletionCheckbox: showCompletionCheckbox,
-              flatStyle: devZoneCardFlat,
-              onHeaderTap: onZoneHeaderTap == null
-                  ? null
-                  : () => onZoneHeaderTap!(row.zone),
-            ),
-            Task() => TaskCapsuleBlock(
-              task: row,
-              category: row.categoryId == null
-                  ? null
-                  : categoryById[row.categoryId],
-              // Fixed badge size, matching List view's own individual-row
-              // look — a flat list has no time axis for a proportional
-              // pill height to read against.
-              durationIndicatedBySize: false,
-              compactText: true,
-              textLayout: devTextLayout,
-              iconsVisible: devIconsVisible,
-              durationVisible: devDurationVisible,
-              timeRangeVisible: devTimeRangeVisible,
-              showCompletionCheckbox: showCompletionCheckbox,
-              onTap: () => onTaskTap(row),
-              onToggleComplete: () => onToggleComplete(row),
-            ),
-            ExternalCalendarEvent() => _UnzonedEventRow(
-              theme: theme,
-              event: row,
-              durationVisible: devDurationVisible,
-              timeRangeVisible: devTimeRangeVisible,
-            ),
-            _ => const SizedBox.shrink(),
-          };
-        },
-      ),
+      ],
     );
   }
 }

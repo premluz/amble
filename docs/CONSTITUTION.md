@@ -148,7 +148,7 @@ A toggleable mode on the real Timeline — **not onboarding-only.** Onboarding i
 
 **Entry points (two, converging on the same state):**
 - **Two-finger long-press anywhere on the Timeline** (empty space or on a task — doesn't matter, since two fingers is a fully separate gesture channel from move-drag or create-task's existing single-finger long-press-on-empty-space interaction, needing no disambiguation against either).
-- **A visible "Edit" text link**, top-right of the Timeline, positioned above the day's first hour marker — same margin column already used for hour labels (consistent with the existing hour-marker-in-margin pattern), styled as a link (accent/primary color text, not a button/icon) so it reads as a mode switch, not an action.
+- **A pen icon, top-right of the shared `AppCalendarHeader`** (2026-09-12 — reverses the original "styled as a link, not a button/icon" rule below; see docs/DECISIONS.md's 2026-09-12 nav-redesign entry for why). ~~A visible "Edit" text link, top-right of the Timeline, positioned above the day's first hour marker — same margin column already used for hour labels (consistent with the existing hour-marker-in-margin pattern), styled as a link (accent/primary color text, not a button/icon) so it reads as a mode switch, not an action.~~
 
 Both trigger the same wiggle-in animation on entry (same visual language as iOS/Android home-screen rearrange mode) — this doubles as the active-state indicator, since Edit Mode has no other persistent chrome distinguishing it from the normal Timeline. Exiting mirrors entry: the link (now reading "Done" — default label, flag before silently improvising anything else) or the same two-finger long-press again.
 

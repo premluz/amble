@@ -57,6 +57,7 @@ class TaskCapsuleBlock extends StatelessWidget {
     this.durationMinutesOverride,
     this.entranceProgress = 1,
     this.isLifted = false,
+    this.isResizing = false,
     this.onDragStart,
     this.onDragUpdate,
     this.onDragEnd,
@@ -170,13 +171,31 @@ class TaskCapsuleBlock extends StatelessWidget {
   /// timeline. Defaults to false — a resting block casts no shadow.
   final bool isLifted;
 
+  /// Whether a resize drag (either edge) is live on this block right now.
+  ///
+  /// Zeroes the pill's own height animation for the duration of the
+  /// gesture — reported directly: "resize bottom is animated so pill
+  /// catches up (should follow also)." The height [AnimatedContainer]
+  /// exists so a duration change from the edit modal or a cascade
+  /// visibly grows/shrinks the pill, which is still right for those; but
+  /// under a finger it made the pill trail the drag and then settle.
+  /// A gesture should track 1:1, so this flag opts that one case out
+  /// rather than removing the animation everyone else depends on.
+  final bool isResizing;
+
   /// Renders the PILL at this duration instead of the task's own, without
   /// touching the time/duration text (which keeps showing the real,
   /// already-saved value). Used for exactly one thing: holding a pill at
   /// its pre-save height while the create/edit modal is still closing, so
   /// the grow/shrink into the new duration happens where the user can
   /// actually see it — see `_DraggableTaskBlock.growFromMinutes`.
-  final int? durationMinutesOverride;
+  /// **`double`, not `int` (2026-09-12).** A live resize drag drives this
+  /// with a continuous, unsnapped duration so the pill tracks the finger
+  /// exactly; rounding to whole minutes here would put ~1.5px of stepping
+  /// back into the one path that exists to be smooth. Callers that have
+  /// an `int` (a group follower's snapped preview, a held pre-save
+  /// duration) simply widen it.
+  final double? durationMinutesOverride;
 
   /// 0 → 1 while a newly-created task is arriving on the Timeline; 1 (the
   /// default) for every block that isn't animating in.
@@ -522,7 +541,12 @@ class TaskCapsuleBlock extends StatelessWidget {
                     // both are "watch this happen" beats rather than responses
                     // to a gesture, and at motionNormal the resize was over
                     // almost as soon as it started (reported directly).
-                    duration: theme.motionSlow,
+                    //
+                    // Zero while a resize drag is live, though — see
+                    // [isResizing]. Under a finger the pill has to track the
+                    // gesture exactly; the "watch this happen" pacing above is
+                    // for duration changes the user did NOT drag out.
+                    duration: isResizing ? Duration.zero : theme.motionSlow,
                     curve: theme.curveStandard,
                     width: badgeSize,
                     height: pillHeight,
@@ -597,20 +621,30 @@ class TaskCapsuleBlock extends StatelessWidget {
                 // of this Stack), never nested inside it — see the doc
                 // comment on the outer Opacity/Stack wrap for the bug that
                 // ordering fixes.
+                // **2026-09-12 — bigger resize targets.** Requested
+                // directly: "handle hit/active area should be larger
+                // outward... we need affordance for all resize and move 3
+                // different interactive hotspots... and sides also
+                // difficult to catch." Genuinely-outward growth turned
+                // out to be impossible (a box past the pill's bounds
+                // paints but never hit-tests — see
+                // `taskResizeHandleHeightFor` for the probe), so each
+                // handle grows INWARD from its edge while its visible bar
+                // stays pinned to that edge via `barAlignment`. Flush at
+                // the edge now (was `-spacingXs`), since an overhanging
+                // strip was dead area that only looked grabbable.
                 if (editModeEnabled && onResizeTopEnd != null)
                   Positioned(
-                    top: -theme.spacingXs,
+                    top: 0,
                     left: 0,
                     right: 0,
                     child: ResizeHandle(
                       theme: theme,
-                      // Shrinks on a short pill so the two handles never
-                      // consume the whole block, leaving no move-only
-                      // band — see resizeHandleHeightFor.
-                      height: resizeHandleHeightFor(
+                      height: taskResizeHandleHeightFor(
                         theme: theme,
                         blockHeight: pillHeight,
                       ),
+                      barAlignment: Alignment.topCenter,
                       onDragStart: onResizeTopStart,
                       onDragUpdate: onResizeTopUpdate,
                       onDragEnd: onResizeTopEnd,
@@ -618,18 +652,16 @@ class TaskCapsuleBlock extends StatelessWidget {
                   ),
                 if (editModeEnabled && onResizeEnd != null)
                   Positioned(
-                    bottom: -theme.spacingXs,
+                    bottom: 0,
                     left: 0,
                     right: 0,
                     child: ResizeHandle(
                       theme: theme,
-                      // Shrinks on a short pill so the two handles never
-                      // consume the whole block, leaving no move-only
-                      // band — see resizeHandleHeightFor.
-                      height: resizeHandleHeightFor(
+                      height: taskResizeHandleHeightFor(
                         theme: theme,
                         blockHeight: pillHeight,
                       ),
+                      barAlignment: Alignment.bottomCenter,
                       onDragStart: onResizeStart,
                       onDragUpdate: onResizeUpdate,
                       onDragEnd: onResizeEnd,

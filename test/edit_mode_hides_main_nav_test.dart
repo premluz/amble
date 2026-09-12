@@ -5,7 +5,8 @@ import 'package:hive_ce/hive_ce.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/main.dart';
-import 'package:amble/features/timeline/day_strip.dart';
+import 'package:amble/core/widgets/app_floating_create_button.dart';
+import 'package:amble/features/timeline/app_calendar_header.dart';
 import 'package:amble/features/timeline/edit_mode_provider.dart';
 import 'package:amble/features/timeline/pending_task_draft_provider.dart';
 import 'package:amble/shared/models/category.dart';
@@ -31,12 +32,30 @@ import 'support/fake_notification_service.dart';
 import 'support/seeded_category_box.dart';
 
 /// Covers a real gap, reported directly: Edit Mode's own docs/plan
-/// described hiding the bottom NavigationBar and DayStrip (day chips,
-/// the Task/Zone/List view-cycle button, the "+" create button) while
-/// active, but neither `main.dart`'s bottom nav nor `day_strip.dart` had
-/// ANY wiring reacting to `editModeEnabledProvider` at all — a real,
-/// missing piece, not a duplicate of the (unrelated) task-edit-sheet
-/// full-screen-route coverage from a separate feature.
+/// described hiding the bottom NavigationBar and the day-navigation bar
+/// (day chips, the Task/Zone/List view-cycle button, the "+" create
+/// button) while active, but neither had ANY wiring reacting to
+/// `editModeEnabledProvider` at all — a real, missing piece, not a
+/// duplicate of the (unrelated) task-edit-sheet full-screen-route
+/// coverage from a separate feature.
+///
+/// **2026-09-12** — the old `DayStrip` (day chips + view-cycle button +
+/// "+") is gone; day navigation moved to the new `AppCalendarHeader` (top
+/// of screen), and the "+" is now an independently floating
+/// `AppFloatingCreateButton` rather than living in a bottom bar. This
+/// file's own assertions were updated to check for that widget instead —
+/// the suppression behavior itself (hide the "+" and the nav while Edit
+/// Mode/a draft is active) is unchanged, just applied to a different
+/// widget. `AmbleHome` now opens on Task view (index 0, was Inbox) by
+/// default, which is still a `TimelineScreen` — the same screen this
+/// file's assertions always meant to exercise.
+///
+/// **Also 2026-09-12** — a follow-up report: hiding `AppCalendarHeader`
+/// entirely while Edit Mode was on took its own close control down with
+/// it, leaving no visible way to exit. `AppCalendarHeader` now stays
+/// mounted throughout Edit Mode, collapsing to just its close button —
+/// so unlike the NavigationBar/"+", it is never expected to disappear
+/// from the tree here.
 void main() {
   late Box<Task> taskBox;
   late Box<dynamic> prefsBox;
@@ -53,7 +72,8 @@ void main() {
     final stamp = DateTime.now().microsecondsSinceEpoch;
     taskBox = await Hive.openBox<Task>('test_tasks_$stamp');
     prefsBox = await Hive.openBox<dynamic>('test_prefs_$stamp');
-    // AmbleHome mounts EVERY tab (Inbox, Timeline, Tracked, Settings) at
+    // AmbleHome mounts EVERY tab (Task view, Timeline, Inbox, Tracked,
+    // Settings) at
     // once via IndexedStack, so every repository provider any of them
     // reads needs a real box — not just Task/preferences.
     categoryBox = await openSeededCategoryBox('test_categories_$stamp');
@@ -124,37 +144,52 @@ void main() {
     return container;
   }
 
-  testWidgets('the bottom NavigationBar and DayStrip are both visible on an '
-      'ordinary Timeline (Edit Mode off)', (tester) async {
-    final container = await pumpHome(tester);
-    expect(container.read(editModeEnabledProvider), isFalse);
+  testWidgets(
+    'the bottom NavigationBar and the floating create button are both '
+    'visible on an ordinary Task view (Edit Mode off)',
+    (tester) async {
+      final container = await pumpHome(tester);
+      expect(container.read(editModeEnabledProvider), isFalse);
 
-    expect(find.byType(NavigationBar), findsOneWidget);
-    expect(find.byType(DayStrip), findsOneWidget);
-  });
+      expect(find.byType(NavigationBar), findsOneWidget);
+      expect(find.byType(AppFloatingCreateButton), findsOneWidget);
+    },
+  );
 
-  testWidgets('turning Edit Mode on hides both the bottom NavigationBar and '
-      'DayStrip, and turning it back off restores them', (tester) async {
-    final container = await pumpHome(tester);
+  testWidgets(
+    'turning Edit Mode on hides the bottom NavigationBar and the floating '
+    'create button, but keeps AppCalendarHeader mounted (collapsed to its '
+    'own close button) — turning it back off restores all three to their '
+    'normal shape',
+    (tester) async {
+      final container = await pumpHome(tester);
+      expect(find.byType(AppCalendarHeader), findsOneWidget);
 
-    container.read(editModeEnabledProvider.notifier).toggle();
-    // NOT pumpAndSettle — EditModeWiggle's perpetually-repeating
-    // animation never settles once Edit Mode is on. See
-    // multi_task_selection_test.dart's own pumpTimeline for the same
-    // fix and full explanation.
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+      container.read(editModeEnabledProvider.notifier).toggle();
+      // NOT pumpAndSettle — EditModeWiggle's perpetually-repeating
+      // animation never settles once Edit Mode is on. See
+      // multi_task_selection_test.dart's own pumpTimeline for the same
+      // fix and full explanation.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
 
-    expect(find.byType(NavigationBar), findsNothing);
-    expect(find.byType(DayStrip), findsNothing);
+      expect(find.byType(NavigationBar), findsNothing);
+      expect(find.byType(AppFloatingCreateButton), findsNothing);
+      // Still mounted — this is the real gap this file was expanded to
+      // cover: the header used to disappear entirely along with everything
+      // else, taking its own only Edit Mode exit control down with it.
+      expect(find.byType(AppCalendarHeader), findsOneWidget);
+      expect(find.byTooltip('Done'), findsOneWidget);
 
-    container.read(editModeEnabledProvider.notifier).toggle();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+      container.read(editModeEnabledProvider.notifier).toggle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
 
-    expect(find.byType(NavigationBar), findsOneWidget);
-    expect(find.byType(DayStrip), findsOneWidget);
-  });
+      expect(find.byType(NavigationBar), findsOneWidget);
+      expect(find.byType(AppFloatingCreateButton), findsOneWidget);
+      expect(find.byTooltip('Edit'), findsOneWidget);
+    },
+  );
 
   // Reported directly, from a screenshot: the quick-create overlay's own
   // small sheet "should cover main nav currently it opens above main
@@ -163,18 +198,23 @@ void main() {
   // overlay (bottom-anchored inside TimelineScreen's own body) has that
   // space to occupy instead of stopping short above a still-visible bar.
   //
-  // The DayStrip half was a follow-up report: "we don't show main nav, we
-  // should not show also the days with view switch and + button section,
-  // only the minisheet is visible in this scenario" — the first pass only
-  // suppressed the NavigationBar, leaving DayStrip still rendering.
+  // The create button's half was a follow-up report: "we don't show main
+  // nav, we should not show also the days with view switch and + button
+  // section, only the minisheet is visible in this scenario" — the first
+  // pass only suppressed the NavigationBar, leaving the "+" still
+  // rendering. Unlike Edit Mode, a live draft hides `AppCalendarHeader`
+  // entirely too (see `timeline_screen.dart`'s own `if`) — this is the
+  // ONE case the whole header still disappears for, since there is no
+  // control on it that a draft needs to stay reachable.
   testWidgets(
-    'starting a quick-create draft hides BOTH the bottom NavigationBar '
-    'and the DayStrip (days, view switch, "+"), and clearing it restores '
-    'both — "only the minisheet is visible in this scenario"',
+    'starting a quick-create draft hides the bottom NavigationBar, the '
+    'floating create button, AND AppCalendarHeader; clearing it restores '
+    'all three — "only the minisheet is visible in this scenario"',
     (tester) async {
       final container = await pumpHome(tester);
       expect(find.byType(NavigationBar), findsOneWidget);
-      expect(find.byType(DayStrip), findsOneWidget);
+      expect(find.byType(AppFloatingCreateButton), findsOneWidget);
+      expect(find.byType(AppCalendarHeader), findsOneWidget);
 
       container
           .read(pendingTaskDraftProvider.notifier)
@@ -183,14 +223,16 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
 
       expect(find.byType(NavigationBar), findsNothing);
-      expect(find.byType(DayStrip), findsNothing);
+      expect(find.byType(AppFloatingCreateButton), findsNothing);
+      expect(find.byType(AppCalendarHeader), findsNothing);
 
       container.read(pendingTaskDraftProvider.notifier).clear();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
 
       expect(find.byType(NavigationBar), findsOneWidget);
-      expect(find.byType(DayStrip), findsOneWidget);
+      expect(find.byType(AppFloatingCreateButton), findsOneWidget);
+      expect(find.byType(AppCalendarHeader), findsOneWidget);
     },
   );
 }

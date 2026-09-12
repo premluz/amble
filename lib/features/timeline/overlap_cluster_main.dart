@@ -162,7 +162,7 @@ class _ShellState extends State<_Shell> {
       body: IndexedStack(
         index: _index,
         children: [
-          const TimelineScreen(),
+          const TimelineScreen(mode: TimelineDisplayMode.spatial),
           PrimaryScrollController(
             controller: _settingsScrollController,
             child: const SettingsScreen(),

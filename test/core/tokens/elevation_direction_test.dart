@@ -123,16 +123,50 @@ void main() {
   /// light mode) instead of `colorSurfaceBase` (the ground). In light mode
   /// that made the page and the white floating nav byte-identical, and it
   /// meant deepening the base token changed nothing on screen.
-  group('the app paints the base, not the pane', () {
-    test('main.dart wires scaffoldBackgroundColor to colorSurfaceBase', () {
+  ///
+  /// **2026-09-12 — re-wired again, to `colorSurfaceTimeline`.** Once the
+  /// bottom nav became a floating pill with margin on every side (rather
+  /// than flush to the screen edge), that margin gap exposes
+  /// `scaffoldBackgroundColor` directly — and every real screen already
+  /// paints its own full-bleed `colorSurfaceTimeline`, not
+  /// `colorSurfaceBase`. Reported directly: an unwanted extra patch of
+  /// background color in that gap, in dark mode `colorSurfaceBase`
+  /// (`ink900`, #121110) visibly darker than the `colorSurfaceTimeline`
+  /// (`ink800`) surrounding it on every real screen. The ORIGINAL bug this
+  /// group guards against (scaffold and pane byte-identical) is still
+  /// avoided: `colorSurfaceTimeline` isn't `colorSurfaceOverlay` in either
+  /// theme either — only the specific non-overlay token changed.
+  group('the app paints its own screen background, not a mismatched base', () {
+    test('main.dart wires scaffoldBackgroundColor to colorSurfaceTimeline', () {
       final source = File('lib/main.dart').readAsStringSync();
       expect(
-        source.contains('scaffoldBackgroundColor: palette.colorSurfaceBase'),
+        source.contains(
+          'scaffoldBackgroundColor: palette.colorSurfaceTimeline',
+        ),
         isTrue,
         reason:
-            'the page background must be level 0; painting it with '
-            'colorSurfacePrimary collapses base and overlay together',
+            'every real screen already paints colorSurfaceTimeline '
+            'full-bleed — the scaffold color is only visible in the '
+            'floating nav pill\'s own margin gap now, and must match '
+            'what surrounds it there',
       );
+    });
+
+    test('colorSurfaceTimeline is never the same as colorSurfaceOverlay — '
+        'the original scaffold-vs-pane collision this re-wiring must not '
+        'reintroduce', () {
+      for (final entry in {
+        'light': AmbleTheme.light,
+        'dark': AmbleTheme.dark,
+      }.entries) {
+        expect(
+          entry.value.colorSurfaceTimeline,
+          isNot(equals(entry.value.colorSurfaceOverlay)),
+          reason:
+              '${entry.key}: screen background and floating nav pill '
+              'would be byte-identical',
+        );
+      }
     });
 
     test('base and overlay are never the same color in either theme', () {

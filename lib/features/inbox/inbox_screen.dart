@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
-import '../../core/widgets/app_bottom_extension_bar.dart';
+import '../../core/widgets/app_floating_create_button.dart';
 import '../../core/widgets/app_press_feedback.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
 import '../../shared/models/task.dart';
@@ -41,107 +41,112 @@ class InboxScreen extends ConsumerWidget {
       color: theme.colorSurfaceTimeline,
       child: SafeArea(
         bottom: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Stack(
           children: [
-            // Top/bottom bumped from spacingMd/spacingSm to spacingLg/
-            // spacingMd — requested directly, alongside the Tracked
-            // screen's identical header (same values there, same
-            // reasoning): "for inbox and tracked also might need to
-            // increase the heading section."
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                theme.spacingScreenPadding,
-                theme.spacingLg,
-                theme.spacingScreenPadding,
-                theme.spacingMd,
-              ),
-              child: Text('Manage', style: theme.textHeadline),
-            ),
-            Expanded(
-              // Stack, so top/bottom fades overlay the list's own
-              // scrolling content directly — reversed back from an
-              // earlier attempt that moved the top fade INTO the fixed
-              // heading above instead (a separate, non-scrolling sibling
-              // box, never actually behind any real content). Reported
-              // directly: "the header cuts the content with a hard edge
-              // ... the content slides through underneath" — a fade
-              // living in its own static header can only ever blend
-              // against that header's own flat background, never the
-              // list sliding past underneath it, which is exactly the
-              // hard-cut bug this reverses. The title above stays clear
-              // of the fade by construction now: the fade is confined to
-              // this Expanded's own bounds, which start below the fixed
-              // heading, so it can never paint over the title text again
-              // (the original problem the header-embedded fade was built
-              // to solve) — the same non-overlapping-by-position fix
-              // `_DayTimeline`'s own fade/heading split already uses on
-              // the Timeline. Mirrors the bottom fade already doing this
-              // correctly in this exact Stack.
-              child: Stack(
-                children: [
-                  tasks.isEmpty
-                      ? _EmptyInboxState(theme: theme)
-                      : ListView.separated(
-                          padding: EdgeInsets.fromLTRB(
-                            theme.spacingScreenPadding,
-                            // spacingContentTop — the shared value
-                            // every list/sheet's own first row uses,
-                            // confirmed directly at 30px: "tasks
-                            // templates tracked cards should all
-                            // start at same y level." Unrelated to
-                            // the fade above now that the fade lives
-                            // in the header, not over this list —
-                            // this is purely the card-alignment fix.
-                            theme.spacingContentTop,
-                            theme.spacingScreenPadding,
-                            0,
-                          ),
-                          itemCount: tasks.length,
-                          separatorBuilder: (context, _) =>
-                              SizedBox(height: theme.spacingSm),
-                          itemBuilder: (context, index) {
-                            final task = tasks[index];
-                            return _InboxListItem(
-                              key: ValueKey(task.id),
-                              task: task,
-                              theme: theme,
-                              onTap: () =>
-                                  showQuickCaptureSheet(context, task: task),
-                              onToggleComplete: () =>
-                                  taskNotifier.toggleComplete(task),
-                              onSchedule: () =>
-                                  showTaskDetailSheet(context, task: task),
-                            );
-                          },
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Top/bottom bumped from spacingMd/spacingSm to spacingLg/
+                // spacingMd — requested directly, alongside the Tracked
+                // screen's identical header (same values there, same
+                // reasoning): "for inbox and tracked also might need to
+                // increase the heading section."
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    theme.spacingScreenPadding,
+                    theme.spacingLg,
+                    theme.spacingScreenPadding,
+                    theme.spacingMd,
+                  ),
+                  child: Text('Manage', style: theme.textHeadline),
+                ),
+                Expanded(
+                  // Stack, so top/bottom fades overlay the list's own
+                  // scrolling content directly — reversed back from an
+                  // earlier attempt that moved the top fade INTO the fixed
+                  // heading above instead (a separate, non-scrolling sibling
+                  // box, never actually behind any real content). Reported
+                  // directly: "the header cuts the content with a hard edge
+                  // ... the content slides through underneath" — a fade
+                  // living in its own static header can only ever blend
+                  // against that header's own flat background, never the
+                  // list sliding past underneath it, which is exactly the
+                  // hard-cut bug this reverses. The title above stays clear
+                  // of the fade by construction now: the fade is confined to
+                  // this Expanded's own bounds, which start below the fixed
+                  // heading, so it can never paint over the title text again
+                  // (the original problem the header-embedded fade was built
+                  // to solve) — the same non-overlapping-by-position fix
+                  // `_DayTimeline`'s own fade/heading split already uses on
+                  // the Timeline. Mirrors the bottom fade already doing this
+                  // correctly in this exact Stack.
+                  child: Stack(
+                    children: [
+                      tasks.isEmpty
+                          ? _EmptyInboxState(theme: theme)
+                          : ListView.separated(
+                              padding: EdgeInsets.fromLTRB(
+                                theme.spacingScreenPadding,
+                                // spacingContentTop — the shared value
+                                // every list/sheet's own first row uses,
+                                // confirmed directly at 30px: "tasks
+                                // templates tracked cards should all
+                                // start at same y level." Unrelated to
+                                // the fade above now that the fade lives
+                                // in the header, not over this list —
+                                // this is purely the card-alignment fix.
+                                theme.spacingContentTop,
+                                theme.spacingScreenPadding,
+                                0,
+                              ),
+                              itemCount: tasks.length,
+                              separatorBuilder: (context, _) =>
+                                  SizedBox(height: theme.spacingSm),
+                              itemBuilder: (context, index) {
+                                final task = tasks[index];
+                                return _InboxListItem(
+                                  key: ValueKey(task.id),
+                                  task: task,
+                                  theme: theme,
+                                  onTap: () => showQuickCaptureSheet(
+                                    context,
+                                    task: task,
+                                  ),
+                                  onToggleComplete: () =>
+                                      taskNotifier.toggleComplete(task),
+                                  onSchedule: () =>
+                                      showTaskDetailSheet(context, task: task),
+                                );
+                              },
+                            ),
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        child: AppTopScrollFade(
+                          color: theme.colorSurfaceTimeline,
                         ),
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    child: AppTopScrollFade(color: theme.colorSurfaceTimeline),
+                      ),
+                      Positioned(
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        child: AppTopScrollFade(
+                          color: theme.colorSurfaceTimeline,
+                          fromBottom: true,
+                        ),
+                      ),
+                    ],
                   ),
-                  Positioned(
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    child: AppTopScrollFade(
-                      color: theme.colorSurfaceTimeline,
-                      fromBottom: true,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-            // The "+" lives in the same bottom "extension" bar the
-            // Timeline's DayStrip established — requested directly, so the
-            // create button sits at the exact same screen position on
-            // every tab. No `leading` content now that the sub-tab switch
-            // is gone — matches the Tracked tab's own "create button
-            // alone" shape (see AppBottomExtensionBar's own doc comment).
-            AppBottomExtensionBar(
-              leading: const SizedBox.shrink(),
-              onCreatePressed: () => showQuickCaptureSheet(context),
+            // Floating independently above the bottom nav pill now
+            // (2026-09-12, matching every other screen's own
+            // `AppFloatingCreateButton` — see that widget's doc comment),
+            // rather than welded into a bar shared with the nav below.
+            AppFloatingCreateButton(
+              onPressed: () => showQuickCaptureSheet(context),
             ),
           ],
         ),
@@ -201,7 +206,15 @@ class _InboxListItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final categoryColor = theme.categoryColors[task.category.token]!;
-    final badgeSize = theme.spacingXl;
+    // `theme.sizeTaskBadge`/`theme.textTaskTitle`, NOT `spacingXl`/
+    // `textBody` (corrected 2026-09-12, reported directly: "manage items
+    // should have same size as zone view") — this row bypassed the
+    // shared "Task size" setting entirely, rendering visibly larger than
+    // every other task row in the app (Task view, Zone view) regardless
+    // of what size the user had actually chosen. These are the exact
+    // same resolved tokens `TaskCapsuleBlock`'s own badge/title already
+    // use, so Manage now tracks that one setting like every other view.
+    final badgeSize = theme.sizeTaskBadge;
 
     // **2026-09-12 — the card is gone.** Requested directly: "remove cards
     // from Manage." No fill, no shadow, no rounded corners — a plain row,
@@ -240,7 +253,9 @@ class _InboxListItem extends StatelessWidget {
             Expanded(
               child: Text(
                 task.title,
-                style: theme.textBody.copyWith(fontWeight: FontWeight.w700),
+                style: theme.textTaskTitle.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),

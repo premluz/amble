@@ -105,7 +105,9 @@ void main() {
                 useMaterial3: true,
                 extensions: [AmbleTheme.light],
               ),
-              home: const Scaffold(body: TimelineScreen()),
+              home: const Scaffold(
+                body: TimelineScreen(mode: TimelineDisplayMode.spatial),
+              ),
             );
           },
         ),
@@ -216,14 +218,14 @@ void main() {
       await tester.pump();
       expect(find.byType(TaskEdgeTimeLabel), findsNWidgets(2));
 
-      // Tapping the armed task itself closes its edit state (opens the
-      // detail sheet instead) — same close path
-      // `armed_edit_task_test.dart`'s own "single tap on the armed task"
-      // test uses. NOT an empty-space tap: this Timeline's own
-      // tap-to-quick-create feature (`onEmptyTap`) fires on ANY empty
-      // background tap and would create a brand new pending draft there
-      // — which now shows its OWN pair of edge labels (this same
-      // session's other feature), confounding this test's count.
+      // Tapping the armed task itself closes its edit state — 2026-09-12,
+      // reported directly, this no longer ALSO opens the detail sheet
+      // (see `armed_edit_task_test.dart`'s own "single tap on the armed
+      // task" test for the full reasoning). NOT an empty-space tap: this
+      // Timeline's own tap-to-quick-create feature (`onEmptyTap`) fires
+      // on ANY empty background tap and would create a brand new pending
+      // draft there — which now shows its OWN pair of edge labels (this
+      // same session's other feature), confounding this test's count.
       await tester.tap(find.text('Focus block'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
@@ -236,7 +238,7 @@ void main() {
             'this fails, the test\'s own tap position/harness is wrong, '
             'not the edge-label feature',
       );
-      expect(find.text('Edit task'), findsOneWidget);
+      expect(find.text('Edit task'), findsNothing);
 
       expect(find.byType(TaskEdgeTimeLabel), findsNothing);
     },

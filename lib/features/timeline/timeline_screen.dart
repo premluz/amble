@@ -9,6 +9,7 @@ import '../../core/feature_flags.dart';
 import '../../core/haptics.dart';
 import '../../core/haptics_provider.dart';
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/app_floating_create_button.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
 import '../../shared/models/category.dart';
 import '../../shared/models/external_calendar_event.dart';
@@ -31,9 +32,9 @@ import '../../shared/services/zone_containment.dart';
 import '../tracked_behavior/behavior_outcome_prompt.dart';
 import '../task_detail/task_detail_sheet.dart';
 import '../task_detail/task_remove.dart';
+import 'app_calendar_header.dart';
 import 'collapsed_stack_layout.dart';
 import 'current_time_indicator.dart';
-import 'day_strip.dart';
 import 'armed_edit_task_provider.dart';
 import 'edit_mode_delete_target.dart';
 import 'edit_mode_provider.dart';
@@ -250,6 +251,19 @@ void _commitZoneCascade(
 double _pillHeight(AmbleTheme theme, Task task, double pixelsPerMinute) =>
     math.max(task.durationMinutes! * pixelsPerMinute, _pillWidth(theme));
 
+/// Which of this screen's two spatial layouts to render — see
+/// [TimelineScreen.mode]'s own doc comment for the nav split this exists
+/// for.
+enum TimelineDisplayMode {
+  /// The original spatial Timeline — tasks positioned against a real time
+  /// axis. Nav destination "Task view".
+  spatial,
+
+  /// The Zone-organized, non-spatial list of zones/tasks. Nav destination
+  /// "Timeline".
+  zone,
+}
+
 /// The Timeline day view — hour markers, tasks for the selected day
 /// positioned by [Task.scheduledAt]/[Task.durationMinutes], a live
 /// current-time indicator, and simple day navigation. Wired to
@@ -257,7 +271,18 @@ double _pillHeight(AmbleTheme theme, Task task, double pixelsPerMinute) =>
 /// session), not seeded data — see timeline_capsule_preview.dart for the
 /// separate dev-scaffold preview.
 class TimelineScreen extends ConsumerWidget {
-  const TimelineScreen({super.key});
+  const TimelineScreen({super.key, required this.mode});
+
+  /// **2026-09-12 — no longer read from `ZoneViewEnabledSetting`.**
+  /// Requested directly: Task view and Zone view become two separate,
+  /// permanent nav destinations rather than one screen with an in-screen
+  /// switcher (`DayStrip`'s own cycle button, removed alongside this) —
+  /// each caller now forces the mode outright, matching which nav tab
+  /// it's mounted under. `ZoneViewEnabledSetting`/`ShowHourLabelsSetting`
+  /// remain as persisted Hive fields (harmless if unread) rather than
+  /// migrated away, since removing a Hive field outright risks breaking
+  /// existing installs' stored preferences for no functional gain.
+  final TimelineDisplayMode mode;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -297,16 +322,14 @@ class TimelineScreen extends ConsumerWidget {
       for (final category in ref.watch(categoryListProvider))
         category.id: category,
     };
-    // Only surfaced (and only ever true) when the Zone feature flag is on
-    // — see ZoneViewEnabledSetting and the Settings screen's own gating.
-    // With the flag off, zoneViewEnabled always reads false here, so the
-    // Task view below is the only path a flag-off build can ever take.
-    // Zone view no longer has a separate debug-only override (removed
-    // 2026-09-10, "zone view and task view are on always") — this must
-    // still match `day_strip.dart`'s own `zoneFeatureEnabled` term
-    // exactly, which is now just the flag alone too.
+    // **2026-09-12 — driven by `mode`, not a setting.** Still gated on the
+    // Zone feature flag: with it off, the "Timeline" nav tab that requests
+    // `TimelineDisplayMode.zone` would otherwise render a Zone view no
+    // other Zone UI surface in the app is reachable from — this keeps that
+    // one tab falling back to the spatial layout instead, matching every
+    // other Zone surface's own flag gating.
     final zoneViewEnabled =
-        FeatureFlags.zoneEnabled && ref.watch(zoneViewEnabledSettingProvider);
+        FeatureFlags.zoneEnabled && mode == TimelineDisplayMode.zone;
     // Feature 1 (read-only external calendar events) — see CONSTITUTION.md's
     // "Calendar" section. A day-bounded range is generous enough for both
     // Timeline modes' own (possibly slightly wider) rangeStart/rangeEnd to
@@ -356,9 +379,10 @@ class TimelineScreen extends ConsumerWidget {
     ref.listen(editModeEnabledProvider, (previous, next) {
       // Hooked to the state CHANGE rather than to either toggle call site,
       // because Edit Mode has two of them (the two-finger long-press and
-      // `_EditModeLink`) and both deserve the same confirmation. Entering
-      // gets `lift` (a mode is now being held), leaving gets the lighter
-      // `selection` — the same asymmetry the completion checkbox uses.
+      // `AppCalendarHeader`'s own pen icon) and both deserve the same
+      // confirmation. Entering gets `lift` (a mode is now being held),
+      // leaving gets the lighter `selection` — the same asymmetry the
+      // completion checkbox uses.
       ref
           .read(hapticsProvider)
           .play(next ? AmbleHaptic.lift : AmbleHaptic.selection);
@@ -370,430 +394,520 @@ class TimelineScreen extends ConsumerWidget {
       if (!next) ref.read(zoneEditSelectionProvider.notifier).clear();
     });
 
+    // **2026-09-12 — anything that navigates away disarms a long-pressed
+    // task.** Reported directly: "changing day, page, or navigating
+    // elsewhere basically or activating sheet would exit edit mode."
+    // Previously only a tap on the Timeline itself cleared the arm, so a
+    // task kept wiggling behind an open sheet, and switching day left it
+    // armed on a day it isn't even visible on — its resize handles then
+    // belonged to a task the user could no longer see.
+    //
+    // Listened here rather than added to each navigation call site: the
+    // arm is Timeline-local state, the transitions are all observable as
+    // provider changes, and wiring N call sites would guarantee the N+1th
+    // gets missed. `selectedDate` covers the day strip, the month
+    // stepper, the today button and swipes; `pendingTaskDraft` covers the
+    // quick-create mini sheet. A pushed route (the detail sheet, any
+    // Settings page) disarms via `_effectiveOnTap`'s own clear before it
+    // pushes, and the tab bar rebuilds this screen with the provider
+    // already reset by its autoDispose.
+    ref.listen(selectedDateProvider, (previous, next) {
+      if (previous != next) ref.read(armedEditTaskProvider.notifier).clear();
+    });
+    ref.listen(pendingTaskDraftProvider, (previous, next) {
+      if (next != null) ref.read(armedEditTaskProvider.notifier).clear();
+    });
+
     return Container(
       color: theme.colorSurfaceTimeline,
       child: SafeArea(
-        // The day strip owns the bottom edge itself (its own SafeArea
-        // handling — see DayStrip), so this outer SafeArea only needs to
-        // guard the top/sides.
+        // The floating "+" (AppFloatingCreateButton, in the outer Stack
+        // below) owns the bottom edge itself via its own SafeArea, so this
+        // outer SafeArea only needs to guard the top/sides.
         bottom: false,
-        child: Column(
+        child: Stack(
           children: [
-            Expanded(
-              // Whole-screen swipe-to-change-day REMOVED (requested
-              // directly) — day navigation now happens only through the
-              // strip below, either by tapping a chip or scrolling it.
-              // Previously this Expanded's child was wrapped in a
-              // GestureDetector(onHorizontalDragEnd: ...) calling
-              // dayNotifier.goToNextDay()/goToPreviousDay(); kept as a
-              // comment rather than deleted outright, since "comment out"
-              // was the explicit instruction:
-              //
-              // GestureDetector(
-              //   onHorizontalDragEnd: (details) {
-              //     final velocity = details.primaryVelocity ?? 0;
-              //     if (velocity < 0) {
-              //       dayNotifier.goToNextDay();
-              //     } else if (velocity > 0) {
-              //       dayNotifier.goToPreviousDay();
-              //     }
-              //   },
-              //   child: ...,
-              // ),
-              child: TwoFingerLongPress(
-                onTwoFingerLongPress: () =>
-                    ref.read(editModeEnabledProvider.notifier).toggle(),
-                child: Stack(
-                  children: [
-                    AnimatedSwitcher(
-                      // Task<->Zone view switch: outgoing view slides left+fades
-                      // out, incoming view slides in from the right+fades in —
-                      // requested directly. motionRouteSettle/curveStandard
-                      // (500ms, Material standard ease) since this is a
-                      // route-level view change, not a small in-place UI tweak.
-                      duration: theme.motionRouteSettle,
-                      switchInCurve: theme.curveStandard,
-                      switchOutCurve: theme.curveStandard,
-                      transitionBuilder: (child, animation) {
-                        // Every view switch must read right-to-left, both
-                        // directions — reported directly, twice: first that the
-                        // outgoing view slid right instead of left, then (after
-                        // an attempted fix using animation.status) that the
-                        // Task view stopped animating in at all, plus real
-                        // clipping ("left side cut off").
-                        //
-                        // Root cause of the SECOND attempt's failure:
-                        // AnimatedSwitcher calls transitionBuilder(child,
-                        // animation) ONCE, synchronously, at the moment an entry
-                        // is CREATED — before its controller.forward()/.reverse()
-                        // has actually been called (see _addEntryForNewChild in
-                        // the framework source: _newEntry builds the transition
-                        // BEFORE forward()/reverse() runs). So `animation.status`
-                        // read at that instant is always still `dismissed`, for
-                        // BOTH the incoming and outgoing entry — never `forward`.
-                        // That's why the Task view (whichever entry happened to
-                        // build second) silently took the wrong branch and never
-                        // animated in.
-                        //
-                        // The reliable signal instead: `child` is the ACTUAL
-                        // widget passed in for THIS entry, and its `key` is
-                        // known — compare it against which view is CURRENTLY
-                        // selected (the enclosing build's own `zoneViewEnabled`,
-                        // captured by this closure) rather than the animation's
-                        // own transient status. This entry is "entering" if and
-                        // only if its key matches the view that's actually
-                        // selected right now.
-                        final isEntering =
-                            child.key ==
-                            (zoneViewEnabled
-                                ? const ValueKey('zone-view')
-                                : const ValueKey('task-view'));
-                        final slide = Tween<Offset>(
-                          begin: isEntering
-                              ? const Offset(0.15, 0)
-                              : Offset.zero,
-                          end: isEntering
-                              ? Offset.zero
-                              : const Offset(-0.15, 0),
-                        ).animate(animation);
-                        return FadeTransition(
-                          opacity: animation,
-                          child: SlideTransition(position: slide, child: child),
-                        );
-                      },
-                      // clipBehavior: Clip.none — real bug, reported directly
-                      // ("list and zone screens are positioned off screen, left
-                      // side is cut off"): Stack's OWN default is
-                      // Clip.hardEdge, and the custom layoutBuilder below
-                      // (needed so both the outgoing and incoming full-width
-                      // views can slide past the Stack's own bounds mid-
-                      // transition) inherited that default silently. Also
-                      // switched alignment to center, matching
-                      // AnimatedSwitcher.defaultLayoutBuilder's own choice —
-                      // topLeft mis-aligned a translated child against a
-                      // Stack that isn't naturally sized to its own top-left
-                      // corner once children can slide outside its bounds.
-                      layoutBuilder: (currentChild, previousChildren) => Stack(
-                        alignment: Alignment.center,
-                        clipBehavior: Clip.none,
-                        children: [...previousChildren, ?currentChild],
-                      ),
-                      child: zoneViewEnabled
-                          // Same empty-day treatment as the Task view below: the
-                          // timeline still renders and scrolls, with the message
-                          // floating over it.
-                          ? Stack(
-                              key: const ValueKey('zone-view'),
-                              children: [
-                                ZoneDayTimeline(
-                                  tasks: tasks,
-                                  zones: zones,
-                                  // "hide imported tasks" now also affects
-                                  // Zone view, not just List view —
-                                  // requested directly, replacing the old
-                                  // "Only Amble tasks" toggle. Mirrors the
-                                  // List-view `filteredExternalEvents`
-                                  // pattern below exactly.
-                                  // "hide imported tasks" now also affects
-                                  // Zone view, not just List view —
-                                  // requested directly, replacing the old
-                                  // "Only Amble tasks" toggle. Mirrors the
-                                  // List-view `filteredExternalEvents`
-                                  // pattern below exactly.
-                                  externalEvents:
-                                      ref.watch(devHideImportedTasksProvider)
-                                      ? const <ExternalCalendarEvent>[]
-                                      : externalEvents,
-                                  theme: theme,
-                                  categoryById: categoryById,
-                                  selectedDate: selectedDate,
-                                  // Dev-only capsule display toggles (Settings'
-                                  // "Developer" section) — read once here, same
-                                  // as showHourLabels/disableClustering, and
-                                  // threaded down as plain fields since
-                                  // ZoneDayTimeline isn't Riverpod-aware.
-                                  devTextLayout: ref.watch(
-                                    devTimelineTaskTextLayoutProvider,
-                                  ),
-                                  // A real user setting (not a dev toggle) —
-                                  // one toggle across all three views.
-                                  showCompletionCheckbox: ref.watch(
-                                    showCompletionCheckboxSettingProvider,
-                                  ),
-                                  devIconsVisible: ref.watch(
-                                    devTimelineTaskIconsVisibleProvider,
-                                  ),
-                                  devDurationVisible: ref.watch(
-                                    devTimelineTaskDurationVisibleProvider,
-                                  ),
-                                  // Same threading, same reason — List
-                                  // view's own "Show time (from-to)"
-                                  // toggle now also applies to Zone view,
-                                  // requested directly: "Hide/show start
-                                  // end should also affect zone view."
-                                  devTimeRangeVisible: ref.watch(
-                                    devTimelineTaskTimeRangeVisibleProvider,
-                                  ),
-                                  // Strips each zone's own card
-                                  // background/padding, leaving just its
-                                  // title/duration header above a bare row
-                                  // list — requested directly, Developer
-                                  // section only.
-                                  devZoneCardFlat: ref.watch(
-                                    devZoneCardFlatProvider,
-                                  ),
-                                  // Opens Edit directly, skipping the action
-                                  // sheet (Edit/Duplicate/Remove) — requested
-                                  // directly. The sheet stays in the codebase,
-                                  // unused for now, in case it's wanted again.
-                                  onTaskTap: (task) =>
-                                      showTaskDetailSheet(context, task: task),
-                                  onToggleComplete: (task) =>
-                                      _completeTask(context, ref, task),
-                                  // Non-spatial list — requested directly
-                                  // ("current zone view make non spatial..
-                                  // just list of zones one by one"). No more
-                                  // drag-to-move/resize or drag-and-drop task
-                                  // reassignment; a zone's own header now
-                                  // opens the same edit form Settings' plain
-                                  // Zones list already uses.
-                                  onZoneHeaderTap: (zone) =>
-                                      showZoneFormScreen(context, zone: zone),
-                                ),
-                                if (tasks.isEmpty && zones.isEmpty)
-                                  IgnorePointer(
-                                    child: _EmptyDayState(theme: theme),
-                                  ),
-                              ],
-                            )
-                          // An empty day still renders the full scrollable
-                          // timeline — the "nothing scheduled" message floats
-                          // OVER it rather than replacing it, confirmed directly.
-                          // Previously an empty day short-circuited to a centered
-                          // message with nothing to scroll at all.
-                          : Stack(
-                              key: const ValueKey('task-view'),
-                              children: [
-                                _DayTimeline(
-                                  tasks: tasks,
-                                  theme: theme,
-                                  categoryById: categoryById,
-                                  zones: zones,
-                                  externalEvents: externalEvents,
-                                  selectedDate: selectedDate,
-                                  showHourLabels: ref.watch(
-                                    showHourLabelsSettingProvider,
-                                  ),
-                                  showTimelineConnectors: ref.watch(
-                                    showTimelineConnectorsSettingProvider,
-                                  ),
-                                  // Opens Edit directly, skipping the action sheet
-                                  // (Edit/Duplicate/Remove) — requested directly.
-                                  // The sheet stays in the codebase, unused for
-                                  // now, in case it's wanted again.
-                                  onTaskTap: (task) =>
-                                      showTaskDetailSheet(context, task: task),
-                                  onToggleComplete: (task) =>
-                                      _completeTask(context, ref, task),
-                                  onReschedule: (task, newScheduledAt) =>
-                                      taskNotifier.rescheduleTask(
-                                        task,
-                                        newScheduledAt,
+            Column(
+              children: [
+                // **2026-09-12 — the calendar moved to the top**, shared by
+                // both this screen's modes (and Timeline's own "Task view"
+                // tab — see main.dart), replacing the old bottom day-strip's
+                // own day-navigation UI entirely. Requested directly, with a
+                // reference screenshot.
+                //
+                // Hidden ENTIRELY only for the quick-create-draft case (see
+                // the matching `if` further down for the "+" button's own
+                // half of that same rule) — NOT for Edit Mode any more.
+                // Reported directly as a real gap: hiding the whole header
+                // while Edit Mode is on took its own close control down with
+                // it, leaving no visible way back out. `AppCalendarHeader`
+                // itself now collapses to just that close button when Edit
+                // Mode is active, so it's never removed from the tree here.
+                if (ref.watch(pendingTaskDraftProvider) == null)
+                  const AppCalendarHeader(),
+                Expanded(
+                  // Whole-screen swipe-to-change-day REMOVED (requested
+                  // directly) — day navigation now happens only through the
+                  // strip below, either by tapping a chip or scrolling it.
+                  // Previously this Expanded's child was wrapped in a
+                  // GestureDetector(onHorizontalDragEnd: ...) calling
+                  // dayNotifier.goToNextDay()/goToPreviousDay(); kept as a
+                  // comment rather than deleted outright, since "comment out"
+                  // was the explicit instruction:
+                  //
+                  // GestureDetector(
+                  //   onHorizontalDragEnd: (details) {
+                  //     final velocity = details.primaryVelocity ?? 0;
+                  //     if (velocity < 0) {
+                  //       dayNotifier.goToNextDay();
+                  //     } else if (velocity > 0) {
+                  //       dayNotifier.goToPreviousDay();
+                  //     }
+                  //   },
+                  //   child: ...,
+                  // ),
+                  child: TwoFingerLongPress(
+                    onTwoFingerLongPress: () =>
+                        ref.read(editModeEnabledProvider.notifier).toggle(),
+                    child: Stack(
+                      children: [
+                        AnimatedSwitcher(
+                          // Task<->Zone view switch: outgoing view slides left+fades
+                          // out, incoming view slides in from the right+fades in —
+                          // requested directly. motionRouteSettle/curveStandard
+                          // (500ms, Material standard ease) since this is a
+                          // route-level view change, not a small in-place UI tweak.
+                          duration: theme.motionRouteSettle,
+                          switchInCurve: theme.curveStandard,
+                          switchOutCurve: theme.curveStandard,
+                          transitionBuilder: (child, animation) {
+                            // Every view switch must read right-to-left, both
+                            // directions — reported directly, twice: first that the
+                            // outgoing view slid right instead of left, then (after
+                            // an attempted fix using animation.status) that the
+                            // Task view stopped animating in at all, plus real
+                            // clipping ("left side cut off").
+                            //
+                            // Root cause of the SECOND attempt's failure:
+                            // AnimatedSwitcher calls transitionBuilder(child,
+                            // animation) ONCE, synchronously, at the moment an entry
+                            // is CREATED — before its controller.forward()/.reverse()
+                            // has actually been called (see _addEntryForNewChild in
+                            // the framework source: _newEntry builds the transition
+                            // BEFORE forward()/reverse() runs). So `animation.status`
+                            // read at that instant is always still `dismissed`, for
+                            // BOTH the incoming and outgoing entry — never `forward`.
+                            // That's why the Task view (whichever entry happened to
+                            // build second) silently took the wrong branch and never
+                            // animated in.
+                            //
+                            // The reliable signal instead: `child` is the ACTUAL
+                            // widget passed in for THIS entry, and its `key` is
+                            // known — compare it against which view is CURRENTLY
+                            // selected (the enclosing build's own `zoneViewEnabled`,
+                            // captured by this closure) rather than the animation's
+                            // own transient status. This entry is "entering" if and
+                            // only if its key matches the view that's actually
+                            // selected right now.
+                            final isEntering =
+                                child.key ==
+                                (zoneViewEnabled
+                                    ? const ValueKey('zone-view')
+                                    : const ValueKey('task-view'));
+                            final slide = Tween<Offset>(
+                              begin: isEntering
+                                  ? const Offset(0.15, 0)
+                                  : Offset.zero,
+                              end: isEntering
+                                  ? Offset.zero
+                                  : const Offset(-0.15, 0),
+                            ).animate(animation);
+                            return FadeTransition(
+                              opacity: animation,
+                              child: SlideTransition(
+                                position: slide,
+                                child: child,
+                              ),
+                            );
+                          },
+                          // clipBehavior: Clip.none — real bug, reported directly
+                          // ("list and zone screens are positioned off screen, left
+                          // side is cut off"): Stack's OWN default is
+                          // Clip.hardEdge, and the custom layoutBuilder below
+                          // (needed so both the outgoing and incoming full-width
+                          // views can slide past the Stack's own bounds mid-
+                          // transition) inherited that default silently. Also
+                          // switched alignment to center, matching
+                          // AnimatedSwitcher.defaultLayoutBuilder's own choice —
+                          // topLeft mis-aligned a translated child against a
+                          // Stack that isn't naturally sized to its own top-left
+                          // corner once children can slide outside its bounds.
+                          layoutBuilder: (currentChild, previousChildren) =>
+                              Stack(
+                                alignment: Alignment.center,
+                                clipBehavior: Clip.none,
+                                children: [...previousChildren, ?currentChild],
+                              ),
+                          child: zoneViewEnabled
+                              // Same empty-day treatment as the Task view below: the
+                              // timeline still renders and scrolls, with the message
+                              // floating over it.
+                              ? Stack(
+                                  key: const ValueKey('zone-view'),
+                                  children: [
+                                    ZoneDayTimeline(
+                                      tasks: tasks,
+                                      zones: zones,
+                                      // "hide imported tasks" now also affects
+                                      // Zone view, not just List view —
+                                      // requested directly, replacing the old
+                                      // "Only Amble tasks" toggle. Mirrors the
+                                      // List-view `filteredExternalEvents`
+                                      // pattern below exactly.
+                                      // "hide imported tasks" now also affects
+                                      // Zone view, not just List view —
+                                      // requested directly, replacing the old
+                                      // "Only Amble tasks" toggle. Mirrors the
+                                      // List-view `filteredExternalEvents`
+                                      // pattern below exactly.
+                                      externalEvents:
+                                          ref.watch(
+                                            devHideImportedTasksProvider,
+                                          )
+                                          ? const <ExternalCalendarEvent>[]
+                                          : externalEvents,
+                                      theme: theme,
+                                      categoryById: categoryById,
+                                      selectedDate: selectedDate,
+                                      // Dev-only capsule display toggles (Settings'
+                                      // "Developer" section) — read once here, same
+                                      // as showHourLabels/disableClustering, and
+                                      // threaded down as plain fields since
+                                      // ZoneDayTimeline isn't Riverpod-aware.
+                                      devTextLayout: ref.watch(
+                                        devTimelineTaskTextLayoutProvider,
                                       ),
-                                  onCreateAt: (startAt) => showTaskDetailSheet(
-                                    context,
-                                    initialScheduledAt: startAt,
-                                    initialTimeOfDay: TimeOfDay.fromDateTime(
-                                      startAt,
+                                      // A real user setting (not a dev toggle) —
+                                      // one toggle across all three views.
+                                      showCompletionCheckbox: ref.watch(
+                                        showCompletionCheckboxSettingProvider,
+                                      ),
+                                      devIconsVisible: ref.watch(
+                                        devTimelineTaskIconsVisibleProvider,
+                                      ),
+                                      devDurationVisible: ref.watch(
+                                        devTimelineTaskDurationVisibleProvider,
+                                      ),
+                                      // Same threading, same reason — List
+                                      // view's own "Show time (from-to)"
+                                      // toggle now also applies to Zone view,
+                                      // requested directly: "Hide/show start
+                                      // end should also affect zone view."
+                                      devTimeRangeVisible: ref.watch(
+                                        devTimelineTaskTimeRangeVisibleProvider,
+                                      ),
+                                      // Strips each zone's own card
+                                      // background/padding, leaving just its
+                                      // title/duration header above a bare row
+                                      // list — requested directly, Developer
+                                      // section only.
+                                      devZoneCardFlat: ref.watch(
+                                        devZoneCardFlatProvider,
+                                      ),
+                                      // Opens Edit directly, skipping the action
+                                      // sheet (Edit/Duplicate/Remove) — requested
+                                      // directly. The sheet stays in the codebase,
+                                      // unused for now, in case it's wanted again.
+                                      onTaskTap: (task) => showTaskDetailSheet(
+                                        context,
+                                        task: task,
+                                      ),
+                                      onToggleComplete: (task) =>
+                                          _completeTask(context, ref, task),
+                                      // Non-spatial list — requested directly
+                                      // ("current zone view make non spatial..
+                                      // just list of zones one by one"). No more
+                                      // drag-to-move/resize or drag-and-drop task
+                                      // reassignment; a zone's own header now
+                                      // opens the same edit form Settings' plain
+                                      // Zones list already uses.
+                                      onZoneHeaderTap: (zone) =>
+                                          showZoneFormScreen(
+                                            context,
+                                            zone: zone,
+                                          ),
                                     ),
-                                  ),
-                                  // Tap-empty-space quick-create, requested
-                                  // directly: drops the wiggly placeholder
-                                  // pill immediately (so it's visible the
-                                  // instant the tap lands). QuickCreateOverlay
-                                  // (rendered below, gated on pendingDraft)
-                                  // owns the small sheet AND the eventual
-                                  // promotion to the real showTaskDetailSheet
-                                  // route once the user expands it — nothing
-                                  // pushed from here.
-                                  onEmptyTap: (tappedAt) {
-                                    // Tapping outside a long-press-armed
-                                    // task closes its edit/wiggle state —
-                                    // requested directly, the other half of
-                                    // "long press on task should enable its
-                                    // edit mode... tapping outside closes
-                                    // that mode." See _effectiveOnLongPress
-                                    // for the arming side.
-                                    ref
-                                        .read(armedEditTaskProvider.notifier)
-                                        .clear();
-                                    ref
-                                        .read(pendingTaskDraftProvider.notifier)
-                                        .start(
-                                          scheduledAt: tappedAt,
-                                          durationMinutes:
-                                              quickAddDefaultMinutes,
-                                        );
-                                  },
-                                  pendingDraft: ref.watch(
-                                    pendingTaskDraftProvider,
-                                  ),
-                                  recentlySaved: ref.watch(
-                                    recentlySavedTaskProvider,
-                                  ),
-                                  onSavedTaskConsumed: () => ref
-                                      .read(recentlySavedTaskProvider.notifier)
-                                      .clear(),
-                                  disableClustering: ref.watch(
-                                    disableOverlapClusteringSettingProvider,
-                                  ),
-                                  // Independently configurable from the Zone
-                                  // view's own scale above — see
-                                  // DevZoneViewPixelsPerMinute's doc comment.
-                                  pixelsPerMinute: ref.watch(
-                                    devTaskViewPixelsPerMinuteProvider,
-                                  ),
-                                  showFreeWindowPrompt: ref.watch(
-                                    devShowFreeWindowPromptProvider,
-                                  ),
-                                  // Read here (not just inside
-                                  // _DraggableTaskBlockState, which independently
-                                  // watches its own copy for TaskCapsuleBlock) so
-                                  // OverlapClusterBlock's cluster rows — built by
-                                  // this plain (non-Riverpod) _DayTimelineState —
-                                  // can respect the same setting. Real parity gap,
-                                  // fixed here: a clustered task's row previously
-                                  // never showed the duration suffix at all.
-                                  devDurationVisible: ref.watch(
-                                    devTimelineTaskDurationVisibleProvider,
-                                  ),
-                                  // Same threading, same reason — List
-                                  // view's own from-to time range,
-                                  // independent of duration. See
-                                  // DevTimelineTaskTimeRangeVisible's own
-                                  // doc comment.
-                                  devTimeRangeVisible: ref.watch(
-                                    devTimelineTaskTimeRangeVisibleProvider,
-                                  ),
-                                  // Same threading, same reason — List
-                                  // view here (Zone view has its own
-                                  // separate call site below), hides
-                                  // imported calendar events entirely.
-                                  // See DevHideImportedTasks's own doc
-                                  // comment.
-                                  devHideImportedTasks: ref.watch(
-                                    devHideImportedTasksProvider,
-                                  ),
-                                  // Same threading, same reason — List
-                                  // view only, hides non-important tasks.
-                                  // See DevTimelineListOnlyImportant's own
-                                  // doc comment.
-                                  devListOnlyImportant: ref.watch(
-                                    devTimelineListOnlyImportantProvider,
-                                  ),
-                                  // Same threading, same reason — see
-                                  // _DayTimeline.devTextLayout's own doc comment.
-                                  devTextLayout: ref.watch(
-                                    devTimelineTaskTextLayoutProvider,
-                                  ),
-                                  // A real user setting (not a dev toggle) —
-                                  // one toggle across all three views.
-                                  showCompletionCheckbox: ref.watch(
-                                    showCompletionCheckboxSettingProvider,
-                                  ),
-                                  // Shared with Zone view above via
-                                  // viewed_time_provider.dart. `read`, not `watch`
-                                  // — see the Zone view's own copy of this above
-                                  // for why watching it was a feedback loop.
-                                  readViewedMinutes: () =>
-                                      ref.read(viewedTimeProvider),
-                                  onViewedMinutesChanged: (minutes) => ref
-                                      .read(viewedTimeProvider.notifier)
-                                      .set(minutes),
-                                  editModeEnabled: editModeEnabled,
-                                  onDeleteTask: (task) =>
-                                      removeTask(context, taskNotifier, task),
-                                  // Same shared commit path Zone view's own
-                                  // resize/move already use — see
-                                  // `_commitZoneCascade`'s own doc comment.
-                                  onZoneResize:
-                                      (
-                                        zoneId,
-                                        originalStartMinutes,
-                                        newStartMinutes,
-                                        newEndMinutes,
-                                      ) => _commitZoneCascade(
-                                        ref,
-                                        zoneId: zoneId,
-                                        originalStartMinutes:
-                                            originalStartMinutes,
-                                        newStartMinutes: newStartMinutes,
-                                        newEndMinutes: newEndMinutes,
-                                        day: selectedDate,
+                                    if (tasks.isEmpty && zones.isEmpty)
+                                      IgnorePointer(
+                                        child: _EmptyDayState(theme: theme),
                                       ),
-                                  onZoneMove:
-                                      (
-                                        zoneId,
-                                        originalStartMinutes,
-                                        newStartMinutes,
-                                        newEndMinutes,
-                                      ) => _commitZoneCascade(
-                                        ref,
-                                        zoneId: zoneId,
-                                        originalStartMinutes:
-                                            originalStartMinutes,
-                                        newStartMinutes: newStartMinutes,
-                                        newEndMinutes: newEndMinutes,
-                                        day: selectedDate,
+                                  ],
+                                )
+                              // An empty day still renders the full scrollable
+                              // timeline — the "nothing scheduled" message floats
+                              // OVER it rather than replacing it, confirmed directly.
+                              // Previously an empty day short-circuited to a centered
+                              // message with nothing to scroll at all.
+                              : Stack(
+                                  key: const ValueKey('task-view'),
+                                  children: [
+                                    _DayTimeline(
+                                      tasks: tasks,
+                                      theme: theme,
+                                      categoryById: categoryById,
+                                      zones: zones,
+                                      externalEvents: externalEvents,
+                                      selectedDate: selectedDate,
+                                      // **2026-09-12 — no longer read from the
+                                      // setting.** List view (this being
+                                      // `false`) is dropped from user reach
+                                      // entirely per direct request: Task view
+                                      // is now its own permanent nav tab, and
+                                      // always renders the spatial layout. The
+                                      // underlying `ShowHourLabelsSetting`
+                                      // Hive field is left in place rather
+                                      // than migrated away (a prior install's
+                                      // stored `false`, from when List view
+                                      // was still reachable, must not silently
+                                      // resurface it) — this call site simply
+                                      // stops reading it.
+                                      showHourLabels: true,
+                                      showTimelineConnectors: ref.watch(
+                                        showTimelineConnectorsSettingProvider,
                                       ),
-                                  // Reported directly: "zones cant see
-                                  // remove... when in edt move dragging
-                                  // zone should remove zone appear like
-                                  // with tasks." No recurring-scope
-                                  // disambiguation (unlike removeTask
-                                  // above) — deleteZone has no series
-                                  // concept to ask about; a materialized
-                                  // recurring instance is deleted the same
-                                  // way a plain one is.
-                                  onDeleteZone: (zone) => ref
-                                      .read(zoneListProvider.notifier)
-                                      .deleteZone(zone.id),
+                                      // Opens Edit directly, skipping the action sheet
+                                      // (Edit/Duplicate/Remove) — requested directly.
+                                      // The sheet stays in the codebase, unused for
+                                      // now, in case it's wanted again.
+                                      onTaskTap: (task) => showTaskDetailSheet(
+                                        context,
+                                        task: task,
+                                      ),
+                                      onToggleComplete: (task) =>
+                                          _completeTask(context, ref, task),
+                                      onReschedule: (task, newScheduledAt) =>
+                                          taskNotifier.rescheduleTask(
+                                            task,
+                                            newScheduledAt,
+                                          ),
+                                      onCreateAt: (startAt) =>
+                                          showTaskDetailSheet(
+                                            context,
+                                            initialScheduledAt: startAt,
+                                            initialTimeOfDay:
+                                                TimeOfDay.fromDateTime(startAt),
+                                          ),
+                                      // Tap-empty-space quick-create, requested
+                                      // directly: drops the wiggly placeholder
+                                      // pill immediately (so it's visible the
+                                      // instant the tap lands). QuickCreateOverlay
+                                      // (rendered below, gated on pendingDraft)
+                                      // owns the small sheet AND the eventual
+                                      // promotion to the real showTaskDetailSheet
+                                      // route once the user expands it — nothing
+                                      // pushed from here.
+                                      onEmptyTap: (tappedAt) {
+                                        // Tapping outside a long-press-armed
+                                        // task closes its edit/wiggle state —
+                                        // requested directly, the other half of
+                                        // "long press on task should enable its
+                                        // edit mode... tapping outside closes
+                                        // that mode." See _effectiveOnLongPress
+                                        // for the arming side.
+                                        //
+                                        // **2026-09-12 — a tap while a task IS
+                                        // armed now ONLY closes the arm.**
+                                        // Reported directly: "tap anywhere on
+                                        // the screen [while a task is
+                                        // wiggling]... its not triggering
+                                        // (task creation if tapped on
+                                        // timeline) but stopping wiggling."
+                                        // The original behavior started a
+                                        // quick-create draft on the SAME tap
+                                        // that closed the arm — a tap meant
+                                        // only to dismiss the wiggle was
+                                        // silently also creating a task.
+                                        final wasArmed =
+                                            ref.read(armedEditTaskProvider) !=
+                                            null;
+                                        ref
+                                            .read(
+                                              armedEditTaskProvider.notifier,
+                                            )
+                                            .clear();
+                                        if (wasArmed) return;
+                                        ref
+                                            .read(
+                                              pendingTaskDraftProvider.notifier,
+                                            )
+                                            .start(
+                                              scheduledAt: tappedAt,
+                                              durationMinutes:
+                                                  quickAddDefaultMinutes,
+                                            );
+                                      },
+                                      pendingDraft: ref.watch(
+                                        pendingTaskDraftProvider,
+                                      ),
+                                      recentlySaved: ref.watch(
+                                        recentlySavedTaskProvider,
+                                      ),
+                                      onSavedTaskConsumed: () => ref
+                                          .read(
+                                            recentlySavedTaskProvider.notifier,
+                                          )
+                                          .clear(),
+                                      disableClustering: ref.watch(
+                                        disableOverlapClusteringSettingProvider,
+                                      ),
+                                      // Independently configurable from the Zone
+                                      // view's own scale above — see
+                                      // DevZoneViewPixelsPerMinute's doc comment.
+                                      pixelsPerMinute: ref.watch(
+                                        devTaskViewPixelsPerMinuteProvider,
+                                      ),
+                                      showFreeWindowPrompt: ref.watch(
+                                        devShowFreeWindowPromptProvider,
+                                      ),
+                                      // Read here (not just inside
+                                      // _DraggableTaskBlockState, which independently
+                                      // watches its own copy for TaskCapsuleBlock) so
+                                      // OverlapClusterBlock's cluster rows — built by
+                                      // this plain (non-Riverpod) _DayTimelineState —
+                                      // can respect the same setting. Real parity gap,
+                                      // fixed here: a clustered task's row previously
+                                      // never showed the duration suffix at all.
+                                      devDurationVisible: ref.watch(
+                                        devTimelineTaskDurationVisibleProvider,
+                                      ),
+                                      // Same threading, same reason — List
+                                      // view's own from-to time range,
+                                      // independent of duration. See
+                                      // DevTimelineTaskTimeRangeVisible's own
+                                      // doc comment.
+                                      devTimeRangeVisible: ref.watch(
+                                        devTimelineTaskTimeRangeVisibleProvider,
+                                      ),
+                                      // Same threading, same reason — List
+                                      // view here (Zone view has its own
+                                      // separate call site below), hides
+                                      // imported calendar events entirely.
+                                      // See DevHideImportedTasks's own doc
+                                      // comment.
+                                      devHideImportedTasks: ref.watch(
+                                        devHideImportedTasksProvider,
+                                      ),
+                                      // Same threading, same reason — List
+                                      // view only, hides non-important tasks.
+                                      // See DevTimelineListOnlyImportant's own
+                                      // doc comment.
+                                      devListOnlyImportant: ref.watch(
+                                        devTimelineListOnlyImportantProvider,
+                                      ),
+                                      // Same threading, same reason — see
+                                      // _DayTimeline.devTextLayout's own doc comment.
+                                      devTextLayout: ref.watch(
+                                        devTimelineTaskTextLayoutProvider,
+                                      ),
+                                      // A real user setting (not a dev toggle) —
+                                      // one toggle across all three views.
+                                      showCompletionCheckbox: ref.watch(
+                                        showCompletionCheckboxSettingProvider,
+                                      ),
+                                      // Shared with Zone view above via
+                                      // viewed_time_provider.dart. `read`, not `watch`
+                                      // — see the Zone view's own copy of this above
+                                      // for why watching it was a feedback loop.
+                                      readViewedMinutes: () =>
+                                          ref.read(viewedTimeProvider),
+                                      onViewedMinutesChanged: (minutes) => ref
+                                          .read(viewedTimeProvider.notifier)
+                                          .set(minutes),
+                                      editModeEnabled: editModeEnabled,
+                                      onDeleteTask: (task) => removeTask(
+                                        context,
+                                        taskNotifier,
+                                        task,
+                                      ),
+                                      // Same shared commit path Zone view's own
+                                      // resize/move already use — see
+                                      // `_commitZoneCascade`'s own doc comment.
+                                      onZoneResize:
+                                          (
+                                            zoneId,
+                                            originalStartMinutes,
+                                            newStartMinutes,
+                                            newEndMinutes,
+                                          ) => _commitZoneCascade(
+                                            ref,
+                                            zoneId: zoneId,
+                                            originalStartMinutes:
+                                                originalStartMinutes,
+                                            newStartMinutes: newStartMinutes,
+                                            newEndMinutes: newEndMinutes,
+                                            day: selectedDate,
+                                          ),
+                                      onZoneMove:
+                                          (
+                                            zoneId,
+                                            originalStartMinutes,
+                                            newStartMinutes,
+                                            newEndMinutes,
+                                          ) => _commitZoneCascade(
+                                            ref,
+                                            zoneId: zoneId,
+                                            originalStartMinutes:
+                                                originalStartMinutes,
+                                            newStartMinutes: newStartMinutes,
+                                            newEndMinutes: newEndMinutes,
+                                            day: selectedDate,
+                                          ),
+                                      // Reported directly: "zones cant see
+                                      // remove... when in edt move dragging
+                                      // zone should remove zone appear like
+                                      // with tasks." No recurring-scope
+                                      // disambiguation (unlike removeTask
+                                      // above) — deleteZone has no series
+                                      // concept to ask about; a materialized
+                                      // recurring instance is deleted the same
+                                      // way a plain one is.
+                                      onDeleteZone: (zone) => ref
+                                          .read(zoneListProvider.notifier)
+                                          .deleteZone(zone.id),
+                                    ),
+                                    // IgnorePointer so the message never blocks a tap
+                                    // on the timeline underneath (creating a task by
+                                    // tapping a free window still works through it).
+                                    if (tasks.isEmpty)
+                                      IgnorePointer(
+                                        child: _EmptyDayState(theme: theme),
+                                      ),
+                                  ],
                                 ),
-                                // IgnorePointer so the message never blocks a tap
-                                // on the timeline underneath (creating a task by
-                                // tapping a free window still works through it).
-                                if (tasks.isEmpty)
-                                  IgnorePointer(
-                                    child: _EmptyDayState(theme: theme),
-                                  ),
-                              ],
-                            ),
+                        ),
+                        // Edit Mode's second entry point moved OUT of this
+                        // Stack — 2026-09-12, it now lives in the new
+                        // `AppCalendarHeader` above (the pen icon), not
+                        // positioned over the scrollable day any more. See
+                        // that widget's own doc comment for the restyle.
+                      ],
                     ),
-                    // Edit Mode's second entry point — see
-                    // `edit_mode_provider.dart` and CONSTITUTION.md's "Edit
-                    // Mode" section. Top-right, above the scrollable day
-                    // (confirmed directly: this codebase's hour-label
-                    // gutter is a LEFT-side column, so "same margin column
-                    // as the hour labels" has no literal right-side
-                    // equivalent to match — placed top-right, above the
-                    // first hour marker, per the clearer half of the
-                    // instruction).
-                    Positioned(
-                      top: theme.spacingSm,
-                      right: theme.spacingScreenPadding,
-                      child: _EditModeLink(theme: theme),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
+            // Floating independently above the bottom nav pill now
+            // (2026-09-12, requested directly from a reference
+            // screenshot: "nav is just 5 items + its outside") rather
+            // than welded into its own bar stacked on top of it — see
+            // `AppFloatingCreateButton`'s own doc comment.
+            //
             // Hidden entirely while Edit Mode is active — requested
             // directly: "in edit mode we don't see main menu and days and
-            // view switching... let's skip Plus." Day chips, the Task/
-            // Zone/List view-cycle button, and the "+" create button all
-            // live inside DayStrip, so removing it from the tree covers
-            // all three at once rather than threading a suppression flag
-            // through each of its own controls individually.
+            // view switching... let's skip Plus." The day chips/view-cycle
+            // button are gone now (2026-09-12, see AppCalendarHeader and
+            // the mode split above), so only the "+" create button is left
+            // to suppress here.
             //
             // Hidden for the same reason while a quick-create draft is
             // live (the tap-empty-space mini sheet) — requested directly:
@@ -803,32 +917,15 @@ class TimelineScreen extends ConsumerWidget {
             // already suppressed for this case in `main.dart`'s own
             // `hideBottomNav`; this is the other half of that same
             // "only the mini sheet" rule.
-            if (ref.watch(pendingTaskDraftProvider) != null)
-              // NOTHING here for the quick-create case — deliberately not
-              // even the SafeArea stand-in Edit Mode gets below. The mini
-              // sheet is bottom-anchored inside the Expanded above and
-              // applies its OWN bottom SafeArea internally, so a second
-              // one out here just pushes the sheet up off the screen edge
-              // by the inset's height. Reported directly: "still there is
-              // some padding from bottom of screen.. sheet is not
-              // starting from edge bottom."
-              const SizedBox.shrink()
-            else if (editModeEnabled)
-              // DayStrip normally owns the bottom SafeArea guard itself
-              // (see the outer SafeArea's own `bottom: false` above) —
-              // removing it from the tree entirely while Edit Mode is on
-              // would leave the bottom edge unguarded, so this stands in
-              // for exactly that one job with nothing else in it.
-              const SafeArea(top: false, child: SizedBox.shrink())
-            else
-              DayStrip(
-                // Defaults to whatever time is vertically centered in the
-                // current scroll position, not real "now" — requested
-                // directly. `viewedTimeProvider` already tracks this (kept
-                // in sync by both spatial views as the user scrolls); null
-                // only for a fresh, never-scrolled session, where "now" is
-                // still the right fallback.
-                onCreatePressed: () {
+            if (!editModeEnabled && ref.watch(pendingTaskDraftProvider) == null)
+              AppFloatingCreateButton(
+                onPressed: () {
+                  // Defaults to whatever time is vertically centered in
+                  // the current scroll position, not real "now" —
+                  // requested directly. `viewedTimeProvider` already
+                  // tracks this (kept in sync by both spatial views as the
+                  // user scrolls); null only for a fresh, never-scrolled
+                  // session, where "now" is still the right fallback.
                   final viewedMinutes =
                       ref.read(viewedTimeProvider) ??
                       (DateTime.now().hour * 60 + DateTime.now().minute);
@@ -3931,11 +4028,18 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
   /// resize handles before this feature existed.
   VoidCallback get _effectiveOnTap {
     if (!widget.editModeEnabled || !ref.watch(devMultiTaskEditModeProvider)) {
-      // A tap always still opens the detail sheet, armed or not — per the
-      // work order ("keep single tap to open edit sheet"). It also clears
-      // any long-press-armed task (this one or another one), same as
-      // tapping empty background does — see `onEmptyTap`'s own wiring for
-      // the "tapping outside closes that mode" half of the same request.
+      // **2026-09-12 — reversed for the tapped-the-armed-task-itself
+      // case.** Reported directly: "when by long tap task in edit mode
+      // tapping on it again it's not opening detail, but stopping edit
+      // mode (wiggling)." A tap on THIS SAME already-armed task now only
+      // clears the arm — it no longer also opens the detail sheet.
+      // Tapping a DIFFERENT task (or tapping while nothing is armed)
+      // still opens the sheet exactly as before ("keep single tap to
+      // open edit sheet" — that original work order's own premise never
+      // covered tapping the SAME task twice in a row).
+      if (_isArmed) {
+        return () => ref.read(armedEditTaskProvider.notifier).clear();
+      }
       return () {
         ref.read(armedEditTaskProvider.notifier).clear();
         widget.onTap();
@@ -4125,9 +4229,56 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
       (_resizeOffset / widget.pixelsPerMinute / _durationSnapMinutes).round() *
       _durationSnapMinutes;
 
-  /// The duration this resize would commit to if released right now —
-  /// floored at [_minDurationMinutes], mirroring [_previewStartsAt]'s own
-  /// "what the drop would actually commit" contract for move-drag.
+  /// The smallest duration whose pill is still tall enough to render
+  /// without hitting [_pillHeight]'s own `sizeTaskBadge` floor.
+  ///
+  /// **This is the constraint that actually binds a top-edge drag, and it
+  /// is NOT [_minDurationMinutes].** The pill's rendered height is
+  /// `max(duration x pixelsPerMinute, sizeTaskBadge)`, so below this many
+  /// minutes the pill stops shrinking even though the duration keeps
+  /// falling. For a top-edge drag — which moves `top` by the start delta
+  /// while shrinking the height by that same delta — the two only cancel
+  /// (leaving the END anchored) while the height is genuinely still
+  /// shrinking. Past the floor the height freezes, `top` keeps moving,
+  /// and the whole pill slides downward: reported directly as "it's
+  /// almost like I'm moving the pill and the bottom... is being resized
+  /// downward," with the end-time badge drifting along with it.
+  ///
+  /// At the default scale this is 24px / 1.5 = 16 minutes — more than
+  /// three times [_minDurationMinutes] (5), which is why clamping to that
+  /// constant alone never prevented the slide.
+  double get _minRenderableDurationMinutes =>
+      _pillWidth(widget.theme) / widget.pixelsPerMinute;
+
+  /// How far the START may move on a top-edge drag before the pill can no
+  /// longer shrink to match — i.e. the point past which moving it further
+  /// would translate the whole block instead of resizing its top edge.
+  /// Shared by the live preview and the commit so the two can never
+  /// disagree about where the drag actually stopped.
+  double _clampTopStartDelta(double rawDelta) => math.min(
+    rawDelta,
+    widget.task.durationMinutes! - _minRenderableDurationMinutes,
+  );
+
+  /// The RAW (unsnapped) live duration for a bottom-edge drag.
+  ///
+  /// Live geometry follows the finger continuously and snaps only on
+  /// release — the same contract move-drag already states for itself
+  /// ("while dragging, follow the finger exactly (unsnapped)... once
+  /// released, switch to the SNAPPED offset"). Driving the pill from the
+  /// snapped value instead made it jump a whole 5-minute step at a time
+  /// (~7px at the default scale) while the time badge beside it changed
+  /// on the same instants — which read as the badge responding and the
+  /// pill lagging behind it, reported directly.
+  double get _livePreviewDurationMinutes => math.max(
+    widget.task.durationMinutes! + _resizeOffset / widget.pixelsPerMinute,
+    _minDurationMinutes.toDouble(),
+  );
+
+  /// The duration this resize would COMMIT to if released right now —
+  /// snapped, and floored at [_minDurationMinutes], mirroring
+  /// [_previewStartsAt]'s own "what the drop would actually commit"
+  /// contract for move-drag.
   int get _previewDurationMinutes => math.max(
     widget.task.durationMinutes! + _snappedResizeDelta,
     _minDurationMinutes,
@@ -4141,17 +4292,25 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
           .round() *
       _durationSnapMinutes;
 
-  /// How far the start ACTUALLY moves for the current top-edge drag,
-  /// after the minimum-duration floor is applied. A top-edge drag that
-  /// would shrink the task past [_minDurationMinutes] stops moving the
-  /// start at exactly the point that floor is hit, so the two previewed
-  /// edges never cross — the same clamping the bottom edge gets from
-  /// [_previewDurationMinutes]'s own `math.max`, expressed here as a
-  /// start-offset because this edge is the one that moves.
-  int get _previewTopStartDelta => math.min(
-    _snappedResizeTopDelta,
-    widget.task.durationMinutes! - _minDurationMinutes,
-  );
+  /// The RAW (unsnapped) live start delta for a top-edge drag — see
+  /// [_livePreviewDurationMinutes] for why live geometry is unsnapped,
+  /// and [_minRenderableDurationMinutes] for why the clamp is the
+  /// pill-height floor rather than [_minDurationMinutes].
+  double get _liveTopStartDelta =>
+      _clampTopStartDelta(_resizeTopOffset / widget.pixelsPerMinute);
+
+  /// The live duration a top-edge drag is previewing. Always exactly
+  /// `duration - liveStartDelta`, so the shrink and the downward shift of
+  /// `top` cancel at every point in the gesture and the END edge stays
+  /// genuinely anchored.
+  double get _liveTopDurationMinutes =>
+      widget.task.durationMinutes! - _liveTopStartDelta;
+
+  /// How far the start ACTUALLY moves when a top-edge drag is COMMITTED —
+  /// the snapped delta under the same floor clamp the live preview uses,
+  /// so what the user released on is what gets saved.
+  int get _previewTopStartDelta =>
+      _clampTopStartDelta(_snappedResizeTopDelta.toDouble()).floor();
 
   /// The duration a top-edge resize would commit to — the end stays put,
   /// so the duration shrinks by exactly however far the start moved.
@@ -4277,11 +4436,19 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
         groupFollowOffsetPixels;
     // A top-edge resize moves the block's own TOP as it drags (the end
     // stays anchored), so unlike the bottom edge — which only changes
-    // the previewed duration/height — this one has to shift `top` too,
-    // clamped by the same minimum-duration floor the commit applies so
-    // the preview can never show the edges crossed.
+    // the previewed duration/height — this one has to shift `top` too.
+    //
+    // RAW (unsnapped) while THIS block is the one being dragged, so the
+    // shift cancels exactly against the equally-raw height shrink
+    // (`_liveTopDurationMinutes`) and the bottom edge stays put at every
+    // point in the gesture. A snapped shift against a snapped height
+    // still cancels, but both step in 5-minute jumps, which is the
+    // stepping reported as the pill "taking time to animate." Group
+    // FOLLOWERS keep the snapped delta: they aren't under a finger, so
+    // continuity buys them nothing, and it keeps a follower's preview
+    // identical to what the group commit will write.
     final topResizeOffset =
-        (_previewTopStartDelta + groupTopStartDelta) *
+        ((_isResizingTop ? _liveTopStartDelta : 0) + groupTopStartDelta) *
         widget.pixelsPerMinute.toDouble();
     final top = widget.baseTop + effectiveOffset + topResizeOffset;
     final slot = widget.slot;
@@ -4388,15 +4555,30 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
             onLongPress: _effectiveOnLongPress,
             onToggleComplete: widget.onToggleComplete,
             dragPreviewStartsAt: _isDragging ? _previewStartsAt : null,
+            // LIVE (unsnapped) while this block is the one under a
+            // finger, so the dragged edge follows continuously rather
+            // than jumping a 5-minute step at a time — see
+            // `_livePreviewDurationMinutes`. Group followers and the
+            // held pre-save duration stay snapped/whole: neither is
+            // being dragged, so continuity buys them nothing.
             durationMinutesOverride: _isResizing
-                ? _previewDurationMinutes
+                ? _livePreviewDurationMinutes
                 : _isResizingTop
-                ? _previewTopDurationMinutes
+                ? _liveTopDurationMinutes
                 : (groupPreviewTopDurationMinutes ??
-                      groupPreviewDurationMinutes ??
-                      _heldDurationMinutes),
+                          groupPreviewDurationMinutes ??
+                          _heldDurationMinutes)
+                      ?.toDouble(),
             entranceProgress: entranceProgress,
             isLifted: _isDragging,
+            // Zeroes the pill's own height animation for the length of
+            // the gesture, so the edge being dragged tracks the finger
+            // 1:1 instead of easing after it — see
+            // `TaskCapsuleBlock.isResizing`. Both edges, since a
+            // top-edge resize changes the height too (the block's own
+            // `top` moves as well, handled separately by the
+            // AnimatedPositioned above).
+            isResizing: _isResizing || _isResizingTop,
             // A dragged cluster member always shows full content — only
             // the resting state stays blanked.
             contentHidden: widget.contentHidden && !_isDragging,
@@ -4941,7 +5123,15 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
       // this block settling into its snapped slot after a drop, and (the
       // case that matters for neighbours) a task the cascade pushed out of
       // the way, which now slides to its new time instead of teleporting.
-      duration: _isDragging || _suppressPositionAnimation
+      // `_isResizingTop` joins `_isDragging` here (2026-09-12): a
+      // top-edge resize MOVES this block's own `top` (see the
+      // `topResizeOffset` that feeds it), so an animated duration made
+      // the pill lag behind the finger and then visibly settle —
+      // reported directly ("seem that pill is moving not only resizing
+      // top... and 'settles' with animation"). Any live gesture tracks
+      // 1:1; only non-gesture repositioning (a cascade push, a settle
+      // after drop) still eases.
+      duration: _isDragging || _isResizingTop || _suppressPositionAnimation
           ? Duration.zero
           : widget.theme.motionNormal,
       curve: Curves.easeOut,
@@ -5032,21 +5222,73 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
   /// sohul[d] always be on left." A move-drag shows BOTH edges (start
   /// AND end move together, since the duration is unchanged) — reported
   /// directly as a gap: "when moving also end should be shown... atm
-  /// only beginning start time." A resize shows only the edge that's
-  /// actually moving (the other stays anchored, already shown by
-  /// whichever edge-time widget is resting there — but since resting
-  /// labels don't render during an active gesture, showing just the
-  /// live edge here matches [_previewDurationMinutes]/
-  /// [_previewTopStartDelta]'s own "only the edge that moves" contract).
+  /// only beginning start time."
+  ///
+  /// **2026-09-12 — both edges now shown during EITHER resize too**,
+  /// reversing the original "only the edge that's actually moving"
+  /// design. Reported directly as wrong: the anchored edge's own RESTING
+  /// label (`_edgeTimeLabels`) doesn't render during an active gesture —
+  /// `wiggleEnabled`'s branch and this one are mutually exclusive in the
+  /// caller (`if (_isDragging || _isResizing || _isResizingTop) ... else
+  /// if (wiggleEnabled) ...`) — so a resize was leaving the OTHER edge
+  /// with no visible time label at all, not merely deferring to an
+  /// already-shown one.
+  ///
+  /// **Also 2026-09-12 — the bottom-resize end label's own Y position now
+  /// tracks the LIVE preview height**, not the stale resting `height`
+  /// passed in. Reported directly: unlike the top-resize case (where the
+  /// whole block, and everything positioned inside it, already shifts
+  /// with `topResizeOffset` — see `build`'s own `top` computation — a
+  /// LOCAL `top: 0` on the start label was already correct there), a
+  /// bottom-edge resize leaves the block's own `top` fixed and only grows
+  /// `height`, so the end label's local `top` has to move by the SAME
+  /// live pixel delta the pill's own bottom edge is visibly moving by, or
+  /// the label silently stops tracking the finger the instant a resize
+  /// starts.
   List<Widget> _liveEdgeTimeLabels({required double height}) {
     final baseStart = widget.task.scheduledAt!;
     if (_isResizing) {
-      final end = baseStart.add(Duration(minutes: _previewDurationMinutes));
-      return [_leftEdgeLabel(top: height, time: end)];
+      // Driven by the LIVE (unsnapped) duration, matching what the pill
+      // itself is rendering this frame — the badge and the geometry it
+      // labels must come from one source, or the badge appears to
+      // respond while the pill trails it (reported directly).
+      final liveHeight = math.max(
+        _livePreviewDurationMinutes * widget.pixelsPerMinute,
+        _pillWidth(widget.theme),
+      );
+      final end = baseStart.add(
+        Duration(minutes: _livePreviewDurationMinutes.round()),
+      );
+      return [
+        _leftEdgeLabel(top: 0, time: baseStart),
+        _leftEdgeLabel(top: liveHeight, time: end),
+      ];
     }
     if (_isResizingTop) {
-      final start = baseStart.add(Duration(minutes: _previewTopStartDelta));
-      return [_leftEdgeLabel(top: 0, time: start)];
+      // The END is anchored during a top-edge drag, so its badge must
+      // NOT move — reported directly: "the blue badge with time, end
+      // time is moving around while it should remain fixed."
+      //
+      // It sits at the block's ORIGINAL height, deliberately un-floored:
+      // this whole Stack is positioned by a `top` that already shifted
+      // down by the live start delta, and the height shrank by that same
+      // delta, so the task's true end is always at `originalHeight -
+      // liveStartDelta x ppm` in this local frame — which is exactly the
+      // live height. Using the FLOORED live height instead (what this
+      // did before) is what made the badge drift once the pill stopped
+      // shrinking: the floor freezes while `top` keeps moving.
+      final liveHeightUnfloored =
+          _liveTopDurationMinutes * widget.pixelsPerMinute;
+      final start = baseStart.add(
+        Duration(minutes: _liveTopStartDelta.round()),
+      );
+      final end = baseStart.add(
+        Duration(minutes: widget.task.durationMinutes!),
+      );
+      return [
+        _leftEdgeLabel(top: 0, time: start),
+        _leftEdgeLabel(top: liveHeightUnfloored, time: end),
+      ];
     }
     // Move-drag: both edges shift by the same live offset, duration
     // unchanged.
@@ -5109,7 +5351,15 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
 
     return AnimatedPositioned(
       // Same timing rule as the combined layout's own — see its comment.
-      duration: _isDragging || _suppressPositionAnimation
+      // `_isResizingTop` joins `_isDragging` here (2026-09-12): a
+      // top-edge resize MOVES this block's own `top` (see the
+      // `topResizeOffset` that feeds it), so an animated duration made
+      // the pill lag behind the finger and then visibly settle —
+      // reported directly ("seem that pill is moving not only resizing
+      // top... and 'settles' with animation"). Any live gesture tracks
+      // 1:1; only non-gesture repositioning (a cascade push, a settle
+      // after drop) still eases.
+      duration: _isDragging || _isResizingTop || _suppressPositionAnimation
           ? Duration.zero
           : widget.theme.motionNormal,
       curve: Curves.easeOut,
@@ -5349,44 +5599,6 @@ class _TimelineConnectors extends StatelessWidget {
       width: theme.borderWidthConnector,
       height: height,
       child: ColoredBox(color: theme.colorBorder),
-    );
-  }
-}
-
-/// Edit Mode's other entry point — a text link, styled as accent-colored
-/// link text rather than a button/icon (per CONSTITUTION.md: "so it reads
-/// as a mode switch, not an action"), reading "Edit" when off and "Done"
-/// when on. Tapping toggles `editModeEnabledProvider` — the exact same
-/// state the two-finger long-press gesture toggles, per the "two entry
-/// points, converging on the same state" contract.
-class _EditModeLink extends ConsumerWidget {
-  const _EditModeLink({required this.theme});
-
-  final AmbleTheme theme;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final enabled = ref.watch(editModeEnabledProvider);
-    return GestureDetector(
-      onTap: () => ref.read(editModeEnabledProvider.notifier).toggle(),
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        // A real tap target around otherwise-small link text, matching
-        // how every other small tappable label in this codebase (e.g.
-        // AppSheet's own text buttons) gets breathing room rather than a
-        // hitbox that's exactly its glyph bounds.
-        padding: EdgeInsets.symmetric(
-          horizontal: theme.spacingSm,
-          vertical: theme.spacingXs,
-        ),
-        child: Text(
-          enabled ? 'Done' : 'Edit',
-          style: theme.textBody.copyWith(
-            color: theme.colorAccent,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
     );
   }
 }

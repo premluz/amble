@@ -6,7 +6,9 @@ import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/timeline/armed_edit_task_provider.dart';
 import 'package:amble/features/timeline/edit_mode_wiggle.dart';
+import 'package:amble/features/timeline/pending_task_draft_provider.dart';
 import 'package:amble/features/timeline/resize_handle.dart';
+import 'package:amble/features/timeline/selected_date_provider.dart';
 import 'package:amble/features/timeline/timeline_screen.dart';
 import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/models/task.dart';
@@ -120,7 +122,9 @@ void main() {
                 useMaterial3: true,
                 extensions: [AmbleTheme.light],
               ),
-              home: const Scaffold(body: TimelineScreen()),
+              home: const Scaffold(
+                body: TimelineScreen(mode: TimelineDisplayMode.spatial),
+              ),
             );
           },
         ),
@@ -220,6 +224,43 @@ void main() {
     },
   );
 
+  testWidgets(
+    'tapping empty timeline space while a task is armed ONLY closes the '
+    'arm — it does not also start a quick-create draft. Reported '
+    'directly: "tap anywhere on the screen... its not triggering (task '
+    'creation if tapped on timeline) but stopping wiggling, so actually '
+    'in edit mode of single task, tap on timeline anywhere stops '
+    'wiggling"',
+    (tester) async {
+      final task = makeTask('Focus block');
+      await pumpTimeline(tester, tasks: [task]);
+
+      await tester.longPress(find.text('Focus block'));
+      await tester.pump();
+      expect(capturedContainer!.read(armedEditTaskProvider), task.id);
+
+      await tester.tapAt(const Offset(220, 700));
+      await tester.pump();
+
+      expect(capturedContainer!.read(armedEditTaskProvider), isNull);
+      expect(capturedContainer!.read(pendingTaskDraftProvider), isNull);
+    },
+  );
+
+  testWidgets('tapping empty timeline space with NOTHING armed still starts a '
+      'quick-create draft as before — the arm-clearing fix must not '
+      'suppress ordinary tap-to-create', (tester) async {
+    final task = makeTask('Focus block');
+    await pumpTimeline(tester, tasks: [task]);
+
+    expect(capturedContainer!.read(armedEditTaskProvider), isNull);
+
+    await tester.tapAt(const Offset(220, 700));
+    await tester.pump();
+
+    expect(capturedContainer!.read(pendingTaskDraftProvider), isNotNull);
+  });
+
   testWidgets('tapping a DIFFERENT task while one is armed opens that task\'s '
       'detail sheet AND clears the arming', (tester) async {
     final a = makeTask('Focus block', minuteOffset: -40);
@@ -238,23 +279,25 @@ void main() {
     expect(capturedContainer!.read(armedEditTaskProvider), isNull);
   });
 
-  testWidgets(
-    'a single tap on the armed task itself still opens the detail sheet '
-    '— long-press arming never replaces the ordinary tap contract',
-    (tester) async {
-      final task = makeTask('Focus block');
-      await pumpTimeline(tester, tasks: [task]);
+  testWidgets('a single tap on the armed task itself closes its arm instead of '
+      'opening the detail sheet — reported directly: "tapping on it again '
+      'it\'s not opening detail, but stopping edit mode (wiggling)"', (
+    tester,
+  ) async {
+    final task = makeTask('Focus block');
+    await pumpTimeline(tester, tasks: [task]);
 
-      await tester.longPress(find.text('Focus block'));
-      await tester.pump();
+    await tester.longPress(find.text('Focus block'));
+    await tester.pump();
+    expect(capturedContainer!.read(armedEditTaskProvider), task.id);
 
-      await tester.tap(find.text('Focus block'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('Focus block'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
 
-      expect(find.text('Edit task'), findsOneWidget);
-    },
-  );
+    expect(find.text('Edit task'), findsNothing);
+    expect(capturedContainer!.read(armedEditTaskProvider), isNull);
+  });
 
   testWidgets(
     'an armed task wiggles even though the global Edit Mode toggle is off',
@@ -276,4 +319,63 @@ void main() {
       expect(wiggleAfter.enabled, isTrue);
     },
   );
+
+  /// 2026-09-12, reported directly: "changing day, page, or navigating
+  /// elsewhere basically or activating sheet would exit edit mode."
+  /// Before this, only a tap on the Timeline itself disarmed — so a task
+  /// kept wiggling behind an open sheet, and a day change left it armed on
+  /// a day where it isn't even rendered.
+  group('navigating away disarms the task', () {
+    testWidgets('changing the selected day clears the arm', (tester) async {
+      final task = makeTask('Focus block');
+      await pumpTimeline(tester, tasks: [task]);
+
+      await tester.longPress(find.text('Focus block'));
+      await tester.pump();
+      expect(capturedContainer!.read(armedEditTaskProvider), task.id);
+
+      capturedContainer!.read(selectedDateProvider.notifier).goToNextDay();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(capturedContainer!.read(armedEditTaskProvider), isNull);
+    });
+
+    testWidgets('starting a quick-create draft (its mini sheet) clears the '
+        'arm', (tester) async {
+      final task = makeTask('Focus block');
+      await pumpTimeline(tester, tasks: [task]);
+
+      await tester.longPress(find.text('Focus block'));
+      await tester.pump();
+      expect(capturedContainer!.read(armedEditTaskProvider), task.id);
+
+      capturedContainer!
+          .read(pendingTaskDraftProvider.notifier)
+          .start(
+            scheduledAt: task.scheduledAt!.add(const Duration(hours: 2)),
+            durationMinutes: 30,
+          );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(capturedContainer!.read(armedEditTaskProvider), isNull);
+    });
+
+    testWidgets('re-selecting the SAME day does not disarm — only a real '
+        'change does', (tester) async {
+      final task = makeTask('Focus block');
+      await pumpTimeline(tester, tasks: [task]);
+
+      await tester.longPress(find.text('Focus block'));
+      await tester.pump();
+
+      final current = capturedContainer!.read(selectedDateProvider);
+      capturedContainer!.read(selectedDateProvider.notifier).goTo(current);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(capturedContainer!.read(armedEditTaskProvider), task.id);
+    });
+  });
 }

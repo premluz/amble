@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
+import 'package:amble/core/widgets/app_top_scroll_fade.dart';
 import 'package:amble/features/timeline/task_capsule_block.dart';
 import 'package:amble/features/timeline/zone_container_block.dart';
 import 'package:amble/features/timeline/zone_day_timeline.dart';
@@ -78,6 +79,20 @@ void main() {
     expect(find.byType(ZoneContainerBlock), findsNWidgets(2));
     expect(find.textContaining('Morning ritual'), findsOneWidget);
     expect(find.textContaining('Deep work'), findsOneWidget);
+  });
+
+  // Reported directly, off the same reference screenshot the shared
+  // `AppCalendarHeader` came from: "hard edge here... should be gradient
+  // that fades under it." `_DayTimeline` (Task view) already had its own
+  // top fade; this view had none at all until this fix.
+  testWidgets('fades its own top row out under a fixed heading, matching '
+      'the Task view\'s identical fade', (tester) async {
+    await pump(tester, zones: [zoneAt('z1', 'Morning ritual', 7, 8)]);
+
+    expect(find.byType(AppTopScrollFade), findsOneWidget);
+    final fade = tester.widget<AppTopScrollFade>(find.byType(AppTopScrollFade));
+    expect(fade.color, AmbleTheme.light.colorSurfaceTimeline);
+    expect(fade.fromBottom, isFalse);
   });
 
   testWidgets(

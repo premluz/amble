@@ -6,7 +6,6 @@ import 'package:hive_ce/hive_ce.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/timeline/external_event_capsule_block.dart';
-import 'package:amble/features/timeline/overlap_cluster_block.dart';
 import 'package:amble/features/timeline/task_capsule_block.dart';
 import 'package:amble/features/timeline/timeline_screen.dart';
 import 'package:amble/shared/models/category.dart';
@@ -74,15 +73,6 @@ class _FixedCalendarDisplayIds extends CalendarDisplayIdsSetting {
   List<String> build() => const ['cal-1'];
 }
 
-class _FixedShowHourLabels extends ShowHourLabelsSetting {
-  _FixedShowHourLabels(this._value);
-
-  final bool _value;
-
-  @override
-  bool build() => _value;
-}
-
 void main() {
   late Box<Task> taskBox;
   late Box<Category> categoryBox;
@@ -132,7 +122,6 @@ void main() {
     WidgetTester tester, {
     required Task task,
     required List<ExternalCalendarEvent> events,
-    bool showHourLabels = true,
   }) async {
     tester.view.physicalSize = const Size(430, 932);
     tester.view.devicePixelRatio = 1.0;
@@ -166,14 +155,12 @@ void main() {
             HiveSyncedCalendarEventRepository(syncedCalendarEventBox),
           ),
           zoneRepositoryProvider.overrideWithValue(HiveZoneRepository(zoneBox)),
-          if (!showHourLabels)
-            showHourLabelsSettingProvider.overrideWith(
-              () => _FixedShowHourLabels(false),
-            ),
         ],
         child: MaterialApp(
           theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
-          home: const Scaffold(body: TimelineScreen()),
+          home: const Scaffold(
+            body: TimelineScreen(mode: TimelineDisplayMode.spatial),
+          ),
         ),
       ),
     );
@@ -256,52 +243,9 @@ void main() {
     },
   );
 
-  testWidgets('three mutually-overlapping members — two tasks and an event — '
-      'collapse into ONE OverlapClusterBlock, with the event\'s own title '
-      'in its row list', (tester) async {
-    final now = DateTime.now();
-    final taskA = Task.create(
-      title: 'Task A',
-      scheduledAt: DateTime(now.year, now.month, now.day, 9),
-      durationMinutes: 60,
-      categoryId: BuiltInCategoryIds.general,
-    );
-    final event = ExternalCalendarEvent(
-      id: 'evt-1',
-      title: 'Imported Meeting',
-      start: DateTime(now.year, now.month, now.day, 9, 15),
-      end: DateTime(now.year, now.month, now.day, 10, 15),
-      sourceCalendarId: 'cal-1',
-    );
-
-    // A second task, saved after the first so both persist — the third
-    // member of the mutual-overlap run.
-    await tester.runAsync(() async {
-      final taskB = Task.create(
-        title: 'Task B',
-        scheduledAt: DateTime(now.year, now.month, now.day, 9, 30),
-        durationMinutes: 60,
-        categoryId: BuiltInCategoryIds.general,
-      );
-      await taskBox.put(taskB.id, taskB);
-    });
-
-    await pumpTimeline(
-      tester,
-      task: taskA,
-      events: [event],
-      showHourLabels: false,
-    );
-
-    expect(find.byType(OverlapClusterBlock), findsOneWidget);
-    // Each row renders as one Text.rich combining time + title (List
-    // mode's compact layout), so the title isn't its own standalone Text
-    // widget — matched via textContaining instead of an exact find.text.
-    // AnimatedSwitcher briefly keeps an outgoing child alongside the
-    // incoming one, so more than one match can be legitimate — this only
-    // asserts the title is present at all, not exactly-once.
-    expect(find.textContaining('Imported Meeting'), findsWidgets);
-    expect(find.textContaining('Task A'), findsWidgets);
-    expect(find.textContaining('Task B'), findsWidgets);
-  });
+  // **2026-09-12 — removed.** This tested List mode's own compact
+  // Text.rich row rendering (`showHourLabels: false`), which is now
+  // unreachable: List view is dropped from user reach entirely (Task
+  // view is a permanent nav tab that always renders the spatial layout —
+  // see TimelineScreen.mode). See docs/PROGRESS_LOG.md for the removal.
 }
