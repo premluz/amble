@@ -49,26 +49,44 @@ class EditSelection extends _$EditSelection {
 /// rather than the mode indicator every zone shows under ordinary
 /// (single-task) Edit Mode.
 ///
-/// Deliberately single-select only (toggling a new zone id REPLACES
-/// whatever was selected, rather than adding to a set) — unlike
-/// [EditSelection]'s genuine multi-select: there is no group-zone-move
-/// feature (CONSTITUTION.md's multi-task route is "Tasks only, Zones
-/// deferred to a follow-up round" for the GROUP-gesture machinery
-/// specifically), so only ever one zone at a time can be the thing a drag
-/// actually acts on. Screen-local, ephemeral UI state, same reasoning and
-/// shape as [EditSelection] — plain `autoDispose`, cleared by
+/// **Widened to genuine multi-select 2026-09-12** (was `String?`,
+/// single-select). The original shape was justified by "there is no
+/// group-zone-move feature" — that is no longer true: the Weekly Zone
+/// Authoring Grid (`features/zone_grid/`) selects several zones at once
+/// and moves/resizes them as a group, so this now mirrors
+/// [EditSelection]'s `Set<String>` shape exactly.
+///
+/// Still a SEPARATE provider from [EditSelection] rather than one shared
+/// set — that reasoning is unchanged and unrelated to cardinality: a task
+/// id and a zone id have no shared meaning, and mixing them would make
+/// membership checks ambiguous about which kind of thing is selected.
+///
+/// The Timeline's own zone selection (`_DraggableZoneBlock`) remains
+/// effectively single-select in practice, because nothing there offers a
+/// group gesture — it simply reads membership instead of equality now.
+/// Screen-local, ephemeral UI state, same reasoning and shape as
+/// [EditSelection] — plain `autoDispose`, cleared by
 /// `timeline_screen.dart`'s own `ref.listen` wiring whenever Edit Mode
 /// exits or multi-task mode toggles off, same as that provider.
 @riverpod
 class ZoneEditSelection extends _$ZoneEditSelection {
   @override
-  String? build() => null;
+  Set<String> build() => const {};
 
-  void toggle(String zoneId) => state = state == zoneId ? null : zoneId;
+  void toggle(String zoneId) {
+    final next = Set<String>.of(state);
+    if (!next.remove(zoneId)) next.add(zoneId);
+    state = next;
+  }
+
+  /// Replaces the whole selection with exactly [zoneId] — the Timeline's
+  /// own "only one zone at a time" behaviour, kept explicit now that
+  /// [toggle] genuinely accumulates.
+  void selectOnly(String zoneId) => state = {zoneId};
 
   void clear() {
-    if (state == null) return;
-    state = null;
+    if (state.isEmpty) return;
+    state = const {};
   }
 }
 

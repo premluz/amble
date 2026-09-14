@@ -1,6 +1,7 @@
 import '../models/external_calendar_event.dart';
 import '../models/task.dart';
 import '../models/zone.dart';
+import 'weekly_zone_schedule.dart';
 
 /// One [Zone] paired with the [Task]s (and read-only external calendar
 /// events — see CONSTITUTION.md's "Calendar" section) that belong inside
@@ -108,9 +109,7 @@ ZoneContainmentResult resolveZoneContainment({
   required DateTime day,
   List<ExternalCalendarEvent> externalEvents = const [],
 }) {
-  final applicableZones =
-      zones.where((zone) => _zoneAppliesOnDay(zone, day)).toList()
-        ..sort((a, b) => a.startMinutes.compareTo(b.startMinutes));
+  final applicableZones = zonesForDay(zones, day);
   final zoneById = {for (final zone in applicableZones) zone.id: zone};
 
   final tasksByZoneId = <String, List<Task>>{};
@@ -140,7 +139,9 @@ ZoneContainmentResult resolveZoneContainment({
     // place it — there is no time to resolve against. This is the case
     // CONSTITUTION.md's "a task can be assigned to a zone with no
     // scheduledAt at all" note exists for.
-    final explicitZone = task.zoneId == null ? null : zoneById[task.zoneId];
+    final original = zones.where((z) => z.id == task.zoneId).firstOrNull;
+    final explicitZone = task.zoneId == null ? null : (zoneById[task.zoneId] ??
+      applicableZones.where((z) => original?.facetId != null && z.facetId == original!.facetId).firstOrNull);
     if (explicitZone != null) {
       (tasksByZoneId[explicitZone.id] ??= []).add(task);
       continue;
@@ -198,14 +199,6 @@ Zone? _zoneContainingTime(List<Zone> zones, DateTime time) {
     }
   }
   return null;
-}
-
-bool _zoneAppliesOnDay(Zone zone, DateTime day) {
-  final anchorDate = zone.anchorDate;
-  if (anchorDate == null) return true;
-  return anchorDate.year == day.year &&
-      anchorDate.month == day.month &&
-      anchorDate.day == day.day;
 }
 
 List<Task> _sortedByScheduledAt(List<Task> tasks) {

@@ -1,3 +1,9 @@
+import 'dart:async';
+
+import 'package:amble/shared/providers/zone_facet_providers.dart';
+
+import '../../support/memory_zone_repositories.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,9 +13,12 @@ import 'package:amble/core/widgets/app_segmented_time_field.dart';
 import 'package:amble/core/widgets/app_text_field.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/zones/zone_form_screen.dart';
+import 'package:amble/shared/models/task.dart';
 import 'package:amble/shared/models/zone.dart';
 import 'package:amble/shared/providers/notification_providers.dart';
+import 'package:amble/shared/providers/task_providers.dart';
 import 'package:amble/shared/providers/zone_providers.dart';
+import 'package:amble/shared/repositories/hive_task_repository.dart';
 import 'package:amble/shared/repositories/hive_zone_repository.dart';
 
 import '../../support/fake_notification_service.dart';
@@ -24,6 +33,7 @@ Finder _nameField() => find.descendant(
 Future<GlobalKey<NavigatorState>> _pumpHost(
   WidgetTester tester, {
   required Box<Zone> box,
+  required Box<Task> taskBox,
 }) async {
   tester.view.physicalSize = const Size(390, 844);
   tester.view.devicePixelRatio = 1.0;
@@ -33,7 +43,15 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        zoneFacetRepositoryProvider.overrideWithValue(
+          MemoryZoneFacetRepository(),
+        ),
         zoneRepositoryProvider.overrideWithValue(HiveZoneRepository(box)),
+        // Save now reads `taskListProvider` (to build the cascade's own
+        // `tasksByZoneId` map for the squeeze-in check) even for a plain
+        // create with no tasks assigned — needs a real, open box the same
+        // way `zoneRepositoryProvider` does, or `Hive.box<Task>` throws.
+        taskRepositoryProvider.overrideWithValue(HiveTaskRepository(taskBox)),
         // Real Save/Delete both reach NotificationService
         // (scheduleForZone/cancelForZone) — Save fires it unawaited so a
         // plugin exception there never surfaces synchronously in a test,
@@ -56,19 +74,21 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
 
 void main() {
   late Box<Zone> box;
+  late Box<Task> taskBox;
 
   setUp(() async {
     Hive.init('./.dart_tool/test_hive_zone_form_screen');
     if (!Hive.isAdapterRegistered(0)) {
       Hive.registerAdapters();
     }
-    box = await Hive.openBox<Zone>(
-      'test_zones_${DateTime.now().microsecondsSinceEpoch}',
-    );
+    final suffix = DateTime.now().microsecondsSinceEpoch;
+    box = await Hive.openBox<Zone>('test_zones_$suffix');
+    taskBox = await Hive.openBox<Task>('test_tasks_$suffix');
   });
 
   tearDown(() async {
     await box.close();
+    await taskBox.close();
   });
 
   testWidgets(
@@ -79,7 +99,7 @@ void main() {
       // as tasks, on creation first just name visible, other items below
       // (start, end, repeat etc.) not visible, then fade in after Done is
       // clicked."
-      final navigatorKey = await _pumpHost(tester, box: box);
+      final navigatorKey = await _pumpHost(tester, box: box, taskBox: taskBox);
       unawaited(showZoneFormScreen(navigatorKey.currentContext!));
       await tester.pumpAndSettle();
 
@@ -105,7 +125,7 @@ void main() {
     'tapping Done with no name typed closes the whole screen, matching the '
     'task creation flow\'s own abandon behavior',
     (tester) async {
-      final navigatorKey = await _pumpHost(tester, box: box);
+      final navigatorKey = await _pumpHost(tester, box: box, taskBox: taskBox);
       unawaited(showZoneFormScreen(navigatorKey.currentContext!));
       await tester.pumpAndSettle();
 
@@ -122,9 +142,15 @@ void main() {
   );
 
   testWidgets(
-    'Save is disabled until start and end are also set, once past stage 1',
+    'Save is enabled with no start/end typed — time is no longer mandatory, '
+    'a default is resolved at save time instead',
     (tester) async {
-      final navigatorKey = await _pumpHost(tester, box: box);
+      // Requested directly: "we should not require time start end as
+      // mandatory on zone creation." Save now only needs a name; a blank
+      // start/end pair resolves to a default window when Save actually
+      // runs (see _ZoneFormScreenState._resolvedStartMinutes/
+      // _resolvedEndMinutes).
+      final navigatorKey = await _pumpHost(tester, box: box, taskBox: taskBox);
       unawaited(showZoneFormScreen(navigatorKey.currentContext!));
       await tester.pumpAndSettle();
 
@@ -137,16 +163,160 @@ void main() {
       expect(saveButton, findsOneWidget);
       expect(
         tester.widget<ElevatedButton>(saveButton).onPressed,
-        isNull,
-        reason: 'no start/end time yet',
+        isNotNull,
+        reason: 'name alone is enough now — no start/end time required',
       );
+    },
+  );
+
+  testWidgets(
+    'Save is disabled when only ONE of start/end is typed — a half-typed '
+    'pair is still refused, not silently defaulted',
+    (tester) async {
+      final navigatorKey = await _pumpHost(tester, box: box, taskBox: taskBox);
+      unawaited(showZoneFormScreen(navigatorKey.currentContext!));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(_nameField(), 'Morning ritual');
+      await tester.pump();
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Done'));
+      await tester.pumpAndSettle();
+
+      final startField = find.descendant(
+        of: find.widgetWithText(AppSegmentedTimeField, 'Start'),
+        matching: find.byType(TextField),
+      );
+      await tester.tap(startField);
+      await tester.pump();
+      await tester.enterText(startField, '0700');
+      // `AppSegmentedTimeField` only commits (fires `onChanged`) on blur
+      // or `onEditingComplete` — plain `enterText` alone never triggers
+      // either, so the typed value would otherwise never even reach
+      // `_startHour`/`_startMinute` (confirmed via a temporary debug
+      // print: `_canSave` was still seeing both as null after just
+      // `enterText`). Submitting the field is what actually commits it,
+      // matching how `AppSegmentedTimeField`'s own widget tests trigger a
+      // commit without a second field to tab away to.
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+
+      final saveButton = find.widgetWithText(ElevatedButton, 'Save');
+      expect(
+        tester.widget<ElevatedButton>(saveButton).onPressed,
+        isNull,
+        reason: 'start was typed but end was not — an ambiguous half-pair',
+      );
+    },
+  );
+
+  testWidgets(
+    'saving with no time set creates a zone starting now, 2 hours long — '
+    'the default duration',
+    (tester) async {
+      final navigatorKey = await _pumpHost(tester, box: box, taskBox: taskBox);
+      unawaited(showZoneFormScreen(navigatorKey.currentContext!));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(_nameField(), 'Undated zone');
+      await tester.pump();
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Done'));
+      await tester.pumpAndSettle();
+
+      final saveButton = find.widgetWithText(ElevatedButton, 'Save');
+      await tester.runAsync(() async {
+        await tester.tap(saveButton);
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      });
+      await tester.pumpAndSettle();
+
+      final zones = box.values.toList();
+      expect(zones, hasLength(1));
+      expect(zones.single.title, 'Undated zone');
+      expect(
+        zones.single.endMinutes - zones.single.startMinutes,
+        (1440 - zones.single.startMinutes).clamp(0, 120),
+      );
+    },
+  );
+
+  testWidgets(
+    'an overlapping weekly create is SAVED, never refused',
+    (tester) async {
+      // Requested directly: "we should not block user from adding zone
+      // even if overlap zone gets added in current viewport squeezing in
+      // between zones even if it had to resize them" — and again later,
+      // "never prevent action".
+      //
+      // The old title said "is refused without moving existing zones",
+      // which contradicted the very quote beneath it: this test was
+      // mis-titled from the start, and its body asserted the block that
+      // quote asked to remove. Both are corrected here.
+      //
+      // Note the fixture is a legacy DATELESS row (no `weekday`), not a
+      // weekly placement — so it is not a push/trim candidate itself. What
+      // this pins is the part that matters: the save is no longer refused.
+      final existing = Zone(
+        id: 'existing',
+        title: 'Focus block',
+        startMinutes: 9 * 60,
+        endMinutes: 11 * 60,
+      );
+      await tester.runAsync(() => box.put(existing.id, existing));
+
+      final navigatorKey = await _pumpHost(tester, box: box, taskBox: taskBox);
+      unawaited(showZoneFormScreen(navigatorKey.currentContext!));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(_nameField(), 'New zone');
+      await tester.pump();
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Done'));
+      await tester.pumpAndSettle();
+
+      final startField = find.descendant(
+        of: find.widgetWithText(AppSegmentedTimeField, 'Start'),
+        matching: find.byType(TextField),
+      );
+      await tester.tap(startField);
+      await tester.pump();
+      await tester.enterText(startField, '1000'); // 10:00 — inside Focus block
+      await tester.pump();
+
+      final endField = find.descendant(
+        of: find.widgetWithText(AppSegmentedTimeField, 'End'),
+        matching: find.byType(TextField),
+      );
+      await tester.tap(endField);
+      await tester.pump();
+      await tester.enterText(endField, '1100'); // 11:00
+      // Commits the End field's own typed value — `AppSegmentedTimeField`
+      // only fires `onChanged` on blur/submit, matching the same fix
+      // applied to the "half-typed pair" test above (a bare `enterText`
+      // never reaches `_endHour`/`_endMinute` on its own).
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+
+      final saveButton = find.widgetWithText(ElevatedButton, 'Save');
+      await tester.runAsync(() async {
+        await tester.tap(saveButton);
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      });
+      await tester.pumpAndSettle();
+
+      // Overlap NEVER refuses a save — confirmed directly, "never prevent
+      // action". This test previously asserted the opposite (one zone left
+      // and a refusal message); the new zone is now written and the
+      // existing one is pushed aside, or trimmed only if it would
+      // otherwise be swallowed whole.
+      final zones = box.values.toList();
+      expect(zones, hasLength(greaterThan(1)));
+      expect(find.textContaining('overlaps another zone'), findsNothing);
     },
   );
 
   testWidgets('creating a zone saves it and it appears in zoneListProvider', (
     tester,
   ) async {
-    final navigatorKey = await _pumpHost(tester, box: box);
+    final navigatorKey = await _pumpHost(tester, box: box, taskBox: taskBox);
     unawaited(showZoneFormScreen(navigatorKey.currentContext!));
     await tester.pumpAndSettle();
 
@@ -195,7 +365,7 @@ void main() {
       // rebuilt on the name controller's own text changing, so Save
       // stayed disabled through the very keystroke that made the form
       // valid, only catching up once focus later left the field.
-      final navigatorKey = await _pumpHost(tester, box: box);
+      final navigatorKey = await _pumpHost(tester, box: box, taskBox: taskBox);
       unawaited(showZoneFormScreen(navigatorKey.currentContext!));
       await tester.pumpAndSettle();
 
@@ -254,7 +424,7 @@ void main() {
     // reasoning as test 2 above.
     await tester.runAsync(() => box.put(zone.id, zone));
 
-    final navigatorKey = await _pumpHost(tester, box: box);
+    final navigatorKey = await _pumpHost(tester, box: box, taskBox: taskBox);
     unawaited(showZoneFormScreen(navigatorKey.currentContext!, zone: zone));
     await tester.pumpAndSettle();
 
@@ -281,7 +451,7 @@ void main() {
       );
       await tester.runAsync(() => box.put(zone.id, zone));
 
-      final navigatorKey = await _pumpHost(tester, box: box);
+      final navigatorKey = await _pumpHost(tester, box: box, taskBox: taskBox);
       unawaited(showZoneFormScreen(navigatorKey.currentContext!, zone: zone));
       await tester.pumpAndSettle();
 
@@ -319,7 +489,7 @@ void main() {
       );
       await tester.runAsync(() => box.put(zone.id, zone));
 
-      final navigatorKey = await _pumpHost(tester, box: box);
+      final navigatorKey = await _pumpHost(tester, box: box, taskBox: taskBox);
       unawaited(showZoneFormScreen(navigatorKey.currentContext!, zone: zone));
       await tester.pumpAndSettle();
 
@@ -341,7 +511,7 @@ void main() {
   testWidgets(
     'the create flow (no existing zone) shows no remove icon button',
     (tester) async {
-      final navigatorKey = await _pumpHost(tester, box: box);
+      final navigatorKey = await _pumpHost(tester, box: box, taskBox: taskBox);
       unawaited(showZoneFormScreen(navigatorKey.currentContext!));
       await tester.pumpAndSettle();
 
@@ -354,7 +524,3 @@ void main() {
     },
   );
 }
-
-/// Fires an async future without awaiting it inline — same helper as
-/// `add_category_modal_test.dart`'s own copy.
-void unawaited(Future<void> future) {}

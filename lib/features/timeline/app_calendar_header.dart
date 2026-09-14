@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_press_feedback.dart';
 import '../../core/widgets/app_subtle_icon_button.dart';
+import '../zone_grid/zone_grid_screen.dart';
 import 'edit_mode_provider.dart';
 import 'selected_date_provider.dart';
 
@@ -125,6 +126,21 @@ class AppCalendarHeader extends ConsumerWidget {
                 icon: Icons.sync_rounded,
                 tooltip: 'Sync',
                 onTap: null,
+              ),
+              SizedBox(width: theme.spacingSm),
+              // Entry point into the Weekly Zone Authoring Grid — flagged
+              // per the work order's own "add the minimum needed, flag
+              // your choice" instruction: no existing "open weekly zone
+              // grid" affordance exists anywhere yet. Placed in this row
+              // rather than a new nav destination or a Settings entry,
+              // since this row is already shared by both Timeline tabs
+              // and already hosts the other Zone-adjacent utility icon
+              // (Edit Mode) — a natural home for a second Zone-related
+              // entry point rather than inventing new chrome elsewhere.
+              AppSubtleIconButton(
+                icon: Icons.view_week_outlined,
+                tooltip: 'Weekly zone grid',
+                onTap: () => showZoneGridScreen(context),
               ),
               SizedBox(width: theme.spacingSm),
               // Edit Mode's OWN entry point, restyled — was a text link

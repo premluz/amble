@@ -5,9 +5,9 @@ import 'package:hive_ce/hive_ce.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/timeline/armed_edit_task_provider.dart';
-import 'package:amble/features/timeline/edit_mode_wiggle.dart';
 import 'package:amble/features/timeline/pending_task_draft_provider.dart';
 import 'package:amble/features/timeline/resize_handle.dart';
+import 'package:amble/features/timeline/task_edge_time_label.dart';
 import 'package:amble/features/timeline/selected_date_provider.dart';
 import 'package:amble/features/timeline/timeline_screen.dart';
 import 'package:amble/shared/models/category.dart';
@@ -130,7 +130,7 @@ void main() {
         ),
       ),
     );
-    // NOT pumpAndSettle — EditModeWiggle starts a perpetually-repeating
+    // NOT pumpAndSettle — a perpetually-repeating
     // AnimationController once a task is armed, same reason
     // `multi_task_selection_test.dart`'s own pumpTimeline avoids it.
     await tester.pump();
@@ -300,23 +300,23 @@ void main() {
   });
 
   testWidgets(
-    'an armed task wiggles even though the global Edit Mode toggle is off',
+    'an armed task shows its edge time labels even though the global Edit '
+    'Mode toggle is off',
     (tester) async {
+      // Was 'an armed task wiggles...' — task wiggle is gone entirely,
+      // replaced by an accent ring on the rail for SELECTION (see
+      // `TaskCapsuleBlock.isSelected`) and requested directly. Arming is a
+      // different state from selection, and what it still turns on is the
+      // block's own start/end edge labels, so that is what this now pins.
       final task = makeTask('Focus block');
       await pumpTimeline(tester, tasks: [task]);
 
-      final wiggleBefore = tester.widget<EditModeWiggle>(
-        find.byType(EditModeWiggle).first,
-      );
-      expect(wiggleBefore.enabled, isFalse);
+      expect(find.byType(TaskEdgeTimeLabel), findsNothing);
 
       await tester.longPress(find.text('Focus block'));
       await tester.pump();
 
-      final wiggleAfter = tester.widget<EditModeWiggle>(
-        find.byType(EditModeWiggle).first,
-      );
-      expect(wiggleAfter.enabled, isTrue);
+      expect(find.byType(TaskEdgeTimeLabel), findsWidgets);
     },
   );
 

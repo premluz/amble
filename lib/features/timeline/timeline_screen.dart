@@ -17,6 +17,7 @@ import '../../shared/models/scheduled_block.dart';
 import '../../shared/models/task.dart';
 import '../../shared/models/task_status.dart';
 import '../../shared/models/zone.dart';
+import '../../shared/services/weekly_zone_schedule.dart';
 import '../../shared/providers/calendar_providers.dart';
 import '../../shared/providers/category_providers.dart';
 import '../../shared/providers/preferences_providers.dart';
@@ -38,7 +39,6 @@ import 'current_time_indicator.dart';
 import 'armed_edit_task_provider.dart';
 import 'edit_mode_delete_target.dart';
 import 'edit_mode_provider.dart';
-import 'edit_mode_wiggle.dart';
 import 'edit_selection_provider.dart';
 import 'external_event_block.dart';
 import 'external_event_capsule_block.dart';
@@ -221,10 +221,10 @@ void _commitZoneCascade(
 }) {
   final allZones = ref.read(zoneListProvider);
   final allTasks = ref.read(taskListProvider);
-  final otherZones = allZones
-      .where((z) => z.id != zoneId)
-      .where((z) => z.anchorDate == null || _isSameDay(z.anchorDate!, day))
-      .toList();
+  final otherZones = zonesForDay(
+    allZones,
+    day,
+  ).where((z) => z.id != zoneId).toList();
   final tasksByZoneId = <String, List<Task>>{};
   for (final task in allTasks) {
     final taskZoneId = task.zoneId;
@@ -309,14 +309,7 @@ class TimelineScreen extends ConsumerWidget {
     // `resolveZoneContainment` already use — a non-recurring zone
     // (`anchorDate == null`) still applies to every day, unaffected.
     final zones = FeatureFlags.zoneEnabled
-        ? ref
-              .watch(zoneListProvider)
-              .where(
-                (zone) =>
-                    zone.anchorDate == null ||
-                    _isSameDay(zone.anchorDate!, selectedDate),
-              )
-              .toList()
+        ? zonesForDay(ref.watch(zoneListProvider), selectedDate)
         : const <Zone>[];
     final categoryById = {
       for (final category in ref.watch(categoryListProvider))
@@ -3335,15 +3328,28 @@ class _DraggableZoneBlockState extends ConsumerState<_DraggableZoneBlock> {
     if (!widget.editModeEnabled || !ref.watch(devMultiTaskEditModeProvider)) {
       return null;
     }
-    return () =>
-        ref.read(zoneEditSelectionProvider.notifier).toggle(widget.zone.id);
+    // `selectOnly`, not `toggle` — `ZoneEditSelection` became a genuine
+    // multi-select set 2026-09-12 for the Weekly Zone Authoring Grid, and
+    // a bare `toggle` here would have silently turned the TIMELINE into a
+    // multi-select surface too. Nothing on the Timeline offers a group
+    // zone gesture, so its one-zone-at-a-time behaviour is preserved
+    // explicitly: tapping the selected zone's own header clears it,
+    // tapping any other header replaces the selection.
+    return () {
+      final notifier = ref.read(zoneEditSelectionProvider.notifier);
+      if (_isSelected) {
+        notifier.clear();
+      } else {
+        notifier.selectOnly(widget.zone.id);
+      }
+    };
   }
 
   bool get _isSelected =>
-      ref.watch(zoneEditSelectionProvider) == widget.zone.id;
+      ref.watch(zoneEditSelectionProvider).contains(widget.zone.id);
 
   /// Whether wiggle/handles/the move-header actually render right now —
-  /// mirrors `_DraggableTaskBlockState`'s own `wiggleEnabled` exactly:
+  /// mirrors `_DraggableTaskBlockState`'s own `editAffordanceActive` exactly:
   /// multi-task mode flips what "active" means from "Edit Mode is on" (every
   /// zone) to "this zone is selected" (only the selected one), since
   /// otherwise Edit Mode's own active-state signal would be indistinguishable
@@ -4551,6 +4557,12 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                 .where((c) => c.id == widget.task.categoryId)
                 .firstOrNull,
             pixelsPerMinute: widget.pixelsPerMinute,
+            // Selection reads as an accent ring on the pill's own rail —
+            // requested directly, replacing the wiggle that used to signal
+            // it, and matching `ZoneGridBlock`'s own selected treatment.
+            // Scoped to multi-task mode because that is the only mode in
+            // which a task is selectable at all.
+            isSelected: multiTaskEditMode && _isSelected,
             onTap: _effectiveOnTap,
             onLongPress: _effectiveOnLongPress,
             onToggleComplete: widget.onToggleComplete,
@@ -5078,31 +5090,30 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
       },
     );
 
-    // Edit Mode's own persistent visual signal — see
-    // `edit_mode_wiggle.dart`. Suppressed while THIS block is actively
-    // being manipulated (dragged or resized): a block already tracking
-    // the finger has its own, more specific motion, and adding the
-    // independent wiggle rotation on top of that would fight it rather
-    // than read as "also editable." Phase offset derived from the task's
-    // own id hash — stable across rebuilds, and different per task so a
-    // day full of blocks doesn't wiggle in lockstep.
+    // Whether this block should show its edit affordances (its own
+    // start/end edge time labels). Suppressed while THIS block is actively
+    // being manipulated (dragged or resized) — a block tracking the finger
+    // already shows LIVE edge labels instead, and rendering both at once
+    // would double them up.
     //
-    // Multi-task mode (`DevMultiTaskEditMode`) flips what wiggle MEANS —
-    // requested directly: with it on, wiggle stops being "Edit Mode is
-    // active" (every block) and becomes "this block is selected" (only
-    // selected ones), since Edit Mode's own active-state signal would
-    // otherwise be indistinguishable from the selection signal if both
-    // used the same motion on every block at once. `multiTaskEditMode`
-    // itself is computed once, up top in `build()` (see the group-move
-    // follow logic there), not redeclared here.
-    final wiggleEnabled = multiTaskEditMode
+    // **Task wiggle is gone** — requested directly: "instead of wiggle
+    // should be same accent color border as on zones used here."
+    // SELECTION now reads as an accent ring on the pill's own rail (see
+    // `TaskCapsuleBlock.isSelected`), matching `ZoneGridBlock` exactly.
+    //
+    // This flag survives the removal because it never only meant "wiggle":
+    // it also gates this block's own start/end edge labels below (see the
+    // `else if (editAffordanceActive)` branches in both layouts). Deleting
+    // it outright would have silently taken those labels with it.
+    //
+    // Multi-task mode (`DevMultiTaskEditMode`) still flips what it MEANS —
+    // with it on, the affordance belongs to a SELECTED block only; with it
+    // off, to every block while Edit Mode is active. `multiTaskEditMode`
+    // itself is computed once, up top in `build()`, not redeclared here.
+    final editAffordanceActive = multiTaskEditMode
         ? (_isSelected && !_isDragging && !_isResizing && !_isResizingTop)
         : (_editActive && !_isDragging && !_isResizing && !_isResizingTop);
-    final capsule = EditModeWiggle(
-      enabled: wiggleEnabled,
-      phaseOffset: (widget.task.id.hashCode % 1000) / 1000,
-      child: capsuleCore,
-    );
+    final capsule = capsuleCore;
 
     if (widget.splitLayout) {
       return _buildSplit(
@@ -5111,7 +5122,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
         pillContent: capsule,
         devDurationVisible: devDurationVisible,
         devTimeRangeVisible: devTimeRangeVisible,
-        wiggleEnabled: wiggleEnabled,
+        editAffordanceActive: editAffordanceActive,
       );
     }
 
@@ -5151,7 +5162,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                   widget.pixelsPerMinute,
                 ),
               )
-            else if (wiggleEnabled)
+            else if (editAffordanceActive)
               ..._edgeTimeLabels(
                 height: _pillHeight(
                   widget.theme,
@@ -5228,9 +5239,9 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
   /// reversing the original "only the edge that's actually moving"
   /// design. Reported directly as wrong: the anchored edge's own RESTING
   /// label (`_edgeTimeLabels`) doesn't render during an active gesture —
-  /// `wiggleEnabled`'s branch and this one are mutually exclusive in the
+  /// `editAffordanceActive`'s branch and this one are mutually exclusive in the
   /// caller (`if (_isDragging || _isResizing || _isResizingTop) ... else
-  /// if (wiggleEnabled) ...`) — so a resize was leaving the OTHER edge
+  /// if (editAffordanceActive) ...`) — so a resize was leaving the OTHER edge
   /// with no visible time label at all, not merely deferring to an
   /// already-shown one.
   ///
@@ -5335,7 +5346,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
     required Widget pillContent,
     required bool devDurationVisible,
     required bool devTimeRangeVisible,
-    required bool wiggleEnabled,
+    required bool editAffordanceActive,
   }) {
     // Must also cover a label that collision-avoidance pushed BELOW the
     // pill's own bottom: the Stack is Clip.none so it would still paint,
@@ -5483,7 +5494,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                   widget.pixelsPerMinute,
                 ),
               )
-            else if (wiggleEnabled)
+            else if (editAffordanceActive)
               ..._edgeTimeLabels(
                 height: _pillHeight(
                   widget.theme,

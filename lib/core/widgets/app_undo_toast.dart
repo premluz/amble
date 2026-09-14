@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../tokens/semantic_theme.dart';
 
-/// A brief, self-dismissing toast with an "Undo" action — the app's only
-/// entry point for this kind of transient confirmation, per
+/// A brief, self-dismissing toast, optionally with an "Undo" action — the
+/// app's only entry point for this kind of transient confirmation, per
 /// docs/CONSTITUTION.md design principle 4. New addition to the adaptive
 /// widget layer: nothing like this existed before Quick Capture's
 /// confident-parse auto-create needed a lightweight "done, but you can
@@ -21,13 +21,19 @@ import '../tokens/semantic_theme.dart';
 /// [OverlayEntry], auto-dismisses after [duration] unless [onUndo] fires
 /// first (which also dismisses immediately), and removes itself cleanly
 /// either way — callers never need to track or manually remove the entry.
+///
+/// [onUndo] is optional — a null value renders a plain informational
+/// message with no action, added for the Weekly Zone Authoring Grid's
+/// "this zone already exists for that day" notice (a heads-up, not an
+/// undoable action) rather than building a second, near-identical toast
+/// widget for the action-less case.
 class AppUndoToast {
   AppUndoToast._();
 
   static void show({
     required BuildContext context,
     required String message,
-    required VoidCallback onUndo,
+    VoidCallback? onUndo,
     Duration duration = const Duration(seconds: 4),
   }) {
     // rootOverlay: true — targets the app's outermost Overlay (supplied
@@ -51,10 +57,12 @@ class AppUndoToast {
         theme: theme,
         message: message,
         duration: duration,
-        onUndo: () {
-          onUndo();
-          dismiss();
-        },
+        onUndo: onUndo == null
+            ? null
+            : () {
+                onUndo();
+                dismiss();
+              },
         onExpired: dismiss,
       ),
     );
@@ -75,7 +83,7 @@ class _ToastOverlay extends StatefulWidget {
   final AmbleTheme theme;
   final String message;
   final Duration duration;
-  final VoidCallback onUndo;
+  final VoidCallback? onUndo;
   final VoidCallback onExpired;
 
   @override
@@ -162,18 +170,20 @@ class _ToastOverlayState extends State<_ToastOverlay>
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  SizedBox(width: theme.spacingSm),
-                  GestureDetector(
-                    onTap: widget.onUndo,
-                    behavior: HitTestBehavior.opaque,
-                    child: Text(
-                      'Undo',
-                      style: theme.textBody.copyWith(
-                        color: theme.colorAccent,
-                        fontWeight: FontWeight.w700,
+                  if (widget.onUndo case final onUndo?) ...[
+                    SizedBox(width: theme.spacingSm),
+                    GestureDetector(
+                      onTap: onUndo,
+                      behavior: HitTestBehavior.opaque,
+                      child: Text(
+                        'Undo',
+                        style: theme.textBody.copyWith(
+                          color: theme.colorAccent,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),

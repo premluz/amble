@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 import '../models/category.dart';
 import '../models/task.dart';
 import '../models/zone.dart';
+import '../models/zone_facet.dart';
 
 /// The current export-file schema version. Independent of [Task.schemaVersion]
 /// in spirit (both start at 1 and would only diverge if the file's own
@@ -29,11 +30,13 @@ class ParsedImportFile {
     required this.tasks,
     required this.categories,
     required this.zones,
+    this.zoneFacets = const [],
   });
 
   final List<Task> tasks;
   final List<Category> categories;
   final List<Zone> zones;
+  final List<ZoneFacet> zoneFacets;
 }
 
 /// Thrown when an import file is malformed or its schema version isn't
@@ -62,14 +65,16 @@ class BackupService {
   Future<void> exportTasks(
     List<Task> tasks,
     List<Category> categories,
-    List<Zone> zones,
-  ) async {
+    List<Zone> zones, {
+    List<ZoneFacet> zoneFacets = const [],
+  }) async {
     final payload = {
       'schemaVersion': backupSchemaVersion,
       'exportedAt': DateTime.now().toIso8601String(),
       'tasks': tasks.map((task) => task.toJson()).toList(),
       'categories': categories.map((category) => category.toJson()).toList(),
       'zones': zones.map((zone) => zone.toJson()).toList(),
+      'zoneFacets': zoneFacets.map((facet) => facet.toJson()).toList(),
     };
     final json = const JsonEncoder.withIndent('  ').convert(payload);
 
@@ -220,6 +225,10 @@ class BackupService {
       }
     }
 
-    return ParsedImportFile(tasks: tasks, categories: categories, zones: zones);
+    final List<ZoneFacet> facets;
+    try {
+      facets = ((payload['zoneFacets'] ?? []) as List).map((e) => ZoneFacet.fromJson(Map<String,dynamic>.from(e as Map))).toList();
+    } catch (_) { throw BackupImportException('This backup contains invalid zone names.'); }
+    return ParsedImportFile(tasks: tasks, categories: categories, zones: zones, zoneFacets: facets);
   }
 }

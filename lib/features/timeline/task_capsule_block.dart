@@ -76,6 +76,7 @@ class TaskCapsuleBlock extends StatelessWidget {
     this.bottomTrim = 0,
     this.maxPillHeight,
     this.editModeEnabled = false,
+    this.isSelected = false,
     this.onResizeStart,
     this.onResizeUpdate,
     this.onResizeEnd,
@@ -123,6 +124,17 @@ class TaskCapsuleBlock extends StatelessWidget {
   /// `StatelessWidget` with no provider access, same reasoning as
   /// [category] above; the caller resolves it once and passes it down.
   final bool editModeEnabled;
+
+  /// Whether this task is currently SELECTED (multi-task edit mode) —
+  /// rendered as an accent ring on the pill's own coloured rail.
+  ///
+  /// Requested directly: "instead of wiggle should be same accent color
+  /// border as on zones used here." Uses the identical treatment
+  /// `ZoneGridBlock` gives a selected zone (`colorAccent` at
+  /// `borderWidthHairline * 2`), so selection looks the same whichever
+  /// kind of block you are editing. Task wiggle is gone entirely as a
+  /// result — see `timeline_screen.dart`'s `editAffordanceActive`.
+  final bool isSelected;
 
   /// The bottom-edge resize handle's own vertical drag handlers — a
   /// deliberately SEPARATE gesture channel from [onDragStart]/
@@ -558,6 +570,18 @@ class TaskCapsuleBlock extends StatelessWidget {
                     padding: EdgeInsets.zero,
                     decoration: BoxDecoration(
                       color: badgeColor,
+                      // Selection reads as an accent ring on the rail —
+                      // requested directly, replacing the wiggle that used
+                      // to signal it. Same treatment `ZoneGridBlock` uses
+                      // for a selected zone (`colorAccent` at
+                      // `borderWidthHairline * 2`), so selection looks the
+                      // same whether you're editing a task or a zone.
+                      border: isSelected
+                          ? Border.all(
+                              color: theme.colorAccent,
+                              width: theme.borderWidthHairline * 2,
+                            )
+                          : null,
                       // radiusSm (4px), not radiusTaskPill (fully round) —
                       // requested directly. Kept scoped to this one rail rather
                       // than repointing radiusTaskPill itself, which every

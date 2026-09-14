@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import '../models/task.dart';
 import '../models/zone.dart';
 
@@ -222,6 +224,103 @@ List<ZoneMove>? computeZoneCascadeMoves({
         ],
       ),
   ];
+}
+
+/// The shortest a zone may be trimmed to rather than removed — confirmed
+/// directly: "leave a minimum sliver". A fully-swallowed neighbour keeps a
+/// visible, recoverable remnant instead of being deleted by a drag.
+const int kZoneSliverMinutes = 15;
+
+/// Resolves [placed] against every zone already occupying the day, NEVER
+/// refusing — confirmed directly: "never prevent action".
+///
+/// Push first ([computeZoneCascadeMoves]'s own nearest-edge cascade, which
+/// preserves every pushed zone's full duration). Only when the cascade
+/// genuinely cannot place a neighbour does this fall back to trimming that
+/// neighbour to whatever room is left beside [placed], floored at
+/// [kZoneSliverMinutes] — the narrow "would be fully swallowed" case, not
+/// ordinary tight fits.
+///
+/// Returns the moves to apply. A neighbour that ends up trimmed reports its
+/// new, SHORTER window; one that was merely pushed keeps its duration.
+List<ZoneMove> resolveZonePlacement({
+  required String placedZoneId,
+  required int placedOriginalStartMinutes,
+  required int placedStartMinutes,
+  required int placedEndMinutes,
+  required List<Zone> otherZones,
+  required Map<String, List<Task>> tasksByZoneId,
+}) {
+  final pushed = computeZoneCascadeMoves(
+    draggedZoneId: placedZoneId,
+    draggedZoneOriginalStartMinutes: placedOriginalStartMinutes,
+    zoneStartOverride: placedStartMinutes,
+    zoneEndOverride: placedEndMinutes,
+    otherZones: otherZones,
+    tasksByZoneId: tasksByZoneId,
+  );
+  if (pushed != null) return pushed;
+
+  // The day could not absorb a pure push. Keep the placement exactly where
+  // the user put it and trim only the neighbours it actually overlaps,
+  // leaving each at least a sliver. Neighbours it does not touch are left
+  // completely alone.
+  final moves = <ZoneMove>[
+    ZoneMove(
+      zoneId: placedZoneId,
+      newStartMinutes: placedStartMinutes,
+      newEndMinutes: placedEndMinutes,
+      taskMoves: [
+        for (final task in tasksByZoneId[placedZoneId] ?? const <Task>[])
+          ZoneTaskMove(
+            taskId: task.id,
+            deltaMinutes: placedStartMinutes - placedOriginalStartMinutes,
+          ),
+      ],
+    ),
+  ];
+
+  for (final zone in otherZones) {
+    final overlaps =
+        placedStartMinutes < zone.endMinutes &&
+        zone.startMinutes < placedEndMinutes;
+    if (!overlaps) continue;
+
+    final roomBefore = placedStartMinutes - zone.startMinutes;
+    final roomAfter = zone.endMinutes - placedEndMinutes;
+
+    // Keep whichever side of the placement has more of this zone left,
+    // floored at a sliver so it stays visible and recoverable.
+    final (start, end) = roomBefore >= roomAfter
+        ? (
+            math.min(
+              zone.startMinutes,
+              placedStartMinutes - kZoneSliverMinutes,
+            ),
+            math.max(
+              placedStartMinutes,
+              zone.startMinutes + kZoneSliverMinutes,
+            ),
+          )
+        : (
+            math.min(placedEndMinutes, zone.endMinutes - kZoneSliverMinutes),
+            math.max(zone.endMinutes, placedEndMinutes + kZoneSliverMinutes),
+          );
+
+    moves.add(
+      ZoneMove(
+        zoneId: zone.id,
+        newStartMinutes: start.clamp(0, 24 * 60 - kZoneSliverMinutes),
+        newEndMinutes: end.clamp(kZoneSliverMinutes, 24 * 60),
+        // A trimmed zone does not shift its tasks: its start usually holds,
+        // and a task left outside the remnant keeps its own time rather
+        // than being silently dragged, matching this codebase's existing
+        // "a stale assignment simply stops affecting placement" posture.
+        taskMoves: const [],
+      ),
+    );
+  }
+  return moves;
 }
 
 (int, int)? _findFreeSlot(

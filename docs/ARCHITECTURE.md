@@ -94,3 +94,7 @@ See `CONSTITUTION.md` for the non-negotiables (UUIDs, status enum, `completedAt`
 ## Known open item
 
 `hive_generator` compatibility conflict — resolution pending (likely `hive_ce` as the fix, pending confirmation of the actual error). Resolve before building out the Task/Event models, since it affects how typed adapters get generated.
+
+## Weekly zone authoring (2026-09-14)
+
+`ZoneFacetRepository` owns the name-only registry (`zone_facets`, primitive maps with schema validation). `ZoneRepository` continues to own timed placements and retained legacy rows. `ZoneList.paintWeeklyZones` validates the complete weekday selection before writing any placement; `ZoneFacetList` owns name creation/rename. `weekly_zone_schedule.dart` supplies the canonical date projection and conflict predicate. The grid's `ZonePaintSelection` is transient schedule geometry, never a persisted Zone. Widget keys use stable placement IDs; no global object interning is needed for the new one-placement-per-weekday grid. Migration and backup preserve old IDs and unsupported recurrence rules.

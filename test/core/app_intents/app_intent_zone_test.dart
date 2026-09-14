@@ -37,7 +37,8 @@ void main() {
     expect(zone.title, 'Evening');
     expect(zone.startMinutes, 1200);
     expect(zone.endMinutes, 1440);
-    expect(zone.anchorDate, isNull); // Same dateless default as the form.
+    expect(zone.anchorDate, isNull);
+    expect(zone.weekday, now.weekday);
   });
 
   test(

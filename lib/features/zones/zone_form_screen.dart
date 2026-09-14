@@ -8,19 +8,20 @@ import '../../core/widgets/app_field_action_button.dart';
 import '../../core/widgets/app_modal_route.dart';
 import '../../core/widgets/app_pane.dart';
 import '../../core/widgets/app_segmented_time_field.dart';
-import '../../core/widgets/app_selectable_chip.dart';
 import '../../core/widgets/app_staggered_entrance.dart';
 import '../../core/widgets/app_step_scaffold.dart';
 import '../../core/widgets/app_switch.dart';
 import '../../core/widgets/app_text_field.dart';
 import '../../core/widgets/app_wheel_time_picker.dart';
-import '../../shared/models/recurrence_frequency.dart';
-import '../../shared/models/recurrence_rule.dart';
+import '../../core/widgets/weekday_repeat_panel.dart';
+import '../../shared/models/zone_facet.dart';
+import '../../shared/providers/zone_facet_providers.dart';
 import '../../shared/models/zone.dart';
-import '../../shared/providers/notification_providers.dart';
+
 import '../../shared/providers/zone_providers.dart';
-import '../../shared/services/zone_overlap_checker.dart';
-import '../timeline/selected_date_provider.dart';
+
+
+import '../timeline/viewed_time_provider.dart';
 
 /// Opens the "add/edit zone" screen — near-full-screen, built on
 /// [StepScaffold] (the same chrome the real task-creation flow uses,
@@ -30,17 +31,78 @@ import '../timeline/selected_date_provider.dart';
 ///
 /// All writes go through `zoneListProvider` — this UI never touches
 /// [ZoneRepository]/Hive directly.
-Future<void> showZoneFormScreen(BuildContext context, {Zone? zone}) {
-  return pushAppSheetRoute<void>(
+///
+/// Returns a [ZoneFormResult] describing what Save actually did, so a
+/// caller that wants to react (the Weekly Zone Authoring Grid scrolling
+/// the saved zone into view, matching the Timeline's own "scroll to the
+/// just-created task" convention) doesn't have to re-derive it by diffing
+/// `zoneListProvider` itself. Null means the screen was dismissed without
+/// saving (closed, or the create flow was abandoned at stage 1).
+/// [forDay] is the calendar day this create is FOR — the day a new zone
+/// anchors on, and the day the same-type collision check below tests
+/// against. Null falls back to `selectedDateProvider` (the Timeline's own
+/// current day), which is correct for callers that genuinely live on the
+/// Timeline but was a real bug for the Weekly Zone Authoring Grid: that
+/// screen has its OWN week/day state (`zoneGridWeekProvider`) and never
+/// writes `selectedDateProvider`, so every create from the grid silently
+/// resolved against the Timeline's day instead of the grid day the user
+/// was actually looking at. Reported directly — "we show the message that
+/// the zone exists for that day even though it doesn't."
+Future<ZoneFormResult?> showZoneFormScreen(
+  BuildContext context, {
+  Zone? zone,
+  DateTime? forDay,
+}) {
+  return pushAppSheetRoute<ZoneFormResult>(
     context,
-    (context) => _ZoneFormScreen(zone: zone),
+    (context) => _ZoneFormScreen(zone: zone, forDay: forDay),
   );
 }
 
+/// What [showZoneFormScreen] actually did — returned to the caller once
+/// Save completes.
+class ZoneFormResult {
+  const ZoneFormResult({
+    required this.savedZoneId,
+    this.existingSameDayId,
+    this.existingSameDayTitle,
+  });
+
+  /// The id of the zone Save just wrote (created or updated).
+  final String savedZoneId;
+
+  /// Set when Save found ANOTHER zone of the same type (matched by title,
+  /// per Settings' own "zone type" list — see `_ExistingZonesBrowserPane`'s
+  /// doc comment) already applying on the same day — confirmed via
+  /// AskUserQuestion: this does NOT block the save, it's surfaced so the
+  /// caller can point the user at the pre-existing one, same spirit as the
+  /// Timeline's own "scroll to what you just touched" convention, just
+  /// aimed at the OTHER occurrence rather than the one just saved.
+  final String? existingSameDayId;
+
+  /// That same zone's own title, so the caller can name it in its own
+  /// message ('"Morning ritual" already exists on that day.') rather than
+  /// re-looking it up from `zoneListProvider` just to render one string.
+  /// Non-null exactly when [existingSameDayId] is.
+  final String? existingSameDayTitle;
+}
+
+/// A zone saved with no explicit time gets this length — requested
+/// directly ("as default zone is 2 hours") once start/end stopped being
+/// mandatory. Every `Zone` row still has a real `startMinutes`/
+/// `endMinutes` under the hood (the model itself has no "timeless" concept
+/// — see docs/DECISIONS.md); only the FORM'S requirement to fill them in
+/// by hand is what's being removed.
+const int _defaultZoneDurationMinutes = 2 * 60;
+
 class _ZoneFormScreen extends ConsumerStatefulWidget {
-  const _ZoneFormScreen({this.zone});
+  const _ZoneFormScreen({this.zone, this.forDay});
 
   final Zone? zone;
+
+  /// The day this create is for — see [showZoneFormScreen]'s own doc
+  /// comment. Null falls back to `selectedDateProvider`.
+  final DateTime? forDay;
 
   @override
   ConsumerState<_ZoneFormScreen> createState() => _ZoneFormScreenState();
@@ -56,7 +118,7 @@ class _ZoneFormScreenState extends ConsumerState<_ZoneFormScreen> {
   /// Repeat/Notify local state, pre-filled from an existing zone when
   /// editing — mirrors `task_detail_sheet.dart`'s own `_repeats`/
   /// `_selectedDays`/`notificationsEnabled` shape for the identical UI.
-  bool _repeats = false;
+  String? _facetId;
   Set<int> _selectedDays = {};
   late bool _notificationsEnabled;
 
@@ -94,7 +156,9 @@ class _ZoneFormScreenState extends ConsumerState<_ZoneFormScreen> {
     // Create only — an edit already has a name and every other field
     // filled in, so it opens straight on the full form.
     _isNameStage = zone == null;
-    _notificationsEnabled = zone?.notificationsEnabled ?? true;
+    _notificationsEnabled = zone?.notificationsEnabled ?? false;
+    _facetId = zone?.facetId;
+    _selectedDays = {zone?.weekday ?? widget.forDay?.weekday ?? DateTime.now().weekday};
     if (zone != null) {
       _startHour = zone.startMinutes ~/ 60;
       _startMinute = zone.startMinutes % 60;
@@ -102,8 +166,8 @@ class _ZoneFormScreenState extends ConsumerState<_ZoneFormScreen> {
       _endMinute = zone.endMinutes % 60;
       final rule = zone.recurrenceRule;
       if (rule != null) {
-        _repeats = true;
-        _selectedDays = _selectedDaysFromRecurrenceRule(rule);
+
+        _selectedDays = selectedDaysFromRecurrenceRule(rule);
       }
     }
   }
@@ -122,121 +186,69 @@ class _ZoneFormScreenState extends ConsumerState<_ZoneFormScreen> {
       ? null
       : _endHour! * 60 + _endMinute!;
 
+  /// Start/end are no longer required to save — requested directly ("we
+  /// should not require time start end as mandatory on zone creation").
+  /// An end typed WITHOUT a start (or vice versa) is still refused rather
+  /// than silently guessing which one the user meant to leave blank; a
+  /// fully-blank pair resolves to [_resolvedStartMinutes]'s own default at
+  /// save time. `_endMinutes! > _startMinutes!` is still enforced whenever
+  /// BOTH are actually typed in.
   bool get _canSave =>
-      _titleController.text.trim().isNotEmpty &&
-      _startMinutes != null &&
-      _endMinutes != null &&
-      _endMinutes! > _startMinutes! &&
+      _titleController.text.trim().isNotEmpty && _selectedDays.isNotEmpty &&
+      (_startMinutes == null) == (_endMinutes == null) &&
+      (_startMinutes == null || _endMinutes! > _startMinutes!) &&
       !_isSaving;
 
-  Future<void> _save() async {
-    if (!_canSave) return;
+  /// The zone's actual start once saved — whatever was typed in, or (if
+  /// both fields were left blank) the time the user is currently looking
+  /// at on the Timeline, matching the FAB's own "defaults to whatever
+  /// time is vertically centered in the current scroll position, not real
+  /// 'now'" convention (`timeline_screen.dart`'s own `AppFloatingCreateButton`
+  /// handler) — a `null` fallback there (a fresh, never-scrolled session)
+  /// falls back to real "now" the same way.
+  int _resolvedStartMinutes() =>
+      _startMinutes ??
+      ref.read(viewedTimeProvider) ??
+      (DateTime.now().hour * 60 + DateTime.now().minute);
 
-    // Flushes any pending, uncommitted edit in a still-focused segmented
-    // time field before reading `_startMinutes`/`_endMinutes` below.
-    // Reported directly and reproduced in a widget test: typing a new
-    // time and tapping Save WITHOUT first tapping elsewhere (the field
-    // still has focus, keyboard still up) silently saved the OLD time —
-    // `AppSegmentedTimeField` only commits its typed value on blur or
-    // `onEditingComplete`, and tapping the Save button is neither.
-    //
-    // `unfocus()` alone is NOT enough: it schedules the field's blur
-    // listener (which does the actual commit + `onChanged` + `setState`)
-    // rather than running it inline, so reading `_startHour`/`_startMinute`
-    // immediately afterward still saw the stale value — confirmed by
-    // tracing the actual call order in a widget test. Awaiting a frame
-    // lets that listener's `setState` land before the values below are
-    // read. Same fix `task_detail_sheet.dart`'s own schedule save would
-    // need if it shares this field — flagged there too if a similar
-    // report comes in.
-    FocusScope.of(context).unfocus();
+  int _resolvedEndMinutes(int resolvedStart) =>
+      _endMinutes ??
+      (resolvedStart + _defaultZoneDurationMinutes).clamp(0, 24 * 60);
+
+  Future<void> _save() async {
+    if (_isSaving || !_canSave) return;
+    FocusManager.instance.primaryFocus?.unfocus();
     await Future<void>.delayed(Duration.zero);
     if (!mounted) return;
-
-    setState(() => _overlapError = null);
-
-    // A draft `Zone` purely for the overlap check below — never saved
-    // itself if the check fails. The real constructor's own asserts
-    // (start within a day, end after start) are already satisfied by
-    // `_canSave`'s gate, so this can't throw.
-    final draft = Zone(
-      id: widget.zone?.id ?? 'draft',
-      title: _titleController.text.trim(),
-      startMinutes: _startMinutes!,
-      endMinutes: _endMinutes!,
-    );
-    // The day this instance actually occupies — the existing zone's own
-    // `anchorDate` when editing a materialized instance, or (for a new
-    // recurring series) the day the user was viewing when they opened
-    // "Add Zone" (see `_anchorDateForNewSeries`'s own doc comment). Only
-    // zones applying on THIS SAME day can genuinely overlap it — a Monday
-    // occurrence and a Wednesday occurrence of two different series were
-    // never a real conflict, per the Zone materialization session (see
-    // docs/DECISIONS.md); this is what "should get simpler, not more
-    // complex" meant for the overlap check.
-    final DateTime thisDay =
-        widget.zone?.anchorDate ?? ref.read(selectedDateProvider);
-    final others = ref
-        .read(zoneListProvider)
-        .where((z) => z.id != widget.zone?.id)
-        .where(
-          (z) => z.anchorDate == null || _isSameDay(z.anchorDate!, thisDay),
-        );
-    final conflict = others.where((z) => zonesOverlap(draft, z)).firstOrNull;
-    if (conflict != null) {
-      setState(
-        () => _overlapError =
-            'This overlaps "${conflict.title}". Choose a different time.',
-      );
-      return;
-    }
-
-    final recurrenceRule = _repeats
-        ? _recurrenceRuleFromSelectedDays(_selectedDays)
-        : null;
-
-    setState(() => _isSaving = true);
+    final start = _resolvedStartMinutes();
+    final end = _resolvedEndMinutes(start);
+    setState(() { _isSaving = true; _overlapError = null; });
     try {
       final notifier = ref.read(zoneListProvider.notifier);
-      final notificationService = ref.read(notificationServiceProvider);
       final existing = widget.zone;
       final Zone saved;
       if (existing == null) {
-        saved = await notifier.createZone(
-          title: draft.title,
-          startMinutes: draft.startMinutes,
-          endMinutes: draft.endMinutes,
-          recurrenceRule: recurrenceRule,
-          notificationsEnabled: _notificationsEnabled,
-          // Only meaningful for a new recurring series — the day the
-          // template (and every materialized instance the generator walks
-          // forward from) anchors on. A non-recurring zone stays dateless,
-          // unaffected — `ZoneList.createZone` ignores this when
-          // `recurrenceRule` is null.
-          anchorDateForRecurrence: ref.read(selectedDateProvider),
-        );
+        final created = await notifier.paintWeeklyZones(title: _titleController.text,
+          facetId: _facetId, weekdays: _selectedDays, startMinutes: start, endMinutes: end);
+        saved = created.first;
+        for (final placement in created) {
+          placement.notificationsEnabled = _notificationsEnabled;
+          await notifier.updateZone(placement);
+        }
       } else {
-        existing.title = draft.title;
-        existing.startMinutes = draft.startMinutes;
-        existing.endMinutes = draft.endMinutes;
-        existing.recurrenceRule = recurrenceRule;
-        existing.notificationsEnabled = _notificationsEnabled;
-        await notifier.updateZone(existing);
-        saved = existing;
+        final facet = await ref.read(zoneFacetListProvider.notifier).resolve(_titleController.text,
+          id: _titleController.text.trim() == existing.title ? _facetId : null);
+        saved = Zone.fromJson({...existing.toJson(), 'title': facet.name, 'facetId': facet.id,
+          'startMinutes': start, 'endMinutes': end, 'notificationsEnabled': _notificationsEnabled,
+          if (existing.isWeeklyPlacement) 'weekday': _selectedDays.single});
+        await notifier.updateZone(saved);
       }
-      // Fire-and-forget, matching every TaskList write path's own
-      // notification sync (docs/DECISIONS.md) — Save must never wait on a
-      // notification platform call, and a scheduling failure must never
-      // block the save that already succeeded.
-      unawaited(
-        _notificationsEnabled
-            ? notificationService.scheduleForZone(saved)
-            : notificationService.cancelForZone(saved.id),
-      );
-      if (mounted) Navigator.of(context).pop();
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
-    }
+
+      if (mounted) { Navigator.of(context).pop(ZoneFormResult(savedZoneId: saved.id)); }
+    } catch (error) {
+      if (mounted) { setState(() => _overlapError = error is StateError ? error.message :
+        error is ArgumentError ? '${error.message}' : 'Could not save this zone.'); }
+    } finally { if (mounted) setState(() => _isSaving = false); }
   }
 
   /// Removes the zone being edited — requested directly: "Edit zone
@@ -257,6 +269,24 @@ class _ZoneFormScreenState extends ConsumerState<_ZoneFormScreen> {
     final notifier = ref.read(zoneListProvider.notifier);
     navigator.pop();
     await notifier.deleteZone(zone.id);
+  }
+
+  /// Seeds this (still stage-1) form from an existing zone tapped in
+  /// [_ExistingZonesBrowserPane] — confirmed via AskUserQuestion: prefill
+  /// name AND time, same as tapping a task template seeds name/category.
+  /// Advances straight to stage 2, matching the template browser's own
+  /// "picking one is a commitment, not just a fill-in" behaviour.
+  ///
+  /// Repeat/Notifications are still not carried across, but that no
+  /// longer decides what Save produces: `ZoneList.createZone` keys off
+  /// the TITLE, so a save whose name matches an existing zone type always
+  /// becomes a single dated instance of that type — Repeat on or off,
+  /// tapped from this list or typed by hand. Confirmed directly ("the one
+  /// added as existing template with same name but different hour should
+  /// be just [an] instance"); see `createZone`'s own doc comment.
+  void _seedFromExistingZone(ZoneFacet zone) {
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() { _titleController.text = zone.name; _facetId = zone.id; _isNameStage = false; });
   }
 
   /// Confirms stage 1 (Name) and advances to stage 2 — fired by stage 1's
@@ -356,23 +386,20 @@ class _ZoneFormScreenState extends ConsumerState<_ZoneFormScreen> {
           ],
         ),
       ),
-      // Repeat — standalone pane, same treatment as Notifications below,
-      // mirroring task_detail_sheet.dart's own layout (docs/DECISIONS.md).
-      AppPane(
-        child: _ZoneRecurrencePanel(
-          theme: theme,
-          repeats: _repeats,
-          selectedDays: _selectedDays,
-          onRepeatsChanged: (value) => setState(() => _repeats = value),
-          onDayToggled: (day) => setState(() {
-            if (_selectedDays.contains(day)) {
-              _selectedDays = {..._selectedDays}..remove(day);
-            } else {
-              _selectedDays = {..._selectedDays, day};
-            }
+      if (!_isEditing || widget.zone!.isWeeklyPlacement)
+      AppPane(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Every week', style: theme.textBody),
+        Row(children: [for (var day = 1; day <= 7; day++) Expanded(child: GestureDetector(
+          onTap: () => setState(() {
+            if (_isEditing) { _selectedDays = {day}; }
+            else if (_selectedDays.contains(day)) { _selectedDays = {..._selectedDays}..remove(day); }
+            else { _selectedDays = {..._selectedDays, day}; }
           }),
-        ),
-      ),
+          child: Padding(padding: EdgeInsets.symmetric(vertical: theme.spacingSm), child: Text(
+            ['M','T','W','T','F','S','S'][day-1], textAlign: TextAlign.center,
+            style: theme.textBody.copyWith(color: _selectedDays.contains(day) ? theme.colorAccent : theme.colorTextTertiary))),
+        ))]),
+      ])),
       AppPane(
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -440,6 +467,22 @@ class _ZoneFormScreenState extends ConsumerState<_ZoneFormScreen> {
                 onSubmitted: (_) => _confirmNameStage(),
               ),
             ),
+            // Stage 1 (Name) only, create flow only — mirrors
+            // `task_detail_sheet.dart`'s own `_TemplateBrowserPane`
+            // placement exactly: "on the Add Task sheet, under Task Name,
+            // let's list the templates," applied here to existing ZONES
+            // rather than templates (Zone has no separate template
+            // concept — an existing zone IS the reusable shape). Gone the
+            // instant stage 2 reveals, same as the task version, and
+            // never shown at all when editing (there's no "new zone" to
+            // seed from another one while already editing a specific row).
+            if (_isNameStage && !_isEditing) ...[
+              SizedBox(height: theme.spacingLg),
+              _ExistingZonesBrowserPane(
+                theme: theme,
+                onSelected: _seedFromExistingZone,
+              ),
+            ],
             if (!_isNameStage) ...[
               SizedBox(height: theme.spacingLg),
               for (final (index, pane) in staggeredPanes.indexed) ...[
@@ -454,69 +497,66 @@ class _ZoneFormScreenState extends ConsumerState<_ZoneFormScreen> {
   }
 }
 
-/// Zone's own day-selection UI, matching `task_detail_sheet.dart`'s
-/// private `_RecurrencePanel` exactly (same 7-chip layout, same
-/// Expanded-chip overflow fix) but written locally rather than promoted to
-/// a shared widget. Judgment call, not a default: the two pieces genuinely
-/// shared between them are the panel's ~35 lines of layout and two trivial
-/// pure helper functions below — promoting the whole panel (as
-/// `StepScaffold` was promoted earlier this session) would mean carving a
-/// public widget out of a 2900+-line file for a second caller that needs
-/// no state beyond what it already owns locally. Small enough to duplicate
-/// without real drift risk; flagged here and in docs/DECISIONS.md rather
-/// than decided silently.
-class _ZoneRecurrencePanel extends StatelessWidget {
-  const _ZoneRecurrencePanel({
+/// Stage 1's inline "existing zone types" browser — requested directly:
+/// "on zone add screen we should list Zones that are already created as
+/// cards (same pattern as we have when adding task we list templates)."
+///
+/// **Reworked to read the EXACT same list Settings → Zones shows**
+/// (`ZoneListBody`'s own filter, `zone_list_screen.dart`), not a separately
+/// re-derived one — confirmed via AskUserQuestion after a real bug report:
+/// "see 2 presets (with different timings) even though in settings is only
+/// one." Root cause was a genuine gap in this pane's OWN prior dedup logic:
+/// it only deduplicated RECURRING zones (grouped by `recurrenceId`) and
+/// applied no deduplication at all to non-recurring zones, so any two
+/// non-recurring rows — including two the user never meant to be
+/// separate, e.g. two independently-saved zones sharing a title — each
+/// rendered their own card. Settings' own list has never had that
+/// distinction (it already treats every non-recurring zone as its own
+/// row), so the fix is to point this pane at THAT list directly rather
+/// than re-implementing a second, subtly different one: `!zone.isRecurring
+/// || zone.isRecurrenceTemplate`, one row per plain zone plus one per
+/// series template — copied verbatim from `ZoneListBody`'s own query
+/// rather than imported, since that widget's build method also owns
+/// sorting/rendering concerns this pane doesn't share.
+///
+/// This list is now the fixed "zone type" registry the work order settled
+/// on: Settings owns which types exist, and this pane is the SAME list,
+/// browsable while creating a new occurrence — not a separately-curated
+/// view that can drift from it.
+class _ExistingZonesBrowserPane extends ConsumerWidget {
+  const _ExistingZonesBrowserPane({
     required this.theme,
-    required this.repeats,
-    required this.selectedDays,
-    required this.onRepeatsChanged,
-    required this.onDayToggled,
+    required this.onSelected,
   });
 
   final AmbleTheme theme;
-  final bool repeats;
-  final Set<int> selectedDays;
-  final ValueChanged<bool> onRepeatsChanged;
-  final ValueChanged<int> onDayToggled;
+  final ValueChanged<ZoneFacet> onSelected;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final zones = [...ref.watch(zoneFacetListProvider)]..sort((a,b) => a.name.compareTo(b.name));
+
+    if (zones.isEmpty) return const SizedBox.shrink();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: EdgeInsets.symmetric(horizontal: theme.spacingSm),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Repeat',
-                style: theme.textBody.copyWith(color: theme.colorTextPrimary),
-              ),
-              AppSwitch(value: repeats, onChanged: onRepeatsChanged),
-            ],
+          padding: EdgeInsets.only(bottom: theme.spacingSm),
+          child: Text(
+            'Existing zones',
+            style: theme.textBody.copyWith(
+              color: theme.colorTextSecondary,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
-        if (repeats) ...[
-          SizedBox(height: theme.spacingSm),
-          Row(
-            children: [
-              for (
-                var day = DateTime.monday;
-                day <= DateTime.sunday;
-                day++
-              ) ...[
-                if (day > DateTime.monday) SizedBox(width: theme.spacingXs),
-                Expanded(
-                  child: AppSelectableChip(
-                    label: _zoneWeekdayAbbreviations[day - 1],
-                    selected: selectedDays.contains(day),
-                    onTap: () => onDayToggled(day),
-                  ),
-                ),
-              ],
-            ],
+        for (final (index, zone) in zones.indexed) ...[
+          if (index > 0) SizedBox(height: theme.spacingSm),
+          _ExistingZoneRow(
+            theme: theme,
+            zone: zone,
+            onTap: () => onSelected(zone),
           ),
         ],
       ],
@@ -524,41 +564,54 @@ class _ZoneRecurrencePanel extends StatelessWidget {
   }
 }
 
-bool _isSameDay(DateTime a, DateTime b) =>
-    a.year == b.year && a.month == b.month && a.day == b.day;
+/// One card in [_ExistingZonesBrowserPane] — same visual shape as
+/// `inbox/template_list_view.dart`'s `TemplateRow` (flat card, shadow, no
+/// border), but written locally rather than reused: `TemplateRow` is
+/// `TaskTemplate`-shaped (a category badge/color, a duration-in-minutes
+/// line) and Zone has neither a category nor a bare duration — it has a
+/// start/end time-of-day range, which reads as its own natural subtitle.
+class _ExistingZoneRow extends StatelessWidget {
+  const _ExistingZoneRow({
+    required this.theme,
+    required this.zone,
+    required this.onTap,
+  });
 
-const _zoneWeekdayAbbreviations = [
-  'MON',
-  'TUE',
-  'WED',
-  'THU',
-  'FRI',
-  'SAT',
-  'SUN',
-];
+  final AmbleTheme theme;
+  final ZoneFacet zone;
+  final VoidCallback onTap;
 
-/// Same rule as `task_detail_sheet.dart`'s own
-/// `_recurrenceRuleFromSelectedDays` — duplicated locally rather than
-/// imported, since that function is file-private (`_`-prefixed) and this
-/// is a genuinely separate feature's save path, not a shared caller of the
-/// same one. All 7 days maps to daily; any smaller selection maps to
-/// weekly with that exact `daysOfWeek` set.
-RecurrenceRule _recurrenceRuleFromSelectedDays(Set<int> selectedDays) {
-  if (selectedDays.length == 7) {
-    return RecurrenceRule(frequency: RecurrenceFrequency.daily);
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: EdgeInsets.all(theme.spacingMd),
+        decoration: BoxDecoration(
+          color: theme.colorSurfaceSecondary,
+          borderRadius: BorderRadius.circular(theme.radiusXl),
+          boxShadow: theme.shadowPane,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    zone.name,
+                    style: theme.textBody.copyWith(fontWeight: FontWeight.w700),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
-  return RecurrenceRule(
-    frequency: RecurrenceFrequency.weekly,
-    daysOfWeek: selectedDays.toList()..sort(),
-  );
 }
 
-/// The inverse, for pre-filling an existing zone's Repeat panel. Daily has
-/// no `daysOfWeek` (it means every day by definition), so that case maps
-/// back to all 7.
-Set<int> _selectedDaysFromRecurrenceRule(RecurrenceRule rule) {
-  if (rule.frequency == RecurrenceFrequency.daily) {
-    return {for (var day = DateTime.monday; day <= DateTime.sunday; day++) day};
-  }
-  return rule.daysOfWeek!.toSet();
-}

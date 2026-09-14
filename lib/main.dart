@@ -33,6 +33,7 @@ import 'shared/models/task_size.dart';
 import 'shared/models/task_template.dart';
 import 'shared/models/tracked_behavior.dart';
 import 'shared/models/zone.dart';
+import 'shared/repositories/zone_facet_repository.dart';
 import 'shared/providers/calendar_providers.dart';
 import 'shared/providers/category_providers.dart';
 import 'shared/providers/notification_providers.dart';
@@ -56,6 +57,7 @@ void main() async {
   // FeatureFlags.zoneEnabled) — same "additive, inert data layer" pattern
   // as trackedBehaviorBoxName above.
   await Hive.openBox<Zone>(zoneBoxName);
+  await HiveZoneFacetRepository.initialize();
   // The user-extensible category entity — seeded with 5 built-in rows and
   // backfilled onto existing tasks below, once, at launch.
   await Hive.openBox<Category>(categoryBoxName);
@@ -104,6 +106,16 @@ void main() async {
   // 8-week window means a session would have to stay open for weeks before
   // running dry. Idempotent, so this never duplicates existing instances.
   await container.read(taskListProvider.notifier).materializeDueRecurrences();
+  // Collapses duplicate same-titled Zone series into one, and detaches
+  // any orphaned series (rows carrying a recurrenceId whose template no
+  // longer exists). Runs BEFORE the top-up below, so materialization
+  // never re-fills a series that is about to be removed. Idempotent and a
+  // no-op on healthy data — see `ZoneList.repairDuplicateZoneSeries`.
+  //
+  // Needed because two now-fixed bugs could mint parallel series for one
+  // zone (see docs/ERROR_LOG.md); this repairs installs that already
+  // accumulated them, which a code fix alone cannot do.
+  await container.read(zoneListProvider.notifier).migrateToWeeklySchedule();
   // Same rolling-window top-up, for Zone's own materialized recurring
   // instances (see docs/DECISIONS.md — Zone materialization session).
   // Mirrors the Task call above exactly, including trigger point (app
@@ -119,18 +131,11 @@ void main() async {
   // blocking `runApp` on it would trade a slow save for a slow cold start.
   // Alerts are a side effect of data that is already persisted, so they can
   // finish registering after the first frame.
-  unawaited(
-    container.read(taskListProvider.notifier).refreshScheduledNotifications(),
-  );
-  // Same reasoning as the task refresh above, for Zone's own notifications
-  // — now each materialized instance schedules against its own real
-  // `anchorDate`, replacing the former one-shot, re-resolved-on-save
-  // workaround (see docs/DECISIONS.md). Without this launch-time pass, an
-  // instance that later moves into the horizon would never pick up an
-  // alarm until its zone happened to be re-saved.
-  unawaited(
-    container.read(zoneListProvider.notifier).refreshScheduledNotifications(),
-  );
+  // Task refresh owns cancelAll; zone registration must follow it.
+  unawaited(() async {
+    await container.read(taskListProvider.notifier).refreshScheduledNotifications();
+    await container.read(zoneListProvider.notifier).refreshScheduledNotifications();
+  }());
 
   // Morning-summary background task: re-registered (or cancelled) on every
   // launch against the CURRENT setting value, same reasoning as the

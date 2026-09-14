@@ -184,7 +184,10 @@ void main() {
     block.onHeaderTap!();
     await tester.pump();
 
-    expect(capturedContainer!.read(zoneEditSelectionProvider), zone.id);
+    expect(
+      capturedContainer!.read(zoneEditSelectionProvider),
+      contains(zone.id),
+    );
   });
 
   testWidgets('once selected, a zone gets move/resize handlers back', (
@@ -208,11 +211,14 @@ void main() {
 
     capturedContainer!.read(zoneEditSelectionProvider.notifier).toggle(zone.id);
     await tester.pump();
-    expect(capturedContainer!.read(zoneEditSelectionProvider), zone.id);
+    expect(
+      capturedContainer!.read(zoneEditSelectionProvider),
+      contains(zone.id),
+    );
 
     capturedContainer!.read(devMultiTaskEditModeProvider.notifier).set(false);
     await tester.pump();
 
-    expect(capturedContainer!.read(zoneEditSelectionProvider), isNull);
+    expect(capturedContainer!.read(zoneEditSelectionProvider), isEmpty);
   });
 }

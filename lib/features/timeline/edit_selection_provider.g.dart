@@ -140,14 +140,23 @@ abstract class _$EditSelection extends $Notifier<Set<String>> {
 /// rather than the mode indicator every zone shows under ordinary
 /// (single-task) Edit Mode.
 ///
-/// Deliberately single-select only (toggling a new zone id REPLACES
-/// whatever was selected, rather than adding to a set) — unlike
-/// [EditSelection]'s genuine multi-select: there is no group-zone-move
-/// feature (CONSTITUTION.md's multi-task route is "Tasks only, Zones
-/// deferred to a follow-up round" for the GROUP-gesture machinery
-/// specifically), so only ever one zone at a time can be the thing a drag
-/// actually acts on. Screen-local, ephemeral UI state, same reasoning and
-/// shape as [EditSelection] — plain `autoDispose`, cleared by
+/// **Widened to genuine multi-select 2026-09-12** (was `String?`,
+/// single-select). The original shape was justified by "there is no
+/// group-zone-move feature" — that is no longer true: the Weekly Zone
+/// Authoring Grid (`features/zone_grid/`) selects several zones at once
+/// and moves/resizes them as a group, so this now mirrors
+/// [EditSelection]'s `Set<String>` shape exactly.
+///
+/// Still a SEPARATE provider from [EditSelection] rather than one shared
+/// set — that reasoning is unchanged and unrelated to cardinality: a task
+/// id and a zone id have no shared meaning, and mixing them would make
+/// membership checks ambiguous about which kind of thing is selected.
+///
+/// The Timeline's own zone selection (`_DraggableZoneBlock`) remains
+/// effectively single-select in practice, because nothing there offers a
+/// group gesture — it simply reads membership instead of equality now.
+/// Screen-local, ephemeral UI state, same reasoning and shape as
+/// [EditSelection] — plain `autoDispose`, cleared by
 /// `timeline_screen.dart`'s own `ref.listen` wiring whenever Edit Mode
 /// exits or multi-task mode toggles off, same as that provider.
 
@@ -168,18 +177,27 @@ final zoneEditSelectionProvider = ZoneEditSelectionProvider._();
 /// rather than the mode indicator every zone shows under ordinary
 /// (single-task) Edit Mode.
 ///
-/// Deliberately single-select only (toggling a new zone id REPLACES
-/// whatever was selected, rather than adding to a set) — unlike
-/// [EditSelection]'s genuine multi-select: there is no group-zone-move
-/// feature (CONSTITUTION.md's multi-task route is "Tasks only, Zones
-/// deferred to a follow-up round" for the GROUP-gesture machinery
-/// specifically), so only ever one zone at a time can be the thing a drag
-/// actually acts on. Screen-local, ephemeral UI state, same reasoning and
-/// shape as [EditSelection] — plain `autoDispose`, cleared by
+/// **Widened to genuine multi-select 2026-09-12** (was `String?`,
+/// single-select). The original shape was justified by "there is no
+/// group-zone-move feature" — that is no longer true: the Weekly Zone
+/// Authoring Grid (`features/zone_grid/`) selects several zones at once
+/// and moves/resizes them as a group, so this now mirrors
+/// [EditSelection]'s `Set<String>` shape exactly.
+///
+/// Still a SEPARATE provider from [EditSelection] rather than one shared
+/// set — that reasoning is unchanged and unrelated to cardinality: a task
+/// id and a zone id have no shared meaning, and mixing them would make
+/// membership checks ambiguous about which kind of thing is selected.
+///
+/// The Timeline's own zone selection (`_DraggableZoneBlock`) remains
+/// effectively single-select in practice, because nothing there offers a
+/// group gesture — it simply reads membership instead of equality now.
+/// Screen-local, ephemeral UI state, same reasoning and shape as
+/// [EditSelection] — plain `autoDispose`, cleared by
 /// `timeline_screen.dart`'s own `ref.listen` wiring whenever Edit Mode
 /// exits or multi-task mode toggles off, same as that provider.
 final class ZoneEditSelectionProvider
-    extends $NotifierProvider<ZoneEditSelection, String?> {
+    extends $NotifierProvider<ZoneEditSelection, Set<String>> {
   /// The set of ZONE ids currently selected under Edit Mode's multi-task
   /// route — a separate provider from [EditSelection] (which holds TASK ids)
   /// rather than one shared set, since the two are genuinely different
@@ -194,14 +212,23 @@ final class ZoneEditSelectionProvider
   /// rather than the mode indicator every zone shows under ordinary
   /// (single-task) Edit Mode.
   ///
-  /// Deliberately single-select only (toggling a new zone id REPLACES
-  /// whatever was selected, rather than adding to a set) — unlike
-  /// [EditSelection]'s genuine multi-select: there is no group-zone-move
-  /// feature (CONSTITUTION.md's multi-task route is "Tasks only, Zones
-  /// deferred to a follow-up round" for the GROUP-gesture machinery
-  /// specifically), so only ever one zone at a time can be the thing a drag
-  /// actually acts on. Screen-local, ephemeral UI state, same reasoning and
-  /// shape as [EditSelection] — plain `autoDispose`, cleared by
+  /// **Widened to genuine multi-select 2026-09-12** (was `String?`,
+  /// single-select). The original shape was justified by "there is no
+  /// group-zone-move feature" — that is no longer true: the Weekly Zone
+  /// Authoring Grid (`features/zone_grid/`) selects several zones at once
+  /// and moves/resizes them as a group, so this now mirrors
+  /// [EditSelection]'s `Set<String>` shape exactly.
+  ///
+  /// Still a SEPARATE provider from [EditSelection] rather than one shared
+  /// set — that reasoning is unchanged and unrelated to cardinality: a task
+  /// id and a zone id have no shared meaning, and mixing them would make
+  /// membership checks ambiguous about which kind of thing is selected.
+  ///
+  /// The Timeline's own zone selection (`_DraggableZoneBlock`) remains
+  /// effectively single-select in practice, because nothing there offers a
+  /// group gesture — it simply reads membership instead of equality now.
+  /// Screen-local, ephemeral UI state, same reasoning and shape as
+  /// [EditSelection] — plain `autoDispose`, cleared by
   /// `timeline_screen.dart`'s own `ref.listen` wiring whenever Edit Mode
   /// exits or multi-task mode toggles off, same as that provider.
   ZoneEditSelectionProvider._()
@@ -223,15 +250,15 @@ final class ZoneEditSelectionProvider
   ZoneEditSelection create() => ZoneEditSelection();
 
   /// {@macro riverpod.override_with_value}
-  Override overrideWithValue(String? value) {
+  Override overrideWithValue(Set<String> value) {
     return $ProviderOverride(
       origin: this,
-      providerOverride: $SyncValueProvider<String?>(value),
+      providerOverride: $SyncValueProvider<Set<String>>(value),
     );
   }
 }
 
-String _$zoneEditSelectionHash() => r'bf94bb51909de0d58c53be9a979ab3b6d0ec116c';
+String _$zoneEditSelectionHash() => r'9311b33740fc9bd0fad06300a56bad5c06ac45a9';
 
 /// The set of ZONE ids currently selected under Edit Mode's multi-task
 /// route — a separate provider from [EditSelection] (which holds TASK ids)
@@ -247,28 +274,37 @@ String _$zoneEditSelectionHash() => r'bf94bb51909de0d58c53be9a979ab3b6d0ec116c';
 /// rather than the mode indicator every zone shows under ordinary
 /// (single-task) Edit Mode.
 ///
-/// Deliberately single-select only (toggling a new zone id REPLACES
-/// whatever was selected, rather than adding to a set) — unlike
-/// [EditSelection]'s genuine multi-select: there is no group-zone-move
-/// feature (CONSTITUTION.md's multi-task route is "Tasks only, Zones
-/// deferred to a follow-up round" for the GROUP-gesture machinery
-/// specifically), so only ever one zone at a time can be the thing a drag
-/// actually acts on. Screen-local, ephemeral UI state, same reasoning and
-/// shape as [EditSelection] — plain `autoDispose`, cleared by
+/// **Widened to genuine multi-select 2026-09-12** (was `String?`,
+/// single-select). The original shape was justified by "there is no
+/// group-zone-move feature" — that is no longer true: the Weekly Zone
+/// Authoring Grid (`features/zone_grid/`) selects several zones at once
+/// and moves/resizes them as a group, so this now mirrors
+/// [EditSelection]'s `Set<String>` shape exactly.
+///
+/// Still a SEPARATE provider from [EditSelection] rather than one shared
+/// set — that reasoning is unchanged and unrelated to cardinality: a task
+/// id and a zone id have no shared meaning, and mixing them would make
+/// membership checks ambiguous about which kind of thing is selected.
+///
+/// The Timeline's own zone selection (`_DraggableZoneBlock`) remains
+/// effectively single-select in practice, because nothing there offers a
+/// group gesture — it simply reads membership instead of equality now.
+/// Screen-local, ephemeral UI state, same reasoning and shape as
+/// [EditSelection] — plain `autoDispose`, cleared by
 /// `timeline_screen.dart`'s own `ref.listen` wiring whenever Edit Mode
 /// exits or multi-task mode toggles off, same as that provider.
 
-abstract class _$ZoneEditSelection extends $Notifier<String?> {
-  String? build();
+abstract class _$ZoneEditSelection extends $Notifier<Set<String>> {
+  Set<String> build();
   @$mustCallSuper
   @override
   WhenComplete runBuild() {
-    final ref = this.ref as $Ref<String?, String?>;
+    final ref = this.ref as $Ref<Set<String>, Set<String>>;
     final element =
         ref.element
             as $ClassProviderElement<
-              AnyNotifier<String?, String?>,
-              String?,
+              AnyNotifier<Set<String>, Set<String>>,
+              Set<String>,
               Object?,
               Object?
             >;

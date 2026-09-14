@@ -26,13 +26,19 @@ class ZoneAdapter extends TypeAdapter<Zone> {
       notificationsEnabled: fields[6] == null ? true : fields[6] as bool,
       recurrenceId: fields[7] as String?,
       anchorDate: fields[8] as DateTime?,
+      weekday: (fields[9] as num?)?.toInt(),
+      facetId: fields[10] as String?,
+      archived: fields[11] == null ? false : fields[11] as bool,
+      effectiveFrom: fields[12] as DateTime?,
+      sourceId: fields[13] as String?,
+      effectiveUntil: fields[14] as DateTime?,
     );
   }
 
   @override
   void write(BinaryWriter writer, Zone obj) {
     writer
-      ..writeByte(9)
+      ..writeByte(15)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -50,7 +56,19 @@ class ZoneAdapter extends TypeAdapter<Zone> {
       ..writeByte(7)
       ..write(obj.recurrenceId)
       ..writeByte(8)
-      ..write(obj.anchorDate);
+      ..write(obj.anchorDate)
+      ..writeByte(9)
+      ..write(obj.weekday)
+      ..writeByte(10)
+      ..write(obj.facetId)
+      ..writeByte(11)
+      ..write(obj.archived)
+      ..writeByte(12)
+      ..write(obj.effectiveFrom)
+      ..writeByte(13)
+      ..write(obj.sourceId)
+      ..writeByte(14)
+      ..write(obj.effectiveUntil);
   }
 
   @override

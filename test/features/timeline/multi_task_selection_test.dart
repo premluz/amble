@@ -29,7 +29,8 @@ import '../../support/seeded_category_box.dart';
 
 /// Covers Edit Mode's multi-task route (`DevMultiTaskEditMode`) tap-to-
 /// select behavior — requested directly: with it on, tapping a task
-/// toggles selection (wiggle becomes the selection indicator) instead of
+/// toggles selection (an accent ring on the pill's rail indicates it,
+/// replacing the wiggle that used to) instead of
 /// opening the detail sheet; with it off (the default), Edit Mode is
 /// unaffected — see `edit_selection_provider.dart`'s own doc comments and
 /// docs/CONSTITUTION.md's Edit Mode section.

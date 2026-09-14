@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../shared/models/category.dart';
 import '../../shared/models/task.dart';
 import '../../shared/models/zone.dart';
+import '../../shared/services/weekly_zone_schedule.dart';
 import '../../shared/providers/category_providers.dart';
 import '../../shared/providers/notification_providers.dart';
 import '../../shared/providers/task_providers.dart';
@@ -122,13 +123,7 @@ class AppIntentService {
     final day = now();
     // Same day-membership filter and the SAME validator as ZoneFormScreen.
     // Non-recurring create stays dateless, per ZoneList.createZone's contract.
-    final others = container.read(zoneRepositoryProvider).getAll().where((z) {
-      final date = z.anchorDate;
-      return date == null ||
-          (date.year == day.year &&
-              date.month == day.month &&
-              date.day == day.day);
-    });
+    final others = zonesForDay(container.read(zoneRepositoryProvider).getAll(), day);
     final conflict = others.where((z) => zonesOverlap(draft, z)).firstOrNull;
     if (conflict != null) {
       throw AppIntentFailure(
@@ -137,7 +132,7 @@ class AppIntentService {
     }
     final zone = await container
         .read(zoneListProvider.notifier)
-        .createZone(title: title, startMinutes: start, endMinutes: end);
+        .createZone(title: title, startMinutes: start, endMinutes: end, anchorDateForRecurrence: day);
     // Zone notifications are scheduled by the form, not by createZone itself.
     try {
       await container.read(notificationServiceProvider).scheduleForZone(zone);

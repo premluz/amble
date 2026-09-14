@@ -1,3 +1,4 @@
+import 'package:uuid/uuid.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
@@ -7,6 +8,7 @@ import 'package:timezone/timezone.dart' as tz;
 import '../models/task.dart';
 import '../models/task_status.dart';
 import '../models/zone.dart';
+import 'weekly_zone_schedule.dart';
 
 const _androidChannelId = 'task_alerts';
 const _androidChannelName = 'Task alerts';
@@ -297,7 +299,10 @@ class NotificationService {
   /// does, reusing the same [notificationHorizonDays] constant established
   /// by the 500-alarm-cap fix rather than inventing a separate one.
   Future<void> scheduleForZone(Zone zone) async {
-    if (!zone.notificationsEnabled) return;
+    if (!zone.notificationsEnabled || zone.archived ||
+        (zone.effectiveUntil != null && !DateTime.now().isBefore(zone.effectiveUntil!))) {
+      return;
+    }
 
     final occurrence = _zoneOccurrence(zone);
     if (occurrence == null) return;
@@ -313,6 +318,7 @@ class NotificationService {
       scheduledDate: tz.TZDateTime.from(occurrence, tz.local),
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       payload: zone.id,
+      matchDateTimeComponents: zone.isWeeklyPlacement ? DateTimeComponents.dayOfWeekAndTime : null,
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(
           _androidChannelId,
@@ -326,8 +332,35 @@ class NotificationService {
     );
   }
 
-  Future<void> cancelForZone(String zoneId) =>
-      _plugin.cancel(id: _zoneNotificationId(zoneId));
+  /// Resolve the bounded notification calendar with the same exception rules
+  /// as Timeline. Temporary dates are notification requests, never Hive rows.
+  Future<void> scheduleZoneCalendar(List<Zone> zones) async {
+    final now = DateTime.now();
+    for (final zone in zones.where((z) => z.isWeeklyPlacement)) {
+      await cancelForZone(zone.id);
+    }
+    for (var offset = 0; offset < notificationHorizonDays; offset++) {
+      final day = DateTime(now.year, now.month, now.day + offset);
+      for (final zone in zonesForDay(zones, day)) {
+        if (!zone.notificationsEnabled) continue;
+        final request = zone.isWeeklyPlacement ? Zone.fromJson({...zone.toJson(),
+          'id': _zoneDayRequestId(zone.id, day), 'weekday': null,
+          'anchorDate': day.toIso8601String()}) : zone;
+        try { await scheduleForZone(request); }
+        catch (error) { debugPrint('Zone notification failed: $error'); }
+      }
+    }
+  }
+
+  Future<void> cancelForZone(String zoneId) async {
+    await _plugin.cancel(id: _zoneNotificationId(zoneId));
+    final now = DateTime.now();
+    for (var offset = 0; offset < notificationHorizonDays; offset++) {
+      final day = DateTime(now.year, now.month, now.day + offset);
+      await _plugin.cancel(id: _zoneNotificationId(_zoneDayRequestId(zoneId, day)));
+    }
+  }
+
 }
 
 /// Resolves [zone] to the concrete [DateTime] its next alert should fire
@@ -338,9 +371,16 @@ class NotificationService {
 /// resolution rule is testable without a platform channel.
 DateTime? _zoneOccurrence(Zone zone, {DateTime? now}) {
   final from = now ?? DateTime.now();
-  DateTime atMinutesOn(DateTime day) => day.add(
-    Duration(hours: zone.startMinutes ~/ 60, minutes: zone.startMinutes % 60),
-  );
+  DateTime atMinutesOn(DateTime day) => DateTime(day.year, day.month, day.day,
+    zone.startMinutes ~/ 60, zone.startMinutes % 60);
+  if (zone.isWeeklyPlacement) {
+    for (var offset = 0; offset <= 7; offset++) {
+      final day = DateTime(from.year, from.month, from.day + offset);
+      final occurrence = atMinutesOn(day);
+      if (zone.appliesOn(day) && occurrence.isAfter(from)) return occurrence;
+    }
+    return null;
+  }
 
   final anchorDate = zone.anchorDate;
   if (anchorDate == null) {
@@ -378,3 +418,5 @@ String _formatTime(DateTime dateTime) {
   final minute = dateTime.minute.toString().padLeft(2, '0');
   return '$hour:$minute';
 }
+
+String _zoneDayRequestId(String id, DateTime day) => const Uuid().v5(Namespace.url.value, 'amble:zone-alarm:$id@${day.year}-${day.month}-${day.day}');

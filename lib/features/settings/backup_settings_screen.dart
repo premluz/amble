@@ -7,6 +7,7 @@ import '../../shared/providers/backup_providers.dart';
 import '../../shared/providers/category_providers.dart';
 import '../../shared/providers/task_providers.dart';
 import '../../shared/providers/zone_providers.dart';
+import '../../shared/providers/zone_facet_providers.dart';
 import '../../shared/services/backup_service.dart';
 import 'settings_detail_scaffold.dart';
 import 'settings_panel.dart';
@@ -78,7 +79,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
       final zones = ref.read(zoneListProvider);
       await ref
           .read(backupServiceProvider)
-          .exportTasks(tasks, categories, zones);
+          .exportTasks(tasks, categories, zones, zoneFacets: ref.read(zoneFacetListProvider));
       if (!mounted) return;
       setState(() {
         // Reports every entity actually written to the file — previously
@@ -122,9 +123,11 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
       final categoryResult = await ref
           .read(categoryListProvider.notifier)
           .importCategories(parsed.categories);
+      await ref.read(zoneFacetListProvider.notifier).importFacets(parsed.zoneFacets);
       final zoneResult = await ref
           .read(zoneListProvider.notifier)
           .importZones(parsed.zones);
+      await ref.read(zoneListProvider.notifier).migrateToWeeklySchedule();
       final result = await ref
           .read(taskListProvider.notifier)
           .importTasks(parsed.tasks);

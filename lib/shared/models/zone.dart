@@ -31,6 +31,12 @@ class Zone extends HiveObject {
     this.notificationsEnabled = true,
     this.recurrenceId,
     this.anchorDate,
+    this.weekday,
+    this.facetId,
+    this.archived = false,
+    this.effectiveFrom,
+    this.sourceId,
+    this.effectiveUntil,
   }) : assert(
          startMinutes >= 0 && startMinutes < _minutesPerDay,
          'startMinutes must be within a single day (0-1439)',
@@ -122,6 +128,42 @@ class Zone extends HiveObject {
   @HiveField(8)
   DateTime? anchorDate;
 
+  /// Weekly placements are independent windows; the facet owns only the name.
+  @HiveField(9)
+  int? weekday;
+
+  @HiveField(10)
+  String? facetId;
+
+  /// Retained legacy rows preserve IDs/export history without rendering twice.
+  @HiveField(11)
+  bool archived;
+
+  @HiveField(12)
+  DateTime? effectiveFrom;
+
+  /// Original series/plain-row ID, for preserved dated exceptions and aliases.
+  @HiveField(13)
+  String? sourceId;
+
+  @HiveField(14)
+  DateTime? effectiveUntil;
+
+  bool get isWeeklyPlacement => weekday != null;
+
+  bool appliesOn(DateTime day) {
+    if (archived) return false;
+    final date = DateTime(day.year, day.month, day.day);
+    if (effectiveUntil != null && !date.isBefore(effectiveUntil!)) return false;
+    if (weekday != null) {
+      return day.weekday == weekday &&
+          (effectiveFrom == null || !date.isBefore(effectiveFrom!));
+    }
+    final anchor = anchorDate;
+    return anchor == null ||
+        (anchor.year == day.year && anchor.month == day.month && anchor.day == day.day);
+  }
+
   /// True when this row belongs to a recurring series (materialized
   /// instance or template) — mirrors [Task.isRecurring] exactly.
   bool get isRecurring => recurrenceId != null;
@@ -149,6 +191,12 @@ class Zone extends HiveObject {
     'notificationsEnabled': notificationsEnabled,
     'recurrenceId': recurrenceId,
     'anchorDate': anchorDate?.toIso8601String(),
+    'weekday': weekday,
+    'facetId': facetId,
+    'archived': archived,
+    'effectiveFrom': effectiveFrom?.toIso8601String(),
+    'sourceId': sourceId,
+    'effectiveUntil': effectiveUntil?.toIso8601String(),
   };
 
   /// Reconstructs a [Zone] from [toJson]'s output, for import. Throws
@@ -192,7 +240,17 @@ class Zone extends HiveObject {
         Map<String, dynamic>.from(recurrenceRuleJson),
       );
     }
+    final weekday = json['weekday'];
+    if (weekday != null && (weekday is! int || weekday < 1 || weekday > 7)) {
+      throw const FormatException('Invalid zone weekday');
+    }
     return Zone(
+      weekday: weekday as int?,
+      facetId: json['facetId'] as String?,
+      archived: json['archived'] as bool? ?? false,
+      effectiveFrom: json['effectiveFrom'] == null ? null : DateTime.parse(json['effectiveFrom'] as String),
+      sourceId: json['sourceId'] as String?,
+      effectiveUntil: json['effectiveUntil'] == null ? null : DateTime.parse(json['effectiveUntil'] as String),
       id: id,
       title: title,
       startMinutes: startMinutes,
@@ -227,7 +285,9 @@ class Zone extends HiveObject {
   /// Compares every persisted field except [id] itself, which the caller
   /// already knows matches.
   bool hasSameFieldsAs(Zone other) {
-    return title == other.title &&
+    return effectiveUntil == other.effectiveUntil && weekday == other.weekday && facetId == other.facetId &&
+        archived == other.archived && effectiveFrom == other.effectiveFrom &&
+        sourceId == other.sourceId && title == other.title &&
         startMinutes == other.startMinutes &&
         endMinutes == other.endMinutes &&
         schemaVersion == other.schemaVersion &&

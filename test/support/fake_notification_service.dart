@@ -23,6 +23,9 @@ class FakeNotificationService extends NotificationService {
   Future<void> scheduleForZone(Zone zone) async {}
 
   @override
+  Future<void> scheduleZoneCalendar(List<Zone> zones) async {}
+
+  @override
   Future<void> cancelForZone(String zoneId) async {}
 
   @override

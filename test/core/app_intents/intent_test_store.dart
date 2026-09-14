@@ -1,3 +1,5 @@
+import 'package:amble/shared/providers/zone_facet_providers.dart';
+import '../../support/memory_zone_repositories.dart';
 import 'dart:io';
 
 import 'package:amble/hive_registrar.g.dart';
@@ -32,6 +34,7 @@ class IntentTestStore {
     categories = await Hive.openBox<Category>('categories');
     container = ProviderContainer(
       overrides: [
+        zoneFacetRepositoryProvider.overrideWithValue(MemoryZoneFacetRepository()),
         taskRepositoryProvider.overrideWithValue(HiveTaskRepository(tasks)),
         zoneRepositoryProvider.overrideWithValue(HiveZoneRepository(zones)),
         categoryRepositoryProvider.overrideWithValue(
