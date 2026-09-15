@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:amble/core/tokens/semantic_theme.dart';
+import 'package:amble/core/widgets/selected_pill_border.dart';
 import 'package:amble/features/timeline/task_capsule_block.dart';
 import 'package:amble/features/zone_grid/zone_grid_block.dart';
 import 'package:amble/shared/models/category.dart';
@@ -232,68 +233,93 @@ void main() {
           .map((r) => r.topLeft.x)
           .toList();
 
-      // Outermost (accent ring) -> innermost: never INVERTED. A nested
-      // layer may share its parent's radius (the soft inner-shadow
-      // gradient deliberately sits exactly concentric with the fill it
-      // shades) but must never be LARGER, which is the actual defect
-      // this guards — a corner curve escaping its enclosing ring.
-      final sorted = [...radii]..sort((a, b) => b.compareTo(a));
+      // Fill -> scrim ring -> accent ring, in PAINT order (that's the
+      // z-order `Stack` uses: fill first so the rings sit visibly on top
+      // of it): strictly INCREASING, never equal and never inverted. The
+      // three layers are now painted as overlaid `Positioned.fill`s at
+      // correctly pre-computed radii (not nested `Padding`, which used to
+      // shrink the box) — but each must still be smaller than the one
+      // painted after it, or a corner curve escapes its neighbour exactly
+      // as the original bug did.
+      final sorted = [...radii]..sort();
       expect(
         radii,
         sorted,
-        reason: 'each ring/fill must nest at a radius no larger than its '
-            'enclosing layer, or their corners will not be concentric',
+        reason: 'each ring/fill must nest at a strictly smaller radius '
+            'than the layer painted after it, or their corners will not '
+            'be concentric',
       );
-
-      // The three STRUCTURAL layers (accent ring, scrim ring, fill) must
-      // still each step inward — asserted on distinct values rather than
-      // on the raw layer count, so a purely decorative layer sharing a
-      // radius (the inner shadow) doesn't read as a regression.
-      expect(
-        radii.toSet().length,
-        greaterThanOrEqualTo(3),
-        reason: 'the accent ring, scrim ring and fill must each nest at '
-            'their own strictly smaller radius — that stepping is what '
-            'stops a fill corner peeking out past its enclosing ring',
-      );
+      expect(radii.toSet().length, radii.length, reason: 'no two layers '
+          'should share the exact same radius — that is what let a fill '
+          'corner peek out past its enclosing ring in the reported bug');
     });
 
-    // Confirmed directly: the solid separator is correct ("one inner
-    // solid line is fine separating blue from bg pill"), and a SOFTER,
-    // more transparent shadow belongs inside it as well ("we still have
-    // one more inner dark softer/transparent something").
-    //
-    // It must be a real, deliberate gradient — not the paint artifact it
-    // used to be, where `TaskCapsuleBlock`'s hand-nested copy set `color:`
-    // and `border:` on ONE `BoxDecoration` so the fill bled through the
-    // 40%-alpha scrim stroke and muddied it.
-    testWidgets('selected: a soft inner shadow sits inside the solid '
-        'separator — a real gradient, softer than the ring itself', (
-      tester,
-    ) async {
-      await pump(tester, isSelected: true);
+    // A soft inner-shadow RadialGradient briefly sat inside the solid
+    // separator here — removed (confirmed directly) once measured:
+    // `RadialGradient.radius` scales to a box's SHORTER side, so on a
+    // tall, narrow pill it rendered as a circular blob roughly centered
+    // in the box rather than shading that followed the pill's actual
+    // rounded-rect edges. Reported directly: "something circular appears
+    // in middle, shouldn't be." The single solid separator line alone was
+    // already confirmed correct on its own.
+    testWidgets(
+      'selected: no gradient of any kind — the circular-artifact bug this '
+      'guards against staying fixed',
+      (tester) async {
+        await pump(tester, isSelected: true);
 
-      final gradients = tester
-          .widgetList<DecoratedBox>(find.byType(DecoratedBox))
-          .map((w) => w.decoration)
-          .whereType<BoxDecoration>()
-          .map((d) => d.gradient)
-          .whereType<RadialGradient>()
-          .toList();
+        final gradients = tester
+            .widgetList<DecoratedBox>(find.byType(DecoratedBox))
+            .map((w) => w.decoration)
+            .whereType<BoxDecoration>()
+            .map((d) => d.gradient)
+            .whereType<RadialGradient>()
+            .toList();
 
-      expect(
-        gradients,
-        hasLength(1),
-        reason: 'exactly one inner-shadow gradient, drawn deliberately',
-      );
-      final shadow = gradients.single;
-      expect(shadow.colors.first.a, 0.0, reason: 'fades from transparent');
-      expect(
-        shadow.colors.last.a,
-        lessThan(theme.colorScrim.a),
-        reason: 'the soft shadow must be WEAKER than the solid separator '
-            'ring, not a second hard edge',
-      );
-    });
+        expect(gradients, isEmpty);
+      },
+    );
+
   });
+
+  // Requested directly: "that added inner border... should not affect
+  // inner content, at the moment pushes it a bit." The two rings used to
+  // be `Padding`, which shrank the box's own layout space by
+  // `accent + separator` px — so an icon inside sat smaller/more inset
+  // than its unselected counterpart. They are now `Positioned.fill`
+  // overlays painted OVER the full-size content instead. Standalone
+  // against `SelectedPillBorder` directly, since neither `pump` helper
+  // above exposes its wrapped content by key.
+  testWidgets(
+    'selected: the child keeps the box\'s FULL size — the rings do not '
+    'consume any layout space',
+    (tester) async {
+      final probeKey = GlobalKey();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(useMaterial3: true, extensions: [theme]),
+          home: Scaffold(
+            body: SizedBox(
+              width: 60,
+              height: 90,
+              child: SelectedPillBorder(
+                theme: theme,
+                contentRadius: BorderRadius.circular(theme.radiusPill),
+                fillColor: const Color(0xFF4CAF50),
+                child: SizedBox.expand(key: probeKey),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final childSize = tester.getSize(find.byKey(probeKey));
+      expect(
+        childSize,
+        const Size(60, 90),
+        reason: 'the wrapped content must fill the exact same box the '
+            'unselected pill would — selection must not shrink it',
+      );
+    },
+  );
 }

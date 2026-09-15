@@ -66,12 +66,22 @@ class ResizeHandle extends StatelessWidget {
       child: Container(
         height: height ?? theme.spacingMd,
         alignment: barAlignment,
+        // A small accent-colored circle, not a bar — requested directly:
+        // "the resize controls should be small blue circles in the center
+        // on both ends, at the moment is line, instead in the same
+        // position circle/oval centered." Was a grey `colorTextPrimary`
+        // bar (a straight line); now a `BoxShape.circle` dot in
+        // `colorAccent`, matching the selection border's own accent
+        // color so the two read as one consistent "this is editable"
+        // visual language. Same position (pinned to the handle's outer
+        // edge via [barAlignment]) and same touch target — only the
+        // visible shape and color change.
         child: Container(
-          width: theme.spacingLg,
-          height: 3,
+          width: theme.spacingSm,
+          height: theme.spacingSm,
           decoration: BoxDecoration(
-            color: theme.colorTextPrimary.withValues(alpha: 0.55),
-            borderRadius: BorderRadius.circular(theme.radiusSm),
+            color: theme.colorAccent,
+            shape: BoxShape.circle,
           ),
         ),
       ),

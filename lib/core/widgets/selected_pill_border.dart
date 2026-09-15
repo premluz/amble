@@ -88,22 +88,6 @@ class SelectedPillBorder extends StatelessWidget {
     );
   }
 
-  /// How far in from the edge the soft inner shadow starts, as a fraction
-  /// of the pill's own radius — the rest of the falloff runs to the edge.
-  /// Confirmed directly: the solid separator alone is right ("one inner
-  /// solid line is fine separating blue from bg pill") but a softer, more
-  /// transparent shadow belongs inside it too ("we still have one more
-  /// inner dark softer/transparent something"). That soft ring previously
-  /// existed only as a PAINT ARTIFACT — `TaskCapsuleBlock`'s hand-nested
-  /// copy set `color:` and `border:` in one `BoxDecoration`, so the fill
-  /// bled through the 40%-alpha scrim and blended it. It is now drawn
-  /// deliberately, once, here.
-  static const double innerShadowStop = 0.72;
-
-  /// The inner shadow's strength, as a fraction of [AmbleTheme.colorScrim]'s
-  /// own alpha — softer than the solid separator ring by design.
-  static const double innerShadowStrength = 0.55;
-
   @override
   Widget build(BuildContext context) {
     final accent = accentWidth(theme);
@@ -111,64 +95,58 @@ class SelectedPillBorder extends StatelessWidget {
     final scrimRadius = _inset(contentRadius, accent);
     final fillRadius = _inset(scrimRadius, separator);
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border.all(color: theme.colorAccent, width: accent),
-        borderRadius: contentRadius,
-      ),
-      child: Padding(
-        padding: EdgeInsets.all(accent),
-        child: DecoratedBox(
-          // The SOLID separator. Its own layer, carrying no `color:` of
-          // its own — see [innerShadowExtent] for why that separation
-          // matters (a fill here would bleed through this 40%-alpha
-          // stroke and soften it into the wrong kind of ring).
-          decoration: BoxDecoration(
-            border: Border.all(color: theme.colorScrim, width: separator),
-            borderRadius: scrimRadius,
+    // Both rings are painted as OVERLAYS in a `Stack`, not as `Padding`
+    // that shrinks the content — reported directly: "that added inner
+    // border... should not affect inner content, at the moment pushes it
+    // a bit." `Padding` was consuming `accent + separator` px of the
+    // box's own layout space, so the icon/emoji inside sat progressively
+    // smaller/more centered than its unselected counterpart. `Positioned
+    // .fill` + `IgnorePointer` paints each ring on top of the full-size
+    // fill instead, so [child] keeps the box's REAL size regardless of
+    // whether it's selected.
+    //
+    // A soft inner-shadow gradient used to sit inside the solid ring too,
+    // for extra separation — removed (confirmed directly) once measured:
+    // `RadialGradient.radius` scales to a box's SHORTER side by Flutter's
+    // own convention, so on a tall, narrow pill (e.g. 24x90) it rendered
+    // as a circular blob roughly centered in the box rather than shading
+    // that followed the pill's actual rounded-rect edges — reported
+    // directly as "something circular appears in middle, shouldn't be."
+    // The single solid separator line was already confirmed correct on
+    // its own ("one inner solid line is fine separating blue from bg
+    // pill").
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: fillColor,
+              borderRadius: fillRadius,
+            ),
           ),
-          child: Padding(
-            padding: EdgeInsets.all(separator),
+        ),
+        Positioned.fill(
+          child: IgnorePointer(
             child: DecoratedBox(
               decoration: BoxDecoration(
-                color: fillColor,
-                borderRadius: fillRadius,
-              ),
-              // The SOFT inner shadow, over the fill and inside the solid
-              // ring. An inset shadow isn't expressible in `BoxDecoration`
-              // (`boxShadow` only casts outward), so it's a gradient from
-              // the scrim color at the edge to fully transparent a few px
-              // in — which is what an inner shadow is. `IgnorePointer` so
-              // this purely decorative layer never intercepts a gesture
-              // meant for the content beneath it.
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          borderRadius: fillRadius,
-                          gradient: RadialGradient(
-                            radius: 0.85,
-                            colors: [
-                              const Color(0x00000000),
-                              theme.colorScrim.withValues(
-                                alpha: theme.colorScrim.a * innerShadowStrength,
-                              ),
-                            ],
-                            stops: const [innerShadowStop, 1.0],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  Positioned.fill(child: child),
-                ],
+                border: Border.all(color: theme.colorScrim, width: separator),
+                borderRadius: scrimRadius,
               ),
             ),
           ),
         ),
-      ),
+        Positioned.fill(
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border.all(color: theme.colorAccent, width: accent),
+                borderRadius: contentRadius,
+              ),
+            ),
+          ),
+        ),
+        child,
+      ],
     );
   }
 }
