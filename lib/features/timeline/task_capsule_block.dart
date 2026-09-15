@@ -1181,26 +1181,45 @@ class TaskCapsuleBlock extends StatelessWidget {
     // fill opacity, shadow — all via AnimatedContainer/TweenAnimationBuilder
     // rather than presence/absence of the wrapper), keeps the gesture's
     // render object ancestry stable across the whole drag.
-    // Tried, twice, and REVERTED: wrapping this return value in an outer
-    // `Stack` to paint the resize dots' visible circle OUTSIDE the
-    // frosted wrapper's `ClipRRect` (see [_buildFrostedWrapper], kept as
-    // its own method from that attempt since the extraction itself is
-    // harmless). Both attempts — a bare `Stack`, then an
-    // `IntrinsicHeight`/`IntrinsicWidth`-constrained one — changed
-    // `TaskCapsuleBlock`'s own REPORTED SIZE under its real parent (a
-    // `Positioned(left:, right:)` inside the outer Timeline `Stack`,
-    // which hands down a bounded, stretched width): confirmed directly
-    // that `multi_task_group_move_test.dart`'s real drag-on-the-pill
-    // tests broke outright both times, not cosmetically — the widget's
-    // own hit-tested bounds no longer matched where the pill visually
-    // sits. Restructuring this safely (splitting the dot's PAINT from
-    // its gesture box without touching sizing) needs more than a
-    // wrapping `Stack`; flagged rather than attempted a third time. The
-    // resize handles keep their existing `outwardShiftFactor: 0.5`
-    // half-visible compromise (see their own call sites below) — full
-    // outward, un-clipped dots are not currently achievable here without
-    // a larger change to this widget's layout than is safe to make
-    // blind.
+    // Tried, TWICE, and REVERTED: wrapping this return value in an outer
+    // layer (first a bare `Stack`, then an
+    // `IntrinsicHeight`/`IntrinsicWidth`-constrained one) to paint the
+    // resize dots' visible circle as a SIBLING outside the frosted
+    // wrapper's `ClipRRect` — which never clips a true sibling, only
+    // descendants, so this is the right shape in principle.
+    // [_buildFrostedWrapper] is kept as its own extracted method from
+    // that attempt (harmless on its own).
+    //
+    // Both attempts broke `multi_task_group_move_test.dart`'s real
+    // drag-on-the-pill tests outright. What is NOT yet correctly
+    // diagnosed, despite two rounds of investigation — stated plainly
+    // rather than leaving a confident-sounding but wrong explanation for
+    // the next attempt to trust:
+    // - `TaskCapsuleBlock.build()`'s reported size under `splitLayout:
+    //   true` was measured DIRECTLY, on the unmodified/reverted code, as
+    //   the FULL stretched `Positioned(left:, right:)` width — NOT
+    //   narrowed to the pill, contradicting this comment's own earlier
+    //   claim (now known wrong) that the `Stack` wrapper was what caused
+    //   a sizing regression. The width was already full-stretch before
+    //   any of this session's changes.
+    // - `tester.drag`'s target point is `getCenter()` of the WHOLE
+    //   found widget (confirmed by reading `flutter_test`'s own
+    //   `controller.dart`), and the pill itself sits left-aligned within
+    //   that stretched row (`MainAxisAlignment.start`, no centering) —
+    //   which on paper means a plain `getCenter()` drag should ALREADY
+    //   miss the pill on today's working code too. It doesn't; the real
+    //   mechanism connecting these facts to what actually broke was not
+    //   pinned down before time was better spent stopping (confirmed
+    //   directly) than guessing a third implementation blind.
+    //
+    // Current state: resize handles keep `outwardShiftFactor: 0.5` (see
+    // their own call sites below) — a deliberate, measured, working
+    // half-visible compromise, not the fully-outside/un-clipped result
+    // still requested. A real fix needs the ACTUAL mechanism above
+    // pinned down with real device/full-integration measurement (not
+    // synthetic single-widget probes, which have twice produced
+    // measurements that didn't transfer to the real call site) before
+    // trying a third structural change here.
     return _buildFrostedWrapper(theme: theme, isLifted: isLifted, card: card);
   }
 
