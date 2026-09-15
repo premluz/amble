@@ -118,11 +118,38 @@ class CategoryList extends _$CategoryList {
   /// install — the idempotency above is a belt-and-braces guarantee, not a
   /// substitute for the gate (re-running the Task backfill loop on every
   /// launch would mean re-scanning every task forever for no reason).
+  /// Clears the built-in General category's old `'⚪'` glyph on installs
+  /// that were ALREADY seeded before it was removed.
+  ///
+  /// The seed above only ever runs once per install (gated by
+  /// `categoriesSeeded`), so changing its literal alone would fix new
+  /// installs and leave every existing user looking at the white circle
+  /// they asked to have removed. This is deliberately narrow: it touches
+  /// ONLY the built-in General row, ONLY when that row still carries the
+  /// exact old glyph, so a user who has since set their own emoji on it
+  /// keeps their choice, and a second run is a no-op.
+  Future<void> _clearLegacyGeneralEmoji() async {
+    const legacyGeneralEmoji = '⚪';
+    final categoryRepository = ref.read(categoryRepositoryProvider);
+    final general = categoryRepository
+        .getCategories()
+        .where((c) => c.id == BuiltInCategoryIds.general)
+        .firstOrNull;
+    if (general == null || general.emoji != legacyGeneralEmoji) return;
+
+    general.emoji = '';
+    await categoryRepository.saveCategory(general);
+    _refresh();
+  }
+
   Future<void> seedBuiltInsAndBackfillIfNeeded() async {
     final prefs = ref.read(preferencesRepositoryProvider);
     final alreadySeeded =
         prefs.getValue<bool>(PreferenceKeys.categoriesSeeded) ?? false;
-    if (alreadySeeded) return;
+    if (alreadySeeded) {
+      await _clearLegacyGeneralEmoji();
+      return;
+    }
 
     final categoryRepository = ref.read(categoryRepositoryProvider);
     final builtIns = <Category>[
@@ -130,7 +157,13 @@ class CategoryList extends _$CategoryList {
         id: BuiltInCategoryIds.general,
         name: 'General',
         colorToken: 0,
-        emoji: '⚪',
+        // Deliberately EMPTY — requested directly: "both light dark mode
+        // default should not have emoji." The grey pill already carries
+        // the "uncategorised" signal; a glyph on top of it adds a fifth
+        // meaning where the point is the absence of one. See
+        // `TaskCategoryTokenMapping.emoji`'s own copy of this reasoning
+        // for the legacy enum's matching change.
+        emoji: '',
         isBuiltIn: true,
       ),
       Category(

@@ -34,10 +34,20 @@ extension TaskCategoryTokenMapping on TaskCategory {
   /// retained for the places a monochrome vector is still the right
   /// primitive (anywhere the glyph must take a tint from its context).
   String get emoji => switch (this) {
-    // A plain marker for "no category chosen" — deliberately the least
-    // loaded glyph available, since the point is the absence of a
-    // category, not a fifth meaning.
-    TaskCategory.general => '⚪',
+    // EMPTY for "no category chosen" — requested directly: "both light
+    // dark mode default should not have emoji." The absence of a category
+    // is best shown by an absent glyph; the pill's own grey fill already
+    // carries the "uncategorised" signal on its own.
+    //
+    // Was '⚪' (a white circle), which on light mode compounded the
+    // legibility problem reported alongside this: a white glyph on a
+    // near-white pill (measured 1.01 contrast against the page before
+    // `neutralTint` was corrected) read as nothing at all.
+    //
+    // Callers already handle an absent glyph — every render site treats
+    // the emoji as optional, since an uncategorised task has never been
+    // guaranteed one. See `_ZoneTaskRow`'s own `emoji != null` branch.
+    TaskCategory.general => '',
     TaskCategory.health => '⛑️',
     TaskCategory.work => '💼',
     TaskCategory.personal => '🏠',

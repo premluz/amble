@@ -6,6 +6,7 @@ import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/task_detail/quick_create_sheet_shell.dart';
 import 'package:amble/features/timeline/pending_task_draft_provider.dart';
+import 'package:amble/core/widgets/glass_pill_surface.dart';
 import 'package:amble/features/timeline/edit_mode_wiggle.dart';
 import 'package:amble/features/timeline/pending_task_pill.dart';
 import 'package:amble/core/widgets/app_top_scroll_fade.dart';
@@ -906,6 +907,61 @@ void main() {
             'shared text column',
       );
     });
+
+    // Requested directly: "this ghost phantom state should have fill gray
+    // semitransparent with bg blur glassy thing / make this style reusable
+    // token."
+    //
+    // The rail was a solid 30%-alpha `Container` at a HARDCODED
+    // `theme.radiusSm` (a fixed 4px), so it neither read as provisional
+    // nor tracked the "Pill shape" setting every other card follows. It
+    // now uses the shared `GlassPillSurface` in its GLASS material — a
+    // translucent fill over a real `BackdropFilter` — corner-tracking
+    // `theme.radiusPill`, the active rung of that setting.
+    //
+    // The flat material is the imported-event counterpart and must NOT be
+    // what the draft gets: a draft is airborne and provisional, an
+    // imported event is a real calendar thing.
+    testWidgets(
+      'the draft rail is the shared glass surface — frosted, not the flat '
+      'imported-event material, and no glyph of its own',
+      (tester) async {
+        await pumpTimeline(tester);
+
+        await tester.tapAt(const Offset(220, 400));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 250));
+
+        final surface = find.descendant(
+          of: find.byType(PendingTaskPill),
+          matching: find.byType(GlassPillSurface),
+        );
+        expect(surface, findsOneWidget);
+
+        final widget = tester.widget<GlassPillSurface>(surface);
+        expect(
+          widget.material,
+          GlassPillMaterial.glass,
+          reason: 'the draft is airborne/provisional — it gets the frosted '
+              'material, not the imported event\'s flat gray',
+        );
+        expect(
+          widget.child,
+          isNull,
+          reason: 'a draft has no category yet — any glyph would be '
+              'inventing one',
+        );
+        // The frosted look requires a real blur behind it, not just a
+        // translucent fill (see colorSurfaceBlurOverlay's own doc comment).
+        expect(
+          find.descendant(
+            of: find.byType(PendingTaskPill),
+            matching: find.byType(BackdropFilter),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
   });
 
   // Reported directly: "bug when adding task quick add after 20:00 the

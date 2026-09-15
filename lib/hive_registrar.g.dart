@@ -30,6 +30,7 @@ extension HiveRegistrar on HiveInterface {
     registerAdapter(SyncedCalendarEventAdapter());
     registerAdapter(TaskAdapter());
     registerAdapter(TaskCategoryAdapter());
+    registerAdapter(TaskFontSizeAdapter());
     registerAdapter(TaskSizeAdapter());
     registerAdapter(TaskStatusAdapter());
     registerAdapter(TaskTemplateAdapter());
@@ -50,6 +51,7 @@ extension IsolatedHiveRegistrar on IsolatedHiveInterface {
     registerAdapter(SyncedCalendarEventAdapter());
     registerAdapter(TaskAdapter());
     registerAdapter(TaskCategoryAdapter());
+    registerAdapter(TaskFontSizeAdapter());
     registerAdapter(TaskSizeAdapter());
     registerAdapter(TaskStatusAdapter());
     registerAdapter(TaskTemplateAdapter());

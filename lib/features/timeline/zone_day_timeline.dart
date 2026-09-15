@@ -10,6 +10,7 @@ import '../../shared/models/zone.dart';
 import '../../shared/services/zone_containment.dart';
 import 'duration_label.dart';
 import 'external_event_block.dart' show showExternalCalendarEventInfo;
+import 'external_event_capsule_block.dart' show DashedPillRail;
 import 'task_capsule_block.dart';
 import 'zone_container_block.dart';
 
@@ -358,48 +359,60 @@ class _UnzonedEventRow extends StatelessWidget {
 
     return SizedBox(
       height: zoneContainerRowHeight,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: theme.colorSurfaceSecondary,
-          borderRadius: BorderRadius.circular(theme.radiusXl),
+      child: GestureDetector(
+        onTap: () => showExternalCalendarEventInfo(
+          context: context,
+          theme: theme,
+          event: event,
         ),
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: theme.spacingMd),
-          child: GestureDetector(
-            onTap: () => showExternalCalendarEventInfo(
-              context: context,
+        behavior: HitTestBehavior.opaque,
+        child: Row(
+          children: [
+            // Collapsed ENTIRELY when there's no time text — the column
+            // and its trailing gap both, mirroring `_ZoneTaskRow`'s and
+            // `_ZoneExternalEventRow`'s own guards. Without it the empty
+            // `Text` collapsed to zero width but the gap SURVIVED, and
+            // measured: this row's title sat at 64.0 against every other
+            // row kind's 72.0 — the same 8px `spacingSm` leak reported
+            // in-zone as "imported from other calendar (indent)."
+            if (timeLabel.isNotEmpty) ...[
+              Flexible(
+                flex: 2,
+                child: Text(
+                  timeLabel,
+                  style: theme.textTaskTitle.copyWith(
+                    color: theme.colorTextSecondary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              SizedBox(width: theme.spacingSm),
+            ],
+            // The same dashed calendar badge an IN-ZONE imported row
+            // already shows (`_ZoneExternalEventRow`) — reported directly:
+            // "standup is imported task but doesn't show icon with dotted
+            // circle.. like those imported in zones." An unzoned imported
+            // event is the same kind of object as a zoned one, so it reads
+            // the same way.
+            DashedPillRail(
               theme: theme,
-              event: event,
+              width: theme.sizeTaskBadge,
+              height: theme.sizeTaskBadge,
             ),
-            behavior: HitTestBehavior.opaque,
-            child: Row(
-              children: [
-                Flexible(
-                  flex: 2,
-                  child: Text(
-                    timeLabel,
-                    style: theme.textTaskTitle.copyWith(
-                      color: theme.colorTextSecondary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+            SizedBox(width: theme.spacingSm),
+            Expanded(
+              flex: 3,
+              child: Text(
+                event.title,
+                style: theme.textTaskTitle.copyWith(
+                  color: theme.colorTextSecondary,
                 ),
-                SizedBox(width: theme.spacingSm),
-                Expanded(
-                  flex: 3,
-                  child: Text(
-                    event.title,
-                    style: theme.textTaskTitle.copyWith(
-                      color: theme.colorTextSecondary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );

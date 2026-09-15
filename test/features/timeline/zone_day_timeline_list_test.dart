@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_top_scroll_fade.dart';
+import 'package:amble/features/timeline/external_event_capsule_block.dart'
+    show DashedPillRail;
 import 'package:amble/features/timeline/task_capsule_block.dart';
 import 'package:amble/features/timeline/zone_container_block.dart';
 import 'package:amble/features/timeline/zone_day_timeline.dart';
@@ -31,6 +33,7 @@ void main() {
     bool devTimeRangeVisible = true,
     bool devZoneCardFlat = false,
     bool devHideEmptyZones = false,
+    bool devIconsVisible = true,
   }) async {
     tester.view.physicalSize = const Size(390, 1400);
     tester.view.devicePixelRatio = 1.0;
@@ -54,6 +57,7 @@ void main() {
             devTimeRangeVisible: devTimeRangeVisible,
             devZoneCardFlat: devZoneCardFlat,
             devHideEmptyZones: devHideEmptyZones,
+            devIconsVisible: devIconsVisible,
           ),
         ),
       ),
@@ -460,6 +464,128 @@ void main() {
             'not flush with the container\'s outer edge',
       );
     });
+
+    // Regression coverage for two defects reported together against one
+    // screenshot: "items that don't fit in zones render differently than
+    // those in zones" and "standup is imported task but doesn't show icon
+    // with dotted circle.. like those imported in zones > and is in a
+    // pane, but those in zones not."
+    //
+    // `_UnzonedEventRow` was a bare time/title Row inside its own
+    // `DecoratedBox` panel, with no badge at all — so an imported event
+    // read as a different KIND of object depending only on whether it
+    // happened to fall inside a zone's window. It also lacked the
+    // `if (timeLabel.isNotEmpty)` guard both in-container rows have, so
+    // with time hidden its leftover `spacingSm` indented it 8px: measured
+    // at title.left 64.0 against every other row kind's 72.0.
+    testWidgets(
+      'an unzoned imported event shows the same dashed badge as a zoned '
+      'one, with no panel of its own, and its title lines up with every '
+      'other row kind when time is hidden',
+      (tester) async {
+        final zone = zoneAt('z1', 'Morning ritual', 7, 18);
+        // Outside the zone window -> renders as an unzoned imported row.
+        final unzonedEvent = ExternalCalendarEvent(
+          id: 'e-out',
+          title: 'UnzonedEvent',
+          start: DateTime(2026, 9, 2, 21),
+          end: DateTime(2026, 9, 2, 21, 30),
+          sourceCalendarId: 'cal-1',
+        );
+        // Inside it -> renders as a zoned imported row, the reference.
+        final zonedEvent = ExternalCalendarEvent(
+          id: 'e-in',
+          title: 'ZonedEvent',
+          start: DateTime(2026, 9, 2, 10),
+          end: DateTime(2026, 9, 2, 10, 30),
+          sourceCalendarId: 'cal-1',
+        );
+
+        await pump(
+          tester,
+          zones: [zone],
+          externalEvents: [zonedEvent, unzonedEvent],
+          devTimeRangeVisible: false,
+          devDurationVisible: false,
+        );
+
+        // Both imported rows carry the badge — zoned AND unzoned.
+        expect(find.byType(DashedPillRail), findsNWidgets(2));
+
+        // The two imported rows share one title origin. Compared against
+        // the ZONED imported row rather than the task row deliberately:
+        // this suite's own `pump` passes an empty `categoryById`, so a
+        // task row has no emoji and therefore renders no badge at all,
+        // putting its title at a different x for a reason unrelated to
+        // what's under test here.
+        final zonedEventLeft = tester.getTopLeft(find.text('ZonedEvent')).dx;
+        final unzonedEventLeft = tester
+            .getTopLeft(find.text('UnzonedEvent'))
+            .dx;
+
+        expect(
+          unzonedEventLeft,
+          moreOrLessEquals(zonedEventLeft, epsilon: 0.5),
+          reason:
+              'unzoned imported title left=$unzonedEventLeft, zoned '
+              'imported left=$zonedEventLeft',
+        );
+      },
+    );
+
+    // Regression coverage for a real bug, reported directly against a
+    // screenshot: "note focus label is not aligned with labels tasks in
+    // zones." An out-of-zone task renders as a `TaskCapsuleBlock`, whose
+    // text column sat inside a `Center(widthFactor: 1)` — centring on
+    // BOTH axes when only the vertical half was intended. It went
+    // unnoticed while the Column always had a wide child holding its
+    // width; with the indicator-icon row hidden AND the time line empty,
+    // the Column shrank to the title alone, which then floated to the
+    // horizontal centre. Measured before the fix: title.left 275.6
+    // against every other row kind's 72.0.
+    testWidgets(
+      'an out-of-zone task title stays left-aligned with every other row '
+      'kind even with icons hidden and no time line',
+      (tester) async {
+        final zone = zoneAt('z1', 'Morning ritual', 7, 18);
+        final zonedEvent = ExternalCalendarEvent(
+          id: 'e-in',
+          title: 'ZonedEvent',
+          start: DateTime(2026, 9, 2, 10),
+          end: DateTime(2026, 9, 2, 10, 30),
+          sourceCalendarId: 'cal-1',
+        );
+        // Outside the zone window -> an unzoned TaskCapsuleBlock row.
+        final unzonedTask = Task.create(
+          title: 'UnzonedTask',
+          scheduledAt: DateTime(2026, 9, 2, 21),
+          durationMinutes: 30,
+          categoryId: BuiltInCategoryIds.work,
+        );
+
+        await pump(
+          tester,
+          zones: [zone],
+          tasks: [unzonedTask],
+          externalEvents: [zonedEvent],
+          devTimeRangeVisible: false,
+          devDurationVisible: false,
+          devIconsVisible: false,
+        );
+
+        expect(
+          tester.getTopLeft(find.text('UnzonedTask')).dx,
+          moreOrLessEquals(
+            tester.getTopLeft(find.text('ZonedEvent')).dx,
+            epsilon: 0.5,
+          ),
+          reason:
+              'an out-of-zone task title must share the same origin as '
+              'every in-zone row, not drift to the centre when its own '
+              'text column happens to be narrow',
+        );
+      },
+    );
 
     testWidgets('an unmatched external event gets the same left inset as '
         'an unzoned task', (tester) async {

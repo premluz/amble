@@ -44,13 +44,21 @@ class AppearanceSettingsScreen extends ConsumerWidget {
             ),
           ),
           SizedBox(height: theme.spacingSm),
+          // Split from "Task size" into two independent controls —
+          // requested directly: "Settings in appearance separately font
+          // size and separately pill size, let's split this, and should
+          // affect all pills its text." An existing user's prior single
+          // choice is migrated once into both new settings on first read
+          // (see `TaskFontSizeSetting`'s own doc comment) — nothing
+          // visibly changes for them until they touch one of these two
+          // pickers independently.
           SettingsPanel(
             theme: theme,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Task size',
+                  'Pill size',
                   style: theme.textBody.copyWith(
                     color: theme.colorTextPrimary,
                     fontWeight: FontWeight.w700,
@@ -58,9 +66,8 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                 ),
                 SizedBox(height: theme.spacingXs),
                 Text(
-                  'The size of a task\'s badge/icon and its name/time '
-                  'text — applies everywhere: Task view, List view, and '
-                  'Zone view.',
+                  'The size of a task\'s badge/icon — applies everywhere: '
+                  'Task view, List view, and Zone view.',
                   style: theme.textBody.copyWith(
                     color: theme.colorTextSecondary,
                   ),
@@ -80,6 +87,51 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                         selected: ref.watch(taskSizeSettingProvider) == size,
                         onTap: () => ref
                             .read(taskSizeSettingProvider.notifier)
+                            .set(size),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+          SizedBox(height: theme.spacingSm),
+          SettingsPanel(
+            theme: theme,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Text size',
+                  style: theme.textBody.copyWith(
+                    color: theme.colorTextPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                SizedBox(height: theme.spacingXs),
+                Text(
+                  'The size of a task\'s name/time text — applies '
+                  'everywhere: Task view, List view, and Zone view.',
+                  style: theme.textBody.copyWith(
+                    color: theme.colorTextSecondary,
+                  ),
+                ),
+                SizedBox(height: theme.spacingSm),
+                Row(
+                  children: [
+                    for (final size in TaskFontSize.values) ...[
+                      if (size != TaskFontSize.values.first)
+                        SizedBox(width: theme.spacingSm),
+                      AppSelectableChip(
+                        label: switch (size) {
+                          TaskFontSize.sm => 'Small',
+                          TaskFontSize.md => 'Medium',
+                          TaskFontSize.lg => 'Large',
+                        },
+                        selected:
+                            ref.watch(taskFontSizeSettingProvider) == size,
+                        onTap: () => ref
+                            .read(taskFontSizeSettingProvider.notifier)
                             .set(size),
                       ),
                     ],

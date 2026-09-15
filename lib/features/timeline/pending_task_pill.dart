@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/glass_pill_surface.dart';
 import 'edit_mode_wiggle.dart';
 import 'resize_handle.dart';
 import 'task_edge_time_label.dart';
@@ -209,15 +210,27 @@ class PendingTaskPill extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       SizedBox(width: columnOffset),
-                      Container(
+                      // Frosted glass — requested directly: "this ghost
+                      // phantom state should have fill gray semitransparent
+                      // with bg blur glassy thing." The draft is airborne
+                      // (provisional, unsaved, sitting over whatever is
+                      // underneath), which is exactly what the glass
+                      // material is for; an imported event gets the FLAT
+                      // one instead, since it's a real calendar thing.
+                      //
+                      // Was a solid 30%-alpha `Container` at a hardcoded
+                      // `radiusSm` (fixed 4px), then briefly a dashed
+                      // rail. `GlassPillSurface` corners at
+                      // `theme.radiusPill` — the ACTIVE rung of the "Pill
+                      // shape" setting — so this pill tracks it like every
+                      // other card, which the hardcoded radius never did.
+                      //
+                      // No child: a draft has no category until the user
+                      // picks one, so any glyph would be inventing one.
+                      GlassPillSurface(
+                        theme: theme,
                         width: width,
                         height: height,
-                        decoration: BoxDecoration(
-                          color: theme.colorTextSecondary.withValues(
-                            alpha: 0.30,
-                          ),
-                          borderRadius: BorderRadius.circular(theme.radiusSm),
-                        ),
                       ),
                     ],
                   ),

@@ -93,8 +93,38 @@ ExternalCalendarEvent? mapDeviceEvent(dc.Event event, dc.Calendar calendar) {
   return ExternalCalendarEvent(
     id: id,
     title: event.title ?? '',
-    start: start,
-    end: end,
+    // Rebuilt from the absolute INSTANT into a plain, device-local
+    // `DateTime` — never passed through, and never via `.toLocal()`.
+    //
+    // Reported directly: a Google event at 10:30 rendered "09:30 - 10:00"
+    // in the detail sheet while sitting correctly at 10:30 on the spatial
+    // rail. On-device diagnostics showed exactly why:
+    //
+    //   raw=2026-09-15 09:30:00.000+0100  zone=BST  offset=1:00
+    //   epochLocal=2026-09-15 10:30:00.000
+    //   deviceOffset=2:00
+    //
+    // The INSTANT the plugin returns is always right (it comes from the
+    // OS). Only the LOCATION it staples on is unreliable: `Event.fromJson`
+    // does `timeZoneDatabase.locations[eventStartTimeZone] ?? tz.local` —
+    // a raw map lookup, falling back to the `timezone` package's own
+    // `tz.local`, which is `Etc/UTC` until `tz.setLocalLocation` runs and
+    // is whatever `FlutterTimezone` last resolved after that. Above, it
+    // attached BST (UTC+1) to a device genuinely on UTC+2.
+    //
+    // That matters because the two render paths read the value
+    // differently: the rail does `difference()` arithmetic on absolute
+    // instants (offset-correct whatever zone is attached), while every
+    // text label goes through `TimeOfDay.fromDateTime`, which reads
+    // wall-clock FIELDS. Hence one event showing two different times.
+    //
+    // `DateTime.fromMillisecondsSinceEpoch` resolves against the Dart
+    // VM's own local zone — the one the OS sets — so it is immune to
+    // whatever `tz.local` happens to hold. Verified across five
+    // `tz.local` states and both plugin outcomes: the rebuilt wall clock
+    // always equals the host's, and the instant is preserved exactly.
+    start: DateTime.fromMillisecondsSinceEpoch(start.millisecondsSinceEpoch),
+    end: DateTime.fromMillisecondsSinceEpoch(end.millisecondsSinceEpoch),
     sourceCalendarId: calendar.id ?? '',
     sourceCalendarName: calendar.name,
     sourceCalendarColor: _colorFromArgb(calendar.color),

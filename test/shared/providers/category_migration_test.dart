@@ -234,4 +234,73 @@ void main() {
       expect(taskBox.get('should-not-be-touched')!.categoryId, isNull);
     },
   );
+
+  // Requested directly: "both light dark mode default should not have
+  // emoji." Changing the seed literal alone would only fix FRESH installs
+  // — the seed is gated by `categoriesSeeded` and never runs again — so
+  // every existing user would keep staring at the white circle they asked
+  // to have removed. This repair runs on the already-seeded path.
+  group('the built-in General category loses its legacy ⚪ glyph', () {
+    test('an already-seeded install has the old glyph cleared on next '
+        'launch', () async {
+      await categoryBox.put(
+        BuiltInCategoryIds.general,
+        Category(
+          id: BuiltInCategoryIds.general,
+          name: 'General',
+          colorToken: 0,
+          emoji: '⚪',
+          isBuiltIn: true,
+        ),
+      );
+      await container
+          .read(preferencesRepositoryProvider)
+          .setValue(PreferenceKeys.categoriesSeeded, true);
+
+      await container
+          .read(categoryListProvider.notifier)
+          .seedBuiltInsAndBackfillIfNeeded();
+
+      expect(categoryBox.get(BuiltInCategoryIds.general)!.emoji, isEmpty);
+    });
+
+    test('a user who set their OWN emoji on General keeps it — the repair '
+        'only clears the exact legacy glyph', () async {
+      await categoryBox.put(
+        BuiltInCategoryIds.general,
+        Category(
+          id: BuiltInCategoryIds.general,
+          name: 'General',
+          colorToken: 0,
+          emoji: '🌟',
+          isBuiltIn: true,
+        ),
+      );
+      await container
+          .read(preferencesRepositoryProvider)
+          .setValue(PreferenceKeys.categoriesSeeded, true);
+
+      await container
+          .read(categoryListProvider.notifier)
+          .seedBuiltInsAndBackfillIfNeeded();
+
+      expect(categoryBox.get(BuiltInCategoryIds.general)!.emoji, '🌟');
+    });
+
+    test('a fresh install seeds General with no emoji at all', () async {
+      await container
+          .read(categoryListProvider.notifier)
+          .seedBuiltInsAndBackfillIfNeeded();
+
+      final general = container
+          .read(categoryListProvider)
+          .firstWhere((c) => c.id == BuiltInCategoryIds.general);
+      expect(general.emoji, isEmpty);
+      // Scoped to General only — the other built-ins keep their glyphs.
+      final health = container
+          .read(categoryListProvider)
+          .firstWhere((c) => c.id == BuiltInCategoryIds.health);
+      expect(health.emoji, isNotEmpty);
+    });
+  });
 }

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/features/timeline/completion_checkbox.dart';
+import 'package:amble/features/timeline/external_event_capsule_block.dart'
+    show DashedPillRail;
 import 'package:amble/features/timeline/zone_container_block.dart';
 import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/models/external_calendar_event.dart';
@@ -318,6 +320,86 @@ void main() {
       // the external event row renders no equivalent control at all.
       expect(find.byType(CompletionCheckbox), findsOneWidget);
     });
+
+    // Requested directly, from a screenshot comparing the two views: "on
+    // the zone view, the imported items from calendar should be rendered
+    // in the same way as other events, other tasks, so with the circle,
+    // and icon inside the circle is dotted, same as in the timeline
+    // view." This row used to be a bare muted title with no badge at all,
+    // which is what made an imported event read as a different KIND of
+    // object here than it does in Task view.
+    testWidgets('an external event row shows the same dashed calendar badge '
+        'Task view\'s own imported events use', (tester) async {
+      await pump(tester, externalEvents: [event]);
+
+      expect(find.byType(DashedPillRail), findsOneWidget);
+    });
+
+    testWidgets('the dashed badge is sized to theme.sizeTaskBadge, matching '
+        'a real task row\'s own category badge exactly', (tester) async {
+      await pump(tester, externalEvents: [event]);
+
+      final rail = tester.widget<DashedPillRail>(
+        find.byType(DashedPillRail),
+      );
+      expect(rail.width, AmbleTheme.light.sizeTaskBadge);
+      expect(rail.height, AmbleTheme.light.sizeTaskBadge);
+    });
+
+    testWidgets('a zone with no external events renders no dashed badge at '
+        'all', (tester) async {
+      await pump(tester);
+
+      expect(find.byType(DashedPillRail), findsNothing);
+    });
+
+    // Regression coverage for a real bug, reported directly from a
+    // screenshot with time hidden: "the tasks are still not aligned, 3
+    // different alignment for text — imported from other calendar
+    // (indent) / inside zone / outside zone."
+    //
+    // `_ZoneTaskRow` collapses its time column AND the trailing
+    // `spacingSm` gap together behind `if (timeLabel.isNotEmpty)`.
+    // `_ZoneExternalEventRow` had no such guard, so with time hidden its
+    // empty `Text` collapsed to zero width but the gap SURVIVED, pushing
+    // every imported row's badge and title exactly 8px (spacingSm) right
+    // of the task rows beside them. Measured before the fix: badge 24.0
+    // vs 16.0, title 56.0 vs 48.0.
+    testWidgets(
+      'with time hidden, an imported event row\'s badge and title line up '
+      'exactly with a task row\'s — no leftover gap indenting it',
+      (tester) async {
+        await pump(
+          tester,
+          externalEvents: [event],
+          timeRangeVisible: false,
+          durationVisible: false,
+          categoriesById: {BuiltInCategoryIds.work: category},
+        );
+
+        final taskBadge = tester.getRect(
+          find
+              .ancestor(of: find.text('💼'), matching: find.byType(Container))
+              .first,
+        );
+        final eventBadge = tester.getRect(find.byType(DashedPillRail));
+
+        expect(
+          eventBadge.left,
+          moreOrLessEquals(taskBadge.left, epsilon: 0.5),
+          reason:
+              'imported badge left=${eventBadge.left}, task badge '
+              'left=${taskBadge.left}',
+        );
+        expect(
+          tester.getTopLeft(find.text('Team sync')).dx,
+          moreOrLessEquals(
+            tester.getTopLeft(find.text('Deep work')).dx,
+            epsilon: 0.5,
+          ),
+        );
+      },
+    );
 
     testWidgets(
       'timeRangeVisible: false hides an external event row\'s time too',

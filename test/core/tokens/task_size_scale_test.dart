@@ -33,8 +33,8 @@ void main() {
     });
 
     test(
-      'xl badge is 32px — new, added for the "Large" Task-size option '
-      '(main.dart\'s _resolveTaskSize), no matching font rung of its own',
+      'xl badge is 32px — new, added for the "Large" Pill-size option '
+      '(main.dart\'s _resolvePillSize), no matching font rung of its own',
       () {
         expect(AmbleTheme.light.sizeTaskBadgeXl, 32.0);
       },
@@ -97,11 +97,24 @@ void main() {
   });
 
   group('copyWith resolves the active fields to main.dart\'s actual '
-      '_resolveTaskSize pairing', () {
-    // Mirrors exactly what main.dart's own _resolveTaskSize does — pinned
-    // here since that function is private to main.dart and untestable
-    // directly, matching this codebase's existing pattern of not unit
-    // testing main.dart's helpers (there is no main_test.dart).
+      '_resolvePillSize/_resolveFontSize pairing', () {
+    // Mirrors exactly what main.dart's own _resolvePillSize/
+    // _resolveFontSize do — pinned here since those functions are private
+    // to main.dart and untestable directly, matching this codebase's
+    // existing pattern of not unit testing main.dart's helpers (there is
+    // no main_test.dart).
+    //
+    // **2026-09-15 — split into two independent settings** (requested
+    // directly: "Settings in appearance separately font size and
+    // separately pill size, let's split this"). What was one function
+    // (`_resolveTaskSize`) resolving BOTH fields off one `TaskSize` value
+    // is now two functions, each off its own setting (`TaskSize` for the
+    // badge, `TaskFontSize` for the font) — but the NUMBERS below are
+    // unchanged: this test still pins the exact same badge+font pairing a
+    // user would get by picking the matching-named option on both of the
+    // two new controls, which is what migrating an existing single
+    // `TaskSize` choice into both settings preserves (see
+    // `TaskFontSizeSetting`'s own migration doc comment).
     //
     // Badge/font pairing itself (2026-09-10, requested directly: "Current
     // medium size but with font size from small should be small... large

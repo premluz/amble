@@ -94,6 +94,15 @@ void main() async {
         container.read(notificationTapProvider.notifier).set(taskId),
   );
 
+  // One-time migration: an existing user's single `TaskSize` choice seeds
+  // the newly-independent `TaskFontSize` setting, by name, exactly once —
+  // see `TaskFontSizeSetting.migrateIfNeeded`'s own doc comment for why
+  // this happens here (an explicit, awaited launch step) rather than as a
+  // side effect of that provider's own `build()`.
+  await container
+      .read(taskFontSizeSettingProvider.notifier)
+      .migrateIfNeeded();
+
   // Seed the 5 built-in categories and backfill every pre-existing task's
   // deprecated `category` enum onto the new `categoryId`. Launch-only,
   // gated by PreferenceKeys.categoriesSeeded so it only actually runs
@@ -186,13 +195,23 @@ class AmbleApp extends ConsumerWidget {
     // `textTaskTitle` fields it always has, with no per-call-site changes.
     // Requested directly: "it's not per view, it's a setting, that when
     // set affects all."
+    //
+    // `taskSize` (pill/badge diameter) and `taskFontSize` (title font) are
+    // now TWO independent settings, not one — requested directly:
+    // "Settings in appearance separately font size and separately pill
+    // size, let's split this, and should affect all pills its text."
+    // Resolved as two separate passes for the same reason `pillShape`
+    // already is below: each setting owns exactly the fields it controls.
     final taskSize = ref.watch(taskSizeSettingProvider);
+    final taskFontSize = ref.watch(taskFontSizeSettingProvider);
     // Same "resolve once, here, before MaterialApp" mechanism as taskSize
     // above — see PillShapeSetting's own doc comment. Requested directly:
     // "this should affect globally, in edit tasks etc."
     final pillShape = ref.watch(pillShapeSettingProvider);
-    var lightTheme = _resolveTaskSize(AmbleTheme.light, taskSize);
-    var darkTheme = _resolveTaskSize(AmbleTheme.dark, taskSize);
+    var lightTheme = _resolvePillSize(AmbleTheme.light, taskSize);
+    var darkTheme = _resolvePillSize(AmbleTheme.dark, taskSize);
+    lightTheme = _resolveFontSize(lightTheme, taskFontSize);
+    darkTheme = _resolveFontSize(darkTheme, taskFontSize);
     lightTheme = _resolvePillShape(lightTheme, pillShape);
     darkTheme = _resolvePillShape(darkTheme, pillShape);
 
@@ -260,27 +279,42 @@ SystemUiOverlayStyle _overlayStyleFor(Brightness surface) {
   );
 }
 
-/// Resolves the ACTIVE `sizeTaskBadge`/`textTaskTitle` fields on [palette]
-/// to whichever fixed rung [size] selects — see `TaskSizeSetting`'s own
-/// doc comment. Every real call site reads `theme.sizeTaskBadge`/
+/// Resolves the ACTIVE `sizeTaskBadge` field on [palette] to whichever
+/// fixed rung [size] selects — see `TaskSizeSetting`'s own doc comment.
+/// Every real call site reads `theme.sizeTaskBadge` directly and has no
+/// idea this setting exists; this is the one place the mapping happens.
+///
+/// **Split from font size** (requested directly: "Settings in appearance
+/// separately font size and separately pill size, let's split this") —
+/// this used to also resolve `textTaskTitle`/`textTaskTitleZone` in the
+/// same switch, paired to the badge rung by a historical "one step
+/// smaller" rule (see docs/DECISIONS.md and [_resolveFontSize]'s own doc
+/// comment for that rule, now applied independently). Splitting this
+/// function changes NOTHING about what badge size each named option
+/// resolves to — only which setting controls it.
+AmbleTheme _resolvePillSize(AmbleTheme palette, TaskSize size) {
+  return switch (size) {
+    TaskSize.sm => palette.copyWith(sizeTaskBadge: palette.sizeTaskBadgeMd),
+    TaskSize.md => palette.copyWith(sizeTaskBadge: palette.sizeTaskBadgeLg),
+    TaskSize.lg => palette.copyWith(sizeTaskBadge: palette.sizeTaskBadgeXl),
+  };
+}
+
+/// Resolves the ACTIVE `textTaskTitle`/`textTaskTitleZone` fields on
+/// [palette] to whichever fixed rung [size] selects — see
+/// `TaskFontSizeSetting`'s own doc comment. Every real call site reads
 /// `theme.textTaskTitle` directly and has no idea this setting exists;
 /// this is the one place the mapping happens.
 ///
-/// **Decoupled 2026-09-10** (requested directly): each named option now
-/// pairs a badge rung with a font rung ONE STEP SMALLER, rather than the
-/// matching-named rung — "Current medium size but with font size from
-/// small should be small... Current large but with the font size medium
-/// should be medium... large should be larger task pill but font size
-/// same as medium." Exact pairing:
-/// - sm: badge md (24) + font sm (12) — was badge sm (20) + font sm (12).
-/// - md: badge lg (28) + font md (14) — was badge md (24) + font md (14).
-/// - lg: badge xl (32, new) + font md (14) — was badge lg (28) + font lg
-///   (16); lg's own font rung is no longer used by this mapping at all,
-///   kept only as a named token in case a future rung needs it.
-AmbleTheme _resolveTaskSize(AmbleTheme palette, TaskSize size) {
+/// Mirrors the EXACT font rung [_resolvePillSize]'s own [TaskSize]
+/// mapping historically paired with each badge rung (see that function's
+/// own doc comment on the "one step smaller" rule this preserves,
+/// unchanged, now that the two are independent controls) — `sm`->font sm,
+/// `md`->font md, `lg`->font lg (its own genuine rung, not md's, per the
+/// 2026-09-12 reversal already on record).
+AmbleTheme _resolveFontSize(AmbleTheme palette, TaskFontSize size) {
   return switch (size) {
-    TaskSize.sm => palette.copyWith(
-      sizeTaskBadge: palette.sizeTaskBadgeMd,
+    TaskFontSize.sm => palette.copyWith(
       textTaskTitle: palette.textTaskTitleSm,
       // Zone view's own title font is always one rung up from the active
       // one — see AmbleTheme.textTaskTitleZone's own doc comment.
@@ -288,21 +322,11 @@ AmbleTheme _resolveTaskSize(AmbleTheme palette, TaskSize size) {
       // scale up)."
       textTaskTitleZone: palette.textTaskTitleMd,
     ),
-    TaskSize.md => palette.copyWith(
-      sizeTaskBadge: palette.sizeTaskBadgeLg,
+    TaskFontSize.md => palette.copyWith(
       textTaskTitle: palette.textTaskTitleMd,
       textTaskTitleZone: palette.textTaskTitleLg,
     ),
-    // **2026-09-12** — was `textTaskTitleMd` (a deliberate "large should
-    // be a larger pill but font size same as medium" decision, confirmed
-    // directly at the time). Reversed on THIS session's own direct
-    // request ("reduce 1 scale down" across all 3 settings, confirmed via
-    // AskUserQuestion that lg should get its own genuine one-step
-    // reduction rather than stay paired with md): `textTaskTitleLg` now
-    // renders at its own size (14, one step down from its old 16) instead
-    // of borrowing md's.
-    TaskSize.lg => palette.copyWith(
-      sizeTaskBadge: palette.sizeTaskBadgeXl,
+    TaskFontSize.lg => palette.copyWith(
       textTaskTitle: palette.textTaskTitleLg,
       // No rung larger than lg exists, so Zone view stays at lg's own
       // size too — it simply can't go any further up.

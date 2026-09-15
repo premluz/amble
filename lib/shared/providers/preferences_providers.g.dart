@@ -710,6 +710,69 @@ abstract class _$TaskSizeSetting extends $Notifier<TaskSize> {
   }
 }
 
+/// Which rung of the task-title-FONT scale (`TaskFontSize.sm`/`md`/`lg`)
+/// the Timeline renders title text at — independent of [TaskSizeSetting]'s
+/// own badge/pill diameter.
+
+@ProviderFor(TaskFontSizeSetting)
+final taskFontSizeSettingProvider = TaskFontSizeSettingProvider._();
+
+/// Which rung of the task-title-FONT scale (`TaskFontSize.sm`/`md`/`lg`)
+/// the Timeline renders title text at — independent of [TaskSizeSetting]'s
+/// own badge/pill diameter.
+final class TaskFontSizeSettingProvider
+    extends $NotifierProvider<TaskFontSizeSetting, TaskFontSize> {
+  /// Which rung of the task-title-FONT scale (`TaskFontSize.sm`/`md`/`lg`)
+  /// the Timeline renders title text at — independent of
+  /// [TaskSizeSetting]'s own badge/pill diameter.
+  TaskFontSizeSettingProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'taskFontSizeSettingProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$taskFontSizeSettingHash();
+
+  @$internal
+  @override
+  TaskFontSizeSetting create() => TaskFontSizeSetting();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(TaskFontSize value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<TaskFontSize>(value),
+    );
+  }
+}
+
+String _$taskFontSizeSettingHash() =>
+    r'taskfontsizesetting00000000000000000000000';
+
+abstract class _$TaskFontSizeSetting extends $Notifier<TaskFontSize> {
+  TaskFontSize build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<TaskFontSize, TaskFontSize>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<TaskFontSize, TaskFontSize>,
+              TaskFontSize,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
+
 /// Which corner-rounding a task/zone/Inbox pill badge renders at
 /// (`PillShape.small`/`rounded`/`full`) — one global setting spanning
 /// every pill-shaped surface in the app, mirroring [TaskSizeSetting]'s own

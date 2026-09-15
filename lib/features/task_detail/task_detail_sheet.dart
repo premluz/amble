@@ -2939,7 +2939,11 @@ class _SchedulePreviewCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(theme.radiusTaskPill),
             ),
             child: Text(
-              category?.emoji ?? '⚪',
+              // Empty, not '⚪' — requested directly: "both light dark mode
+              // default should not have emoji." The grey badge already
+              // signals "uncategorised" on its own, and the white circle
+              // was invisible against it on light mode besides.
+              category?.emoji ?? '',
               style: TextStyle(fontSize: badgeSize * 0.55),
             ),
           ),

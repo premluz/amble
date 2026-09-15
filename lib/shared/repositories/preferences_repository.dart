@@ -82,11 +82,29 @@ abstract final class PreferenceKeys {
   /// only.
   static const String showCompletionCheckbox = 'showCompletionCheckbox';
 
-  /// Which rung of the task-size scale (badge/icon + task-related font,
+  /// Which rung of the task-PILL-size scale (badge/icon diameter only,
   /// see `TaskSize`) the Timeline renders at — Task, List, and Zone view
   /// alike. Absent (null) defaults to `TaskSize.md` — see
   /// [TaskSizeSetting].
+  ///
+  /// **Split from font size** — requested directly ("separately font
+  /// size and separately pill size, let's split this"). Before the split,
+  /// this same key/setting ALSO drove the task-title font rung; an
+  /// existing value here is now migrated ONCE into [taskFontSize] (see
+  /// that key's own doc comment) rather than silently losing the font
+  /// half of what a user had already chosen.
   static const String taskSize = 'taskSize';
+
+  /// Which rung of the task-TITLE-FONT scale the Timeline renders at —
+  /// Task, List, and Zone view alike, independent of [taskSize]'s own
+  /// badge/pill diameter. Absent (null) triggers a ONE-TIME migration
+  /// (confirmed via AskUserQuestion): seeded from whatever [taskSize]
+  /// currently resolves to (by NAME — `TaskSize.sm` seeds
+  /// `TaskFontSize.sm`, etc., mirroring the pairing `_resolveTaskSize` in
+  /// main.dart used before this split), so an existing user's font size
+  /// doesn't silently change on the upgrade that introduces this as a
+  /// separate control. See [TaskFontSizeSetting].
+  static const String taskFontSize = 'taskFontSize';
 
   /// Which corner-rounding a task/zone/Inbox pill badge renders at (see
   /// `PillShape`). One global setting, spanning every pill-shaped surface

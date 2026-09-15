@@ -10,6 +10,7 @@ import '../task_detail/category_visual.dart';
 import 'completion_checkbox.dart';
 import 'duration_label.dart';
 import 'external_event_block.dart' show showExternalCalendarEventInfo;
+import 'external_event_capsule_block.dart' show DashedPillRail;
 import 'resize_handle.dart';
 
 /// The minimum height a [ZoneContainerBlock] renders at even when its own
@@ -969,16 +970,44 @@ class _ZoneExternalEventRow extends StatelessWidget {
           children: [
             // Same flex: 2 / flex: 3 time/title split as _ZoneTaskRow, so
             // the two row kinds visually line up in the merged list.
-            Flexible(
-              flex: 2,
-              child: Text(
-                timeLabel,
-                style: theme.textTaskTitleZone.copyWith(
-                  color: theme.colorTextSecondary,
+            //
+            // Collapsed ENTIRELY when there's no time text — the column
+            // and its trailing gap both, mirroring `_ZoneTaskRow`'s own
+            // `if (timeLabel.isNotEmpty)` guard. Reported directly against
+            // a screenshot with time hidden: "3 different alignment for
+            // text... imported from other calendar (indent)." Without the
+            // guard the empty `Text` collapsed to zero width but the
+            // trailing `SizedBox(width: spacingSm)` survived, indenting
+            // the badge and title of every imported row by exactly 8px
+            // against the task rows beside them (measured: badge 24.0 vs
+            // 16.0, title 56.0 vs 48.0).
+            if (timeLabel.isNotEmpty) ...[
+              Flexible(
+                flex: 2,
+                child: Text(
+                  timeLabel,
+                  style: theme.textTaskTitleZone.copyWith(
+                    color: theme.colorTextSecondary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
+              SizedBox(width: theme.spacingSm),
+            ],
+            // The same dashed calendar badge Task view's own imported
+            // events already show — requested directly: "on the zone view,
+            // the imported items from calendar should be rendered in the
+            // same way as other events, other tasks, so with the circle,
+            // and icon inside the circle is dotted, same as in the
+            // timeline view." Sized to `theme.sizeTaskBadge` and gapped by
+            // `spacingSm`, exactly like `_ZoneTaskRow`'s own category
+            // badge sitting in this same position, so the two row kinds
+            // line up in the merged list.
+            DashedPillRail(
+              theme: theme,
+              width: theme.sizeTaskBadge,
+              height: theme.sizeTaskBadge,
             ),
             SizedBox(width: theme.spacingSm),
             Expanded(

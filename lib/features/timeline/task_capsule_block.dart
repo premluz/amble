@@ -455,6 +455,33 @@ class TaskCapsuleBlock extends StatelessWidget {
         ? trimmedPillHeight
         : math.max(math.min(trimmedPillHeight, maxPillHeight!), 0.0);
 
+    // The height the title/time text column centers itself against — NOT
+    // simply the row's own full height. Corrected directly: "task outside
+    // zone view text isn't centered... on timeline view text goes higher,
+    // should be aligned with icon." Measured before fixing: the row is
+    // `IntrinsicHeight`-sized to whichever sibling is tallest, and for a
+    // pill past the badge floor that's the pill ITSELF (it can run to
+    // hundreds of pixels for a multi-hour task) — blindly centering the
+    // text against the row's full height dragged the title 38px down a
+    // 135px pill, away from the icon pinned at its own top, the opposite
+    // of "aligned with icon."
+    //
+    // The only sibling whose height can exceed a SHORT pill without the
+    // pill itself growing is the trailing CompletionCheckbox's fixed tap
+    // target (`spacingMinTapTarget`, 48) — so the header region a short
+    // pill's text centers within is exactly that checkbox height, not the
+    // pill's own (often much smaller) height. Once the pill itself grows
+    // past that same 48px (any task long enough to need it), it's already
+    // the row's tallest sibling regardless of the checkbox, so capping the
+    // header at a fixed 48 there still keeps the text pinned near the
+    // pill's own top — aligned with the icon — rather than drifting down
+    // as the pill keeps growing. One fixed cap serves both cases: genuine
+    // centering for a short pill (matching `_ZoneTaskRow`'s own always-
+    // centered short row), top-alignment beside the icon for a tall one.
+    final textHeaderHeight = showCompletionCheckbox
+        ? theme.spacingMinTapTarget
+        : pillHeight;
+
     // While dragging, the time/duration line reflects the DROP TARGET,
     // not the task's currently-saved schedule — replacing the earlier
     // pair of floating chips above/below the pill, which could overlap a
@@ -608,28 +635,31 @@ class TaskCapsuleBlock extends StatelessWidget {
                     // own color. See [SelectedPillBorder]'s own doc comment.
                     // Unselected keeps the exact same box (color, radius, no
                     // border) as before this feature existed at all.
+                    // Unselected paints the fill here and nothing else.
+                    // SELECTED paints nothing here at all — the whole
+                    // two-ring treatment (accent ring, dark separator,
+                    // fill) is delegated to `SelectedPillBorder` on the
+                    // child below, so there is exactly ONE implementation
+                    // of that shape in the codebase.
+                    //
+                    // This used to hand-nest its own copy of those rings,
+                    // and the copy had a real bug the shared widget does
+                    // not: it set `color:` AND `border:` in a SINGLE
+                    // `BoxDecoration`, and Flutter paints a decoration's
+                    // fill across the FULL box — including underneath the
+                    // border stroke. `colorScrim` is 40% alpha (measured),
+                    // so the pill fill showed THROUGH the separator ring
+                    // and blended it into a soft, half-lit extra ring.
+                    // Reported directly, twice: "we still have one more
+                    // inner dark softer/transparent something."
                     decoration: isSelected
-                        ? BoxDecoration(
-                            border: Border.all(
-                              color: theme.colorAccent,
-                              width: SelectedPillBorder.accentWidth(theme),
-                            ),
-                            borderRadius: BorderRadius.circular(
-                              theme.radiusPill,
-                            ),
-                            // No shadow here any more while lifted — the
-                            // shadow now belongs to the outer frosted card
-                            // (see the wrapping below).
-                          )
+                        ? const BoxDecoration()
                         : BoxDecoration(
                             color: badgeColor,
                             borderRadius: BorderRadius.circular(
                               theme.radiusPill,
                             ),
-                          ), // Unselected: this is the pill's ONLY fill —
-                    // the inner box below stays undecorated in that case,
-                    // so the color is painted once, exactly as before this
-                    // feature existed.
+                          ),
                     // Deliberately NOT faded while lifted — corrected
                     // directly after a first pass hid it: this glyph is the
                     // pill's identity and stays visible the whole time,
@@ -673,39 +703,22 @@ class TaskCapsuleBlock extends StatelessWidget {
                             // which lets that child shrink-wrap to its
                             // natural size instead of filling the box —
                             // without forcing this layer to expand, the
-                            // separator ring below would hug just the
-                            // emoji's own tiny bounds rather than the full
-                            // pill.
-                            child: Padding(
-                              padding: EdgeInsets.all(
-                                SelectedPillBorder.accentWidth(theme),
+                            // rings below would hug just the emoji's own
+                            // tiny bounds rather than the full pill.
+                            child: SelectedPillBorder(
+                              theme: theme,
+                              contentRadius: BorderRadius.circular(
+                                theme.radiusPill,
                               ),
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  color: badgeColor,
-                                  border: Border.all(
-                                    color: theme.colorScrim,
-                                    width: SelectedPillBorder.separatorWidth(
-                                      theme,
-                                    ),
-                                  ),
-                                  borderRadius: BorderRadius.circular(
-                                    (theme.radiusPill -
-                                            SelectedPillBorder.accentWidth(
-                                              theme,
-                                            ))
-                                        .clamp(0.0, double.infinity),
-                                  ),
-                                ),
-                                child: Align(
-                                  alignment: Alignment.topCenter,
-                                  child: Opacity(
-                                    opacity: glyphHidden ? 0 : 1,
-                                    child: Text(
-                                      categoryVisual.emoji,
-                                      style: TextStyle(
-                                        fontSize: badgeSize * 0.55,
-                                      ),
+                              fillColor: badgeColor,
+                              child: Align(
+                                alignment: Alignment.topCenter,
+                                child: Opacity(
+                                  opacity: glyphHidden ? 0 : 1,
+                                  child: Text(
+                                    categoryVisual.emoji,
+                                    style: TextStyle(
+                                      fontSize: badgeSize * 0.55,
                                     ),
                                   ),
                                 ),
@@ -837,154 +850,231 @@ class TaskCapsuleBlock extends StatelessWidget {
                         : (maxTextWidth ?? double.infinity),
                     maxHeight: textRegionHidden ? pillHeight : double.infinity,
                   ),
-                  child: Padding(
-                    padding: EdgeInsets.only(top: theme.spacingXs),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Dev-only layout experiment (textLayout — see
-                        // core/dev_config.dart): `stacked` keeps the name
-                        // and time+duration on their own lines (steps 1/2
-                        // of the entrance stagger, unchanged); `inline`
-                        // puts the time+duration first, then the name,
-                        // both in one Text.rich so they share a line.
-                        if (effectiveTextLayout ==
-                            TimelineTaskTextLayout.stacked) ...[
-                          // Step 1 of the entrance stagger — the name.
-                          Opacity(
-                            opacity: textRegionHidden
-                                ? 0
-                                : _staggeredOpacity(entranceProgress, 1),
-                            child: Text(
-                              task.title,
-                              style: titleTextStyle.copyWith(
-                                color: isCompleted
-                                    ? theme.colorTextSecondary
-                                    : theme.colorTextPrimary,
-                                fontWeight: FontWeight.w700,
-                                decoration: isCompleted
-                                    ? TextDecoration.lineThrough
-                                    : TextDecoration.none,
-                                decorationColor: theme.colorTextSecondary,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          // Corrected directly: this line is now the same
-                          // size as the task name (textBody, not the
-                          // smaller textCaption) but stays regular weight,
-                          // and gains a real gap below the title. The
-                          // earlier -3px Transform nudge that pulled it
-                          // CLOSER to the title is gone — it was solving
-                          // the opposite problem.
-                          SizedBox(height: theme.spacingXs),
-                          // Step 2 of the entrance stagger — the time line.
-                          Opacity(
-                            opacity: textRegionHidden
-                                ? 0
-                                : _staggeredOpacity(entranceProgress, 2),
-                            child: Text(
-                              timeLine,
-                              style: titleTextStyle.copyWith(
-                                color: theme.colorTextSecondary,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ] else
-                          // `inline`: time+duration then the name, one
-                          // line — requested directly ("hours first
-                          // followed by task name in one line instead of
-                          // stacked"). Reuses steps 1/2's opacities so the
-                          // entrance stagger still reads the same, just on
-                          // one Text.rich instead of two Text widgets.
-                          Opacity(
-                            opacity: textRegionHidden
-                                ? 0
-                                : math.min(
-                                    _staggeredOpacity(entranceProgress, 1),
-                                    _staggeredOpacity(entranceProgress, 2),
+                  // Corrected directly: "task outside zone view text isn't
+                  // centered... on timeline view text goes higher, should
+                  // be aligned with icon." With the outer Row now
+                  // `stretch`ed (see its own doc comment), this column
+                  // receives the row's REAL height (often the trailing
+                  // CompletionCheckbox's fixed 48px tap target, not the
+                  // pill) — but the title must only ever center within
+                  // [textHeaderHeight], never the row's full height, or a
+                  // multi-hour pill drags the title far from the icon
+                  // pinned at its own top (measured: 38px off at 90
+                  // minutes, 105.5px at 180).
+                  //
+                  // Three combinators were tried and measured wrong before
+                  // this one:
+                  // (1) A bare `Center` against the row's full height —
+                  //     the "drags away from the icon" bug above.
+                  // (2) `Align` + `ConstrainedBox(minHeight:
+                  //     textHeaderHeight)` — a MINIMUM can only ever GROW
+                  //     to what the parent already offers, never shrink
+                  //     it, so this silently behaved identically to (1).
+                  // (3) `OverflowBox(minHeight:/maxHeight:
+                  //     textHeaderHeight)` directly around the Column —
+                  //     `OverflowBox`'s own min/max still constrain the
+                  //     CHILD's layout (only PAINT escapes the parent's
+                  //     box, not layout its own constraints), so a
+                  //     `maxHeight` here just reintroduced a RenderFlex
+                  //     overflow on the two-line `stacked` layout, and
+                  //     without `maxHeight` a `minHeight` alone stretched
+                  //     a SHORT single-line title to fill the whole
+                  //     [textHeaderHeight] instead of centering within it.
+                  //
+                  // The combinator that actually measures right needs TWO
+                  // boxes doing two different jobs:
+                  // - An outer `OverflowBox` with NO min/max of its own
+                  //   (0/infinity) — this is what decouples the alignment
+                  //   region from the stretched Row's own height, letting
+                  //   it size itself to whatever its own child needs
+                  //   instead of inheriting the row's height.
+                  // - An inner `ConstrainedBox(minHeight:
+                  //   textHeaderHeight)` wrapping a `Center` — `Center`
+                  //   gives ITS OWN child loose (not tight) constraints,
+                  //   so a short title keeps its natural size and centers
+                  //   within the 48px floor, while a taller `stacked`
+                  //   column simply exceeds that floor and determines its
+                  //   own size, unclipped, with the outer `OverflowBox`
+                  //   growing to match (its own min/max being 0/infinity).
+                  child: OverflowBox(
+                    alignment: Alignment.topCenter,
+                    minHeight: 0,
+                    maxHeight: double.infinity,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: textHeaderHeight),
+                      // `Alignment.centerLeft`, not a bare `Center` —
+                      // reported directly: "note focus label is not
+                      // aligned with labels tasks in zones." A `Center`
+                      // (which this was) centres on BOTH axes, and only
+                      // the VERTICAL half was ever wanted here. It went
+                      // unnoticed while the Column always had a wide child
+                      // to hold its width; with the icon row hidden
+                      // (`iconsVisible: false`) AND the time line empty,
+                      // the Column shrank to the title alone and that
+                      // title then floated to the horizontal centre —
+                      // measured at title.left 275.6 against every other
+                      // row kind's 72.0. `widthFactor`/`heightFactor: 1`
+                      // are preserved (size to child, per the combinator
+                      // reasoning above); only the horizontal anchoring
+                      // changes.
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        widthFactor: 1,
+                        heightFactor: 1,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Dev-only layout experiment (textLayout — see
+                            // core/dev_config.dart): `stacked` keeps the name
+                            // and time+duration on their own lines (steps 1/2
+                            // of the entrance stagger, unchanged); `inline`
+                            // puts the time+duration first, then the name,
+                            // both in one Text.rich so they share a line.
+                            if (effectiveTextLayout ==
+                                TimelineTaskTextLayout.stacked) ...[
+                              // Step 1 of the entrance stagger — the name.
+                              Opacity(
+                                opacity: textRegionHidden
+                                    ? 0
+                                    : _staggeredOpacity(entranceProgress, 1),
+                                child: Text(
+                                  task.title,
+                                  style: titleTextStyle.copyWith(
+                                    color: isCompleted
+                                        ? theme.colorTextSecondary
+                                        : theme.colorTextPrimary,
+                                    fontWeight: FontWeight.w700,
+                                    decoration: isCompleted
+                                        ? TextDecoration.lineThrough
+                                        : TextDecoration.none,
+                                    decorationColor: theme.colorTextSecondary,
                                   ),
-                            child: Text.rich(
-                              TextSpan(
-                                children: [
-                                  TextSpan(
-                                    text: timeLine.isEmpty ? '' : '$timeLine  ',
-                                    style: titleTextStyle.copyWith(
-                                      color: theme.colorTextSecondary,
-                                    ),
-                                  ),
-                                  TextSpan(
-                                    text: task.title,
-                                    style: titleTextStyle.copyWith(
-                                      color: isCompleted
-                                          ? theme.colorTextSecondary
-                                          : theme.colorTextPrimary,
-                                      fontWeight: FontWeight.w700,
-                                      decoration: isCompleted
-                                          ? TextDecoration.lineThrough
-                                          : TextDecoration.none,
-                                      decorationColor: theme.colorTextSecondary,
-                                    ),
-                                  ),
-                                ],
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        // Status/indicator icons: all four share one row
-                        // below the time/duration line, all at the same 2x
-                        // size — requested directly (moved/tracked-behavior
-                        // used to sit on the time line itself at half this
-                        // size; notification/repeat were already here).
-                        // Neutral facts about the task, not statuses worth
-                        // colouring (design principle 1).
-                        //
-                        // Dev-only toggle (iconsVisible — see
-                        // core/dev_config.dart): hides this whole row.
-                        if (iconsVisible && capsuleIcons.isNotEmpty) ...[
-                          SizedBox(height: theme.spacingXs),
-                          // These fade out while the block is lifted and
-                          // back in on drop — requested directly: they're
-                          // secondary detail that isn't useful mid-drag,
-                          // unlike the category glyph in the pill, which
-                          // stays visible throughout.
-                          AnimatedOpacity(
-                            // Step 3 of the entrance stagger, multiplied
-                            // into the lift fade rather than replacing it —
-                            // both can be in play at once (a block dragged
-                            // immediately after being created), and taking
-                            // the product keeps whichever is more hiding.
-                            // Also hidden for `contentHidden` — redundant
-                            // with the cluster list's own indicator icons.
-                            opacity: textRegionHidden
-                                ? 0.0
-                                : (isLifted ? 0.0 : 1.0) *
-                                      _staggeredOpacity(entranceProgress, 3),
-                            duration: theme.motionFast,
-                            curve: Curves.easeOut,
-                            child: Row(
-                              children: [
-                                for (final (index, icon)
-                                    in capsuleIcons.indexed) ...[
-                                  if (index > 0)
-                                    SizedBox(width: theme.spacingXs),
-                                  Icon(
-                                    icon,
-                                    size: theme.spacingSm * 2,
+                              // Corrected directly: this line is now the same
+                              // size as the task name (textBody, not the
+                              // smaller textCaption) but stays regular weight,
+                              // and gains a real gap below the title. The
+                              // earlier -3px Transform nudge that pulled it
+                              // CLOSER to the title is gone — it was solving
+                              // the opposite problem.
+                              SizedBox(height: theme.spacingXs),
+                              // Step 2 of the entrance stagger — the time line.
+                              Opacity(
+                                opacity: textRegionHidden
+                                    ? 0
+                                    : _staggeredOpacity(entranceProgress, 2),
+                                child: Text(
+                                  timeLine,
+                                  style: titleTextStyle.copyWith(
                                     color: theme.colorTextSecondary,
                                   ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ],
-                      ],
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ] else
+                              // `inline`: time+duration then the name, one
+                              // line — requested directly ("hours first
+                              // followed by task name in one line instead of
+                              // stacked"). Reuses steps 1/2's opacities so the
+                              // entrance stagger still reads the same, just on
+                              // one Text.rich instead of two Text widgets.
+                              Opacity(
+                                opacity: textRegionHidden
+                                    ? 0
+                                    : math.min(
+                                        _staggeredOpacity(entranceProgress, 1),
+                                        _staggeredOpacity(entranceProgress, 2),
+                                      ),
+                                child: Text.rich(
+                                  TextSpan(
+                                    children: [
+                                      TextSpan(
+                                        text: timeLine.isEmpty
+                                            ? ''
+                                            : '$timeLine  ',
+                                        style: titleTextStyle.copyWith(
+                                          color: theme.colorTextSecondary,
+                                        ),
+                                      ),
+                                      TextSpan(
+                                        text: task.title,
+                                        style: titleTextStyle.copyWith(
+                                          color: isCompleted
+                                              ? theme.colorTextSecondary
+                                              : theme.colorTextPrimary,
+                                          fontWeight: FontWeight.w700,
+                                          decoration: isCompleted
+                                              ? TextDecoration.lineThrough
+                                              : TextDecoration.none,
+                                          decorationColor:
+                                              theme.colorTextSecondary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            // Status/indicator icons: all four share one row
+                            // below the time/duration line, all at the same 2x
+                            // size — requested directly (moved/tracked-behavior
+                            // used to sit on the time line itself at half this
+                            // size; notification/repeat were already here).
+                            // Neutral facts about the task, not statuses worth
+                            // colouring (design principle 1).
+                            //
+                            // Dev-only toggle (iconsVisible — see
+                            // core/dev_config.dart): hides this whole row.
+                            if (iconsVisible && capsuleIcons.isNotEmpty) ...[
+                              SizedBox(height: theme.spacingXs),
+                              // These fade out while the block is lifted and
+                              // back in on drop — requested directly: they're
+                              // secondary detail that isn't useful mid-drag,
+                              // unlike the category glyph in the pill, which
+                              // stays visible throughout.
+                              AnimatedOpacity(
+                                // Step 3 of the entrance stagger, multiplied
+                                // into the lift fade rather than replacing it —
+                                // both can be in play at once (a block dragged
+                                // immediately after being created), and taking
+                                // the product keeps whichever is more hiding.
+                                // Also hidden for `contentHidden` — redundant
+                                // with the cluster list's own indicator icons.
+                                opacity: textRegionHidden
+                                    ? 0.0
+                                    : (isLifted ? 0.0 : 1.0) *
+                                          _staggeredOpacity(
+                                            entranceProgress,
+                                            3,
+                                          ),
+                                duration: theme.motionFast,
+                                curve: Curves.easeOut,
+                                child: Row(
+                                  children: [
+                                    for (final (index, icon)
+                                        in capsuleIcons.indexed) ...[
+                                      if (index > 0)
+                                        SizedBox(width: theme.spacingXs),
+                                      Icon(
+                                        icon,
+                                        size: theme.spacingSm * 2,
+                                        color: theme.colorTextSecondary,
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
                   ),
                 ),
               ),

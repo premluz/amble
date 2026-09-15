@@ -188,7 +188,17 @@ abstract final class ColorPrimitives {
   // lightness as the four tints above so it sits in the same family. Icon
   // lightness matches the other *500 icons for equal contrast against its
   // own fill.
-  static final neutralTint = oklch(0.956, 0.0, 0); // default pill (grey)
+  // Default/uncategorised pill (grey). Lightness 0.900, matching every
+  // OTHER category tint (clay/ochre/periwinkle/berry are all 0.900) rather
+  // than the 0.956 it used to sit at.
+  //
+  // Reported directly: "gray on light mode for default (non selected
+  // category) is too light, non legible on light mode." Measured against
+  // `colorSurfacePrimary`, the old value gave a contrast ratio of **1.01**
+  // — indistinguishable from the page — while the four colored tints all
+  // landed at 1.08-1.10. Dropping to the shared 0.900 puts the default
+  // back in family instead of treating grey as a special case.
+  static final neutralTint = oklch(0.900, 0.0, 0);
   // Was 4.50:1 — technically at the floor, but close enough that sRGB
   // rounding could drop it under. Nudged to 4.69:1.
   static final neutral500 = oklch(0.520, 0.0, 0); // default icon, 4.69:1

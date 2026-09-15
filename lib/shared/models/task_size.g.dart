@@ -46,3 +46,44 @@ class TaskSizeAdapter extends TypeAdapter<TaskSize> {
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }
+
+class TaskFontSizeAdapter extends TypeAdapter<TaskFontSize> {
+  @override
+  final typeId = 15;
+
+  @override
+  TaskFontSize read(BinaryReader reader) {
+    switch (reader.readByte()) {
+      case 0:
+        return TaskFontSize.sm;
+      case 1:
+        return TaskFontSize.md;
+      case 2:
+        return TaskFontSize.lg;
+      default:
+        return TaskFontSize.sm;
+    }
+  }
+
+  @override
+  void write(BinaryWriter writer, TaskFontSize obj) {
+    switch (obj) {
+      case TaskFontSize.sm:
+        writer.writeByte(0);
+      case TaskFontSize.md:
+        writer.writeByte(1);
+      case TaskFontSize.lg:
+        writer.writeByte(2);
+    }
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TaskFontSizeAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}

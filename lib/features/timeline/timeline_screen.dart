@@ -1788,24 +1788,48 @@ class _DayTimelineState extends State<_DayTimeline> {
     // would collide with the label above it — requested directly. Computed
     // once here for the whole day so every label agrees, the same way the
     // shared text column's x is.
-    // Event slots are excluded: an ExternalEventCapsuleBlock has no
-    // "name label pushed below the icon on collision" mechanism at all
-    // (unlike TaskCapsuleBlock's own split layout) — its title sits
-    // fixed in the shared text column, so there is nothing for this
-    // collision-avoidance pass to compute FOR an event slot in the first
-    // place.
+    // EVERY slot — tasks and imported events alike. Event slots used to be
+    // excluded here, on the reasoning that an event had no "label pushed
+    // below the icon on collision" mechanism to compute for; that was
+    // circular (the mechanism is just `labelOffset`, which
+    // `ExternalEventCapsuleBlock` now takes exactly as a task does), and
+    // it produced a real bug reported directly from a screenshot: a task
+    // and an event sharing a time window each got their own lane for the
+    // RAIL — the lane pipeline was always generic over `ScheduledBlock`
+    // and measured correct — but only the task's TITLE was nudged clear,
+    // so both titles printed at the identical x and y ("Walky sync",
+    // "hhnch"). Feeding both kinds into one sweep is what makes the
+    // collision arithmetic see the collision at all.
+    // An event's own top is NOT in `blockTops` (that map is task-only in
+    // Task view — see its own doc comment), so it is derived here the same
+    // way `ExternalEventCapsuleBlock` derives it internally: elapsed
+    // minutes from `rangeStart`. Keeping the two in sync matters — an
+    // anchor computed from a different origin than the rail it points at
+    // would push labels around a collision that isn't where the sweep
+    // thinks it is.
     final labelTops = widget.showHourLabels
         ? computeLabelTops(
             anchors: [
               for (final slot in slots)
-                if (slot.task != null)
-                  LabelAnchor(
-                    id: slot.block.id,
-                    preferredTop: blockTops[slot.block.id]!,
-                    height: _labelHeight(theme),
-                  ),
+                LabelAnchor(
+                  id: slot.block.id,
+                  // `blockTops` is TASK-ONLY in Task view (see its own doc
+                  // comment), and `slots` also carries imported events and
+                  // the quick-create draft. Anything not in the map falls
+                  // back to its own scheduled start — the same derivation
+                  // those blocks' widgets use for their own `top`, so an
+                  // anchor always points at the rail it belongs to.
+                  preferredTop:
+                      blockTops[slot.block.id] ??
+                      _blockPreferredTop(slot.block, rangeStart),
+                  height: _labelHeight(theme),
+                ),
             ],
-            gap: theme.spacingXs,
+            // spacingSm, not spacingXs — requested directly: "slight
+            // larger gap between stacked names." Only affects labels the
+            // stacker actually had to push apart; non-colliding labels
+            // keep their own preferred top either way.
+            gap: theme.spacingSm,
           )
         : const <String, double>{};
     // Timeline mode's height is the real elapsed span. Collapsed mode has
@@ -2477,6 +2501,17 @@ class _DayTimelineState extends State<_DayTimeline> {
                               : _collapsedExternalEventHeight(event, theme),
                           compactText: !widget.showHourLabels,
                           durationVisible: widget.devDurationVisible,
+                          // Same collision-avoidance offset a task's own
+                          // label gets, from the same `computeLabelTops`
+                          // sweep — see that sweep's own comment for the
+                          // overlapping-title bug this fixes. Zero (its
+                          // default) whenever nothing collides, or in List
+                          // mode, where `labelTops` is empty by design.
+                          labelOffset: _eventLabelOffset(
+                            event: event,
+                            labelTops: labelTops,
+                            rangeStart: rangeStart,
+                          ),
                           onTap: () => showExternalCalendarEventInfo(
                             context: context,
                             theme: theme,
@@ -2719,6 +2754,30 @@ class _DayTimelineState extends State<_DayTimeline> {
 
   double _minutesSinceStart(DateTime rangeStart, DateTime scheduledAt) =>
       scheduledAt.difference(rangeStart).inMinutes.toDouble();
+
+  /// Where a block's own rail sits when it isn't in `blockTops` — elapsed
+  /// minutes from [rangeStart], the SAME derivation an imported event's
+  /// and the quick-create draft's own widgets use for their `top`.
+  /// `blockTops` is task-only in Task view (see its own doc comment), so
+  /// every other block kind resolves its position here instead.
+  double _blockPreferredTop(ScheduledBlock block, DateTime rangeStart) =>
+      _minutesSinceStart(rangeStart, block.scheduledStart) *
+      widget.pixelsPerMinute;
+
+  /// How far an imported event's title is pushed below its own rail to
+  /// clear a colliding neighbour — the event-side counterpart of the
+  /// `labelOffset` a task already gets, read off the same
+  /// `computeLabelTops` sweep. Zero when nothing collides (title stays
+  /// level with the rail's icon) and zero in List mode, where the sweep
+  /// doesn't run at all.
+  double _eventLabelOffset({
+    required ExternalCalendarEvent event,
+    required Map<String, double> labelTops,
+    required DateTime rangeStart,
+  }) {
+    final preferred = _blockPreferredTop(event, rangeStart);
+    return (labelTops[event.id] ?? preferred) - preferred;
+  }
 
   /// Every task's vertical offset, keyed by task id — computed once here
   /// so every place a `top` is needed reads the same values rather than
@@ -4599,9 +4658,16 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
             // Selection reads as an accent ring on the pill's own rail —
             // requested directly, replacing the wiggle that used to signal
             // it, and matching `ZoneGridBlock`'s own selected treatment.
-            // Scoped to multi-task mode because that is the only mode in
-            // which a task is selectable at all.
-            isSelected: multiTaskEditMode && _isSelected,
+            //
+            // `_isArmed` too, not just multi-task selection — requested
+            // directly: "edit on long press on timeline (not in edit mode
+            // screen) should have same edit style." A long-press-armed
+            // task already gets the wiggle and its resize handles (see
+            // `_editActive`); it was the ONE edit-ish state that never got
+            // the border, so the same gesture looked different depending
+            // on which way you entered edit. Both routes now render the
+            // one shared `SelectedPillBorder`.
+            isSelected: (multiTaskEditMode && _isSelected) || _isArmed,
             onTap: _effectiveOnTap,
             onLongPress: _effectiveOnLongPress,
             onToggleComplete: widget.onToggleComplete,

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/glass_pill_surface.dart';
 import '../../shared/models/external_calendar_event.dart';
 import 'duration_label.dart';
 import 'task_capsule_block.dart'
@@ -51,6 +52,7 @@ class ExternalEventCapsuleBlock extends StatelessWidget {
     this.collapsedHeight,
     this.compactText = false,
     this.durationVisible = true,
+    this.labelOffset = 0,
     this.onTap,
   });
 
@@ -108,6 +110,23 @@ class ExternalEventCapsuleBlock extends StatelessWidget {
   /// on regardless — see `_ExternalEventTextRow.alwaysShowTime`.
   final bool durationVisible;
 
+  /// How far this event's title sits BELOW its own rail's top — zero when
+  /// nothing collides (so the title stays level with the rail's icon),
+  /// positive when a neighbouring block's label pushed it down. Mirrors
+  /// `TaskCapsuleBlock.labelOffset`'s contract exactly, and is fed from
+  /// the SAME `computeLabelTops` collision sweep tasks already use.
+  ///
+  /// Real bug, reported directly from a screenshot showing an imported
+  /// event's title printed on top of a native task's ("Walky sync",
+  /// "hhnch"): event slots used to be excluded from that sweep outright,
+  /// on the reasoning that an event "has no label-push mechanism at all"
+  /// — which was circular, since this parameter is that mechanism. A task
+  /// and an event sharing a time window each got their own LANE for the
+  /// rail (the lane pipeline was always generic over `ScheduledBlock`, and
+  /// measured correct), but only the task's TITLE was ever nudged clear,
+  /// so the two titles landed at the identical x and y.
+  final double labelOffset;
+
   final VoidCallback? onTap;
 
   @override
@@ -153,28 +172,64 @@ class ExternalEventCapsuleBlock extends StatelessWidget {
             child: GestureDetector(
               onTap: onTap,
               behavior: HitTestBehavior.opaque,
-              child: _DashedPillRail(
+              // `height`, not `badgeSize` — corrected directly: "imported
+              // tasks on timeline (spatial view) should also adopt length
+              // of pill to their duration, at the moment they are the same
+              // minimal size." The duration-derived height was already
+              // being computed for the outer box (see `height` above) but
+              // the visible rail was pinned to a flat `badgeSize`, so a
+              // 15-minute and a 4-hour event drew identical 24px pills
+              // while every native task beside them scaled properly.
+              // Matches `TaskCapsuleBlock`'s own rail exactly, which is
+              // `width: badgeSize, height: pillHeight`.
+              child: DashedPillRail(
                 theme: theme,
                 width: badgeSize,
-                height: badgeSize,
+                height: height,
               ),
             ),
           ),
           Positioned(
-            top: 0,
+            // Pushed down only when a neighbouring label would collide —
+            // see [labelOffset]. The enclosing Stack is `Clip.none`, so a
+            // label nudged past this box's own (duration-derived) height
+            // still renders in full, exactly as a task's does.
+            top: labelOffset,
             left: textColumnLeft,
             right: textColumnRight,
             child: GestureDetector(
               onTap: onTap,
               behavior: HitTestBehavior.opaque,
-              child: _ExternalEventTextRow(
-                theme: theme,
-                event: event,
-                timeColumnWidth: taskTimeColumnWidth(theme),
-                durationColumnWidth: taskDurationColumnWidth(theme),
-                compactInlineLayout: compactText,
-                durationVisible: durationVisible,
-                alwaysShowTime: compactText,
+              // Centred against the BADGE's own height, not pinned to its
+              // top — corrected directly from a screenshot annotated "text
+              // too high, should be middle", comparing this view against
+              // Zone view (whose fixed-height rows centre their content by
+              // default). Measured before fixing: the title's centre sat a
+              // consistent 4px above the icon's at every duration, because
+              // a 16px title top-aligned inside the 24px badge span.
+              //
+              // `minHeight`, not a fixed height: a title that ever wraps
+              // taller than the badge grows instead of being clipped — the
+              // same reasoning `TaskCapsuleBlock`'s own equivalent
+              // centring uses (see `textHeaderHeight` there).
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: badgeSize),
+                // No `widthFactor` — this column must keep filling its
+                // full width (`textColumnLeft`..`textColumnRight`) so the
+                // title truncates at the same x every native task's does;
+                // only the VERTICAL centring is wanted here.
+                child: Center(
+                  heightFactor: 1,
+                  child: _ExternalEventTextRow(
+                    theme: theme,
+                    event: event,
+                    timeColumnWidth: taskTimeColumnWidth(theme),
+                    durationColumnWidth: taskDurationColumnWidth(theme),
+                    compactInlineLayout: compactText,
+                    durationVisible: durationVisible,
+                    alwaysShowTime: compactText,
+                  ),
+                ),
               ),
             ),
           ),
@@ -184,14 +239,31 @@ class ExternalEventCapsuleBlock extends StatelessWidget {
   }
 }
 
-/// The pill rail's own visual — same badge size/corner radius as a real
-/// task's category-colored rail, but a dashed outline over a faint fill
-/// instead of a solid category color, plus a small calendar glyph in
+/// An imported calendar event's badge — same size/corner radius as a real
+/// task's category-colored rail, but a dashed outline instead of a solid
+/// category fill, plus a small calendar glyph in
 /// [AmbleTheme.colorTextSecondary] (subtle, matching every other "this is
 /// not a real Amble object" visual cue already established for external
-/// events — see `_ZoneExternalEventRow`'s own muted-title precedent).
-class _DashedPillRail extends StatelessWidget {
-  const _DashedPillRail({
+/// events).
+///
+/// Public, and shared: Zone view's own imported-event rows
+/// (`_ZoneExternalEventRow`) render this exact badge too, requested
+/// directly — "on the zone view, the imported items from calendar should
+/// be rendered in the same way as other events, other tasks, so with the
+/// circle, and icon inside the circle is dotted, same as in the timeline
+/// view." Zone view previously showed a bare muted title with no badge at
+/// all, which is what made the two views read as different kinds of
+/// object.
+/// **No longer dashed** (the name is kept so the many existing call sites
+/// and tests that reference it keep working): the outline was removed
+/// entirely per a direct instruction — "no dotted line, no line at all" —
+/// and replaced by a flat gray fill via the shared [GlassPillSurface].
+/// That is deliberately the FLAT material, not the frosted one the
+/// quick-create draft placeholder uses: a draft is airborne and
+/// provisional, while an imported event is a real thing on the calendar.
+class DashedPillRail extends StatelessWidget {
+  const DashedPillRail({
+    super.key,
     required this.theme,
     required this.width,
     required this.height,
@@ -203,70 +275,48 @@ class _DashedPillRail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: _DashedRoundedRectPainter(
-        color: theme.colorTextSecondary,
-        // theme.radiusPill, not radiusSm — this dashed rail is deliberately
-        // shaped to echo a real task pill's own rail (see this class's own
-        // doc comment), so it tracks the same "Pill shape" setting rather
-        // than a fixed corner.
-        radius: theme.radiusPill,
-      ),
+    // A FLAT gray fill, no outline — requested directly: "the imported
+    // should have fill also but just gray not the same glassy / and no
+    // dotted line, no line at all." This was a dashed outline over
+    // nothing; it is now the shared `GlassPillSurface` in its flat
+    // material, which is deliberately NOT the frosted one the quick-create
+    // draft uses (that one is airborne and provisional; an imported event
+    // is a real thing on the calendar, just not an Amble task).
+    //
+    // Still corners at `theme.radiusPill` — the active "Pill shape" rung —
+    // via that widget, so this rail keeps echoing a real task's own rail
+    // exactly as the dashed version did.
+    return GlassPillSurface(
+      theme: theme,
+      material: GlassPillMaterial.flat,
+      width: width,
+      height: height,
       child: SizedBox(
         width: width,
         height: height,
-        child: Center(
-          child: Icon(
-            Icons.calendar_today_outlined,
-            size: theme.sizeTaskBadge * 0.55,
-            color: theme.colorTextSecondary,
+        // The glyph sits in the rail's own TOP square, not the middle of
+        // however tall the rail runs — matching `TaskCapsuleBlock`'s own
+        // `alignment: Alignment.topCenter`. Once the rail started scaling
+        // with duration, a centred glyph would drift to the middle of a
+        // long event and lose its alignment with the title beside it
+        // (which stays level with the icon, by design — see
+        // `external_event_title_alignment_test.dart`).
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: SizedBox(
+            height: theme.sizeTaskBadge,
+            child: Center(
+              child: Icon(
+                Icons.calendar_today_outlined,
+                size: theme.sizeTaskBadge * 0.55,
+                color: theme.colorTextSecondary,
+              ),
+            ),
           ),
         ),
       ),
     );
   }
-}
-
-/// Draws a dashed rounded-rectangle outline — Flutter has no built-in
-/// dashed border, and no dashed-border package is in this project's
-/// dependencies (adding one for a single visual cue is out of scope per
-/// CLAUDE.md's "no new dependency without flagging it first" rule), so
-/// this is a small hand-rolled `CustomPainter` instead.
-class _DashedRoundedRectPainter extends CustomPainter {
-  const _DashedRoundedRectPainter({required this.color, required this.radius});
-
-  final Color color;
-  final double radius;
-
-  static const _dashLength = 3.0;
-  static const _gapLength = 2.0;
-  static const _strokeWidth = 1.0;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rrect = RRect.fromRectAndRadius(
-      Offset.zero & size,
-      Radius.circular(radius),
-    );
-    final path = Path()..addRRect(rrect);
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = _strokeWidth;
-
-    for (final metric in path.computeMetrics()) {
-      var distance = 0.0;
-      while (distance < metric.length) {
-        final next = math.min(distance + _dashLength, metric.length);
-        canvas.drawPath(metric.extractPath(distance, next), paint);
-        distance = next + _gapLength;
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _DashedRoundedRectPainter oldDelegate) =>
-      oldDelegate.color != color || oldDelegate.radius != radius;
 }
 
 /// The text half of [ExternalEventCapsuleBlock] — mirrors

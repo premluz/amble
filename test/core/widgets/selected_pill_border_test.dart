@@ -232,19 +232,68 @@ void main() {
           .map((r) => r.topLeft.x)
           .toList();
 
-      // Outermost (accent ring) -> innermost (fill): strictly decreasing,
-      // never equal and never inverted.
+      // Outermost (accent ring) -> innermost: never INVERTED. A nested
+      // layer may share its parent's radius (the soft inner-shadow
+      // gradient deliberately sits exactly concentric with the fill it
+      // shades) but must never be LARGER, which is the actual defect
+      // this guards — a corner curve escaping its enclosing ring.
       final sorted = [...radii]..sort((a, b) => b.compareTo(a));
       expect(
         radii,
         sorted,
-        reason: 'each ring/fill must nest at a strictly smaller radius '
-            'than its enclosing layer, or their corners will not be '
-            'concentric',
+        reason: 'each ring/fill must nest at a radius no larger than its '
+            'enclosing layer, or their corners will not be concentric',
       );
-      expect(radii.toSet().length, radii.length, reason: 'no two layers '
-          'should share the exact same radius — that is what let a fill '
-          'corner peek out past its enclosing ring in the reported bug');
+
+      // The three STRUCTURAL layers (accent ring, scrim ring, fill) must
+      // still each step inward — asserted on distinct values rather than
+      // on the raw layer count, so a purely decorative layer sharing a
+      // radius (the inner shadow) doesn't read as a regression.
+      expect(
+        radii.toSet().length,
+        greaterThanOrEqualTo(3),
+        reason: 'the accent ring, scrim ring and fill must each nest at '
+            'their own strictly smaller radius — that stepping is what '
+            'stops a fill corner peeking out past its enclosing ring',
+      );
+    });
+
+    // Confirmed directly: the solid separator is correct ("one inner
+    // solid line is fine separating blue from bg pill"), and a SOFTER,
+    // more transparent shadow belongs inside it as well ("we still have
+    // one more inner dark softer/transparent something").
+    //
+    // It must be a real, deliberate gradient — not the paint artifact it
+    // used to be, where `TaskCapsuleBlock`'s hand-nested copy set `color:`
+    // and `border:` on ONE `BoxDecoration` so the fill bled through the
+    // 40%-alpha scrim stroke and muddied it.
+    testWidgets('selected: a soft inner shadow sits inside the solid '
+        'separator — a real gradient, softer than the ring itself', (
+      tester,
+    ) async {
+      await pump(tester, isSelected: true);
+
+      final gradients = tester
+          .widgetList<DecoratedBox>(find.byType(DecoratedBox))
+          .map((w) => w.decoration)
+          .whereType<BoxDecoration>()
+          .map((d) => d.gradient)
+          .whereType<RadialGradient>()
+          .toList();
+
+      expect(
+        gradients,
+        hasLength(1),
+        reason: 'exactly one inner-shadow gradient, drawn deliberately',
+      );
+      final shadow = gradients.single;
+      expect(shadow.colors.first.a, 0.0, reason: 'fades from transparent');
+      expect(
+        shadow.colors.last.a,
+        lessThan(theme.colorScrim.a),
+        reason: 'the soft shadow must be WEAKER than the solid separator '
+            'ring, not a second hard edge',
+      );
     });
   });
 }

@@ -223,6 +223,83 @@ class TaskSizeSetting extends _$TaskSizeSetting {
   }
 }
 
+/// Which rung of the task-title-FONT scale (`TaskFontSize.sm`/`md`/`lg`)
+/// the Timeline renders title text at — independent of [TaskSizeSetting]'s
+/// own badge/pill diameter. Requested directly: "Settings in appearance
+/// separately font size and separately pill size, let's split this, and
+/// should affect all pills its text."
+///
+/// `main.dart` reads this to `copyWith` the right `textTaskTitle*` field
+/// onto the active `AmbleTheme`, mirroring [TaskSizeSetting]'s own
+/// mechanism exactly — see `_resolveFontSize`.
+///
+/// **One-time migration, not a plain default** (confirmed via
+/// AskUserQuestion): before this split, [TaskSizeSetting]'s own single
+/// value drove BOTH the badge size and the font rung together (paired by
+/// NAME — `TaskSize.sm` resolved to `textTaskTitleSm`, etc.). An absent
+/// [PreferenceKeys.taskFontSize] means this user's device predates the
+/// split, so [build] resolves it from whatever [TaskSizeSetting] currently
+/// holds — by name, `TaskSize.sm` -> `TaskFontSize.sm` — rather than
+/// silently resetting an existing user's font size to a fresh default the
+/// moment this control becomes independent. A genuinely fresh install
+/// (where [TaskSizeSetting] ALSO has nothing stored) falls through to that
+/// same by-name mapping applied to `TaskSize`'s own default (`md`), so it
+/// still lands on `TaskFontSize.md` — identical to [TaskSizeSetting]'s own
+/// plain default, just reached via one extra (harmless) hop.
+///
+/// `build()` deliberately never WRITES — only resolves the value to
+/// return, in memory. Real bug, caught by the full test suite hanging
+/// indefinitely: an earlier version persisted the migrated value
+/// immediately from inside `build()` via `unawaited(...)`, and any test
+/// that mounted the app and tore down its Hive boxes before that
+/// fire-and-forget write finished deadlocked on `deleteFromDisk()` — the
+/// exact "unawaited Hive write still in flight when the test returned"
+/// class of bug this codebase has hit before (see docs/ERROR_LOG.md). A
+/// provider's `build()` performing I/O as a side effect is the wrong
+/// place for this regardless of the test-hang symptom; [migrateIfNeeded]
+/// below is the explicit, awaited, launch-time equivalent of every other
+/// one-time migration in this app (see `main()`'s own
+/// `materializeDueRecurrences`/`migrateToWeeklySchedule` calls).
+@Riverpod(keepAlive: true)
+class TaskFontSizeSetting extends _$TaskFontSizeSetting {
+  @override
+  TaskFontSize build() {
+    final repository = ref.read(preferencesRepositoryProvider);
+    final stored = repository.getValue<TaskFontSize>(
+      PreferenceKeys.taskFontSize,
+    );
+    if (stored != null) return stored;
+
+    final legacyPillRung = ref.read(taskSizeSettingProvider);
+    return TaskFontSize.values.byName(legacyPillRung.name);
+  }
+
+  Future<void> set(TaskFontSize value) async {
+    await ref
+        .read(preferencesRepositoryProvider)
+        .setValue(PreferenceKeys.taskFontSize, value);
+    state = value;
+  }
+
+  /// Persists the by-name migration [build] resolves in memory, ONCE, so a
+  /// later `build()` (a fresh provider container — app restart, a new
+  /// test) reads it back directly instead of re-deriving it from
+  /// [TaskSizeSetting] every time (which would silently stop tracking an
+  /// independent choice the user made afterward via [set], since a re-
+  /// derivation on every launch would only ever reflect [TaskSizeSetting],
+  /// never actually diverge from it). Called explicitly at app launch
+  /// (see `main()`), matching every other one-time migration in this app.
+  /// A no-op once a value is already stored, migrated or explicitly set.
+  Future<void> migrateIfNeeded() async {
+    final repository = ref.read(preferencesRepositoryProvider);
+    final stored = repository.getValue<TaskFontSize>(
+      PreferenceKeys.taskFontSize,
+    );
+    if (stored != null) return;
+    await repository.setValue(PreferenceKeys.taskFontSize, state);
+  }
+}
+
 /// Which corner-rounding a task/zone/Inbox pill badge renders at
 /// (`PillShape.small`/`rounded`/`full`) — one global setting spanning
 /// every pill-shaped surface in the app, mirroring [TaskSizeSetting]'s own
