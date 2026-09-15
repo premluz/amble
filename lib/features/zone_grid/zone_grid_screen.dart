@@ -25,7 +25,29 @@ Future<void> showZoneGridScreen(BuildContext context) =>
         .push<void>(MaterialPageRoute(builder: (_) => const ZoneGridScreen()));
 
 const _pixelsPerMinute = 44.0 / 60;
-const _axisWidth = 44.0;
+
+/// The hour-label column's full width, INCLUDING the 8px breathing room on
+/// each side of the label text (see the label `Positioned` in `build`).
+///
+/// Reported directly: the gap between the screen edge and the hour labels
+/// read as ~3px here versus ~16px on the Timeline, because this axis had
+/// no left inset at all — labels started at `left: 0` with only a 4px
+/// shave on the right. Both sides are now `theme.spacingSm` (8px).
+///
+/// **Sized as 8 (left inset) + text + 16 (clearance before lane 1).**
+/// "00:00" is five glyphs of JetBrains Mono at `textCaption`'s 12px
+/// (~7.2px advance each, ~36px total), so 8 + 36 + 16 = 60.
+///
+/// The right-hand clearance is 16px, not 8, per a direct follow-up: "right
+/// gap smaller on zone edit and too big on task view make it 16px."
+///
+/// History worth keeping: a first attempt narrowed this to 40 on the
+/// assumption the lanes could reclaim space — that left only 24px for the
+/// text and wrapped every label onto two lines ("it squashed actually the
+/// edit zone screen so hours spatial run in 2 lines now"). The lanes give
+/// up width here rather than gaining any; the padding has to come from
+/// somewhere.
+const _axisWidth = 60.0;
 const _gridHeight = 1440 * _pixelsPerMinute;
 
 class ZoneGridScreen extends ConsumerStatefulWidget {
@@ -452,6 +474,22 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                     children: [
                       SingleChildScrollView(
                         controller: _scroll,
+                        // Every hour label is centred ON its own tick line,
+                        // so the 00:00 label at the very top extends half a
+                        // caption line ABOVE the content box and the one at
+                        // the day's end sits flush against the bottom —
+                        // both clipped. Reported directly: "need larger
+                        // padding top bottom as cant see 00 and 00 end
+                        // day."
+                        //
+                        // `spacingLg` matches the Timeline's own fix for
+                        // the identical report on its hour gutter (see
+                        // `timeline_screen.dart`'s scroll padding, where
+                        // spacingMd was explicitly found too small to clear
+                        // half a caption line).
+                        padding: EdgeInsets.symmetric(
+                          vertical: theme.spacingLg,
+                        ),
                         physics:
                             _editing ||
                                 _paintOrigin != null ||
@@ -541,15 +579,65 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                                           : null,
                                     ),
                                   ),
-                                  for (var hour = 0; hour < 24; hour++)
+                                  // `<= 24`, not `< 24`. The day's closing
+                                  // label is a real 25th tick at the grid's
+                                  // bottom edge: with `< 24` the last one
+                                  // drawn was 23:00 and the final hour of
+                                  // the grid carried no label at all, which
+                                  // no amount of scroll padding could
+                                  // reveal — reported directly, "still cant
+                                  // fully scroll on zone edit to see 00 end
+                                  // of day."
+                                  for (var hour = 0; hour <= 24; hour++)
                                     Positioned(
-                                      left: 0,
-                                      top: hour * 44,
-                                      width: _axisWidth - theme.spacingXs,
+                                      // 8px clear of the screen edge and
+                                      // 8px clear of the first lane —
+                                      // requested directly, replacing a
+                                      // zero left inset that left the
+                                      // labels almost touching the edge.
+                                      left: theme.spacingSm,
+                                      // Derived from the same scale the
+                                      // zones are laid out on, never a
+                                      // second hardcoded 44 — a literal
+                                      // here silently drifts from every
+                                      // block beside it the moment the
+                                      // scale changes.
+                                      top: hour * 60 * _pixelsPerMinute,
+                                      width: _axisWidth - theme.spacingSm * 2,
                                       child: IgnorePointer(
                                         child: Text(
                                           '${hour.toString().padLeft(2, '0')}:00',
-                                          textAlign: TextAlign.right,
+                                          // LEFT-aligned, matching the
+                                          // Timeline's own hour labels
+                                          // (`TaskBoundaryMarkers` with
+                                          // `leftInset` set and NO
+                                          // `columnWidth`, which is what
+                                          // switches it to right-aligned).
+                                          //
+                                          // Right-alignment was why earlier
+                                          // width changes looked like they
+                                          // did nothing: the glyphs hugged
+                                          // the box's RIGHT edge, so
+                                          // shrinking the box moved them
+                                          // right while the left gap only
+                                          // appeared constant by
+                                          // coincidence. Measured with a
+                                          // throwaway geometry probe before
+                                          // changing it.
+                                          textAlign: TextAlign.left,
+                                          // Never wrap. `_axisWidth` is sized
+                                          // from a measured-by-arithmetic
+                                          // glyph width, which a device font
+                                          // fallback or a larger text scale
+                                          // could exceed — and the failure
+                                          // mode is silent two-line labels
+                                          // that squash the whole axis
+                                          // (reported directly once already).
+                                          // One line, clipped if it ever must
+                                          // be, rather than reflowing.
+                                          maxLines: 1,
+                                          softWrap: false,
+                                          overflow: TextOverflow.clip,
                                           style: theme.textCaption.copyWith(
                                             color: theme.colorTextTertiary,
                                           ),

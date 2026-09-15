@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/dev_config.dart' show TimelineTaskTextLayout;
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/selected_pill_border.dart';
 import '../../shared/models/category.dart';
 import '../../shared/models/task.dart';
 import '../../shared/models/task_category.dart';
@@ -512,8 +513,27 @@ class TaskCapsuleBlock extends StatelessWidget {
     final textRegionHidden = contentHidden || textCollapsed;
 
     final card = IntrinsicHeight(
+      // stretch, NOT start — corrected directly: "task outside zone view
+      // text isn't centered... on timeline view text goes higher, should
+      // be aligned with icon." Measured before fixing: the row's real
+      // height is set by whichever child is tallest — often the trailing
+      // CompletionCheckbox's fixed 48px tap target, NOT the pill, once the
+      // pill is anywhere near its badge-size floor. With `start`, every
+      // child (pill, text column, checkbox) kept only its OWN intrinsic
+      // height, pinned to the row's top — so a short pill's title, given a
+      // fixed 4px top offset meant for a badge-height row, sat near the
+      // top of a much taller (checkbox-driven) row with dead space below
+      // it. `stretch` gives every child the row's real height; each one
+      // then positions its own content within that height as appropriate:
+      // the pill's own `AnimatedContainer.alignment: topCenter` already
+      // pins its emoji to the top (unchanged, still correct — the icon
+      // should stay flush with the pill's own top edge regardless of the
+      // row's height), `CompletionCheckbox` already centers itself
+      // internally (unchanged), and the text column below gains a new
+      // `Center` wrapper so IT constructs the one thing that was actually
+      // missing: centering against the row's own real height.
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Drag-to-reschedule is scoped to just this pill — wrapping the
           // whole row (as before) made the title/time text draggable too,
@@ -568,38 +588,48 @@ class TaskCapsuleBlock extends StatelessWidget {
                     // pass): spacingXs/2 (2px) still read as slightly low
                     // next to the title.
                     padding: EdgeInsets.zero,
-                    decoration: BoxDecoration(
-                      color: badgeColor,
-                      // Selection reads as an accent ring on the rail —
-                      // requested directly, replacing the wiggle that used
-                      // to signal it. Same treatment `ZoneGridBlock` uses
-                      // for a selected zone (`colorAccent` at
-                      // `borderWidthHairline * 2`), so selection looks the
-                      // same whether you're editing a task or a zone.
-                      border: isSelected
-                          ? Border.all(
+                    // theme.radiusPill — the ACTIVE rung of the "Pill
+                    // shape" setting (small/rounded/full), not
+                    // radiusTaskPill (always fully round, used by
+                    // AppButton/the theme selector/the tracked-behavior
+                    // form, none of which this setting should touch —
+                    // confirmed via AskUserQuestion as the wrong scope for
+                    // those). Was hardcoded to radiusSm (4px) before this
+                    // setting existed; requested directly ("we have squary
+                    // rounded shape of pills but rounded on inbox ... this
+                    // should affect globally").
+                    //
+                    // Selection reads as a two-ring border on the rail —
+                    // requested directly, replacing the wiggle that used to
+                    // signal it, then refined again: a single accent ring
+                    // disappeared against a pill that happened to already be
+                    // blue, so a thin dark separator ring now sits between
+                    // the accent ring and the fill, regardless of the pill's
+                    // own color. See [SelectedPillBorder]'s own doc comment.
+                    // Unselected keeps the exact same box (color, radius, no
+                    // border) as before this feature existed at all.
+                    decoration: isSelected
+                        ? BoxDecoration(
+                            border: Border.all(
                               color: theme.colorAccent,
-                              width: theme.borderWidthHairline * 2,
-                            )
-                          : null,
-                      // radiusSm (4px), not radiusTaskPill (fully round) —
-                      // requested directly. Kept scoped to this one rail rather
-                      // than repointing radiusTaskPill itself, which every
-                      // pill-SHAPED button across the app (AppButton, the theme
-                      // selector, the tracked-behavior form) also reads —
-                      // changing that token's value would have flattened all of
-                      // those too, confirmed via AskUserQuestion as the wrong
-                      // scope. radiusSm already equals 4 and is a real Tier 2
-                      // token, so this reuses it rather than adding a duplicate.
-                      borderRadius: BorderRadius.circular(theme.radiusSm),
-                      // No shadow here any more while lifted — the shadow now
-                      // belongs to the outer frosted card (see the wrapping
-                      // below), matching how every other pane in the app
-                      // carries its OWN elevation rather than one of its
-                      // children carrying it. Requested directly: "the
-                      // draggable coloured icon pane would not have shadow
-                      // instead the pane has shadow."
-                    ),
+                              width: SelectedPillBorder.accentWidth(theme),
+                            ),
+                            borderRadius: BorderRadius.circular(
+                              theme.radiusPill,
+                            ),
+                            // No shadow here any more while lifted — the
+                            // shadow now belongs to the outer frosted card
+                            // (see the wrapping below).
+                          )
+                        : BoxDecoration(
+                            color: badgeColor,
+                            borderRadius: BorderRadius.circular(
+                              theme.radiusPill,
+                            ),
+                          ), // Unselected: this is the pill's ONLY fill —
+                    // the inner box below stays undecorated in that case,
+                    // so the color is painted once, exactly as before this
+                    // feature existed.
                     // Deliberately NOT faded while lifted — corrected
                     // directly after a first pass hid it: this glyph is the
                     // pill's identity and stays visible the whole time,
@@ -625,13 +655,70 @@ class TaskCapsuleBlock extends StatelessWidget {
                     // tinting is applied or needed here any more.
                     // `glyphHidden` (the drag ghost) is the ONE case that also
                     // drops the emoji — see its own doc comment.
-                    child: Opacity(
-                      opacity: glyphHidden ? 0 : 1,
-                      child: Text(
-                        categoryVisual.emoji,
-                        style: TextStyle(fontSize: badgeSize * 0.55),
-                      ),
-                    ),
+                    //
+                    // The emoji itself is wrapped in the dark separator
+                    // ring + fill (see [SelectedPillBorder]'s doc comment)
+                    // only while selected, inset by the accent border's own
+                    // width so the two rings stay concentric. Unselected,
+                    // `badgeColor` already lives on the outer decoration
+                    // above and this whole inner wrapper is skipped — the
+                    // child is the bare emoji, same three widgets
+                    // (`Opacity` -> `Text`) as before this feature existed,
+                    // not extra empty layers left in the tree for a case
+                    // that needs none of them.
+                    child: isSelected
+                        ? SizedBox.expand(
+                            // `AnimatedContainer`'s own `alignment:
+                            // topCenter` wraps ITS child in an `Align`,
+                            // which lets that child shrink-wrap to its
+                            // natural size instead of filling the box —
+                            // without forcing this layer to expand, the
+                            // separator ring below would hug just the
+                            // emoji's own tiny bounds rather than the full
+                            // pill.
+                            child: Padding(
+                              padding: EdgeInsets.all(
+                                SelectedPillBorder.accentWidth(theme),
+                              ),
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: badgeColor,
+                                  border: Border.all(
+                                    color: theme.colorScrim,
+                                    width: SelectedPillBorder.separatorWidth(
+                                      theme,
+                                    ),
+                                  ),
+                                  borderRadius: BorderRadius.circular(
+                                    (theme.radiusPill -
+                                            SelectedPillBorder.accentWidth(
+                                              theme,
+                                            ))
+                                        .clamp(0.0, double.infinity),
+                                  ),
+                                ),
+                                child: Align(
+                                  alignment: Alignment.topCenter,
+                                  child: Opacity(
+                                    opacity: glyphHidden ? 0 : 1,
+                                    child: Text(
+                                      categoryVisual.emoji,
+                                      style: TextStyle(
+                                        fontSize: badgeSize * 0.55,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          )
+                        : Opacity(
+                            opacity: glyphHidden ? 0 : 1,
+                            child: Text(
+                              categoryVisual.emoji,
+                              style: TextStyle(fontSize: badgeSize * 0.55),
+                            ),
+                          ),
                   ),
                 ),
                 // The resize handle — visible only in Edit Mode, and only
@@ -898,6 +985,7 @@ class TaskCapsuleBlock extends StatelessWidget {
                       ],
                     ),
                   ),
+                  ),
                 ),
               ),
             ),
@@ -1007,14 +1095,33 @@ class TaskCapsuleBlock extends StatelessWidget {
         // right edge and the wrapper's own right edge, so the outer clip
         // has nothing to visibly cut into there.
         //
-        // Animating the radius itself (pill's own resting radius up to
-        // radiusXl once fully lifted) is what makes REST correct without
-        // undoing the lift treatment, which already looked right. Anchored
-        // to radiusSm, not radiusMd — the pill's own rail reads radiusSm
-        // (see its own doc comment above); this wrapper has to start from
-        // the SAME value or it re-creates the identical mismatch this bug
-        // report was about, just shifted between two different tokens
-        // instead of two different corners.
+        // Anchored to a small FIXED `radiusSm`, deliberately independent of
+        // `theme.radiusPill` — reported directly against a screenshot
+        // ("pills are clipped, rounding is applied not directly on pills
+        // but perhaps elsewhere"), and measured before fixing.
+        //
+        // The trap here is that a bigger radius on this wrapper makes the
+        // clipping WORSE, not better. This wrapper spans the whole ROW
+        // (~390px wide); the pill is a ~24px-wide rail pinned to its
+        // top-left with zero inset. Flutter clamps a rounded-rect corner to
+        // half the box's SHORTER side, so on a short row (e.g. a 30-minute
+        // task, 390x60) a large radius clamps to a 30px arc that sweeps
+        // straight through the pill's own 24px width and bites its
+        // top-left and bottom-left corners off. A tall row (390x180) clamps
+        // to 90px, whose arc curves away outside the pill's visible edge —
+        // which is exactly why the reported screenshot showed SHORT pills
+        // flat-topped while tall ones looked correct.
+        //
+        // An earlier attempt set this to `max(radiusSm, radiusPill)`,
+        // reasoning that a wider clip could never cut into the pill. That
+        // is true for a clip of the same size as the pill, and false here:
+        // this box is 16x the pill's width, so "wider radius" means "arc
+        // reaching further across the pill". Small and fixed is correct —
+        // the wrapper has no visible shape of its own at rest anyway (no
+        // fill, no blur, no shadow at t=0), so its corner only ever
+        // matters for what it cuts. Still animates UP to radiusXl once
+        // actually lifted, where the frosted card IS visible and wants a
+        // real corner.
         final wrapperRadius = BorderRadius.circular(
           theme.radiusSm + (theme.radiusXl - theme.radiusSm) * t,
         );

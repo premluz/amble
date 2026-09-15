@@ -21,9 +21,16 @@ import '../tokens/semantic_theme.dart';
 ///
 /// [color] is the surface it fades FROM — different per surface
 /// (`colorSurfaceTimeline` for the Timeline, Inbox, and Tracked,
-/// `colorSurfaceBase` for a sheet), since each one paints over a
+/// `colorSurfaceOverlay` for a sheet), since each one paints over a
 /// different background and a mismatched fade colour would read as a
 /// visible tint rather than a seamless disappearance.
+///
+/// This said `colorSurfaceBase` for a sheet until sheets were moved up to
+/// the overlay rung (see docs/DECISIONS.md). The rule that matters is not
+/// the specific token but that this ALWAYS matches whatever its own sheet
+/// body actually paints — a mismatch here is what produced the
+/// already-recorded "sheet heading section different color than body"
+/// report.
 ///
 /// Always [IgnorePointer]-wrapped: purely decorative, must never
 /// intercept a tap or drag meant for whatever's scrolled underneath it.

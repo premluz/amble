@@ -3,6 +3,7 @@ import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../models/app_theme_mode.dart';
+import '../models/pill_shape.dart';
 import '../models/task_size.dart';
 import '../models/tracked_behavior_view_mode.dart';
 import '../repositories/hive_preferences_repository.dart';
@@ -218,6 +219,45 @@ class TaskSizeSetting extends _$TaskSizeSetting {
     await ref
         .read(preferencesRepositoryProvider)
         .setValue(PreferenceKeys.taskSize, value);
+    state = value;
+  }
+}
+
+/// Which corner-rounding a task/zone/Inbox pill badge renders at
+/// (`PillShape.small`/`rounded`/`full`) — one global setting spanning
+/// every pill-shaped surface in the app, mirroring [TaskSizeSetting]'s own
+/// mechanism exactly. `main.dart` reads this to `copyWith` the right
+/// `radiusPill` value onto the active `AmbleTheme` before it reaches
+/// `MaterialApp`, so every existing call site (`TaskCapsuleBlock`,
+/// `ZoneContainerBlock`, the Inbox row's own badge) picks it up
+/// automatically without itself knowing this setting exists.
+///
+/// Requested directly: "we have squary rounded shape of pills but rounded
+/// on inbox ... let's make it configurable in admin ... this should affect
+/// globally, in edit tasks etc."
+///
+/// Defaults to `PillShape.small` — NOT a silent no-op default. The
+/// pre-existing hardcoded task/zone badge corner (`radiusSm`, 4px) is
+/// replaced by `radiusPillSmall` (8px, Material 3's own "small" component
+/// corner — confirmed via AskUserQuestion), a deliberate, visible step up
+/// chosen to match a real design-system scale rather than reusing the old
+/// value unchanged. The Inbox badge's own prior shape (`BoxShape.circle`,
+/// always fully round regardless of this setting) is superseded entirely —
+/// it now resolves to the same active rung as every other pill.
+@Riverpod(keepAlive: true)
+class PillShapeSetting extends _$PillShapeSetting {
+  @override
+  PillShape build() {
+    return ref
+            .read(preferencesRepositoryProvider)
+            .getValue<PillShape>(PreferenceKeys.pillShape) ??
+        PillShape.small;
+  }
+
+  Future<void> set(PillShape value) async {
+    await ref
+        .read(preferencesRepositoryProvider)
+        .setValue(PreferenceKeys.pillShape, value);
     state = value;
   }
 }

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_floating_create_button.dart';
 import '../../core/widgets/app_press_feedback.dart';
+import '../../core/widgets/app_swipe_actions.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
 import '../../shared/models/task.dart';
 import '../../shared/providers/task_providers.dart';
@@ -58,7 +59,12 @@ class InboxScreen extends ConsumerWidget {
                     theme.spacingScreenPadding,
                     theme.spacingMd,
                   ),
-                  child: Text('Manage', style: theme.textHeadline),
+                  // "Inbox", not "Manage" — requested directly: "It's
+                  // Inbox screen with header manage > should change to
+                  // inbox actually, adding notes..." The screen collects
+                  // unscheduled notes, so "Inbox" names what it holds
+                  // rather than what you do to it.
+                  child: Text('Inbox', style: theme.textHeadline),
                 ),
                 Expanded(
                   // Stack, so top/bottom fades overlay the list's own
@@ -104,18 +110,48 @@ class InboxScreen extends ConsumerWidget {
                                   SizedBox(height: theme.spacingSm),
                               itemBuilder: (context, index) {
                                 final task = tasks[index];
-                                return _InboxListItem(
+                                void onSchedule() =>
+                                    showTaskDetailSheet(context, task: task);
+                                // Swipe right schedules, swipe left removes
+                                // — requested directly: "swipe right is
+                                // schedule ... swipe left is remove."
+                                //
+                                // `deleteTask`, never `deleteTaskSeries`:
+                                // an Inbox row is unscheduled by
+                                // definition (see inboxTasksProvider's own
+                                // `!task.isScheduled` filter) and a
+                                // recurring instance always carries a
+                                // scheduledAt, so no row reachable from
+                                // this list belongs to a series at all —
+                                // `deleteTaskSeries`'s own assert would
+                                // fire if it were wired here.
+                                return AppSwipeActions(
                                   key: ValueKey(task.id),
-                                  task: task,
-                                  theme: theme,
-                                  onTap: () => showQuickCaptureSheet(
-                                    context,
-                                    task: task,
+                                  startAction: AppSwipeAction(
+                                    icon: Icons.calendar_today_rounded,
+                                    background: theme.colorAccent,
+                                    semanticLabel: 'Schedule',
+                                    onActivate: onSchedule,
                                   ),
-                                  onToggleComplete: () =>
-                                      taskNotifier.toggleComplete(task),
-                                  onSchedule: () =>
-                                      showTaskDetailSheet(context, task: task),
+                                  endAction: AppSwipeAction(
+                                    icon: Icons.delete_outline_rounded,
+                                    background: theme.colorTaskAlert,
+                                    semanticLabel: 'Remove',
+                                    destructive: true,
+                                    onActivate: () =>
+                                        taskNotifier.deleteTask(task.id),
+                                  ),
+                                  child: _InboxListItem(
+                                    task: task,
+                                    theme: theme,
+                                    onTap: () => showQuickCaptureSheet(
+                                      context,
+                                      task: task,
+                                    ),
+                                    onToggleComplete: () =>
+                                        taskNotifier.toggleComplete(task),
+                                    onSchedule: onSchedule,
+                                  ),
                                 );
                               },
                             ),
@@ -177,7 +213,6 @@ class _EmptyInboxState extends StatelessWidget {
 
 class _InboxListItem extends StatelessWidget {
   const _InboxListItem({
-    super.key,
     required this.task,
     required this.theme,
     required this.onTap,
@@ -219,19 +254,30 @@ class _InboxListItem extends StatelessWidget {
     // **2026-09-12 — the card is gone.** Requested directly: "remove cards
     // from Manage." No fill, no shadow, no rounded corners — a plain row,
     // separated from its neighbours by the list's own `separatorBuilder`
-    // gap rather than by a card edge. `spacingMd` vertical padding is kept
-    // (the card's own padding, minus its horizontal half — the list
-    // already carries the horizontal screen inset) so the row still has a
-    // real tap target height, not just its own text's tight line box.
+    // gap rather than by a card edge.
+    //
+    // **2026-09-15 — vertical padding tightened from `spacingMd` (16) to
+    // `spacingSm` (8)**, requested directly: "reduce padding top bottom on
+    // inbox item cards, they should be more compact." One rung down the
+    // spacing scale rather than a bespoke value — the row still keeps a
+    // real tap target height via its content (badge/text line height),
+    // just without as much air around it.
     return AppPressFeedback(
       onTap: onTap,
       child: Padding(
-        padding: EdgeInsets.symmetric(vertical: theme.spacingMd),
+        padding: EdgeInsets.symmetric(vertical: theme.spacingSm),
         child: Row(
           children: [
             AppPressFeedback(
               onTap: onToggleComplete,
-              shape: BoxShape.circle,
+              // theme.radiusPill, not BoxShape.circle — requested
+              // directly ("we have squary rounded shape of pills but
+              // rounded on inbox ... this should affect globally"). Was
+              // always fully round regardless of the Task/Zone view's own
+              // pill shape; now tracks the same "Pill shape" setting they
+              // do, via the SAME token — see radiusPill's own doc comment
+              // on AmbleTheme.
+              borderRadius: BorderRadius.circular(theme.radiusPill),
               // The badge is a saturated category fill, so the wash rides
               // on the light foreground its own icon uses.
               rippleColor: theme.colorSurfacePrimary,
@@ -240,7 +286,7 @@ class _InboxListItem extends StatelessWidget {
                 height: badgeSize,
                 decoration: BoxDecoration(
                   color: categoryColor,
-                  shape: BoxShape.circle,
+                  borderRadius: BorderRadius.circular(theme.radiusPill),
                 ),
                 child: Icon(
                   task.category.icon,

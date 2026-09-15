@@ -107,7 +107,17 @@ class StepScaffold extends StatelessWidget {
         padding: EdgeInsets.only(top: theme.spacingXl),
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: theme.colorSurfaceBase,
+            // `colorSurfaceOverlay`, the top of the elevation ramp — that
+            // token's doc comment names "a modal's own surface" as its
+            // purpose. This painted `colorSurfaceBase` (level 0, the app
+            // ground), so a near-full-screen sheet read as flat against
+            // the page behind it. Requested directly: "sheets across the
+            // app should have next surface level to bg."
+            //
+            // The two `AppTopScrollFade`s below MUST keep matching this
+            // value — they fade scrolling body content into this exact
+            // surface, so any divergence shows up as a visible band.
+            color: theme.colorSurfaceOverlay,
             borderRadius: BorderRadius.vertical(
               top: Radius.circular(theme.radiusModal),
             ),
@@ -154,7 +164,15 @@ class StepScaffold extends StatelessWidget {
                               end: Alignment.bottomCenter,
                               colors: [
                                 theme.colorSurfaceSecondary,
-                                theme.colorSurfaceBase,
+                                // The sheet body's own surface — see the
+                                // `colorSurfaceOverlay` note above. This
+                                // gradient's job is to fade the header INTO
+                                // the body, so it has to end on whatever the
+                                // body actually paints; leaving it at level 0
+                                // would recreate the exact "sheet heading
+                                // section different color than body" report
+                                // the comment above records.
+                                theme.colorSurfaceOverlay,
                               ],
                             )
                           : null,
@@ -280,7 +298,8 @@ class StepScaffold extends StatelessWidget {
                             right: 0,
                             top: 0,
                             child: AppTopScrollFade(
-                              color: theme.colorSurfaceBase,
+                              // Matches the sheet surface above.
+                              color: theme.colorSurfaceOverlay,
                             ),
                           ),
                         // Mirrored bottom fade — requested directly:
@@ -293,7 +312,8 @@ class StepScaffold extends StatelessWidget {
                           right: 0,
                           bottom: 0,
                           child: AppTopScrollFade(
-                            color: theme.colorSurfaceBase,
+                            // Matches the sheet surface above.
+                            color: theme.colorSurfaceOverlay,
                             fromBottom: true,
                           ),
                         ),

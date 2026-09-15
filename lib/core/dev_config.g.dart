@@ -566,6 +566,126 @@ abstract class _$DevZoneCardFlat extends $Notifier<bool> {
   }
 }
 
+/// Zone (list) view only — when on, hides every zone container that has
+/// no member task and no matched external event. Defaults to false.
+
+@ProviderFor(DevHideEmptyZones)
+final devHideEmptyZonesProvider = DevHideEmptyZonesProvider._();
+
+/// Zone (list) view only — when on, hides every zone container that has
+/// no member task and no matched external event. Defaults to false.
+final class DevHideEmptyZonesProvider
+    extends $NotifierProvider<DevHideEmptyZones, bool> {
+  /// Zone (list) view only — when on, hides every zone container that has
+  /// no member task and no matched external event. Defaults to false.
+  DevHideEmptyZonesProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'devHideEmptyZonesProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$devHideEmptyZonesHash();
+
+  @$internal
+  @override
+  DevHideEmptyZones create() => DevHideEmptyZones();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(bool value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<bool>(value),
+    );
+  }
+}
+
+String _$devHideEmptyZonesHash() => r'devhideemptyzones00000000000000000000000';
+
+abstract class _$DevHideEmptyZones extends $Notifier<bool> {
+  bool build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<bool, bool>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<bool, bool>,
+              bool,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
+
+/// Zone view's member task rows only — when on, each row shows just its
+/// task's start time. Defaults to false.
+
+@ProviderFor(DevZoneTaskStartTimeVisible)
+final devZoneTaskStartTimeVisibleProvider =
+    DevZoneTaskStartTimeVisibleProvider._();
+
+/// Zone view's member task rows only — when on, each row shows just its
+/// task's start time. Defaults to false.
+final class DevZoneTaskStartTimeVisibleProvider
+    extends $NotifierProvider<DevZoneTaskStartTimeVisible, bool> {
+  /// Zone view's member task rows only — when on, each row shows just its
+  /// task's start time. Defaults to false.
+  DevZoneTaskStartTimeVisibleProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'devZoneTaskStartTimeVisibleProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$devZoneTaskStartTimeVisibleHash();
+
+  @$internal
+  @override
+  DevZoneTaskStartTimeVisible create() => DevZoneTaskStartTimeVisible();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(bool value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<bool>(value),
+    );
+  }
+}
+
+String _$devZoneTaskStartTimeVisibleHash() =>
+    r'devzonetaskstarttimevisible0000000000000';
+
+abstract class _$DevZoneTaskStartTimeVisible extends $Notifier<bool> {
+  bool build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<bool, bool>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<bool, bool>,
+              bool,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
+
 /// List view only — when on, hides every [Task] with `isImportant == false`
 /// from the row list. Requested directly as "config (only important)",
 /// alongside [DevHideImportedTasks] above. Task view and Zone view

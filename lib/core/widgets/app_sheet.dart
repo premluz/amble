@@ -146,7 +146,14 @@ class AppSheet {
         context: context,
         builder: (sheetContext) => Container(
           decoration: BoxDecoration(
-            color: theme.colorSurfaceBase,
+            // `colorSurfaceOverlay`, the TOP of the elevation ramp — that
+            // token's own doc comment names "a modal's own surface" as its
+            // purpose. This previously painted `colorSurfaceBase`, i.e.
+            // level 0: literally the same value as the page behind it, so
+            // a sheet read as flat against the background rather than as a
+            // layer above it. Reported directly: "sheets across the app
+            // should have next surface level to bg."
+            color: theme.colorSurfaceOverlay,
             borderRadius: BorderRadius.vertical(
               top: Radius.circular(theme.radiusModal),
             ),
@@ -170,7 +177,9 @@ class AppSheet {
     return showModalBottomSheet<T>(
       context: context,
       barrierColor: theme.colorScrim,
-      backgroundColor: theme.colorSurfaceBase,
+      // See the Cupertino branch above — level 0 made every sheet the same
+      // value as the page it covered.
+      backgroundColor: theme.colorSurfaceOverlay,
       // Sets the entrance's CURVE as well as its duration. The curve is
       // the part that actually mattered: Flutter's default for a modal
       // bottom sheet is `Easing.legacyDecelerate`, used for BOTH

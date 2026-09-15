@@ -265,15 +265,17 @@ void main() {
   // with no padding — so the outer 16px clip landed on top of the pill's
   // own corner and overrode it.
   //
-  // The wrapper's rest-state anchor must always match the pill rail's OWN
-  // radius (`radiusSm`, requested directly — see that field's own doc
-  // comment in task_capsule_block.dart), not a hardcoded value: an earlier
-  // version of this fix anchored the wrapper to `radiusMd` while the pill
-  // itself later moved to `radiusSm`, silently reintroducing the exact
-  // same mismatch this test exists to catch.
+  // The wrapper's rest-state anchor is a small FIXED `radiusSm`,
+  // deliberately independent of the pill's own "Pill shape" rung. The trap
+  // this pins down (measured, after getting it wrong twice): a BIGGER
+  // radius here makes the clipping WORSE. This wrapper spans the whole row
+  // (~390px wide) while the pill is a ~24px rail pinned to its top-left,
+  // and Flutter clamps a corner to half the box's SHORTER side — so on a
+  // short row (a 30-minute task, 390x60) a large radius clamps to a 30px
+  // arc that sweeps straight through the pill and bites its corners off.
   testWidgets(
-    'the frosted wrapper clips at the PILL\'s own radius while resting, '
-    'and only widens to the lifted radius once actually lifted',
+    'the frosted wrapper clips at a small FIXED radius while resting, '
+    'independent of the pill rung, and only widens once actually lifted',
     (tester) async {
       final theme = AmbleTheme.light;
 
@@ -303,6 +305,80 @@ void main() {
         await wrapperRadius(isLifted: true),
         BorderRadius.circular(theme.radiusXl),
       );
+    },
+  );
+
+  // Regression test for a real bug, reported directly from a screenshot:
+  // "pills are clipped, rounding is applied not directly on pills but
+  // perhaps elsewhere" — SHORT pills rendered flat-topped/flat-bottomed
+  // while tall ones looked correct, because the row-wide wrapper's own
+  // corner (then anchored to radiusPill) clamped to an arc wide enough to
+  // cut across the narrow pill. Two things must hold at every rung: the
+  // wrapper stays small and fixed, and the pill keeps its own real corner.
+  testWidgets(
+    'the pill keeps its own configured radius at every "Pill shape" rung, '
+    'and the row-wide wrapper never adopts it — including on a SHORT pill, '
+    'the case that actually rendered clipped',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      // 30 minutes — short enough that the wrapper's own corner arc used to
+      // reach across the pill's full 24px width.
+      final shortTask = Task.create(
+        title: 'Audiobook',
+        scheduledAt: DateTime(2026, 9, 15, 8, 30),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      );
+
+      for (final radiusPill in [8.0, 16.0, 9999.0]) {
+        final theme = AmbleTheme.light.copyWith(radiusPill: radiusPill);
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(useMaterial3: true, extensions: [theme]),
+            home: Scaffold(body: TaskCapsuleBlock(task: shortTask)),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final wrapperClip =
+            (tester
+                        .widgetList<ClipRRect>(find.byType(ClipRRect))
+                        .first
+                        .borderRadius
+                    as BorderRadius?)
+                ?.topLeft
+                .x;
+        final pillRadius =
+            ((tester.widget<AnimatedContainer>(
+                              find.byType(AnimatedContainer).first,
+                            )
+                            .decoration
+                        as BoxDecoration?)
+                    ?.borderRadius
+                as BorderRadius?)
+                ?.topLeft
+                .x;
+
+        expect(
+          pillRadius,
+          radiusPill,
+          reason:
+              'the pill itself must carry the configured rung — the '
+              'rounding belongs on the pill, not anywhere else',
+        );
+        expect(
+          wrapperClip,
+          theme.radiusSm,
+          reason:
+              'at radiusPill=$radiusPill the row-wide wrapper clipped at '
+              '$wrapperClip; it must stay at the small fixed radiusSm, '
+              'since a wider arc on a 390px-wide box cuts across the '
+              'narrow pill and flattens its corners',
+        );
+      }
     },
   );
 

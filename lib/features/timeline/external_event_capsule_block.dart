@@ -206,7 +206,11 @@ class _DashedPillRail extends StatelessWidget {
     return CustomPaint(
       painter: _DashedRoundedRectPainter(
         color: theme.colorTextSecondary,
-        radius: theme.radiusSm,
+        // theme.radiusPill, not radiusSm — this dashed rail is deliberately
+        // shaped to echo a real task pill's own rail (see this class's own
+        // doc comment), so it tracks the same "Pill shape" setting rather
+        // than a fixed corner.
+        radius: theme.radiusPill,
       ),
       child: SizedBox(
         width: width,

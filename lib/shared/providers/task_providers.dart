@@ -254,6 +254,42 @@ class TaskList extends _$TaskList {
     _refresh();
   }
 
+  /// Applies [instance]'s CURRENT [Task.behaviorId] (and the paired
+  /// `actualAmount` reset when unlinking) to every OTHER instance of its
+  /// recurring series. Confirmed via AskUserQuestion: a tracked-behaviour
+  /// link, unlike every other per-instance field (title, notes, category,
+  /// isImportant — see `Task.isImportant`'s own doc comment), is meant to
+  /// describe the whole repeated task rather than one occurrence of it, so
+  /// setting or clearing it from any single instance's edit sheet is meant
+  /// to apply series-wide rather than stay scoped to that one row.
+  ///
+  /// A no-op for a non-recurring task, or one whose `behaviorId` didn't
+  /// actually change this save — callers pass [instance] AFTER their own
+  /// `updateTask`/`updateTaskThisInstanceOnly`/etc. call already persisted
+  /// it, so this only needs to fan the same value out to its siblings, not
+  /// save [instance] itself again.
+  Future<void> propagateBehaviorLinkToSeries(Task instance) async {
+    final seriesId = instance.recurrenceId;
+    if (seriesId == null) return;
+
+    final repository = ref.read(taskRepositoryProvider);
+    final siblings = repository
+        .getTasks()
+        .where((task) => task.recurrenceId == seriesId && task.id != instance.id)
+        .toList();
+    if (siblings.isEmpty) return;
+
+    for (final sibling in siblings) {
+      // Same orphaned-data guard as every other behaviorId-editing save
+      // site: an amount recorded against a behavior this task no longer
+      // belongs to would be meaningless data left behind.
+      if (instance.behaviorId == null) sibling.actualAmount = null;
+      sibling.behaviorId = instance.behaviorId;
+      await repository.saveTask(sibling);
+    }
+    _refresh();
+  }
+
   /// Saves [task]'s other field changes AND turns it into a new recurring
   /// series' template in one call — the edit-flow equivalent of
   /// [createTask]'s own `recurrenceRule` parameter, for a task that was

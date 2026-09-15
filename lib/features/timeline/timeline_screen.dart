@@ -76,7 +76,18 @@ import '../zones/zone_form_screen.dart';
 /// which begins at exactly this offset. Single-digit hours ("1:00 PM",
 /// 50.4) fit at either width, which is why only the 10-12 o'clock labels
 /// collided.
-const _hourGutterWidth = 72.0;
+/// Narrowed 72 → 66 so the gap between an hour label and the task pills
+/// tightens — requested directly: the right gap was "too big on task view",
+/// and should be "smaller for tasks screen" while the zone grid's own axis
+/// goes the other way (see `zone_grid_screen.dart`'s `_axisWidth`).
+///
+/// 66 is the floor that keeps `hour_gutter_overflow_test.dart`'s own
+/// invariant intact: the widest label ("12:00 AM") measures 57.6px, and
+/// that test requires ≥8px clearance so a label can never paint into the
+/// pill column — a rule written from a real reported overlap. 58 would
+/// have given the 16px gap asked for elsewhere but left 0.4px of
+/// clearance, breaking it.
+const _hourGutterWidth = 66.0;
 
 /// Vertical scale used when the hour gutter is hidden ("Show hour labels"
 /// off). Requested directly: with no hour scale on screen, the gaps
@@ -606,6 +617,19 @@ class TimelineScreen extends ConsumerWidget {
                                       // section only.
                                       devZoneCardFlat: ref.watch(
                                         devZoneCardFlatProvider,
+                                      ),
+                                      // Hides every zone with no member
+                                      // task/event from this list —
+                                      // requested directly, Developer
+                                      // section only.
+                                      devHideEmptyZones: ref.watch(
+                                        devHideEmptyZonesProvider,
+                                      ),
+                                      // Each zone's own member task rows show
+                                      // just their start time — requested
+                                      // directly, Developer section only.
+                                      devZoneTaskStartTimeVisible: ref.watch(
+                                        devZoneTaskStartTimeVisibleProvider,
                                       ),
                                       // Opens Edit directly, skipping the action
                                       // sheet (Edit/Duplicate/Remove) — requested
@@ -1977,18 +2001,25 @@ class _DayTimelineState extends State<_DayTimeline> {
                         rangeEnd: rangeEnd,
                         pixelsPerMinute: widget.pixelsPerMinute,
                         hideLabelNear: _now,
-                        // LEFT-aligned at the same `spacingScreenPadding`
-                        // the rotated zone names sit in from the right
-                        // edge — so the two annotations frame the day
-                        // symmetrically. Requested directly: "these
-                        // should have same padding as zone names on the
-                        // other side[,] left aligned."
+                        // LEFT-aligned at 8px, the SAME inset the Weekly
+                        // Zone Authoring Grid's own hour axis uses —
+                        // requested directly ("both 8 px") after the two
+                        // surfaces read visibly differently side by side.
+                        //
+                        // Deliberately `spacingSm` at this ONE call site
+                        // rather than repointing `spacingScreenPadding`:
+                        // that token governs horizontal margins on every
+                        // screen in the app, and this is a change to the
+                        // hour gutter only. It supersedes the earlier
+                        // "same padding as the rotated zone names on the
+                        // other side" request, which had set this to
+                        // `spacingScreenPadding` (24px).
                         //
                         // `columnWidth` is deliberately NOT passed: it is
                         // what switches these labels to right-aligned
                         // (see TaskBoundaryMarkers), which an earlier
                         // request had asked for and this one reverses.
-                        leftInset: theme.spacingScreenPadding,
+                        leftInset: theme.spacingSm,
                       ),
                     // Zone background blocks — purely decorative, rendered
                     // BEHIND every task capsule (this Stack paints in child-
@@ -2600,8 +2631,16 @@ class _DayTimelineState extends State<_DayTimeline> {
                         rangeStart: rangeStart,
                         rangeEnd: rangeEnd,
                         pixelsPerMinute: widget.pixelsPerMinute,
-                        gutterWidth: hourGutterWidth,
-                        leftInset: theme.spacingScreenPadding,
+                        // `spacingSm`, matching `TaskBoundaryMarkers`'
+                        // own `leftInset` above — the two share a column,
+                        // so "now" has to start where every other hour
+                        // label starts. This was left at
+                        // `spacingScreenPadding` (24px) when those labels
+                        // moved to 8px, which is exactly the misalignment
+                        // reported ("current time with red line should be
+                        // in the same new position as the times on the
+                        // left in task view").
+                        leftInset: theme.spacingSm,
                         rightInset: rightEdgeInset,
                       ),
                     // LAST, deliberately — the placement line has to paint above

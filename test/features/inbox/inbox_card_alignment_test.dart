@@ -113,9 +113,9 @@ void main() {
       );
 
       // And the fade is NOT scoped inside any ClipRect wrapping the
-      // "Manage" title — the old header-embedded shape.
+      // "Inbox" title — the old header-embedded shape.
       final headingClips = find.ancestor(
-        of: find.text('Manage'),
+        of: find.text('Inbox'),
         matching: find.byType(ClipRect),
       );
       for (final clipElement in headingClips.evaluate()) {
@@ -205,12 +205,12 @@ void main() {
   // Expanded content area are separate Column children, so the title's
   // own bounds and the fade's own bounds can never overlap at all.
   testWidgets(
-    'the "Manage" title never visually overlaps the top scroll-fade — they '
+    'the "Inbox" title never visually overlaps the top scroll-fade — they '
     'occupy separate, non-overlapping regions of the screen',
     (tester) async {
       await pumpInbox(tester);
 
-      final titleRect = tester.getRect(find.text('Manage'));
+      final titleRect = tester.getRect(find.text('Inbox'));
       final topFade = find.byWidgetPredicate(
         (w) => w is AppTopScrollFade && !w.fromBottom,
       );

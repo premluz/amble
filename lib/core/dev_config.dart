@@ -136,6 +136,59 @@ class DevZoneCardFlat extends _$DevZoneCardFlat {
   void set(bool value) => state = value;
 }
 
+/// Zone (list) view only — when on, hides every zone container that has
+/// no member [Task] AND no matched [ExternalCalendarEvent], leaving only
+/// zones that actually contain something. Requested directly: "add config
+/// in dev to hide zones that have no items inside in zone view only."
+///
+/// A deliberate, scoped OVERRIDE of `ZoneContainmentResult.containments`'
+/// own documented default ("regardless of whether it has any member
+/// tasks, so an empty zone still renders its container per the confirmed
+/// spec" — see `zone_containment.dart`) — that default is still correct
+/// for the normal case; this is an opt-in dev toggle for comparing the
+/// alternative, not a change to the underlying containment logic itself.
+///
+/// Task view and the Zone (grid) Authoring screen are unaffected — this
+/// only touches [ZoneDayTimeline]'s own row list.
+///
+/// Defaults to false (current shipped behavior: every zone renders,
+/// empty or not) — this toggle only ever REMOVES rows, never adds a
+/// display mode that didn't exist.
+@Riverpod(keepAlive: true)
+class DevHideEmptyZones extends _$DevHideEmptyZones {
+  @override
+  bool build() => false;
+
+  void set(bool value) => state = value;
+}
+
+/// Zone view's member task rows ONLY — when on, each row shows just its
+/// task's START time (e.g. "9:00 AM"), never the "start - end" range
+/// [DevTimelineTaskTimeRangeVisible] shows. Requested directly: "we need
+/// to add control show time Start time (zone view), this will add task
+/// start time only (we have similar show start end time switch, but this
+/// one only start time)."
+///
+/// A SEPARATE, independent toggle from [DevTimelineTaskTimeRangeVisible]
+/// — confirmed via AskUserQuestion — rather than a third value replacing
+/// that boolean. If a caller somehow has both on at once, start-time-only
+/// WINS (confirmed via AskUserQuestion): it is the more specific request,
+/// and [_ZoneTaskRow]'s own branch order enforces this.
+///
+/// The zone HEADER's own time range is unaffected (confirmed via
+/// AskUserQuestion) — this only touches each member task's row, never
+/// [ZoneContainerBlock]'s own title/time header.
+///
+/// Defaults to false (current shipped behavior unchanged) — this toggle
+/// only ever ADDS a display mode, never removes the existing one.
+@Riverpod(keepAlive: true)
+class DevZoneTaskStartTimeVisible extends _$DevZoneTaskStartTimeVisible {
+  @override
+  bool build() => false;
+
+  void set(bool value) => state = value;
+}
+
 /// List view only — when on, hides every [Task] with `isImportant == false`
 /// from the row list. Requested directly as "config (only important)",
 /// alongside [DevHideImportedTasks] above. Task view and Zone view

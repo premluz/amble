@@ -41,7 +41,9 @@ void main() {
   }
 
   testWidgets('shows a mirrored bottom scroll-fade above the primary-button '
-      'footer, blending from the body\'s own colorSurfaceBase', (tester) async {
+      'footer, blending from the body\'s own colorSurfaceOverlay', (
+    tester,
+  ) async {
     await pump(tester, modalTitle: 'New task');
 
     final bottomFade = find.byWidgetPredicate(
@@ -49,7 +51,11 @@ void main() {
     );
     expect(bottomFade, findsOneWidget);
     final fade = tester.widget<AppTopScrollFade>(bottomFade);
-    expect(fade.color, theme.colorSurfaceBase);
+    // Sheets moved from level 0 (`colorSurfaceBase`, the literal app
+    // background) up to the elevation ramp's top rung — requested
+    // directly, "sheets across the app should have next surface level to
+    // bg." This fade has to keep matching the body it blends into.
+    expect(fade.color, theme.colorSurfaceOverlay);
   });
 
   // Reported directly (2026-09-09), after the header/body seam still cut
@@ -57,7 +63,7 @@ void main() {
   // "the header on pages like Tasks...is not a smooth gradient. The
   // content slides through underneath, and the header cuts the content
   // with a hard edge." The header's gradient only ever blends ITS OWN
-  // fixed background into colorSurfaceBase — it says nothing about the
+  // fixed background into the body's own surface — it says nothing about the
   // body's real scrolling content, which had no fade at all until now.
   testWidgets(
     'shows a TOP scroll-fade at the header/body seam, over the scrolling '
@@ -70,7 +76,9 @@ void main() {
       );
       expect(topFade, findsOneWidget);
       final fade = tester.widget<AppTopScrollFade>(topFade);
-      expect(fade.color, theme.colorSurfaceBase);
+      // See the bottom-fade test above — the sheet body is now
+      // `colorSurfaceOverlay`, and this fade tracks it.
+      expect(fade.color, theme.colorSurfaceOverlay);
     },
   );
 
@@ -89,7 +97,7 @@ void main() {
 
   testWidgets('the title header\'s own background IS a gradient — '
       'colorSurfaceSecondary at the top blending down into the body\'s '
-      'colorSurfaceBase at the header\'s bottom edge — rather than a flat '
+      'colorSurfaceOverlay at the header\'s bottom edge — rather than a flat '
       'fill with a separate (and, against an identical fill underneath '
       'it, invisible) fade painted on top. Reported directly: "heading '
       'not have nice gradient... sheet heading section different color '
@@ -106,9 +114,14 @@ void main() {
     final gradient = decoration.gradient! as LinearGradient;
     expect(gradient.begin, Alignment.topCenter);
     expect(gradient.end, Alignment.bottomCenter);
+    // The lower stop tracks the sheet BODY's own surface, which moved from
+    // level 0 to the elevation ramp's top rung — requested directly,
+    // "sheets across the app should have next surface level to bg." The
+    // gradient's whole job is fading the header into the body, so a stale
+    // stop here would recreate the very report this test's name quotes.
     expect(gradient.colors, [
       theme.colorSurfaceSecondary,
-      theme.colorSurfaceBase,
+      theme.colorSurfaceOverlay,
     ]);
   });
 

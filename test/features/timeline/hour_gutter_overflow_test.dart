@@ -21,7 +21,11 @@ void main() {
 
   /// The production values: `_hourGutterWidth` and `spacingScreenPadding`
   /// from `timeline_screen.dart`. Kept in sync by the guard test below.
-  const gutterWidth = 72.0;
+  // 66, narrowed from 72 — requested directly, "smaller for tasks screen".
+  // This is the floor that still satisfies the ≥8px clearance assertion
+  // below (widest label 57.6px), so the overlap rule this file exists to
+  // protect survives the change.
+  const gutterWidth = 66.0;
   const screenPadding = 28.0;
 
   Future<Map<String, ({double box, double intrinsic})>> measure(
@@ -147,10 +151,18 @@ void main() {
       isFalse,
       reason: 'columnWidth right-aligns the labels; the screen must omit it',
     );
+    // Was `theme.spacingScreenPadding` (24px), pinning the earlier "same
+    // padding as the rotated zone names on the other side" request. That is
+    // superseded: the Timeline and the Weekly Zone Authoring Grid must now
+    // share ONE hour-gutter inset, confirmed directly as "both 8 px" after
+    // the two screens read visibly differently side by side.
+    //
+    // `spacingSm` at this one call site rather than repointing
+    // `spacingScreenPadding`, which governs horizontal margins app-wide.
     expect(
-      args.contains('leftInset: theme.spacingScreenPadding'),
+      args.contains('leftInset: theme.spacingSm'),
       isTrue,
-      reason: 'labels must sit at the same inset the zone names use',
+      reason: 'the hour gutter must sit at 8px, matching the zone grid axis',
     );
   });
 }

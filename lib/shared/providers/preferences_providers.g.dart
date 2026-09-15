@@ -710,6 +710,71 @@ abstract class _$TaskSizeSetting extends $Notifier<TaskSize> {
   }
 }
 
+/// Which corner-rounding a task/zone/Inbox pill badge renders at
+/// (`PillShape.small`/`rounded`/`full`) — one global setting spanning
+/// every pill-shaped surface in the app, mirroring [TaskSizeSetting]'s own
+/// mechanism exactly. Defaults to `PillShape.small`.
+
+@ProviderFor(PillShapeSetting)
+final pillShapeSettingProvider = PillShapeSettingProvider._();
+
+/// Which corner-rounding a task/zone/Inbox pill badge renders at
+/// (`PillShape.small`/`rounded`/`full`) — one global setting spanning
+/// every pill-shaped surface in the app, mirroring [TaskSizeSetting]'s own
+/// mechanism exactly. Defaults to `PillShape.small`.
+final class PillShapeSettingProvider
+    extends $NotifierProvider<PillShapeSetting, PillShape> {
+  /// Which corner-rounding a task/zone/Inbox pill badge renders at
+  /// (`PillShape.small`/`rounded`/`full`) — one global setting spanning
+  /// every pill-shaped surface in the app, mirroring [TaskSizeSetting]'s
+  /// own mechanism exactly. Defaults to `PillShape.small`.
+  PillShapeSettingProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'pillShapeSettingProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$pillShapeSettingHash();
+
+  @$internal
+  @override
+  PillShapeSetting create() => PillShapeSetting();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(PillShape value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<PillShape>(value),
+    );
+  }
+}
+
+String _$pillShapeSettingHash() => r'pillshapesetting0000000000000000000000000';
+
+abstract class _$PillShapeSetting extends $Notifier<PillShape> {
+  PillShape build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<PillShape, PillShape>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<PillShape, PillShape>,
+              PillShape,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
+
 /// How the "Tracked" screen's cards render a behavior's completion
 /// history (weekly row / monthly grid / six-month heatmap) — one global
 /// setting for the whole screen, cycled by a single switcher button in

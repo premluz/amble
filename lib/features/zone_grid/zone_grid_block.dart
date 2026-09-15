@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/selected_pill_border.dart';
 import '../../shared/models/zone.dart';
 import '../timeline/edit_mode_wiggle.dart';
 import '../timeline/resize_handle.dart';
@@ -159,19 +160,20 @@ class ZoneGridBlock extends StatelessWidget {
               onHorizontalDragStart: onExtendStart,
               onHorizontalDragUpdate: onExtendUpdate,
               onHorizontalDragEnd: onExtendEnd,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: theme.colorSurfaceSecondary,
-                  borderRadius: BorderRadius.circular(theme.radiusMd),
-                  border: isSelected
-                      ? Border.all(
-                          color: theme.colorAccent,
-                          width: theme.borderWidthHairline * 2,
-                        )
-                      : null,
-                ),
-                child: _RotatedTitle(theme: theme, title: zone.title),
-              ),
+              child: isSelected
+                  ? SelectedPillBorder(
+                      theme: theme,
+                      contentRadius: BorderRadius.circular(theme.radiusMd),
+                      fillColor: theme.colorSurfaceSecondary,
+                      child: _RotatedTitle(theme: theme, title: zone.title),
+                    )
+                  : DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: theme.colorSurfaceSecondary,
+                        borderRadius: BorderRadius.circular(theme.radiusMd),
+                      ),
+                      child: _RotatedTitle(theme: theme, title: zone.title),
+                    ),
             ),
             if (isSelected && onResizeTopEnd != null)
               Positioned(

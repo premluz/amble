@@ -6,6 +6,7 @@ import 'package:amble/features/timeline/zone_container_block.dart';
 import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/models/external_calendar_event.dart';
 import 'package:amble/shared/models/task.dart';
+import 'package:amble/shared/models/task_status.dart';
 import 'package:amble/shared/models/zone.dart';
 
 void main() {
@@ -33,6 +34,7 @@ void main() {
     WidgetTester tester, {
     bool durationVisible = true,
     bool timeRangeVisible = true,
+    bool startTimeOnlyVisible = false,
     List<ExternalCalendarEvent> externalEvents = const [],
     bool showCompletionCheckbox = true,
     Map<String, Category> categoriesById = const {},
@@ -55,6 +57,7 @@ void main() {
               stackAncestorKey: stackKey,
               durationVisible: durationVisible,
               timeRangeVisible: timeRangeVisible,
+              startTimeOnlyVisible: startTimeOnlyVisible,
               showCompletionCheckbox: showCompletionCheckbox,
               flatStyle: flatStyle,
             ),
@@ -82,6 +85,53 @@ void main() {
 
     expect(titleText.style?.fontSize, timeText.style?.fontSize);
   });
+
+  // Regression test for a real bug, reported directly: "some items when
+  // selected as 'done' in zone view are not crossed out and greyed out,
+  // while they are on task view spatial." The checkbox already reflected
+  // `task.status` correctly (it toggled fine) — the row's own TITLE never
+  // referenced completion at all, so marking a task done in Zone view
+  // changed the checkbox but left the title looking untouched. Matches
+  // `TaskCapsuleBlock`'s own completed-title treatment (muted secondary
+  // color + strikethrough).
+  testWidgets(
+    'a completed task\'s title is greyed out and struck through, matching '
+    'the Spatial Task View\'s own treatment',
+    (tester) async {
+      final completedTask = Task.create(
+        title: 'Deep work',
+        scheduledAt: DateTime(2026, 9, 4, 9),
+        durationMinutes: 230,
+        categoryId: BuiltInCategoryIds.work,
+      )..status = TaskStatus.completed;
+
+      await pump(tester, tasksOverride: [completedTask]);
+
+      final titleText = tester.widget<Text>(find.text('Deep work'));
+      expect(
+        titleText.style?.color,
+        AmbleTheme.light.colorTextSecondary,
+        reason: 'a completed task\'s title must grey out',
+      );
+      expect(
+        titleText.style?.decoration,
+        TextDecoration.lineThrough,
+        reason: 'a completed task\'s title must be struck through',
+      );
+    },
+  );
+
+  testWidgets(
+    'an INCOMPLETE task\'s title stays bold primary color with no '
+    'strikethrough',
+    (tester) async {
+      await pump(tester);
+
+      final titleText = tester.widget<Text>(find.text('Deep work'));
+      expect(titleText.style?.color, AmbleTheme.light.colorTextPrimary);
+      expect(titleText.style?.decoration, TextDecoration.none);
+    },
+  );
 
   // Requested directly: "Size of text in zone view (task name one scale
   // up)." AmbleTheme.light's own default resolves textTaskTitle to md's
@@ -158,6 +208,73 @@ void main() {
       expect(find.text('Deep work'), findsOneWidget);
     },
   );
+
+  // Requested directly: "we need to add control show time Start time
+  // (zone view), this will add task start time only (we have similar
+  // show start end time switch, but this one only start time)."
+  group('startTimeOnlyVisible', () {
+    testWidgets('renders just the start time — no end time, no duration '
+        'suffix, no dash separator', (tester) async {
+      await pump(tester, startTimeOnlyVisible: true);
+
+      final timeText = tester.widget<Text>(
+        find.textContaining('9:00 AM', findRichText: false),
+      );
+      expect(
+        timeText.data,
+        '9:00 AM',
+        reason: 'exactly the start time, nothing appended — the zone '
+            'HEADER above still legitimately shows its own "7:00 AM - '
+            '12:00 PM" range, which is a different Text widget and '
+            'unaffected by this per-row toggle',
+      );
+      expect(find.textContaining('12:50 PM'), findsNothing);
+      expect(find.textContaining('3h 50m'), findsNothing);
+    });
+
+    testWidgets('WINS over timeRangeVisible when both are somehow true — '
+        'the more specific request takes priority', (tester) async {
+      await pump(
+        tester,
+        startTimeOnlyVisible: true,
+        timeRangeVisible: true,
+        durationVisible: true,
+      );
+
+      expect(find.textContaining('9:00 AM'), findsOneWidget);
+      expect(find.textContaining('12:50 PM'), findsNothing);
+    });
+
+    testWidgets('off (default): the row keeps its existing start-end '
+        'range, unchanged', (tester) async {
+      await pump(tester);
+
+      expect(find.textContaining('9:00 AM'), findsOneWidget);
+      expect(find.textContaining('12:50 PM'), findsOneWidget);
+    });
+
+    testWidgets('the label renders in colorTextTertiary, the more subtle '
+        'of the two muted text tokens', (tester) async {
+      await pump(tester, startTimeOnlyVisible: true);
+
+      final timeText = tester.widget<Text>(
+        find.textContaining('9:00 AM', findRichText: false),
+      );
+      expect(timeText.style?.color, AmbleTheme.light.colorTextTertiary);
+    });
+
+    testWidgets('does not affect the zone header\'s own time range', (
+      tester,
+    ) async {
+      await pump(tester, startTimeOnlyVisible: true);
+
+      // The zone's own header still shows its full start-end range
+      // (7:00 AM - 12:00 PM per this file's own `zone` fixture),
+      // regardless of the task row toggle.
+      expect(find.textContaining('7:00 AM'), findsOneWidget);
+      expect(find.textContaining('12:00 PM'), findsOneWidget);
+    });
+  });
 
   group('externalEvents (merged into the container\'s own row list)', () {
     // Regression coverage for a real bug, reported directly: "on zone
@@ -285,7 +402,11 @@ void main() {
     expect(decoration.shape, BoxShape.rectangle);
     expect(
       decoration.borderRadius,
-      BorderRadius.circular(AmbleTheme.light.radiusSm),
+      // theme.radiusPill, not radiusSm — tracks the "Pill shape" setting;
+      // AmbleTheme.light's own field already resolves to its default rung
+      // (PillShape.small -> radiusPillSmall, 8), not the old hardcoded
+      // radiusSm (4).
+      BorderRadius.circular(AmbleTheme.light.radiusPill),
     );
   });
 

@@ -322,11 +322,18 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay> {
                 duration: const Duration(milliseconds: 180),
                 curve: Curves.easeOut,
                 height: currentHeight,
-                // Nav-bar-matched fill with rounded top corners and no
-                // shadow/glow — the Android non-modal bottom sheet
-                // shape, requested directly.
+                // Rounded top corners, no shadow/glow — the Android
+                // non-modal bottom sheet shape, requested directly.
+                //
+                // `colorSurfaceOverlay` (the top of the elevation ramp,
+                // whose own doc comment names a modal's surface as its
+                // purpose) rather than the level-1 `colorSurfacePrimary`
+                // this used to paint — requested directly, "sheets across
+                // the app should have next surface level to bg." The nav
+                // bar this was originally matched to paints the same
+                // overlay token, so the two still agree.
                 decoration: BoxDecoration(
-                  color: theme.colorSurfacePrimary,
+                  color: theme.colorSurfaceOverlay,
                   borderRadius: BorderRadius.vertical(
                     top: Radius.circular(theme.radiusModal),
                   ),

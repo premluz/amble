@@ -29,6 +29,7 @@ import 'shared/models/app_theme_mode.dart';
 import 'shared/models/category.dart';
 import 'shared/models/synced_calendar_event.dart';
 import 'shared/models/task.dart';
+import 'shared/models/pill_shape.dart';
 import 'shared/models/task_size.dart';
 import 'shared/models/task_template.dart';
 import 'shared/models/tracked_behavior.dart';
@@ -133,8 +134,12 @@ void main() async {
   // finish registering after the first frame.
   // Task refresh owns cancelAll; zone registration must follow it.
   unawaited(() async {
-    await container.read(taskListProvider.notifier).refreshScheduledNotifications();
-    await container.read(zoneListProvider.notifier).refreshScheduledNotifications();
+    await container
+        .read(taskListProvider.notifier)
+        .refreshScheduledNotifications();
+    await container
+        .read(zoneListProvider.notifier)
+        .refreshScheduledNotifications();
   }());
 
   // Morning-summary background task: re-registered (or cancelled) on every
@@ -182,8 +187,14 @@ class AmbleApp extends ConsumerWidget {
     // Requested directly: "it's not per view, it's a setting, that when
     // set affects all."
     final taskSize = ref.watch(taskSizeSettingProvider);
-    final lightTheme = _resolveTaskSize(AmbleTheme.light, taskSize);
-    final darkTheme = _resolveTaskSize(AmbleTheme.dark, taskSize);
+    // Same "resolve once, here, before MaterialApp" mechanism as taskSize
+    // above — see PillShapeSetting's own doc comment. Requested directly:
+    // "this should affect globally, in edit tasks etc."
+    final pillShape = ref.watch(pillShapeSettingProvider);
+    var lightTheme = _resolveTaskSize(AmbleTheme.light, taskSize);
+    var darkTheme = _resolveTaskSize(AmbleTheme.dark, taskSize);
+    lightTheme = _resolvePillShape(lightTheme, pillShape);
+    darkTheme = _resolvePillShape(darkTheme, pillShape);
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       // Status/navigation bar icons must contrast with our surface, and
@@ -297,6 +308,21 @@ AmbleTheme _resolveTaskSize(AmbleTheme palette, TaskSize size) {
       // size too — it simply can't go any further up.
       textTaskTitleZone: palette.textTaskTitleLg,
     ),
+  };
+}
+
+/// Resolves the ACTIVE `radiusPill` field on [palette] to whichever fixed
+/// rung [shape] selects — see `PillShapeSetting`'s own doc comment. Every
+/// real call site reads `theme.radiusPill` directly and has no idea this
+/// setting exists; this is the one place the mapping happens. Mirrors
+/// [_resolveTaskSize]'s own shape exactly.
+AmbleTheme _resolvePillShape(AmbleTheme palette, PillShape shape) {
+  return switch (shape) {
+    PillShape.small => palette.copyWith(radiusPill: palette.radiusPillSmall),
+    PillShape.rounded => palette.copyWith(
+      radiusPill: palette.radiusPillRounded,
+    ),
+    PillShape.full => palette.copyWith(radiusPill: palette.radiusPillFull),
   };
 }
 
@@ -428,9 +454,11 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
     ),
     const NavigationDestination(
       icon: Icon(Icons.inbox_rounded),
-      // "Inbox" -> "Manage" — matches the in-screen heading (unchanged by
-      // this session's nav restructure).
-      label: 'Manage',
+      // Back to "Inbox", matching the in-screen heading again — requested
+      // directly ("header manage > should change to inbox actually").
+      // This label has always tracked that heading; it was "Manage" only
+      // for as long as the heading was.
+      label: 'Inbox',
     ),
     if (trackedTabVisible)
       const NavigationDestination(

@@ -47,8 +47,12 @@ void main() {
     final rect = tester.getRect(
       find.byKey(const ValueKey('zone-paint-surface')),
     );
+    // Must track `_axisWidth` in `zone_grid_screen.dart` — 52, so "00:00"
+    // (~36px of JetBrains Mono at 12px) still fits between the two 8px
+    // insets without wrapping.
+    const axisWidth = 60.0;
     return Offset(
-      rect.left + 44 + (day - .5) * (rect.width - 44) / 7,
+      rect.left + axisWidth + (day - .5) * (rect.width - axisWidth) / 7,
       rect.top + minute * 44 / 60,
     );
   }

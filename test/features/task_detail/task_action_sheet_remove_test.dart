@@ -9,12 +9,15 @@ import 'package:amble/shared/models/recurrence_frequency.dart';
 import 'package:amble/shared/models/recurrence_rule.dart';
 import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/models/task.dart';
+import 'package:amble/shared/models/tracked_behavior.dart';
 import 'package:amble/shared/providers/category_providers.dart';
 import 'package:amble/shared/providers/notification_providers.dart';
 import 'package:amble/shared/providers/preferences_providers.dart';
 import 'package:amble/shared/providers/task_providers.dart';
+import 'package:amble/shared/providers/tracked_behavior_providers.dart';
 import 'package:amble/shared/repositories/hive_category_repository.dart';
 import 'package:amble/shared/repositories/hive_task_repository.dart';
+import 'package:amble/shared/repositories/hive_tracked_behavior_repository.dart';
 
 import '../../support/fake_notification_service.dart';
 import '../../support/seeded_category_box.dart';
@@ -42,6 +45,7 @@ Future<void> _pumpActionSheet(
   WidgetTester tester, {
   required Box<Task> box,
   required Box<Category> categoryBox,
+  required Box<TrackedBehavior> trackedBehaviorBox,
   required Task task,
 }) async {
   tester.view.physicalSize = const Size(390, 844);
@@ -55,6 +59,9 @@ Future<void> _pumpActionSheet(
         taskRepositoryProvider.overrideWithValue(HiveTaskRepository(box)),
         categoryRepositoryProvider.overrideWithValue(
           HiveCategoryRepository(categoryBox),
+        ),
+        trackedBehaviorRepositoryProvider.overrideWithValue(
+          HiveTrackedBehaviorRepository(trackedBehaviorBox),
         ),
         notificationServiceProvider.overrideWithValue(
           FakeNotificationService(),
@@ -77,6 +84,7 @@ Future<void> _pumpActionSheet(
 void main() {
   late Box<Task> box;
   late Box<Category> categoryBox;
+  late Box<TrackedBehavior> trackedBehaviorBox;
 
   setUp(() async {
     Hive.init('./.dart_tool/test_hive_action_sheet_remove');
@@ -89,11 +97,21 @@ void main() {
     categoryBox = await openSeededCategoryBox(
       'test_categories_${DateTime.now().microsecondsSinceEpoch}',
     );
+    // The create/edit flows now render the tracked-behavior picker (it was
+    // previously only on "Edit details"), so they watch
+    // `trackedBehaviorListProvider` and this box must exist or the whole
+    // stage fails to build. Never seeded — nothing here exercises
+    // linking. Same fixture `create_flow_initial_modal_test.dart` already
+    // established when the feature flag first defaulted on.
+    trackedBehaviorBox = await Hive.openBox<TrackedBehavior>(
+      'test_tracked_behaviors_${DateTime.now().microsecondsSinceEpoch}',
+    );
   });
 
   tearDown(() async {
     await box.close();
     await categoryBox.close();
+    await trackedBehaviorBox.close();
   });
 
   testWidgets('Remove on a PLAIN task deletes it', (tester) async {
@@ -109,6 +127,7 @@ void main() {
       tester,
       box: box,
       categoryBox: categoryBox,
+      trackedBehaviorBox: trackedBehaviorBox,
       task: task,
     );
     await _tapAndSettle(tester, find.text('Remove'));
@@ -136,6 +155,7 @@ void main() {
       tester,
       box: box,
       categoryBox: categoryBox,
+      trackedBehaviorBox: trackedBehaviorBox,
       task: task,
     );
     await _tapAndSettle(tester, find.text('Remove'));
@@ -177,6 +197,7 @@ void main() {
       tester,
       box: box,
       categoryBox: categoryBox,
+      trackedBehaviorBox: trackedBehaviorBox,
       task: template,
     );
     await _tapAndSettle(tester, find.text('Remove'));
@@ -228,6 +249,7 @@ void main() {
       tester,
       box: box,
       categoryBox: categoryBox,
+      trackedBehaviorBox: trackedBehaviorBox,
       task: template,
     );
     await _tapAndSettle(tester, find.text('Remove'));
@@ -264,6 +286,7 @@ void main() {
         tester,
         box: box,
         categoryBox: categoryBox,
+        trackedBehaviorBox: trackedBehaviorBox,
         task: task,
       );
       await _tapAndSettle(tester, find.text('Duplicate'));
@@ -295,6 +318,7 @@ void main() {
       tester,
       box: box,
       categoryBox: categoryBox,
+      trackedBehaviorBox: trackedBehaviorBox,
       task: task,
     );
     await _tapAndSettle(tester, find.text('Edit task'));

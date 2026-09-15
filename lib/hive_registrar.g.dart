@@ -6,6 +6,7 @@ import 'package:hive_ce/hive_ce.dart';
 import 'package:amble/shared/models/app_theme_mode.dart';
 import 'package:amble/shared/models/behavior_target_type.dart';
 import 'package:amble/shared/models/category.dart';
+import 'package:amble/shared/models/pill_shape.dart';
 import 'package:amble/shared/models/recurrence_frequency.dart';
 import 'package:amble/shared/models/recurrence_rule.dart';
 import 'package:amble/shared/models/synced_calendar_event.dart';
@@ -23,6 +24,7 @@ extension HiveRegistrar on HiveInterface {
     registerAdapter(AppThemeModeAdapter());
     registerAdapter(BehaviorTargetTypeAdapter());
     registerAdapter(CategoryAdapter());
+    registerAdapter(PillShapeAdapter());
     registerAdapter(RecurrenceFrequencyAdapter());
     registerAdapter(RecurrenceRuleAdapter());
     registerAdapter(SyncedCalendarEventAdapter());
@@ -42,6 +44,7 @@ extension IsolatedHiveRegistrar on IsolatedHiveInterface {
     registerAdapter(AppThemeModeAdapter());
     registerAdapter(BehaviorTargetTypeAdapter());
     registerAdapter(CategoryAdapter());
+    registerAdapter(PillShapeAdapter());
     registerAdapter(RecurrenceFrequencyAdapter());
     registerAdapter(RecurrenceRuleAdapter());
     registerAdapter(SyncedCalendarEventAdapter());

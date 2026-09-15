@@ -1727,3 +1727,59 @@ The weekly-placement rewrite had introduced five hard-block sites (`paintWeeklyZ
 **The consequence to watch, flagged before building**: wiggle previously carried two meanings (`timeline_screen.dart` documented this explicitly). With multi-task mode ON it meant "this block is selected"; with it OFF it meant "Edit Mode is active" on every block. The accent ring replaces the first. The second now has no ambient block-level signal at all — chosen deliberately ("Both — remove task wiggle entirely"), but it is a real reduction in Edit Mode's visible state and the original behaviour was itself a deliberate choice.
 
 **What was NOT deleted, despite sharing the old flag's name**: `wiggleEnabled` also gated each block's own start/end edge time labels through two `else if` branches in both layouts. Deleting it outright would have silently removed those labels too. It is renamed `editAffordanceActive` and still drives them.
+
+**[Design] Every sheet paints `colorSurfaceOverlay` — the top of the elevation ramp — not the page's own surface.** Requested directly: "sheets across the app should have next surface level to bg."
+
+No new token was needed. `colorSurfaceOverlay`'s own doc comment already named "a modal's own surface" as its purpose alongside the bottom nav, and `elevation_direction_test.dart` already pins it as a genuine step from `colorSurfacePrimary` in BOTH palettes (dark `ink650` vs `ink800`; light separates by staying white and casting `shadowPane`). The sheets were simply on the wrong rung.
+
+**What was actually wrong, and it was worse than it looked**: `AppSheet` — the shared helper behind most modals — painted `colorSurfaceBase`, i.e. **level 0, the literal app background**. A sheet was therefore the same value as the page it covered, in both palettes. `AppStepScaffold` (the near-full-screen task-detail/zone-add flow) did the same. The two in-tree sheets (`QuickCreateOverlay`, `NewZoneSheet`) were one rung better at level 1, but still not the overlay rung.
+
+**Six surfaces changed**: `AppSheet`'s Cupertino container and its Material `backgroundColor`; `AppStepScaffold`'s own sheet surface; `QuickCreateOverlay`; `NewZoneSheet`.
+
+**Three companion values had to move with the scaffold's surface, not independently**: its two `AppTopScrollFade`s and its header gradient's lower stop all blend content INTO the sheet body, so they must land on exactly whatever the body paints. Leaving any at level 0 would have reproduced a bug the code already records verbatim — "sheet heading section different color than body." Flagged in-code at each site so they cannot silently diverge again.
+
+**Deliberately NOT changed**: pushed-page `Scaffold`s (settings detail, template list, category list, zone list, the zone grid) keep `colorSurfacePrimary` — they are pages, not sheets, and level 1 is correct for them. Two `colorSurfacePrimary` hits in `task_detail_sheet.dart` are foreground glyph colours on tinted banners, not surfaces.
+
+**[Task detail] The tracked-behavior picker now appears on task CREATE and EDIT-SCHEDULE, not only on "Edit details".** Requested directly: "Tracked behaviour should be added to task add/edit sheet as is on add template sheet."
+
+**The reported symptom located the gap precisely**: tapping a template spawns the task CREATE flow, so the Tracked behavior field the template form had just shown vanished at the handoff. Edit-template was never broken — `_isNameStage = template == null` means an edit opens straight to the stage containing that pane, and it renders in both add and edit. Confirmed with the user before changing anything there.
+
+**Both task flows were already HALF-wired, which is what made this easy to miss.** `_TaskDetailFlowState` (create) and `_EditScheduleFormState` (edit-schedule) each owned a `_behaviorId`, seeded it, and persisted it on save — the edit-schedule form even cleared `actualAmount` alongside it. Neither rendered a picker. So a behavior could arrive (seeded from a template) and be written back, but never chosen.
+
+**Reused the sheet's own `_BehaviorPickerPanel`, not the template's `TemplateBehaviorPane`.** The two are near-identical — same `AppPane` title, same empty-state copy, same None-plus-one-per-behavior chips — differing only in chip widget. Reusing the local one keeps the sheet internally consistent and avoids a cross-feature dependency on `inbox/`.
+
+**Placed after the Important pane in both flows**, matching the template form's own Category → Important → … → Behaviour order, so the field does not move when tapping a template spawns the create flow.
+
+**Structural cost, flagged rather than hidden**: `_ScheduleFieldsStage` and `_ScheduleStepScaffold` were plain `StatelessWidget`s and had to become `ConsumerWidget`s to watch `trackedBehaviorListProvider` — mirroring `_DetailsStepScaffold`, which already did exactly that. **The consequence is that both flows now fail to BUILD if the `TrackedBehavior` Hive box is not open**, rendering nothing rather than erroring clearly. Two tests broke on this and surfaced only as a confusing "Found 0 widgets"; their fixture was widened to match `create_flow_initial_modal_test.dart`, which had already hit this same trap when the feature flag first defaulted on. Any future test pumping the create or edit-schedule flow needs that box.
+
+**[Design] Hour-gutter spacing: both surfaces left-align at 8px; the zone grid's right clearance grows to 16px while the Timeline's narrows.** Requested across several rounds: "needs to be 8px on both unified", then "both 8 px", then "right gap smaller on zone edit and too big on task view make it 16px", finally "bigger for zones edit and smaller for tasks screen".
+
+**The real mismatch was ALIGNMENT, not width** — and two attempts to fix it by resizing failed because of that. The Timeline's labels are left-aligned (`TaskBoundaryMarkers` with `leftInset` and deliberately no `columnWidth`); the zone grid's were `textAlign: TextAlign.right` inside a fixed box, so glyphs hugged the box's RIGHT edge and shrinking the box moved text right while the left gap only appeared constant by coincidence. Reported as "no change of space left and right", which was accurate. Settled by a throwaway geometry probe reading real `getRect` values rather than a third round of arithmetic.
+
+**Final geometry**: grid `_axisWidth` = 60 (8 left + ~36 text + 16 clearance), labels `TextAlign.left` with `maxLines: 1, softWrap: false` so a device font fallback or larger text scale can never silently re-wrap them — an earlier 40px attempt did exactly that, squashing every label onto two lines. Timeline `leftInset` = `spacingSm` at its one call site (NOT the global `spacingScreenPadding`, which governs every screen's margins), and `_hourGutterWidth` 72 → 66.
+
+**Why the Timeline is 66 and not 58** (which would give the literal 16px gap asked for): `hour_gutter_overflow_test.dart` requires every label keep ≥8px clearance so it can never paint into the pill column — a rule written from a real reported overlap. The widest label ("12:00 AM") measures 57.6px, so 58 leaves 0.4px and breaks it. 66 is the floor satisfying both "smaller" and that guard. **Flagged as the open trade**: that invariant dates from when labels were right-aligned inside a fixed column, so it may now be guarding a model that no longer applies — retiring it deliberately is the route to a true 16px, and should start with measuring the actual label-to-pill gap.
+
+**Zone grid vertical padding**: `spacingLg` on its scroll view, so the 00:00 labels at the top and at the day's end are not clipped — reported directly ("cant see 00 and 00 end day"). Copied from the Timeline's own fix for the identical symptom, whose code records that `spacingMd` was explicitly too small to clear half a caption line.
+
+**Noted, not fixed**: `hour_gutter_overflow_test.dart` hardcodes `const screenPadding = 28.0` while `spacingScreenPadding` is actually 24 — a stale hand-copied constant. Harmless today (those tests assert label width against column width, not absolute position), and that file guards `_hourGutterWidth` against drift but has no equivalent guard for this one.
+
+**[Timeline] The now-line's dot starts at the hour-label inset, and its time is a background-coloured masking pill painted OVER the line.** Requested directly: "current time with red line should be in the same new position as the times on the left"; "that current time need to be in bg color pill so when over on top of another hour it doesnt clash legibility"; "the red line with dot should extend to the left more".
+
+**The alignment half was a bug of omission from the gutter work**: `CurrentTimeIndicator` was still being passed `leftInset: theme.spacingScreenPadding` (24px) after `TaskBoundaryMarkers`' own labels moved to 8px, so "now" sat indented from every other hour label. Both now take `spacingSm`.
+
+**Structure**: the time no longer reserves a gutter ahead of the dot. Dot and line start at the inset and the pill paints over the line, which is what lets the marker span nearly the full width. `gutterWidth` had no consumer left after this and was removed from the widget and its one call site rather than left as a dead parameter.
+
+**Pill fill is `colorSurfaceTimeline`** — the Timeline's own background, per "same color as bg". A neutral mask, deliberately not the accent badge `TaskEdgeTimeLabel` uses for drag/resize times: the red line stays the only accent in this marker.
+
+## ERROR_LOG-worthy: a Stack child that silently resized a translated row
+
+**The pill was first added as an ordinary `Stack` child, which broke two unrelated tests.** `resize_anchored_edge_test.dart` began reporting 48px of bottom-edge drift against a <2px tolerance — tests about *task pill resizing*, with no obvious connection to the now-line.
+
+**Cause**: `Stack` sizes to its tallest child. The pill (~20px) replaced the dot (8px) as that child, and because the whole row is wrapped in `FractionalTranslation(-0.5)` — which shifts by the row's OWN height — the rendered line moved. Those tests pump a full `TimelineScreen`, so they measure a pill in the same tree.
+
+**Fix**: the pill is a `Positioned` overlay inside a `Clip.none` Stack, so it contributes nothing to layout. Row height is the dot's 8px again, confirmed by probe (`Stack rect 140.0→148.0`).
+
+**Rule**: when a widget's vertical position is derived from its own height (`FractionalTranslation`, `Align`, intrinsic sizing), adding any child that could become the tallest silently moves it. Overlays on such a widget must be `Positioned`, not ordinary children. Symptom to recognise: a layout test failing in a *different* feature by a distance close to the height you just added.
+
+**Measurement beat arithmetic three times in a row here.** The gutter width, the axis inset and this row height were each settled by a throwaway probe reading real `getRect` values after estimates had failed. Cheap to write, deleted immediately after.

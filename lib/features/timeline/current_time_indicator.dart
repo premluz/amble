@@ -23,7 +23,6 @@ class CurrentTimeIndicator extends StatefulWidget {
     this.leftInset = 0,
     this.rightInset = 0,
     this.pixelsPerMinute = 1.5,
-    this.gutterWidth = 56.0,
   });
 
   /// The day view's visible top/bottom edges — a dynamic, per-day computed
@@ -39,10 +38,6 @@ class CurrentTimeIndicator extends StatefulWidget {
   final double rightInset;
   final DateTime rangeEnd;
   final double pixelsPerMinute;
-
-  /// Width of the time-label gutter this indicator's time label shares
-  /// with `TaskBoundaryMarkers`, so the two align on the same left edge.
-  final double gutterWidth;
 
   @override
   State<CurrentTimeIndicator> createState() => _CurrentTimeIndicatorState();
@@ -83,40 +78,74 @@ class _CurrentTimeIndicatorState extends State<CurrentTimeIndicator> {
       // screen edges while every task beside it stays inset.
       left: widget.leftInset,
       right: widget.rightInset,
-      // The row is taller than the line itself (the time label sets its
-      // height), so shift it up by half to keep the line — not the row's
-      // top edge — sitting exactly on the current minute.
+      // Shifted up by half the DOT's height (the row's tallest sizing
+      // child) so the line — not the row's top edge — sits exactly on the
+      // current minute.
       child: FractionalTranslation(
         translation: const Offset(0, -0.5),
-        child: Row(
+        // **Dot and line start at the left inset, flush with the hour
+        // labels** — requested directly ("the red line with dot should
+        // extend to the left more"). The time no longer reserves a gutter
+        // ahead of them; it paints OVER the line instead, which is what
+        // lets the marker span nearly the full width.
+        //
+        // **The pill is a NON-SIZING overlay** (`Positioned` + `Clip.none`),
+        // deliberately. A first attempt made it an ordinary Stack child,
+        // which sized the whole row to the pill's ~20px instead of the
+        // dot's 8px — and since this row is `FractionalTranslation`-ed by
+        // half its own height, that moved the rendered line and broke two
+        // `resize_anchored_edge_test.dart` cases measuring a pill in the
+        // same tree (48px of bottom drift against a <2px tolerance). The
+        // row's height must stay the dot's height, whatever the pill does.
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.centerLeft,
           children: [
-            SizedBox(
-              // gutterWidth arrives already carrying the screen padding
-              // (see the Timeline's own hourGutterWidth); this Positioned
-              // has separately shifted the whole row right by that same
-              // amount, so take it back off here or the label would be
-              // double-indented.
-              width: widget.gutterWidth - widget.leftInset,
-              child: Text(
-                TimeOfDay.fromDateTime(_now).format(context),
-                style: theme.textCaption.copyWith(
-                  color: theme.colorTextPrimary,
-                  fontWeight: FontWeight.w700,
+            Row(
+              children: [
+                Container(
+                  width: theme.spacingSm,
+                  height: theme.spacingSm,
+                  decoration: BoxDecoration(
+                    color: theme.colorTaskAlert,
+                    shape: BoxShape.circle,
+                  ),
                 ),
-              ),
+                Expanded(
+                  child: Container(
+                    height: theme.borderWidthHairline,
+                    color: theme.colorTaskAlert,
+                  ),
+                ),
+              ],
             ),
-            Container(
-              width: theme.spacingSm,
-              height: theme.spacingSm,
-              decoration: BoxDecoration(
-                color: theme.colorTaskAlert,
-                shape: BoxShape.circle,
-              ),
-            ),
-            Expanded(
-              child: Container(
-                height: theme.borderWidthHairline,
-                color: theme.colorTaskAlert,
+            // Filled with the Timeline's OWN background so the pill masks
+            // whatever sits beneath it — requested directly: "that current
+            // time need to be in bg color pill so when over on top of
+            // another hour it doesnt clash legibility". A neutral mask, not
+            // an accent badge: the red line stays the only accent here.
+            //
+            // Offset past the dot so the two never overlap.
+            Positioned(
+              left: theme.spacingSm * 2,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: theme.colorSurfaceTimeline,
+                  borderRadius: BorderRadius.circular(theme.radiusSm),
+                ),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: theme.spacingXs,
+                    vertical: theme.spacingXs / 2,
+                  ),
+                  child: Text(
+                    TimeOfDay.fromDateTime(_now).format(context),
+                    style: theme.textCaption.copyWith(
+                      color: theme.colorTextPrimary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
               ),
             ),
           ],

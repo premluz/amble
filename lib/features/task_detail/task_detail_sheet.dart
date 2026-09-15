@@ -312,6 +312,11 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
   late Set<int> _selectedDays;
   String? _behaviorId;
 
+  /// The value [_behaviorId] started at, so [_save] can tell whether it
+  /// actually changed this edit — meaningful only when [widget.task] is
+  /// non-null (an edit); a pure create has no series to propagate to yet.
+  String? _initialBehaviorId;
+
   /// Provenance for the task this form will CREATE, if it was seeded from
   /// a [TaskTemplate] — recorded on save (see [Task.templateId]) so a
   /// future quick-drop drawer can frequency-rank templates.
@@ -459,6 +464,7 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
         widget.initialCategoryId ??
         BuiltInCategoryIds.general;
     _behaviorId = seed?.behaviorId;
+    _initialBehaviorId = _behaviorId;
     _templateId = widget.templateId;
     _notificationsEnabled = seed?.notificationsEnabled ?? true;
     _isImportant = seed?.isImportant ?? widget.initialIsImportant;
@@ -690,6 +696,7 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
         existing.categoryId = _categoryId;
         existing.notificationsEnabled = _notificationsEnabled;
         existing.isImportant = _isImportant;
+        final behaviorChanged = _behaviorId != _initialBehaviorId;
         if (_behaviorId == null) existing.actualAmount = null;
         existing.behaviorId = _behaviorId;
 
@@ -717,7 +724,11 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
           // Recurring -> recurring, but the user explicitly chose "just
           // this occurrence" for a start-time/duration change: isolates
           // the edit to `existing` alone, leaving the template/rule and
-          // every other instance untouched.
+          // every other instance untouched. NOTE: this scopes the
+          // schedule fields the toggle is about — it does NOT also narrow
+          // the behaviorId propagation below, a separate, always-
+          // series-wide concern per propagateBehaviorLinkToSeries's own
+          // doc comment.
           await notifier.updateTaskThisInstanceOnly(existing);
         } else if ((_wasRecurring ?? false) && _repeats) {
           // Recurring -> recurring, days possibly changed (or the toggle
@@ -730,6 +741,12 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
         } else {
           // Plain -> plain: no recurrence involvement at all.
           await notifier.updateTask(existing);
+        }
+        // A tracked-behaviour link applies to the whole series, not just
+        // this occurrence — see propagateBehaviorLinkToSeries's own doc.
+        // A no-op when `existing` has no siblings, so safe unconditionally.
+        if (behaviorChanged && existing.isRecurring) {
+          await notifier.propagateBehaviorLinkToSeries(existing);
         }
 
         final durationChanged = previousDuration != existing.durationMinutes;
@@ -1042,6 +1059,12 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
           notesController: _notesController,
           showScheduleFields: !_isNameStage,
           onNameSubmitted: _confirmNameStage,
+          // The create flow already carried `behaviorId` through its save
+          // path (seeded from a template) but offered no way to set one —
+          // so tapping a template, which spawns THIS flow, silently
+          // dropped the field the template form had just shown.
+          behaviorId: _behaviorId,
+          onBehaviorChanged: (id) => setState(() => _behaviorId = id),
           category: category,
           date: _scheduledAt,
           timeOfDay: _timeOfDay,
@@ -1097,12 +1120,14 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
 /// build (not on every rebuild — see [_StaggeredEntrance]), which is the
 /// second half of "keyboard slides down and stagger animation of other
 /// panes."
-class _ScheduleFieldsStage extends StatelessWidget {
+class _ScheduleFieldsStage extends ConsumerWidget {
   const _ScheduleFieldsStage({
     required this.theme,
     required this.titleController,
     required this.notesController,
     required this.showScheduleFields,
+    required this.behaviorId,
+    required this.onBehaviorChanged,
     required this.onNameSubmitted,
     required this.category,
     required this.date,
@@ -1143,6 +1168,17 @@ class _ScheduleFieldsStage extends StatelessWidget {
   /// `onNameSubmitted` doc comment.
   final VoidCallback onNameSubmitted;
 
+  /// The tracked behavior this task links to, if any — surfaced here so a
+  /// behavior can be picked while CREATING a task, not only afterwards via
+  /// "Edit details". Requested directly: the template form has had this
+  /// field all along, and tapping a template spawns this create flow, so
+  /// the field simply vanished at the handoff.
+  ///
+  /// The create flow already carried `behaviorId` through its own save
+  /// path (seeded from a template) — it just had no way to SET one.
+  final String? behaviorId;
+  final ValueChanged<String?> onBehaviorChanged;
+
   /// Fired when the user picks a row in [_TemplateBrowserPane] — see that
   /// widget's own doc comment. Only rendered while [showScheduleFields] is
   /// false (stage 1 / Name stage), same gating as everything below it.
@@ -1174,7 +1210,7 @@ class _ScheduleFieldsStage extends StatelessWidget {
   final ValueChanged<int> onDayToggled;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final time = timeOfDay;
     final duration = durationMinutes;
     final startTime = time == null
@@ -1280,6 +1316,18 @@ class _ScheduleFieldsStage extends StatelessWidget {
           ],
         ),
       ),
+      // Tracked-behavior link — same position the TEMPLATE form gives it
+      // (Category → Important → … → Behaviour) so the field doesn't move
+      // when tapping a template spawns this create flow. Gated exactly as
+      // every other tracked-behavior surface is: with the flag off the
+      // whole subtree const-eliminates rather than rendering disabled.
+      if (FeatureFlags.trackedBehaviorEnabled)
+        _BehaviorPickerPanel(
+          theme: theme,
+          behaviors: ref.watch(trackedBehaviorListProvider),
+          selectedId: behaviorId,
+          onChanged: onBehaviorChanged,
+        ),
       if (showRepeats)
         AppPane(
           child: _RecurrencePanel(
@@ -1807,10 +1855,21 @@ class _EditDetailsFormState extends ConsumerState<_EditDetailsForm> {
     existing.categoryId = _categoryId;
     // Unlinking clears any recorded outcome — an amount measured against a
     // behavior this task no longer belongs to would be orphaned data.
+    // Captured before the save below, which is what `existing.behaviorId`
+    // will read as afterward regardless — kept as its own bool so the
+    // series-wide propagation call is guarded by intent, not by re-deriving
+    // "did this change" from already-mutated state.
+    final behaviorChanged = _behaviorId != _initialBehaviorId;
     if (_behaviorId == null) existing.actualAmount = null;
     existing.behaviorId = _behaviorId;
 
-    await ref.read(taskListProvider.notifier).updateTask(existing);
+    final notifier = ref.read(taskListProvider.notifier);
+    await notifier.updateTask(existing);
+    // A tracked-behaviour link applies to the whole series, not just this
+    // occurrence — see propagateBehaviorLinkToSeries's own doc comment.
+    if (behaviorChanged && existing.isRecurring) {
+      await notifier.propagateBehaviorLinkToSeries(existing);
+    }
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -1948,6 +2007,7 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
   late final String _initialCategoryId;
   late final bool _initialNotificationsEnabled;
   late final bool _initialIsImportant;
+  late final String? _initialBehaviorId;
 
   /// See _TaskDetailFlowState's matching field — same inline-error contract
   /// for the "Prevent overlapping tasks" preference.
@@ -1988,6 +2048,7 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
     _initialCategoryId = _categoryId;
     _initialNotificationsEnabled = task.notificationsEnabled;
     _initialIsImportant = task.isImportant;
+    _initialBehaviorId = task.behaviorId;
     _wasRecurring = task.isRecurring;
     _repeats = task.isRecurring;
     // An already-recurring task seeds its REAL days from the series'
@@ -2087,6 +2148,7 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
     existing.categoryId = _categoryId;
     existing.notificationsEnabled = _notificationsEnabled;
     existing.isImportant = _isImportant;
+    final behaviorChanged = _behaviorId != _initialBehaviorId;
     if (_behaviorId == null) existing.actualAmount = null;
     existing.behaviorId = _behaviorId;
 
@@ -2114,7 +2176,10 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
         !_affectFutureInstances) {
       // Recurring -> recurring, but the user explicitly chose "just this
       // occurrence" for a start-time/duration change: isolates the edit
-      // to `existing` alone.
+      // to `existing` alone. NOTE: "just this occurrence" scopes the
+      // schedule fields this toggle is about — it does NOT also narrow
+      // the behaviorId propagation below, which is a separate, always-
+      // series-wide concern per propagateBehaviorLinkToSeries's own doc.
       await notifier.updateTaskThisInstanceOnly(existing);
     } else if (_wasRecurring && _repeats) {
       // Recurring -> recurring, days possibly changed (or the toggle
@@ -2130,6 +2195,14 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
     } else {
       // Plain -> plain: no recurrence involvement at all.
       await notifier.updateTask(existing);
+    }
+    // A tracked-behaviour link applies to the whole series, not just this
+    // occurrence — see propagateBehaviorLinkToSeries's own doc comment. A
+    // no-op when `existing` isn't (or no longer, or not yet) part of a
+    // series with any siblings, so this is safe to call unconditionally
+    // after every branch above, including "just this occurrence".
+    if (behaviorChanged && existing.isRecurring) {
+      await notifier.propagateBehaviorLinkToSeries(existing);
     }
     if (mounted) Navigator.of(context).pop();
   }
@@ -2187,6 +2260,11 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
       // the original widget.task snapshot.
       title: _titleController.text.trim(),
       category: category,
+      // Parity with "Edit details", which has had this picker all along —
+      // this form already persisted `behaviorId` on save (and cleared
+      // `actualAmount` with it) while offering no way to change it.
+      behaviorId: _behaviorId,
+      onBehaviorChanged: (id) => setState(() => _behaviorId = id),
       // An existing task always HAS a time and duration, so this modal
       // never shows the empty state — it splits the stored instant into
       // date + time to match the scaffold's contract, then reassembles it.
@@ -2435,12 +2513,14 @@ class _DetailsStepScaffold extends ConsumerWidget {
 }
 
 /// Step 2 — date, time, duration, and (create-only) repeats.
-class _ScheduleStepScaffold extends StatelessWidget {
+class _ScheduleStepScaffold extends ConsumerWidget {
   const _ScheduleStepScaffold({
     required this.theme,
     this.modalTitle,
     required this.title,
     required this.category,
+    required this.behaviorId,
+    required this.onBehaviorChanged,
     required this.date,
     required this.timeOfDay,
     required this.durationMinutes,
@@ -2479,6 +2559,13 @@ class _ScheduleStepScaffold extends StatelessWidget {
   /// will read on the Timeline — requested directly.
   final String title;
   final Category? category;
+
+  /// The tracked behavior this task links to, if any. Added so the
+  /// edit-SCHEDULE form reaches parity with "Edit details", which has had
+  /// the picker all along — this form already persisted `behaviorId` on
+  /// save while offering no way to change it.
+  final String? behaviorId;
+  final ValueChanged<String?> onBehaviorChanged;
 
   /// The DAY the task lands on — always set (defaults to today). The time
   /// of day is tracked separately because it, unlike the date, starts
@@ -2565,7 +2652,7 @@ class _ScheduleStepScaffold extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     // The preview can only show a time range once BOTH halves are set;
     // until then it shows the task without one rather than inventing a
     // start or a length.
@@ -2725,6 +2812,18 @@ class _ScheduleStepScaffold extends StatelessWidget {
               ),
             ),
             SizedBox(height: theme.spacingLg),
+            // Tracked-behavior link — same position the create flow and
+            // the template form both give it (after Important), so the
+            // field sits in a consistent place across every task surface.
+            if (FeatureFlags.trackedBehaviorEnabled) ...[
+              _BehaviorPickerPanel(
+                theme: theme,
+                behaviors: ref.watch(trackedBehaviorListProvider),
+                selectedId: behaviorId,
+                onChanged: onBehaviorChanged,
+              ),
+              SizedBox(height: theme.spacingLg),
+            ],
             // Repeat — now standalone, its OWN bare pane matching
             // Notifications' treatment exactly (requested directly:
             // "Repeat is standalone same as notifications"). Previously

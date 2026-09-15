@@ -7,6 +7,7 @@ import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_alert_dialog.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_switch.dart';
+import '../../shared/models/pill_shape.dart';
 import '../../shared/models/tracked_behavior.dart';
 import '../../shared/providers/preferences_providers.dart';
 import '../../shared/providers/task_providers.dart';
@@ -374,6 +375,62 @@ class _DeveloperSettingsScreenState
             ),
           ),
 
+          // "Pill shape" — one global setting for the corner-rounding of
+          // every task/zone/Inbox pill badge. Requested directly: "we have
+          // squary rounded shape of pills but rounded on inbox ... let's
+          // make it configurable in admin ... this should affect globally,
+          // in edit tasks etc." Persisted (not a `dev_config.dart` runtime
+          // toggle like "Timeline task layout" below) — this is a real
+          // user-facing visual preference, not an in-memory debug
+          // comparison tool, so it survives a restart the same way "Task
+          // size" does.
+          SizedBox(height: theme.spacingSm),
+          SettingsPanel(
+            theme: theme,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Pill shape',
+                  style: theme.textBody.copyWith(
+                    color: theme.colorTextPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                SizedBox(height: theme.spacingXs),
+                Text(
+                  'The corner-rounding of every task/zone pill badge and '
+                  'the Inbox row\'s own badge — applies everywhere: Task '
+                  'view, List view, Zone view, and Inbox.',
+                  style: theme.textBody.copyWith(
+                    color: theme.colorTextSecondary,
+                  ),
+                ),
+                SizedBox(height: theme.spacingSm),
+                Row(
+                  children: [
+                    for (final shape in PillShape.values) ...[
+                      if (shape != PillShape.values.first)
+                        SizedBox(width: theme.spacingSm),
+                      _DevChip(
+                        theme: theme,
+                        label: switch (shape) {
+                          PillShape.small => 'Small',
+                          PillShape.rounded => 'Rounded',
+                          PillShape.full => 'Full',
+                        },
+                        selected: ref.watch(pillShapeSettingProvider) == shape,
+                        onTap: () => ref
+                            .read(pillShapeSettingProvider.notifier)
+                            .set(shape),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+
           SizedBox(height: theme.spacingSm),
           SettingsPanel(
             theme: theme,
@@ -491,6 +548,84 @@ class _DeveloperSettingsScreenState
                     value: ref.watch(devZoneCardFlatProvider),
                     onChanged: (value) =>
                         ref.read(devZoneCardFlatProvider.notifier).set(value),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: theme.spacingSm),
+            SettingsPanel(
+              theme: theme,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Hide empty zones',
+                          style: theme.textBody.copyWith(
+                            color: theme.colorTextPrimary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        SizedBox(height: theme.spacingXs),
+                        Text(
+                          'When on, a zone with no tasks or calendar events '
+                          'inside it is hidden from Zone view entirely.',
+                          style: theme.textBody.copyWith(
+                            color: theme.colorTextSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(width: theme.spacingMd),
+                  AppSwitch(
+                    value: ref.watch(devHideEmptyZonesProvider),
+                    onChanged: (value) =>
+                        ref.read(devHideEmptyZonesProvider.notifier).set(value),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: theme.spacingSm),
+            SettingsPanel(
+              theme: theme,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Show start time',
+                          style: theme.textBody.copyWith(
+                            color: theme.colorTextPrimary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        SizedBox(height: theme.spacingXs),
+                        Text(
+                          'A zone\'s own member task rows show just their '
+                          'start time (e.g. "9:00 AM"), instead of the '
+                          'start - end range above. A separate toggle from '
+                          '"Show time (from-to)" — if both are on, this one '
+                          'wins.',
+                          style: theme.textBody.copyWith(
+                            color: theme.colorTextSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(width: theme.spacingMd),
+                  AppSwitch(
+                    value: ref.watch(devZoneTaskStartTimeVisibleProvider),
+                    onChanged: (value) => ref
+                        .read(devZoneTaskStartTimeVisibleProvider.notifier)
+                        .set(value),
                   ),
                 ],
               ),

@@ -88,6 +88,12 @@ abstract final class PreferenceKeys {
   /// [TaskSizeSetting].
   static const String taskSize = 'taskSize';
 
+  /// Which corner-rounding a task/zone/Inbox pill badge renders at (see
+  /// `PillShape`). One global setting, spanning every pill-shaped surface
+  /// in the app. Absent (null) defaults to `PillShape.small` — see
+  /// [PillShapeSetting].
+  static const String pillShape = 'pillShape';
+
   /// How the "Tracked" screen's cards render a behavior's completion
   /// history — see `TrackedBehaviorViewMode`. One global setting for the
   /// whole screen, cycled by a single switcher button, mirroring

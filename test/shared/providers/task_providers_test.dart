@@ -1003,6 +1003,105 @@ void main() {
     });
   });
 
+  group('propagateBehaviorLinkToSeries', () {
+    test('links every OTHER instance of the series to the same behavior', () async {
+      final notifier = container.read(taskListProvider.notifier);
+      final template = await notifier.createTask(
+        title: 'Meditate',
+        scheduledAt: DateTime(2026, 8, 20, 7),
+        durationMinutes: 10,
+        categoryId: BuiltInCategoryIds.health,
+        recurrenceRule: RecurrenceRule(frequency: RecurrenceFrequency.daily),
+      );
+      final seriesBefore = container
+          .read(taskListProvider)
+          .where((t) => t.recurrenceId == template.recurrenceId)
+          .toList();
+      expect(seriesBefore.length, greaterThan(1));
+      expect(seriesBefore.every((t) => t.behaviorId == null), isTrue);
+
+      template.behaviorId = 'behavior-1';
+      await notifier.updateTask(template);
+      await notifier.propagateBehaviorLinkToSeries(template);
+
+      final seriesAfter = container
+          .read(taskListProvider)
+          .where((t) => t.recurrenceId == template.recurrenceId);
+      expect(seriesAfter.every((t) => t.behaviorId == 'behavior-1'), isTrue);
+    });
+
+    test('unlinking clears behaviorId AND actualAmount on every sibling, '
+        'not just the edited instance', () async {
+      final notifier = container.read(taskListProvider.notifier);
+      final template = await notifier.createTask(
+        title: 'Meditate',
+        scheduledAt: DateTime(2026, 8, 20, 7),
+        durationMinutes: 10,
+        categoryId: BuiltInCategoryIds.health,
+        recurrenceRule: RecurrenceRule(frequency: RecurrenceFrequency.daily),
+        behaviorId: 'behavior-1',
+      );
+      await notifier.propagateBehaviorLinkToSeries(template);
+      for (final task in container.read(taskListProvider)) {
+        if (task.id != template.id) task.actualAmount = 5;
+      }
+      for (final task in container.read(taskListProvider)) {
+        if (task.id != template.id) {
+          await notifier.updateTask(task);
+        }
+      }
+
+      template.behaviorId = null;
+      await notifier.updateTask(template);
+      await notifier.propagateBehaviorLinkToSeries(template);
+
+      final series = container
+          .read(taskListProvider)
+          .where((t) => t.recurrenceId == template.recurrenceId);
+      expect(series.every((t) => t.behaviorId == null), isTrue);
+      expect(series.every((t) => t.actualAmount == null), isTrue);
+    });
+
+    test('a non-recurring task is a no-op', () async {
+      final notifier = container.read(taskListProvider.notifier);
+      final task = await notifier.createTask(
+        title: 'One-off',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.general,
+        behaviorId: 'behavior-1',
+      );
+
+      // Must not throw despite recurrenceId being null.
+      await notifier.propagateBehaviorLinkToSeries(task);
+
+      expect(container.read(taskListProvider).single.behaviorId, 'behavior-1');
+    });
+
+    test('the SOLE instance of a series (no siblings yet) is a no-op, not '
+        'a crash', () async {
+      final notifier = container.read(taskListProvider.notifier);
+      final task = await notifier.createTask(
+        title: 'Standup',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 15,
+        categoryId: BuiltInCategoryIds.work,
+      );
+      // Give it a recurrenceId with no materialized siblings — the state
+      // right after updateTaskWithNewRecurrence's own save, before
+      // _materializeSeries has produced anything (or a series that has
+      // since had every other instance deleted).
+      task.recurrenceId = 'lonely-series';
+      await notifier.updateTask(task);
+
+      task.behaviorId = 'behavior-1';
+      await notifier.updateTask(task);
+      await notifier.propagateBehaviorLinkToSeries(task);
+
+      expect(container.read(taskListProvider).single.behaviorId, 'behavior-1');
+    });
+  });
+
   group('rescheduleTaskWithZone', () {
     test('sets zoneId and scheduledAt together, and originalScheduledAt '
         'once, matching rescheduleTask\'s own semantics', () async {

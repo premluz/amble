@@ -55,6 +55,7 @@ class ZoneContainerBlock extends StatelessWidget {
     this.onRowDragEnd,
     this.durationVisible = true,
     this.timeRangeVisible = true,
+    this.startTimeOnlyVisible = false,
     this.showCompletionCheckbox = true,
     this.editModeEnabled = false,
     this.onResizeTopStart,
@@ -94,6 +95,14 @@ class ZoneContainerBlock extends StatelessWidget {
   /// through to this container's own [_Header] and to every
   /// [_ZoneTaskRow]/[_ZoneExternalEventRow] it renders.
   final bool timeRangeVisible;
+
+  /// The "Show start time" dev toggle (`DevZoneTaskStartTimeVisible`) —
+  /// requested directly: "add control show time Start time (zone view),
+  /// this will add task start time only." Threaded to every [_ZoneTaskRow]
+  /// ONLY (confirmed via AskUserQuestion) — this container's own [_Header]
+  /// and [_ZoneExternalEventRow] are unaffected, keeping their existing
+  /// [timeRangeVisible] behavior regardless of this toggle.
+  final bool startTimeOnlyVisible;
 
   /// Whether each task row's trailing completion checkbox renders at all
   /// (`ShowCompletionCheckboxSetting`) — one setting spanning all three
@@ -374,6 +383,7 @@ class ZoneContainerBlock extends StatelessWidget {
                             : (_) => onRowDragEnd!(row),
                         durationVisible: durationVisible,
                         timeRangeVisible: timeRangeVisible,
+                        startTimeOnlyVisible: startTimeOnlyVisible,
                         showCompletionCheckbox: showCompletionCheckbox,
                         flatStyle: flatStyle,
                       ),
@@ -531,6 +541,7 @@ class _ZoneTaskRow extends StatelessWidget {
     this.onDragEnd,
     this.durationVisible = true,
     this.timeRangeVisible = true,
+    this.startTimeOnlyVisible = false,
     this.showCompletionCheckbox = true,
     this.flatStyle = false,
   });
@@ -577,6 +588,18 @@ class _ZoneTaskRow extends StatelessWidget {
   /// from before this parameter existed.
   final bool timeRangeVisible;
 
+  /// The "Show start time" dev toggle
+  /// (`DevZoneTaskStartTimeVisibleProvider`) — requested directly: "add
+  /// control show time Start time (zone view), this will add task start
+  /// time only (we have similar show start end time switch, but this one
+  /// only start time)." A SEPARATE toggle from [timeRangeVisible]
+  /// (confirmed via AskUserQuestion), not a third value replacing it — if
+  /// both happen to be true, this one WINS (also confirmed), since it's
+  /// the more specific request; see [timeLabel]'s own branch order.
+  /// Defaults false so a caller that doesn't wire it up renders unchanged
+  /// from before this parameter existed.
+  final bool startTimeOnlyVisible;
+
   /// See [ZoneContainerBlock.showCompletionCheckbox].
   final bool showCompletionCheckbox;
 
@@ -606,6 +629,14 @@ class _ZoneTaskRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheduledAt = task.scheduledAt;
     final durationMinutes = task.durationMinutes;
+    // Real bug, reported directly: "some items when selected as 'done' in
+    // zone view are not crossed out and greyed out, while they are on
+    // task view spatial." The checkbox below already read
+    // `task.status == TaskStatus.completed` correctly (it toggled fine) —
+    // the row's own TITLE simply never referenced this at all, so
+    // completing a task in Zone view changed the checkbox but nothing
+    // else. Matches `TaskCapsuleBlock`'s own `isCompleted` treatment.
+    final isCompleted = task.status == TaskStatus.completed;
 
     // Matches TaskCapsuleBlock's own "start - end (duration)" format
     // exactly — requested directly, replacing this row's previous
@@ -613,8 +644,18 @@ class _ZoneTaskRow extends StatelessWidget {
     // and `durationVisible` are two independent pieces (either, both, or
     // neither can be on) — requested directly: "Hide/show start end should
     // also affect zone view," matching TaskCapsuleTextRow's own contract.
+    //
+    // `startTimeOnlyVisible` is checked FIRST and wins outright — per
+    // AskUserQuestion, the more specific request takes priority over
+    // `timeRangeVisible`/`durationVisible` if a caller somehow has both
+    // toggles on. "Start time only" means exactly that: no duration
+    // suffix, no end time, regardless of what the other two toggles say.
     final String timeLabel;
-    if (!timeRangeVisible) {
+    if (startTimeOnlyVisible) {
+      timeLabel = scheduledAt == null
+          ? '--:--'
+          : TimeOfDay.fromDateTime(scheduledAt).format(context);
+    } else if (!timeRangeVisible) {
       timeLabel = durationVisible && durationMinutes != null
           ? '(${formatDurationLabel(durationMinutes)})'
           : '';
@@ -730,8 +771,16 @@ class _ZoneTaskRow extends StatelessWidget {
                       behavior: HitTestBehavior.opaque,
                       child: Text(
                         timeLabel,
+                        // colorTextTertiary, not colorTextSecondary —
+                        // corrected directly: "greyed out text token
+                        // subtle (same as on edit zone times > this
+                        // should be also applied on timeline (currently
+                        // lighter))". Matches the Zone Authoring Grid's
+                        // own hour-axis labels (colorTextTertiary,
+                        // zone_grid_screen.dart), the subtler of the two
+                        // muted text tokens.
                         style: theme.textTaskTitleZone.copyWith(
-                          color: theme.colorTextSecondary,
+                          color: theme.colorTextTertiary,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -750,9 +799,9 @@ class _ZoneTaskRow extends StatelessWidget {
                 // checkbox ring already resolves, rather than the pill's
                 // own pale fill color, so the badge and the ring agree.
                 // Sized and shaped to match `badgeSize`'s own comment
-                // above — the SAME `theme.sizeTaskBadge` and `radiusSm`
-                // TaskCapsuleBlock's own pill rail uses, not a separate
-                // enlarged circle.
+                // above — the SAME `theme.sizeTaskBadge` and
+                // `theme.radiusPill` TaskCapsuleBlock's own pill rail
+                // uses, not a separate enlarged circle.
                 //
                 // Carries the drag-to-reschedule gesture ONLY when the time
                 // column above is gone (see its own comment) — with a
@@ -783,14 +832,13 @@ class _ZoneTaskRow extends StatelessWidget {
                               theme: theme,
                               category: category!,
                             ).iconColor,
-                      // radiusSm, not BoxShape.circle — requested directly
-                      // ("make actually same shape as timeline, not
-                      // circle but rounded square"). Matches
-                      // TaskCapsuleBlock's own pill rail exactly (see its
-                      // own borderRadius comment for why radiusSm rather
-                      // than a fully-round radiusTaskPill was chosen
-                      // there).
-                      borderRadius: BorderRadius.circular(theme.radiusSm),
+                      // theme.radiusPill, not BoxShape.circle — requested
+                      // directly ("make actually same shape as timeline,
+                      // not circle but rounded square"). Matches
+                      // TaskCapsuleBlock's own pill rail exactly, and
+                      // tracks the SAME "Pill shape" setting it does — see
+                      // radiusPill's own doc comment on AmbleTheme.
+                      borderRadius: BorderRadius.circular(theme.radiusPill),
                     ),
                     child: Text(
                       emoji,
@@ -819,8 +867,14 @@ class _ZoneTaskRow extends StatelessWidget {
                 child: Text(
                   task.title,
                   style: theme.textTaskTitleZone.copyWith(
-                    color: theme.colorTextPrimary,
+                    color: isCompleted
+                        ? theme.colorTextSecondary
+                        : theme.colorTextPrimary,
                     fontWeight: FontWeight.w700,
+                    decoration: isCompleted
+                        ? TextDecoration.lineThrough
+                        : TextDecoration.none,
+                    decorationColor: theme.colorTextSecondary,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -841,7 +895,7 @@ class _ZoneTaskRow extends StatelessWidget {
                   // category's — see task_capsule_block.dart's own copy of
                   // this reasoning. The row's own emoji badge above still
                   // carries the category's color.
-                  isCompleted: task.status == TaskStatus.completed,
+                  isCompleted: isCompleted,
                   onToggle: onToggleComplete,
                 ),
               ],

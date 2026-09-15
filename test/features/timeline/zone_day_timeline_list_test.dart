@@ -30,6 +30,7 @@ void main() {
     bool devDurationVisible = true,
     bool devTimeRangeVisible = true,
     bool devZoneCardFlat = false,
+    bool devHideEmptyZones = false,
   }) async {
     tester.view.physicalSize = const Size(390, 1400);
     tester.view.devicePixelRatio = 1.0;
@@ -52,6 +53,7 @@ void main() {
             devDurationVisible: devDurationVisible,
             devTimeRangeVisible: devTimeRangeVisible,
             devZoneCardFlat: devZoneCardFlat,
+            devHideEmptyZones: devHideEmptyZones,
           ),
         ),
       ),
@@ -419,5 +421,170 @@ void main() {
         expect(find.textContaining('(15m)'), findsNothing);
       },
     );
+  });
+
+  // Requested directly: "align tasks that are not in zones same with tasks
+  // that have zones, so add margin that is equal zone left padding."
+  group('unzoned rows line up with zoned rows (2026-09-15)', () {
+    testWidgets('an unzoned task\'s own badge sits spacingMd further right '
+        'than a bare row would, matching a zoned task\'s own inset', (
+      tester,
+    ) async {
+      final zone = zoneAt('z1', 'Morning ritual', 7, 8);
+      final unzonedTask = Task.create(
+        title: 'Out of zone',
+        scheduledAt: DateTime(2026, 9, 2, 12),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      );
+
+      await pump(tester, zones: [zone], tasks: [unzonedTask]);
+
+      // ZoneContainerBlock's own content padding is theme.spacingMd on the
+      // left (see its own `EdgeInsets.fromLTRB` — unchanged by this fix).
+      // An unzoned row must now sit that same spacingMd further right than
+      // the zone container's own left edge, not flush with it.
+      final theme = AmbleTheme.light;
+      final zoneLeft = tester.getTopLeft(find.byType(ZoneContainerBlock)).dx;
+      final unzonedTaskLeft = tester
+          .getTopLeft(find.byType(TaskCapsuleBlock))
+          .dx;
+
+      expect(
+        unzonedTaskLeft,
+        moreOrLessEquals(zoneLeft + theme.spacingMd, epsilon: 0.5),
+        reason:
+            'an unzoned task must sit spacingMd right of the zone '
+            'container\'s own left edge — matching where a zoned task\'s '
+            'own badge sits inside that container\'s spacingMd padding, '
+            'not flush with the container\'s outer edge',
+      );
+    });
+
+    testWidgets('an unmatched external event gets the same left inset as '
+        'an unzoned task', (tester) async {
+      final zone = zoneAt('z1', 'Morning ritual', 7, 8);
+      final event = ExternalCalendarEvent(
+        id: 'e1',
+        title: 'Dentist',
+        start: DateTime(2026, 9, 2, 14),
+        end: DateTime(2026, 9, 2, 15),
+        sourceCalendarId: 'cal-1',
+      );
+
+      await pump(tester, zones: [zone], externalEvents: [event]);
+
+      final theme = AmbleTheme.light;
+      final zoneLeft = tester.getTopLeft(find.byType(ZoneContainerBlock)).dx;
+      // The row's own outer bounds (`_UnzonedEventRow`'s SizedBox), not the
+      // "Dentist" text itself — that text sits further right again inside
+      // the row's OWN internal `spacingMd` padding, which is unrelated to
+      // the fix under test here (this row's OUTER left edge, set by the
+      // Padding this fix added in ZoneDayTimeline).
+      final eventRowLeft = tester
+          .getTopLeft(
+            find
+                .ancestor(
+                  of: find.textContaining('Dentist'),
+                  matching: find.byType(SizedBox),
+                )
+                .first,
+          )
+          .dx;
+
+      expect(
+        eventRowLeft,
+        moreOrLessEquals(zoneLeft + theme.spacingMd, epsilon: 0.5),
+      );
+    });
+  });
+
+  // Requested directly: "add config in dev to hide zones that have no
+  // items inside in zone view only."
+  group('devHideEmptyZones (2026-09-15)', () {
+    testWidgets('off (default): an empty zone still renders its container '
+        '— the existing documented default is unchanged', (tester) async {
+      await pump(tester, zones: [zoneAt('z1', 'Empty zone', 7, 8)]);
+
+      expect(find.byType(ZoneContainerBlock), findsOneWidget);
+    });
+
+    testWidgets('on: a zone with no member task and no matched event is '
+        'hidden entirely', (tester) async {
+      await pump(
+        tester,
+        zones: [zoneAt('z1', 'Empty zone', 7, 8)],
+        devHideEmptyZones: true,
+      );
+
+      expect(find.byType(ZoneContainerBlock), findsNothing);
+    });
+
+    testWidgets('on: a zone WITH a member task still renders', (tester) async {
+      final zone = zoneAt('z1', 'Morning ritual', 7, 8);
+      final task = Task.create(
+        title: 'Stretch',
+        scheduledAt: DateTime(2026, 9, 2, 7, 15),
+        durationMinutes: 15,
+        categoryId: BuiltInCategoryIds.health,
+      );
+
+      await pump(tester, zones: [zone], tasks: [task], devHideEmptyZones: true);
+
+      expect(find.byType(ZoneContainerBlock), findsOneWidget);
+    });
+
+    testWidgets('on: a zone with no task but a MATCHED external event '
+        'still renders — an event counts as "has items inside"', (
+      tester,
+    ) async {
+      final zone = zoneAt('z1', 'Morning ritual', 7, 9);
+      final event = ExternalCalendarEvent(
+        id: 'e1',
+        title: 'Standup',
+        start: DateTime(2026, 9, 2, 7, 30),
+        end: DateTime(2026, 9, 2, 8),
+        sourceCalendarId: 'cal-1',
+      );
+
+      await pump(
+        tester,
+        zones: [zone],
+        externalEvents: [event],
+        devHideEmptyZones: true,
+      );
+
+      expect(find.byType(ZoneContainerBlock), findsOneWidget);
+    });
+
+    testWidgets('on: hides only the empty zone among several, leaving '
+        'non-empty ones and unzoned rows untouched', (tester) async {
+      final emptyZone = zoneAt('z1', 'Empty zone', 6, 7);
+      final fullZone = zoneAt('z2', 'Morning ritual', 9, 10);
+      final task = Task.create(
+        title: 'Stretch',
+        scheduledAt: DateTime(2026, 9, 2, 9, 15),
+        durationMinutes: 15,
+        categoryId: BuiltInCategoryIds.health,
+      );
+      final unzonedTask = Task.create(
+        title: 'Out of zone',
+        scheduledAt: DateTime(2026, 9, 2, 14),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      );
+
+      await pump(
+        tester,
+        zones: [emptyZone, fullZone],
+        tasks: [task, unzonedTask],
+        devHideEmptyZones: true,
+      );
+
+      expect(find.byType(ZoneContainerBlock), findsOneWidget);
+      expect(find.textContaining('Morning ritual'), findsOneWidget);
+      expect(find.textContaining('Empty zone'), findsNothing);
+      expect(find.textContaining('Out of zone'), findsOneWidget);
+    });
   });
 }

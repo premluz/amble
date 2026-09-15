@@ -60,6 +60,10 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     required this.radiusLg,
     required this.radiusXl,
     required this.radiusTaskPill,
+    required this.radiusPillSmall,
+    required this.radiusPillRounded,
+    required this.radiusPillFull,
+    required this.radiusPill,
     required this.radiusModal,
     required this.borderWidthHairline,
     required this.borderWidthConnector,
@@ -318,6 +322,36 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   /// control. Not a rung on the size scale; a shape.
   final double radiusTaskPill;
 
+  /// 8 — the [PillShape.small] rung of the "Pill shape" setting. Matches
+  /// Material 3's own named "small" component corner (confirmed via
+  /// AskUserQuestion) rather than reusing [radiusSm] (4) unchanged — the
+  /// existing hardcoded task/zone badge corner was tighter than any real
+  /// design-system's own "small," so this is a deliberate step up, not a
+  /// silent no-op default for whoever picks it.
+  final double radiusPillSmall;
+
+  /// 16 — the [PillShape.rounded] rung. Matches Material 3's own named
+  /// "large" component corner.
+  final double radiusPillRounded;
+
+  /// Fully round — the [PillShape.full] rung. Same value as
+  /// [radiusTaskPill]/[RadiusPrimitives.radiusFull]; kept as its own named
+  /// field (rather than pointing call sites at `radiusTaskPill` directly)
+  /// so every pill-shape-aware call site reads one consistent name
+  /// regardless of which rung is active.
+  final double radiusPillFull;
+
+  /// The ACTIVE pill corner — whichever of [radiusPillSmall]/
+  /// [radiusPillRounded]/[radiusPillFull] the "Pill shape" setting
+  /// currently selects, resolved once in `main.dart` via `AmbleTheme
+  /// .copyWith` before the palette reaches [MaterialApp], mirroring
+  /// [sizeTaskBadge]'s own mechanism exactly. Every task/zone/Inbox badge
+  /// call site reads THIS field, not the setting itself — see
+  /// `PillShapeSetting`'s own doc comment. Requested directly: "we have
+  /// squary rounded shape of pills but rounded on inbox ... this should
+  /// affect globally, in edit tasks etc."
+  final double radiusPill;
+
   /// 40 — the modal sheet's corner, and only that. Deliberately off the
   /// size scale so it can't be reached for by ordinary cards.
   final double radiusModal;
@@ -530,6 +564,16 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     radiusLg: RadiusPrimitives.radiusLg,
     radiusXl: RadiusPrimitives.radiusXl,
     radiusTaskPill: RadiusPrimitives.radiusFull,
+    // Reuses the existing radiusMd(8)/radiusXl(16) primitives rather than
+    // new literals — they already sit at exactly the Material 3
+    // small/large values this setting's rungs were chosen to match.
+    radiusPillSmall: RadiusPrimitives.radiusMd,
+    radiusPillRounded: RadiusPrimitives.radiusXl,
+    radiusPillFull: RadiusPrimitives.radiusFull,
+    // Default rung: PillShapeSetting.build() defaults to PillShape.small
+    // for a fresh install — see that provider's own doc comment for why
+    // small (not the pre-existing radiusSm=4 shape) is the new default.
+    radiusPill: RadiusPrimitives.radiusMd,
     radiusModal: RadiusPrimitives.radiusModal,
     borderWidthHairline: SpacingPrimitives.space1,
     borderWidthConnector: 3.0,
@@ -772,6 +816,10 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     radiusLg: RadiusPrimitives.radiusLg,
     radiusXl: RadiusPrimitives.radiusXl,
     radiusTaskPill: RadiusPrimitives.radiusFull,
+    radiusPillSmall: RadiusPrimitives.radiusMd,
+    radiusPillRounded: RadiusPrimitives.radiusXl,
+    radiusPillFull: RadiusPrimitives.radiusFull,
+    radiusPill: RadiusPrimitives.radiusMd,
     radiusModal: RadiusPrimitives.radiusModal,
     borderWidthHairline: SpacingPrimitives.space1,
     borderWidthConnector: 3.0,
@@ -943,6 +991,10 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     double? radiusLg,
     double? radiusXl,
     double? radiusTaskPill,
+    double? radiusPillSmall,
+    double? radiusPillRounded,
+    double? radiusPillFull,
+    double? radiusPill,
     double? radiusModal,
     double? borderWidthHairline,
     double? borderWidthConnector,
@@ -1013,6 +1065,10 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       radiusLg: radiusLg ?? this.radiusLg,
       radiusXl: radiusXl ?? this.radiusXl,
       radiusTaskPill: radiusTaskPill ?? this.radiusTaskPill,
+      radiusPillSmall: radiusPillSmall ?? this.radiusPillSmall,
+      radiusPillRounded: radiusPillRounded ?? this.radiusPillRounded,
+      radiusPillFull: radiusPillFull ?? this.radiusPillFull,
+      radiusPill: radiusPill ?? this.radiusPill,
       radiusModal: radiusModal ?? this.radiusModal,
       borderWidthHairline: borderWidthHairline ?? this.borderWidthHairline,
       borderWidthConnector: borderWidthConnector ?? this.borderWidthConnector,
@@ -1163,6 +1219,14 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       radiusLg: _lerpDouble(radiusLg, other.radiusLg, t),
       radiusXl: _lerpDouble(radiusXl, other.radiusXl, t),
       radiusTaskPill: _lerpDouble(radiusTaskPill, other.radiusTaskPill, t),
+      radiusPillSmall: _lerpDouble(radiusPillSmall, other.radiusPillSmall, t),
+      radiusPillRounded: _lerpDouble(
+        radiusPillRounded,
+        other.radiusPillRounded,
+        t,
+      ),
+      radiusPillFull: _lerpDouble(radiusPillFull, other.radiusPillFull, t),
+      radiusPill: _lerpDouble(radiusPill, other.radiusPill, t),
       radiusModal: _lerpDouble(radiusModal, other.radiusModal, t),
       borderWidthHairline: _lerpDouble(
         borderWidthHairline,

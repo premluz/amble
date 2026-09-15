@@ -127,7 +127,19 @@ class _PlaceTaskLineLayerState extends State<PlaceTaskLineLayer> {
 
   /// When the current pointer went down, and where — used by
   /// [_handlePointerUp] to tell a quick tap from a hold or a drag.
-  DateTime? _pointerDownAt;
+  /// The pointer-down moment, taken from the EVENT's own timestamp rather
+  /// than `DateTime.now()`.
+  ///
+  /// Pointer timestamps run on the same clock `WidgetTester.pump(Duration)`
+  /// advances; wall-clock time does not. With `DateTime.now()` a widget
+  /// test that held for a simulated 600ms measured ~0ms of real elapsed
+  /// time, so this guard never tripped, every long press was classified as
+  /// a tap, and `onTapAt` fired instead of the line appearing — which is
+  /// exactly what `place_task_line_test.dart`'s "a long press still shows
+  /// the line ... unaffected by onTapAt being wired up" case was failing
+  /// on. Event time is the correct source for gesture timing regardless:
+  /// it is what every Flutter recognizer itself uses.
+  Duration? _pointerDownAt;
   Offset? _pointerDownPosition;
 
   /// Set once [LongPressDraggable] actually begins a drag, so the release
@@ -157,7 +169,7 @@ class _PlaceTaskLineLayerState extends State<PlaceTaskLineLayer> {
     final onTapAt = widget.onTapAt;
     if (onTapAt == null || downAt == null || downPosition == null) return;
     if (_dragStarted) return;
-    if (DateTime.now().difference(downAt) > kLongPressTimeout) return;
+    if (event.timeStamp - downAt > kLongPressTimeout) return;
     if ((event.position - downPosition).distance > kTouchSlop) return;
 
     final y = _localY(event.position);
@@ -203,7 +215,7 @@ class _PlaceTaskLineLayerState extends State<PlaceTaskLineLayer> {
       child: Listener(
         onPointerDown: (event) {
           _lastPointerPosition = event.position;
-          _pointerDownAt = DateTime.now();
+          _pointerDownAt = event.timeStamp;
           _pointerDownPosition = event.position;
           _dragStarted = false;
         },
@@ -242,7 +254,18 @@ class _PlaceTaskLineLayerState extends State<PlaceTaskLineLayer> {
             // interactions this layer hosts (long-press to place, tap to
             // create) carry their own haptics at their own commit points.
             haptic: null,
-            onTap: widget.onTapAt == null ? null : () {},
+            // Deliberately NO onTap, even when widget.onTapAt is wired.
+            // A non-null onTap here builds a real TapGestureRecognizer as
+            // an ANCESTOR of LongPressDraggable's own recognizer; on a
+            // stationary hold both enter the arena, the tap one is nearer
+            // the root and never yields, so the long press never wins and
+            // onDragStarted never fires at all. That silently disabled
+            // hold-to-place whenever tap-to-create was enabled.
+            //
+            // The tap is fired from the raw pointer stream in
+            // _handlePointerUp instead — see its own note on staying out
+            // of the arena precisely so the two interactions coexist.
+            onTap: null,
             child: LongPressDraggable<Object>(
               // OPAQUE, not the default deferToChild — fixed directly after
               // this stopped firing entirely: `deferToChild` hit-tests

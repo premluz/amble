@@ -174,18 +174,21 @@ void main() {
       final titleText = tester.widget<Text>(find.text('Buy milk'));
       expect(titleText.style?.fontSize, theme.textTaskTitle.fontSize);
 
-      // The row's own circular category badge — the ONE Container that
-      // builds a BoxShape.circle decoration when no duration badge is
-      // present (see the "renders nothing extra" case above for the same
-      // "only the category badge" premise).
-      final circleContainer = tester
+      // The row's own category badge — found by its width/height matching
+      // theme.sizeTaskBadge exactly, NOT by shape any more. It used to be
+      // the one BoxShape.circle Container on the row, but that marker
+      // stopped identifying it once the badge started tracking the "Pill
+      // shape" setting (rounded-rect by default, not always circular) —
+      // see radiusPill's own doc comment on AmbleTheme. Matching by shape
+      // after that change silently found a DIFFERENT circular widget
+      // elsewhere on the row instead, which is what broke this test rather
+      // than the size assertion itself being wrong.
+      final badgeContainer = tester
           .widgetList<Container>(find.byType(Container))
-          .firstWhere(
-            (c) => (c.decoration as BoxDecoration?)?.shape == BoxShape.circle,
-          );
+          .firstWhere((c) => c.constraints?.maxWidth == theme.sizeTaskBadge);
 
-      expect(circleContainer.constraints?.maxWidth, theme.sizeTaskBadge);
-      expect(circleContainer.constraints?.maxHeight, theme.sizeTaskBadge);
+      expect(badgeContainer.constraints?.maxWidth, theme.sizeTaskBadge);
+      expect(badgeContainer.constraints?.maxHeight, theme.sizeTaskBadge);
     },
   );
 

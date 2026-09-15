@@ -55,6 +55,8 @@ class ZoneDayTimeline extends StatelessWidget {
     this.devDurationVisible = true,
     this.devTimeRangeVisible = true,
     this.devZoneCardFlat = false,
+    this.devHideEmptyZones = false,
+    this.devZoneTaskStartTimeVisible = false,
     required this.onTaskTap,
     required this.onToggleComplete,
     this.onZoneHeaderTap,
@@ -98,6 +100,18 @@ class ZoneDayTimeline extends StatelessWidget {
   /// title/duration header above its row list. See that provider's own
   /// doc comment for the full request.
   final bool devZoneCardFlat;
+
+  /// The `DevHideEmptyZones` dev toggle — drops every zone container with
+  /// no member task and no matched external event from the merged row
+  /// list. See that provider's own doc comment for the full request.
+  final bool devHideEmptyZones;
+
+  /// The `DevZoneTaskStartTimeVisible` dev toggle — each zone's OWN member
+  /// task rows show just their start time, overriding
+  /// [devTimeRangeVisible] for those rows only. See that provider's own
+  /// doc comment for the full request and its scope (zone member rows
+  /// only — the zone header and unzoned rows are unaffected).
+  final bool devZoneTaskStartTimeVisible;
 
   /// Whether a task's trailing completion checkbox renders
   /// (`ShowCompletionCheckboxSetting`) — a real user setting, not a dev
@@ -144,8 +158,20 @@ class ZoneDayTimeline extends StatelessWidget {
       _ => DateTime(9999),
     };
 
+    // `devHideEmptyZones` (`DevHideEmptyZones`) — an opt-in OVERRIDE of
+    // `ZoneContainmentResult.containments`' own documented default
+    // (every zone renders regardless of member count); see that
+    // provider's own doc comment. Applied here, not in
+    // `resolveZoneContainment` itself, so the underlying containment
+    // logic's real default is untouched.
+    final containments = devHideEmptyZones
+        ? result.containments
+              .where((c) => c.tasks.isNotEmpty || c.externalEvents.isNotEmpty)
+              .toList()
+        : result.containments;
+
     final rows = <Object>[
-      ...result.containments,
+      ...containments,
       ...result.unzonedTasks,
       ...outerExternalEvents,
     ]..sort((a, b) => keyFor(a).compareTo(keyFor(b)));
@@ -214,35 +240,55 @@ class ZoneDayTimeline extends StatelessWidget {
                   onToggleComplete: onToggleComplete,
                   durationVisible: devDurationVisible,
                   timeRangeVisible: devTimeRangeVisible,
+                  startTimeOnlyVisible: devZoneTaskStartTimeVisible,
                   showCompletionCheckbox: showCompletionCheckbox,
                   flatStyle: devZoneCardFlat,
                   onHeaderTap: onZoneHeaderTap == null
                       ? null
                       : () => onZoneHeaderTap!(row.zone),
                 ),
-                Task() => TaskCapsuleBlock(
-                  task: row,
-                  category: row.categoryId == null
-                      ? null
-                      : categoryById[row.categoryId],
-                  // Fixed badge size, matching List view's own individual-row
-                  // look — a flat list has no time axis for a proportional
-                  // pill height to read against.
-                  durationIndicatedBySize: false,
-                  compactText: true,
-                  textLayout: devTextLayout,
-                  iconsVisible: devIconsVisible,
-                  durationVisible: devDurationVisible,
-                  timeRangeVisible: devTimeRangeVisible,
-                  showCompletionCheckbox: showCompletionCheckbox,
-                  onTap: () => onTaskTap(row),
-                  onToggleComplete: () => onToggleComplete(row),
+                // Left-padded by `spacingMd` — requested directly: "align
+                // tasks that are not in zones same with tasks that have
+                // zones, so add margin that is equal zone left padding."
+                // A ZONED task's own badge sits at `spacingScreenPadding`
+                // (this list's own horizontal inset) PLUS `spacingMd`
+                // (ZoneContainerBlock's own card padding — see its
+                // `EdgeInsets.fromLTRB` there), so an unzoned row needs the
+                // exact same extra inset to line its badge up under the
+                // same left edge rather than sitting `spacingMd` further
+                // left than every zoned task beside it.
+                Task() => Padding(
+                  padding: EdgeInsets.only(left: theme.spacingMd),
+                  child: TaskCapsuleBlock(
+                    task: row,
+                    category: row.categoryId == null
+                        ? null
+                        : categoryById[row.categoryId],
+                    // Fixed badge size, matching List view's own individual-row
+                    // look — a flat list has no time axis for a proportional
+                    // pill height to read against.
+                    durationIndicatedBySize: false,
+                    compactText: true,
+                    textLayout: devTextLayout,
+                    iconsVisible: devIconsVisible,
+                    durationVisible: devDurationVisible,
+                    timeRangeVisible: devTimeRangeVisible,
+                    showCompletionCheckbox: showCompletionCheckbox,
+                    onTap: () => onTaskTap(row),
+                    onToggleComplete: () => onToggleComplete(row),
+                  ),
                 ),
-                ExternalCalendarEvent() => _UnzonedEventRow(
-                  theme: theme,
-                  event: row,
-                  durationVisible: devDurationVisible,
-                  timeRangeVisible: devTimeRangeVisible,
+                // Same left-inset fix as the unzoned Task row above — an
+                // unmatched external event is the other kind of row that
+                // sits outside any zone container.
+                ExternalCalendarEvent() => Padding(
+                  padding: EdgeInsets.only(left: theme.spacingMd),
+                  child: _UnzonedEventRow(
+                    theme: theme,
+                    event: row,
+                    durationVisible: devDurationVisible,
+                    timeRangeVisible: devTimeRangeVisible,
+                  ),
                 ),
                 _ => const SizedBox.shrink(),
               };
