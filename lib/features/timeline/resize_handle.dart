@@ -58,6 +58,14 @@ class ResizeHandle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final dotSize = theme.spacingSm;
+
+    // Which way is "outward" for this handle: [barAlignment] is
+    // `topCenter` for a top handle, `bottomCenter` for a bottom one, so
+    // its own `y` (-1 or 1) already tells us which direction points away
+    // from the pill.
+    final outwardDirection = barAlignment.y.sign;
+
     return GestureDetector(
       onVerticalDragStart: onDragStart,
       onVerticalDragUpdate: onDragUpdate,
@@ -73,15 +81,34 @@ class ResizeHandle extends StatelessWidget {
         // bar (a straight line); now a `BoxShape.circle` dot in
         // `colorAccent`, matching the selection border's own accent
         // color so the two read as one consistent "this is editable"
-        // visual language. Same position (pinned to the handle's outer
-        // edge via [barAlignment]) and same touch target — only the
-        // visible shape and color change.
-        child: Container(
-          width: theme.spacingSm,
-          height: theme.spacingSm,
-          decoration: BoxDecoration(
-            color: theme.colorAccent,
-            shape: BoxShape.circle,
+        // visual language.
+        //
+        // Nudged its own full diameter OUTWARD via [Transform.translate]
+        // — corrected directly, twice: first "the resize controls should
+        // be small blue circles... centered," which read as centered ON
+        // the pill's edge; then "the dots should be slight outer, not
+        // inner like now or middle on the blue line, then part is inner
+        // part outer." `Container(alignment: barAlignment)` alone centers
+        // the dot exactly ON the handle's own edge (which sits flush with
+        // the pill's outer boundary — see this handle's caller,
+        // `Positioned(top: 0, ...)`), so half painted inside the pill and
+        // half outside. A HALF-diameter shift only moves the dot's
+        // CENTER to the boundary — still straddling it — so the full
+        // diameter is what's needed to clear the whole dot, landing it
+        // flush against the outside of the boundary rather than floating
+        // further away. Measured directly (dot.bottom == pillTop for a
+        // top handle) rather than assumed. The touch target (this
+        // widget's own hit-tested bounds) is untouched — only the paint
+        // moves, not the gesture geometry.
+        child: Transform.translate(
+          offset: Offset(0, outwardDirection * dotSize),
+          child: Container(
+            width: dotSize,
+            height: dotSize,
+            decoration: BoxDecoration(
+              color: theme.colorAccent,
+              shape: BoxShape.circle,
+            ),
           ),
         ),
       ),

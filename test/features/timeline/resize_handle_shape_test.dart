@@ -66,31 +66,64 @@ void main() {
     );
   });
 
-  testWidgets('the circle sits centered at the SAME position the old bar '
-      'did — pinned to barAlignment, not the handle\'s geometric middle', (
-    tester,
-  ) async {
-    await pump(tester, barAlignment: Alignment.topCenter);
+  // Corrected TWICE against the original placement: first landing the dot
+  // centered exactly ON the handle's own edge (half painted inside the
+  // pill, half outside — "should be slight outer, not inner like now or
+  // middle on the blue line, then part is inner part outer"), then
+  // shifted its FULL diameter outward so the whole dot clears the
+  // boundary and sits flush against the outside of it.
+  testWidgets(
+    'topCenter: the dot is pushed its OWN diameter past the handle\'s '
+    'edge — fully outside, not straddling it',
+    (tester) async {
+      await pump(tester, barAlignment: Alignment.topCenter);
 
-    final handleRect = tester.getRect(find.byType(ResizeHandle));
-    final circleRect = tester.getRect(
-      find.byWidgetPredicate(
-        (w) => w is Container && (w.decoration as BoxDecoration?)?.shape == BoxShape.circle,
-      ),
-    );
+      final handleRect = tester.getRect(find.byType(ResizeHandle));
+      final circleRect = tester.getRect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Container &&
+              (w.decoration as BoxDecoration?)?.shape == BoxShape.circle,
+        ),
+      );
 
-    expect(
-      circleRect.center.dy,
-      closeTo(handleRect.top + circleRect.height / 2, 0.5),
-      reason: 'topCenter alignment must still pin the visible dot to the '
-          'handle\'s OUTER edge, same contract the bar had',
-    );
-    expect(
-      circleRect.center.dx,
-      closeTo(handleRect.center.dx, 0.5),
-      reason: 'horizontally centered regardless of vertical alignment',
-    );
-  });
+      expect(
+        circleRect.bottom,
+        closeTo(handleRect.top, 0.5),
+        reason:
+            'the dot\'s bottom edge must land exactly at the handle\'s '
+            'own top boundary — flush outside it, not centered on it',
+      );
+      expect(
+        circleRect.center.dx,
+        closeTo(handleRect.center.dx, 0.5),
+        reason: 'horizontally centered regardless of vertical alignment',
+      );
+    },
+  );
+
+  testWidgets(
+    'bottomCenter: the dot pushes outward in the OPPOSITE direction',
+    (tester) async {
+      await pump(tester, barAlignment: Alignment.bottomCenter);
+
+      final handleRect = tester.getRect(find.byType(ResizeHandle));
+      final circleRect = tester.getRect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Container &&
+              (w.decoration as BoxDecoration?)?.shape == BoxShape.circle,
+        ),
+      );
+
+      expect(
+        circleRect.top,
+        closeTo(handleRect.bottom, 0.5),
+        reason: 'a bottom handle pushes its dot DOWN, clear of the '
+            'handle\'s own bottom boundary',
+      );
+    },
+  );
 
   testWidgets('the circle is small — a subtle dot, not a large control', (
     tester,
