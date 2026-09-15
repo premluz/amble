@@ -3422,17 +3422,27 @@ class _DraggableZoneBlockState extends ConsumerState<_DraggableZoneBlock> {
   /// a move — the same "tap becomes select/deselect" rule multi-task mode
   /// already gives tasks. **New 2026-09-06** (confirmed directly — zones
   /// should not wiggle/be draggable in multi-task mode unless selected).
+  // Reachable in PLAIN Edit Mode now too, not just multi-task mode —
+  // corrected directly, alongside `_interactionEnabled`'s own matching
+  // fix: gating resize handles on `_isSelected` unconditionally is only
+  // correct if a zone can actually BECOME selected in every mode that
+  // gate applies to. This used to return `null` (no tap at all) outside
+  // multi-task mode, which would have made every zone permanently
+  // unresizable in plain Edit Mode once handles started requiring
+  // selection — `_isSelected` could never become true with no way to
+  // select.
   VoidCallback? get _effectiveOnHeaderTap {
-    if (!widget.editModeEnabled || !ref.watch(devMultiTaskEditModeProvider)) {
-      return null;
-    }
+    if (!widget.editModeEnabled) return null;
     // `selectOnly`, not `toggle` — `ZoneEditSelection` became a genuine
     // multi-select set 2026-09-12 for the Weekly Zone Authoring Grid, and
     // a bare `toggle` here would have silently turned the TIMELINE into a
     // multi-select surface too. Nothing on the Timeline offers a group
     // zone gesture, so its one-zone-at-a-time behaviour is preserved
     // explicitly: tapping the selected zone's own header clears it,
-    // tapping any other header replaces the selection.
+    // tapping any other header replaces the selection. Unaffected by
+    // this fix — plain Edit Mode was never a multi-select surface either
+    // way, so the same select-one-at-a-time shape now just applies in
+    // both modes rather than only one.
     return () {
       final notifier = ref.read(zoneEditSelectionProvider.notifier);
       if (_isSelected) {
@@ -3453,9 +3463,15 @@ class _DraggableZoneBlockState extends ConsumerState<_DraggableZoneBlock> {
   /// otherwise Edit Mode's own active-state signal would be indistinguishable
   /// from the selection signal if both used the same motion on every zone at
   /// once.
+  // Gated on `_isSelected` unconditionally now — corrected directly:
+  // "edit mode tasks shows handles for resize without selecting, that's
+  // another thing to change, should only show after tapping/selecting
+  // task." This used to short-circuit to `true` outside multi-task mode,
+  // showing every zone's resize handles/wiggle the instant plain Edit
+  // Mode turned on, with no select step at all — the same decoupled-
+  // from-selection gap fixed on `TaskCapsuleBlock`'s own resize handles.
   bool get _interactionEnabled {
     if (!widget.editModeEnabled) return false;
-    if (!ref.watch(devMultiTaskEditModeProvider)) return true;
     return _isSelected;
   }
 

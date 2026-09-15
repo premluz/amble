@@ -152,6 +152,19 @@ void main() {
         'zone-background rendering or Edit Mode gating.',
       );
     }
+
+    // Corrected directly: "edit mode tasks shows handles for resize
+    // without selecting, that's another thing to change, should only
+    // show after tapping/selecting task." Move/resize now require the
+    // zone to be SELECTED first, in plain Edit Mode too (previously only
+    // multi-task mode required this) — so every test in this file must
+    // select the zone via its own header tap before expecting
+    // onMoveStart/onResizeTopStart/etc. to be wired.
+    (find.byType(ZoneBackgroundBlock).evaluate().single.widget
+            as ZoneBackgroundBlock)
+        .onHeaderTap!();
+    await tester.pump();
+
     return zone;
   }
 
@@ -409,7 +422,12 @@ void main() {
 
       // Only today's instance renders — the Timeline defaults to today.
       expect(find.byType(ZoneBackgroundBlock), findsOneWidget);
-      final block = findZoneBlock();
+      var block = findZoneBlock();
+      // Selection is required before resize now — see
+      // `pumpTaskViewWithZone`'s own matching comment.
+      block.onHeaderTap!();
+      await tester.pump();
+      block = findZoneBlock();
       // Snapshotted BEFORE the drag: `Box.get` returns the same cached
       // `HiveObject` instance every time, so `todayInstance`/
       // `otherDayInstance` themselves get mutated in place the moment the

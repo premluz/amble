@@ -182,6 +182,18 @@ class ZoneGridBlock extends StatelessWidget {
                 right: 0,
                 child: ResizeHandle(
                   theme: theme,
+                  // `barAlignment`/`outwardShiftFactor` wired here too —
+                  // this call had neither, so the default
+                  // `Alignment.center` made `ResizeHandle`'s own outward
+                  // push (keyed off `barAlignment.y.sign`) a no-op,
+                  // leaving the dot at this box's MIDDLE — the same
+                  // "still inside, not outside" gap fixed on
+                  // `ZoneContainerBlock`'s equivalent handles. No
+                  // clipping ancestor here (this `Stack` is
+                  // `Clip.none`, same as that container's), so it gets
+                  // the same full `1.5` push.
+                  barAlignment: Alignment.topCenter,
+                  outwardShiftFactor: 1.5,
                   onDragStart: onResizeTopStart,
                   onDragUpdate: onResizeTopUpdate,
                   onDragEnd: onResizeTopEnd,
@@ -194,6 +206,8 @@ class ZoneGridBlock extends StatelessWidget {
                 right: 0,
                 child: ResizeHandle(
                   theme: theme,
+                  barAlignment: Alignment.bottomCenter,
+                  outwardShiftFactor: 1.5,
                   onDragStart: onResizeBottomStart,
                   onDragUpdate: onResizeBottomUpdate,
                   onDragEnd: onResizeBottomEnd,

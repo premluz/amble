@@ -757,7 +757,17 @@ class TaskCapsuleBlock extends StatelessWidget {
                 // stays pinned to that edge via `barAlignment`. Flush at
                 // the edge now (was `-spacingXs`), since an overhanging
                 // strip was dead area that only looked grabbable.
-                if (editModeEnabled && onResizeTopEnd != null)
+                // `isSelected`, not just `editModeEnabled` — corrected
+                // directly: "edit mode tasks shows handles for resize
+                // without selecting, that's another thing to change
+                // actually, should only show after tapping/selecting
+                // task." Every task in Edit Mode showed resize handles
+                // regardless of selection, while the selection BORDER
+                // already required `isSelected` — the two were
+                // decoupled. Handles now gate on the same condition the
+                // border does, so a task reads as "editable right now"
+                // consistently: no border, no handles until selected.
+                if (editModeEnabled && isSelected && onResizeTopEnd != null)
                   Positioned(
                     top: 0,
                     left: 0,
@@ -787,7 +797,7 @@ class TaskCapsuleBlock extends StatelessWidget {
                       onDragEnd: onResizeTopEnd,
                     ),
                   ),
-                if (editModeEnabled && onResizeEnd != null)
+                if (editModeEnabled && isSelected && onResizeEnd != null)
                   Positioned(
                     bottom: 0,
                     left: 0,

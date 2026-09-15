@@ -252,6 +252,17 @@ class PendingTaskPill extends StatelessWidget {
                       theme: theme,
                       blockHeight: height,
                     ),
+                    // `barAlignment`/`outwardShiftFactor` wired here too
+                    // — this call had neither, so the default
+                    // `Alignment.center` made `ResizeHandle`'s own
+                    // outward push a no-op, leaving the dot at this
+                    // box's MIDDLE instead of outside it (the same gap
+                    // fixed on `ZoneContainerBlock`/`ZoneGridBlock`'s own
+                    // equivalents). No clipping ancestor here (this
+                    // `Stack` is `Clip.none`), so it gets the same full
+                    // push.
+                    barAlignment: Alignment.topCenter,
+                    outwardShiftFactor: 1.5,
                     onDragStart: onResizeTopStart,
                     onDragUpdate: (details) =>
                         onResizeTopUpdate(details.delta.dy),
@@ -268,6 +279,8 @@ class PendingTaskPill extends StatelessWidget {
                       theme: theme,
                       blockHeight: height,
                     ),
+                    barAlignment: Alignment.bottomCenter,
+                    outwardShiftFactor: 1.5,
                     onDragStart: onResizeStart,
                     onDragUpdate: (details) => onResizeUpdate(details.delta.dy),
                     onDragEnd: (_) => onResizeEnd(),

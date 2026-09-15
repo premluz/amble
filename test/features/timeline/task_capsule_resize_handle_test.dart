@@ -17,6 +17,14 @@ void main() {
   Future<void> pump(
     WidgetTester tester, {
     required bool editModeEnabled,
+    // Defaults true: most tests in this file are about the OTHER gating
+    // conditions (Edit Mode, wired callbacks), so selection is assumed
+    // already satisfied unless a test says otherwise. Corrected directly:
+    // "edit mode tasks shows handles for resize without selecting, that's
+    // another thing to change, should only show after tapping/selecting
+    // task" — handles now also require `isSelected`, matching the
+    // selection border's own existing gate.
+    bool isSelected = true,
     GestureDragStartCallback? onResizeStart,
     GestureDragUpdateCallback? onResizeUpdate,
     GestureDragEndCallback? onResizeEnd,
@@ -28,6 +36,7 @@ void main() {
           body: TaskCapsuleBlock(
             task: task,
             editModeEnabled: editModeEnabled,
+            isSelected: isSelected,
             onResizeStart: onResizeStart,
             onResizeUpdate: onResizeUpdate,
             onResizeEnd: onResizeEnd,
@@ -57,8 +66,8 @@ void main() {
     expect(find.byType(ResizeHandle), findsNothing);
   });
 
-  testWidgets('the handle renders only when BOTH Edit Mode is on AND a '
-      'resize end callback is wired', (tester) async {
+  testWidgets('the handle renders only when Edit Mode is on, a resize end '
+      'callback is wired, AND the task is selected', (tester) async {
     await pump(
       tester,
       editModeEnabled: true,
@@ -68,6 +77,26 @@ void main() {
     );
 
     expect(find.byType(ResizeHandle), findsOneWidget);
+  });
+
+  // Requested directly: "edit mode tasks shows handles for resize without
+  // selecting, that's another thing to change actually, should only show
+  // after tapping/selecting task and we should have blue border, same
+  // style, unified, reusable." Handles used to show for EVERY task the
+  // instant Edit Mode turned on; they now require selection too, matching
+  // the accent border's own existing `isSelected` gate exactly.
+  testWidgets('no handle renders in Edit Mode with callbacks wired if the '
+      'task is NOT selected', (tester) async {
+    await pump(
+      tester,
+      editModeEnabled: true,
+      isSelected: false,
+      onResizeStart: (_) {},
+      onResizeUpdate: (_) {},
+      onResizeEnd: (_) {},
+    );
+
+    expect(find.byType(ResizeHandle), findsNothing);
   });
 
   testWidgets('dragging the handle reports start/update/end without ever '
@@ -84,6 +113,7 @@ void main() {
           body: TaskCapsuleBlock(
             task: task,
             editModeEnabled: true,
+            isSelected: true,
             onDragStart: (_) => moveDragged = true,
             onResizeStart: (_) => resizeStarted = true,
             onResizeUpdate: (_) => resizeUpdated = true,
@@ -121,6 +151,7 @@ void main() {
             body: TaskCapsuleBlock(
               task: task,
               editModeEnabled: true,
+              isSelected: true,
               onResizeTopStart: (_) => topStarted = true,
               onResizeTopUpdate: (_) => topUpdated = true,
               onResizeTopEnd: (_) => topEnded = true,
@@ -152,6 +183,7 @@ void main() {
             body: TaskCapsuleBlock(
               task: task,
               editModeEnabled: true,
+              isSelected: true,
               onResizeStart: (_) {},
               onResizeUpdate: (_) {},
               onResizeEnd: (_) => bottomEnded = true,
