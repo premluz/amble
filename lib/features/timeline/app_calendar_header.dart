@@ -356,9 +356,18 @@ class _WeekDayCell extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // textCaption, not textBody — requested directly: "top
+              // calendar (week view) on timeline and task view spatial and
+              // nonspatial smaller font." Matches the weekday-letter row
+              // just above this grid, which already uses textCaption, so
+              // the two rows read as one consistent scale. Selected keeps
+              // the same RELATIVE treatment (bold vs regular weight),
+              // confirmed directly — both rungs shrink together rather
+              // than the selected day staying at the old size for
+              // contrast.
               Text(
                 '${date.day}',
-                style: theme.textBody.copyWith(
+                style: theme.textCaption.copyWith(
                   color: theme.colorTextPrimary,
                   fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                 ),

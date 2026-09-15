@@ -64,7 +64,12 @@ class InboxScreen extends ConsumerWidget {
                   // inbox actually, adding notes..." The screen collects
                   // unscheduled notes, so "Inbox" names what it holds
                   // rather than what you do to it.
-                  child: Text('Inbox', style: theme.textHeadline),
+                  // textTitle, not textHeadline — requested directly:
+                  // "headings inbox, tracked, settings (page headings)
+                  // same size as month selector on timeline view." The
+                  // month selector (`app_calendar_header.dart`) uses
+                  // textTitle deliberately, at 1/3 textHeadline's size.
+                  child: Text('Inbox', style: theme.textTitle),
                 ),
                 Expanded(
                   // Stack, so top/bottom fades overlay the list's own

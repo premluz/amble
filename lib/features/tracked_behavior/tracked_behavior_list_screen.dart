@@ -94,7 +94,10 @@ class TrackedBehaviorListScreen extends ConsumerWidget {
                   child: Row(
                     children: [
                       Expanded(
-                        child: Text('Tracked', style: theme.textHeadline),
+                        // textTitle, not textHeadline — see the matching
+                        // change on Inbox's own heading for the full
+                        // reasoning.
+                        child: Text('Tracked', style: theme.textTitle),
                       ),
                       AppSubtleIconButton(
                         icon: viewMode.icon,

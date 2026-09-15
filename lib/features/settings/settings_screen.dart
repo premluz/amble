@@ -40,7 +40,9 @@ class SettingsScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Settings', style: theme.textHeadline),
+              // textTitle, not textHeadline — see Inbox's own heading for
+              // the full reasoning.
+              Text('Settings', style: theme.textTitle),
               SizedBox(height: theme.spacingLg),
 
               SettingsPanel(

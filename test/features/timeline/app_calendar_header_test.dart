@@ -146,6 +146,47 @@ void main() {
 
     expect(container.read(selectedDateProvider), DateTime(2026, 9, 6));
   });
+
+  // Requested directly: "top calendar (week view) on timeline and task
+  // view spatial and nonspatial smaller font. And selected should [shrink
+  // too, same relative emphasis]" (confirmed via AskUserQuestion).
+  testWidgets('the day-number cells use textCaption, matching the weekday '
+      'letter row above them, and selected keeps only its WEIGHT '
+      'difference — not a separate, larger size', (tester) async {
+    await pumpHeader(tester, initialDate: DateTime(2026, 9, 6));
+
+    final theme = AmbleTheme.light;
+    // Scoped to `_WeekDayCell` specifically — a bare digit-regex match
+    // also caught the "jump to today" button's own day-of-month text
+    // elsewhere in the header, a DIFFERENT widget with its own unrelated
+    // bold treatment.
+    final dayTexts = tester
+        .widgetList<Text>(
+          find.descendant(
+            of: find.byWidgetPredicate(
+              (w) => w.runtimeType.toString() == '_WeekDayCell',
+            ),
+            matching: find.textContaining(RegExp(r'^\d{1,2}$')),
+          ),
+        )
+        .toList();
+
+    expect(dayTexts, hasLength(7), reason: 'one cell per weekday');
+    for (final text in dayTexts) {
+      expect(
+        text.style?.fontSize,
+        theme.textCaption.fontSize,
+        reason: 'every day cell — selected or not — must be sized off '
+            'textCaption, matching the "S M T W T F S" row above it',
+      );
+    }
+
+    // The selected day (the 6th) still reads as selected via weight alone.
+    final selectedDay = dayTexts.firstWhere((t) => t.data == '6');
+    final unselectedDay = dayTexts.firstWhere((t) => t.data != '6');
+    expect(selectedDay.style?.fontWeight, FontWeight.w700);
+    expect(unselectedDay.style?.fontWeight, FontWeight.w500);
+  });
 }
 
 DateTime _dateOnly(DateTime date) => DateTime(date.year, date.month, date.day);
