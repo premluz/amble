@@ -421,6 +421,16 @@ class ZoneContainerBlock extends StatelessWidget {
               // MIDDLE of this already-overhanging box — visually still
               // mostly over the block, not fully clear of it.
               barAlignment: Alignment.topCenter,
+              // 1.5, not the default 1.0 — corrected directly: "on zones
+              // still inside not middle with part outside." This
+              // container carries no clipping ancestor (unlike
+              // TaskCapsuleBlock's frosted wrapper), so there's no
+              // ceiling on how far the dot can be pushed — a full-
+              // diameter shift measured as genuinely clear of the
+              // block's edge but still read as too subtle at real
+              // screen density to look "outside," so it's now pushed
+              // half again as far.
+              outwardShiftFactor: 1.5,
               onDragStart: onResizeTopStart,
               onDragUpdate: onResizeTopUpdate,
               onDragEnd: onResizeTopEnd,
@@ -435,6 +445,7 @@ class ZoneContainerBlock extends StatelessWidget {
             child: ResizeHandle(
               theme: theme,
               barAlignment: Alignment.bottomCenter,
+              outwardShiftFactor: 1.5,
               onDragStart: onResizeBottomStart,
               onDragUpdate: onResizeBottomUpdate,
               onDragEnd: onResizeBottomEnd,

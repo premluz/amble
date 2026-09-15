@@ -773,11 +773,14 @@ class TaskCapsuleBlock extends StatelessWidget {
                       // comment: this pill sits inside a frosted wrapper
                       // whose `ClipRRect` is ALWAYS present and clips
                       // anything painted past the pill's own edge. A full
-                      // outward push made the dot vanish entirely
-                      // ("on task can't see at all now"); no push at all
-                      // read as fully inward ("position more outward
-                      // instead of inward or middle"). Half is what's
-                      // actually visible under that clip.
+                      // outward push made the dot vanish entirely ("on
+                      // task can't see at all now"); an attempt to paint
+                      // it as a sibling OUTSIDE that clip broke this
+                      // pill's own hit-test bounds under its real
+                      // `Positioned(left:, right:)` parent (reverted,
+                      // see `build`'s own doc comment on that attempt).
+                      // Half is what's actually visible under the clip
+                      // without touching this widget's layout at all.
                       outwardShiftFactor: 0.5,
                       onDragStart: onResizeTopStart,
                       onDragUpdate: onResizeTopUpdate,
@@ -1178,6 +1181,37 @@ class TaskCapsuleBlock extends StatelessWidget {
     // fill opacity, shadow — all via AnimatedContainer/TweenAnimationBuilder
     // rather than presence/absence of the wrapper), keeps the gesture's
     // render object ancestry stable across the whole drag.
+    // Tried, twice, and REVERTED: wrapping this return value in an outer
+    // `Stack` to paint the resize dots' visible circle OUTSIDE the
+    // frosted wrapper's `ClipRRect` (see [_buildFrostedWrapper], kept as
+    // its own method from that attempt since the extraction itself is
+    // harmless). Both attempts — a bare `Stack`, then an
+    // `IntrinsicHeight`/`IntrinsicWidth`-constrained one — changed
+    // `TaskCapsuleBlock`'s own REPORTED SIZE under its real parent (a
+    // `Positioned(left:, right:)` inside the outer Timeline `Stack`,
+    // which hands down a bounded, stretched width): confirmed directly
+    // that `multi_task_group_move_test.dart`'s real drag-on-the-pill
+    // tests broke outright both times, not cosmetically — the widget's
+    // own hit-tested bounds no longer matched where the pill visually
+    // sits. Restructuring this safely (splitting the dot's PAINT from
+    // its gesture box without touching sizing) needs more than a
+    // wrapping `Stack`; flagged rather than attempted a third time. The
+    // resize handles keep their existing `outwardShiftFactor: 0.5`
+    // half-visible compromise (see their own call sites below) — full
+    // outward, un-clipped dots are not currently achievable here without
+    // a larger change to this widget's layout than is safe to make
+    // blind.
+    return _buildFrostedWrapper(theme: theme, isLifted: isLifted, card: card);
+  }
+
+  /// Extracted from [build] so the always-present frosted wrapper can sit
+  /// as one child of a new outer `Stack` there, alongside the resize
+  /// dots' overlay siblings — see that call site's own doc comment.
+  Widget _buildFrostedWrapper({
+    required AmbleTheme theme,
+    required bool isLifted,
+    required Widget card,
+  }) {
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: isLifted ? 1 : 0),
       duration: theme.motionFast,
