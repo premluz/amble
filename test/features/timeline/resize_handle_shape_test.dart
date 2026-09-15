@@ -141,13 +141,10 @@ void main() {
     expect(circleRect.width, circleRect.height, reason: 'a circle, not an oval, at this size');
   });
 
-  // `TaskCapsuleBlock` passes `dotClearsBoundary: false` — see that
-  // field's own doc comment: its resize handles sit inside a frosted
-  // wrapper whose ClipRRect is ALWAYS present, clipping a dot pushed past
-  // the pill's own edge. Reported directly: "on task can't see at all
-  // now." This asserts the OPT-OUT itself, independent of any clip.
+  // `outwardShiftFactor: 0.0` keeps the dot centered on the edge — the
+  // pre-outward-push behavior, still available for a caller that needs it.
   testWidgets(
-    'dotClearsBoundary: false keeps the dot centered on the edge — no '
+    'outwardShiftFactor: 0.0 keeps the dot centered on the edge — no '
     'outward shift at all',
     (tester) async {
       await tester.pumpWidget(
@@ -160,7 +157,7 @@ void main() {
               onDragUpdate: (_) {},
               onDragEnd: (_) {},
               barAlignment: Alignment.topCenter,
-              dotClearsBoundary: false,
+              outwardShiftFactor: 0.0,
             ),
           ),
         ),
@@ -178,8 +175,60 @@ void main() {
       expect(
         circleRect.center.dy,
         closeTo(handleRect.top + circleRect.height / 2, 0.5),
-        reason: 'centered exactly on the handle\'s own edge, matching the '
-            'pre-outward-push behavior — no shift applied',
+        reason: 'centered exactly on the handle\'s own edge — zero shift',
+      );
+    },
+  );
+
+  // `TaskCapsuleBlock` passes `outwardShiftFactor: 0.5` — see that field's
+  // own doc comment: its resize handles sit inside a frosted wrapper
+  // whose ClipRRect is ALWAYS present, clipping a dot pushed a FULL
+  // diameter past the pill's own edge entirely invisible (reported
+  // directly: "on task can't see at all now"), while zero shift read as
+  // fully inward ("position more outward instead of inward or middle").
+  // Half a diameter is the geometry actually shipped for that caller.
+  testWidgets(
+    'outwardShiftFactor: 0.5 shifts the dot HALFWAY between centered and '
+    'fully cleared',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(useMaterial3: true, extensions: [theme]),
+          home: Scaffold(
+            body: ResizeHandle(
+              theme: theme,
+              onDragStart: (_) {},
+              onDragUpdate: (_) {},
+              onDragEnd: (_) {},
+              barAlignment: Alignment.topCenter,
+              outwardShiftFactor: 0.5,
+            ),
+          ),
+        ),
+      );
+
+      final handleRect = tester.getRect(find.byType(ResizeHandle));
+      final circleRect = tester.getRect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Container &&
+              (w.decoration as BoxDecoration?)?.shape == BoxShape.circle,
+        ),
+      );
+
+      // At factor 0.0 the dot's center sits at handleRect.top + height/2
+      // (Container(alignment: topCenter) pins the dot's own TOP to the
+      // handle's top with no shift). At factor 1.0 it's shifted a full
+      // diameter to handleRect.top - height/2 (confirmed by the sibling
+      // "fully outside" test above, via circleRect.bottom == handleRect
+      // .top). 0.5 lands exactly halfway between those two centers — at
+      // handleRect.top itself.
+      expect(
+        circleRect.center.dy,
+        closeTo(handleRect.top, 0.5),
+        reason: 'a 0.5 factor moves the dot half its own diameter past '
+            'where a 0.0 factor would sit — halfway to the full '
+            '(1.0-factor) shift, landing its center exactly on the edge',
       );
     },
   );

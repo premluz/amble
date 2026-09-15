@@ -22,7 +22,7 @@ class ResizeHandle extends StatelessWidget {
     required this.onDragEnd,
     this.height,
     this.barAlignment = Alignment.center,
-    this.dotClearsBoundary = true,
+    this.outwardShiftFactor = 1.0,
   });
 
   final AmbleTheme theme;
@@ -57,24 +57,34 @@ class ResizeHandle extends StatelessWidget {
   /// a bottom one.
   final Alignment barAlignment;
 
-  /// Whether the visible dot is pushed its own full diameter past
-  /// [barAlignment]'s edge, clear of the block's boundary — see this
-  /// class's own build method for the geometry.
+  /// How far the visible dot is pushed past [barAlignment]'s edge, as a
+  /// multiple of the dot's own diameter — see this class's own build
+  /// method for the geometry. `1.0` (the default) clears the dot fully of
+  /// the block's boundary; `0.0` centers it exactly ON the boundary.
   ///
-  /// **False for `TaskCapsuleBlock`'s two handles specifically.** That
+  /// **`0.5` for `TaskCapsuleBlock`'s two handles specifically.** That
   /// caller wraps its whole row (not just the pill) in a frosted card
   /// whose own `ClipRRect` is ALWAYS present, even at rest (see that
-  /// wrapper's own doc comment for why it can't be conditional) — and
-  /// that ancestor clip applies regardless of THIS widget's `Clip.none`,
-  /// so a dot pushed past the pill's edge there is invisible, painted but
-  /// clipped away. Reported directly: "on task can't see at all now."
-  /// Restructuring that wrapper to exempt the handles was assessed as a
-  /// larger, riskier change (that clip's shape has its own documented
-  /// history of breaking mid-drag when the widget tree around it
-  /// changes) than accepting the dot centered on the pill's edge there.
+  /// wrapper's own doc comment for why it can't be conditional), and that
+  /// ancestor clip applies regardless of THIS widget's `Clip.none` — so a
+  /// dot pushed a full diameter past the pill's edge there is entirely
+  /// invisible (reported directly: "on task can't see at all now"), while
+  /// centering it exactly on the edge (`0.0`) read as fully inward
+  /// (reported directly: "make it position more outward the pill instead
+  /// of inward or middle... part half is outside"). `0.5` splits the
+  /// difference and is genuinely half-visible: measured directly (not
+  /// assumed) that the wrapper's clip boundary sits exactly at the pill's
+  /// own edge at rest, so a half-diameter push leaves exactly the outward
+  /// half of the dot painted and the inward half clipped away — the dot
+  /// reads as poking out from the edge rather than sitting on or inside
+  /// it. Restructuring the wrapper to exempt the handles entirely was
+  /// assessed as a larger, riskier change (that clip's shape has its own
+  /// documented history of breaking mid-drag when the widget tree around
+  /// it changes) than this partial-visibility compromise.
+  ///
   /// `ZoneContainerBlock`'s containers carry no such wrapper, so their
-  /// handles keep the full outward push.
-  final bool dotClearsBoundary;
+  /// handles keep the default full (`1.0`) outward push.
+  final double outwardShiftFactor;
 
   @override
   Widget build(BuildContext context) {
@@ -83,10 +93,9 @@ class ResizeHandle extends StatelessWidget {
     // Which way is "outward" for this handle: [barAlignment] is
     // `topCenter` for a top handle, `bottomCenter` for a bottom one, so
     // its own `y` (-1 or 1) already tells us which direction points away
-    // from the pill. Zero (no shift) when [dotClearsBoundary] is false —
-    // see that field's own doc comment for why `TaskCapsuleBlock` needs
-    // this off.
-    final outwardDirection = dotClearsBoundary ? barAlignment.y.sign : 0.0;
+    // from the pill. Scaled by [outwardShiftFactor] — see that field's
+    // own doc comment for why `TaskCapsuleBlock` needs a partial shift.
+    final outwardDirection = barAlignment.y.sign * outwardShiftFactor;
 
     return GestureDetector(
       onVerticalDragStart: onDragStart,
@@ -105,23 +114,22 @@ class ResizeHandle extends StatelessWidget {
         // color so the two read as one consistent "this is editable"
         // visual language.
         //
-        // Nudged its own full diameter OUTWARD via [Transform.translate]
-        // — corrected directly, twice: first "the resize controls should
-        // be small blue circles... centered," which read as centered ON
-        // the pill's edge; then "the dots should be slight outer, not
-        // inner like now or middle on the blue line, then part is inner
-        // part outer." `Container(alignment: barAlignment)` alone centers
-        // the dot exactly ON the handle's own edge (which sits flush with
-        // the pill's outer boundary — see this handle's caller,
-        // `Positioned(top: 0, ...)`), so half painted inside the pill and
-        // half outside. A HALF-diameter shift only moves the dot's
-        // CENTER to the boundary — still straddling it — so the full
-        // diameter is what's needed to clear the whole dot, landing it
-        // flush against the outside of the boundary rather than floating
-        // further away. Measured directly (dot.bottom == pillTop for a
-        // top handle) rather than assumed. The touch target (this
-        // widget's own hit-tested bounds) is untouched — only the paint
-        // moves, not the gesture geometry.
+        // Nudged outward via [Transform.translate], scaled by
+        // [outwardShiftFactor] — corrected directly across several
+        // rounds: first "the resize controls should be small blue
+        // circles... centered," which read as centered ON the pill's
+        // edge; then "the dots should be slight outer, not inner like
+        // now or middle on the blue line"; a full-diameter push then made
+        // `TaskCapsuleBlock`'s dots vanish entirely under its always-on
+        // frosted-wrapper clip (see [outwardShiftFactor]'s own doc
+        // comment), and centering them back on the edge for that case
+        // read as "position more outward... instead of inward or
+        // middle." `outwardShiftFactor: 1.0` (the default) clears the
+        // whole dot; `0.5` leaves exactly half visible under a clip that
+        // sits flush with the edge, which reads as "poking outward"
+        // rather than "sitting on the line." The touch target (this
+        // widget's own hit-tested bounds) is untouched regardless — only
+        // the paint moves, not the gesture geometry.
         child: Transform.translate(
           offset: Offset(0, outwardDirection * dotSize),
           child: Container(
