@@ -22,6 +22,7 @@ class ResizeHandle extends StatelessWidget {
     required this.onDragEnd,
     this.height,
     this.barAlignment = Alignment.center,
+    this.dotClearsBoundary = true,
   });
 
   final AmbleTheme theme;
@@ -56,6 +57,25 @@ class ResizeHandle extends StatelessWidget {
   /// a bottom one.
   final Alignment barAlignment;
 
+  /// Whether the visible dot is pushed its own full diameter past
+  /// [barAlignment]'s edge, clear of the block's boundary — see this
+  /// class's own build method for the geometry.
+  ///
+  /// **False for `TaskCapsuleBlock`'s two handles specifically.** That
+  /// caller wraps its whole row (not just the pill) in a frosted card
+  /// whose own `ClipRRect` is ALWAYS present, even at rest (see that
+  /// wrapper's own doc comment for why it can't be conditional) — and
+  /// that ancestor clip applies regardless of THIS widget's `Clip.none`,
+  /// so a dot pushed past the pill's edge there is invisible, painted but
+  /// clipped away. Reported directly: "on task can't see at all now."
+  /// Restructuring that wrapper to exempt the handles was assessed as a
+  /// larger, riskier change (that clip's shape has its own documented
+  /// history of breaking mid-drag when the widget tree around it
+  /// changes) than accepting the dot centered on the pill's edge there.
+  /// `ZoneContainerBlock`'s containers carry no such wrapper, so their
+  /// handles keep the full outward push.
+  final bool dotClearsBoundary;
+
   @override
   Widget build(BuildContext context) {
     final dotSize = theme.spacingSm;
@@ -63,8 +83,10 @@ class ResizeHandle extends StatelessWidget {
     // Which way is "outward" for this handle: [barAlignment] is
     // `topCenter` for a top handle, `bottomCenter` for a bottom one, so
     // its own `y` (-1 or 1) already tells us which direction points away
-    // from the pill.
-    final outwardDirection = barAlignment.y.sign;
+    // from the pill. Zero (no shift) when [dotClearsBoundary] is false —
+    // see that field's own doc comment for why `TaskCapsuleBlock` needs
+    // this off.
+    final outwardDirection = dotClearsBoundary ? barAlignment.y.sign : 0.0;
 
     return GestureDetector(
       onVerticalDragStart: onDragStart,

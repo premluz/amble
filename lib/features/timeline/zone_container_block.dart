@@ -413,6 +413,14 @@ class ZoneContainerBlock extends StatelessWidget {
             right: 0,
             child: ResizeHandle(
               theme: theme,
+              // `barAlignment` wired here too — reported directly: "on
+              // zones the dot circle is still inner, almost fully." This
+              // caller never set it, so `ResizeHandle`'s own outward push
+              // (keyed off `barAlignment.y.sign`) was a no-op at the
+              // default `Alignment.center`, leaving the dot at the
+              // MIDDLE of this already-overhanging box — visually still
+              // mostly over the block, not fully clear of it.
+              barAlignment: Alignment.topCenter,
               onDragStart: onResizeTopStart,
               onDragUpdate: onResizeTopUpdate,
               onDragEnd: onResizeTopEnd,
@@ -426,6 +434,7 @@ class ZoneContainerBlock extends StatelessWidget {
             right: 0,
             child: ResizeHandle(
               theme: theme,
+              barAlignment: Alignment.bottomCenter,
               onDragStart: onResizeBottomStart,
               onDragUpdate: onResizeBottomUpdate,
               onDragEnd: onResizeBottomEnd,

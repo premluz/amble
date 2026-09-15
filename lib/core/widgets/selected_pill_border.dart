@@ -72,12 +72,18 @@ class SelectedPillBorder extends StatelessWidget {
   /// the pill fill; the accent ring only needs to read as a hairline.
   static double accentWidth(AmbleTheme theme) => theme.borderWidthHairline;
 
-  /// The dark separator ring's stroke width — 1-2px per the direct
-  /// request ("hard inner glow/shadow of 1-2px"). `borderWidthHairline`
-  /// (2px in this theme) sits at the top of that range rather than the
-  /// bottom, so the separation reads clearly rather than as a hairline
-  /// that could disappear at a lower device pixel ratio.
-  static double separatorWidth(AmbleTheme theme) => theme.borderWidthHairline;
+  /// The dark separator ring's stroke width — `borderWidthHairline * 1.5`
+  /// (3px in this theme), thicker than [accentWidth]. Bumped up directly:
+  /// "we lost the inner solid border or need to be increased," after the
+  /// soft inner-shadow gradient beside it was removed (a separate fix, for
+  /// a real circular-artifact bug on tall pills). The gradient never
+  /// changed the SOLID line's own numbers, but it was adding visual weight
+  /// that made the line read as more present than it measured — removing
+  /// it left the original `borderWidthHairline` (2px) too subtle on its
+  /// own, so the line itself is now thicker rather than restoring the
+  /// gradient that caused the artifact.
+  static double separatorWidth(AmbleTheme theme) =>
+      theme.borderWidthHairline * 1.5;
 
   static BorderRadius _inset(BorderRadius radius, double by) {
     return BorderRadius.only(

@@ -140,4 +140,47 @@ void main() {
     expect(circleRect.height, theme.spacingSm);
     expect(circleRect.width, circleRect.height, reason: 'a circle, not an oval, at this size');
   });
+
+  // `TaskCapsuleBlock` passes `dotClearsBoundary: false` — see that
+  // field's own doc comment: its resize handles sit inside a frosted
+  // wrapper whose ClipRRect is ALWAYS present, clipping a dot pushed past
+  // the pill's own edge. Reported directly: "on task can't see at all
+  // now." This asserts the OPT-OUT itself, independent of any clip.
+  testWidgets(
+    'dotClearsBoundary: false keeps the dot centered on the edge — no '
+    'outward shift at all',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(useMaterial3: true, extensions: [theme]),
+          home: Scaffold(
+            body: ResizeHandle(
+              theme: theme,
+              onDragStart: (_) {},
+              onDragUpdate: (_) {},
+              onDragEnd: (_) {},
+              barAlignment: Alignment.topCenter,
+              dotClearsBoundary: false,
+            ),
+          ),
+        ),
+      );
+
+      final handleRect = tester.getRect(find.byType(ResizeHandle));
+      final circleRect = tester.getRect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Container &&
+              (w.decoration as BoxDecoration?)?.shape == BoxShape.circle,
+        ),
+      );
+
+      expect(
+        circleRect.center.dy,
+        closeTo(handleRect.top + circleRect.height / 2, 0.5),
+        reason: 'centered exactly on the handle\'s own edge, matching the '
+            'pre-outward-push behavior — no shift applied',
+      );
+    },
+  );
 }

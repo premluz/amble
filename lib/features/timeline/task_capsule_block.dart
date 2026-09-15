@@ -769,6 +769,13 @@ class TaskCapsuleBlock extends StatelessWidget {
                         blockHeight: pillHeight,
                       ),
                       barAlignment: Alignment.topCenter,
+                      // See [ResizeHandle.dotClearsBoundary]'s own doc
+                      // comment: this pill sits inside a frosted wrapper
+                      // whose `ClipRRect` is ALWAYS present and clips
+                      // anything painted past the pill's own edge,
+                      // including a dot pushed outward. Reported
+                      // directly: "on task can't see at all now."
+                      dotClearsBoundary: false,
                       onDragStart: onResizeTopStart,
                       onDragUpdate: onResizeTopUpdate,
                       onDragEnd: onResizeTopEnd,
@@ -786,6 +793,7 @@ class TaskCapsuleBlock extends StatelessWidget {
                         blockHeight: pillHeight,
                       ),
                       barAlignment: Alignment.bottomCenter,
+                      dotClearsBoundary: false,
                       onDragStart: onResizeStart,
                       onDragUpdate: onResizeUpdate,
                       onDragEnd: onResizeEnd,
