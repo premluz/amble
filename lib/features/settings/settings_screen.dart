@@ -82,7 +82,12 @@ class SettingsScreen extends StatelessWidget {
                     ),
                     SizedBox(height: theme.spacingMd),
                     SettingsLinkRow(
-                      label: 'Categories',
+                      // "Tags" in the UI, "Category" in code — requested
+                      // directly: "categories become tags." Copy-only
+                      // rename this session; the underlying Category
+                      // model/identifiers are unchanged (see
+                      // category_list_screen.dart's own doc comment).
+                      label: 'Tags',
                       onTap: () => showCategoryListScreen(context),
                     ),
                   ],

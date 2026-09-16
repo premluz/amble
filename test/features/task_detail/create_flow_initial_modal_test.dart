@@ -143,7 +143,7 @@ void main() {
 
       expect(find.text('Create task'), findsOneWidget);
       expect(_nameField(), findsOneWidget);
-      expect(find.text('Category'), findsNothing);
+      expect(find.text('Tag'), findsNothing);
       expect(find.text('Duration'), findsNothing);
     },
   );
@@ -171,7 +171,7 @@ void main() {
 
       // Straight to the full form — the Category row (part of stage 2
       // only) is visible immediately.
-      expect(find.text('Category'), findsOneWidget);
+      expect(find.text('Tag'), findsOneWidget);
     },
   );
 
@@ -202,7 +202,7 @@ void main() {
 
       // Stage 2's own content is now showing, and the name entered on
       // stage 1 carried through to the live preview.
-      expect(find.text('Category'), findsOneWidget);
+      expect(find.text('Tag'), findsOneWidget);
       expect(find.text('Read a book'), findsWidgets);
       expect(find.text('Schedule'), findsOneWidget);
     },

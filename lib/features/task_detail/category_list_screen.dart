@@ -7,13 +7,22 @@ import '../../core/widgets/app_press_feedback.dart';
 import '../../shared/models/category.dart';
 import '../../shared/providers/category_providers.dart';
 import 'add_category_modal.dart';
+import 'category_visual.dart';
 
-/// Opens the Categories list — every saved [Category] (built-in and
-/// user-defined alike), tap to edit, "+" to add. Mirrors
-/// `zone_list_screen.dart`'s `ZoneListScreen`/`ZoneListBody` split exactly:
-/// this pushed-page shell for Settings → Categories, [CategoryListBody]
+/// Opens the Tags list — every saved [Category] (built-in and
+/// user-defined alike), tap to edit, "+" to add. "Tags" in the UI,
+/// "Category" in code throughout this file and everywhere else — requested
+/// directly: "categories become tags." A copy-only rename this session:
+/// the model class, its file name, `categoryId`, and every provider/
+/// repository identifier are unchanged, so this doc comment (and every
+/// other one in this file) keeps saying "Category"/"category" for the
+/// underlying concept and switches to "Tag" only in the literal strings a
+/// user actually reads.
+///
+/// Mirrors `zone_list_screen.dart`'s `ZoneListScreen`/`ZoneListBody` split
+/// exactly: this pushed-page shell for Settings → Tags, [CategoryListBody]
 /// (no back button/heading of its own) for embedding inside the Manage
-/// screen's "Categories" sub-tab.
+/// screen's own Tags sub-tab.
 ///
 /// Per CONSTITUTION.md's "v2: rename, recolor, and reorder" section —
 /// reorder itself confirmed out of scope for now, so this is rename +
@@ -46,9 +55,7 @@ class CategoryListScreen extends StatelessWidget {
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                   SizedBox(width: theme.spacingMd),
-                  Expanded(
-                    child: Text('Categories', style: theme.textTitle),
-                  ),
+                  Expanded(child: Text('Tags', style: theme.textTitle)),
                   AppIconButton(
                     icon: Icons.add_rounded,
                     onPressed: () => showAddCategoryModal(context),
@@ -141,7 +148,11 @@ class _CategoryRow extends StatelessWidget {
               height: theme.spacingXl,
               alignment: Alignment.center,
               decoration: BoxDecoration(color: swatch, shape: BoxShape.circle),
-              child: Text(category.emoji, style: theme.textBody),
+              child: CategoryGlyph(
+                category: category,
+                color: glyphColorOn(swatch),
+                size: theme.spacingXl * 0.5,
+              ),
             ),
             SizedBox(width: theme.spacingSm),
             Expanded(

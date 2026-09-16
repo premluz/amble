@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive_ce.dart';
+import 'package:tabler_icons_plus/tabler_icons_plus.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_pane.dart';
 import 'package:amble/core/widgets/app_text_field.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/task_detail/add_category_modal.dart';
+import 'package:amble/features/task_detail/category_visual.dart';
 import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/models/task.dart';
 import 'package:amble/shared/providers/category_providers.dart';
@@ -14,13 +16,13 @@ import 'package:amble/shared/providers/task_providers.dart';
 import 'package:amble/shared/repositories/hive_category_repository.dart';
 import 'package:amble/shared/repositories/hive_task_repository.dart';
 
-/// The real, typeable `TextField` inside the "Category name" `AppTextField`
-/// — same reasoning as `create_flow_initial_modal_test.dart`'s `_nameField`:
+/// The real, typeable `TextField` inside the "Tag name" `AppTextField` —
+/// same reasoning as `create_flow_initial_modal_test.dart`'s `_nameField`:
 /// `AppFieldShell` renders the floating label and the TextField as
 /// siblings, so descending through the labeled `AppTextField` ancestor is
 /// what actually finds it.
 Finder _nameField() => find.descendant(
-  of: find.widgetWithText(AppTextField, 'Category name'),
+  of: find.widgetWithText(AppTextField, 'Tag name'),
   matching: find.byType(TextField),
 );
 
@@ -76,7 +78,7 @@ void main() {
 
   testWidgets(
     'opens on the Name-only stage 1, matching the task/zone creation flows '
-    '— color and emoji are not in the tree yet',
+    '— color and icon are not in the tree yet',
     (tester) async {
       // Requested directly: "this would be a pattern of progressive
       // disclosure that applies to task, zone, category."
@@ -87,7 +89,7 @@ void main() {
       expect(find.text('Done'), findsOneWidget);
       expect(find.widgetWithText(ElevatedButton, 'Save'), findsNothing);
       expect(find.text('Color'), findsNothing);
-      expect(find.text('Emoji'), findsNothing);
+      expect(find.text('Icon'), findsNothing);
 
       // Done is always enabled at stage 1 (matching the task/zone flows'
       // own _confirmNameStage) — an empty name closes the whole screen
@@ -98,7 +100,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Color'), findsOneWidget);
-      expect(find.text('Emoji'), findsOneWidget);
+      expect(find.text('Icon'), findsOneWidget);
       expect(find.widgetWithText(ElevatedButton, 'Save'), findsOneWidget);
     },
   );
@@ -114,11 +116,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Color'), findsNothing);
-    expect(find.text('New category'), findsNothing);
+    expect(find.text('New tag'), findsNothing);
   });
 
   testWidgets(
-    'Save is disabled until color and emoji are both set, once past stage 1',
+    'Save is disabled until color and icon are both set, once past stage 1',
     (tester) async {
       final navigatorKey = await _pumpHost(tester, box: box, taskBox: taskBox);
       unawaited(showAddCategoryModal(navigatorKey.currentContext!));
@@ -136,7 +138,7 @@ void main() {
       // Nothing set yet.
       expect(saveButton().onPressed, isNull);
 
-      // Color, still no emoji.
+      // Color, still no icon.
       final colorSwatch = find
           .descendant(
             of: find.widgetWithText(AppPane, 'Color'),
@@ -147,14 +149,14 @@ void main() {
       await tester.pump();
       expect(saveButton().onPressed, isNull);
 
-      // Color + emoji — now enabled. ensureVisible first: the emoji grid
-      // scrolls, and the default test viewport doesn't fit every emoji
+      // Color + icon — now enabled. ensureVisible first: the icon grid
+      // scrolls, and the default test viewport doesn't fit every icon
       // without scrolling to it — same fix as edit_schedule_repeats_test.dart
       // needed for its own scrollable schedule stage (see docs/ERROR_LOG.md).
-      final emoji = find.text('🌱');
-      await tester.ensureVisible(emoji);
+      final icon = find.byIcon(TablerIcons.heart);
+      await tester.ensureVisible(icon);
       await tester.pump();
-      await tester.tap(emoji);
+      await tester.tap(icon);
       await tester.pump();
       expect(saveButton().onPressed, isNotNull);
     },
@@ -187,12 +189,12 @@ void main() {
       await tester.tap(colorSwatch);
       await tester.pump();
 
-      // Tap the first curated emoji. ensureVisible first — same scrollable
+      // Tap the first curated icon. ensureVisible first — same scrollable
       // grid reasoning as the test above.
-      final emoji = find.text('⭐');
-      await tester.ensureVisible(emoji);
+      final icon = find.byIcon(curatedCategoryIcons.first);
+      await tester.ensureVisible(icon);
       await tester.pump();
-      await tester.tap(emoji);
+      await tester.tap(icon);
       await tester.pump();
 
       final saveButton = find.widgetWithText(ElevatedButton, 'Save');
@@ -220,7 +222,10 @@ void main() {
       expect(result, isNotNull);
       expect(result!.name, 'Gardening');
       expect(result!.colorToken, 0);
-      expect(result!.emoji, '⭐');
+      expect(result!.iconCodePoint, curatedCategoryIcons.first.codePoint);
+      // Superseded field, left empty on a freshly created category — see
+      // Category.emoji's own doc comment.
+      expect(result!.emoji, '');
 
       final container = ProviderScope.containerOf(navigatorKey.currentContext!);
       final categories = container.read(categoryListProvider);
@@ -275,7 +280,7 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(box.get(category.id), isNull);
-        expect(find.text('Edit category'), findsNothing);
+        expect(find.text('Edit tag'), findsNothing);
         expect(taskBox.get(task.id)!.categoryId, BuiltInCategoryIds.general);
       },
     );

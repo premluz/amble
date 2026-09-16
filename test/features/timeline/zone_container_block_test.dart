@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tabler_icons_plus/tabler_icons_plus.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/features/timeline/completion_checkbox.dart';
 import 'package:amble/features/timeline/external_event_capsule_block.dart'
@@ -123,17 +124,14 @@ void main() {
     },
   );
 
-  testWidgets(
-    'an INCOMPLETE task\'s title stays bold primary color with no '
-    'strikethrough',
-    (tester) async {
-      await pump(tester);
+  testWidgets('an INCOMPLETE task\'s title stays bold primary color with no '
+      'strikethrough', (tester) async {
+    await pump(tester);
 
-      final titleText = tester.widget<Text>(find.text('Deep work'));
-      expect(titleText.style?.color, AmbleTheme.light.colorTextPrimary);
-      expect(titleText.style?.decoration, TextDecoration.none);
-    },
-  );
+    final titleText = tester.widget<Text>(find.text('Deep work'));
+    expect(titleText.style?.color, AmbleTheme.light.colorTextPrimary);
+    expect(titleText.style?.decoration, TextDecoration.none);
+  });
 
   // Requested directly: "Size of text in zone view (task name one scale
   // up)." AmbleTheme.light's own default resolves textTaskTitle to md's
@@ -225,7 +223,8 @@ void main() {
       expect(
         timeText.data,
         '9:00 AM',
-        reason: 'exactly the start time, nothing appended — the zone '
+        reason:
+            'exactly the start time, nothing appended — the zone '
             'HEADER above still legitimately shows its own "7:00 AM - '
             '12:00 PM" range, which is a different Text widget and '
             'unaffected by this per-row toggle',
@@ -339,9 +338,7 @@ void main() {
         'a real task row\'s own category badge exactly', (tester) async {
       await pump(tester, externalEvents: [event]);
 
-      final rail = tester.widget<DashedPillRail>(
-        find.byType(DashedPillRail),
-      );
+      final rail = tester.widget<DashedPillRail>(find.byType(DashedPillRail));
       expect(rail.width, AmbleTheme.light.sizeTaskBadge);
       expect(rail.height, AmbleTheme.light.sizeTaskBadge);
     });
@@ -379,7 +376,10 @@ void main() {
 
         final taskBadge = tester.getRect(
           find
-              .ancestor(of: find.text('💼'), matching: find.byType(Container))
+              .ancestor(
+                of: find.byIcon(TablerIcons.briefcase),
+                matching: find.byType(Container),
+              )
               .first,
         );
         final eventBadge = tester.getRect(find.byType(DashedPillRail));
@@ -457,7 +457,10 @@ void main() {
 
       final badge = tester.widget<Container>(
         find
-            .ancestor(of: find.text('💼'), matching: find.byType(Container))
+            .ancestor(
+              of: find.byIcon(TablerIcons.briefcase),
+              matching: find.byType(Container),
+            )
             .first,
       );
       expect(badge.constraints?.maxWidth, AmbleTheme.light.sizeTaskBadge);
@@ -477,7 +480,10 @@ void main() {
 
     final badge = tester.widget<Container>(
       find
-          .ancestor(of: find.text('💼'), matching: find.byType(Container))
+          .ancestor(
+            of: find.byIcon(TablerIcons.briefcase),
+            matching: find.byType(Container),
+          )
           .first,
     );
     final decoration = badge.decoration! as BoxDecoration;
@@ -503,7 +509,10 @@ void main() {
       // padding beyond its visible glyph, which would inflate the gap by
       // more than the actual SizedBox between them.
       final badgeFinder = find
-          .ancestor(of: find.text('💼'), matching: find.byType(Container))
+          .ancestor(
+            of: find.byIcon(TablerIcons.briefcase),
+            matching: find.byType(Container),
+          )
           .first;
       final badgeRight = tester.getTopRight(badgeFinder).dx;
       final titleLeft = tester.getTopLeft(find.text('Deep work')).dx;
@@ -886,7 +895,10 @@ void main() {
         );
         final badgeRect = tester.getRect(
           find
-              .ancestor(of: find.text('💼'), matching: find.byType(Container))
+              .ancestor(
+                of: find.byIcon(TablerIcons.briefcase),
+                matching: find.byType(Container),
+              )
               .first,
         );
 
@@ -910,7 +922,10 @@ void main() {
         );
         final badgeRect = tester.getRect(
           find
-              .ancestor(of: find.text('💼'), matching: find.byType(Container))
+              .ancestor(
+                of: find.byIcon(TablerIcons.briefcase),
+                matching: find.byType(Container),
+              )
               .first,
         );
 
@@ -949,7 +964,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final badgeCenter = tester.getCenter(find.text('💼'));
+      final badgeCenter = tester.getCenter(find.byIcon(TablerIcons.briefcase));
       final gesture = await tester.startGesture(badgeCenter);
       await gesture.moveBy(const Offset(0, 5));
       await tester.pump();

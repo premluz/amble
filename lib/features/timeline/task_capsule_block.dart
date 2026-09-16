@@ -674,19 +674,26 @@ class TaskCapsuleBlock extends StatelessWidget {
                     // down) — those genuinely duplicate the cluster's own row
                     // list, but the emoji does not.
                     //
-                    // Emoji, not `Icon(task.category.icon)` — matches the
-                    // emoji already shown on the category picker's chips
-                    // during create/edit (see `.emoji`'s own doc comment).
-                    // Requested directly, reversing an earlier decision that
-                    // deliberately kept the pill on the monochrome `.icon`
-                    // glyph specifically because it could be tinted
-                    // (`iconColor`) for contrast against the pale category
-                    // fill — an emoji carries its own fixed color, so no
-                    // tinting is applied or needed here any more.
+                    // Tabler icon (`categoryVisual.icon`) where one
+                    // resolves — matches the same glyph now shown on the
+                    // category picker's chips during create/edit (see
+                    // `CategoryGlyph`'s own doc comment). Falls back to the
+                    // legacy `.emoji` text only for a pre-migration task
+                    // with no live `Category` row to read an icon from.
+                    // Unlike the emoji this replaces, a monochrome Tabler
+                    // icon carries no color of its own, so it's tinted via
+                    // `glyphColorOn(categoryVisual.pillColor)` rather than
+                    // `categoryVisual.iconColor` directly — a CUSTOM
+                    // category's `iconColor` is the exact same swatch as
+                    // its `pillColor` (see `resolveCategoryVisual`'s own
+                    // doc comment), which would make the icon invisible
+                    // against its own background; `glyphColorOn` picks
+                    // white/black by contrast instead, for both the
+                    // built-in and custom case alike.
                     // `glyphHidden` (the drag ghost) is the ONE case that also
-                    // drops the emoji — see its own doc comment.
+                    // drops the glyph — see its own doc comment.
                     //
-                    // The emoji itself is wrapped in the dark separator
+                    // The glyph itself is wrapped in the dark separator
                     // ring + fill (see [SelectedPillBorder]'s doc comment)
                     // only while selected, inset by the accent border's own
                     // width so the two rings stay concentric. Unselected,
@@ -715,22 +722,40 @@ class TaskCapsuleBlock extends StatelessWidget {
                                 alignment: Alignment.topCenter,
                                 child: Opacity(
                                   opacity: glyphHidden ? 0 : 1,
-                                  child: Text(
-                                    categoryVisual.emoji,
-                                    style: TextStyle(
-                                      fontSize: badgeSize * 0.55,
-                                    ),
-                                  ),
+                                  child: categoryVisual.icon != null
+                                      ? Icon(
+                                          categoryVisual.icon,
+                                          size: badgeSize * 0.55,
+                                          color: glyphColorOn(
+                                            categoryVisual.pillColor,
+                                          ),
+                                        )
+                                      : Text(
+                                          categoryVisual.emoji,
+                                          style: TextStyle(
+                                            fontSize: badgeSize * 0.55,
+                                          ),
+                                        ),
                                 ),
                               ),
                             ),
                           )
                         : Opacity(
                             opacity: glyphHidden ? 0 : 1,
-                            child: Text(
-                              categoryVisual.emoji,
-                              style: TextStyle(fontSize: badgeSize * 0.55),
-                            ),
+                            child: categoryVisual.icon != null
+                                ? Icon(
+                                    categoryVisual.icon,
+                                    size: badgeSize * 0.55,
+                                    color: glyphColorOn(
+                                      categoryVisual.pillColor,
+                                    ),
+                                  )
+                                : Text(
+                                    categoryVisual.emoji,
+                                    style: TextStyle(
+                                      fontSize: badgeSize * 0.55,
+                                    ),
+                                  ),
                           ),
                   ),
                 ),
@@ -1695,11 +1720,22 @@ class _CapsuleCategoryVisual {
     required this.pillColor,
     required this.iconColor,
     required this.emoji,
+    required this.icon,
   });
 
   final Color pillColor;
   final Color iconColor;
+
+  /// Legacy fallback glyph — only actually rendered when [icon] is null
+  /// (a pre-migration [legacyCategory] with no live [Category] row yet).
+  /// See [CategoryGlyph]'s own doc comment for the same fallback shape.
   final String emoji;
+
+  /// The Tabler glyph to render, when one resolves — null only for the
+  /// legacy-enum branch (no live [Category] row to read
+  /// [Category.iconCodePoint] from), in which case [emoji] is shown
+  /// instead.
+  final IconData? icon;
 
   factory _CapsuleCategoryVisual.resolve({
     required AmbleTheme theme,
@@ -1711,6 +1747,7 @@ class _CapsuleCategoryVisual {
         pillColor: theme.categoryColors[legacyCategory.token]!,
         iconColor: theme.categoryIconColors[legacyCategory.token]!,
         emoji: legacyCategory.emoji,
+        icon: null,
       );
     }
 
@@ -1719,6 +1756,7 @@ class _CapsuleCategoryVisual {
       pillColor: visual.pillColor,
       iconColor: visual.iconColor,
       emoji: category.emoji,
+      icon: categoryIconFor(category),
     );
   }
 }

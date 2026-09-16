@@ -23,13 +23,14 @@ class CategoryAdapter extends TypeAdapter<Category> {
       emoji: fields[3] as String,
       isBuiltIn: fields[4] == null ? false : fields[4] as bool,
       schemaVersion: fields[5] == null ? 1 : (fields[5] as num).toInt(),
+      iconCodePoint: (fields[6] as num?)?.toInt(),
     );
   }
 
   @override
   void write(BinaryWriter writer, Category obj) {
     writer
-      ..writeByte(6)
+      ..writeByte(7)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -41,7 +42,9 @@ class CategoryAdapter extends TypeAdapter<Category> {
       ..writeByte(4)
       ..write(obj.isBuiltIn)
       ..writeByte(5)
-      ..write(obj.schemaVersion);
+      ..write(obj.schemaVersion)
+      ..writeByte(6)
+      ..write(obj.iconCodePoint);
   }
 
   @override

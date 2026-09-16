@@ -47,3 +47,7 @@ app.*.map.json
 # Widget Preview related
 .widget_preview/
 amble-backup-*.json
+
+# golden-test failure diffs (flutter_test writes these on a mismatch;
+# regenerated locally, never meant to be committed)
+test/**/failures/

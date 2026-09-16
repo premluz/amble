@@ -118,7 +118,10 @@ class TemplateCategoryPane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppPane(
-      title: 'Category',
+      // "Tag" in the UI, "Category" in code — see category_list_screen
+      // .dart's own doc comment for the full "categories become tags"
+      // copy-only rename.
+      title: 'Tag',
       child: Wrap(
         spacing: theme.spacingSm,
         runSpacing: theme.spacingSm,
@@ -131,9 +134,13 @@ class TemplateCategoryPane extends StatelessWidget {
             // Expanded, duration presets intrinsic), where that never
             // happens. Sizing it to its label here is what lets the
             // category chips actually wrap onto shared lines.
+            // Text-only label — AppSelectableChip has no leading-icon slot
+            // (a shared chip used elsewhere; adding one is out of scope
+            // here), and a Tabler glyph is an IconData, not renderable as
+            // a String the way the old emoji prefix was.
             IntrinsicWidth(
               child: AppSelectableChip(
-                label: '${category.emoji} ${category.name}',
+                label: category.name,
                 selected: category.id == selectedId,
                 onTap: () => onChanged(category.id),
               ),

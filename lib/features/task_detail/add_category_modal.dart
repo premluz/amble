@@ -9,38 +9,7 @@ import '../../core/widgets/app_step_scaffold.dart';
 import '../../core/widgets/app_text_field.dart';
 import '../../shared/models/category.dart';
 import '../../shared/providers/category_providers.dart';
-
-/// A small, curated emoji set for the new-category picker — hand-picked,
-/// not an emoji-picker package, matching how the 5 built-in categories'
-/// own emoji are each just a literal in `task_category_token_mapping.dart`.
-/// Broad enough to cover common category themes without becoming its own
-/// scrollable-forever wall.
-const _curatedCategoryEmoji = [
-  '⭐',
-  '🎯',
-  '📌',
-  '📝',
-  '📅',
-  '💡',
-  '🎨',
-  '🎵',
-  '🏋️',
-  '🧘',
-  '🍎',
-  '☕',
-  '🐾',
-  '🌱',
-  '🚗',
-  '✈️',
-  '🎓',
-  '💰',
-  '🛒',
-  '🎮',
-  '📚',
-  '🧹',
-  '🔧',
-  '❤️',
-];
+import 'category_visual.dart';
 
 /// Pushes the "Add new category" screen — the same near-full-screen
 /// slide-up route `task_detail_sheet.dart`'s own `_pushDetailRoute` and
@@ -58,7 +27,7 @@ const _curatedCategoryEmoji = [
 /// picker sheet can select it immediately, unchanged from before this
 /// became a pushed route rather than a sheet.
 ///
-/// [category] non-null opens in EDIT mode — rename + recolor + re-emoji an
+/// [category] non-null opens in EDIT mode — rename + recolor + re-icon an
 /// existing category, per CONSTITUTION.md's "v2" section (reorder itself
 /// confirmed out of scope for now). Reached from [CategoryListScreen]'s
 /// own list. Mirrors `zone_form_screen.dart`'s `showZoneFormScreen(zone:)`
@@ -89,10 +58,15 @@ class _AddCategoryScreen extends ConsumerStatefulWidget {
 class _AddCategoryScreenState extends ConsumerState<_AddCategoryScreen> {
   final _nameController = TextEditingController();
   int? _colorToken;
-  String? _emoji;
+
+  /// The picked Tabler glyph's `IconData.codePoint` — see
+  /// [Category.iconCodePoint]. Replaces the old `_emoji` field; the
+  /// underlying [Category.emoji] itself is left untouched on save
+  /// (superseded, not repurposed — see that field's own doc comment).
+  int? _iconCodePoint;
   bool _isSaving = false;
 
-  /// Stage 1 (Name only) vs. stage 2 (Color + Emoji) — the same
+  /// Stage 1 (Name only) vs. stage 2 (Color + Icon) — the same
   /// progressive-disclosure pattern the task and zone creation flows use.
   /// Requested directly: "this would be a pattern of progressive
   /// disclosure that applies to task, zone, category." Editing an existing
@@ -110,7 +84,12 @@ class _AddCategoryScreenState extends ConsumerState<_AddCategoryScreen> {
     if (category != null) {
       _nameController.text = category.name;
       _colorToken = category.colorToken;
-      _emoji = category.emoji;
+      // Falls back to the curated set's first icon when editing a category
+      // that predates this field (still only carrying a legacy emoji) —
+      // `_canSave` requires a real selection, so this pre-selects one
+      // rather than leaving Save permanently disabled for that row.
+      _iconCodePoint =
+          category.iconCodePoint ?? curatedCategoryIcons.first.codePoint;
       _isNameStage = false;
     }
     // Save's enabled state depends on the name being non-empty, so it has
@@ -133,7 +112,7 @@ class _AddCategoryScreenState extends ConsumerState<_AddCategoryScreen> {
   bool get _canSave =>
       _nameController.text.trim().isNotEmpty &&
       _colorToken != null &&
-      _emoji != null &&
+      _iconCodePoint != null &&
       !_isSaving;
 
   /// Confirms stage 1 (Name) and advances to stage 2 — fired by stage 1's
@@ -179,7 +158,7 @@ class _AddCategoryScreenState extends ConsumerState<_AddCategoryScreen> {
       if (existing != null) {
         existing.name = _nameController.text.trim();
         existing.colorToken = _colorToken!;
-        existing.emoji = _emoji!;
+        existing.iconCodePoint = _iconCodePoint!;
         await ref.read(categoryListProvider.notifier).updateCategory(existing);
         if (!mounted) return;
         Navigator.of(context).pop(existing);
@@ -190,7 +169,11 @@ class _AddCategoryScreenState extends ConsumerState<_AddCategoryScreen> {
           .createCategory(
             name: _nameController.text.trim(),
             colorToken: _colorToken!,
-            emoji: _emoji!,
+            // Superseded by iconCodePoint — see Category.emoji's own doc
+            // comment. Every newly created category leaves this at '',
+            // same as the built-in re-seed already does.
+            emoji: '',
+            iconCodePoint: _iconCodePoint!,
           );
       if (!mounted) return;
       Navigator.of(context).pop(created);
@@ -224,16 +207,17 @@ class _AddCategoryScreenState extends ConsumerState<_AddCategoryScreen> {
         ),
       ),
       AppPane(
-        title: 'Emoji',
+        title: 'Icon',
         child: Wrap(
           spacing: theme.spacingSm,
           runSpacing: theme.spacingSm,
           children: [
-            for (final emoji in _curatedCategoryEmoji)
-              _EmojiOption(
-                emoji: emoji,
-                selected: _emoji == emoji,
-                onSelected: () => setState(() => _emoji = emoji),
+            for (final icon in curatedCategoryIcons)
+              _IconOption(
+                icon: icon,
+                selected: _iconCodePoint == icon.codePoint,
+                onSelected: () =>
+                    setState(() => _iconCodePoint = icon.codePoint),
               ),
           ],
         ),
@@ -242,7 +226,7 @@ class _AddCategoryScreenState extends ConsumerState<_AddCategoryScreen> {
 
     return StepScaffold(
       theme: theme,
-      modalTitle: _isEditing ? 'Edit category' : 'New category',
+      modalTitle: _isEditing ? 'Edit tag' : 'New tag',
       titleAlignment: TextAlign.left,
       headerColor: theme.colorAccent,
       headerContent: null,
@@ -280,7 +264,7 @@ class _AddCategoryScreenState extends ConsumerState<_AddCategoryScreen> {
               title: 'Name',
               child: AppTextField(
                 controller: _nameController,
-                label: 'Category name',
+                label: 'Tag name',
                 autofocus: !_isEditing,
                 onSubmitted: (_) => _confirmNameStage(),
               ),
@@ -337,16 +321,16 @@ class _ColorSwatch extends StatelessWidget {
   }
 }
 
-/// One emoji option in the curated grid — selection is a border ring,
-/// same affordance as [_ColorSwatch].
-class _EmojiOption extends StatelessWidget {
-  const _EmojiOption({
-    required this.emoji,
+/// One Tabler icon option in the curated grid — selection is a border
+/// ring, same affordance as [_ColorSwatch].
+class _IconOption extends StatelessWidget {
+  const _IconOption({
+    required this.icon,
     required this.selected,
     required this.onSelected,
   });
 
-  final String emoji;
+  final IconData icon;
   final bool selected;
   final VoidCallback onSelected;
 
@@ -370,7 +354,7 @@ class _EmojiOption extends StatelessWidget {
             width: theme.borderWidthHairline * 1.5,
           ),
         ),
-        child: Text(emoji, style: theme.textBody),
+        child: Icon(icon, size: theme.spacingLg, color: theme.colorTextPrimary),
       ),
     );
   }

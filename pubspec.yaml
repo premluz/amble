@@ -52,6 +52,7 @@ dependencies:
   workmanager: ^0.10.9
   http: ^1.6.0
   device_calendar: ^4.3.3
+  tabler_icons_plus: ^3.46.0
 
 dev_dependencies:
   flutter_test:

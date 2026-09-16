@@ -1,5 +1,6 @@
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:tabler_icons_plus/tabler_icons_plus.dart';
 
 import '../models/category.dart';
 import '../models/task.dart';
@@ -43,11 +44,13 @@ class CategoryList extends _$CategoryList {
     required String name,
     required int colorToken,
     required String emoji,
+    int? iconCodePoint,
   }) async {
     final category = Category.create(
       name: name,
       colorToken: colorToken,
       emoji: emoji,
+      iconCodePoint: iconCodePoint,
     );
     await ref.read(categoryRepositoryProvider).saveCategory(category);
     _refresh();
@@ -142,12 +145,45 @@ class CategoryList extends _$CategoryList {
     _refresh();
   }
 
+  /// Same narrow, repeatable-no-op shape as [_clearLegacyGeneralEmoji]:
+  /// an install seeded before [Category.iconCodePoint] existed has all 5
+  /// built-in rows sitting with that field still null (the seed loop only
+  /// ever runs once — see [seedBuiltInsAndBackfillIfNeeded]'s own doc
+  /// comment). Backfills ONLY a built-in row that still has no
+  /// `iconCodePoint` set, to the same default the fresh-seed literals
+  /// above use (kept in sync with `features/task_detail/category_visual
+  /// .dart`'s `builtInIconFor` by hand — duplicated rather than imported
+  /// so this provider layer doesn't reach into `features/`, per
+  /// ARCHITECTURE.md's strict one-directional dependency rule). Touches
+  /// nothing on a row a user could ever have re-iconned (built-ins have
+  /// no edit UI in v1), so there's no "keeps their own choice" case to
+  /// protect here unlike the emoji one.
+  Future<void> _backfillBuiltInIconCodePoints() async {
+    final categoryRepository = ref.read(categoryRepositoryProvider);
+    var changed = false;
+    for (final category in categoryRepository.getCategories()) {
+      if (!category.isBuiltIn || category.iconCodePoint != null) continue;
+      final icon = switch (category.id) {
+        BuiltInCategoryIds.health => TablerIcons.heart,
+        BuiltInCategoryIds.work => TablerIcons.briefcase,
+        BuiltInCategoryIds.personal => TablerIcons.home,
+        BuiltInCategoryIds.admin => TablerIcons.clipboardList,
+        _ => TablerIcons.circle,
+      };
+      category.iconCodePoint = icon.codePoint;
+      await categoryRepository.saveCategory(category);
+      changed = true;
+    }
+    if (changed) _refresh();
+  }
+
   Future<void> seedBuiltInsAndBackfillIfNeeded() async {
     final prefs = ref.read(preferencesRepositoryProvider);
     final alreadySeeded =
         prefs.getValue<bool>(PreferenceKeys.categoriesSeeded) ?? false;
     if (alreadySeeded) {
       await _clearLegacyGeneralEmoji();
+      await _backfillBuiltInIconCodePoints();
       return;
     }
 
@@ -164,6 +200,7 @@ class CategoryList extends _$CategoryList {
         // `TaskCategoryTokenMapping.emoji`'s own copy of this reasoning
         // for the legacy enum's matching change.
         emoji: '',
+        iconCodePoint: TablerIcons.circle.codePoint,
         isBuiltIn: true,
       ),
       Category(
@@ -171,6 +208,7 @@ class CategoryList extends _$CategoryList {
         name: 'Health',
         colorToken: 1,
         emoji: '⛑️',
+        iconCodePoint: TablerIcons.heart.codePoint,
         isBuiltIn: true,
       ),
       Category(
@@ -178,6 +216,7 @@ class CategoryList extends _$CategoryList {
         name: 'Work',
         colorToken: 2,
         emoji: '💼',
+        iconCodePoint: TablerIcons.briefcase.codePoint,
         isBuiltIn: true,
       ),
       Category(
@@ -185,6 +224,7 @@ class CategoryList extends _$CategoryList {
         name: 'Personal',
         colorToken: 3,
         emoji: '🏠',
+        iconCodePoint: TablerIcons.home.codePoint,
         isBuiltIn: true,
       ),
       Category(
@@ -192,6 +232,7 @@ class CategoryList extends _$CategoryList {
         name: 'Admin',
         colorToken: 4,
         emoji: '📋',
+        iconCodePoint: TablerIcons.clipboardList.codePoint,
         isBuiltIn: true,
       ),
     ];

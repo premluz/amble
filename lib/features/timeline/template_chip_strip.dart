@@ -157,10 +157,17 @@ class TemplateChip extends StatelessWidget {
                 color: badgeColor,
                 shape: BoxShape.circle,
               ),
-              child: Text(
-                resolved?.emoji ?? '',
-                style: TextStyle(fontSize: badgeSize * 0.5),
-              ),
+              child: resolved == null
+                  ? Icon(
+                      builtInIconFor(BuiltInCategoryIds.general),
+                      size: badgeSize * 0.5,
+                      color: glyphColorOn(badgeColor),
+                    )
+                  : CategoryGlyph(
+                      category: resolved,
+                      color: glyphColorOn(badgeColor),
+                      size: badgeSize * 0.5,
+                    ),
             ),
             SizedBox(width: theme.spacingSm),
             // No duration line here, unlike TemplateRow — see

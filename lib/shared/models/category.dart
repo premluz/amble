@@ -35,6 +35,7 @@ class Category extends HiveObject {
     required this.name,
     required this.colorToken,
     required this.emoji,
+    this.iconCodePoint,
     this.isBuiltIn = false,
     this.schemaVersion = 1,
   });
@@ -48,7 +49,14 @@ class Category extends HiveObject {
     required String name,
     required int colorToken,
     required String emoji,
-  }) : this(id: _uuid.v4(), name: name, colorToken: colorToken, emoji: emoji);
+    int? iconCodePoint,
+  }) : this(
+         id: _uuid.v4(),
+         name: name,
+         colorToken: colorToken,
+         emoji: emoji,
+         iconCodePoint: iconCodePoint,
+       );
 
   @HiveField(0)
   final String id;
@@ -65,6 +73,15 @@ class Category extends HiveObject {
   @HiveField(2)
   int colorToken;
 
+  /// Legacy display glyph — superseded by [iconCodePoint] (Tabler Icons,
+  /// requested directly: "let's get tabler icons installed and use it
+  /// instead of emojis for categories"). Kept, not removed or repurposed:
+  /// a pre-existing export/import (`toJson`/`fromJson`) or a row from
+  /// before this field existed still carries a real emoji here, and every
+  /// render site now prefers [iconCodePoint] but falls back to this when
+  /// it's null, so those rows keep showing SOMETHING rather than going
+  /// blank. New categories (built-in re-seed and the add-category modal)
+  /// no longer set this to anything but `''`.
   @HiveField(3)
   String emoji;
 
@@ -77,6 +94,14 @@ class Category extends HiveObject {
   @HiveField(5)
   int schemaVersion;
 
+  /// A Tabler Icons glyph (`IconData.codePoint` from the `tabler_icons_plus`
+  /// package's `TablerIcons.*` constants) — the current display icon,
+  /// replacing [emoji]. Null for a category that predates this field (an
+  /// old export, or a row written before this session); render sites fall
+  /// back to [emoji] in that case rather than showing nothing.
+  @HiveField(6)
+  int? iconCodePoint;
+
   /// Serializes every persisted field to a JSON-safe map, for export.
   /// Hand-written, matching [Task.toJson]'s style — not generated, per the
   /// same "small and stable enough to avoid a new dependency" reasoning.
@@ -85,6 +110,7 @@ class Category extends HiveObject {
     'name': name,
     'colorToken': colorToken,
     'emoji': emoji,
+    'iconCodePoint': iconCodePoint,
     'isBuiltIn': isBuiltIn,
     'schemaVersion': schemaVersion,
   };
@@ -126,6 +152,10 @@ class Category extends HiveObject {
       name: name,
       colorToken: colorToken,
       emoji: emoji,
+      // Absent for any export written before this field existed — falls
+      // back to null (and so to `emoji` at render time), same as every
+      // other optional-field import precedent in this file.
+      iconCodePoint: json['iconCodePoint'] as int?,
       isBuiltIn: json['isBuiltIn'] as bool? ?? false,
       schemaVersion: schemaVersion,
     );

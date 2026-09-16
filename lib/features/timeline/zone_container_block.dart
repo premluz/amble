@@ -693,7 +693,14 @@ class _ZoneTaskRow extends StatelessWidget {
           : '${startTime.format(context)} - ${endTime.format(context)}';
     }
 
-    final emoji = category?.emoji;
+    // Was `final emoji = category?.emoji;`, used below purely as a proxy
+    // for "does this task have a category at all" (`category?.emoji` is
+    // only ever null when `category` itself is — `Category.emoji` is a
+    // non-nullable String on every real row, "General" included). Renamed
+    // now that the badge glyph is a Tabler icon rather than that emoji
+    // string directly — see `categoryIconFor`/`CategoryGlyph`
+    // (`task_detail/category_visual.dart`).
+    final hasCategory = category != null;
     // **2026-09-12 — back to theme.sizeTaskBadge, and shrunk further still
     // by moving off sizeTaskBadgeXl.** Requested directly, this time:
     // "the emoji and circle... smaller" and "make actually same shape as
@@ -728,13 +735,13 @@ class _ZoneTaskRow extends StatelessWidget {
           // (fighting the Timeline's vertical scroll), but only for this
           // narrow, uncommon combination — every other state keeps its
           // narrow handle.
-          onVerticalDragStart: (timeLabel.isEmpty && emoji == null)
+          onVerticalDragStart: (timeLabel.isEmpty && !hasCategory)
               ? (details) => _handleDragStart(context, details)
               : null,
-          onVerticalDragUpdate: (timeLabel.isEmpty && emoji == null)
+          onVerticalDragUpdate: (timeLabel.isEmpty && !hasCategory)
               ? onDragUpdate
               : null,
-          onVerticalDragEnd: (timeLabel.isEmpty && emoji == null)
+          onVerticalDragEnd: (timeLabel.isEmpty && !hasCategory)
               ? onDragEnd
               : null,
           behavior: HitTestBehavior.opaque,
@@ -809,7 +816,7 @@ class _ZoneTaskRow extends StatelessWidget {
                 ),
                 SizedBox(width: theme.spacingSm),
               ],
-              if (emoji != null) ...[
+              if (hasCategory) ...[
                 // Small colored rounded-square badge behind the emoji —
                 // requested directly, matching the badge every task pill
                 // already shows elsewhere (this view's own bare emoji
@@ -840,29 +847,51 @@ class _ZoneTaskRow extends StatelessWidget {
                   onVerticalDragUpdate: timeLabel.isEmpty ? onDragUpdate : null,
                   onVerticalDragEnd: timeLabel.isEmpty ? onDragEnd : null,
                   behavior: HitTestBehavior.opaque,
-                  child: Container(
-                    width: badgeSize,
-                    height: badgeSize,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: category == null
+                  child: Builder(
+                    builder: (context) {
+                      // Local copy, not the widget field directly — Dart
+                      // doesn't retain a field's null-check promotion
+                      // across the closure below.
+                      final resolvedCategory = category;
+                      final badgeColor = resolvedCategory == null
                           ? theme.colorTextSecondary
                           : resolveCategoryVisual(
                               theme: theme,
-                              category: category!,
-                            ).iconColor,
-                      // theme.radiusPill, not BoxShape.circle — requested
-                      // directly ("make actually same shape as timeline,
-                      // not circle but rounded square"). Matches
-                      // TaskCapsuleBlock's own pill rail exactly, and
-                      // tracks the SAME "Pill shape" setting it does — see
-                      // radiusPill's own doc comment on AmbleTheme.
-                      borderRadius: BorderRadius.circular(theme.radiusPill),
-                    ),
-                    child: Text(
-                      emoji,
-                      style: TextStyle(fontSize: badgeSize * 0.55),
-                    ),
+                              category: resolvedCategory,
+                            ).iconColor;
+                      return Container(
+                        width: badgeSize,
+                        height: badgeSize,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: badgeColor,
+                          // theme.radiusPill, not BoxShape.circle —
+                          // requested directly ("make actually same shape
+                          // as timeline, not circle but rounded square").
+                          // Matches TaskCapsuleBlock's own pill rail
+                          // exactly, and tracks the SAME "Pill shape"
+                          // setting it does — see radiusPill's own doc
+                          // comment on AmbleTheme.
+                          borderRadius: BorderRadius.circular(theme.radiusPill),
+                        ),
+                        // Tabler icon via CategoryGlyph — glyphColorOn
+                        // rather than this badge's own `iconColor`
+                        // directly, matching TaskCapsuleBlock's identical
+                        // reasoning: a CUSTOM category's iconColor is the
+                        // same swatch as this badge's own fill.
+                        child: resolvedCategory == null
+                            ? Icon(
+                                builtInIconFor(BuiltInCategoryIds.general),
+                                size: badgeSize * 0.55,
+                                color: glyphColorOn(badgeColor),
+                              )
+                            : CategoryGlyph(
+                                category: resolvedCategory,
+                                color: glyphColorOn(badgeColor),
+                                size: badgeSize * 0.55,
+                              ),
+                      );
+                    },
                   ),
                 ),
                 // spacingSm, not spacingXs — matches the gap between the

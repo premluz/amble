@@ -1604,6 +1604,9 @@ class _CategoryFieldRow extends StatelessWidget {
     final category = this.category;
     final hasCategory =
         category != null && category.id != BuiltInCategoryIds.general;
+    final categoryVisual = hasCategory
+        ? resolveCategoryVisual(theme: theme, category: category)
+        : null;
 
     return GestureDetector(
       onTap: onTap,
@@ -1612,7 +1615,7 @@ class _CategoryFieldRow extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
-            'Category',
+            'Tag',
             style: theme.textBody.copyWith(color: theme.colorTextPrimary),
           ),
           if (hasCategory)
@@ -1622,16 +1625,17 @@ class _CategoryFieldRow extends StatelessWidget {
                 vertical: theme.spacingXs,
               ),
               decoration: BoxDecoration(
-                color: resolveCategoryVisual(
-                  theme: theme,
-                  category: category,
-                ).pillColor,
+                color: categoryVisual!.pillColor,
                 borderRadius: BorderRadius.circular(theme.radiusMd),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(category.emoji, style: theme.textBody),
+                  CategoryGlyph(
+                    category: category,
+                    color: glyphColorOn(categoryVisual.pillColor),
+                    size: theme.textBody.fontSize!,
+                  ),
                   SizedBox(width: theme.spacingXs),
                   Text(
                     category.name,
@@ -2463,7 +2467,7 @@ class _DetailsStepScaffold extends ConsumerWidget {
               ),
               SizedBox(height: theme.spacingLg),
               AppPane(
-                title: 'Category',
+                title: 'Tag',
                 child: Wrap(
                   spacing: theme.spacingSm,
                   runSpacing: theme.spacingSm,
@@ -2937,14 +2941,17 @@ class _SchedulePreviewCard extends StatelessWidget {
               color: badgeColor,
               borderRadius: BorderRadius.circular(theme.radiusTaskPill),
             ),
-            child: Text(
-              // Empty, not '⚪' — requested directly: "both light dark mode
-              // default should not have emoji." The grey badge already
-              // signals "uncategorised" on its own, and the white circle
-              // was invisible against it on light mode besides.
-              category?.emoji ?? '',
-              style: TextStyle(fontSize: badgeSize * 0.55),
-            ),
+            child: category == null
+                ? Icon(
+                    builtInIconFor(BuiltInCategoryIds.general),
+                    size: badgeSize * 0.55,
+                    color: glyphColorOn(badgeColor),
+                  )
+                : CategoryGlyph(
+                    category: category,
+                    color: glyphColorOn(badgeColor),
+                    size: badgeSize * 0.55,
+                  ),
           ),
           SizedBox(width: theme.spacingSm),
           Expanded(
@@ -3049,7 +3056,11 @@ class _CategoryTag extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(category.emoji, style: theme.textBody),
+            CategoryGlyph(
+              category: category,
+              color: glyphColorOn(categoryColor),
+              size: theme.textBody.fontSize!,
+            ),
             SizedBox(width: theme.spacingSm),
             Text(
               category.name,

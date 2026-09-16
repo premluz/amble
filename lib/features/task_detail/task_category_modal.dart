@@ -63,7 +63,7 @@ class TaskCategoryModal extends ConsumerWidget {
             // needs.
             Expanded(
               child: Text(
-                'Category',
+                'Tag',
                 style: theme.textTitle.copyWith(
                   color: theme.colorTextPrimary,
                   fontWeight: FontWeight.w700,
@@ -147,7 +147,11 @@ class _CategoryChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(category.emoji, style: theme.textBody),
+            CategoryGlyph(
+              category: category,
+              color: glyphColorOn(visual.pillColor),
+              size: theme.textBody.fontSize!,
+            ),
             SizedBox(width: theme.spacingSm),
             Text(
               category.name,

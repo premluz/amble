@@ -227,7 +227,11 @@ class _CategoryChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(category.emoji, style: theme.textBody),
+            CategoryGlyph(
+              category: category,
+              color: glyphColorOn(visual.pillColor),
+              size: theme.textBody.fontSize!,
+            ),
             SizedBox(width: theme.spacingSm),
             Text(
               category.name,
