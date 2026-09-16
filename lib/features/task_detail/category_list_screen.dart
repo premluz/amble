@@ -47,7 +47,7 @@ class CategoryListScreen extends StatelessWidget {
                   ),
                   SizedBox(width: theme.spacingMd),
                   Expanded(
-                    child: Text('Categories', style: theme.textHeadline),
+                    child: Text('Categories', style: theme.textTitle),
                   ),
                   AppIconButton(
                     icon: Icons.add_rounded,

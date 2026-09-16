@@ -37,7 +37,11 @@ class SettingsDetailScaffold extends StatelessWidget {
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                   SizedBox(width: theme.spacingMd),
-                  Expanded(child: Text(title, style: theme.textHeadline)),
+                  // textTitle — every page and sheet title in the app
+                  // shares this one size (see `AppStepScaffold`'s own
+                  // matching comment), so moving between a page, a
+                  // settings sub-page and a sheet never jumps.
+                  Expanded(child: Text(title, style: theme.textTitle)),
                 ],
               ),
             ),

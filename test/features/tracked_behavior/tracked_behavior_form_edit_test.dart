@@ -69,9 +69,52 @@ void main() {
     expect(find.text('Edit behavior'), findsOneWidget);
     expect(find.text('Track a behavior'), findsNothing);
     expect(find.text('Exercise'), findsOneWidget);
-    // Rendered without a trailing ".0" — the model stores `num`, but a
-    // 60-minute target must read back as the "60" the user typed.
-    expect(find.text('60'), findsOneWidget);
+    // The saved 60-minute target does NOT read back into the form: the
+    // Target field was removed directly ("hide target and times per week
+    // and its dependency to be filled in order to save"). The value is
+    // still on the model, and an edit preserves it rather than clearing
+    // it — it just has nowhere to render.
+    expect(find.text('60'), findsNothing);
+  });
+
+  // The real data risk in hiding Target/Times per week: an edit must not
+  // silently wipe values the form no longer shows and the user therefore
+  // has no way to re-enter.
+  testWidgets('editing and saving preserves the target amount, minimum and '
+      'weekly frequency the behavior was already saved with', (
+    tester,
+  ) async {
+    final behavior = TrackedBehavior.create(
+      title: 'Exercise',
+      targetType: BehaviorTargetType.duration,
+      targetAmount: 60,
+      minimumAmount: 15,
+      timesPerWeek: 3,
+    );
+    await tester.runAsync(() async {
+      await box.put(behavior.id, behavior);
+    });
+
+    final navigatorKey = await pumpHost(tester);
+    showTrackedBehaviorForm(navigatorKey.currentContext!, behavior: behavior);
+    await tester.pumpAndSettle();
+
+    // Change only the one field the form still offers.
+    await tester.enterText(find.byType(TextField).first, 'Exercise daily');
+    await tester.pump();
+
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Save').last);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final saved = box.get(behavior.id)!;
+    expect(saved.title, 'Exercise daily');
+    expect(saved.targetAmount, 60);
+    expect(saved.minimumAmount, 15);
+    expect(saved.timesPerWeek, 3);
   });
 
   testWidgets('opening the form with no behavior reads "Track a behavior" '

@@ -205,9 +205,8 @@ void main() {
     expect(find.text('Read'), findsOneWidget);
   });
 
-  testWidgets('a row shows the target amount, unit, and frequency', (
-    tester,
-  ) async {
+  testWidgets('a row names its unit, and shows neither the target amount '
+      'nor the weekly frequency', (tester) async {
     await pumpList(
       tester,
       behaviors: [
@@ -220,11 +219,19 @@ void main() {
       ],
     );
 
-    expect(find.text('60 min · 3x a week'), findsOneWidget);
+    expect(find.text('Min'), findsOneWidget);
+    // The saved amount and frequency are still on the model — they just
+    // no longer surface anywhere in the UI.
+    expect(find.textContaining('60'), findsNothing);
+    expect(find.textContaining('3x'), findsNothing);
   });
 
+  // Requested directly ("hide target and times per week"), confirmed to
+  // apply everywhere in the UI and then confirmed again that this line
+  // keeps the unit/type rather than disappearing: the summary names what
+  // KIND of behavior a row is, and carries no amount and no frequency.
   group('describeBehaviorTarget', () {
-    test('renders an integer amount without a trailing ".0"', () {
+    test('names the unit, with no amount and no frequency', () {
       final behavior = TrackedBehavior.create(
         title: 'Exercise',
         targetType: BehaviorTargetType.duration,
@@ -232,10 +239,10 @@ void main() {
         timesPerWeek: 3,
       );
 
-      expect(describeBehaviorTarget(behavior), '60 min · 3x a week');
+      expect(describeBehaviorTarget(behavior), 'Min');
     });
 
-    test('includes the minimum when one is set', () {
+    test('a saved minimum does not surface either', () {
       final behavior = TrackedBehavior.create(
         title: 'Exercise',
         targetType: BehaviorTargetType.duration,
@@ -244,17 +251,17 @@ void main() {
         timesPerWeek: 3,
       );
 
-      expect(describeBehaviorTarget(behavior), '60 min (min 15) · 3x a week');
+      expect(describeBehaviorTarget(behavior), 'Min');
     });
 
-    test('a binary behavior reads as "Did it", with no amount', () {
+    test('a binary behavior reads as "Did it"', () {
       final behavior = TrackedBehavior.create(
         title: 'Meditate',
         targetType: BehaviorTargetType.binary,
         timesPerWeek: 7,
       );
 
-      expect(describeBehaviorTarget(behavior), 'Did it · 7x a week');
+      expect(describeBehaviorTarget(behavior), 'Did it');
     });
 
     // "reps" is a distinct unit type as of 2026-09-10 (Unit of measure:
@@ -268,7 +275,7 @@ void main() {
         timesPerWeek: 5,
       );
 
-      expect(describeBehaviorTarget(behavior), '20 times · 5x a week');
+      expect(describeBehaviorTarget(behavior), 'Times');
     });
 
     test('uses the reps unit for a reps target', () {
@@ -279,7 +286,18 @@ void main() {
         timesPerWeek: 5,
       );
 
-      expect(describeBehaviorTarget(behavior), '20 reps · 5x a week');
+      expect(describeBehaviorTarget(behavior), 'Reps');
+    });
+
+    test('a behavior with no target amount at all still names its unit — '
+        'the create form no longer asks for one', () {
+      final behavior = TrackedBehavior.create(
+        title: 'Walk',
+        targetType: BehaviorTargetType.distance,
+        timesPerWeek: 3,
+      );
+
+      expect(describeBehaviorTarget(behavior), isNotEmpty);
     });
   });
 }

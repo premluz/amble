@@ -59,8 +59,6 @@ class _TrackedBehaviorForm extends ConsumerStatefulWidget {
 
 class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
   late final TextEditingController _titleController;
-  late final TextEditingController _targetController;
-  late final TextEditingController _minimumController;
 
   late BehaviorTargetType _targetType;
   late int _timesPerWeek;
@@ -91,14 +89,6 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
       // has no onChanged of its own, so this listens to the controller
       // directly instead.
       ..addListener(() => setState(() {}));
-    // Amounts are `num?` on the model but plain text here — rendered via
-    // toString() so an integer target reads "60", not "60.0".
-    _targetController = TextEditingController(
-      text: _amountText(behavior?.targetAmount),
-    );
-    _minimumController = TextEditingController(
-      text: _amountText(behavior?.minimumAmount),
-    );
     _targetType = behavior?.targetType ?? BehaviorTargetType.duration;
     _timesPerWeek = behavior?.timesPerWeek ?? 3;
     _isNameStage = behavior == null;
@@ -113,8 +103,6 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
   @override
   void dispose() {
     _titleController.dispose();
-    _targetController.dispose();
-    _minimumController.dispose();
     super.dispose();
   }
 
@@ -128,12 +116,15 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
   /// `customUnitName` are required whenever `targetType` is custom).
   bool get _isCustom => _targetType == BehaviorTargetType.custom;
 
+  /// No longer waits on a target amount — requested directly: "hide
+  /// target and times per week and its dependency to be filled in order
+  /// to save." A name (and, for a custom type, its unit) is all that's
+  /// required now.
   bool get _canSave {
     if (_isSaving) return false;
     if (_titleController.text.trim().isEmpty) return false;
     if (_isCustom && _customUnit == null) return false;
-    if (_isBinary) return true;
-    return num.tryParse(_targetController.text.trim()) != null;
+    return true;
   }
 
   /// Opens [showCustomUnitSheet] and applies its result — fired by tapping
@@ -168,13 +159,14 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
     try {
       final notifier = ref.read(trackedBehaviorListProvider.notifier);
       final title = _titleController.text.trim();
-      // A binary behavior has no amount to hit, so none is submitted —
-      // matching the model's own constructor invariant rather than writing
-      // a value the model would reject.
-      final targetAmount = _isBinary
-          ? null
-          : num.tryParse(_targetController.text.trim());
-      final minimumAmount = num.tryParse(_minimumController.text.trim());
+      // Carried through from whatever this behavior was already saved
+      // with, NOT read from a field — the Target/Minimum inputs are gone
+      // (see the form body's own comment). A create leaves both null; an
+      // edit preserves the existing row's values rather than silently
+      // clearing amounts the form no longer shows and the user therefore
+      // has no way to re-enter.
+      final targetAmount = _isBinary ? null : widget.behavior?.targetAmount;
+      final minimumAmount = widget.behavior?.minimumAmount;
       // Only ever set for a custom target type — matching the model's own
       // constructor invariant, and clearing them out if a behavior is
       // edited AWAY from custom to something else.
@@ -242,45 +234,17 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
           ],
         ),
       ),
-      if (!_isBinary)
-        AppPane(
-          title: 'Target',
-          child: Row(
-            children: [
-              Expanded(
-                child: _AmountField(
-                  theme: theme,
-                  controller: _targetController,
-                  label:
-                      'Target (${_unitFor(_targetType, customUnitName: _customUnit?.name)})',
-                  onChanged: () => setState(() {}),
-                ),
-              ),
-              SizedBox(width: theme.spacingMd),
-              Expanded(
-                child: _AmountField(
-                  theme: theme,
-                  controller: _minimumController,
-                  label: 'Minimum (optional)',
-                  onChanged: () => setState(() {}),
-                ),
-              ),
-            ],
-          ),
-        ),
-      AppPane(
-        child: Row(
-          children: [
-            Text('Times per week', style: theme.textBody),
-            const Spacer(),
-            _Stepper(
-              theme: theme,
-              value: _timesPerWeek,
-              onChanged: (value) => setState(() => _timesPerWeek = value),
-            ),
-          ],
-        ),
-      ),
+      // The "Target"/"Minimum" pane and the "Times per week" stepper both
+      // used to sit here — removed directly: "from settings track hide
+      // target and times per week and its dependency to be filled in
+      // order to save."
+      //
+      // Both fields are still on the model and still written on save
+      // (`timesPerWeek` from its own default, `targetAmount` as null);
+      // the model's "targetAmount is required unless binary" assert is
+      // gone, and `_canSave` no longer waits on an amount. Existing
+      // behaviors keep whatever they were saved with — nothing rewrites
+      // them.
     ];
 
     return StepScaffold(
@@ -360,16 +324,6 @@ const _measuredInOrder = [
   BehaviorTargetType.binary,
 ];
 
-/// Renders a `num?` amount for a text field: an integer-valued amount
-/// reads "60" rather than "60.0", so reopening an edit form shows the
-/// value back exactly as it was typed.
-String _amountText(num? amount) {
-  if (amount == null) return '';
-  if (amount is int) return amount.toString();
-  if (amount == amount.roundToDouble()) return amount.round().toString();
-  return amount.toString();
-}
-
 /// The unit a target amount is expressed in, for labels and prompts.
 /// [customUnitName] is required only for [BehaviorTargetType.custom] — a
 /// custom behavior's own real unit (e.g. "glasses"), never a placeholder,
@@ -391,43 +345,6 @@ String _unitFor(BehaviorTargetType type, {String? customUnitName}) =>
 /// a generic placeholder.
 String unitLabelFor(BehaviorTargetType type, {String? customUnitName}) =>
     _unitFor(type, customUnitName: customUnitName);
-
-class _AmountField extends StatelessWidget {
-  const _AmountField({
-    required this.theme,
-    required this.controller,
-    required this.label,
-    required this.onChanged,
-  });
-
-  final AmbleTheme theme;
-  final TextEditingController controller;
-  final String label;
-  final VoidCallback onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    // A raw TextField, not AppTextField — AppTextField has no
-    // keyboardType hook, and a numeric amount genuinely needs the
-    // numeric keypad rather than the default text one. Kept as its own
-    // small field (styled from Tier 2 tokens directly, same as before)
-    // rather than widening the shared component's API for one caller.
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: theme.textCaption),
-        SizedBox(height: theme.spacingXs),
-        TextField(
-          controller: controller,
-          keyboardType: TextInputType.number,
-          style: theme.textBody.copyWith(color: theme.colorTextPrimary),
-          decoration: const InputDecoration(isDense: true, hintText: '—'),
-          onChanged: (_) => onChanged(),
-        ),
-      ],
-    );
-  }
-}
 
 class _TypeChip extends StatelessWidget {
   const _TypeChip({
@@ -470,77 +387,3 @@ class _TypeChip extends StatelessWidget {
   }
 }
 
-/// Minimal −/+ stepper, mirroring the recurrence interval stepper's shape
-/// so the two settings-style controls read consistently.
-class _Stepper extends StatelessWidget {
-  const _Stepper({
-    required this.theme,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final AmbleTheme theme;
-  final int value;
-  final ValueChanged<int> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.colorSurfaceTimeline,
-        borderRadius: BorderRadius.circular(theme.radiusTaskPill),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _StepperButton(
-            theme: theme,
-            icon: Icons.remove_rounded,
-            onTap: value > 1 ? () => onChanged(value - 1) : null,
-          ),
-          Text(
-            '$value',
-            style: theme.textBody.copyWith(
-              color: theme.colorTextPrimary,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          _StepperButton(
-            theme: theme,
-            icon: Icons.add_rounded,
-            // 7 is every day — more than that isn't a weekly frequency.
-            onTap: value < 7 ? () => onChanged(value + 1) : null,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StepperButton extends StatelessWidget {
-  const _StepperButton({
-    required this.theme,
-    required this.icon,
-    required this.onTap,
-  });
-
-  final AmbleTheme theme;
-  final IconData icon;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: EdgeInsets.all(theme.spacingSm),
-        child: Icon(
-          icon,
-          size: theme.spacingMd,
-          color: onTap == null ? theme.colorTextSecondary : theme.colorAccent,
-        ),
-      ),
-    );
-  }
-}

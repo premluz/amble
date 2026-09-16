@@ -1783,3 +1783,23 @@ No new token was needed. `colorSurfaceOverlay`'s own doc comment already named "
 **Rule**: when a widget's vertical position is derived from its own height (`FractionalTranslation`, `Align`, intrinsic sizing), adding any child that could become the tallest silently moves it. Overlays on such a widget must be `Positioned`, not ordinary children. Symptom to recognise: a layout test failing in a *different* feature by a distance close to the height you just added.
 
 **Measurement beat arithmetic three times in a row here.** The gutter width, the axis inset and this row height were each settled by a throwaway probe reading real `getRect` values after estimates had failed. Cheap to write, deleted immediately after.
+
+## TrackedBehavior: target amount and weekly frequency left the UI (2026-09-16)
+
+**Requested directly**: "from settings track hide target and times per week and its dependency to be filled in order to save", confirmed to apply everywhere in the UI rather than only in the create/edit form.
+
+**The form** no longer shows the Target/Minimum pane or the Times-per-week stepper, and `_canSave` no longer waits on an amount — a name (plus, for a custom type, its unit) is all that is required.
+
+**The model keeps both fields.** `targetAmount`/`minimumAmount`/`timesPerWeek` are untouched on `TrackedBehavior`, so nothing needed a Hive migration and no existing row lost data. What changed is the constructor's `targetAmount is required unless targetType is binary` assert, which is now gone: behaviors created through the UI carry a null amount, so that invariant could no longer hold. The custom-unit assert is unchanged. This is the one documented data rule this touched — CONSTITUTION.md's TrackedBehavior section still lists the fields themselves, which continue to exist.
+
+**An edit preserves what was already saved** rather than clearing it. `_save` reads `widget.behavior?.targetAmount`/`minimumAmount` rather than a controller, so editing a behavior that was created back when the form asked for a target keeps that target — it simply has nowhere to render. Covered by a test, since this was the one path that could have silently destroyed user data.
+
+**The list row's subtitle now names the unit only** ("Min", "Times", "Reps", "Did it") instead of "60 min · 3x a week". Confirmed directly in preference to dropping the line entirely, which would have left most rows with an empty second line.
+
+## One title size across pages and sheets (2026-09-16)
+
+**Requested directly**: "titles of sheets should be same size as titles of pages."
+
+`AppStepScaffold`'s `modalTitle` was the last thing still rendering at `textHeadline` (32px) after the page titles moved to `textTitle` (20px), so opening any sheet jumped the title size. The three remaining sub-page headers (`settings_detail_scaffold`, `template_list_screen`, `category_list_screen`) moved with it.
+
+`splash_carousel_screen`'s "Amble" stays at `textHeadline` — a brand wordmark, not a page title.

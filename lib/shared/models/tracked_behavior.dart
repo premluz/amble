@@ -35,10 +35,6 @@ class TrackedBehavior extends HiveObject {
     this.customUnitLabel,
     this.customUnitName,
   }) : assert(
-         targetType == BehaviorTargetType.binary || targetAmount != null,
-         'targetAmount is required unless targetType is binary',
-       ),
-       assert(
          targetType != BehaviorTargetType.custom ||
              (customUnitLabel != null && customUnitName != null),
          'customUnitLabel/customUnitName are required when targetType is '
@@ -76,9 +72,16 @@ class TrackedBehavior extends HiveObject {
   @HiveField(2)
   BehaviorTargetType targetType;
 
-  /// The full intended amount, in [targetType]'s unit. Null only when
-  /// [targetType] is [BehaviorTargetType.binary], which has no amount to
-  /// hit — enforced by the constructor's assert.
+  /// The full intended amount, in [targetType]'s unit. Freely null.
+  ///
+  /// It used to be required for every non-binary type, enforced by a
+  /// constructor assert. That assert is gone: the create/edit form no
+  /// longer asks for a target at all — requested directly ("hide target
+  /// and times per week and its dependency to be filled in order to
+  /// save") — so any behavior created now carries a null amount, and
+  /// every reader already null-guards it (`describeBehaviorTarget`,
+  /// `BehaviorOutcomePrompt`). Existing rows keep whatever they were
+  /// saved with.
   @HiveField(3)
   num? targetAmount;
 

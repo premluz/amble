@@ -41,7 +41,7 @@ class TemplateListScreen extends StatelessWidget {
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                   SizedBox(width: theme.spacingMd),
-                  Expanded(child: Text('Templates', style: theme.textHeadline)),
+                  Expanded(child: Text('Templates', style: theme.textTitle)),
                   AppIconButton(
                     icon: Icons.add_rounded,
                     onPressed: () => showTaskTemplateForm(context),

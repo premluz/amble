@@ -4,6 +4,8 @@ import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_button.dart';
 import 'package:amble/core/widgets/app_text_field.dart';
 import 'package:amble/features/tracked_behavior/tracked_behavior_form.dart';
+import 'package:amble/features/tracked_behavior/tracked_behavior_row.dart'
+    show unitLabelFor;
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/shared/models/behavior_target_type.dart';
 import 'package:amble/shared/models/tracked_behavior.dart';
@@ -98,14 +100,34 @@ void main() {
     },
   );
 
-  testWidgets('Distance defaults its target unit to km', (tester) async {
+  // Used to assert the "Target (km)" field label. That field is gone —
+  // requested directly ("hide target and times per week") — so the unit
+  // no longer surfaces anywhere in the form itself; what matters now is
+  // that picking Distance saves the distance TYPE, which is what every
+  // downstream unit label is derived from.
+  testWidgets('picking Distance saves the distance target type', (
+    tester,
+  ) async {
     final navigatorKey = await _pumpHost(tester, box: box);
     await _openStage2(tester, navigatorKey);
 
     await tester.tap(find.text('Distance'));
     await tester.pump();
 
-    expect(find.text('Target (km)'), findsOneWidget);
+    // Saving does real repository I/O — must run inside `runAsync`, per
+    // this file's own note on the save below (and docs/ERROR_LOG.md), or
+    // `pumpAndSettle` hangs on a Future the fake async zone can't
+    // resolve.
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Save').last);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final saved = box.values.single;
+    expect(saved.targetType, BehaviorTargetType.distance);
+    expect(unitLabelFor(saved.targetType), 'km');
   });
 
   testWidgets(
@@ -198,18 +220,10 @@ void main() {
     // "Water" is now the chip's own label (the custom unit's Label),
     // confirming the sheet's result actually applied.
     expect(find.text('Water'), findsWidgets);
-    expect(find.text('Target (glasses)'), findsOneWidget);
-    final targetField = find.descendant(
-      of: find
-          .ancestor(
-            of: find.text('Target (glasses)'),
-            matching: find.byType(Column),
-          )
-          .first,
-      matching: find.byType(TextField),
-    );
-    await tester.enterText(targetField, '8');
-    await tester.pump();
+    // No Target field to fill any more — it was removed directly ("hide
+    // target and times per week"), so this saves on the custom unit
+    // alone.
+    expect(find.text('Target (glasses)'), findsNothing);
 
     // Saving does real repository I/O (`TrackedBehaviorList.
     // createBehavior` awaits `saveBehavior`) — must run inside
@@ -228,7 +242,9 @@ void main() {
     expect(saved.targetType, BehaviorTargetType.custom);
     expect(saved.customUnitLabel, 'Water');
     expect(saved.customUnitName, 'glasses');
-    expect(saved.targetAmount, 8);
+    // Null, not 8: there is no Target field to type one into any more,
+    // and saving no longer waits on one.
+    expect(saved.targetAmount, isNull);
   });
 
   testWidgets(
@@ -254,7 +270,10 @@ void main() {
       // The chip's own label reflects the saved custom unit's Label —
       // "Water", not the generic "Custom".
       expect(find.text('Water'), findsWidgets);
-      expect(find.text('Target (glasses)'), findsOneWidget);
+      // The Target field is gone (see this file's own notes), so the unit
+      // no longer surfaces through its label — the chip above is the only
+      // place the saved custom unit shows.
+      expect(find.text('Target (glasses)'), findsNothing);
 
       await tester.tap(find.text('Water').last);
       await tester.pumpAndSettle();

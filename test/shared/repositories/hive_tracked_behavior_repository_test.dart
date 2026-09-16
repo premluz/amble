@@ -164,13 +164,33 @@ void main() {
     expect(a.id, isNot(equals(b.id)));
   });
 
-  test('a non-binary behavior without a targetAmount is rejected — the '
-      'constructor invariant from CONSTITUTION.md', () {
+  // Reversed 2026-09-16: a non-binary behavior without a targetAmount
+  // used to throw, per a constructor assert. The create/edit form no
+  // longer asks for a target at all — requested directly, "hide target
+  // and times per week and its dependency to be filled in order to save"
+  // — so every behavior created through the UI now has a null amount and
+  // that assert had to go. See docs/DECISIONS.md.
+  test('a non-binary behavior without a targetAmount is now allowed — the '
+      'form no longer collects one', () {
+    final behavior = TrackedBehavior(
+      id: 'no-amount',
+      title: 'No amount',
+      targetType: BehaviorTargetType.duration,
+      timesPerWeek: 3,
+    );
+
+    expect(behavior.targetAmount, isNull);
+    expect(behavior.targetType, BehaviorTargetType.duration);
+  });
+
+  // The custom-unit invariant is UNCHANGED — only the target-amount one
+  // was dropped.
+  test('a custom behavior still requires its unit label/name', () {
     expect(
       () => TrackedBehavior(
         id: 'invalid',
-        title: 'No amount',
-        targetType: BehaviorTargetType.duration,
+        title: 'No unit',
+        targetType: BehaviorTargetType.custom,
         timesPerWeek: 3,
       ),
       throwsA(isA<AssertionError>()),

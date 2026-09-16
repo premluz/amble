@@ -379,37 +379,29 @@ class _SixMonthlyHeatmap extends StatelessWidget {
   }
 }
 
-/// One line describing a behavior's target type, amount, and frequency —
-/// e.g. "60 min · 3x a week", or "Did it · 5x a week" for a binary
-/// behavior, which has no amount by definition.
+/// One short line naming what KIND of behavior this is — its unit, e.g.
+/// "Minutes"/"Times"/"Glasses", or "Did it" for a binary one, which has
+/// no unit by definition.
+///
+/// Deliberately carries no target amount and no weekly frequency.
+/// Requested directly ("hide target and times per week"), confirmed to
+/// apply everywhere in the UI rather than only in the create/edit form,
+/// and then confirmed again that this line should keep the unit/type
+/// rather than disappearing altogether — the row's own title is the only
+/// other thing on it.
 ///
 /// A top-level function, not a row method, so a test can exercise the
 /// wording directly without mounting a widget — the same shape
 /// `_zoneSummary`/`_behaviorSummary` already use in `settings_screen.dart`.
 String describeBehaviorTarget(TrackedBehavior behavior) {
-  final frequency = '${behavior.timesPerWeek}x a week';
-  if (behavior.isBinary) return 'Did it · $frequency';
+  if (behavior.isBinary) return 'Did it';
 
-  final amount = behavior.targetAmount;
-  // Defensive: the model's constructor asserts a non-binary behavior has a
-  // target, but an assert is debug-only, so this must not render "null" in
-  // a release build if a malformed row ever reaches here.
-  if (amount == null) return frequency;
-
-  final minimum = behavior.minimumAmount;
   final unit = unitLabelFor(
     behavior.targetType,
     customUnitName: behavior.customUnitName,
   );
-  final target = '${_formatAmount(amount)} $unit';
-  if (minimum == null) return '$target · $frequency';
-  return '$target (min ${_formatAmount(minimum)}) · $frequency';
-}
-
-/// Renders an amount without a trailing ".0" — a 60-minute target reads
-/// "60 min", not "60.0 min".
-String _formatAmount(num amount) {
-  if (amount is int) return amount.toString();
-  if (amount == amount.roundToDouble()) return amount.round().toString();
-  return amount.toString();
+  // Sentence case: the unit reads as a label on its own line here, not as
+  // a suffix trailing an amount ("min" was only ever right after "60").
+  if (unit.isEmpty) return '';
+  return unit[0].toUpperCase() + unit.substring(1);
 }

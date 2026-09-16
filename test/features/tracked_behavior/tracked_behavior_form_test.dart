@@ -66,9 +66,8 @@ void main() {
   });
 
   testWidgets(
-    'a fresh create opens on the Name-only stage 1 — Measured in/Target/'
-    'Times per week are not in the tree yet, then reveal once Done is '
-    'tapped',
+    'a fresh create opens on the Name-only stage 1 — Measured in is not in '
+    'the tree yet, then reveals once Done is tapped',
     (tester) async {
       final navigatorKey = await _pumpHost(tester, box: box);
       unawaited(showTrackedBehaviorForm(navigatorKey.currentContext!));
@@ -78,7 +77,6 @@ void main() {
       expect(find.text('Done'), findsOneWidget);
       expect(find.text('Save'), findsNothing);
       expect(find.text('Measured in'), findsNothing);
-      expect(find.text('Times per week'), findsNothing);
 
       await tester.enterText(_nameField(), 'Exercise');
       await tester.pump();
@@ -86,8 +84,11 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Measured in'), findsOneWidget);
-      expect(find.text('Times per week'), findsOneWidget);
       expect(find.text('Save'), findsOneWidget);
+      // Requested directly: "hide target and times per week." Neither
+      // appears at any stage of the form now.
+      expect(find.text('Times per week'), findsNothing);
+      expect(find.text('Target'), findsNothing);
     },
   );
 
@@ -108,8 +109,9 @@ void main() {
   );
 
   testWidgets(
-    'editing an existing behavior skips straight to stage 2 — Measured in/'
-    'Times per week are already visible',
+    'editing an existing behavior skips straight to stage 2 — Measured in '
+    'is already visible, and the hidden Target/Times per week stay hidden '
+    'even for a behavior that HAS saved values for them',
     (tester) async {
       final behavior = TrackedBehavior.create(
         title: 'Exercise',
@@ -128,7 +130,11 @@ void main() {
       expect(find.text('Edit behavior'), findsOneWidget);
       expect(find.text('Save'), findsOneWidget);
       expect(find.text('Measured in'), findsOneWidget);
-      expect(find.text('Times per week'), findsOneWidget);
+      expect(find.text('Times per week'), findsNothing);
+      expect(find.text('Target'), findsNothing);
+      // This behavior was saved WITH a 60-minute target and a 3x
+      // frequency; neither leaks back into the form.
+      expect(find.textContaining('60'), findsNothing);
     },
   );
 }

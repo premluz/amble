@@ -221,7 +221,17 @@ class StepScaffold extends StatelessWidget {
                                     textAlign: titleAlignment,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: theme.textHeadline.copyWith(
+                                    // textTitle, not textHeadline —
+                                    // requested directly: "titles of
+                                    // sheets should be same size as
+                                    // titles of pages." The page titles
+                                    // (Inbox/Tracked/Settings, and the
+                                    // Timeline's own month name) all moved
+                                    // to `textTitle` earlier; this was the
+                                    // last place a title still rendered at
+                                    // `textHeadline`'s 32px, so opening a
+                                    // sheet jumped the title size.
+                                    style: theme.textTitle.copyWith(
                                       color: theme.colorTextPrimary,
                                     ),
                                   ),
