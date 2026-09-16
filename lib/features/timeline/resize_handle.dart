@@ -22,7 +22,7 @@ class ResizeHandle extends StatelessWidget {
     required this.onDragEnd,
     this.height,
     this.barAlignment = Alignment.center,
-    this.outwardShiftFactor = 1.0,
+    this.outwardShiftFactor = 0.5,
   });
 
   final AmbleTheme theme;
@@ -59,31 +59,15 @@ class ResizeHandle extends StatelessWidget {
 
   /// How far the visible dot is pushed past [barAlignment]'s edge, as a
   /// multiple of the dot's own diameter — see this class's own build
-  /// method for the geometry. `1.0` (the default) clears the dot fully of
-  /// the block's boundary; `0.0` centers it exactly ON the boundary.
+  /// method for the geometry. `1.0` clears the dot fully of the block's
+  /// boundary; `0.0` centers it exactly ON that boundary.
   ///
-  /// **`0.5` for `TaskCapsuleBlock`'s two handles specifically.** That
-  /// caller wraps its whole row (not just the pill) in a frosted card
-  /// whose own `ClipRRect` is ALWAYS present, even at rest (see that
-  /// wrapper's own doc comment for why it can't be conditional), and that
-  /// ancestor clip applies regardless of THIS widget's `Clip.none` — so a
-  /// dot pushed a full diameter past the pill's edge there is entirely
-  /// invisible (reported directly: "on task can't see at all now"), while
-  /// centering it exactly on the edge (`0.0`) read as fully inward
-  /// (reported directly: "make it position more outward the pill instead
-  /// of inward or middle... part half is outside"). `0.5` splits the
-  /// difference and is genuinely half-visible: measured directly (not
-  /// assumed) that the wrapper's clip boundary sits exactly at the pill's
-  /// own edge at rest, so a half-diameter push leaves exactly the outward
-  /// half of the dot painted and the inward half clipped away — the dot
-  /// reads as poking out from the edge rather than sitting on or inside
-  /// it. Restructuring the wrapper to exempt the handles entirely was
-  /// assessed as a larger, riskier change (that clip's shape has its own
-  /// documented history of breaking mid-drag when the widget tree around
-  /// it changes) than this partial-visibility compromise.
-  ///
-  /// `ZoneContainerBlock`'s containers carry no such wrapper, so their
-  /// handles keep the default full (`1.0`) outward push.
+  /// Defaults to `0.5` — the dot straddles its edge, half outside and
+  /// half in. Requested directly, after a full-diameter push read as too
+  /// far out: "50% height of dot move inside, top one move bottom,
+  /// bottom one move top." Every caller uses this default; the parameter
+  /// stays for callers that need a different relationship to their own
+  /// edge.
   final double outwardShiftFactor;
 
   @override

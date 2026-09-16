@@ -339,11 +339,16 @@ void main() {
           .toList();
 
       expect(dots, hasLength(2));
-      // Each dot's outer edge lands flush ON the pill's own edge, so the
-      // whole dot sits beyond it — adjacent to the border, not overlapping
-      // it and not floating away from it.
-      expect(dots.first.bottom, moreOrLessEquals(pill.top, epsilon: 0.5));
-      expect(dots.last.top, moreOrLessEquals(pill.bottom, epsilon: 0.5));
+      // Each dot's own CENTRE lands on the pill's edge, so it straddles
+      // that edge half in and half out — requested directly: "50% height
+      // of dot move inside, top one move bottom, bottom one move top."
+      // The point of this test is that the dot is not CLIPPED: its outer
+      // half paints past the pill, which the frosted wrapper used to cut.
+      expect(dots.first.center.dy, moreOrLessEquals(pill.top, epsilon: 0.5));
+      expect(dots.last.center.dy, moreOrLessEquals(pill.bottom, epsilon: 0.5));
+      // The outer half genuinely extends beyond the pill's own bounds.
+      expect(dots.first.top, lessThan(pill.top));
+      expect(dots.last.bottom, greaterThan(pill.bottom));
     });
   });
 }

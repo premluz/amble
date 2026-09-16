@@ -177,7 +177,7 @@ class ZoneGridBlock extends StatelessWidget {
             ),
             if (isSelected && onResizeTopEnd != null)
               Positioned(
-                top: -theme.spacingXs,
+                top: 0,
                 left: 0,
                 right: 0,
                 child: ResizeHandle(
@@ -200,7 +200,7 @@ class ZoneGridBlock extends StatelessWidget {
               ),
             if (isSelected && onResizeBottomEnd != null)
               Positioned(
-                bottom: -theme.spacingXs,
+                bottom: 0,
                 left: 0,
                 right: 0,
                 child: ResizeHandle(

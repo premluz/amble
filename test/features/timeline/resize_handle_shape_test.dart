@@ -73,8 +73,8 @@ void main() {
   // shifted its FULL diameter outward so the whole dot clears the
   // boundary and sits flush against the outside of it.
   testWidgets(
-    'topCenter: the dot is pushed its OWN diameter past the handle\'s '
-    'edge — fully outside, not straddling it',
+    'topCenter: the dot straddles the handle\'s top edge, half outside '
+    'and half in',
     (tester) async {
       await pump(tester, barAlignment: Alignment.topCenter);
 
@@ -87,12 +87,14 @@ void main() {
         ),
       );
 
+      // Requested directly, after a full-diameter push read as too far
+      // out: "50% height of dot move inside, top one move bottom, bottom
+      // one move top." The dot's own CENTRE now lands on the edge.
       expect(
-        circleRect.bottom,
+        circleRect.center.dy,
         closeTo(handleRect.top, 0.5),
-        reason:
-            'the dot\'s bottom edge must land exactly at the handle\'s '
-            'own top boundary — flush outside it, not centered on it',
+        reason: 'the dot straddles the handle\'s own top boundary — half '
+            'of it outside, half inside',
       );
       expect(
         circleRect.center.dx,
@@ -117,10 +119,10 @@ void main() {
       );
 
       expect(
-        circleRect.top,
+        circleRect.center.dy,
         closeTo(handleRect.bottom, 0.5),
-        reason: 'a bottom handle pushes its dot DOWN, clear of the '
-            'handle\'s own bottom boundary',
+        reason: 'a bottom handle straddles its dot across the BOTTOM '
+            'boundary — the mirror of the top handle',
       );
     },
   );

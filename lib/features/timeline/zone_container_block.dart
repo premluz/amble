@@ -408,7 +408,7 @@ class ZoneContainerBlock extends StatelessWidget {
         // TaskCapsuleBlock's bottom handle uses.
         if (editModeEnabled && onResizeTopEnd != null)
           Positioned(
-            top: -theme.spacingXs,
+            top: 0,
             left: 0,
             right: 0,
             child: ResizeHandle(
@@ -438,7 +438,7 @@ class ZoneContainerBlock extends StatelessWidget {
         // Bottom-edge handle — changes Zone.endMinutes only.
         if (editModeEnabled && onResizeBottomEnd != null)
           Positioned(
-            bottom: -theme.spacingXs,
+            bottom: 0,
             left: 0,
             right: 0,
             child: ResizeHandle(

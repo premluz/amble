@@ -102,10 +102,30 @@ class AppCalendarHeader extends ConsumerWidget {
     final today = _dateOnly(DateTime.now());
     final weekStart = _startOfWeek(selectedDate);
 
+    // Laid out so the month name lands on exactly the y and x every
+    // other page's own title sits at — requested directly: "title of
+    // page jumps... the calendar month dropdown should be positioned
+    // same place as title of other pages."
+    //
+    // Three things were moving it, all now handled:
+    //  - the outer top padding was `spacingSm`, not the `spacingLg`
+    //    Inbox/Tracked/Settings share (fixed here);
+    //  - `_MonthStepper` carried its own extra VERTICAL padding (dropped
+    //    there, horizontal kept for its tap target);
+    //  - this `Row` is as tall as the `spacingXl` icon buttons beside the
+    //    name, and a centred cross-axis pushed the shorter text down
+    //    inside it — hence `CrossAxisAlignment.start` below, which also
+    //    keeps the buttons themselves where they already sat, since they
+    //    ARE the row's full height.
+    //
+    // Horizontal already matched via `spacingScreenPadding`. The bottom
+    // keeps its own tighter `spacingSm`: this header continues into its
+    // weekday row and week grid, where the other pages just start their
+    // content.
     return Padding(
       padding: EdgeInsets.fromLTRB(
         theme.spacingScreenPadding,
-        theme.spacingSm,
+        theme.spacingLg,
         theme.spacingScreenPadding,
         theme.spacingSm,
       ),
@@ -113,6 +133,7 @@ class AppCalendarHeader extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: _MonthStepper(theme: theme, monthOf: selectedDate),
@@ -231,35 +252,37 @@ class _MonthStepper extends ConsumerWidget {
     return AppPressFeedback(
       onTap: () => notifier.goTo(monthOf.add(const Duration(days: 7))),
       borderRadius: BorderRadius.circular(theme.radiusSm),
-      child: Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: theme.spacingXs,
-          vertical: theme.spacingXs,
-        ),
-        // No `mainAxisSize: min` — this sits in a fixed-width `Expanded`
-        // slot alongside 3 utility icon buttons (see AppCalendarHeader),
-        // and `min` sizing to unbounded content overflowed the row on a
-        // real device width once those buttons' own space was accounted
-        // for. `textTitle` (20px), not `textHeadline` (32px, meant for a
-        // full page's own title) — a headline-sized month name never fit
-        // beside the 3 buttons on any width this was tested at.
-        child: Row(
-          children: [
-            Flexible(
-              child: Text(
-                _monthNames[monthOf.month - 1],
-                style: theme.textTitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+      // No padding of its own at all. Both axes moved the month name off
+      // the position every other page's title sits at (see
+      // `AppCalendarHeader`'s own padding comment): the vertical pushed
+      // it down, the horizontal pushed it right of the shared
+      // `spacingScreenPadding` gutter. The tap target is still the full
+      // row-height `Expanded` slot this sits in, which is generous
+      // without needing padding to inflate it.
+      //
+      // No `mainAxisSize: min` — this sits in a fixed-width `Expanded`
+      // slot alongside 3 utility icon buttons (see AppCalendarHeader),
+      // and `min` sizing to unbounded content overflowed the row on a
+      // real device width once those buttons' own space was accounted
+      // for. `textTitle` (20px), not `textHeadline` (32px, meant for a
+      // full page's own title) — a headline-sized month name never fit
+      // beside the 3 buttons on any width this was tested at.
+      child: Row(
+        children: [
+          Flexible(
+            child: Text(
+              _monthNames[monthOf.month - 1],
+              style: theme.textTitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-            SizedBox(width: theme.spacingXs),
-            Icon(
-              Icons.keyboard_arrow_down_rounded,
-              color: theme.colorTextPrimary,
-            ),
-          ],
-        ),
+          ),
+          SizedBox(width: theme.spacingXs),
+          Icon(
+            Icons.keyboard_arrow_down_rounded,
+            color: theme.colorTextPrimary,
+          ),
+        ],
       ),
     );
   }
