@@ -30,7 +30,7 @@ import '../../support/seeded_category_box.dart';
 /// in the Template tab in Inbox, without these three dots." Narrowed to
 /// templates only (no Tasks tab) via a direct follow-up.
 Finder _nameField() => find.descendant(
-  of: find.widgetWithText(AppTextField, 'Task name'),
+  of: find.widgetWithText(AppTextField, 'Add title'),
   matching: find.byType(TextField),
 );
 
@@ -215,7 +215,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Advanced to stage 2 (schedule fields visible) rather than a second
-      // modal route on top — exactly one Scaffold-level "Task name" field
+      // modal route on top — exactly one Scaffold-level "Add title" field
       // exists, still showing the seeded title.
       expect(find.text('Duration'), findsOneWidget);
       final titleField = tester.widget<TextField>(_nameField());

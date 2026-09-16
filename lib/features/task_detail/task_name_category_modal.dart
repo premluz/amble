@@ -141,7 +141,9 @@ class _TaskNameCategoryModalState extends ConsumerState<TaskNameCategoryModal> {
               children: [
                 AppTextField(
                   controller: widget.titleController,
-                  label: 'Task name',
+                  label: 'Add title',
+                  // Bare — the shared style for every entity's name.
+                  variant: AppTextFieldVariant.bare,
                   autofocus: true,
                 ),
                 SizedBox(height: theme.spacingSm),

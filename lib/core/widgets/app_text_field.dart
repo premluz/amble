@@ -3,10 +3,33 @@ import 'package:flutter/material.dart';
 import '../tokens/semantic_theme.dart';
 import 'app_field_shell.dart';
 
-/// A single- or multi-line text input wearing the standard field chrome
-/// (see [AppFieldShell]) — the app's only entry point for free-text entry.
-/// Screens must not reach for `TextField`/`CupertinoTextField` directly,
-/// per docs/CONSTITUTION.md design principle 4.
+/// How an [AppTextField] presents itself.
+enum AppTextFieldVariant {
+  /// The standard filled field chrome (see [AppFieldShell]) — a rounded
+  /// fill that deepens on focus, with an inline floating label.
+  filled,
+
+  /// Bare text with no fill, no border and no floating label: the value
+  /// simply reads as text, sized like a heading, and is editable in
+  /// place. Requested directly for entity NAMES — "we need one that is
+  /// just text and, on top, can be edited... also, smaller sizes" — and
+  /// then confirmed as the style for "the input of any entity: task
+  /// name, note, behavior, zone."
+  ///
+  /// The [AppTextField.label] becomes ordinary placeholder text here,
+  /// shown only while the field is empty, rather than a label that
+  /// floats out of the way.
+  bare,
+}
+
+/// A single- or multi-line text input — the app's only entry point for
+/// free-text entry. Screens must not reach for
+/// `TextField`/`CupertinoTextField` directly, per docs/CONSTITUTION.md
+/// design principle 4.
+///
+/// Wears the standard field chrome ([AppFieldShell]) by default, or bare
+/// editable text via [AppTextFieldVariant.bare] — see that value's own
+/// doc comment.
 ///
 /// Owns exactly one piece of state — whether it currently has focus — and
 /// derives everything else from the [controller] it is given, so callers
@@ -22,13 +45,21 @@ class AppTextField extends StatefulWidget {
     this.onSubmitted,
     this.onFocusChanged,
     this.selectAllOnFocus = false,
+    this.variant = AppTextFieldVariant.filled,
   });
+
+  /// See [AppTextFieldVariant]. Defaults to the filled chrome every
+  /// existing caller already renders.
+  final AppTextFieldVariant variant;
 
   final TextEditingController controller;
 
   /// Inline label — floats up on focus or once text is entered. There is
   /// no separate `hint`: the resting label *is* the placeholder, which is
   /// what keeps a column of fields visually quiet.
+  ///
+  /// Under [AppTextFieldVariant.bare] this is plain placeholder text
+  /// instead, shown only while the field is empty.
   final String label;
 
   /// 1 for a single-line field (Name); higher for a notes-style box.
@@ -97,6 +128,35 @@ class _AppTextFieldState extends State<AppTextField> {
       listenable: widget.controller,
       builder: (context, _) {
         final hasValue = widget.controller.text.isNotEmpty;
+        if (widget.variant == AppTextFieldVariant.bare) {
+          return TextField(
+            controller: widget.controller,
+            focusNode: _focusNode,
+            maxLines: widget.maxLines,
+            autofocus: widget.autofocus,
+            textInputAction: widget.textInputAction,
+            onSubmitted: widget.onSubmitted,
+            // `textTitle`, the one size every page and sheet title in the
+            // app already uses — this variant IS the title of whatever is
+            // being created, so it reads as that title rather than as a
+            // form control.
+            style: theme.textTitle.copyWith(color: theme.colorTextPrimary),
+            cursorColor: theme.colorTextPrimary,
+            decoration: InputDecoration(
+              isDense: true,
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              contentPadding: EdgeInsets.zero,
+              // A real hint here, unlike the filled variant: with no
+              // shell there is no floating label to double it up.
+              hintText: widget.label,
+              hintStyle: theme.textTitle.copyWith(
+                color: theme.colorTextSecondary,
+              ),
+            ),
+          );
+        }
         return AppFieldShell(
           label: widget.label,
           isFocused: _isFocused,

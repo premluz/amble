@@ -20,6 +20,21 @@ import '../../core/tokens/semantic_theme.dart';
 /// panel; letting it scroll is not.
 const quickCreateSheetMinFraction = 0.34;
 
+/// The MINIMISED state's height fraction — the third of the sheet's three
+/// states, below [quickCreateSheetMinFraction].
+///
+/// Requested directly against a reference screenshot: "when scrolled, we
+/// need this state: just the title is shown, and there is this little
+/// handle to expand or tap to expand. When tapped, it expands to this
+/// mini sheet... So we need 3 states."
+///
+/// Sized to the handle plus one line of title text and nothing else —
+/// deliberately not a fraction of the content, since the whole point is
+/// that only the title survives. Reached by dragging the handle DOWN from
+/// the small sheet (confirmed directly, in preference to collapsing on
+/// timeline scroll), and left by tapping it or dragging back up.
+const quickCreateSheetMinimisedFraction = 0.11;
+
 /// Drives the height of `QuickCreateOverlay`'s own small-to-near-full
 /// panel (`lib/features/timeline/quick_create_overlay.dart`) — requested
 /// directly: tap empty Timeline space opens "a small sheet with a task
@@ -49,15 +64,37 @@ class QuickCreateSheetHeightController extends ChangeNotifier {
   bool _expanded = false;
   bool get expanded => _expanded;
 
-  /// How far below [quickCreateSheetMinFraction] a drag has to pull
-  /// before it counts as "drag down to close" rather than just settling
-  /// back to the small height — requested directly ("the sheet should
-  /// also be closing with this handle that expands it"). Expressed on
-  /// the same absolute-fraction scale as [fraction] itself; a drag that
-  /// only dips slightly below the floor (finger overshoot) still snaps
-  /// back to small via [settle], matching a real bottom sheet's own
-  /// "small nudge doesn't dismiss it" feel.
+  /// Whether the sheet is in its MINIMISED state — the third state, where
+  /// only the title and the handle show. See
+  /// [quickCreateSheetMinimisedFraction].
+  bool _minimised = false;
+  bool get minimised => _minimised;
+
+  /// How far below [quickCreateSheetMinimisedFraction] a drag has to pull
+  /// before it counts as "drag down to close" rather than settling into
+  /// the minimised state — requested directly ("the sheet should also be
+  /// closing with this handle that expands it"). Expressed on the same
+  /// absolute-fraction scale as [fraction] itself; a drag that only dips
+  /// slightly below the floor (finger overshoot) still snaps back via
+  /// [settle], matching a real bottom sheet's own "small nudge doesn't
+  /// dismiss it" feel.
+  ///
+  /// Measured from the MINIMISED floor rather than the small one now that
+  /// there are three states: dragging down from small lands in minimised,
+  /// and only a further pull from there closes.
   static const _closeThreshold = 0.06;
+
+  /// How far BELOW the small floor a drag has to reach before releasing
+  /// minimises rather than snapping back to small.
+  ///
+  /// A small absolute step, deliberately NOT the midpoint between the two
+  /// floors — the mirror of [_expandThreshold], and for the same reason
+  /// its own doc comment gives: a midpoint rule made the gesture require
+  /// dragging most of the way, which was reported as "difficult to do" on
+  /// the expand side. Measured directly here too: at the midpoint, a
+  /// 0.10-fraction downward drag from small snapped back to small instead
+  /// of minimising.
+  static const _minimiseThreshold = 0.06;
 
   /// How far ABOVE the small floor a drag has to reach before releasing
   /// expands rather than snapping back. Deliberately a small absolute
@@ -97,19 +134,38 @@ class QuickCreateSheetHeightController extends ChangeNotifier {
   /// short upward flick expand the sheet, per direct report that
   /// expanding was "difficult to do."
   bool settle({double velocity = 0}) {
-    // Flick wins outright, in whichever direction it went.
+    // Flick UP wins outright: one state larger than wherever it started.
     if (velocity <= -_expandVelocity) {
+      if (_minimised) {
+        restoreToSmall();
+      } else {
+        expand();
+      }
+      return false;
+    }
+    // Flick DOWN: small collapses to minimised; minimised closes.
+    if (velocity >= _expandVelocity) {
+      if (_minimised) return true;
+      minimise();
+      return false;
+    }
+
+    // Below the minimised floor by a real margin — close.
+    if (_fraction < quickCreateSheetMinimisedFraction - _closeThreshold) {
+      return true;
+    }
+
+    if (_fraction >= quickCreateSheetMinFraction + _expandThreshold) {
       expand();
       return false;
     }
-    if (velocity >= _expandVelocity) return true;
-
-    if (_fraction < quickCreateSheetMinFraction - _closeThreshold) {
-      return true;
+    // Between the two floors: a real pull below the small floor
+    // minimises; anything shallower settles back to small.
+    if (_fraction < quickCreateSheetMinFraction - _minimiseThreshold) {
+      minimise();
+    } else {
+      restoreToSmall();
     }
-    _expanded = _fraction >= quickCreateSheetMinFraction + _expandThreshold;
-    _fraction = _expanded ? 1.0 : quickCreateSheetMinFraction;
-    notifyListeners();
     return false;
   }
 
@@ -117,7 +173,27 @@ class QuickCreateSheetHeightController extends ChangeNotifier {
   /// full-height target.
   void expand() {
     _expanded = true;
+    _minimised = false;
     _fraction = 1.0;
+    notifyListeners();
+  }
+
+  /// Collapses to the MINIMISED state, where only the title shows.
+  void minimise() {
+    _expanded = false;
+    _minimised = true;
+    _fraction = quickCreateSheetMinimisedFraction;
+    notifyListeners();
+  }
+
+  /// Back to the SMALL sheet — the state the overlay opens in. Called by
+  /// a tap on the minimised sheet ("when tapped, it expands to this mini
+  /// sheet, not a minimized sheet, but a small sheet as it is at the
+  /// beginning") as well as by an upward drag from minimised.
+  void restoreToSmall() {
+    _expanded = false;
+    _minimised = false;
+    _fraction = quickCreateSheetMinFraction;
     notifyListeners();
   }
 }
@@ -158,20 +234,43 @@ class QuickCreateSheetHandle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final fullHeight = viewportHeight - theme.spacingXl;
-    final minHeight = viewportHeight * quickCreateSheetMinFraction;
+    // The MINIMISED floor, matching `QuickCreateOverlay`'s own height
+    // math exactly. These two must agree: the overlay converts the
+    // controller's fraction back into a real height against this same
+    // floor, and when they disagreed (the overlay rebased onto minimised
+    // while this still used the small floor) a short upward drag stopped
+    // expanding at all — caught by
+    // `tap_empty_space_quick_create_test.dart`.
+    final minHeight = viewportHeight * quickCreateSheetMinimisedFraction;
     final travel = fullHeight - minHeight;
 
     return GestureDetector(
+      // Tap restores the small sheet — but ONLY from minimised, which is
+      // where it was actually asked for ("this little handle to expand or
+      // tap to expand. When tapped, it expands to this mini sheet").
+      //
+      // Deliberately null in every other state rather than also opening
+      // the full sheet from small: a live `onTap` recognizer keeps the
+      // gesture arena unresolved for longer, and measured directly, that
+      // cost the FIRST ~35px of a short upward drag to touch slop —
+      // enough to drop a 70px drag from 0.419 to 0.379 and miss the
+      // expand threshold entirely. That regressed
+      // `tap_empty_space_quick_create_test.dart`'s own "a SHORT upward
+      // drag is enough to expand", itself written against a direct report
+      // that expanding was "difficult to do". Minimised has no such
+      // conflict: there is no short-drag-to-expand gesture competing
+      // there, since any upward drag from minimised settles to small
+      // anyway.
+      onTap: controller.minimised ? controller.restoreToSmall : null,
       onVerticalDragUpdate: (details) {
         if (travel <= 0) return;
         // `details.delta.dy / travel` is a 0..1 ratio of the real pixel
         // travel between the two heights; `controller.fraction` lives on
-        // the ABSOLUTE [quickCreateSheetMinFraction, 1.0] scale (see its
-        // own doc comment), so the ratio must be scaled up to match
-        // before subtracting, or a full-height drag would move the
-        // fraction by only `1.0 - quickCreateSheetMinFraction` instead of
-        // the full range.
-        final fractionRange = 1.0 - quickCreateSheetMinFraction;
+        // the ABSOLUTE [quickCreateSheetMinimisedFraction, 1.0] scale
+        // (see its own doc comment), so the ratio must be scaled up to
+        // match before subtracting, or a full-height drag would move the
+        // fraction by only part of the range.
+        final fractionRange = 1.0 - quickCreateSheetMinimisedFraction;
         controller.updateFraction(
           controller.fraction - (details.delta.dy / travel) * fractionRange,
         );

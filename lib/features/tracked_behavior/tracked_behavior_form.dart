@@ -282,6 +282,10 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
               child: AppTextField(
                 controller: _titleController,
                 label: 'What are you tracking?',
+                // Bare — the shared style for every entity's name. The
+                // placeholder wording stays this form's own question
+                // rather than a generic "Add title".
+                variant: AppTextFieldVariant.bare,
                 autofocus: !_isEditing,
                 onSubmitted: (_) => _confirmNameStage(),
               ),
@@ -386,4 +390,3 @@ class _TypeChip extends StatelessWidget {
     );
   }
 }
-

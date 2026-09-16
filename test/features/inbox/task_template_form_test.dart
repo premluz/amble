@@ -24,7 +24,7 @@ import 'package:hive_ce/hive_ce.dart';
 /// disclosure first name and them reveal rest." Mirrors
 /// `zone_form_screen_test.dart`'s own equivalent test almost exactly.
 Finder _nameField() => find.descendant(
-  of: find.widgetWithText(AppTextField, 'Template name'),
+  of: find.widgetWithText(AppTextField, 'Add title'),
   matching: find.byType(TextField),
 );
 

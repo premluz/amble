@@ -79,11 +79,19 @@ void main() {
       expect(controller.expanded, isTrue);
     });
 
-    test('a fast downward FLICK closes regardless of how far it moved', () {
+    // Three states (2026-09-16): a downward flick no longer closes straight
+    // from small — it steps DOWN one state at a time, small -> minimised ->
+    // closed, so the minimised state can't be skipped past by a fast
+    // gesture. Only a flick from an already-minimised sheet closes.
+    test('a fast downward FLICK steps down one state, it does not close', () {
       final controller = QuickCreateSheetHeightController(
         initialFraction: quickCreateSheetMinFraction,
       );
       addTearDown(controller.dispose);
+
+      expect(controller.settle(velocity: 1200), isFalse);
+      expect(controller.minimised, isTrue);
+      expect(controller.fraction, quickCreateSheetMinimisedFraction);
 
       expect(controller.settle(velocity: 1200), isTrue);
     });
@@ -100,15 +108,23 @@ void main() {
       expect(controller.fraction, quickCreateSheetMinFraction);
     });
 
+    // Same one-state-at-a-time rule as the flick case above: a long drag
+    // down from SMALL lands on minimised, however far it went. Close is
+    // reachable only by dragging down again from there.
     test('settle() reports true (close) once the fraction is dragged far '
-        'enough below the small floor', () {
+        'enough below the MINIMISED floor', () {
       final controller = QuickCreateSheetHeightController(
         initialFraction: quickCreateSheetMinFraction,
       );
       addTearDown(controller.dispose);
 
-      // Well below the floor — past the close threshold.
+      // Well below the small floor — still only minimises.
       controller.updateFraction(0.05);
+      expect(controller.settle(), isFalse);
+      expect(controller.minimised, isTrue);
+
+      // A second drag down, now past the minimised floor's close threshold.
+      controller.updateFraction(0.02);
       expect(controller.settle(), isTrue);
     });
 

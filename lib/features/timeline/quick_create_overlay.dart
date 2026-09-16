@@ -295,11 +295,17 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay> {
           animation: _heightController,
           builder: (context, _) {
             final fullHeight = viewport - theme.spacingXl;
+            // The floor is the MINIMISED state now, not the small one —
+            // the sheet has three states (see
+            // `quickCreateSheetMinimisedFraction`). `barsHeight` still
+            // applies: even minimised, the panel must cover the space the
+            // nav bar and day strip occupied rather than leaving a strip
+            // of bare Timeline where they were.
             final minHeight = math.max(
-              viewport * quickCreateSheetMinFraction,
+              viewport * quickCreateSheetMinimisedFraction,
               barsHeight,
             );
-            final fractionRange = 1.0 - quickCreateSheetMinFraction;
+            final fractionRange = 1.0 - quickCreateSheetMinimisedFraction;
             // Clamped at 0 — the controller's own fraction is
             // deliberately allowed to go negative mid-drag (see
             // QuickCreateSheetHeightController.updateFraction's own doc
@@ -310,7 +316,7 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay> {
               minHeight +
                   (fullHeight - minHeight) *
                       ((_heightController.fraction -
-                              quickCreateSheetMinFraction) /
+                              quickCreateSheetMinimisedFraction) /
                           fractionRange),
             );
 
@@ -386,169 +392,231 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay> {
                                     onCloseRequested: _onCloseRequested,
                                   ),
                                 ),
-                                // Schedule sits at the header's LEFT,
-                                // opposite the X — per the layout mockup,
-                                // which moves it up out of the sheet's body
-                                // so the template strip can occupy the full
-                                // width below. Both buttons sit ON TOP of
-                                // the `Positioned.fill` handle and win their
-                                // own taps; the handle still drags from any
-                                // part of the row they don't cover.
+                                // Schedule RIGHT, close LEFT — swapped
+                                // directly against a reference screenshot:
+                                // "let's switch the schedule: it should be
+                                // on the right in this small sheet of task
+                                // creation, and Close should be on the
+                                // left." Matches the platform convention
+                                // that screenshot shows (dismiss left,
+                                // confirm right).
+                                //
+                                // Both buttons sit ON TOP of the
+                                // `Positioned.fill` handle and win their own
+                                // taps; the handle still drags from any part
+                                // of the row they don't cover.
                                 //
                                 // "Schedule", not "Done": it commits the
                                 // task outright rather than handing off to
                                 // the full form — reported directly ("Done
                                 // let's change to Schedule and it already
                                 // sets the task there").
-                                Positioned(
-                                  top: 0,
-                                  bottom: 0,
-                                  left: 0,
-                                  child: Center(
-                                    child: AppButton(
-                                      label: 'Schedule',
-                                      size: AppButtonSize.regular,
-                                      shape: AppButtonShape.pill,
-                                      onPressed: _isSaving ? null : _schedule,
+                                // Both buttons hide while MINIMISED —
+                                // requested directly: "just the title is
+                                // shown, and there is this little handle
+                                // to expand or tap to expand." The handle
+                                // behind them stays, and becomes the whole
+                                // row's tap/drag target.
+                                if (!_heightController.minimised)
+                                  Positioned(
+                                    top: 0,
+                                    bottom: 0,
+                                    right: 0,
+                                    child: Center(
+                                      child: AppButton(
+                                        label: 'Schedule',
+                                        size: AppButtonSize.regular,
+                                        shape: AppButtonShape.pill,
+                                        onPressed: _isSaving ? null : _schedule,
+                                      ),
                                     ),
                                   ),
-                                ),
-                                Positioned(
-                                  top: 0,
-                                  bottom: 0,
-                                  right: 0,
-                                  child: Center(
-                                    // Explicit `colorSurfaceSecondary`
-                                    // rather than HeaderCircleButton's own
-                                    // `colorSurfaceField` default —
-                                    // requested directly ("the style of
-                                    // close button should be same as in
-                                    // big sheet"). The widget IS the same
-                                    // one the big sheet uses, but that
-                                    // sheet's body sits on
-                                    // `colorSurfaceBase` while this panel
-                                    // is nav-matched `colorSurfacePrimary`
-                                    // (a step darker in dark mode), so the
-                                    // shared default reads flatter here;
-                                    // this restores the same visible
-                                    // contrast against THIS ground.
-                                    child: HeaderCircleButton(
-                                      theme: theme,
-                                      icon: Icons.close_rounded,
-                                      backgroundColor:
-                                          theme.colorSurfaceSecondary,
-                                      onTap: _onCloseRequested,
+                                if (!_heightController.minimised)
+                                  Positioned(
+                                    top: 0,
+                                    bottom: 0,
+                                    left: 0,
+                                    child: Center(
+                                      // Explicit `colorSurfaceSecondary`
+                                      // rather than HeaderCircleButton's own
+                                      // `colorSurfaceField` default —
+                                      // requested directly ("the style of
+                                      // close button should be same as in
+                                      // big sheet"). The widget IS the same
+                                      // one the big sheet uses, but that
+                                      // sheet's body sits on
+                                      // `colorSurfaceBase` while this panel
+                                      // is nav-matched `colorSurfacePrimary`
+                                      // (a step darker in dark mode), so the
+                                      // shared default reads flatter here;
+                                      // this restores the same visible
+                                      // contrast against THIS ground.
+                                      child: HeaderCircleButton(
+                                        theme: theme,
+                                        icon: Icons.close_rounded,
+                                        backgroundColor:
+                                            theme.colorSurfaceSecondary,
+                                        onTap: _onCloseRequested,
+                                      ),
                                     ),
                                   ),
-                                ),
                               ],
                             ),
                           ),
                         ),
-                        SizedBox(height: theme.spacingSm),
-                        Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: theme.spacingLg,
-                          ),
-                          child: AppTextField(
-                            controller: _titleController,
-                            label: 'Task name',
-                            // Not selectAllOnFocus: the field is CLEARED
-                            // outright when tapped (see onFocusChanged
-                            // below), so there is nothing left to select.
-                            // Tapping the field is itself a request for
-                            // the full form — requested directly ("when
-                            // name input is tapped then it goes into
-                            // near full screen mode"). Fires on the tap
-                            // itself (before any typing), so this stays
-                            // on the real sheet's own stage 1
-                            // (autofocused Name field, keyboard already
-                            // up) rather than skipping ahead — see
-                            // _promote's own doc comment on
-                            // stayOnNameStage.
-                            onFocusChanged: (hasFocus) {
-                              if (!hasFocus) return;
-                              // Reported directly: "New task name input
-                              // should be reset to nothing, clears, so
-                              // user can type in from scratch." Clearing
-                              // beats selectAllOnFocus here because the
-                              // full sheet this promotes into is seeded
-                              // from `initialTitle` — a selection would
-                              // not survive that handoff, but an empty
-                              // string does.
-                              _titleController.clear();
-                              _promote(stayOnNameStage: true);
-                            },
-                          ),
-                        ),
-                        // Important toggle — reported directly as
-                        // missing from this panel ("can't see important
-                        // in quick add in mini sheet"). Compact rather
-                        // than a full AppPane, matching this sheet's own
-                        // "small, no extra chrome" scale — the full
-                        // sheet's own bare-pane treatment would be
-                        // oversized here relative to the Name field
-                        // beside it.
-                        SizedBox(height: theme.spacingSm),
-                        Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: theme.spacingLg,
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                'Important',
-                                style: theme.textBody.copyWith(
-                                  color: theme.colorTextPrimary,
+                        // MINIMISED: the title alone, read-only, with the
+                        // handle above it the only control — requested
+                        // directly: "just the title is shown, and there
+                        // is this little handle to expand or tap to
+                        // expand." Tapping anywhere here restores the
+                        // small sheet, matching the handle's own tap.
+                        if (_heightController.minimised)
+                          GestureDetector(
+                            onTap: _heightController.restoreToSmall,
+                            behavior: HitTestBehavior.opaque,
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: theme.spacingLg,
+                              ),
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: ListenableBuilder(
+                                  listenable: _titleController,
+                                  builder: (context, _) {
+                                    final title = _titleController.text.trim();
+                                    return Text(
+                                      // "(No title)" confirmed directly,
+                                      // matching the reference screenshot's
+                                      // own wording for an unnamed draft.
+                                      title.isEmpty ? '(No title)' : title,
+                                      style: theme.textTitle.copyWith(
+                                        color: title.isEmpty
+                                            ? theme.colorTextSecondary
+                                            : theme.colorTextPrimary,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.center,
+                                    );
+                                  },
                                 ),
                               ),
-                              AppSwitch(
-                                value: _isImportant,
-                                onChanged: (value) =>
-                                    setState(() => _isImportant = value),
-                              ),
-                            ],
-                          ),
-                        ),
-                        // Surfaced in the panel rather than letting the
-                        // Schedule tap silently do nothing — the mini
-                        // sheet has no other way to explain a refusal.
-                        if (_overlapError != null) ...[
+                            ),
+                          )
+                        else ...[
                           SizedBox(height: theme.spacingSm),
                           Padding(
                             padding: EdgeInsets.symmetric(
                               horizontal: theme.spacingLg,
                             ),
-                            child: SizedBox(
-                              width: double.infinity,
-                              child: Text(
-                                _overlapError!,
-                                // Same token pair StepScaffold uses for
-                                // this identical message in the full
-                                // sheet.
-                                style: theme.textBody.copyWith(
-                                  color: theme.colorTaskAlert,
+                            child: AppTextField(
+                              controller: _titleController,
+                              label: 'Add title',
+                              // Bare text, no field chrome — requested
+                              // directly against a reference screenshot:
+                              // "we need a new style for the input field...
+                              // just text and, on top, can be edited." The
+                              // label doubles as the placeholder ("Add
+                              // title", matching that screenshot) since
+                              // there is no floating label in this variant.
+                              variant: AppTextFieldVariant.bare,
+                              // Not selectAllOnFocus: the field is CLEARED
+                              // outright when tapped (see onFocusChanged
+                              // below), so there is nothing left to select.
+                              // Tapping the field is itself a request for
+                              // the full form — requested directly ("when
+                              // name input is tapped then it goes into
+                              // near full screen mode"). Fires on the tap
+                              // itself (before any typing), so this stays
+                              // on the real sheet's own stage 1
+                              // (autofocused Name field, keyboard already
+                              // up) rather than skipping ahead — see
+                              // _promote's own doc comment on
+                              // stayOnNameStage.
+                              onFocusChanged: (hasFocus) {
+                                if (!hasFocus) return;
+                                // Reported directly: "New task name input
+                                // should be reset to nothing, clears, so
+                                // user can type in from scratch." Clearing
+                                // beats selectAllOnFocus here because the
+                                // full sheet this promotes into is seeded
+                                // from `initialTitle` — a selection would
+                                // not survive that handoff, but an empty
+                                // string does.
+                                _titleController.clear();
+                                _promote(stayOnNameStage: true);
+                              },
+                            ),
+                          ),
+                          // Important toggle — reported directly as
+                          // missing from this panel ("can't see important
+                          // in quick add in mini sheet"). Compact rather
+                          // than a full AppPane, matching this sheet's own
+                          // "small, no extra chrome" scale — the full
+                          // sheet's own bare-pane treatment would be
+                          // oversized here relative to the Name field
+                          // beside it.
+                          SizedBox(height: theme.spacingSm),
+                          Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: theme.spacingLg,
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Important',
+                                  style: theme.textBody.copyWith(
+                                    color: theme.colorTextPrimary,
+                                  ),
+                                ),
+                                AppSwitch(
+                                  value: _isImportant,
+                                  onChanged: (value) =>
+                                      setState(() => _isImportant = value),
+                                ),
+                              ],
+                            ),
+                          ),
+                          // Surfaced in the panel rather than letting the
+                          // Schedule tap silently do nothing — the mini
+                          // sheet has no other way to explain a refusal.
+                          if (_overlapError != null) ...[
+                            SizedBox(height: theme.spacingSm),
+                            Padding(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: theme.spacingLg,
+                              ),
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: Text(
+                                  _overlapError!,
+                                  // Same token pair StepScaffold uses for
+                                  // this identical message in the full
+                                  // sheet.
+                                  style: theme.textBody.copyWith(
+                                    color: theme.colorTaskAlert,
+                                  ),
                                 ),
                               ),
                             ),
+                          ],
+                          // Matches the sheet's own side padding, reported
+                          // directly: "larger gap from task name (same as
+                          // from side paddings)."
+                          SizedBox(height: theme.spacingLg),
+                          // Full-bleed: the strip is the one child with no
+                          // side padding of its own, so it can scroll past
+                          // both edges of the sheet instead of clipping
+                          // inside an inset. It applies `spacingLg` as its
+                          // own leading/trailing inset so the first and
+                          // last chip still line up with everything above.
+                          TemplateChipStrip(
+                            onTemplateSelected: _applyTemplate,
+                            selectedTemplateId: _appliedTemplate?.id,
                           ),
+                          SizedBox(height: theme.spacingSm),
                         ],
-                        // Matches the sheet's own side padding, reported
-                        // directly: "larger gap from task name (same as
-                        // from side paddings)."
-                        SizedBox(height: theme.spacingLg),
-                        // Full-bleed: the strip is the one child with no
-                        // side padding of its own, so it can scroll past
-                        // both edges of the sheet instead of clipping
-                        // inside an inset. It applies `spacingLg` as its
-                        // own leading/trailing inset so the first and
-                        // last chip still line up with everything above.
-                        TemplateChipStrip(
-                          onTemplateSelected: _applyTemplate,
-                          selectedTemplateId: _appliedTemplate?.id,
-                        ),
-                        SizedBox(height: theme.spacingSm),
                       ],
                     ),
                   ),

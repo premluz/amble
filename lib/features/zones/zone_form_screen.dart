@@ -20,7 +20,6 @@ import '../../shared/models/zone.dart';
 
 import '../../shared/providers/zone_providers.dart';
 
-
 import '../timeline/viewed_time_provider.dart';
 
 /// Opens the "add/edit zone" screen — near-full-screen, built on
@@ -158,7 +157,9 @@ class _ZoneFormScreenState extends ConsumerState<_ZoneFormScreen> {
     _isNameStage = zone == null;
     _notificationsEnabled = zone?.notificationsEnabled ?? false;
     _facetId = zone?.facetId;
-    _selectedDays = {zone?.weekday ?? widget.forDay?.weekday ?? DateTime.now().weekday};
+    _selectedDays = {
+      zone?.weekday ?? widget.forDay?.weekday ?? DateTime.now().weekday,
+    };
     if (zone != null) {
       _startHour = zone.startMinutes ~/ 60;
       _startMinute = zone.startMinutes % 60;
@@ -166,7 +167,6 @@ class _ZoneFormScreenState extends ConsumerState<_ZoneFormScreen> {
       _endMinute = zone.endMinutes % 60;
       final rule = zone.recurrenceRule;
       if (rule != null) {
-
         _selectedDays = selectedDaysFromRecurrenceRule(rule);
       }
     }
@@ -194,7 +194,8 @@ class _ZoneFormScreenState extends ConsumerState<_ZoneFormScreen> {
   /// save time. `_endMinutes! > _startMinutes!` is still enforced whenever
   /// BOTH are actually typed in.
   bool get _canSave =>
-      _titleController.text.trim().isNotEmpty && _selectedDays.isNotEmpty &&
+      _titleController.text.trim().isNotEmpty &&
+      _selectedDays.isNotEmpty &&
       (_startMinutes == null) == (_endMinutes == null) &&
       (_startMinutes == null || _endMinutes! > _startMinutes!) &&
       !_isSaving;
@@ -222,33 +223,64 @@ class _ZoneFormScreenState extends ConsumerState<_ZoneFormScreen> {
     if (!mounted) return;
     final start = _resolvedStartMinutes();
     final end = _resolvedEndMinutes(start);
-    setState(() { _isSaving = true; _overlapError = null; });
+    setState(() {
+      _isSaving = true;
+      _overlapError = null;
+    });
     try {
       final notifier = ref.read(zoneListProvider.notifier);
       final existing = widget.zone;
       final Zone saved;
       if (existing == null) {
-        final created = await notifier.paintWeeklyZones(title: _titleController.text,
-          facetId: _facetId, weekdays: _selectedDays, startMinutes: start, endMinutes: end);
+        final created = await notifier.paintWeeklyZones(
+          title: _titleController.text,
+          facetId: _facetId,
+          weekdays: _selectedDays,
+          startMinutes: start,
+          endMinutes: end,
+        );
         saved = created.first;
         for (final placement in created) {
           placement.notificationsEnabled = _notificationsEnabled;
           await notifier.updateZone(placement);
         }
       } else {
-        final facet = await ref.read(zoneFacetListProvider.notifier).resolve(_titleController.text,
-          id: _titleController.text.trim() == existing.title ? _facetId : null);
-        saved = Zone.fromJson({...existing.toJson(), 'title': facet.name, 'facetId': facet.id,
-          'startMinutes': start, 'endMinutes': end, 'notificationsEnabled': _notificationsEnabled,
-          if (existing.isWeeklyPlacement) 'weekday': _selectedDays.single});
+        final facet = await ref
+            .read(zoneFacetListProvider.notifier)
+            .resolve(
+              _titleController.text,
+              id: _titleController.text.trim() == existing.title
+                  ? _facetId
+                  : null,
+            );
+        saved = Zone.fromJson({
+          ...existing.toJson(),
+          'title': facet.name,
+          'facetId': facet.id,
+          'startMinutes': start,
+          'endMinutes': end,
+          'notificationsEnabled': _notificationsEnabled,
+          if (existing.isWeeklyPlacement) 'weekday': _selectedDays.single,
+        });
         await notifier.updateZone(saved);
       }
 
-      if (mounted) { Navigator.of(context).pop(ZoneFormResult(savedZoneId: saved.id)); }
+      if (mounted) {
+        Navigator.of(context).pop(ZoneFormResult(savedZoneId: saved.id));
+      }
     } catch (error) {
-      if (mounted) { setState(() => _overlapError = error is StateError ? error.message :
-        error is ArgumentError ? '${error.message}' : 'Could not save this zone.'); }
-    } finally { if (mounted) setState(() => _isSaving = false); }
+      if (mounted) {
+        setState(
+          () => _overlapError = error is StateError
+              ? error.message
+              : error is ArgumentError
+              ? '${error.message}'
+              : 'Could not save this zone.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
   /// Removes the zone being edited — requested directly: "Edit zone
@@ -286,7 +318,11 @@ class _ZoneFormScreenState extends ConsumerState<_ZoneFormScreen> {
   /// be just [an] instance"); see `createZone`'s own doc comment.
   void _seedFromExistingZone(ZoneFacet zone) {
     FocusManager.instance.primaryFocus?.unfocus();
-    setState(() { _titleController.text = zone.name; _facetId = zone.id; _isNameStage = false; });
+    setState(() {
+      _titleController.text = zone.name;
+      _facetId = zone.id;
+      _isNameStage = false;
+    });
   }
 
   /// Confirms stage 1 (Name) and advances to stage 2 — fired by stage 1's
@@ -387,19 +423,46 @@ class _ZoneFormScreenState extends ConsumerState<_ZoneFormScreen> {
         ),
       ),
       if (!_isEditing || widget.zone!.isWeeklyPlacement)
-      AppPane(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Every week', style: theme.textBody),
-        Row(children: [for (var day = 1; day <= 7; day++) Expanded(child: GestureDetector(
-          onTap: () => setState(() {
-            if (_isEditing) { _selectedDays = {day}; }
-            else if (_selectedDays.contains(day)) { _selectedDays = {..._selectedDays}..remove(day); }
-            else { _selectedDays = {..._selectedDays, day}; }
-          }),
-          child: Padding(padding: EdgeInsets.symmetric(vertical: theme.spacingSm), child: Text(
-            ['M','T','W','T','F','S','S'][day-1], textAlign: TextAlign.center,
-            style: theme.textBody.copyWith(color: _selectedDays.contains(day) ? theme.colorAccent : theme.colorTextTertiary))),
-        ))]),
-      ])),
+        AppPane(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Every week', style: theme.textBody),
+              Row(
+                children: [
+                  for (var day = 1; day <= 7; day++)
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setState(() {
+                          if (_isEditing) {
+                            _selectedDays = {day};
+                          } else if (_selectedDays.contains(day)) {
+                            _selectedDays = {..._selectedDays}..remove(day);
+                          } else {
+                            _selectedDays = {..._selectedDays, day};
+                          }
+                        }),
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(
+                            vertical: theme.spacingSm,
+                          ),
+                          child: Text(
+                            ['M', 'T', 'W', 'T', 'F', 'S', 'S'][day - 1],
+                            textAlign: TextAlign.center,
+                            style: theme.textBody.copyWith(
+                              color: _selectedDays.contains(day)
+                                  ? theme.colorAccent
+                                  : theme.colorTextTertiary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
       AppPane(
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -461,7 +524,9 @@ class _ZoneFormScreenState extends ConsumerState<_ZoneFormScreen> {
               title: 'Name',
               child: AppTextField(
                 controller: _titleController,
-                label: 'Zone name',
+                label: 'Add title',
+                // Bare — the shared style for every entity's name.
+                variant: AppTextFieldVariant.bare,
                 autofocus: !_isEditing,
                 onFocusChanged: (_) => setState(() {}),
                 onSubmitted: (_) => _confirmNameStage(),
@@ -534,7 +599,8 @@ class _ExistingZonesBrowserPane extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final zones = [...ref.watch(zoneFacetListProvider)]..sort((a,b) => a.name.compareTo(b.name));
+    final zones = [...ref.watch(zoneFacetListProvider)]
+      ..sort((a, b) => a.name.compareTo(b.name));
 
     if (zones.isEmpty) return const SizedBox.shrink();
 
@@ -614,4 +680,3 @@ class _ExistingZoneRow extends StatelessWidget {
     );
   }
 }
-

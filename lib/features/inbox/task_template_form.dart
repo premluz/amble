@@ -268,9 +268,13 @@ class _TaskTemplateFormState extends ConsumerState<_TaskTemplateForm> {
               title: 'Name',
               child: Column(
                 children: [
+                  // Bare — the shared style for every entity's name.
+                  // Description below keeps the filled chrome: a body
+                  // field, not the thing's title.
                   AppTextField(
                     controller: _titleController,
-                    label: 'Template name',
+                    label: 'Add title',
+                    variant: AppTextFieldVariant.bare,
                     autofocus: !_isEditing,
                     onSubmitted: (_) => _confirmNameStage(),
                   ),

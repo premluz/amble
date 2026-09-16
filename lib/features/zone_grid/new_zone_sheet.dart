@@ -150,7 +150,12 @@ class _NewZoneSheetState extends ConsumerState<NewZoneSheet> {
                     ),
                   ),
                   SizedBox(height: theme.spacingSm),
-                  AppTextField(controller: _title, label: 'Zone name'),
+                  // Bare — the shared style for every entity's name.
+                  AppTextField(
+                    controller: _title,
+                    label: 'Add title',
+                    variant: AppTextFieldVariant.bare,
+                  ),
                   if (names.isNotEmpty) ...[
                     SizedBox(height: theme.spacingSm),
                     Wrap(

@@ -1515,9 +1515,17 @@ class _NameDescriptionPaneState extends State<_NameDescriptionPane> {
     return AppPane(
       child: Column(
         children: [
+          // Bare, not filled — requested directly against a reference
+          // screenshot of this exact sheet: "we have it already but just
+          // replace Task name with new input." See
+          // [AppTextFieldVariant.bare]; the same style now carries every
+          // entity's NAME (task, zone, behavior, template). Description
+          // below deliberately keeps the filled chrome: it is a body
+          // field, not the thing's title.
           AppTextField(
             controller: widget.titleController,
-            label: 'Task name',
+            label: 'Add title',
+            variant: AppTextFieldVariant.bare,
             autofocus: widget.autofocusName,
             onSubmitted: (_) => widget.onNameSubmitted(),
           ),
@@ -2450,7 +2458,9 @@ class _DetailsStepScaffold extends ConsumerWidget {
                   children: [
                     AppTextField(
                       controller: titleController,
-                      label: 'Task name',
+                      label: 'Add title',
+                      // Bare — see the other Name field in this file.
+                      variant: AppTextFieldVariant.bare,
                       autofocus: onBack == null,
                     ),
                     SizedBox(height: theme.spacingSm),

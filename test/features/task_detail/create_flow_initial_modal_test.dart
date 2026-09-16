@@ -24,14 +24,14 @@ import 'package:amble/shared/repositories/hive_tracked_behavior_repository.dart'
 import '../../support/fake_notification_service.dart';
 import '../../support/seeded_category_box.dart';
 
-/// The real, typeable `TextField` inside the "Task name" `AppTextField` —
-/// NOT `find.widgetWithText(TextField, 'Task name')`, which looks for the
+/// The real, typeable `TextField` inside the "Add title" `AppTextField` —
+/// NOT `find.widgetWithText(TextField, 'Add title')`, which looks for the
 /// label text as a DESCENDANT of the TextField itself. `AppFieldShell`
 /// renders the floating label and the TextField as SIBLINGS, so that
 /// finder never matches anything; `AppTextField`'s own subtree does
 /// contain both, so descending through IT is what actually works.
 Finder _nameField() => find.descendant(
-  of: find.widgetWithText(AppTextField, 'Task name'),
+  of: find.widgetWithText(AppTextField, 'Add title'),
   matching: find.byType(TextField),
 );
 

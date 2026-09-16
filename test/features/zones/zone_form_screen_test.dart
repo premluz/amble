@@ -23,10 +23,10 @@ import 'package:amble/shared/repositories/hive_zone_repository.dart';
 
 import '../../support/fake_notification_service.dart';
 
-/// The real, typeable `TextField` inside the "Zone name" `AppTextField` —
+/// The real, typeable `TextField` inside the "Add title" `AppTextField` —
 /// same reasoning as `add_category_modal_test.dart`'s `_nameField`.
 Finder _nameField() => find.descendant(
-  of: find.widgetWithText(AppTextField, 'Zone name'),
+  of: find.widgetWithText(AppTextField, 'Add title'),
   matching: find.byType(TextField),
 );
 

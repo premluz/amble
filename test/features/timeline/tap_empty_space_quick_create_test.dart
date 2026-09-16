@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive_ce.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/hive_registrar.g.dart';
+import 'package:amble/core/widgets/app_text_field.dart';
 import 'package:amble/features/task_detail/quick_create_sheet_shell.dart';
 import 'package:amble/features/timeline/pending_task_draft_provider.dart';
 import 'package:amble/core/widgets/glass_pill_surface.dart';
@@ -494,17 +495,28 @@ void main() {
       expect(find.byType(PendingTaskPill), findsOneWidget);
       expect(find.byType(QuickCreateOverlay), findsOneWidget);
 
-      final gesture = await tester.startGesture(
-        tester.getCenter(find.byType(QuickCreateSheetHandle)),
-      );
-      await tester.pump();
-      await gesture.moveBy(const Offset(0, 150));
-      await tester.pump();
-      await gesture.moveBy(const Offset(0, 150));
-      await tester.pump();
-      await gesture.up();
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 250));
+      // The sheet has three states as of 2026-09-16 (see
+      // `quickCreateSheetMinimisedFraction`), so how far the pull travels
+      // decides where it lands. A big, decisive pull still closes in ONE
+      // gesture — measured: 300px on this viewport lands at fraction
+      // 0.041, well below the close threshold, without stopping at
+      // minimised on the way. (A moderate ~150px pull minimises instead;
+      // that path has its own test below.)
+      Future<void> dragDown(double distance) async {
+        final gesture = await tester.startGesture(
+          tester.getCenter(find.byType(QuickCreateSheetHandle)),
+        );
+        await tester.pump();
+        await gesture.moveBy(Offset(0, distance / 2));
+        await tester.pump();
+        await gesture.moveBy(Offset(0, distance / 2));
+        await tester.pump();
+        await gesture.up();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 250));
+      }
+
+      await dragDown(300);
 
       expect(
         find.byType(PendingTaskPill),
@@ -942,13 +954,15 @@ void main() {
         expect(
           widget.material,
           GlassPillMaterial.glass,
-          reason: 'the draft is airborne/provisional — it gets the frosted '
+          reason:
+              'the draft is airborne/provisional — it gets the frosted '
               'material, not the imported event\'s flat gray',
         );
         expect(
           widget.child,
           isNull,
-          reason: 'a draft has no category yet — any glyph would be '
+          reason:
+              'a draft has no category yet — any glyph would be '
               'inventing one',
         );
         // The frosted look requires a real blur behind it, not just a
@@ -1288,6 +1302,86 @@ void main() {
 
       expect(find.byType(QuickCreateOverlay), findsOneWidget);
       expect(find.byType(TemplateChip), findsNothing);
+    });
+  });
+
+  // The third sheet state, requested directly against a reference
+  // screenshot: "when scrolled, we need this state: just the title is
+  // shown, and there is this little handle to expand or tap to expand.
+  // When tapped, it expands to this mini sheet, not a minimized sheet,
+  // but a small sheet as it is at the beginning... So we need 3 states."
+  //
+  // Confirmed directly that a downward HANDLE DRAG is what collapses it
+  // (rather than scrolling the timeline behind it).
+  group('minimised state (2026-09-16)', () {
+    Future<void> openThenMinimise(WidgetTester tester) async {
+      await tester.tapAt(const Offset(220, 400));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      // A MODERATE pull: far enough to leave the small sheet, not so far
+      // that it closes outright (300px does — see the drag-to-close test).
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byType(QuickCreateSheetHandle)),
+      );
+      await tester.pump();
+      await gesture.moveBy(const Offset(0, 75));
+      await tester.pump();
+      await gesture.moveBy(const Offset(0, 75));
+      await tester.pump();
+      await gesture.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+
+    testWidgets('a moderate pull down minimises rather than closing — the '
+        'draft and its placeholder pill both survive', (tester) async {
+      await pumpTimeline(tester);
+      await openThenMinimise(tester);
+
+      expect(find.byType(QuickCreateOverlay), findsOneWidget);
+      expect(
+        find.byType(PendingTaskPill),
+        findsOneWidget,
+        reason: 'a minimised draft is still a live draft',
+      );
+    });
+
+    testWidgets('minimised shows ONLY the title — no Schedule, no template '
+        'strip, no editable field', (tester) async {
+      await pumpTimeline(tester);
+      await openThenMinimise(tester);
+
+      // The default draft name, rendered as plain text INSIDE the sheet.
+      // Scoped to the overlay: the placeholder pill on the Timeline
+      // renders the same name, so an unscoped finder matches twice.
+      expect(
+        find.descendant(
+          of: find.byType(QuickCreateOverlay),
+          matching: find.text('New task'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byType(AppTextField), findsNothing);
+      expect(find.text('Schedule'), findsNothing);
+      expect(find.byType(TemplateChipStrip), findsNothing);
+    });
+
+    testWidgets('tapping the minimised sheet restores the SMALL sheet, not '
+        'the full one', (tester) async {
+      await pumpTimeline(tester);
+      await openThenMinimise(tester);
+
+      await tester.tap(find.byType(QuickCreateSheetHandle));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      // Back to the small sheet: its own field and Schedule button are
+      // there again, and it did NOT skip ahead to the full pushed sheet
+      // (which would have replaced this overlay entirely).
+      expect(find.byType(QuickCreateOverlay), findsOneWidget);
+      expect(find.byType(AppTextField), findsOneWidget);
+      expect(find.text('Schedule'), findsOneWidget);
     });
   });
 }

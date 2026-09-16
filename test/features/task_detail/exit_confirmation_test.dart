@@ -164,13 +164,13 @@ Future<void> _pumpEditDetailsForm(
 /// — this helper types [title] into it and confirms with Done, advancing
 /// into stage 2's full form.
 Future<void> _nameTaskViaModal(WidgetTester tester, String title) async {
-  // NOT find.widgetWithText(TextField, 'Task name') — that finder needs
+  // NOT find.widgetWithText(TextField, 'Add title') — that finder needs
   // the label text as a DESCENDANT of the TextField, but AppFieldShell
   // renders the floating label and the TextField as siblings. Descending
   // through the AppTextField itself (whose subtree contains both) is what
   // actually locates the real field.
   final nameField = find.descendant(
-    of: find.widgetWithText(AppTextField, 'Task name'),
+    of: find.widgetWithText(AppTextField, 'Add title'),
     matching: find.byType(TextField),
   );
   await tester.enterText(nameField, title);
