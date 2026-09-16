@@ -779,19 +779,11 @@ class TaskCapsuleBlock extends StatelessWidget {
                         blockHeight: pillHeight,
                       ),
                       barAlignment: Alignment.topCenter,
-                      // See [ResizeHandle.outwardShiftFactor]'s own doc
-                      // comment: this pill sits inside a frosted wrapper
-                      // whose `ClipRRect` is ALWAYS present and clips
-                      // anything painted past the pill's own edge. A full
-                      // outward push made the dot vanish entirely ("on
-                      // task can't see at all now"); an attempt to paint
-                      // it as a sibling OUTSIDE that clip broke this
-                      // pill's own hit-test bounds under its real
-                      // `Positioned(left:, right:)` parent (reverted,
-                      // see `build`'s own doc comment on that attempt).
-                      // Half is what's actually visible under the clip
-                      // without touching this widget's layout at all.
-                      outwardShiftFactor: 0.5,
+                      // Back to the plain `1.0` default (no override) now
+                      // that the frosted wrapper no longer clips at rest
+                      // — see the `clipBehavior` comment on that wrapper.
+                      // This used to be a `0.5` compromise, which was the
+                      // most that stayed VISIBLE under that clip.
                       onDragStart: onResizeTopStart,
                       onDragUpdate: onResizeTopUpdate,
                       onDragEnd: onResizeTopEnd,
@@ -809,7 +801,6 @@ class TaskCapsuleBlock extends StatelessWidget {
                         blockHeight: pillHeight,
                       ),
                       barAlignment: Alignment.bottomCenter,
-                      outwardShiftFactor: 0.5,
                       onDragStart: onResizeStart,
                       onDragUpdate: onResizeUpdate,
                       onDragEnd: onResizeEnd,
@@ -1191,51 +1182,27 @@ class TaskCapsuleBlock extends StatelessWidget {
     // fill opacity, shadow — all via AnimatedContainer/TweenAnimationBuilder
     // rather than presence/absence of the wrapper), keeps the gesture's
     // render object ancestry stable across the whole drag.
-    // Tried, TWICE, and REVERTED: wrapping this return value in an outer
-    // layer (first a bare `Stack`, then an
-    // `IntrinsicHeight`/`IntrinsicWidth`-constrained one) to paint the
-    // resize dots' visible circle as a SIBLING outside the frosted
-    // wrapper's `ClipRRect` — which never clips a true sibling, only
-    // descendants, so this is the right shape in principle.
-    // [_buildFrostedWrapper] is kept as its own extracted method from
-    // that attempt (harmless on its own).
+    // The resize dots used to be CUT OFF here, reported repeatedly. Two
+    // attempts tried to move the dots OUT of this subtree — wrapping this
+    // return value in an outer `Stack` (then an `IntrinsicHeight`/
+    // `IntrinsicWidth`-constrained one) so they'd paint as siblings of
+    // the frosted wrapper rather than descendants of its `ClipRRect`.
+    // Both broke `multi_task_group_move_test.dart`'s real
+    // drag-on-the-pill tests outright and were reverted.
     //
-    // Both attempts broke `multi_task_group_move_test.dart`'s real
-    // drag-on-the-pill tests outright. What is NOT yet correctly
-    // diagnosed, despite two rounds of investigation — stated plainly
-    // rather than leaving a confident-sounding but wrong explanation for
-    // the next attempt to trust:
-    // - `TaskCapsuleBlock.build()`'s reported size under `splitLayout:
-    //   true` was measured DIRECTLY, on the unmodified/reverted code, as
-    //   the FULL stretched `Positioned(left:, right:)` width — NOT
-    //   narrowed to the pill, contradicting this comment's own earlier
-    //   claim (now known wrong) that the `Stack` wrapper was what caused
-    //   a sizing regression. The width was already full-stretch before
-    //   any of this session's changes.
-    // - `tester.drag`'s target point is `getCenter()` of the WHOLE
-    //   found widget (confirmed by reading `flutter_test`'s own
-    //   `controller.dart`), and the pill itself sits left-aligned within
-    //   that stretched row (`MainAxisAlignment.start`, no centering) —
-    //   which on paper means a plain `getCenter()` drag should ALREADY
-    //   miss the pill on today's working code too. It doesn't; the real
-    //   mechanism connecting these facts to what actually broke was not
-    //   pinned down before time was better spent stopping (confirmed
-    //   directly) than guessing a third implementation blind.
-    //
-    // Current state: resize handles keep `outwardShiftFactor: 0.5` (see
-    // their own call sites below) — a deliberate, measured, working
-    // half-visible compromise, not the fully-outside/un-clipped result
-    // still requested. A real fix needs the ACTUAL mechanism above
-    // pinned down with real device/full-integration measurement (not
-    // synthetic single-widget probes, which have twice produced
-    // measurements that didn't transfer to the real call site) before
-    // trying a third structural change here.
+    // The actual fix turned out to be in the wrapper itself, not out
+    // here: its `ClipRRect` now sets `clipBehavior: Clip.none` while
+    // resting, because at `t == 0` that clip is the only thing the
+    // wrapper does and all it does is cut. See its own comment for why
+    // that's safe. The dots then need no special handling at all —
+    // they're on the plain `outwardShiftFactor` default like every other
+    // caller. `_buildFrostedWrapper` is kept as its own method from those
+    // attempts (harmless, and it keeps this method readable).
     return _buildFrostedWrapper(theme: theme, isLifted: isLifted, card: card);
   }
 
-  /// Extracted from [build] so the always-present frosted wrapper can sit
-  /// as one child of a new outer `Stack` there, alongside the resize
-  /// dots' overlay siblings — see that call site's own doc comment.
+  /// The always-present frosted card wrapper — extracted from [build]
+  /// only to keep that method readable; it has no caller but [build].
   Widget _buildFrostedWrapper({
     required AmbleTheme theme,
     required bool isLifted,
@@ -1298,6 +1265,29 @@ class TaskCapsuleBlock extends StatelessWidget {
           ),
           child: ClipRRect(
             borderRadius: wrapperRadius,
+            // `Clip.none` while RESTING — this is what finally lets the
+            // resize dots paint outside the pill's own edge, after two
+            // reverted attempts that tried to move the dots OUT of this
+            // subtree instead (both broke this widget's layout; see
+            // `build`'s own history). Reported repeatedly, most recently
+            // "1 dots are positioned good but cut off."
+            //
+            // Safe precisely because this wrapper has NO visible shape of
+            // its own at rest — see this builder's own comment above:
+            // "no fill, no blur, no shadow at t=0, so its corner only
+            // ever matters for what it cuts." Every one of those is
+            // scaled by `t`, so at t==0 the clip is the ONLY thing this
+            // layer does, and all it does is cut. Once actually lifted
+            // (t>0) the frosted card IS visible, genuinely needs its
+            // corner, and clips again.
+            //
+            // This does NOT violate the always-present-tree rule the
+            // wrapper's own doc comment describes: that rule is about
+            // never ADDING or REMOVING render objects mid-gesture (which
+            // broke hit-test routing). `ClipRRect` stays in the tree at
+            // every `t`; only its clip BEHAVIOUR changes, exactly like
+            // the blur sigma and fill opacity beside it already do.
+            clipBehavior: t == 0 ? Clip.none : Clip.antiAlias,
             child: BackdropFilter(
               filter: ImageFilter.blur(
                 sigmaX: theme.blurOverlaySigma * t,

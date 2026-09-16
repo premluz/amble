@@ -228,4 +228,122 @@ void main() {
       expect(find.byType(ResizeHandle), findsNothing);
     });
   });
+
+  // Reported repeatedly across several rounds ("still cut off", "1 dots
+  // are positioned good but cut off"), and the hardest part of this to
+  // fix: the pill's resize dots are painted just OUTSIDE its own edges,
+  // but the frosted card wrapper around the whole row carries a
+  // `ClipRRect` that cut them off.
+  //
+  // Two attempts to move the dots OUT of that subtree instead both broke
+  // real drag behaviour and were reverted (see `TaskCapsuleBlock.build`'s
+  // own comment). The fix is that the wrapper doesn't clip while RESTING,
+  // because at rest it has no visible shape of its own — no fill, no
+  // blur, no shadow, all scaled by the same `t`. It still clips once
+  // lifted, where the frosted card IS visible and wants its corner.
+  group('the frosted wrapper does not clip the resize dots at rest', () {
+    testWidgets('resting: clipBehavior is Clip.none', (tester) async {
+      await pump(
+        tester,
+        editModeEnabled: true,
+        onResizeStart: (_) {},
+        onResizeUpdate: (_) {},
+        onResizeEnd: (_) {},
+      );
+
+      expect(
+        tester
+            .widgetList<ClipRRect>(find.byType(ClipRRect))
+            .map((c) => c.clipBehavior),
+        everyElement(Clip.none),
+        reason: 'a clipping wrapper at rest is what cut the dots off',
+      );
+    });
+
+    testWidgets('lifted: it clips again', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
+          home: Scaffold(
+            body: TaskCapsuleBlock(
+              task: task,
+              editModeEnabled: true,
+              isSelected: true,
+              isLifted: true,
+              onResizeStart: (_) {},
+              onResizeUpdate: (_) {},
+              onResizeEnd: (_) {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widgetList<ClipRRect>(find.byType(ClipRRect))
+            .map((c) => c.clipBehavior),
+        contains(Clip.antiAlias),
+        reason: 'the frosted card is genuinely visible while lifted and '
+            'needs its own corner clipped',
+      );
+    });
+
+    testWidgets('the dots sit just outside the pill, not inside it', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: TaskCapsuleBlock(
+                task: task,
+                splitLayout: true,
+                editModeEnabled: true,
+                isSelected: true,
+                onResizeTopStart: (_) {},
+                onResizeTopUpdate: (_) {},
+                onResizeTopEnd: (_) {},
+                onResizeStart: (_) {},
+                onResizeUpdate: (_) {},
+                onResizeEnd: (_) {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final pill = tester.getRect(find.byType(TaskCapsuleBlock));
+      // Scoped to each `ResizeHandle`'s OWN dot: a bare circle-shaped
+      // predicate also matches an unrelated, zero-width collapsed
+      // Container elsewhere in the pill.
+      final dots = find
+          .byType(ResizeHandle)
+          .evaluate()
+          .map(
+            (handle) => tester.getRect(
+              find.descendant(
+                of: find.byWidget(handle.widget),
+                matching: find.byWidgetPredicate(
+                  (w) =>
+                      w is Container &&
+                      (w.decoration as BoxDecoration?)?.shape ==
+                          BoxShape.circle,
+                ),
+              ),
+            ),
+          )
+          .toList();
+
+      expect(dots, hasLength(2));
+      // Each dot's outer edge lands flush ON the pill's own edge, so the
+      // whole dot sits beyond it — adjacent to the border, not overlapping
+      // it and not floating away from it.
+      expect(dots.first.bottom, moreOrLessEquals(pill.top, epsilon: 0.5));
+      expect(dots.last.top, moreOrLessEquals(pill.bottom, epsilon: 0.5));
+    });
+  });
 }

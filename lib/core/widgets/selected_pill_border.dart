@@ -60,7 +60,12 @@ class SelectedPillBorder extends StatelessWidget {
   /// The pill's own fill, painted by this widget at the correctly-inset
   /// radius — not by the caller's own separate decoration, which is what
   /// caused the mismatched corners above.
-  final Color fillColor;
+  ///
+  /// Null for a caller whose fill isn't a flat colour at all: the
+  /// quick-create draft's rail is a blurred `GlassPillSurface`, which it
+  /// passes as [child] and paints itself. This widget then contributes
+  /// only its two rings, leaving that glass fully visible underneath.
+  final Color? fillColor;
 
   /// The pill's content (e.g. its title) — painted on top of [fillColor],
   /// inside both rings.
@@ -122,14 +127,21 @@ class SelectedPillBorder extends StatelessWidget {
     // pill").
     return Stack(
       children: [
-        Positioned.fill(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: fillColor,
-              borderRadius: fillRadius,
+        // Skipped entirely when [fillColor] is null — the caller is
+        // painting its own fill inside [child] instead, and a flat colour
+        // underneath would either be invisible or (for a translucent one)
+        // muddy it. `PendingTaskPill` does exactly this: its fill is a
+        // blurred `GlassPillSurface`, which has no single colour to hand
+        // over here.
+        if (fillColor != null)
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: fillColor,
+                borderRadius: fillRadius,
+              ),
             ),
           ),
-        ),
         Positioned.fill(
           child: IgnorePointer(
             child: DecoratedBox(

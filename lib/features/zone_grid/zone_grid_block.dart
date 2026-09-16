@@ -193,7 +193,6 @@ class ZoneGridBlock extends StatelessWidget {
                   // `Clip.none`, same as that container's), so it gets
                   // the same full `1.5` push.
                   barAlignment: Alignment.topCenter,
-                  outwardShiftFactor: 1.5,
                   onDragStart: onResizeTopStart,
                   onDragUpdate: onResizeTopUpdate,
                   onDragEnd: onResizeTopEnd,
@@ -207,7 +206,6 @@ class ZoneGridBlock extends StatelessWidget {
                 child: ResizeHandle(
                   theme: theme,
                   barAlignment: Alignment.bottomCenter,
-                  outwardShiftFactor: 1.5,
                   onDragStart: onResizeBottomStart,
                   onDragUpdate: onResizeBottomUpdate,
                   onDragEnd: onResizeBottomEnd,

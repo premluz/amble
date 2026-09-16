@@ -430,7 +430,6 @@ class ZoneContainerBlock extends StatelessWidget {
               // block's edge but still read as too subtle at real
               // screen density to look "outside," so it's now pushed
               // half again as far.
-              outwardShiftFactor: 1.5,
               onDragStart: onResizeTopStart,
               onDragUpdate: onResizeTopUpdate,
               onDragEnd: onResizeTopEnd,
@@ -445,7 +444,6 @@ class ZoneContainerBlock extends StatelessWidget {
             child: ResizeHandle(
               theme: theme,
               barAlignment: Alignment.bottomCenter,
-              outwardShiftFactor: 1.5,
               onDragStart: onResizeBottomStart,
               onDragUpdate: onResizeBottomUpdate,
               onDragEnd: onResizeBottomEnd,

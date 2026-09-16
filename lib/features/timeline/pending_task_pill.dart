@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/glass_pill_surface.dart';
+import '../../core/widgets/selected_pill_border.dart';
 import 'edit_mode_wiggle.dart';
 import 'resize_handle.dart';
 import 'task_edge_time_label.dart';
@@ -227,10 +228,28 @@ class PendingTaskPill extends StatelessWidget {
                       //
                       // No child: a draft has no category until the user
                       // picks one, so any glyph would be inventing one.
-                      GlassPillSurface(
+                      //
+                      // Wrapped in the SHARED `SelectedPillBorder` —
+                      // requested directly ("new task should also have
+                      // blue border", and "same style, unified,
+                      // reusable"), so this draft reads as editable the
+                      // same way a selected task or zone does. Always on,
+                      // with no `isSelected` flag of its own: this pill
+                      // only exists WHILE being placed, so it is always
+                      // the thing being edited.
+                      //
+                      // `fillColor: null` — the glass below is the fill,
+                      // and a flat colour underneath it would muddy the
+                      // blur. See that parameter's own doc comment.
+                      SelectedPillBorder(
                         theme: theme,
-                        width: width,
-                        height: height,
+                        contentRadius: BorderRadius.circular(theme.radiusPill),
+                        fillColor: null,
+                        child: GlassPillSurface(
+                          theme: theme,
+                          width: width,
+                          height: height,
+                        ),
                       ),
                     ],
                   ),
@@ -262,7 +281,6 @@ class PendingTaskPill extends StatelessWidget {
                     // `Stack` is `Clip.none`), so it gets the same full
                     // push.
                     barAlignment: Alignment.topCenter,
-                    outwardShiftFactor: 1.5,
                     onDragStart: onResizeTopStart,
                     onDragUpdate: (details) =>
                         onResizeTopUpdate(details.delta.dy),
@@ -280,7 +298,6 @@ class PendingTaskPill extends StatelessWidget {
                       blockHeight: height,
                     ),
                     barAlignment: Alignment.bottomCenter,
-                    outwardShiftFactor: 1.5,
                     onDragStart: onResizeStart,
                     onDragUpdate: (details) => onResizeUpdate(details.delta.dy),
                     onDragEnd: (_) => onResizeEnd(),
