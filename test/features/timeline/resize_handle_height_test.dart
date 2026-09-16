@@ -41,11 +41,37 @@ void main() {
     expect(badgeFloored - handle * 2, greaterThan(0));
   });
 
-  test('handles never shrink below the minimum hittable size, even on an '
-      'absurdly short block', () {
-    // Better a cramped move band than two handles too small to grab.
-    expect(resizeHandleHeightFor(theme: theme, blockHeight: 4), 8.0);
-    expect(resizeHandleHeightFor(theme: theme, blockHeight: 0), 8.0);
+  // **Reversed directly** ("small tasks have issue the bottom resize dot
+  // is mispositioned"): the original version of this test asserted BOTH
+  // handles stay at the 8px floor even on a 4px or 0px block — which
+  // means two 8px-tall, full-width `Positioned(top:0)`/`Positioned(
+  // bottom:0)` boxes genuinely overlapping each other on any block
+  // shorter than 16px. That overlap is exactly what put the bottom
+  // handle's dot in the wrong place: its own box extended past the
+  // block's midpoint into the top handle's territory, so `barAlignment:
+  // bottomCenter` positioned the dot against a bottom edge that wasn't
+  // where the pill's real bottom actually was. Two handles too small to
+  // grab is a worse-but-safe outcome than two handles that corrupt each
+  // other's geometry.
+  test('each handle shrinks to at most half the block height, so the two '
+      'can never overlap even on an absurdly short block', () {
+    expect(resizeHandleHeightFor(theme: theme, blockHeight: 4), 2.0);
+    expect(resizeHandleHeightFor(theme: theme, blockHeight: 0), 0.0);
+    // Still floors at 8px once the block is tall enough for that floor
+    // to fit both handles without crossing the midpoint.
+    expect(resizeHandleHeightFor(theme: theme, blockHeight: 16), 8.0);
+    expect(resizeHandleHeightFor(theme: theme, blockHeight: 20), 8.0);
+  });
+
+  test('a top and bottom handle pair never overlaps, at any block height', () {
+    for (var h = 0.0; h <= 80.0; h += 1) {
+      final handle = resizeHandleHeightFor(theme: theme, blockHeight: h);
+      expect(
+        handle * 2,
+        lessThanOrEqualTo(h),
+        reason: 'two $handle-tall handles must fit within a ${h}px block',
+      );
+    }
   });
 
   test('the move band grows monotonically with block height', () {

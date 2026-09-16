@@ -169,7 +169,25 @@ double taskResizeHandleHeightFor({
   final minMoveBand = theme.spacingLg;
   if (blockHeight - generous * 2 >= minMoveBand) return generous;
   final fitted = (blockHeight - minMoveBand) / 2;
-  return math.max(_minHandleHeight, math.min(generous, fitted));
+  // Floored at `_minHandleHeight`, but never past `blockHeight / 2` —
+  // reported directly ("small tasks have issue the bottom resize dot is
+  // mispositioned"). `bottomTrim`/`maxPillHeight` can push a pill's real
+  // height below the badge floor this function was originally reasoned
+  // against (see their own doc comments — "can go below badgeSize, that's
+  // the whole point"), and on a pill under 16px tall, two 8px-floored
+  // handles (`top:0` and `bottom:0`, each spanning the block's full
+  // width) genuinely overlapped: the bottom handle's own box extended
+  // past the pill's midpoint into the top handle's territory, so its
+  // dot — aligned to that box's own bottom edge, then nudged further
+  // outward — rendered below where the pill's actual bottom edge was.
+  // Halving `blockHeight` when even the floor doesn't fit guarantees the
+  // two handles' boxes meet exactly at the midpoint and never cross,
+  // trading away the move band entirely on a pill this short rather than
+  // letting the handles corrupt each other's geometry.
+  return math.min(
+    math.max(_minHandleHeight, math.min(generous, fitted)),
+    blockHeight / 2,
+  );
 }
 
 /// A comfortable resize target on a pill with room for one — `spacingLg`
@@ -201,7 +219,13 @@ double resizeHandleHeightFor({
   final byDefault = theme.spacingMd;
   if (blockHeight - byDefault * 2 >= minMoveBand) return byDefault;
   final fitted = (blockHeight - minMoveBand) / 2;
-  return math.max(_minHandleHeight, math.min(byDefault, fitted));
+  // Same `blockHeight / 2` cap as `taskResizeHandleHeightFor` — see that
+  // function's own doc comment for the overlap bug this guards against
+  // on a block shorter than `2 * _minHandleHeight`.
+  return math.min(
+    math.max(_minHandleHeight, math.min(byDefault, fitted)),
+    blockHeight / 2,
+  );
 }
 
 /// Below this a handle is too small to hit reliably on a real device.
