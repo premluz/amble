@@ -145,10 +145,6 @@ class TemplateRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final resolved = category;
-    final badgeColor = resolved == null
-        ? theme.categoryColors[TaskCategoryToken.general]!
-        : resolveCategoryVisual(theme: theme, category: resolved).pillColor;
     final badgeSize = theme.spacingXl;
 
     return AppPressFeedback(
@@ -167,26 +163,7 @@ class TemplateRow extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Container(
-              width: badgeSize,
-              height: badgeSize,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: badgeColor,
-                shape: BoxShape.circle,
-              ),
-              child: resolved == null
-                  ? Icon(
-                      builtInIconFor(BuiltInCategoryIds.general),
-                      size: badgeSize * 0.5,
-                      color: glyphColorOn(badgeColor),
-                    )
-                  : CategoryGlyph(
-                      category: resolved,
-                      color: glyphColorOn(badgeColor),
-                      size: badgeSize * 0.5,
-                    ),
-            ),
+            CategoryBadge(theme: theme, category: category, size: badgeSize),
             SizedBox(width: theme.spacingSm),
             Expanded(
               child: Column(

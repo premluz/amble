@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:tabler_icons_plus/tabler_icons_plus.dart';
 
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/glass_pill_surface.dart';
@@ -305,9 +306,12 @@ class DashedPillRail extends StatelessWidget {
           alignment: Alignment.topCenter,
           child: SizedBox(
             height: theme.sizeTaskBadge,
+            // Tabler, not a Material icon — matches every category glyph
+            // elsewhere now using the Tabler set (reported directly: "the
+            // calendar icon for imported needs to come from new set").
             child: Center(
               child: Icon(
-                Icons.calendar_today_outlined,
+                TablerIcons.calendar,
                 size: theme.sizeTaskBadge * 0.55,
                 color: theme.colorTextSecondary,
               ),

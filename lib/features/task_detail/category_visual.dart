@@ -45,7 +45,12 @@ CategoryVisual resolveCategoryVisual({
 /// A curated set of Tabler glyphs offered in the new/edit-category picker
 /// — hand-picked, not the full ~6,250-icon set, matching how the old
 /// curated emoji set (`add_category_modal.dart`'s `_curatedCategoryEmoji`)
-/// was never a full emoji-picker either.
+/// was never a full emoji-picker either. Broadened from the original
+/// 16-icon set — requested directly: "add more icons... broader choice
+/// of icons that represent tasks, lifestyle, etc. Not UI or anything
+/// like that" — every addition is a concrete real-world thing (a
+/// lifestyle domain, an activity, an object), never a generic app/UI
+/// glyph (no gear, no bell, no generic arrow/chevron).
 const List<IconData> curatedCategoryIcons = [
   TablerIcons.circle,
   TablerIcons.heart,
@@ -63,6 +68,54 @@ const List<IconData> curatedCategoryIcons = [
   TablerIcons.pig,
   TablerIcons.paw,
   TablerIcons.music,
+  // Health & fitness.
+  TablerIcons.dumbbell,
+  TablerIcons.yoga,
+  TablerIcons.pill,
+  TablerIcons.stethoscope,
+  TablerIcons.bike,
+  TablerIcons.walk,
+  TablerIcons.swimming,
+  // Food & drink.
+  TablerIcons.apple,
+  TablerIcons.salad,
+  TablerIcons.coffee,
+  TablerIcons.toolsKitchen,
+  TablerIcons.pizza,
+  // Rest & routine.
+  TablerIcons.bed,
+  TablerIcons.moon,
+  TablerIcons.sun,
+  TablerIcons.sunrise,
+  TablerIcons.hourglass,
+  // Money & shopping.
+  TablerIcons.wallet,
+  TablerIcons.cashBanknote,
+  TablerIcons.gift,
+  // Family & pets.
+  TablerIcons.users,
+  TablerIcons.babyCarriage,
+  TablerIcons.dog,
+  TablerIcons.cat,
+  // Places & travel.
+  TablerIcons.car,
+  TablerIcons.map,
+  TablerIcons.compass,
+  // Nature.
+  TablerIcons.tree,
+  TablerIcons.leaf,
+  // Communication.
+  TablerIcons.phone,
+  TablerIcons.mail,
+  // Creative & hobbies.
+  TablerIcons.palette,
+  TablerIcons.camera,
+  TablerIcons.guitarPick,
+  TablerIcons.shirt,
+  // Achievement.
+  TablerIcons.trophy,
+  TablerIcons.target,
+  TablerIcons.checklist,
 ];
 
 /// The built-in categories' default Tabler glyph — requested directly:
@@ -144,6 +197,88 @@ class CategoryGlyph extends StatelessWidget {
     if (icon != null) return Icon(icon, size: size, color: color);
     if (category.emoji.isEmpty) return const SizedBox.shrink();
     return Text(category.emoji, style: TextStyle(fontSize: size));
+  }
+}
+
+/// The shared category badge: a colored circle or pill holding a
+/// centered [CategoryGlyph] — one reusable widget every render site that
+/// draws "a colored shape with a category icon in it" now uses, instead
+/// of each independently reimplementing `Container(decoration:...) ->
+/// Center -> Icon` with its own slightly different glyph-to-badge ratio.
+/// Reported directly: "all other pills should be [a] consistent padding
+/// scale of icon, ensure using [the] same class[,] reusable."
+///
+/// [category] null renders the General fallback (a plain outline circle,
+/// [BuiltInCategoryIds.general]'s own default) rather than requiring
+/// every caller to branch on "no category assigned" itself — mirrors the
+/// identical null-handling every call site already had inline.
+///
+/// [shape] is deliberately a parameter, not a fixed choice: this app has
+/// two genuinely different existing badge shapes in use on purpose —
+/// [BoxShape.circle] (the Inbox's own toggle badge, template rows,
+/// category list) and the "Pill shape" setting's own [radiusPill] rung
+/// (task/zone pills, which must keep tracking that setting) — unifying
+/// the WIDGET does not mean forcing one shape where two were each chosen
+/// deliberately.
+class CategoryBadge extends StatelessWidget {
+  const CategoryBadge({
+    super.key,
+    required this.theme,
+    required this.category,
+    required this.size,
+    this.shape = BoxShape.circle,
+    this.glyphSizeRatio = 0.55,
+  });
+
+  final AmbleTheme theme;
+  final Category? category;
+
+  /// Width and height of the badge square.
+  final double size;
+  final BoxShape shape;
+
+  /// The glyph's size as a fraction of [size] — 0.55 by default, matching
+  /// the ratio already tuned for `sizeTaskBadge`-scale badges (Task view,
+  /// Zone view, imported events). A badge much smaller than that scale
+  /// (e.g. the quick-create mini sheet's template chips, `spacingLg`) can
+  /// override this: a thin-stroke Tabler icon at the same 0.55 ratio read
+  /// as too small on that badge specifically, reported directly ("Badge
+  /// on add task sheet icons too small").
+  final double glyphSizeRatio;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolvedCategory = category;
+    final badgeColor = resolvedCategory == null
+        ? theme.categoryColors[TaskCategoryToken.general]!
+        : resolveCategoryVisual(
+            theme: theme,
+            category: resolvedCategory,
+          ).pillColor;
+
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: badgeColor,
+        shape: shape == BoxShape.circle ? BoxShape.circle : BoxShape.rectangle,
+        borderRadius: shape == BoxShape.circle
+            ? null
+            : BorderRadius.circular(theme.radiusPill),
+      ),
+      child: resolvedCategory == null
+          ? Icon(
+              builtInIconFor(BuiltInCategoryIds.general),
+              size: size * glyphSizeRatio,
+              color: glyphColorOn(badgeColor),
+            )
+          : CategoryGlyph(
+              category: resolvedCategory,
+              color: glyphColorOn(badgeColor),
+              size: size * glyphSizeRatio,
+            ),
+    );
   }
 }
 

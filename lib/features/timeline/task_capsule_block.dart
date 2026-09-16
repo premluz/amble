@@ -720,42 +720,71 @@ class TaskCapsuleBlock extends StatelessWidget {
                               fillColor: badgeColor,
                               child: Align(
                                 alignment: Alignment.topCenter,
-                                child: Opacity(
-                                  opacity: glyphHidden ? 0 : 1,
-                                  child: categoryVisual.icon != null
-                                      ? Icon(
-                                          categoryVisual.icon,
-                                          size: badgeSize * 0.55,
-                                          color: glyphColorOn(
-                                            categoryVisual.pillColor,
-                                          ),
-                                        )
-                                      : Text(
-                                          categoryVisual.emoji,
-                                          style: TextStyle(
-                                            fontSize: badgeSize * 0.55,
-                                          ),
-                                        ),
+                                // Fixed badgeSize square, glyph CENTERED
+                                // inside it — not just top-aligned in
+                                // whatever space Align gives it. An emoji
+                                // Text happened to read as centered here
+                                // by coincidence (its own font
+                                // ascent/leading roughly matched); a
+                                // Tabler Icon's tight glyph bounds sat
+                                // flush to the very top instead, reported
+                                // directly as needing "new alignments...
+                                // lacks padding."
+                                child: SizedBox(
+                                  width: badgeSize,
+                                  height: badgeSize,
+                                  child: Center(
+                                    child: Opacity(
+                                      opacity: glyphHidden ? 0 : 1,
+                                      child: categoryVisual.icon != null
+                                          ? Icon(
+                                              categoryVisual.icon,
+                                              size: badgeSize * 0.55,
+                                              color: glyphColorOn(
+                                                categoryVisual.pillColor,
+                                              ),
+                                            )
+                                          : Text(
+                                              categoryVisual.emoji,
+                                              style: TextStyle(
+                                                fontSize: badgeSize * 0.55,
+                                              ),
+                                            ),
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
                           )
-                        : Opacity(
-                            opacity: glyphHidden ? 0 : 1,
-                            child: categoryVisual.icon != null
-                                ? Icon(
-                                    categoryVisual.icon,
-                                    size: badgeSize * 0.55,
-                                    color: glyphColorOn(
-                                      categoryVisual.pillColor,
-                                    ),
-                                  )
-                                : Text(
-                                    categoryVisual.emoji,
-                                    style: TextStyle(
-                                      fontSize: badgeSize * 0.55,
-                                    ),
-                                  ),
+                        // Same fixed badgeSize-square + Center fix as the
+                        // selected branch above — this AnimatedContainer's
+                        // own `alignment: topCenter` (set higher up) only
+                        // pins the child to the top of the WHOLE pill
+                        // height, not a centered badgeSize square, which
+                        // is what left a Tabler Icon looking flush to the
+                        // top edge instead of centered in its badge.
+                        : SizedBox(
+                            width: badgeSize,
+                            height: badgeSize,
+                            child: Center(
+                              child: Opacity(
+                                opacity: glyphHidden ? 0 : 1,
+                                child: categoryVisual.icon != null
+                                    ? Icon(
+                                        categoryVisual.icon,
+                                        size: badgeSize * 0.55,
+                                        color: glyphColorOn(
+                                          categoryVisual.pillColor,
+                                        ),
+                                      )
+                                    : Text(
+                                        categoryVisual.emoji,
+                                        style: TextStyle(
+                                          fontSize: badgeSize * 0.55,
+                                        ),
+                                      ),
+                              ),
+                            ),
                           ),
                   ),
                 ),

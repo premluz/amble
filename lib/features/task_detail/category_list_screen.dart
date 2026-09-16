@@ -148,10 +148,18 @@ class _CategoryRow extends StatelessWidget {
               height: theme.spacingXl,
               alignment: Alignment.center,
               decoration: BoxDecoration(color: swatch, shape: BoxShape.circle),
+              // Not CategoryBadge — this row deliberately reads the raw
+              // 12-swatch color by colorToken regardless of built-in
+              // status (this IS the Tags management list; showing each
+              // row's own assigned swatch, not a built-in override, is
+              // the point here), which CategoryBadge's own fill logic
+              // (resolveCategoryVisual, built-in-aware) doesn't produce.
+              // Ratio bumped to CategoryBadge's own 0.55 default for
+              // consistency, without adopting its differing fill color.
               child: CategoryGlyph(
                 category: category,
                 color: glyphColorOn(swatch),
-                size: theme.spacingXl * 0.5,
+                size: theme.spacingXl * 0.55,
               ),
             ),
             SizedBox(width: theme.spacingSm),

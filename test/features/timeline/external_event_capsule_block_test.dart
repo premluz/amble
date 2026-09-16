@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:tabler_icons_plus/tabler_icons_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/features/timeline/external_event_capsule_block.dart';
@@ -77,7 +78,7 @@ void main() {
         .getTopLeft(
           find
               .ancestor(
-                of: find.byIcon(Icons.calendar_today_outlined),
+                of: find.byIcon(TablerIcons.calendar),
                 matching: find.byType(SizedBox),
               )
               .first,
@@ -141,7 +142,7 @@ void main() {
   testWidgets('renders a calendar icon on the rail (the visual distinction '
       'from a real task\'s category icon)', (tester) async {
     await pump(tester);
-    expect(find.byIcon(Icons.calendar_today_outlined), findsOneWidget);
+    expect(find.byIcon(TablerIcons.calendar), findsOneWidget);
   });
 
   testWidgets(

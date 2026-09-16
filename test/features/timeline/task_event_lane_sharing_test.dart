@@ -1,5 +1,6 @@
 import 'package:device_calendar/device_calendar.dart' as dc;
 import 'package:flutter/material.dart';
+import 'package:tabler_icons_plus/tabler_icons_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive_ce.dart';
@@ -208,7 +209,7 @@ void main() {
           .getTopLeft(
             find
                 .ancestor(
-                  of: find.byIcon(Icons.calendar_today_outlined),
+                  of: find.byIcon(TablerIcons.calendar),
                   matching: find.byType(SizedBox),
                 )
                 .first,

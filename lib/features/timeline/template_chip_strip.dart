@@ -122,10 +122,6 @@ class TemplateChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final resolved = category;
-    final badgeColor = resolved == null
-        ? theme.categoryColors[TaskCategoryToken.general]!
-        : resolveCategoryVisual(theme: theme, category: resolved).pillColor;
     // Smaller than TemplateRow's own `spacingXl` badge — these chips sit
     // in a much shorter row and carry no second line of text to balance
     // a full-size badge against.
@@ -149,25 +145,18 @@ class TemplateChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: badgeSize,
-              height: badgeSize,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: badgeColor,
-                shape: BoxShape.circle,
-              ),
-              child: resolved == null
-                  ? Icon(
-                      builtInIconFor(BuiltInCategoryIds.general),
-                      size: badgeSize * 0.5,
-                      color: glyphColorOn(badgeColor),
-                    )
-                  : CategoryGlyph(
-                      category: resolved,
-                      color: glyphColorOn(badgeColor),
-                      size: badgeSize * 0.5,
-                    ),
+            // 0.65, not CategoryBadge's own 0.55 default — reported
+            // directly ("Badge on add task sheet icons too small"): a
+            // Tabler icon's thin stroke reads smaller than an emoji
+            // glyph did at the identical nominal size, on this app's
+            // smallest badge (`spacingLg`, vs. `sizeTaskBadge`
+            // everywhere else CategoryBadge's default ratio was tuned
+            // for).
+            CategoryBadge(
+              theme: theme,
+              category: category,
+              size: badgeSize,
+              glyphSizeRatio: 0.65,
             ),
             SizedBox(width: theme.spacingSm),
             // No duration line here, unlike TemplateRow — see
