@@ -25,10 +25,12 @@ import '../../support/fake_notification_service.dart';
 import '../../support/seeded_category_box.dart';
 
 /// Covers the Add Task sheet's inline template browser (stage 1 / Name
-/// stage only) — requested directly: "on the Add Task sheet, under Task
-/// Name, let's list the templates ... Templates just as they are rendered
-/// in the Template tab in Inbox, without these three dots." Narrowed to
-/// templates only (no Tasks tab) via a direct follow-up.
+/// stage only). Originally requested to match the Inbox's own template
+/// row ("Templates just as they are rendered in the Template tab in
+/// Inbox, without these three dots"), then revised: "Templates view in
+/// add task should be same as in mini sheet quick task add: no heading,
+/// small pills scrollable across under title." Now renders the same
+/// `TemplateChipStrip` the quick-create mini sheet uses.
 Finder _nameField() => find.descendant(
   of: find.widgetWithText(AppTextField, 'Add title'),
   matching: find.byType(TextField),
@@ -144,28 +146,25 @@ void main() {
     await templateBox.close();
   });
 
-  testWidgets(
-    'the Name stage lists saved templates, matching the Inbox\'s own row '
-    'but with no "more" (three-dot) affordance',
-    (tester) async {
-      await seedWalkTemplate(tester);
-      final navigatorKey = await _pumpHost(
-        tester,
-        box: box,
-        categoryBox: categoryBox,
-        trackedBehaviorBox: trackedBehaviorBox,
-        templateBox: templateBox,
-      );
-      showTaskDetailSheet(
-        navigatorKey.currentContext!,
-        initialScheduledAt: DateTime(2026, 8, 20, 9),
-      );
-      await tester.pumpAndSettle();
+  testWidgets('the Name stage lists saved templates as chips, with no "more" '
+      '(three-dot) affordance', (tester) async {
+    await seedWalkTemplate(tester);
+    final navigatorKey = await _pumpHost(
+      tester,
+      box: box,
+      categoryBox: categoryBox,
+      trackedBehaviorBox: trackedBehaviorBox,
+      templateBox: templateBox,
+    );
+    showTaskDetailSheet(
+      navigatorKey.currentContext!,
+      initialScheduledAt: DateTime(2026, 8, 20, 9),
+    );
+    await tester.pumpAndSettle();
 
-      expect(find.text('Take a walk'), findsOneWidget);
-      expect(find.byIcon(Icons.more_horiz_rounded), findsNothing);
-    },
-  );
+    expect(find.text('Take a walk'), findsOneWidget);
+    expect(find.byIcon(Icons.more_horiz_rounded), findsNothing);
+  });
 
   testWidgets(
     'the template browser is gone once stage 2 (schedule fields) reveals',
@@ -194,7 +193,7 @@ void main() {
   );
 
   testWidgets(
-    'tapping a template row seeds THIS open form and advances to stage 2 '
+    'tapping a template chip seeds THIS open form and advances to stage 2 '
     '— it does not push a second sheet',
     (tester) async {
       await seedWalkTemplate(tester);

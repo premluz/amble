@@ -28,10 +28,9 @@ import '../../shared/providers/category_providers.dart';
 import '../../shared/models/task_template.dart';
 import '../../shared/providers/preferences_providers.dart';
 import '../../shared/providers/task_providers.dart';
-import '../../shared/providers/task_template_providers.dart';
 import '../../shared/providers/tracked_behavior_providers.dart';
 import '../../shared/services/overlap_checker.dart';
-import '../inbox/template_list_view.dart' show TemplateRow;
+import '../timeline/template_chip_strip.dart';
 import 'category_visual.dart';
 import 'task_category_modal.dart';
 import 'task_duration_modal.dart';
@@ -1092,6 +1091,7 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
             }
           }),
           onTemplateSelected: _seedFromTemplate,
+          selectedTemplateId: _templateId,
         ),
       ),
     );
@@ -1148,6 +1148,7 @@ class _ScheduleFieldsStage extends ConsumerWidget {
     required this.onRepeatsChanged,
     required this.onDayToggled,
     required this.onTemplateSelected,
+    this.selectedTemplateId,
   });
 
   final AmbleTheme theme;
@@ -1183,6 +1184,10 @@ class _ScheduleFieldsStage extends ConsumerWidget {
   /// widget's own doc comment. Only rendered while [showScheduleFields] is
   /// false (stage 1 / Name stage), same gating as everything below it.
   final ValueChanged<TaskTemplate> onTemplateSelected;
+
+  /// Marks the applied chip in [_TemplateBrowserPane] — mirrors the mini
+  /// sheet's own [TemplateChipStrip.selectedTemplateId].
+  final String? selectedTemplateId;
 
   final Category? category;
   final DateTime date;
@@ -1380,7 +1385,11 @@ class _ScheduleFieldsStage extends ConsumerWidget {
           // reveals, same as every other stage-1-only affordance here.
           if (!showScheduleFields) ...[
             SizedBox(height: theme.spacingLg),
-            _TemplateBrowserPane(theme: theme, onSelected: onTemplateSelected),
+            _TemplateBrowserPane(
+              theme: theme,
+              onSelected: onTemplateSelected,
+              selectedTemplateId: selectedTemplateId,
+            ),
           ],
           if (showScheduleFields) ...[
             SizedBox(height: theme.spacingLg),
@@ -1396,63 +1405,43 @@ class _ScheduleFieldsStage extends ConsumerWidget {
   }
 }
 
-/// Stage 1's inline template browser — requested directly: "on the Add
-/// Task sheet, under Task Name, let's list the templates and tasks in the
-/// same way... Templates just as they are rendered in the Template tab in
-/// Inbox, without these three dots." Narrowed to templates only (no tabs,
-/// no task list) via a direct follow-up: tapping an Inbox TASK row here
-/// would be ambiguous (seed a new task from it, leaving the original
-/// inbox task untouched and duplicated, vs. switching this form into
-/// editing that specific task) in a way tapping a TEMPLATE never is — a
-/// template is already a reusable blueprint, so "seed a new task from it"
-/// is its one unambiguous meaning, the same as the Inbox's own "Use".
+/// Stage 1's inline template browser — requested directly, then revised:
+/// "let's list the templates ... under Task Name" (the original full-width
+/// `TemplateRow` list, with a "Templates" heading), then "Templates view in
+/// add task should be same as in mini sheet quick task add: no heading,
+/// small pills scrollable across under title." Now reuses
+/// [TemplateChipStrip] (`timeline/template_chip_strip.dart`) directly
+/// rather than a second copy of its horizontal-chip layout — the exact
+/// same widget the quick-create mini sheet already renders under ITS own
+/// title field.
 ///
-/// Reuses [TemplateRow] (`inbox/template_list_view.dart`) directly rather
-/// than a second copy of that row's layout — `onMore: null` there omits
-/// the Edit/Delete affordance (see that field's own doc comment), since
-/// this browser only ever picks a template, never manages the list.
-///
-/// Tapping a row calls [onSelected] — see [_TaskDetailFlowState.
+/// Tapping a chip calls [onSelected] — see [_TaskDetailFlowState.
 /// _seedFromTemplate] for why this updates the ALREADY-OPEN form in place
 /// rather than reusing [useTemplate]'s own "push a second sheet" behavior.
-class _TemplateBrowserPane extends ConsumerWidget {
-  const _TemplateBrowserPane({required this.theme, required this.onSelected});
+class _TemplateBrowserPane extends StatelessWidget {
+  const _TemplateBrowserPane({
+    required this.theme,
+    required this.onSelected,
+    this.selectedTemplateId,
+  });
 
   final AmbleTheme theme;
   final ValueChanged<TaskTemplate> onSelected;
+  final String? selectedTemplateId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final templates = ref.watch(taskTemplateListProvider);
-    final categories = ref.watch(categoryListProvider);
-
-    if (templates.isEmpty) return const SizedBox.shrink();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: EdgeInsets.only(bottom: theme.spacingSm),
-          child: Text(
-            'Templates',
-            style: theme.textBody.copyWith(
-              color: theme.colorTextSecondary,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        for (final (index, template) in templates.indexed) ...[
-          if (index > 0) SizedBox(height: theme.spacingSm),
-          TemplateRow(
-            theme: theme,
-            template: template,
-            category: categories
-                .where((c) => c.id == template.categoryId)
-                .firstOrNull,
-            onUse: () => onSelected(template),
-          ),
-        ],
-      ],
+  Widget build(BuildContext context) {
+    // TemplateChipStrip defaults to a full-bleed caller and reapplies
+    // `spacingLg` as its own internal padding so the first/last chip still
+    // lines up with the padded fields around it. This sheet's body, unlike
+    // the mini sheet's, wraps EVERY pane in one shared `spacingLg` inset
+    // rather than going full-bleed itself, so this pane is already sitting
+    // inside that margin — `edgeInset: 0` stops the strip from applying a
+    // second one on top of it.
+    return TemplateChipStrip(
+      onTemplateSelected: onSelected,
+      selectedTemplateId: selectedTemplateId,
+      edgeInset: 0,
     );
   }
 }

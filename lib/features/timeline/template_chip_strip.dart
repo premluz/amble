@@ -32,6 +32,7 @@ class TemplateChipStrip extends ConsumerWidget {
     super.key,
     required this.onTemplateSelected,
     this.selectedTemplateId,
+    this.edgeInset,
   });
 
   /// Applies the tapped template's title and category to the in-progress
@@ -44,6 +45,14 @@ class TemplateChipStrip extends ConsumerWidget {
   /// visibly replaces the first rather than silently swapping values in
   /// a field the user may not be looking at.
   final String? selectedTemplateId;
+
+  /// Horizontal inset applied to the first/last chip so they line up with
+  /// the padded fields above — defaults to `theme.spacingLg`, matching the
+  /// quick-create mini sheet's own full-bleed caller (see this class's own
+  /// doc comment). A caller that already sits inside its own side margin
+  /// (rather than rendering this strip full-bleed) passes 0 instead of
+  /// double-applying that inset.
+  final double? edgeInset;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -66,7 +75,7 @@ class TemplateChipStrip extends ConsumerWidget {
         // The strip is rendered full-bleed by its caller so it can scroll
         // past both edges of the sheet; this inset keeps the first and
         // last chip aligned with the padded fields above it.
-        padding: EdgeInsets.symmetric(horizontal: theme.spacingLg),
+        padding: EdgeInsets.symmetric(horizontal: edgeInset ?? theme.spacingLg),
         itemCount: templates.length,
         separatorBuilder: (context, _) => SizedBox(width: theme.spacingSm),
         itemBuilder: (context, index) {
