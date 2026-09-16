@@ -7,6 +7,7 @@ import '../../core/widgets/app_press_feedback.dart';
 import '../../core/widgets/app_swipe_actions.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
 import '../../shared/models/task.dart';
+import '../../shared/models/task_category.dart';
 import '../../shared/providers/task_providers.dart';
 import '../task_detail/task_detail_sheet.dart';
 import '../timeline/duration_label.dart';
@@ -293,11 +294,21 @@ class _InboxListItem extends StatelessWidget {
                   color: categoryColor,
                   borderRadius: BorderRadius.circular(theme.radiusPill),
                 ),
-                child: Icon(
-                  task.category.icon,
-                  size: badgeSize * 0.55,
-                  color: theme.colorSurfacePrimary,
-                ),
+                // No glyph for General — matches the rule everywhere else
+                // a category badge renders (see `TaskCategoryTokenMapping
+                // .emoji`'s own doc comment: "both light dark mode default
+                // should not have emoji"). This row used `.icon` instead
+                // of `.emoji` and so kept showing a plain outlined circle
+                // glyph on top of the badge for an uncategorised task —
+                // reported directly ("there shouldn't be emoji on those
+                // items, same as default task emoji without category").
+                child: task.category == TaskCategory.general
+                    ? null
+                    : Icon(
+                        task.category.icon,
+                        size: badgeSize * 0.55,
+                        color: theme.colorSurfacePrimary,
+                      ),
               ),
             ),
             SizedBox(width: theme.spacingSm),
