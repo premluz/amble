@@ -1154,3 +1154,16 @@ The entry above is correct about the collision but stops too early — it reads 
 **Rules**:
 - A function that writes a planner's output must not independently re-assert the constraint the planner exists to satisfy. Either the planner owns the invariant or the writer does — never both, or the writer will eventually reject a valid plan.
 - A test asserting `throws` is not evidence the throw is correct. Two of the four tests rewritten in this pass encoded a hard-block the user had already asked to remove, and one (`zone_form_screen_test.dart`) carried a comment quoting that exact request directly beneath a title claiming the opposite — mis-titled since it was written. When a test's name, its body, and its own comment disagree, read the comment: it usually records the original intent.
+
+## Spatial Timeline title label sat above a task's own icon, on badge-floored pills
+
+**Symptom**: reported directly against a screenshot — "label of task on spatial view is higher than middle of the smallest task and feels misaligned, should be aligned with the icon, so same padding top as icon has within pill." Non-spatial (List) view was unaffected.
+
+**Cause**: an earlier session centered the task's category icon inside its own `badgeSize`-tall square (`_PillGlyph`, `task_capsule_block.dart`), moving its visual center from the pill's top edge to `badgeSize / 2` below it. The spatial Timeline's own title label — positioned separately, via `timeline_screen.dart`'s `LabelAnchor.preferredTop` feeding `computeLabelTops`'s collision sweep, not through `TaskCapsuleBlock` at all — kept its original `top: 0` baseline, so it stayed aligned to where the icon used to sit. The gap is small at default tokens (`(sizeTaskBadge - labelHeight) / 2` ≈ 4px), but reads clearly as "too high" on the shortest, badge-floored pills where it is proportionally largest.
+
+**Fix**: added `_labelBaseOffset(theme)` and added it to every anchor's `preferredTop` in `timeline_screen.dart`. Zero-clamped so a pill too short for the icon's own square never gets pushed the label above the pill's top.
+
+**Rules**:
+- Two separately-positioned visual elements that are supposed to align (an icon centered one way, a label positioned another) will silently drift apart the next time either one's centering logic changes, unless the second element's offset is derived from the same constant rather than hand-tuned to match it once. `_labelBaseOffset` reads `theme.sizeTaskBadge` directly for this reason.
+- A widget test asserting position must find the REAL glyph type the bug report describes. The shared `openSeededCategoryBox` test helper seeds legacy/emoji-only built-in categories (no `iconCodePoint`), so `_PillGlyph` renders `Text`, not `Icon`, for them — a test using `BuiltInCategoryIds.work`/`health` and `find.byType(Icon)` would find nothing and fail for the wrong reason. Seed a category with a real `iconCodePoint` when the bug is specifically about the Tabler-icon glyph path.
+- A tolerance that's too loose "passes" against both the buggy and fixed code — always revert the fix and rerun the new test to confirm it actually fails first, then reapply the fix and confirm it passes again. Caught here: an initial 1-line-height tolerance passed unchanged with the fix reverted; tightening to 2px (well under the ~4.2px real regression size) made the test genuinely load-bearing.

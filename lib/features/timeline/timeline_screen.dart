@@ -20,6 +20,7 @@ import '../../shared/models/zone.dart';
 import '../../shared/services/weekly_zone_schedule.dart';
 import '../../shared/providers/calendar_providers.dart';
 import '../../shared/providers/category_providers.dart';
+import '../../shared/models/tag_color_style.dart';
 import '../../shared/providers/preferences_providers.dart';
 import '../../shared/providers/task_providers.dart';
 import '../../shared/providers/tracked_behavior_providers.dart';
@@ -596,6 +597,14 @@ class TimelineScreen extends ConsumerWidget {
                                       showCompletionCheckbox: ref.watch(
                                         showCompletionCheckboxSettingProvider,
                                       ),
+                                      // A real user setting (not a dev
+                                      // toggle) — one global setting across
+                                      // every pill-shaped surface. See
+                                      // TagColorStyleSetting's own doc
+                                      // comment.
+                                      tagColorStyle: ref.watch(
+                                        tagColorStyleSettingProvider,
+                                      ),
                                       devIconsVisible: ref.watch(
                                         devTimelineTaskIconsVisibleProvider,
                                       ),
@@ -691,6 +700,14 @@ class TimelineScreen extends ConsumerWidget {
                                       showHourLabels: true,
                                       showTimelineConnectors: ref.watch(
                                         showTimelineConnectorsSettingProvider,
+                                      ),
+                                      // A real user setting (not a dev
+                                      // toggle) — one global setting across
+                                      // every pill-shaped surface. See
+                                      // TagColorStyleSetting's own doc
+                                      // comment.
+                                      tagColorStyle: ref.watch(
+                                        tagColorStyleSettingProvider,
                                       ),
                                       // Opens Edit directly, skipping the action sheet
                                       // (Edit/Duplicate/Remove) — requested directly.
@@ -1044,10 +1061,17 @@ class _DayTimeline extends StatefulWidget {
     this.onZoneResize,
     this.onZoneMove,
     this.onDeleteZone,
+    this.tagColorStyle = TagColorStyle.pill,
   });
 
   final List<Task> tasks;
   final AmbleTheme theme;
+
+  /// A real user setting (not a dev toggle), read once by the Consumer
+  /// ancestor and threaded down as a plain field since this widget isn't
+  /// Riverpod-aware — same pattern as [showCompletionCheckbox]. See
+  /// `TagColorStyleSetting`'s own doc comment.
+  final TagColorStyle tagColorStyle;
 
   /// Every persisted [Zone] (already filtered to empty when the feature
   /// flag is off) — rendered as a background block per CONSTITUTION.md's
@@ -1819,9 +1843,15 @@ class _DayTimelineState extends State<_DayTimeline> {
                   // back to its own scheduled start — the same derivation
                   // those blocks' widgets use for their own `top`, so an
                   // anchor always points at the rail it belongs to.
+                  //
+                  // `+ _labelBaseOffset` — the icon this label is meant to
+                  // line up with is centered inside its own badgeSize
+                  // square, not flush with the pill's top edge; see that
+                  // method's own doc comment.
                   preferredTop:
-                      blockTops[slot.block.id] ??
-                      _blockPreferredTop(slot.block, rangeStart),
+                      (blockTops[slot.block.id] ??
+                          _blockPreferredTop(slot.block, rangeStart)) +
+                      _labelBaseOffset(theme),
                   height: _labelHeight(theme),
                 ),
             ],
@@ -2305,6 +2335,7 @@ class _DayTimelineState extends State<_DayTimeline> {
                                 compactText: !widget.showHourLabels,
                                 showCompletionCheckbox:
                                     widget.showCompletionCheckbox,
+                                tagColorStyle: widget.tagColorStyle,
                                 // The ghost is a plain shape marking the slot
                                 // the task came FROM — no title, time, icon or
                                 // checkbox. Requested directly: "in ghost
@@ -2379,6 +2410,7 @@ class _DayTimelineState extends State<_DayTimeline> {
                           isDraggable: widget.showHourLabels,
                           compactText: !widget.showHourLabels,
                           showCompletionCheckbox: widget.showCompletionCheckbox,
+                          tagColorStyle: widget.tagColorStyle,
                           // Both modes now: icon-only pill at its own lane x,
                           // name/time in the shared text column — requested
                           // directly, so List mode's names line up the same way
@@ -3192,6 +3224,24 @@ class _DayTimelineState extends State<_DayTimeline> {
   double _labelHeight(AmbleTheme theme) =>
       theme.textTaskTitle.fontSize! * theme.textTaskTitle.height!;
 
+  /// How far below the pill's own top edge the label's FIRST LINE needs to
+  /// start so its own vertical center lines up with the icon's — reported
+  /// directly ("label of task on spatial view is higher than middle of
+  /// the smallest task... should be aligned with the icon, so same
+  /// padding top as icon has within pill").
+  ///
+  /// The icon itself is centered inside a `badgeSize`-tall square (see
+  /// `_PillGlyph` in `task_capsule_block.dart`), so its own visual center
+  /// sits at `badgeSize / 2` from the pill's top — not at the top edge
+  /// itself. The label's own `top: 0` baseline predates that centering
+  /// fix (an earlier session moved the icon from flush-top to centered
+  /// without a matching adjustment here), so a label was left aligned to
+  /// where the icon USED to sit, not where it sits now. Zero-clamped: on
+  /// a pill so short the icon's own square doesn't fully fit, this must
+  /// never push the label ABOVE the pill's top.
+  double _labelBaseOffset(AmbleTheme theme) =>
+      math.max(0.0, (theme.sizeTaskBadge - _labelHeight(theme)) / 2);
+
   /// [ExternalCalendarEvent] counterpart to [_collapsedBlockHeight] — now
   /// byte-for-byte the same duration-proportional floor, since
   /// `ExternalEventCapsuleBlock` renders as a real capsule pill (single-
@@ -3979,10 +4029,18 @@ class _DraggableTaskBlock extends ConsumerStatefulWidget {
     this.deleteTargetKey,
     this.onDeleteTargetVisibilityChanged,
     this.onDeleteTargetArmedChanged,
+    this.tagColorStyle = TagColorStyle.pill,
   });
 
   final Task task;
   final AmbleTheme theme;
+
+  /// See [_DayTimeline.tagColorStyle] — threaded straight through rather
+  /// than watched independently here, so this widget (a
+  /// `ConsumerStatefulWidget`, which COULD watch it directly) and its
+  /// `_DayTimeline` parent never risk reading two different snapshots of
+  /// the same setting within one build.
+  final TagColorStyle tagColorStyle;
   final double baseTop;
   final double left;
 
@@ -4671,6 +4729,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                 .where((c) => c.id == widget.task.categoryId)
                 .firstOrNull,
             pixelsPerMinute: widget.pixelsPerMinute,
+            tagColorStyle: widget.tagColorStyle,
             // Selection reads as an accent ring on the pill's own rail —
             // requested directly, replacing the wiggle that used to signal
             // it, and matching `ZoneGridBlock`'s own selected treatment.
