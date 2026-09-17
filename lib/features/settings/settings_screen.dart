@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../core/feature_flags.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../inbox/template_list_screen.dart';
+import '../onboarding/onboarding_profile_browse_screen.dart';
 import '../task_detail/category_list_screen.dart';
 import '../zones/zone_list_screen.dart';
 import 'about_settings_screen.dart';
@@ -89,6 +90,16 @@ class SettingsScreen extends StatelessWidget {
                       // category_list_screen.dart's own doc comment).
                       label: 'Tags',
                       onTap: () => showCategoryListScreen(context),
+                    ),
+                    SizedBox(height: theme.spacingMd),
+                    // The onboarding Profile quiz only ever runs once —
+                    // this is the revisit path (point 5 of the onboarding
+                    // Profile catalog work order): a plain browse-all list,
+                    // reused as-is from onboarding's own "See other
+                    // profiles" surface rather than a second screen.
+                    SettingsLinkRow(
+                      label: 'Starter profiles',
+                      onTap: () => showOnboardingProfileBrowseScreen(context),
                     ),
                   ],
                 ),

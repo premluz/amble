@@ -299,8 +299,10 @@ class NotificationService {
   /// does, reusing the same [notificationHorizonDays] constant established
   /// by the 500-alarm-cap fix rather than inventing a separate one.
   Future<void> scheduleForZone(Zone zone) async {
-    if (!zone.notificationsEnabled || zone.archived ||
-        (zone.effectiveUntil != null && !DateTime.now().isBefore(zone.effectiveUntil!))) {
+    if (!zone.notificationsEnabled ||
+        zone.archived ||
+        (zone.effectiveUntil != null &&
+            !DateTime.now().isBefore(zone.effectiveUntil!))) {
       return;
     }
 
@@ -318,7 +320,9 @@ class NotificationService {
       scheduledDate: tz.TZDateTime.from(occurrence, tz.local),
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       payload: zone.id,
-      matchDateTimeComponents: zone.isWeeklyPlacement ? DateTimeComponents.dayOfWeekAndTime : null,
+      matchDateTimeComponents: zone.isWeeklyPlacement
+          ? DateTimeComponents.dayOfWeekAndTime
+          : null,
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(
           _androidChannelId,
@@ -343,11 +347,19 @@ class NotificationService {
       final day = DateTime(now.year, now.month, now.day + offset);
       for (final zone in zonesForDay(zones, day)) {
         if (!zone.notificationsEnabled) continue;
-        final request = zone.isWeeklyPlacement ? Zone.fromJson({...zone.toJson(),
-          'id': _zoneDayRequestId(zone.id, day), 'weekday': null,
-          'anchorDate': day.toIso8601String()}) : zone;
-        try { await scheduleForZone(request); }
-        catch (error) { debugPrint('Zone notification failed: $error'); }
+        final request = zone.isWeeklyPlacement
+            ? Zone.fromJson({
+                ...zone.toJson(),
+                'id': _zoneDayRequestId(zone.id, day),
+                'weekday': null,
+                'anchorDate': day.toIso8601String(),
+              })
+            : zone;
+        try {
+          await scheduleForZone(request);
+        } catch (error) {
+          debugPrint('Zone notification failed: $error');
+        }
       }
     }
   }
@@ -357,10 +369,11 @@ class NotificationService {
     final now = DateTime.now();
     for (var offset = 0; offset < notificationHorizonDays; offset++) {
       final day = DateTime(now.year, now.month, now.day + offset);
-      await _plugin.cancel(id: _zoneNotificationId(_zoneDayRequestId(zoneId, day)));
+      await _plugin.cancel(
+        id: _zoneNotificationId(_zoneDayRequestId(zoneId, day)),
+      );
     }
   }
-
 }
 
 /// Resolves [zone] to the concrete [DateTime] its next alert should fire
@@ -371,8 +384,13 @@ class NotificationService {
 /// resolution rule is testable without a platform channel.
 DateTime? _zoneOccurrence(Zone zone, {DateTime? now}) {
   final from = now ?? DateTime.now();
-  DateTime atMinutesOn(DateTime day) => DateTime(day.year, day.month, day.day,
-    zone.startMinutes ~/ 60, zone.startMinutes % 60);
+  DateTime atMinutesOn(DateTime day) => DateTime(
+    day.year,
+    day.month,
+    day.day,
+    zone.startMinutes ~/ 60,
+    zone.startMinutes % 60,
+  );
   if (zone.isWeeklyPlacement) {
     for (var offset = 0; offset <= 7; offset++) {
       final day = DateTime(from.year, from.month, from.day + offset);
@@ -419,4 +437,7 @@ String _formatTime(DateTime dateTime) {
   return '$hour:$minute';
 }
 
-String _zoneDayRequestId(String id, DateTime day) => const Uuid().v5(Namespace.url.value, 'amble:zone-alarm:$id@${day.year}-${day.month}-${day.day}');
+String _zoneDayRequestId(String id, DateTime day) => const Uuid().v5(
+  Namespace.url.value,
+  'amble:zone-alarm:$id@${day.year}-${day.month}-${day.day}',
+);

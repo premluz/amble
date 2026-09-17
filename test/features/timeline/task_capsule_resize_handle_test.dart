@@ -284,7 +284,8 @@ void main() {
             .widgetList<ClipRRect>(find.byType(ClipRRect))
             .map((c) => c.clipBehavior),
         contains(Clip.antiAlias),
-        reason: 'the frosted card is genuinely visible while lifted and '
+        reason:
+            'the frosted card is genuinely visible while lifted and '
             'needs its own corner clipped',
       );
     });

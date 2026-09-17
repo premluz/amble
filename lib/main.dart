@@ -17,6 +17,7 @@ import 'core/tokens/semantic_theme.dart';
 import 'core/tokens/spacing_primitives.dart';
 import 'core/tokens/type_primitives.dart';
 import 'features/inbox/inbox_screen.dart';
+import 'features/onboarding/onboarding_quiz_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/splash/splash_carousel_screen.dart';
 import 'features/timeline/edit_mode_provider.dart';
@@ -99,9 +100,7 @@ void main() async {
   // see `TaskFontSizeSetting.migrateIfNeeded`'s own doc comment for why
   // this happens here (an explicit, awaited launch step) rather than as a
   // side effect of that provider's own `build()`.
-  await container
-      .read(taskFontSizeSettingProvider.notifier)
-      .migrateIfNeeded();
+  await container.read(taskFontSizeSettingProvider.notifier).migrateIfNeeded();
 
   // Seed the 5 built-in categories and backfill every pre-existing task's
   // deprecated `category` enum onto the new `categoryId`. Launch-only,
@@ -188,6 +187,11 @@ class AmbleApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(themeModeSettingProvider);
     final hasSeenSplash = ref.watch(hasSeenSplashProvider);
+    // A separate step from the splash/carousel above, not folded into it
+    // — confirmed directly: "we need to keep carousel and separately
+    // onboarding slides." Only consulted once hasSeenSplash is already
+    // true; the carousel's own CTA is completely unchanged.
+    final hasCompletedOnboarding = ref.watch(hasCompletedOnboardingProvider);
     // One global rung (sm/md/lg) resolved onto BOTH light and dark
     // palettes here, once, before either reaches MaterialApp — every
     // existing call site (TaskCapsuleBlock, ZoneContainerBlock,
@@ -234,15 +238,19 @@ class AmbleApp extends ConsumerWidget {
         theme: _themeDataFor(lightTheme, Brightness.light),
         darkTheme: _themeDataFor(darkTheme, Brightness.dark),
         themeMode: toFlutterThemeMode(themeMode),
-        // First launch shows the splash/carousel once — HasSeenSplash
-        // defaults to false until its CTA calls markSeen(), at which point
-        // this rebuild (the provider is watched, not read) swaps straight
-        // to the real app with no separate Navigator.push, matching
-        // "route straight into the existing app" per docs/SCOPE.md rather
-        // than introducing a stub onboarding step.
-        home: hasSeenSplash
-            ? const AmbleHome()
-            : SplashCarouselScreen(onFinished: () {}),
+        // Three-way gate, both provider-watched so each CTA's write
+        // triggers an immediate rebuild with no separate Navigator.push:
+        // splash/carousel first (HasSeenSplash), then the onboarding
+        // Profile quiz (HasCompletedOnboarding) as its own distinct step
+        // — confirmed directly, "keep carousel and separately onboarding
+        // slides" — then the real app. Skipping the quiz still calls
+        // markDone(), so it can never be re-shown after either a genuine
+        // choice or an explicit skip.
+        home: !hasSeenSplash
+            ? SplashCarouselScreen(onFinished: () {})
+            : !hasCompletedOnboarding
+            ? const OnboardingQuizScreen()
+            : const AmbleHome(),
       ),
     );
   }

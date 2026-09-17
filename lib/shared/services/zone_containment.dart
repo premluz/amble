@@ -140,8 +140,16 @@ ZoneContainmentResult resolveZoneContainment({
     // CONSTITUTION.md's "a task can be assigned to a zone with no
     // scheduledAt at all" note exists for.
     final original = zones.where((z) => z.id == task.zoneId).firstOrNull;
-    final explicitZone = task.zoneId == null ? null : (zoneById[task.zoneId] ??
-      applicableZones.where((z) => original?.facetId != null && z.facetId == original!.facetId).firstOrNull);
+    final explicitZone = task.zoneId == null
+        ? null
+        : (zoneById[task.zoneId] ??
+              applicableZones
+                  .where(
+                    (z) =>
+                        original?.facetId != null &&
+                        z.facetId == original!.facetId,
+                  )
+                  .firstOrNull);
     if (explicitZone != null) {
       (tasksByZoneId[explicitZone.id] ??= []).add(task);
       continue;

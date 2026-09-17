@@ -26,7 +26,8 @@ void main() {
       expect(
         _luminance(dark),
         greaterThan(_luminance(light)),
-        reason: 'dark mode gets the lighter tint, light mode the darker — '
+        reason:
+            'dark mode gets the lighter tint, light mode the darker — '
             'light=${_luminance(light)}, dark=${_luminance(dark)}',
       );
     });
@@ -110,8 +111,9 @@ void main() {
 
   // Both materials must track the "Pill shape" setting like every other
   // card — the phantom's old hardcoded `radiusSm` is exactly what didn't.
-  testWidgets('both materials corner at theme.radiusPill, not a fixed value',
-      (tester) async {
+  testWidgets('both materials corner at theme.radiusPill, not a fixed value', (
+    tester,
+  ) async {
     for (final radius in <double>[4, 8, 999]) {
       for (final material in GlassPillMaterial.values) {
         final theme = AmbleTheme.light.copyWith(radiusPill: radius);

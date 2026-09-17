@@ -4,6 +4,7 @@ import '../../core/dev_config.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
 import '../../shared/models/category.dart';
+import '../../shared/models/tag_color_style.dart';
 import '../../shared/models/external_calendar_event.dart';
 import '../../shared/models/task.dart';
 import '../../shared/models/zone.dart';
@@ -61,6 +62,7 @@ class ZoneDayTimeline extends StatelessWidget {
     required this.onTaskTap,
     required this.onToggleComplete,
     this.onZoneHeaderTap,
+    this.tagColorStyle = TagColorStyle.pill,
   });
 
   final List<Task> tasks;
@@ -119,6 +121,12 @@ class ZoneDayTimeline extends StatelessWidget {
   /// toggle, applied to every row in this view, so one toggle covers all
   /// three views.
   final bool showCompletionCheckbox;
+
+  /// Whether a tag's color fills the whole pill/badge or just the small
+  /// badge behind its icon — a real user setting, applied to every row in
+  /// this view exactly like [showCompletionCheckbox] above. See
+  /// `TagColorStyleSetting`'s own doc comment.
+  final TagColorStyle tagColorStyle;
 
   final ZoneTaskCallback onTaskTap;
   final ZoneTaskCallback onToggleComplete;
@@ -275,6 +283,7 @@ class ZoneDayTimeline extends StatelessWidget {
                     durationVisible: devDurationVisible,
                     timeRangeVisible: devTimeRangeVisible,
                     showCompletionCheckbox: showCompletionCheckbox,
+                    tagColorStyle: tagColorStyle,
                     onTap: () => onTaskTap(row),
                     onToggleComplete: () => onToggleComplete(row),
                   ),

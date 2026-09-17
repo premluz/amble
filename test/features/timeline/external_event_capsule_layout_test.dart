@@ -112,17 +112,14 @@ void main() {
     },
   );
 
-  testWidgets(
-    'a very short event still floors at the badge size rather than '
-    'collapsing to nothing',
-    (tester) async {
-      await pumpEvent(tester, durationMinutes: 5);
-      final rail = tester.getRect(find.byType(DashedPillRail));
+  testWidgets('a very short event still floors at the badge size rather than '
+      'collapsing to nothing', (tester) async {
+    await pumpEvent(tester, durationMinutes: 5);
+    final rail = tester.getRect(find.byType(DashedPillRail));
 
-      // 5m * 1.5 = 7.5px, well under the badge floor.
-      expect(rail.height, AmbleTheme.light.sizeTaskBadge);
-    },
-  );
+    // 5m * 1.5 = 7.5px, well under the badge floor.
+    expect(rail.height, AmbleTheme.light.sizeTaskBadge);
+  });
 
   // Pins the OTHER half of the same rule: a taller pill must not drag the
   // title down with it. The title tracks the icon, which stays at the

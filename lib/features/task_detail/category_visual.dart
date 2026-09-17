@@ -3,6 +3,7 @@ import 'package:tabler_icons_plus/tabler_icons_plus.dart';
 
 import '../../core/tokens/semantic_theme.dart';
 import '../../shared/models/category.dart';
+import '../../shared/models/tag_color_style.dart';
 
 /// The resolved pill fill / icon glyph color for one [Category] — shared
 /// between the category-picker chips and (via `TaskCapsuleBlock`'s own
@@ -24,6 +25,15 @@ class CategoryVisual {
 
   final Color pillColor;
   final Color iconColor;
+
+  /// The tag's own full-saturation color, independent of [pillColor]'s
+  /// built-in-vs-custom split — a BUILT-IN category's [pillColor] is
+  /// already a pale tint (`categoryColors`), so its true color is
+  /// [iconColor] (`categoryIconColors`, the saturated counterpart); a
+  /// CUSTOM category has only one swatch, which [pillColor] already is.
+  /// Feeds [railColorFor]'s `TagColorStyle.iconOnly` mode — see that
+  /// function's own doc comment.
+  Color get trueColor => iconColor;
 }
 
 CategoryVisual resolveCategoryVisual({
@@ -42,15 +52,51 @@ CategoryVisual resolveCategoryVisual({
   return CategoryVisual(pillColor: swatch, iconColor: swatch);
 }
 
+/// How much of [TagColorStyle.iconOnly]'s full-saturation
+/// [CategoryVisual.trueColor] survives on the paled rail — requested
+/// directly: "the pill also being colored but much paler than the main
+/// color of the tag color selected. If we have scales to go down, let's
+/// do it, if not let's try opacity reduction first." No lighten-by-
+/// lightness scale exists for the 12-swatch custom-tag palette today
+/// (only the 5 built-ins have a hand-tuned pale-tint counterpart, and
+/// even that is 5 independently-chosen OKLCH values, not a formula this
+/// function could reuse for an arbitrary swatch) — so this reaches the
+/// "much paler" rail via opacity, the confirmed fallback.
+///
+/// 0.4, not the originally-shipped 0.18 — reported directly ("still see
+/// them as white"): at 0.18, a saturated swatch over this app's light
+/// `colorSurfaceTimeline` background read as indistinguishable from no
+/// color at all, not "this color, but paler." 0.4 keeps the "much paler
+/// than the main color" request while staying visibly tinted rather than
+/// blank.
+const double iconOnlyRailOpacity = 0.4;
+
+/// The color a pill/rail's own fill should use, given the active
+/// [TagColorStyle]: the tag's [CategoryVisual.pillColor] unchanged for
+/// [TagColorStyle.pill] (today's existing look), or its
+/// [CategoryVisual.trueColor] at [iconOnlyRailOpacity] for
+/// [TagColorStyle.iconOnly] — the small badge behind the icon then
+/// carries [CategoryVisual.trueColor] at full opacity instead, painted
+/// by the caller (see `CategoryBadge`'s own `style` parameter).
+Color railColorFor(CategoryVisual visual, TagColorStyle style) =>
+    switch (style) {
+      TagColorStyle.pill => visual.pillColor,
+      TagColorStyle.iconOnly => visual.trueColor.withValues(
+        alpha: iconOnlyRailOpacity,
+      ),
+    };
+
 /// A curated set of Tabler glyphs offered in the new/edit-category picker
 /// — hand-picked, not the full ~6,250-icon set, matching how the old
 /// curated emoji set (`add_category_modal.dart`'s `_curatedCategoryEmoji`)
-/// was never a full emoji-picker either. Broadened from the original
-/// 16-icon set — requested directly: "add more icons... broader choice
-/// of icons that represent tasks, lifestyle, etc. Not UI or anything
-/// like that" — every addition is a concrete real-world thing (a
-/// lifestyle domain, an activity, an object), never a generic app/UI
-/// glyph (no gear, no bell, no generic arrow/chevron).
+/// was never a full emoji-picker either. Broadened twice from the
+/// original 16-icon set (16 -> 60 -> 105) — requested directly both
+/// times: "add more icons... broader choice of icons that represent
+/// tasks, lifestyle, etc. Not UI or anything like that," then "let's pull
+/// more useful icons into selectable for [tags]." Every addition is a
+/// concrete real-world thing (a lifestyle domain, an activity, an
+/// object), never a generic app/UI glyph (no gear, no bell, no generic
+/// arrow/chevron).
 const List<IconData> curatedCategoryIcons = [
   TablerIcons.circle,
   TablerIcons.heart,
@@ -116,6 +162,67 @@ const List<IconData> curatedCategoryIcons = [
   TablerIcons.trophy,
   TablerIcons.target,
   TablerIcons.checklist,
+  // Work & study.
+  TablerIcons.deviceLaptop,
+  TablerIcons.keyboard,
+  TablerIcons.printer,
+  TablerIcons.calculator,
+  TablerIcons.presentation,
+  TablerIcons.folder,
+  // Home & chores.
+  TablerIcons.armchair,
+  TablerIcons.sofa,
+  TablerIcons.bath,
+  TablerIcons.vacuumCleaner,
+  // Weather & outdoors.
+  TablerIcons.umbrella,
+  TablerIcons.snowflake,
+  TablerIcons.cloudRain,
+  TablerIcons.mountain,
+  TablerIcons.tent,
+  TablerIcons.campfire,
+  TablerIcons.backpack,
+  // Sport & games.
+  TablerIcons.golf,
+  TablerIcons.ballBasketball,
+  TablerIcons.ballFootball,
+  TablerIcons.ballVolleyball,
+  TablerIcons.skateboard,
+  TablerIcons.puzzle,
+  TablerIcons.dice,
+  // Celebrations.
+  TablerIcons.confetti,
+  TablerIcons.balloon,
+  TablerIcons.cake,
+  TablerIcons.iceCream,
+  TablerIcons.cookie,
+  TablerIcons.soup,
+  // Health, extended.
+  TablerIcons.firstAidKit,
+  TablerIcons.vaccine,
+  TablerIcons.thermometer,
+  TablerIcons.brain,
+  // Animals, extended.
+  TablerIcons.horse,
+  TablerIcons.butterfly,
+  TablerIcons.ghost,
+  // Ideas & science.
+  TablerIcons.infinity,
+  TablerIcons.flask,
+  TablerIcons.microscope,
+  TablerIcons.telescope,
+  TablerIcons.rocket,
+  TablerIcons.planet,
+  TablerIcons.rainbow,
+  TablerIcons.droplet,
+  TablerIcons.recycle,
+  // Time.
+  TablerIcons.stopwatch,
+  TablerIcons.clockHour3,
+  // Travel, extended.
+  TablerIcons.anchor,
+  TablerIcons.road,
+  TablerIcons.parking,
 ];
 
 /// The built-in categories' default Tabler glyph — requested directly:

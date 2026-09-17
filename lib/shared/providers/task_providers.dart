@@ -275,7 +275,9 @@ class TaskList extends _$TaskList {
     final repository = ref.read(taskRepositoryProvider);
     final siblings = repository
         .getTasks()
-        .where((task) => task.recurrenceId == seriesId && task.id != instance.id)
+        .where(
+          (task) => task.recurrenceId == seriesId && task.id != instance.id,
+        )
         .toList();
     if (siblings.isEmpty) return;
 

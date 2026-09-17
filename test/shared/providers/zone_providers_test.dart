@@ -1,5 +1,7 @@
 import 'package:amble/shared/providers/zone_facet_providers.dart';
+
 import '../../support/memory_zone_repositories.dart';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce/hive_ce.dart';
@@ -35,7 +37,9 @@ void main() {
 
     container = ProviderContainer(
       overrides: [
-        zoneFacetRepositoryProvider.overrideWithValue(MemoryZoneFacetRepository()),
+        zoneFacetRepositoryProvider.overrideWithValue(
+          MemoryZoneFacetRepository(),
+        ),
         zoneRepositoryProvider.overrideWithValue(HiveZoneRepository(box)),
         taskRepositoryProvider.overrideWithValue(HiveTaskRepository(taskBox)),
         notificationServiceProvider.overrideWithValue(
@@ -74,20 +78,38 @@ void main() {
   });
 
   group('weekly creation', () {
-    test('daily input produces seven weekly placements without materialization', () async {
-      final notifier=container.read(zoneListProvider.notifier);
-      await notifier.createZone(title:'Work',startMinutes:540,endMinutes:600,
-        recurrenceRule:RecurrenceRule(frequency:RecurrenceFrequency.daily));
-      final zones=container.read(zoneListProvider);
-      expect(zones,hasLength(7)); expect(zones.every((z)=>z.isWeeklyPlacement),isTrue);
-      await notifier.deleteZone(zones.first.id);
-      await notifier.materializeDueRecurrences();
-      expect(container.read(zoneListProvider).where((z)=>!z.archived),hasLength(6));
-    });
+    test(
+      'daily input produces seven weekly placements without materialization',
+      () async {
+        final notifier = container.read(zoneListProvider.notifier);
+        await notifier.createZone(
+          title: 'Work',
+          startMinutes: 540,
+          endMinutes: 600,
+          recurrenceRule: RecurrenceRule(frequency: RecurrenceFrequency.daily),
+        );
+        final zones = container.read(zoneListProvider);
+        expect(zones, hasLength(7));
+        expect(zones.every((z) => z.isWeeklyPlacement), isTrue);
+        await notifier.deleteZone(zones.first.id);
+        await notifier.materializeDueRecurrences();
+        expect(
+          container.read(zoneListProvider).where((z) => !z.archived),
+          hasLength(6),
+        );
+      },
+    );
     test('single-day input uses its explicit weekday', () async {
-      final zone=await container.read(zoneListProvider.notifier).createZone(title:'Work',startMinutes:540,endMinutes:600,
-        anchorDateForRecurrence:DateTime(2026,9,16));
-      expect(zone.weekday,DateTime.wednesday); expect(zone.recurrenceRule,isNull);
+      final zone = await container
+          .read(zoneListProvider.notifier)
+          .createZone(
+            title: 'Work',
+            startMinutes: 540,
+            endMinutes: 600,
+            anchorDateForRecurrence: DateTime(2026, 9, 16),
+          );
+      expect(zone.weekday, DateTime.wednesday);
+      expect(zone.recurrenceRule, isNull);
     });
   });
 
@@ -103,8 +125,14 @@ void main() {
 
       await notifier.deleteZone(zone.id);
 
-      expect(container.read(zoneListProvider).where((z)=>!z.archived), isEmpty);
-      expect(container.read(zoneRepositoryProvider).getById(zone.id), isNotNull);
+      expect(
+        container.read(zoneListProvider).where((z) => !z.archived),
+        isEmpty,
+      );
+      expect(
+        container.read(zoneRepositoryProvider).getById(zone.id),
+        isNotNull,
+      );
     });
   });
 
@@ -417,9 +445,16 @@ void main() {
       final today = DateTime.now();
       final anchor = DateTime(today.year, today.month, today.day);
 
-      final template = Zone(id:'legacy-delete',title:'Morning ritual',startMinutes:420,endMinutes:480,
-        recurrenceId:'legacy-delete',recurrenceRule:RecurrenceRule(frequency:RecurrenceFrequency.daily),anchorDate:anchor);
-      await box.put(template.id,template);
+      final template = Zone(
+        id: 'legacy-delete',
+        title: 'Morning ritual',
+        startMinutes: 420,
+        endMinutes: 480,
+        recurrenceId: 'legacy-delete',
+        recurrenceRule: RecurrenceRule(frequency: RecurrenceFrequency.daily),
+        anchorDate: anchor,
+      );
+      await box.put(template.id, template);
       await notifier.materializeDueRecurrences();
       final seriesId = template.recurrenceId;
       expect(seriesId, isNotNull);
@@ -476,11 +511,17 @@ void main() {
     // method reads directly) forward is unambiguously "future" regardless
     // of which real day this suite happens to run on.
     Future<Zone> createPastDailySeries(ZoneList notifier) async {
-      final anchor=DateTime.now().subtract(const Duration(days:30));
-      final template=Zone(id:'legacy-series',title:'Morning ritual',startMinutes:420,endMinutes:480,
-        recurrenceId:'legacy-series',recurrenceRule:RecurrenceRule(frequency:RecurrenceFrequency.daily),
-        anchorDate:DateTime(anchor.year,anchor.month,anchor.day));
-      await box.put(template.id,template);
+      final anchor = DateTime.now().subtract(const Duration(days: 30));
+      final template = Zone(
+        id: 'legacy-series',
+        title: 'Morning ritual',
+        startMinutes: 420,
+        endMinutes: 480,
+        recurrenceId: 'legacy-series',
+        recurrenceRule: RecurrenceRule(frequency: RecurrenceFrequency.daily),
+        anchorDate: DateTime(anchor.year, anchor.month, anchor.day),
+      );
+      await box.put(template.id, template);
       await notifier.materializeDueRecurrences();
       return template;
     }

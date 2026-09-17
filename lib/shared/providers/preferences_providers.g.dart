@@ -233,6 +233,75 @@ abstract class _$HasSeenSplash extends $Notifier<bool> {
   }
 }
 
+/// Whether the onboarding Profile quiz has been completed or explicitly
+/// skipped — see [PreferenceKeys.hasCompletedOnboarding]'s own doc
+/// comment. `keepAlive: true` for the same reason as [HasSeenSplash]:
+/// read by the root `MaterialApp` to decide its `home:`, not
+/// screen-scoped state.
+
+@ProviderFor(HasCompletedOnboarding)
+final hasCompletedOnboardingProvider = HasCompletedOnboardingProvider._();
+
+/// Whether the onboarding Profile quiz has been completed or explicitly
+/// skipped — see [PreferenceKeys.hasCompletedOnboarding]'s own doc
+/// comment. `keepAlive: true` for the same reason as [HasSeenSplash]:
+/// read by the root `MaterialApp` to decide its `home:`, not
+/// screen-scoped state.
+final class HasCompletedOnboardingProvider
+    extends $NotifierProvider<HasCompletedOnboarding, bool> {
+  /// Whether the onboarding Profile quiz has been completed or explicitly
+  /// skipped — see [PreferenceKeys.hasCompletedOnboarding]'s own doc
+  /// comment. `keepAlive: true` for the same reason as [HasSeenSplash]:
+  /// read by the root `MaterialApp` to decide its `home:`, not
+  /// screen-scoped state.
+  HasCompletedOnboardingProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'hasCompletedOnboardingProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$hasCompletedOnboardingHash();
+
+  @$internal
+  @override
+  HasCompletedOnboarding create() => HasCompletedOnboarding();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(bool value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<bool>(value),
+    );
+  }
+}
+
+String _$hasCompletedOnboardingHash() =>
+    r'hascompletedonboarding00000000000000000000';
+
+abstract class _$HasCompletedOnboarding extends $Notifier<bool> {
+  bool build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<bool, bool>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<bool, bool>,
+              bool,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
+
 /// Whether creating/moving a task into a slot that overlaps an existing task
 /// is blocked (reject-and-snap-back) rather than allowed side by side.
 ///
@@ -1568,6 +1637,75 @@ abstract class _$SlackIconEmojiSetting extends $Notifier<String?> {
             as $ClassProviderElement<
               AnyNotifier<String?, String?>,
               String?,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
+
+/// Whether a Tag's color fills the WHOLE pill or just the small badge
+/// behind its icon, with the rest of the pill paled — one global setting
+/// spanning every pill-shaped surface in the app, mirroring
+/// [PillShapeSetting]'s own mechanism exactly. Defaults to
+/// `TagColorStyle.pill`.
+
+@ProviderFor(TagColorStyleSetting)
+final tagColorStyleSettingProvider = TagColorStyleSettingProvider._();
+
+/// Whether a Tag's color fills the WHOLE pill or just the small badge
+/// behind its icon, with the rest of the pill paled — one global setting
+/// spanning every pill-shaped surface in the app, mirroring
+/// [PillShapeSetting]'s own mechanism exactly. Defaults to
+/// `TagColorStyle.pill`.
+final class TagColorStyleSettingProvider
+    extends $NotifierProvider<TagColorStyleSetting, TagColorStyle> {
+  /// Whether a Tag's color fills the WHOLE pill or just the small badge
+  /// behind its icon, with the rest of the pill paled — one global
+  /// setting spanning every pill-shaped surface in the app, mirroring
+  /// [PillShapeSetting]'s own mechanism exactly. Defaults to
+  /// `TagColorStyle.pill`.
+  TagColorStyleSettingProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'tagColorStyleSettingProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$tagColorStyleSettingHash();
+
+  @$internal
+  @override
+  TagColorStyleSetting create() => TagColorStyleSetting();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(TagColorStyle value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<TagColorStyle>(value),
+    );
+  }
+}
+
+String _$tagColorStyleSettingHash() =>
+    r'tagcolorstylesetting0000000000000000000000000';
+
+abstract class _$TagColorStyleSetting extends $Notifier<TagColorStyle> {
+  TagColorStyle build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<TagColorStyle, TagColorStyle>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<TagColorStyle, TagColorStyle>,
+              TagColorStyle,
               Object?,
               Object?
             >;

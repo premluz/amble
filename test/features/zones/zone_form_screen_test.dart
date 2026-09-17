@@ -239,79 +239,78 @@ void main() {
     },
   );
 
-  testWidgets(
-    'an overlapping weekly create is SAVED, never refused',
-    (tester) async {
-      // Requested directly: "we should not block user from adding zone
-      // even if overlap zone gets added in current viewport squeezing in
-      // between zones even if it had to resize them" — and again later,
-      // "never prevent action".
-      //
-      // The old title said "is refused without moving existing zones",
-      // which contradicted the very quote beneath it: this test was
-      // mis-titled from the start, and its body asserted the block that
-      // quote asked to remove. Both are corrected here.
-      //
-      // Note the fixture is a legacy DATELESS row (no `weekday`), not a
-      // weekly placement — so it is not a push/trim candidate itself. What
-      // this pins is the part that matters: the save is no longer refused.
-      final existing = Zone(
-        id: 'existing',
-        title: 'Focus block',
-        startMinutes: 9 * 60,
-        endMinutes: 11 * 60,
-      );
-      await tester.runAsync(() => box.put(existing.id, existing));
+  testWidgets('an overlapping weekly create is SAVED, never refused', (
+    tester,
+  ) async {
+    // Requested directly: "we should not block user from adding zone
+    // even if overlap zone gets added in current viewport squeezing in
+    // between zones even if it had to resize them" — and again later,
+    // "never prevent action".
+    //
+    // The old title said "is refused without moving existing zones",
+    // which contradicted the very quote beneath it: this test was
+    // mis-titled from the start, and its body asserted the block that
+    // quote asked to remove. Both are corrected here.
+    //
+    // Note the fixture is a legacy DATELESS row (no `weekday`), not a
+    // weekly placement — so it is not a push/trim candidate itself. What
+    // this pins is the part that matters: the save is no longer refused.
+    final existing = Zone(
+      id: 'existing',
+      title: 'Focus block',
+      startMinutes: 9 * 60,
+      endMinutes: 11 * 60,
+    );
+    await tester.runAsync(() => box.put(existing.id, existing));
 
-      final navigatorKey = await _pumpHost(tester, box: box, taskBox: taskBox);
-      unawaited(showZoneFormScreen(navigatorKey.currentContext!));
-      await tester.pumpAndSettle();
+    final navigatorKey = await _pumpHost(tester, box: box, taskBox: taskBox);
+    unawaited(showZoneFormScreen(navigatorKey.currentContext!));
+    await tester.pumpAndSettle();
 
-      await tester.enterText(_nameField(), 'New zone');
-      await tester.pump();
-      await tester.tap(find.widgetWithText(ElevatedButton, 'Done'));
-      await tester.pumpAndSettle();
+    await tester.enterText(_nameField(), 'New zone');
+    await tester.pump();
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Done'));
+    await tester.pumpAndSettle();
 
-      final startField = find.descendant(
-        of: find.widgetWithText(AppSegmentedTimeField, 'Start'),
-        matching: find.byType(TextField),
-      );
-      await tester.tap(startField);
-      await tester.pump();
-      await tester.enterText(startField, '1000'); // 10:00 — inside Focus block
-      await tester.pump();
+    final startField = find.descendant(
+      of: find.widgetWithText(AppSegmentedTimeField, 'Start'),
+      matching: find.byType(TextField),
+    );
+    await tester.tap(startField);
+    await tester.pump();
+    await tester.enterText(startField, '1000'); // 10:00 — inside Focus block
+    await tester.pump();
 
-      final endField = find.descendant(
-        of: find.widgetWithText(AppSegmentedTimeField, 'End'),
-        matching: find.byType(TextField),
-      );
-      await tester.tap(endField);
-      await tester.pump();
-      await tester.enterText(endField, '1100'); // 11:00
-      // Commits the End field's own typed value — `AppSegmentedTimeField`
-      // only fires `onChanged` on blur/submit, matching the same fix
-      // applied to the "half-typed pair" test above (a bare `enterText`
-      // never reaches `_endHour`/`_endMinute` on its own).
-      await tester.testTextInput.receiveAction(TextInputAction.done);
-      await tester.pump();
+    final endField = find.descendant(
+      of: find.widgetWithText(AppSegmentedTimeField, 'End'),
+      matching: find.byType(TextField),
+    );
+    await tester.tap(endField);
+    await tester.pump();
+    await tester.enterText(endField, '1100'); // 11:00
+    // Commits the End field's own typed value — `AppSegmentedTimeField`
+    // only fires `onChanged` on blur/submit, matching the same fix
+    // applied to the "half-typed pair" test above (a bare `enterText`
+    // never reaches `_endHour`/`_endMinute` on its own).
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
 
-      final saveButton = find.widgetWithText(ElevatedButton, 'Save');
-      await tester.runAsync(() async {
-        await tester.tap(saveButton);
-        await Future<void>.delayed(const Duration(milliseconds: 200));
-      });
-      await tester.pumpAndSettle();
+    final saveButton = find.widgetWithText(ElevatedButton, 'Save');
+    await tester.runAsync(() async {
+      await tester.tap(saveButton);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
+    await tester.pumpAndSettle();
 
-      // Overlap NEVER refuses a save — confirmed directly, "never prevent
-      // action". This test previously asserted the opposite (one zone left
-      // and a refusal message); the new zone is now written and the
-      // existing one is pushed aside, or trimmed only if it would
-      // otherwise be swallowed whole.
-      final zones = box.values.toList();
-      expect(zones, hasLength(greaterThan(1)));
-      expect(find.textContaining('overlaps another zone'), findsNothing);
-    },
-  );
+    // Overlap NEVER refuses a save — confirmed directly, "never prevent
+    // action". This test previously asserted the opposite (one zone left
+    // and a refusal message); the new zone is now written and the
+    // existing one is pushed aside, or trimmed only if it would
+    // otherwise be swallowed whole.
+    final zones = box.values.toList();
+    expect(zones, hasLength(greaterThan(1)));
+    expect(find.textContaining('overlaps another zone'), findsNothing);
+  });
 
   testWidgets('creating a zone saves it and it appears in zoneListProvider', (
     tester,

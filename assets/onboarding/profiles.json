@@ -1,0 +1,269 @@
+{
+  "schemaVersion": 1,
+  "profiles": [
+    {
+      "id": "student",
+      "title": "Student",
+      "description": "Classes, study blocks, and protected downtime — a week built around a timetable that isn't yours to move.",
+      "quizTags": ["fixed_schedule", "study", "young", "social"],
+      "zones": [
+        {
+          "title": "Study block",
+          "weekdays": [1, 2, 3, 4, 5],
+          "startTime": "16:00",
+          "endTime": "18:00"
+        },
+        {
+          "title": "Wind-down",
+          "weekdays": [1, 2, 3, 4, 5, 6, 7],
+          "startTime": "22:00",
+          "endTime": "23:00"
+        }
+      ],
+      "templates": [
+        {
+          "title": "Review lecture notes",
+          "categoryName": "work",
+          "durationMinutes": 30,
+          "notes": "Skim the day's notes before they go cold."
+        },
+        {
+          "title": "Read for class",
+          "categoryName": "work",
+          "durationMinutes": 45
+        },
+        {
+          "title": "Laundry",
+          "categoryName": "admin",
+          "durationMinutes": 20
+        }
+      ],
+      "tasks": [
+        {
+          "title": "Review lecture notes",
+          "categoryName": "work",
+          "time": "16:00",
+          "durationMinutes": 30
+        },
+        {
+          "title": "Call a friend",
+          "categoryName": "personal",
+          "time": "19:30",
+          "durationMinutes": 20
+        }
+      ],
+      "trackedBehaviors": [
+        {
+          "title": "Sleep 7+ hours",
+          "targetType": "binary",
+          "timesPerWeek": 7
+        }
+      ],
+      "notes": [
+        "Buy textbook for next term",
+        "Ask about the assignment extension"
+      ]
+    },
+    {
+      "id": "remote_worker",
+      "title": "Remote / Office Worker",
+      "description": "A 9-to-5 with real edges — deep work protected, meetings contained, and an evening that's actually yours.",
+      "quizTags": ["fixed_schedule", "desk_job", "focus", "overworked"],
+      "zones": [
+        {
+          "title": "Focus block",
+          "weekdays": [1, 2, 3, 4, 5],
+          "startTime": "09:00",
+          "endTime": "11:00"
+        },
+        {
+          "title": "Meetings",
+          "weekdays": [1, 2, 3, 4, 5],
+          "startTime": "13:00",
+          "endTime": "16:00"
+        },
+        {
+          "title": "Evening wind-down",
+          "weekdays": [1, 2, 3, 4, 5, 6, 7],
+          "startTime": "20:30",
+          "endTime": "21:30"
+        }
+      ],
+      "templates": [
+        {
+          "title": "Plan tomorrow",
+          "categoryName": "work",
+          "durationMinutes": 15,
+          "notes": "Three things that actually matter tomorrow."
+        },
+        {
+          "title": "Inbox zero pass",
+          "categoryName": "work",
+          "durationMinutes": 20
+        },
+        {
+          "title": "Stretch break",
+          "categoryName": "health",
+          "durationMinutes": 10
+        }
+      ],
+      "tasks": [
+        {
+          "title": "Plan tomorrow",
+          "categoryName": "work",
+          "time": "17:00",
+          "durationMinutes": 15
+        },
+        {
+          "title": "Take a walk",
+          "categoryName": "health",
+          "time": "12:00",
+          "durationMinutes": 20
+        }
+      ],
+      "trackedBehaviors": [
+        {
+          "title": "Screen-free evening",
+          "targetType": "binary",
+          "timesPerWeek": 5
+        },
+        {
+          "title": "Move during the day",
+          "targetType": "duration",
+          "targetAmount": 20,
+          "timesPerWeek": 5,
+          "customUnitLabel": "min"
+        }
+      ],
+      "notes": [
+        "Follow up with the team on the Q3 doc",
+        "Book the dentist"
+      ]
+    },
+    {
+      "id": "new_parent",
+      "title": "New Parent",
+      "description": "Short windows, real rest, and a day that plans around someone else's schedule too.",
+      "quizTags": ["unpredictable_schedule", "caregiving", "tired", "family"],
+      "zones": [
+        {
+          "title": "Nap window",
+          "weekdays": [1, 2, 3, 4, 5, 6, 7],
+          "startTime": "13:00",
+          "endTime": "15:00"
+        },
+        {
+          "title": "Family time",
+          "weekdays": [1, 2, 3, 4, 5, 6, 7],
+          "startTime": "17:30",
+          "endTime": "19:00"
+        }
+      ],
+      "templates": [
+        {
+          "title": "Prep bottles / meals",
+          "categoryName": "personal",
+          "durationMinutes": 15
+        },
+        {
+          "title": "Nap while baby naps",
+          "categoryName": "health",
+          "durationMinutes": 30,
+          "notes": "Actually rest — the list can wait."
+        },
+        {
+          "title": "Pack the diaper bag",
+          "categoryName": "admin",
+          "durationMinutes": 10
+        }
+      ],
+      "tasks": [
+        {
+          "title": "Nap while baby naps",
+          "categoryName": "health",
+          "time": "13:15",
+          "durationMinutes": 30
+        },
+        {
+          "title": "Prep bottles / meals",
+          "categoryName": "personal",
+          "time": "16:30",
+          "durationMinutes": 15
+        }
+      ],
+      "trackedBehaviors": [
+        {
+          "title": "Rest when the baby rests",
+          "targetType": "binary",
+          "timesPerWeek": 7
+        }
+      ],
+      "notes": [
+        "Schedule the next pediatrician visit",
+        "Order more diapers"
+      ]
+    },
+    {
+      "id": "shift_worker",
+      "title": "Shift Worker",
+      "description": "A schedule that moves under you — built around whichever hours are actually yours this week.",
+      "quizTags": ["unpredictable_schedule", "irregular_hours", "tired", "physical_job"],
+      "zones": [
+        {
+          "title": "Wind-down after shift",
+          "weekdays": [1, 2, 3, 4, 5, 6, 7],
+          "startTime": "23:00",
+          "endTime": "23:59"
+        },
+        {
+          "title": "Errands before shift",
+          "weekdays": [1, 2, 3, 4, 5, 6, 7],
+          "startTime": "12:00",
+          "endTime": "13:00"
+        }
+      ],
+      "templates": [
+        {
+          "title": "Pack a meal for shift",
+          "categoryName": "personal",
+          "durationMinutes": 15
+        },
+        {
+          "title": "Stretch before shift",
+          "categoryName": "health",
+          "durationMinutes": 10
+        },
+        {
+          "title": "Grocery run",
+          "categoryName": "admin",
+          "durationMinutes": 30
+        }
+      ],
+      "tasks": [
+        {
+          "title": "Pack a meal for shift",
+          "categoryName": "personal",
+          "time": "12:15",
+          "durationMinutes": 15
+        },
+        {
+          "title": "Stretch before shift",
+          "categoryName": "health",
+          "time": "13:30",
+          "durationMinutes": 10
+        }
+      ],
+      "trackedBehaviors": [
+        {
+          "title": "Consistent wind-down after shift",
+          "targetType": "binary",
+          "timesPerWeek": 5
+        }
+      ],
+      "notes": [
+        "Request next month's schedule",
+        "Renew parking permit"
+      ]
+    }
+  ]
+}

@@ -208,7 +208,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 01BCF04C304F0CE000621F02 /* Build configuration list for PBXProject "Amble" */;
+			buildConfigurationList = 01BCF04C304F0CE000621F02 /* Build configuration list for PBXProject "Panta" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -572,7 +572,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		01BCF04C304F0CE000621F02 /* Build configuration list for PBXProject "Amble" */ = {
+		01BCF04C304F0CE000621F02 /* Build configuration list for PBXProject "Panta" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				01BCF074304F0CE100621F02 /* Debug */,

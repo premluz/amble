@@ -81,9 +81,7 @@ void main() {
   // silently wipe values the form no longer shows and the user therefore
   // has no way to re-enter.
   testWidgets('editing and saving preserves the target amount, minimum and '
-      'weekly frequency the behavior was already saved with', (
-    tester,
-  ) async {
+      'weekly frequency the behavior was already saved with', (tester) async {
     final behavior = TrackedBehavior.create(
       title: 'Exercise',
       targetType: BehaviorTargetType.duration,

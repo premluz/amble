@@ -1,5 +1,4 @@
-import 'package:flutter/gestures.dart'
-    show HorizontalDragGestureRecognizer;
+import 'package:flutter/gestures.dart' show HorizontalDragGestureRecognizer;
 import 'package:flutter/material.dart';
 
 import '../haptics.dart';
@@ -121,14 +120,12 @@ class _AppSwipeActionsState extends State<AppSwipeActions>
     super.dispose();
   }
 
-  double get _activateThreshold =>
-      widget.extent * _kActivateThresholdFactor;
+  double get _activateThreshold => widget.extent * _kActivateThresholdFactor;
 
   /// Whether a pull in [direction] is allowed at all — a side with no
   /// action configured must not rubber-band open onto an empty background.
-  bool _allows(double direction) => direction > 0
-      ? widget.startAction != null
-      : widget.endAction != null;
+  bool _allows(double direction) =>
+      direction > 0 ? widget.startAction != null : widget.endAction != null;
 
   void _handleDragStart(DragStartDetails details) {
     // _offset is deliberately NOT reset here: a drag beginning on a
@@ -228,7 +225,8 @@ class _AppSwipeActionsState extends State<AppSwipeActions>
       gestures: <Type, GestureRecognizerFactory>{
         HorizontalDragGestureRecognizer:
             GestureRecognizerFactoryWithHandlers<
-                HorizontalDragGestureRecognizer>(
+              HorizontalDragGestureRecognizer
+            >(
               () => HorizontalDragGestureRecognizer(debugOwner: this),
               (HorizontalDragGestureRecognizer recognizer) => recognizer
                 ..onStart = _handleDragStart
@@ -254,10 +252,7 @@ class _AppSwipeActionsState extends State<AppSwipeActions>
                 armed: _offset.abs() >= _activateThreshold,
               ),
             ),
-          Transform.translate(
-            offset: Offset(_offset, 0),
-            child: widget.child,
-          ),
+          Transform.translate(offset: Offset(_offset, 0), child: widget.child),
         ],
       ),
     );
@@ -309,10 +304,7 @@ class _ActionSurface extends StatelessWidget {
                   child: Semantics(
                     label: action.semanticLabel,
                     button: true,
-                    child: Icon(
-                      action.icon,
-                      color: theme.colorSurfacePrimary,
-                    ),
+                    child: Icon(action.icon, color: theme.colorSurfacePrimary),
                   ),
                 ),
               ),

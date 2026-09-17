@@ -161,7 +161,9 @@ class Zone extends HiveObject {
     }
     final anchor = anchorDate;
     return anchor == null ||
-        (anchor.year == day.year && anchor.month == day.month && anchor.day == day.day);
+        (anchor.year == day.year &&
+            anchor.month == day.month &&
+            anchor.day == day.day);
   }
 
   /// True when this row belongs to a recurring series (materialized
@@ -248,9 +250,13 @@ class Zone extends HiveObject {
       weekday: weekday as int?,
       facetId: json['facetId'] as String?,
       archived: json['archived'] as bool? ?? false,
-      effectiveFrom: json['effectiveFrom'] == null ? null : DateTime.parse(json['effectiveFrom'] as String),
+      effectiveFrom: json['effectiveFrom'] == null
+          ? null
+          : DateTime.parse(json['effectiveFrom'] as String),
       sourceId: json['sourceId'] as String?,
-      effectiveUntil: json['effectiveUntil'] == null ? null : DateTime.parse(json['effectiveUntil'] as String),
+      effectiveUntil: json['effectiveUntil'] == null
+          ? null
+          : DateTime.parse(json['effectiveUntil'] as String),
       id: id,
       title: title,
       startMinutes: startMinutes,
@@ -285,9 +291,13 @@ class Zone extends HiveObject {
   /// Compares every persisted field except [id] itself, which the caller
   /// already knows matches.
   bool hasSameFieldsAs(Zone other) {
-    return effectiveUntil == other.effectiveUntil && weekday == other.weekday && facetId == other.facetId &&
-        archived == other.archived && effectiveFrom == other.effectiveFrom &&
-        sourceId == other.sourceId && title == other.title &&
+    return effectiveUntil == other.effectiveUntil &&
+        weekday == other.weekday &&
+        facetId == other.facetId &&
+        archived == other.archived &&
+        effectiveFrom == other.effectiveFrom &&
+        sourceId == other.sourceId &&
+        title == other.title &&
         startMinutes == other.startMinutes &&
         endMinutes == other.endMinutes &&
         schemaVersion == other.schemaVersion &&

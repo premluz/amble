@@ -1004,31 +1004,34 @@ void main() {
   });
 
   group('propagateBehaviorLinkToSeries', () {
-    test('links every OTHER instance of the series to the same behavior', () async {
-      final notifier = container.read(taskListProvider.notifier);
-      final template = await notifier.createTask(
-        title: 'Meditate',
-        scheduledAt: DateTime(2026, 8, 20, 7),
-        durationMinutes: 10,
-        categoryId: BuiltInCategoryIds.health,
-        recurrenceRule: RecurrenceRule(frequency: RecurrenceFrequency.daily),
-      );
-      final seriesBefore = container
-          .read(taskListProvider)
-          .where((t) => t.recurrenceId == template.recurrenceId)
-          .toList();
-      expect(seriesBefore.length, greaterThan(1));
-      expect(seriesBefore.every((t) => t.behaviorId == null), isTrue);
+    test(
+      'links every OTHER instance of the series to the same behavior',
+      () async {
+        final notifier = container.read(taskListProvider.notifier);
+        final template = await notifier.createTask(
+          title: 'Meditate',
+          scheduledAt: DateTime(2026, 8, 20, 7),
+          durationMinutes: 10,
+          categoryId: BuiltInCategoryIds.health,
+          recurrenceRule: RecurrenceRule(frequency: RecurrenceFrequency.daily),
+        );
+        final seriesBefore = container
+            .read(taskListProvider)
+            .where((t) => t.recurrenceId == template.recurrenceId)
+            .toList();
+        expect(seriesBefore.length, greaterThan(1));
+        expect(seriesBefore.every((t) => t.behaviorId == null), isTrue);
 
-      template.behaviorId = 'behavior-1';
-      await notifier.updateTask(template);
-      await notifier.propagateBehaviorLinkToSeries(template);
+        template.behaviorId = 'behavior-1';
+        await notifier.updateTask(template);
+        await notifier.propagateBehaviorLinkToSeries(template);
 
-      final seriesAfter = container
-          .read(taskListProvider)
-          .where((t) => t.recurrenceId == template.recurrenceId);
-      expect(seriesAfter.every((t) => t.behaviorId == 'behavior-1'), isTrue);
-    });
+        final seriesAfter = container
+            .read(taskListProvider)
+            .where((t) => t.recurrenceId == template.recurrenceId);
+        expect(seriesAfter.every((t) => t.behaviorId == 'behavior-1'), isTrue);
+      },
+    );
 
     test('unlinking clears behaviorId AND actualAmount on every sibling, '
         'not just the edited instance', () async {

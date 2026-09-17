@@ -37,10 +37,7 @@ void main() {
     haptics = _RecordingHaptics();
   });
 
-  Future<void> pumpRow(
-    WidgetTester tester, {
-    VoidCallback? onInnerTap,
-  }) async {
+  Future<void> pumpRow(WidgetTester tester, {VoidCallback? onInnerTap}) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
@@ -109,10 +106,7 @@ void main() {
   double rowOffset(WidgetTester tester) {
     final transform = tester.widget<Transform>(
       find
-          .ancestor(
-            of: find.text('Buy milk'),
-            matching: find.byType(Transform),
-          )
+          .ancestor(of: find.text('Buy milk'), matching: find.byType(Transform))
           .first,
     );
     return transform.transform.getTranslation().x;
@@ -250,11 +244,9 @@ void main() {
 
       await tester.tap(find.text('Buy milk'), warnIfMissed: false);
       await tester.pump();
-      expect(
-        fired,
-        ['row'],
-        reason: 'a parked-open row must still expose its inner tap targets',
-      );
+      expect(fired, [
+        'row',
+      ], reason: 'a parked-open row must still expose its inner tap targets');
     });
 
     // The gap that let a real defect ship: every case above either swipes
@@ -271,11 +263,9 @@ void main() {
 
       await swipeBy(tester, -_pastThreshold);
 
-      expect(
-        fired,
-        ['remove'],
-        reason: 'the swipe must still activate on a row with inner taps',
-      );
+      expect(fired, [
+        'remove',
+      ], reason: 'the swipe must still activate on a row with inner taps');
     });
 
     testWidgets('a vertical drag is left to the enclosing scrollable', (

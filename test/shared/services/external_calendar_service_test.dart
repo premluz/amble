@@ -125,7 +125,8 @@ void main() {
       expect(
         TimeOfDay.fromDateTime(mapped.start),
         TimeOfDay.fromDateTime(hostReading),
-        reason: 'the sheet formats via TimeOfDay.fromDateTime — this is '
+        reason:
+            'the sheet formats via TimeOfDay.fromDateTime — this is '
             'the exact value the user sees when tapping the event',
       );
       expect(mapped.start.isUtc, isFalse);

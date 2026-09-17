@@ -227,8 +227,17 @@ class BackupService {
 
     final List<ZoneFacet> facets;
     try {
-      facets = ((payload['zoneFacets'] ?? []) as List).map((e) => ZoneFacet.fromJson(Map<String,dynamic>.from(e as Map))).toList();
-    } catch (_) { throw BackupImportException('This backup contains invalid zone names.'); }
-    return ParsedImportFile(tasks: tasks, categories: categories, zones: zones, zoneFacets: facets);
+      facets = ((payload['zoneFacets'] ?? []) as List)
+          .map((e) => ZoneFacet.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    } catch (_) {
+      throw BackupImportException('This backup contains invalid zone names.');
+    }
+    return ParsedImportFile(
+      tasks: tasks,
+      categories: categories,
+      zones: zones,
+      zoneFacets: facets,
+    );
   }
 }

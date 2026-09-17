@@ -109,7 +109,9 @@ void main() {
       // checkbox's own `spacingMinTapTarget`) is the actual centering
       // region the fix establishes; a title's OWN box should be centered
       // within a 48px-tall span starting at the pill's top.
-      final pillTop = tester.getTopLeft(find.byType(AnimatedContainer).first).dy;
+      final pillTop = tester
+          .getTopLeft(find.byType(AnimatedContainer).first)
+          .dy;
       final title = tester.getRect(
         find.textContaining('Deep work', findRichText: true),
       );
@@ -156,10 +158,7 @@ void main() {
 
       final icon = await emojiRect(tester);
       final title = tester.getRect(find.text('Deep work'));
-      expect(
-        (title.center.dy - icon.center.dy).abs(),
-        lessThan(title.height),
-      );
+      expect((title.center.dy - icon.center.dy).abs(), lessThan(title.height));
     },
   );
 

@@ -48,8 +48,7 @@ void main() {
                 .widgetList<DecoratedBox>(find.byType(DecoratedBox))
                 .map((w) => w.decoration)
                 .whereType<BoxDecoration>())
-          if (decoration.border case Border(:final top))
-            top.color,
+          if (decoration.border case Border(:final top)) top.color,
       }..retainAll([theme.colorAccent, theme.colorScrim]);
 
       expect(
@@ -89,9 +88,7 @@ void main() {
     });
 
     testWidgets('selected: the accent ring and the dark separator ring are '
-        'two DIFFERENT colors, not the same ring drawn twice', (
-      tester,
-    ) async {
+        'two DIFFERENT colors, not the same ring drawn twice', (tester) async {
       await pump(tester, isSelected: true);
 
       final borderColors = <Color>{
@@ -100,8 +97,7 @@ void main() {
                 .widgetList<DecoratedBox>(find.byType(DecoratedBox))
                 .map((w) => w.decoration)
                 .whereType<BoxDecoration>())
-          if (decoration.border case Border(:final top))
-            top.color,
+          if (decoration.border case Border(:final top)) top.color,
       };
 
       expect(
@@ -137,7 +133,8 @@ void main() {
         expect(
           width,
           lessThan(theme.borderWidthHairline * 2),
-          reason: 'requested directly: "the blue selected border should '
+          reason:
+              'requested directly: "the blue selected border should '
               'be thinner"',
         );
       }
@@ -186,8 +183,7 @@ void main() {
                 .widgetList<DecoratedBox>(find.byType(DecoratedBox))
                 .map((w) => w.decoration)
                 .whereType<BoxDecoration>())
-          if (decoration.border case Border(:final top))
-            top.color,
+          if (decoration.border case Border(:final top)) top.color,
       }..retainAll([theme.colorAccent, theme.colorScrim]);
 
       expect(selectionColors, isEmpty);
@@ -203,8 +199,7 @@ void main() {
                 .widgetList<DecoratedBox>(find.byType(DecoratedBox))
                 .map((w) => w.decoration)
                 .whereType<BoxDecoration>())
-          if (decoration.border case Border(:final top))
-            top.color,
+          if (decoration.border case Border(:final top)) top.color,
       };
 
       expect(borderColors, containsAll([theme.colorAccent, theme.colorScrim]));
@@ -245,13 +240,19 @@ void main() {
       expect(
         radii,
         sorted,
-        reason: 'each ring/fill must nest at a strictly smaller radius '
+        reason:
+            'each ring/fill must nest at a strictly smaller radius '
             'than the layer painted after it, or their corners will not '
             'be concentric',
       );
-      expect(radii.toSet().length, radii.length, reason: 'no two layers '
-          'should share the exact same radius — that is what let a fill '
-          'corner peek out past its enclosing ring in the reported bug');
+      expect(
+        radii.toSet().length,
+        radii.length,
+        reason:
+            'no two layers '
+            'should share the exact same radius — that is what let a fill '
+            'corner peek out past its enclosing ring in the reported bug',
+      );
     });
 
     // A soft inner-shadow RadialGradient briefly sat inside the solid
@@ -279,7 +280,6 @@ void main() {
         expect(gradients, isEmpty);
       },
     );
-
   });
 
   // Requested directly: "that added inner border... should not affect
@@ -317,7 +317,8 @@ void main() {
       expect(
         childSize,
         const Size(60, 90),
-        reason: 'the wrapped content must fill the exact same box the '
+        reason:
+            'the wrapped content must fill the exact same box the '
             'unselected pill would — selection must not shrink it',
       );
     },

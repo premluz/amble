@@ -7,6 +7,7 @@ import '../../core/dev_config.dart' show TimelineTaskTextLayout;
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/selected_pill_border.dart';
 import '../../shared/models/category.dart';
+import '../../shared/models/tag_color_style.dart';
 import '../../shared/models/task.dart';
 import '../../shared/models/task_category.dart';
 import '../../shared/models/task_status.dart';
@@ -84,6 +85,7 @@ class TaskCapsuleBlock extends StatelessWidget {
     this.onResizeTopStart,
     this.onResizeTopUpdate,
     this.onResizeTopEnd,
+    this.tagColorStyle = TagColorStyle.pill,
   });
 
   final Task task;
@@ -96,6 +98,15 @@ class TaskCapsuleBlock extends StatelessWidget {
   /// pre-migration task and every dev-scaffold caller (which doesn't wire
   /// up a live category list) still takes. See `_CategoryVisual.resolve`.
   final Category? category;
+
+  /// Whether this pill's whole rail is filled with the tag color
+  /// (`TagColorStyle.pill`, the default — unchanged from before this
+  /// setting existed) or just a small badge behind the icon
+  /// (`TagColorStyle.iconOnly`, the rail then a paled tint of that same
+  /// color) — see `TagColorStyleSetting`'s own doc comment. Passed in by
+  /// the caller (provider access this plain `StatelessWidget` doesn't
+  /// have), same pattern as [category].
+  final TagColorStyle tagColorStyle;
   final double pixelsPerMinute;
   final VoidCallback? onTap;
 
@@ -406,8 +417,14 @@ class TaskCapsuleBlock extends StatelessWidget {
       // ignore: deprecated_member_use_from_same_package
       legacyCategory: task.category,
       category: category,
+      hasCategoryId: task.categoryId != null,
     );
-    final categoryColor = categoryVisual.pillColor;
+    // The RAIL's own fill — `railColor(tagColorStyle)`, not the raw
+    // `pillColor` a `TagColorStyle.pill` caller still gets unchanged.
+    // `TagColorStyle.iconOnly` instead pales this down to a tint; the
+    // small badge behind the icon (below) then carries the tag's full
+    // `categoryVisual.iconColor` on top of it.
+    final categoryColor = categoryVisual.railColor(tagColorStyle);
     final isSkipped = task.status == TaskStatus.skipped;
     final isCompleted = task.status == TaskStatus.completed;
     final isRescheduled = task.status == TaskStatus.rescheduled;
@@ -425,11 +442,23 @@ class TaskCapsuleBlock extends StatelessWidget {
     // badge and its text. colorTaskCompleted is now unused — flagged
     // rather than silently deleted, since removing a Tier 2 token isn't
     // this change's call to make unprompted.
+    //
+    // Skipped/completed override BOTH styles identically — a muted status
+    // color is not a "tag color" in either sense, so TagColorStyle simply
+    // doesn't apply once one of these is true.
     final badgeColor = isSkipped
         ? theme.colorTaskSkipped
         : isCompleted
         ? theme.colorTextSecondary
         : categoryColor;
+    // The small full-saturation circle drawn behind the icon in
+    // `TagColorStyle.iconOnly` mode only — null (no separate badge shape)
+    // for `pill` mode or a skipped/completed status, matching badgeColor's
+    // own override above.
+    final iconOnlyBadgeColor =
+        (!isSkipped && !isCompleted && tagColorStyle == TagColorStyle.iconOnly)
+        ? categoryVisual.iconColor
+        : null;
 
     // theme.sizeTaskBadge (20px) — requested directly ("pill size and icon
     // same as on zone view so smaller"), matching ZoneContainerBlock's own
@@ -730,28 +759,12 @@ class TaskCapsuleBlock extends StatelessWidget {
                                 // flush to the very top instead, reported
                                 // directly as needing "new alignments...
                                 // lacks padding."
-                                child: SizedBox(
-                                  width: badgeSize,
-                                  height: badgeSize,
-                                  child: Center(
-                                    child: Opacity(
-                                      opacity: glyphHidden ? 0 : 1,
-                                      child: categoryVisual.icon != null
-                                          ? Icon(
-                                              categoryVisual.icon,
-                                              size: badgeSize * 0.55,
-                                              color: glyphColorOn(
-                                                categoryVisual.pillColor,
-                                              ),
-                                            )
-                                          : Text(
-                                              categoryVisual.emoji,
-                                              style: TextStyle(
-                                                fontSize: badgeSize * 0.55,
-                                              ),
-                                            ),
-                                    ),
-                                  ),
+                                child: _PillGlyph(
+                                  categoryVisual: categoryVisual,
+                                  badgeSize: badgeSize,
+                                  railColor: categoryColor,
+                                  iconOnlyBadgeColor: iconOnlyBadgeColor,
+                                  hidden: glyphHidden,
                                 ),
                               ),
                             ),
@@ -766,24 +779,12 @@ class TaskCapsuleBlock extends StatelessWidget {
                         : SizedBox(
                             width: badgeSize,
                             height: badgeSize,
-                            child: Center(
-                              child: Opacity(
-                                opacity: glyphHidden ? 0 : 1,
-                                child: categoryVisual.icon != null
-                                    ? Icon(
-                                        categoryVisual.icon,
-                                        size: badgeSize * 0.55,
-                                        color: glyphColorOn(
-                                          categoryVisual.pillColor,
-                                        ),
-                                      )
-                                    : Text(
-                                        categoryVisual.emoji,
-                                        style: TextStyle(
-                                          fontSize: badgeSize * 0.55,
-                                        ),
-                                      ),
-                              ),
+                            child: _PillGlyph(
+                              categoryVisual: categoryVisual,
+                              badgeSize: badgeSize,
+                              railColor: categoryColor,
+                              iconOnlyBadgeColor: iconOnlyBadgeColor,
+                              hidden: glyphHidden,
                             ),
                           ),
                   ),
@@ -1744,6 +1745,79 @@ double taskTimeColumnWidth(AmbleTheme theme) => theme.spacingXl * 3;
 /// Width reserved for the "1h" duration column that follows the time.
 double taskDurationColumnWidth(AmbleTheme theme) => theme.spacingXl;
 
+/// The badgeSize-square glyph shown at the top of a pill's rail — factored
+/// out since both the selected and unselected branches above render the
+/// exact same thing (only their OUTER wrapper, `SelectedPillBorder` vs.
+/// none, differs).
+///
+/// `TagColorStyle.pill` (iconOnlyBadgeColor null): unchanged from before
+/// this setting existed — the icon/emoji sits directly on [railColor],
+/// tinted for contrast against it.
+///
+/// `TagColorStyle.iconOnly` (iconOnlyBadgeColor non-null): a small solid
+/// circle at the tag's full-saturation color sits behind the glyph,
+/// itself sitting on the now-paled [railColor] — requested directly: "the
+/// pill also being colored but much paler than the main color of the tag
+/// color selected."
+class _PillGlyph extends StatelessWidget {
+  const _PillGlyph({
+    required this.categoryVisual,
+    required this.badgeSize,
+    required this.railColor,
+    required this.iconOnlyBadgeColor,
+    required this.hidden,
+  });
+
+  final _CapsuleCategoryVisual categoryVisual;
+  final double badgeSize;
+  final Color railColor;
+  final Color? iconOnlyBadgeColor;
+  final bool hidden;
+
+  @override
+  Widget build(BuildContext context) {
+    // The glyph itself sits on whichever color it's actually painted
+    // against — the small badge circle in iconOnly mode, the rail
+    // directly otherwise — so `glyphColorOn` picks contrast against the
+    // right background in both modes.
+    final glyphBackground = iconOnlyBadgeColor ?? railColor;
+    final glyph = categoryVisual.icon != null
+        ? Icon(
+            categoryVisual.icon,
+            size: badgeSize * 0.55,
+            color: glyphColorOn(glyphBackground),
+          )
+        : Text(
+            categoryVisual.emoji,
+            style: TextStyle(fontSize: badgeSize * 0.55),
+          );
+
+    // A slightly smaller circle than the full badgeSize square — leaves a
+    // sliver of the paled rail visible around it so the badge still reads
+    // as a distinct shape rather than filling the whole square edge to
+    // edge.
+    final badgeCircleSize = badgeSize * 0.8;
+
+    return Center(
+      child: Opacity(
+        opacity: hidden ? 0 : 1,
+        child: iconOnlyBadgeColor == null
+            ? glyph
+            : Container(
+                width: badgeCircleSize,
+                height: badgeCircleSize,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: iconOnlyBadgeColor,
+                  shape: BoxShape.circle,
+                ),
+                child: glyph,
+              ),
+      ),
+    );
+  }
+}
+
 class _CapsuleCategoryVisual {
   const _CapsuleCategoryVisual({
     required this.pillColor,
@@ -1753,7 +1827,25 @@ class _CapsuleCategoryVisual {
   });
 
   final Color pillColor;
+
+  /// The tag's own full-saturation color — already exactly this in both
+  /// branches below ([theme.categoryIconColors] for the legacy-enum path,
+  /// [CategoryVisual.iconColor] for a real [Category] row), so this
+  /// doubles as [CategoryVisual.trueColor]'s counterpart here without a
+  /// new field. Feeds [railColor]'s `TagColorStyle.iconOnly` mode.
   final Color iconColor;
+
+  /// The rail's actual fill, given [style] — [pillColor] unchanged for
+  /// `TagColorStyle.pill` (today's existing look), or [iconColor] paled
+  /// via [iconOnlyRailOpacity] for `TagColorStyle.iconOnly`. Same logic as
+  /// `railColorFor` (`category_visual.dart`), duplicated rather than
+  /// shared because this class wraps a legacy-enum fallback
+  /// `CategoryVisual` itself doesn't have — but reuses that same shared
+  /// opacity constant so the two never drift apart.
+  Color railColor(TagColorStyle style) => switch (style) {
+    TagColorStyle.pill => pillColor,
+    TagColorStyle.iconOnly => iconColor.withValues(alpha: iconOnlyRailOpacity),
+  };
 
   /// Legacy fallback glyph — only actually rendered when [icon] is null
   /// (a pre-migration [legacyCategory] with no live [Category] row yet).
@@ -1770,8 +1862,36 @@ class _CapsuleCategoryVisual {
     required AmbleTheme theme,
     required TaskCategory legacyCategory,
     required Category? category,
+    // Distinguishes "this task genuinely has no category" (a real,
+    // pre-migration/uncategorised task — falls back to the legacy enum's
+    // own General color, unchanged from before this parameter existed)
+    // from "this task HAS a categoryId, but the caller's live-category
+    // lookup came back empty on THIS build" (`categoryById`/
+    // `categoryListProvider.where(...).firstOrNull` missing an entry that
+    // genuinely exists — reported directly: "on Listview tasks render
+    // white even though tag is set with color, but on timeline correctly
+    // renders." Falling through to the legacy enum's General tint in that
+    // second case was the bug: General's own color (`neutralTint`,
+    // OKLCH lightness 0.9, zero chroma) reads as near-white, which is
+    // exactly the "renders white" symptom — for a task that DOES have a
+    // real, colored tag, just not resolved yet this frame.
+    required bool hasCategoryId,
   }) {
     if (category == null) {
+      if (hasCategoryId) {
+        // A real category exists but didn't resolve this build — a
+        // neutral mid-grey (not the near-white General tint) so a
+        // transient miss reads as "still loading," never as "no tag."
+        // Whichever future build DOES resolve the real category corrects
+        // this via the same `AnimatedContainer` that already exists for
+        // any other color change — no separate transition needed.
+        return _CapsuleCategoryVisual(
+          pillColor: theme.colorTextSecondary,
+          iconColor: theme.colorTextSecondary,
+          emoji: '',
+          icon: null,
+        );
+      }
       return _CapsuleCategoryVisual(
         pillColor: theme.categoryColors[legacyCategory.token]!,
         iconColor: theme.categoryIconColors[legacyCategory.token]!,

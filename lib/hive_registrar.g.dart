@@ -10,6 +10,7 @@ import 'package:amble/shared/models/pill_shape.dart';
 import 'package:amble/shared/models/recurrence_frequency.dart';
 import 'package:amble/shared/models/recurrence_rule.dart';
 import 'package:amble/shared/models/synced_calendar_event.dart';
+import 'package:amble/shared/models/tag_color_style.dart';
 import 'package:amble/shared/models/task.dart';
 import 'package:amble/shared/models/task_category.dart';
 import 'package:amble/shared/models/task_size.dart';
@@ -28,6 +29,7 @@ extension HiveRegistrar on HiveInterface {
     registerAdapter(RecurrenceFrequencyAdapter());
     registerAdapter(RecurrenceRuleAdapter());
     registerAdapter(SyncedCalendarEventAdapter());
+    registerAdapter(TagColorStyleAdapter());
     registerAdapter(TaskAdapter());
     registerAdapter(TaskCategoryAdapter());
     registerAdapter(TaskFontSizeAdapter());
@@ -49,6 +51,7 @@ extension IsolatedHiveRegistrar on IsolatedHiveInterface {
     registerAdapter(RecurrenceFrequencyAdapter());
     registerAdapter(RecurrenceRuleAdapter());
     registerAdapter(SyncedCalendarEventAdapter());
+    registerAdapter(TagColorStyleAdapter());
     registerAdapter(TaskAdapter());
     registerAdapter(TaskCategoryAdapter());
     registerAdapter(TaskFontSizeAdapter());

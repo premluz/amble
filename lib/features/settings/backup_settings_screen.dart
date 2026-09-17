@@ -79,7 +79,12 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
       final zones = ref.read(zoneListProvider);
       await ref
           .read(backupServiceProvider)
-          .exportTasks(tasks, categories, zones, zoneFacets: ref.read(zoneFacetListProvider));
+          .exportTasks(
+            tasks,
+            categories,
+            zones,
+            zoneFacets: ref.read(zoneFacetListProvider),
+          );
       if (!mounted) return;
       setState(() {
         // Reports every entity actually written to the file — previously
@@ -123,7 +128,9 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
       final categoryResult = await ref
           .read(categoryListProvider.notifier)
           .importCategories(parsed.categories);
-      await ref.read(zoneFacetListProvider.notifier).importFacets(parsed.zoneFacets);
+      await ref
+          .read(zoneFacetListProvider.notifier)
+          .importFacets(parsed.zoneFacets);
       final zoneResult = await ref
           .read(zoneListProvider.notifier)
           .importZones(parsed.zones);

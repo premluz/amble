@@ -30,38 +30,36 @@ void main() {
   testWidgets('the visible handle is a circle, not a bar', (tester) async {
     await pump(tester);
 
-    final decoration =
-        tester
-            .widgetList<Container>(find.byType(Container))
-            .map((c) => c.decoration)
-            .whereType<BoxDecoration>()
-            .firstWhere((d) => d.shape == BoxShape.circle);
+    final decoration = tester
+        .widgetList<Container>(find.byType(Container))
+        .map((c) => c.decoration)
+        .whereType<BoxDecoration>()
+        .firstWhere((d) => d.shape == BoxShape.circle);
 
     expect(decoration.shape, BoxShape.circle);
     expect(
       decoration.borderRadius,
       isNull,
-      reason: 'a circle uses BoxShape.circle, not a rounded rect — the old '
+      reason:
+          'a circle uses BoxShape.circle, not a rounded rect — the old '
           'bar used borderRadius instead',
     );
   });
 
-  testWidgets('the handle is accent-colored, not the old grey', (
-    tester,
-  ) async {
+  testWidgets('the handle is accent-colored, not the old grey', (tester) async {
     await pump(tester);
 
-    final decoration =
-        tester
-            .widgetList<Container>(find.byType(Container))
-            .map((c) => c.decoration)
-            .whereType<BoxDecoration>()
-            .firstWhere((d) => d.shape == BoxShape.circle);
+    final decoration = tester
+        .widgetList<Container>(find.byType(Container))
+        .map((c) => c.decoration)
+        .whereType<BoxDecoration>()
+        .firstWhere((d) => d.shape == BoxShape.circle);
 
     expect(
       decoration.color,
       theme.colorAccent,
-      reason: 'matches the selection border\'s own accent color, so the '
+      reason:
+          'matches the selection border\'s own accent color, so the '
           'two read as one consistent "editable" visual language',
     );
   });
@@ -93,7 +91,8 @@ void main() {
       expect(
         circleRect.center.dy,
         closeTo(handleRect.top, 0.5),
-        reason: 'the dot straddles the handle\'s own top boundary — half '
+        reason:
+            'the dot straddles the handle\'s own top boundary — half '
             'of it outside, half inside',
       );
       expect(
@@ -121,7 +120,8 @@ void main() {
       expect(
         circleRect.center.dy,
         closeTo(handleRect.bottom, 0.5),
-        reason: 'a bottom handle straddles its dot across the BOTTOM '
+        reason:
+            'a bottom handle straddles its dot across the BOTTOM '
             'boundary — the mirror of the top handle',
       );
     },
@@ -134,53 +134,56 @@ void main() {
 
     final circleRect = tester.getRect(
       find.byWidgetPredicate(
-        (w) => w is Container && (w.decoration as BoxDecoration?)?.shape == BoxShape.circle,
+        (w) =>
+            w is Container &&
+            (w.decoration as BoxDecoration?)?.shape == BoxShape.circle,
       ),
     );
 
     expect(circleRect.width, theme.spacingSm);
     expect(circleRect.height, theme.spacingSm);
-    expect(circleRect.width, circleRect.height, reason: 'a circle, not an oval, at this size');
+    expect(
+      circleRect.width,
+      circleRect.height,
+      reason: 'a circle, not an oval, at this size',
+    );
   });
 
   // `outwardShiftFactor: 0.0` keeps the dot centered on the edge — the
   // pre-outward-push behavior, still available for a caller that needs it.
-  testWidgets(
-    'outwardShiftFactor: 0.0 keeps the dot centered on the edge — no '
-    'outward shift at all',
-    (tester) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: ThemeData(useMaterial3: true, extensions: [theme]),
-          home: Scaffold(
-            body: ResizeHandle(
-              theme: theme,
-              onDragStart: (_) {},
-              onDragUpdate: (_) {},
-              onDragEnd: (_) {},
-              barAlignment: Alignment.topCenter,
-              outwardShiftFactor: 0.0,
-            ),
+  testWidgets('outwardShiftFactor: 0.0 keeps the dot centered on the edge — no '
+      'outward shift at all', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(useMaterial3: true, extensions: [theme]),
+        home: Scaffold(
+          body: ResizeHandle(
+            theme: theme,
+            onDragStart: (_) {},
+            onDragUpdate: (_) {},
+            onDragEnd: (_) {},
+            barAlignment: Alignment.topCenter,
+            outwardShiftFactor: 0.0,
           ),
         ),
-      );
+      ),
+    );
 
-      final handleRect = tester.getRect(find.byType(ResizeHandle));
-      final circleRect = tester.getRect(
-        find.byWidgetPredicate(
-          (w) =>
-              w is Container &&
-              (w.decoration as BoxDecoration?)?.shape == BoxShape.circle,
-        ),
-      );
+    final handleRect = tester.getRect(find.byType(ResizeHandle));
+    final circleRect = tester.getRect(
+      find.byWidgetPredicate(
+        (w) =>
+            w is Container &&
+            (w.decoration as BoxDecoration?)?.shape == BoxShape.circle,
+      ),
+    );
 
-      expect(
-        circleRect.center.dy,
-        closeTo(handleRect.top + circleRect.height / 2, 0.5),
-        reason: 'centered exactly on the handle\'s own edge — zero shift',
-      );
-    },
-  );
+    expect(
+      circleRect.center.dy,
+      closeTo(handleRect.top + circleRect.height / 2, 0.5),
+      reason: 'centered exactly on the handle\'s own edge — zero shift',
+    );
+  });
 
   // `TaskCapsuleBlock` passes `outwardShiftFactor: 0.5` — see that field's
   // own doc comment: its resize handles sit inside a frosted wrapper
@@ -228,7 +231,8 @@ void main() {
       expect(
         circleRect.center.dy,
         closeTo(handleRect.top, 0.5),
-        reason: 'a 0.5 factor moves the dot half its own diameter past '
+        reason:
+            'a 0.5 factor moves the dot half its own diameter past '
             'where a 0.0 factor would sit — halfway to the full '
             '(1.0-factor) shift, landing its center exactly on the edge',
       );

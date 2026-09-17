@@ -178,6 +178,10 @@ class ZoneContainerBlock extends StatelessWidget {
   /// parameter existed.
   final bool flatStyle;
 
+  // No TagColorStyle field here — see `_ZoneTaskRow`'s own doc comment on
+  // why its badge (the only category-colored surface this container
+  // renders) has nothing for that setting to switch between.
+
   /// Key on `ZoneDayTimeline`'s own outer Stack — a row resolves its
   /// current top RELATIVE TO THIS ancestor on drag start (see
   /// `_ZoneTaskRow`'s own doc comment), since that's the coordinate frame
@@ -574,6 +578,14 @@ class _ZoneTaskRow extends StatelessWidget {
   final void Function(Task task, double restingTop)? onDragStart;
   final GestureDragUpdateCallback? onDragUpdate;
   final GestureDragEndCallback? onDragEnd;
+
+  // No TagColorStyle field here, deliberately — this row's badge is
+  // ALREADY the "icon-only" visual by construction: its fill is
+  // `iconColor` (the tag's full-saturation color), and the whole shape
+  // is one fixed small square with no extending rail behind it the way
+  // TaskCapsuleBlock's pill has. There is no separate "pale rail" region
+  // to paint here, so TagColorStyle has nothing to switch between for
+  // this specific row type.
 
   /// The `DevZoneCardFlat` dev toggle — when true, wraps this row in its
   /// own card (`theme.colorSurfaceSecondary` fill, `theme.radiusXl`

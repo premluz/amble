@@ -4,6 +4,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../models/app_theme_mode.dart';
 import '../models/pill_shape.dart';
+import '../models/tag_color_style.dart';
 import '../models/task_size.dart';
 import '../models/tracked_behavior_view_mode.dart';
 import '../repositories/hive_preferences_repository.dart';
@@ -79,6 +80,42 @@ class HasSeenSplash extends _$HasSeenSplash {
     await ref
         .read(preferencesRepositoryProvider)
         .setValue(PreferenceKeys.hasSeenSplash, false);
+    state = false;
+  }
+}
+
+/// Whether the onboarding Profile quiz has been completed or explicitly
+/// skipped — see [PreferenceKeys.hasCompletedOnboarding]'s own doc
+/// comment. `keepAlive: true` for the same reason as [HasSeenSplash]:
+/// read by the root `MaterialApp` to decide its `home:`, not
+/// screen-scoped state.
+@Riverpod(keepAlive: true)
+class HasCompletedOnboarding extends _$HasCompletedOnboarding {
+  @override
+  bool build() {
+    return ref
+            .read(preferencesRepositoryProvider)
+            .getValue<bool>(PreferenceKeys.hasCompletedOnboarding) ??
+        false;
+  }
+
+  /// Called on EITHER a profile choice or an explicit Skip — both count as
+  /// "done" per docs/SCOPE.md's "onboarding is skippable, never blocking"
+  /// rule, so there is only one "mark done" method, not a separate
+  /// skip-vs-complete distinction to persist.
+  Future<void> markDone() async {
+    await ref
+        .read(preferencesRepositoryProvider)
+        .setValue(PreferenceKeys.hasCompletedOnboarding, true);
+    state = true;
+  }
+
+  /// Debug-only reset, mirroring [HasSeenSplash.reset] exactly — see that
+  /// method's own doc comment.
+  Future<void> reset() async {
+    await ref
+        .read(preferencesRepositoryProvider)
+        .setValue(PreferenceKeys.hasCompletedOnboarding, false);
     state = false;
   }
 }
@@ -335,6 +372,33 @@ class PillShapeSetting extends _$PillShapeSetting {
     await ref
         .read(preferencesRepositoryProvider)
         .setValue(PreferenceKeys.pillShape, value);
+    state = value;
+  }
+}
+
+/// Whether a Tag's color fills the WHOLE pill (`TagColorStyle.pill`) or
+/// just the small badge behind its icon, with the rest of the pill paled
+/// (`TagColorStyle.iconOnly`) — one global setting spanning every
+/// pill-shaped surface in the app, mirroring [PillShapeSetting]'s own
+/// mechanism exactly. Requested directly: "add config in admin that lets
+/// [you] manage what gets the tag color as per tag (the pill or just the
+/// icon...)."
+///
+/// Defaults to `TagColorStyle.pill` — today's existing, unchanged look.
+@Riverpod(keepAlive: true)
+class TagColorStyleSetting extends _$TagColorStyleSetting {
+  @override
+  TagColorStyle build() {
+    return ref
+            .read(preferencesRepositoryProvider)
+            .getValue<TagColorStyle>(PreferenceKeys.tagColorStyle) ??
+        TagColorStyle.pill;
+  }
+
+  Future<void> set(TagColorStyle value) async {
+    await ref
+        .read(preferencesRepositoryProvider)
+        .setValue(PreferenceKeys.tagColorStyle, value);
     state = value;
   }
 }

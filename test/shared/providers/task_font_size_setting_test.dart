@@ -58,7 +58,8 @@ void main() {
       expect(
         container.read(taskFontSizeSettingProvider),
         TaskFontSize.md,
-        reason: 'the two settings must be independent once resolved — '
+        reason:
+            'the two settings must be independent once resolved — '
             'changing pill size alone must never move font size',
       );
     });
@@ -131,25 +132,29 @@ void main() {
       expect(
         freshContainer.read(taskFontSizeSettingProvider),
         TaskFontSize.sm,
-        reason: 'once migrated, taskFontSize must be its own persisted '
+        reason:
+            'once migrated, taskFontSize must be its own persisted '
             'value — changing taskSize afterward must not re-derive it',
       );
     });
 
-    test('migrateIfNeeded() is a no-op once a value is already stored', () async {
-      await container
-          .read(taskFontSizeSettingProvider.notifier)
-          .set(TaskFontSize.lg);
+    test(
+      'migrateIfNeeded() is a no-op once a value is already stored',
+      () async {
+        await container
+            .read(taskFontSizeSettingProvider.notifier)
+            .set(TaskFontSize.lg);
 
-      // Change taskSize AFTER an explicit font-size choice, then call
-      // migrateIfNeeded again — it must never overwrite a real choice.
-      await container.read(taskSizeSettingProvider.notifier).set(TaskSize.sm);
-      await container
-          .read(taskFontSizeSettingProvider.notifier)
-          .migrateIfNeeded();
+        // Change taskSize AFTER an explicit font-size choice, then call
+        // migrateIfNeeded again — it must never overwrite a real choice.
+        await container.read(taskSizeSettingProvider.notifier).set(TaskSize.sm);
+        await container
+            .read(taskFontSizeSettingProvider.notifier)
+            .migrateIfNeeded();
 
-      expect(container.read(taskFontSizeSettingProvider), TaskFontSize.lg);
-    });
+        expect(container.read(taskFontSizeSettingProvider), TaskFontSize.lg);
+      },
+    );
 
     test('once a user explicitly sets a font size, it persists across '
         'containers exactly like any other real setting', () async {
@@ -166,10 +171,7 @@ void main() {
       );
       addTearDown(freshContainer.dispose);
 
-      expect(
-        freshContainer.read(taskFontSizeSettingProvider),
-        TaskFontSize.lg,
-      );
+      expect(freshContainer.read(taskFontSizeSettingProvider), TaskFontSize.lg);
     });
   });
 }

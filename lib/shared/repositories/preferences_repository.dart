@@ -39,6 +39,15 @@ abstract final class PreferenceKeys {
   /// is set true and every later launch skips straight to the app.
   static const String hasSeenSplash = 'hasSeenSplash';
 
+  /// Whether the onboarding Profile quiz (separate from, and shown after,
+  /// the splash/carousel above) has been completed OR explicitly skipped —
+  /// both count as "done" per docs/SCOPE.md's "onboarding is skippable,
+  /// never blocking" rule. Absent (null) on a fresh install — the quiz
+  /// shows once, then this is set true regardless of whether the user
+  /// chose a profile or skipped, and every later launch goes straight to
+  /// the app. See [HasCompletedOnboarding].
+  static const String hasCompletedOnboarding = 'hasCompletedOnboarding';
+
   /// Whether creating/moving a task into a slot that overlaps an existing
   /// task should be rejected rather than allowed. Absent (null) defaults to
   /// true — see [PreventOverlappingTasksSetting].
@@ -111,6 +120,13 @@ abstract final class PreferenceKeys {
   /// in the app. Absent (null) defaults to `PillShape.small` — see
   /// [PillShapeSetting].
   static const String pillShape = 'pillShape';
+
+  /// Whether a Tag's color fills the WHOLE pill or just the small badge
+  /// behind its icon (see `TagColorStyle`). One global setting, spanning
+  /// every pill-shaped surface in the app. Absent (null) defaults to
+  /// `TagColorStyle.pill` (today's existing, unchanged look) — see
+  /// [TagColorStyleSetting].
+  static const String tagColorStyle = 'tagColorStyle';
 
   /// How the "Tracked" screen's cards render a behavior's completion
   /// history — see `TrackedBehaviorViewMode`. One global setting for the

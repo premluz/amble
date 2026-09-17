@@ -176,7 +176,8 @@ void main() {
       expect(
         text.style?.fontSize,
         theme.textCaption.fontSize,
-        reason: 'every day cell — selected or not — must be sized off '
+        reason:
+            'every day cell — selected or not — must be sized off '
             'textCaption, matching the "S M T W T F S" row above it',
       );
     }

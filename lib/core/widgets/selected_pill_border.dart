@@ -91,10 +91,18 @@ class SelectedPillBorder extends StatelessWidget {
 
   static BorderRadius _inset(BorderRadius radius, double by) {
     return BorderRadius.only(
-      topLeft: Radius.circular((radius.topLeft.x - by).clamp(0.0, double.infinity)),
-      topRight: Radius.circular((radius.topRight.x - by).clamp(0.0, double.infinity)),
-      bottomLeft: Radius.circular((radius.bottomLeft.x - by).clamp(0.0, double.infinity)),
-      bottomRight: Radius.circular((radius.bottomRight.x - by).clamp(0.0, double.infinity)),
+      topLeft: Radius.circular(
+        (radius.topLeft.x - by).clamp(0.0, double.infinity),
+      ),
+      topRight: Radius.circular(
+        (radius.topRight.x - by).clamp(0.0, double.infinity),
+      ),
+      bottomLeft: Radius.circular(
+        (radius.bottomLeft.x - by).clamp(0.0, double.infinity),
+      ),
+      bottomRight: Radius.circular(
+        (radius.bottomRight.x - by).clamp(0.0, double.infinity),
+      ),
     );
   }
 

@@ -352,13 +352,14 @@ void main() {
                 ?.topLeft
                 .x;
         final pillRadius =
-            ((tester.widget<AnimatedContainer>(
-                              find.byType(AnimatedContainer).first,
-                            )
-                            .decoration
-                        as BoxDecoration?)
-                    ?.borderRadius
-                as BorderRadius?)
+            ((tester
+                                .widget<AnimatedContainer>(
+                                  find.byType(AnimatedContainer).first,
+                                )
+                                .decoration
+                            as BoxDecoration?)
+                        ?.borderRadius
+                    as BorderRadius?)
                 ?.topLeft
                 .x;
 

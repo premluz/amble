@@ -123,7 +123,10 @@ class AppIntentService {
     final day = now();
     // Same day-membership filter and the SAME validator as ZoneFormScreen.
     // Non-recurring create stays dateless, per ZoneList.createZone's contract.
-    final others = zonesForDay(container.read(zoneRepositoryProvider).getAll(), day);
+    final others = zonesForDay(
+      container.read(zoneRepositoryProvider).getAll(),
+      day,
+    );
     final conflict = others.where((z) => zonesOverlap(draft, z)).firstOrNull;
     if (conflict != null) {
       throw AppIntentFailure(
@@ -132,7 +135,12 @@ class AppIntentService {
     }
     final zone = await container
         .read(zoneListProvider.notifier)
-        .createZone(title: title, startMinutes: start, endMinutes: end, anchorDateForRecurrence: day);
+        .createZone(
+          title: title,
+          startMinutes: start,
+          endMinutes: end,
+          anchorDateForRecurrence: day,
+        );
     // Zone notifications are scheduled by the form, not by createZone itself.
     try {
       await container.read(notificationServiceProvider).scheduleForZone(zone);

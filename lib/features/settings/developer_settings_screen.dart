@@ -8,6 +8,7 @@ import '../../core/widgets/app_alert_dialog.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_switch.dart';
 import '../../shared/models/pill_shape.dart';
+import '../../shared/models/tag_color_style.dart';
 import '../../shared/models/tracked_behavior.dart';
 import '../../shared/providers/preferences_providers.dart';
 import '../../shared/providers/task_providers.dart';
@@ -206,6 +207,13 @@ class _DeveloperSettingsScreenState
                   variant: AppButtonVariant.secondary,
                   onPressed: () =>
                       ref.read(hasSeenSplashProvider.notifier).reset(),
+                ),
+                SizedBox(height: theme.spacingSm),
+                AppButton(
+                  label: 'Reset onboarding quiz',
+                  variant: AppButtonVariant.secondary,
+                  onPressed: () =>
+                      ref.read(hasCompletedOnboardingProvider.notifier).reset(),
                 ),
               ],
             ),
@@ -423,6 +431,62 @@ class _DeveloperSettingsScreenState
                         onTap: () => ref
                             .read(pillShapeSettingProvider.notifier)
                             .set(shape),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // "Tag color style" — one global setting for whether a tag's
+          // color fills the whole pill or just the small badge behind its
+          // icon. Requested directly: "add config in admin that lets [you]
+          // manage what gets the tag color as per tag (the pill or just
+          // the icon...)." Persisted (not a `dev_config.dart` runtime
+          // toggle) — same "real user-facing visual preference" reasoning
+          // as "Pill shape" above.
+          SizedBox(height: theme.spacingSm),
+          SettingsPanel(
+            theme: theme,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Tag color style',
+                  style: theme.textBody.copyWith(
+                    color: theme.colorTextPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                SizedBox(height: theme.spacingXs),
+                Text(
+                  'Whether a tag\'s color fills the whole task pill, or '
+                  'just the small badge behind its icon — with the rest '
+                  'of the pill a much paler tint of that same color. '
+                  'Applies everywhere: Task view, List view, and Zone '
+                  'view.',
+                  style: theme.textBody.copyWith(
+                    color: theme.colorTextSecondary,
+                  ),
+                ),
+                SizedBox(height: theme.spacingSm),
+                Row(
+                  children: [
+                    for (final style in TagColorStyle.values) ...[
+                      if (style != TagColorStyle.values.first)
+                        SizedBox(width: theme.spacingSm),
+                      _DevChip(
+                        theme: theme,
+                        label: switch (style) {
+                          TagColorStyle.pill => 'Whole pill',
+                          TagColorStyle.iconOnly => 'Icon only',
+                        },
+                        selected:
+                            ref.watch(tagColorStyleSettingProvider) == style,
+                        onTap: () => ref
+                            .read(tagColorStyleSettingProvider.notifier)
+                            .set(style),
                       ),
                     ],
                   ],
