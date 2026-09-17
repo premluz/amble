@@ -5,6 +5,7 @@ import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/features/timeline/app_calendar_header.dart';
 import 'package:amble/features/timeline/edit_mode_provider.dart';
 import 'package:amble/features/timeline/selected_date_provider.dart';
+import 'package:amble/shared/providers/preferences_providers.dart';
 
 /// Covers `AppCalendarHeader` in isolation — the shared top calendar bar
 /// (month stepper, "jump to today" button, sync placeholder, Edit Mode
@@ -24,6 +25,16 @@ void main() {
             selectedDateProvider.overrideWith(
               () => _FixedSelectedDate(initialDate),
             ),
+          // AppCalendarHeader now reads this directly (its own switcher
+          // button, added when Task view/Timeline merged into one nav
+          // item) — this test has no Hive box set up at all, so without
+          // an override the real notifier throws trying to read
+          // preferencesRepositoryProvider. A fixed, in-memory stand-in
+          // keeps this suite's existing widget-isolation scope (no real
+          // persistence needed for what these tests actually check).
+          zoneViewEnabledSettingProvider.overrideWith(
+            () => _FixedZoneViewEnabled(false),
+          ),
         ],
         child: Consumer(
           builder: (context, ref, child) {
@@ -83,6 +94,19 @@ void main() {
 
     expect(container.read(selectedDateProvider), before);
     expect(container.read(editModeEnabledProvider), isFalse);
+  });
+
+  testWidgets('the spatial/Zone view switcher reflects the current setting and '
+      'tapping it flips zoneViewEnabledSettingProvider', (tester) async {
+    final container = await pumpHeader(tester);
+    expect(container.read(zoneViewEnabledSettingProvider), isFalse);
+    expect(find.byTooltip('Switch to Timeline'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Switch to Timeline'));
+    await tester.pump();
+
+    expect(container.read(zoneViewEnabledSettingProvider), isTrue);
+    expect(find.byTooltip('Switch to Task view'), findsOneWidget);
   });
 
   testWidgets('the Edit Mode control is a pen icon, and tapping it toggles '
@@ -199,4 +223,21 @@ class _FixedSelectedDate extends SelectedDate {
 
   @override
   DateTime build() => _dateOnly(_initial);
+}
+
+class _FixedZoneViewEnabled extends ZoneViewEnabledSetting {
+  _FixedZoneViewEnabled(this._initial);
+
+  final bool _initial;
+
+  @override
+  bool build() => _initial;
+
+  // The real notifier's `set` persists to `preferencesRepositoryProvider`,
+  // unavailable in this widget-isolation suite (no Hive box set up at
+  // all) — this test only needs the in-memory state to actually flip.
+  @override
+  Future<void> set(bool value) async {
+    state = value;
+  }
 }

@@ -432,14 +432,18 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
   /// give a since-reverted larger SELECTED icon room to breathe.
   static const double _navBarHeight = SpacingPrimitives.space9 * 1.4;
 
-  /// **2026-09-12 — restructured**, requested directly with a reference
-  /// screenshot: Task view / Timeline / Inbox / [Tracked] / Settings. Task
-  /// view (the spatial layout) and Timeline (the Zone-organized layout)
-  /// were previously ONE tab with an in-screen switcher
-  /// (`ZoneViewEnabledSetting`, cycled by `DayStrip`'s own button, both
-  /// removed) — they're now two permanent, separate destinations, both
-  /// backed by the same `TimelineScreen` widget forced into one
-  /// `TimelineDisplayMode` each (see that enum's own doc comment).
+  /// **2026-09-17 — Task view and Timeline merged back into ONE nav
+  /// destination**, requested directly: "consolidate the zone view/list
+  /// non spatial, with spatial task view, meaning 1 nav item, but when
+  /// tapped again it switches view... view switch on top similar like
+  /// Tracked page." Reverses the 2026-09-12 split (see git history)
+  /// without reviving that split's own removed `DayStrip` cycle button —
+  /// the switch is now [ZoneViewEnabledSetting] itself (never fully
+  /// deleted, just unread by `TimelineScreen` since that split), read
+  /// here to pick which `TimelineDisplayMode` this one destination shows,
+  /// AND toggled by [AppCalendarHeader]'s own new switcher button
+  /// (Tracked-style) so both "tap the nav item again" and "tap the header
+  /// switcher" reach the same provider.
   ///
   /// "Tracked" is present when [FeatureFlags.trackedBehaviorEnabled] is on
   /// (default true) AND — in a debug build only — the
@@ -447,19 +451,18 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
   /// been switched off; the flag omits the destination entirely rather
   /// than showing a disabled one.
   ///
-  /// Task view is index 0 now (was Inbox) — the notification-tap handler
-  /// below switches to it directly rather than via a stored index,
-  /// avoiding the exact "adding a tab ahead silently redirects every
-  /// notification tap" trap the previous ordering's own doc comment
-  /// warned about.
+  /// The merged Timeline tab is index 0 (was Task view) — the
+  /// notification-tap handler below switches to it directly rather than
+  /// via a stored index, avoiding the exact "adding a tab ahead silently
+  /// redirects every notification tap" trap the previous ordering's own
+  /// doc comment warned about.
   ///
   /// Computed per-build (not `static final`) now that visibility can
   /// change at runtime via the dev toggle — `ref.watch`ing
   /// `devTrackedTabInCycleProvider` needs a live rebuild, which a
   /// once-computed static list can never give.
-  List<Widget> _screens(bool trackedTabVisible) => [
-    const TimelineScreen(mode: TimelineDisplayMode.spatial),
-    const TimelineScreen(mode: TimelineDisplayMode.zone),
+  List<Widget> _screens(bool trackedTabVisible, TimelineDisplayMode mode) => [
+    TimelineScreen(mode: mode),
     const InboxScreen(),
     if (trackedTabVisible) const TrackedBehaviorListScreen(),
     const SettingsScreen(),
@@ -478,10 +481,6 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
   List<NavigationDestination> _destinations(bool trackedTabVisible) => [
     const NavigationDestination(
       icon: Icon(Icons.view_timeline_outlined),
-      label: 'Task view',
-    ),
-    const NavigationDestination(
-      icon: Icon(Icons.grid_view_rounded),
       label: 'Timeline',
     ),
     const NavigationDestination(
@@ -514,14 +513,18 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
     final trackedTabVisible =
         FeatureFlags.trackedBehaviorEnabled &&
         (!isDevConfigAvailable || ref.watch(devTrackedTabInCycleProvider));
-    final screens = _screens(trackedTabVisible);
+    final zoneViewEnabled = ref.watch(zoneViewEnabledSettingProvider);
+    final timelineMode = zoneViewEnabled
+        ? TimelineDisplayMode.zone
+        : TimelineDisplayMode.spatial;
+    final screens = _screens(trackedTabVisible, timelineMode);
 
     // The dev toggle can shrink the tab list at runtime (unlike the
     // compile-time flag, which can't change after launch) — if the
-    // currently-selected index no longer exists, fall back to Task view
+    // currently-selected index no longer exists, fall back to Timeline
     // rather than crashing IndexedStack/NavigationBar on an out-of-range
     // index. Mirrors `DevZoneViewInCycle`'s own "don't strand the user in
-    // a mode the toggle just removed" reasoning. Task view (index 0) can
+    // a mode the toggle just removed" reasoning. Timeline (index 0) can
     // never itself be removed by this toggle (only "Tracked" can), so it's
     // always a safe fallback.
     if (_selectedIndex >= screens.length) {
@@ -537,31 +540,30 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
       if (scheduledAt != null) {
         ref.read(selectedDateProvider.notifier).goTo(scheduledAt);
       }
-      // Task view, not Timeline — a tapped notification's task has a real
-      // scheduled time, and Task view is the tab with a time axis to show
-      // it against (Timeline/Zone view has none).
+      // Spatial, not Zone view — a tapped notification's task has a real
+      // scheduled time, and spatial is the mode with a time axis to show
+      // it against (Zone view has none). Forces the merged Timeline
+      // destination into spatial mode even if the user had it in Zone
+      // view, same as switching tabs used to do outright.
+      ref.read(zoneViewEnabledSettingProvider.notifier).set(false);
       setState(() => _selectedIndex = 0);
       ref.read(notificationTapProvider.notifier).consume();
     });
 
-    // Task view AND Timeline are BOTH `TimelineScreen` now (indices 0/1),
-    // so this bar hides on either — not just one hardcoded index — while
-    // Edit Mode or a quick-create draft is active on whichever of the two
-    // is currently showing. Requested directly: "in edit mode we don't
-    // see main menu and days and view switching." Reported directly as a
-    // real gap: the task edit sheet's OWN full-screen route already
-    // covers this bar for free (a separate, unrelated feature), which is
-    // not true here — Edit Mode is a toggle on the same already-visible
-    // TimelineScreen, not a pushed route, so nothing hid this bar until
-    // now.
+    // Requested directly: "in edit mode we don't see main menu and days
+    // and view switching." Reported directly as a real gap: the task edit
+    // sheet's OWN full-screen route already covers this bar for free (a
+    // separate, unrelated feature), which is not true here — Edit Mode is
+    // a toggle on the same already-visible TimelineScreen, not a pushed
+    // route, so nothing hid this bar until now.
     // Same reasoning as the Edit Mode case just above — the quick-create
     // overlay's own small sheet is meant to cover the nav bar's own
     // screen real estate (reported directly, from a screenshot: "should
     // cover main nav currently it opens above main nav"), and like Edit
-    // Mode, it's a state on the already-visible TimelineScreen rather
+    // Mode, it's a state on the same already-visible TimelineScreen rather
     // than a pushed route, so nothing else hides this bar for it.
     final hideBottomNav =
-        (_selectedIndex == 0 || _selectedIndex == 1) &&
+        _selectedIndex == 0 &&
         (ref.watch(editModeEnabledProvider) ||
             ref.watch(pendingTaskDraftProvider) != null);
 
@@ -664,8 +666,21 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
                         selectedIndex: _selectedIndex < screens.length
                             ? _selectedIndex
                             : 0,
-                        onDestinationSelected: (index) =>
-                            setState(() => _selectedIndex = index),
+                        // Tapping the Timeline destination (index 0) again
+                        // while it's already selected toggles spatial/Zone
+                        // view — the nav-tap half of "1 nav item, but when
+                        // tapped again it switches view," mirrored by
+                        // `AppCalendarHeader`'s own switcher button
+                        // reaching the same provider.
+                        onDestinationSelected: (index) {
+                          if (index == 0 && _selectedIndex == 0) {
+                            ref
+                                .read(zoneViewEnabledSettingProvider.notifier)
+                                .set(!zoneViewEnabled);
+                            return;
+                          }
+                          setState(() => _selectedIndex = index);
+                        },
                         // No text labels under the icons — requested
                         // directly, matching the reference screenshot's
                         // own icon-only nav. Each destination's own

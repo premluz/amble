@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/feature_flags.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_press_feedback.dart';
 import '../../core/widgets/app_subtle_icon_button.dart';
+import '../../shared/providers/preferences_providers.dart';
 import '../zone_grid/zone_grid_screen.dart';
 import 'edit_mode_provider.dart';
 import 'selected_date_provider.dart';
@@ -163,6 +165,10 @@ class AppCalendarHeader extends ConsumerWidget {
                 tooltip: 'Weekly zone grid',
                 onTap: () => showZoneGridScreen(context),
               ),
+              if (FeatureFlags.zoneEnabled) ...[
+                SizedBox(width: theme.spacingSm),
+                const _SpatialZoneViewSwitcher(),
+              ],
               SizedBox(width: theme.spacingSm),
               // Edit Mode's OWN entry point, restyled — was a text link
               // ("Edit"/"Done"), now this pen icon, confirmed directly
@@ -310,6 +316,36 @@ class _TodayButton extends ConsumerWidget {
           fontWeight: FontWeight.w700,
         ),
       ),
+    );
+  }
+}
+
+/// Toggles [ZoneViewEnabledSetting] — the header half of "1 nav item, but
+/// when tapped again it switches view... view switch on top similar like
+/// Tracked page." Only two states (spatial/Zone), so this is a single
+/// switcher button rather than Tracked's own 3-way `.next()` cycle, but
+/// otherwise the same shape: one global, `keepAlive`, Hive-persisted
+/// setting, an icon reflecting the CURRENT mode, tapped to flip it.
+/// `main.dart`'s nav bar reaches the exact same provider when the
+/// already-selected Timeline destination is tapped again — this button
+/// and that nav-tap are two paths to one state, never two separate ones.
+class _SpatialZoneViewSwitcher extends ConsumerWidget {
+  const _SpatialZoneViewSwitcher();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final zoneViewEnabled = ref.watch(zoneViewEnabledSettingProvider);
+    return AppSubtleIconButton(
+      // Icon shows the view a tap will switch TO — matching Tracked's own
+      // `viewMode.icon` convention (the icon names the destination, not
+      // the current state).
+      icon: zoneViewEnabled
+          ? Icons.view_timeline_outlined
+          : Icons.grid_view_rounded,
+      tooltip: zoneViewEnabled ? 'Switch to Task view' : 'Switch to Timeline',
+      onTap: () => ref
+          .read(zoneViewEnabledSettingProvider.notifier)
+          .set(!zoneViewEnabled),
     );
   }
 }

@@ -428,17 +428,25 @@ class TrackedBehaviorViewModeSetting extends _$TrackedBehaviorViewModeSetting {
   }
 }
 
-/// Whether the Timeline renders in Zone view — Zones as real layout
-/// containers owning their child tasks' positions (see
-/// `ZoneContainerBlock`) — instead of the default Task view (where Zones
-/// are purely decorative background, see `ZoneBackgroundBlock`).
+/// Whether the merged Timeline nav destination renders in Zone view —
+/// Zones as real layout containers owning their child tasks' positions
+/// (see `ZoneContainerBlock`) — instead of the default Task view (where
+/// Zones are purely decorative background, see `ZoneBackgroundBlock`).
+///
+/// **2026-09-17 — live again.** Between 2026-09-12 and this date, Task
+/// view and Zone view were two permanent, separate nav tabs and
+/// `TimelineScreen` ignored this setting entirely (each tab forced its
+/// own `TimelineDisplayMode`). Requested directly to consolidate back
+/// into one nav item that toggles on a second tap or via
+/// `AppCalendarHeader`'s own switcher button — this is that toggle's
+/// real, read state again, not a harmless unread field.
 ///
 /// `keepAlive: true` for the same reason as the other settings above.
 /// Defaults to **false** when nothing is stored, so a fresh install (or an
 /// existing one) keeps today's Task view unless the user opts in. Only
-/// ever surfaced as a Settings toggle when `FeatureFlags.zoneEnabled` is
-/// also true — the setting itself has no opinion on the flag; the
-/// Settings screen decides visibility.
+/// ever surfaced (Dev settings toggle, header switcher button) when
+/// `FeatureFlags.zoneEnabled` is also true — the setting itself has no
+/// opinion on the flag; each surface decides its own visibility.
 @Riverpod(keepAlive: true)
 class ZoneViewEnabledSetting extends _$ZoneViewEnabledSetting {
   @override
