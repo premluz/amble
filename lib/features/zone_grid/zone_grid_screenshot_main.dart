@@ -18,6 +18,7 @@ import '../../shared/models/zone.dart';
 import '../../shared/providers/category_providers.dart';
 import '../../shared/providers/task_providers.dart';
 import '../../shared/providers/zone_providers.dart';
+import 'zone_grid_tab.dart';
 import 'zone_grid_screen.dart';
 
 Future<void> main() async {
@@ -125,7 +126,7 @@ Future<void> main() async {
     ProviderScope(
       child: MaterialApp(
         theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
-        home: const ZoneGridScreen(),
+        home: const ZoneGridScreen(initialTab: ZoneGridTab.zones),
       ),
     ),
   );

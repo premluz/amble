@@ -283,7 +283,7 @@ enum TimelineDisplayMode {
 /// session), not seeded data — see timeline_capsule_preview.dart for the
 /// separate dev-scaffold preview.
 class TimelineScreen extends ConsumerWidget {
-  const TimelineScreen({super.key, required this.mode});
+  const TimelineScreen({super.key, required this.mode, this.showHeader = true});
 
   /// **2026-09-12 — no longer read from `ZoneViewEnabledSetting`.**
   /// Requested directly: Task view and Zone view become two separate,
@@ -295,6 +295,16 @@ class TimelineScreen extends ConsumerWidget {
   /// migrated away, since removing a Hive field outright risks breaking
   /// existing installs' stored preferences for no functional gain.
   final TimelineDisplayMode mode;
+
+  /// **2026-09-17 — false when hosted as the "Tasks" tab of the merged
+  /// Edit screen** (`ZoneGridScreen`, see its own doc comment). That host
+  /// already renders its own top row (Tasks/Zones tab switcher + close
+  /// button) — without this flag, `AppCalendarHeader`'s own Edit-Mode
+  /// collapse (just a close button, top-right) would render a second,
+  /// redundant close button directly underneath the host's. Confirmed
+  /// directly over leaving both: "suppress inner header on this path...
+  /// cleanest single header." Every other caller keeps the default.
+  final bool showHeader;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -448,7 +458,7 @@ class TimelineScreen extends ConsumerWidget {
                 // it, leaving no visible way back out. `AppCalendarHeader`
                 // itself now collapses to just that close button when Edit
                 // Mode is active, so it's never removed from the tree here.
-                if (ref.watch(pendingTaskDraftProvider) == null)
+                if (showHeader && ref.watch(pendingTaskDraftProvider) == null)
                   const AppCalendarHeader(),
                 Expanded(
                   // Whole-screen swipe-to-change-day REMOVED (requested

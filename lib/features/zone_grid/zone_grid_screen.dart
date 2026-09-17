@@ -13,16 +13,26 @@ import '../../shared/models/zone.dart';
 import '../../shared/providers/zone_providers.dart';
 import '../../shared/services/zone_cascade_reschedule.dart';
 import '../../shared/services/zone_group_move.dart';
+import '../timeline/edit_mode_provider.dart';
 import '../timeline/edit_selection_provider.dart';
+import '../timeline/timeline_screen.dart';
 import '../zones/zone_form_screen.dart';
 import 'new_zone_sheet.dart';
 import 'zone_grid_block.dart';
 import 'zone_grid_tab.dart';
 import 'zone_paint_selection.dart';
 
-Future<void> showZoneGridScreen(BuildContext context) =>
-    Navigator.of(context)
-        .push<void>(MaterialPageRoute(builder: (_) => const ZoneGridScreen()));
+/// Opens the merged Edit screen — Tasks (spatial Timeline in Edit Mode)
+/// and Zones (the Weekly Zone Authoring Grid) as two tabs of ONE screen,
+/// replacing what used to be two separate header entry points (the pen
+/// icon for task Edit Mode, a "Weekly zone grid" icon pushing this screen
+/// on its own). See `ZoneGridScreen`'s own doc comment.
+Future<void> showEditScreen(
+  BuildContext context, {
+  ZoneGridTab initialTab = ZoneGridTab.tasks,
+}) => Navigator.of(context).push<void>(
+  MaterialPageRoute(builder: (_) => ZoneGridScreen(initialTab: initialTab)),
+);
 
 const _pixelsPerMinute = 44.0 / 60;
 
@@ -50,8 +60,28 @@ const _pixelsPerMinute = 44.0 / 60;
 const _axisWidth = 60.0;
 const _gridHeight = 1440 * _pixelsPerMinute;
 
+/// **2026-09-17 — the merged Edit screen.** Was "the Weekly Zone
+/// Authoring Grid" alone, opened from its own separate header icon
+/// alongside a SECOND, separate entry point for the Timeline's own task
+/// Edit Mode. Requested directly: "we have 2 inactive tabs on edit zone
+/// screen. We need to make them work and switch edit zone with edit
+/// tasks views with these tabs... one entry point instead of 2 in the
+/// header." The "Events"/"Zones" tab chrome already existed (unwired,
+/// `events` reserved for a future calendar-events grid) — `events` is
+/// renamed to [ZoneGridTab.tasks] and wired to show the spatial Timeline
+/// (forced into Edit Mode) as this screen's other tab, rather than
+/// building new tab chrome from scratch.
+///
+/// The two tab bodies are the pre-existing, otherwise-unmodified
+/// screens — this class does not merge their gesture/state systems, it
+/// swaps which one is visible. `TimelineScreen` is rendered with
+/// `showHeader: false` so its own Edit-Mode-collapsed header (just a
+/// close button) doesn't duplicate this screen's own top row.
 class ZoneGridScreen extends ConsumerStatefulWidget {
-  const ZoneGridScreen({super.key});
+  const ZoneGridScreen({super.key, this.initialTab = ZoneGridTab.tasks});
+
+  final ZoneGridTab initialTab;
+
   @override
   ConsumerState<ZoneGridScreen> createState() => _ZoneGridScreenState();
 }
@@ -63,9 +93,15 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   Offset? _paintPointer;
   final _scroll = ScrollController();
   bool _editing = false, _saving = false;
-  ZoneGridTab _tab = ZoneGridTab.zones;
+  late ZoneGridTab _tab = widget.initialTab;
   ZonePaintSelection? _paint;
   Offset? _paintOrigin;
+  // Captured in `build` (below) rather than read via `ref` inside
+  // `dispose` — confirmed the hard way: `ConsumerState.ref.read` throws
+  // "Using ref when a widget is about to or has been unmounted is
+  // unsafe" once called from `dispose`, exactly as its own error message
+  // says to do instead ("save the provider state in a field").
+  ProviderContainer? _container;
   Offset? _downGlobal;
   bool _pointerCancelled = false;
   NewZoneTarget? _pending;
@@ -75,9 +111,71 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   double _moveDy = 0;
 
   @override
+  void initState() {
+    super.initState();
+    // `EditModeEnabled` is the Timeline's own toggle — this screen forces
+    // it to match whichever tab is showing rather than requiring the
+    // Timeline tab body to know it's being hosted here. `addPostFrameCallback`
+    // because a provider must not be written mid-build (this runs during
+    // `initState`, before the first frame) — mirrors `main.dart`'s own
+    // out-of-range-index correction, same reasoning.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncEditMode());
+  }
+
+  void _syncEditMode() {
+    if (!mounted) return;
+    final wantsEditMode = _tab == ZoneGridTab.tasks;
+    if (ref.read(editModeEnabledProvider) != wantsEditMode) {
+      ref.read(editModeEnabledProvider.notifier).toggle();
+    }
+  }
+
+  void _switchTab(ZoneGridTab tab) {
+    setState(() => _tab = tab);
+    // Same reasoning as `initState` above — this runs from an event
+    // handler, not build, so no post-frame deferral is needed here.
+    _syncEditMode();
+  }
+
+  @override
   void dispose() {
     _edgeScroll?.cancel();
     _scroll.dispose();
+    // `EditModeEnabled` is shared with the underlying nav-tab Timeline —
+    // `main.dart`'s `IndexedStack` keeps that tab mounted (and watching
+    // this same provider) the whole time this screen is pushed on top of
+    // it, so leaving it forced `true` here would silently drop the user
+    // back into Edit Mode on the ordinary Timeline the moment this screen
+    // pops, regardless of which tab it was closed from. `toggle()` is the
+    // only mutator this notifier exposes (no direct setter), so only
+    // flip it when it's actually still on.
+    //
+    // Uses the captured `_container` (see its own field doc comment), not
+    // `ref` — `ref.read` throws once called from `dispose`. The WRITE
+    // itself is also deferred a microtask via `scheduleMicrotask`
+    // (confirmed necessary, not just `ref.read`'s own read-side
+    // restriction, by a failing test): Riverpod refuses to modify a
+    // provider "while the widget tree was building," which a pop's
+    // finalize-the-tree pass still counts as even from inside `dispose`.
+    final container = _container;
+    if (container != null && container.read(editModeEnabledProvider)) {
+      scheduleMicrotask(() {
+        // The app's own root container outlives every screen, so this
+        // try/catch is a no-op in production — it exists for tests, where
+        // a ProviderContainer scoped to one test can legitimately be
+        // disposed (tearDown) before this microtask gets a turn, e.g. a
+        // test that never navigates away and so never needed this reset
+        // at all. `ProviderContainer` has no PUBLIC "is this disposed"
+        // check (only an `@internal`, test-only extension) — catching the
+        // `StateError` it throws is the only sanctioned way to guard this
+        // from ordinary app code.
+        try {
+          container.read(editModeEnabledProvider.notifier).toggle();
+        } on StateError {
+          // Container already disposed — nothing left to reset.
+        }
+      });
+    }
     super.dispose();
   }
 
@@ -349,6 +447,61 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
+    _container = ProviderScope.containerOf(context);
+    // `editModeEnabledProvider` is `autoDispose` (by design — see its own
+    // doc comment) and resets to `false` the instant it has zero
+    // watchers. While the Zones tab is showing, the embedded
+    // `TimelineScreen` isn't mounted and nothing else watches it, so a
+    // bare `ref.read`-then-`toggle()` in `_syncEditMode` was found (via a
+    // failing test) to be reset back to `false` by autoDispose before the
+    // next frame's freshly-mounted `TimelineScreen` ever got a chance to
+    // watch it — this screen has to hold its OWN live watch the whole
+    // time it exists, bridging that gap.
+    ref.watch(editModeEnabledProvider);
+
+    // The Tasks tab hosts the pre-existing, unmodified spatial Timeline
+    // (forced into its own Edit Mode by `_syncEditMode`) rather than any
+    // of this class's own zone-grid body/gestures below — see this
+    // class's own doc comment for why these two tabs swap wholesale
+    // rather than sharing state.
+    if (_tab == ZoneGridTab.tasks) {
+      return Scaffold(
+        backgroundColor: theme.colorSurfacePrimary,
+        body: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: EdgeInsets.all(theme.spacingMd),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _TabSwitcher(
+                        theme: theme,
+                        tab: _tab,
+                        onChanged: _switchTab,
+                      ),
+                    ),
+                    SizedBox(width: theme.spacingSm),
+                    AppSubtleIconButton(
+                      icon: Icons.close_rounded,
+                      tooltip: 'Close',
+                      onTap: () => Navigator.of(context).pop(),
+                    ),
+                  ],
+                ),
+              ),
+              const Expanded(
+                child: TimelineScreen(
+                  mode: TimelineDisplayMode.spatial,
+                  showHeader: false,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     final zones = ref
         .watch(zoneListProvider)
         .where((z) => z.isWeeklyPlacement && !z.archived)
@@ -368,16 +521,14 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                   padding: EdgeInsets.all(theme.spacingMd),
                   child: Row(
                     children: [
-                      // Events / Zones tab chrome, restored per direct request. Only
-                      // Zones is built — Events stays genuinely non-interactive (no
-                      // onTap at all), matching how this app treats an out-of-scope
-                      // control elsewhere rather than a disabled-looking one that
-                      // still swallows taps. See `zone_grid_tab.dart`.
+                      // Tasks / Zones tab chrome — 2026-09-17, was "Events" /
+                      // "Zones" with Events reserved and non-interactive; see
+                      // `zone_grid_tab.dart`'s own doc comment for the rename.
                       Expanded(
                         child: _TabSwitcher(
                           theme: theme,
                           tab: _tab,
-                          onChanged: (tab) => setState(() => _tab = tab),
+                          onChanged: _switchTab,
                         ),
                       ),
                       SizedBox(width: theme.spacingSm),
@@ -916,12 +1067,13 @@ class _Phantom extends StatelessWidget {
   );
 }
 
-/// Events / Zones, per the reviewed mockup — restored on direct request
+/// Tasks / Zones, per the reviewed mockup — restored on direct request
 /// after a rewrite replaced it with a "Your usual week" heading.
 ///
-/// **Events is deliberately inert**: no `onTap` wired at all, rather than a
-/// disabled-looking control that still intercepts taps. It's a parallel
-/// grid for tasks/calendar events — a separate, comparably-sized feature.
+/// **2026-09-17 — both segments now wired.** Was "Events" / "Zones" with
+/// Events genuinely inert (no `onTap` at all, reserved for a future
+/// calendar-events grid never built) — see `zone_grid_tab.dart`'s own
+/// doc comment for the rename/repurposing.
 class _TabSwitcher extends StatelessWidget {
   const _TabSwitcher({
     required this.theme,
@@ -943,9 +1095,9 @@ class _TabSwitcher extends StatelessWidget {
         Expanded(
           child: _Segment(
             theme: theme,
-            label: 'Events',
-            selected: tab == ZoneGridTab.events,
-            onTap: null,
+            label: 'Tasks',
+            selected: tab == ZoneGridTab.tasks,
+            onTap: () => onChanged(ZoneGridTab.tasks),
           ),
         ),
         Expanded(

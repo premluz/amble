@@ -6,6 +6,7 @@ import 'package:amble/shared/providers/zone_providers.dart';
 import 'package:amble/shared/providers/zone_facet_providers.dart';
 import 'package:amble/features/zone_grid/zone_grid_screen.dart';
 import 'package:amble/features/zone_grid/zone_grid_block.dart';
+import 'package:amble/features/zone_grid/zone_grid_tab.dart';
 import 'package:amble/features/zone_grid/new_zone_sheet.dart';
 import 'package:amble/features/timeline/edit_selection_provider.dart';
 import 'package:amble/shared/services/zone_cascade_reschedule.dart';
@@ -36,7 +37,10 @@ void main() {
         container: container,
         child: MaterialApp(
           theme: ThemeData(extensions: [AmbleTheme.dark]),
-          home: const ZoneGridScreen(),
+          // This suite is entirely about the ZONE grid's own paint/drag
+          // gestures — explicit tab, since `ZoneGridScreen`'s own default
+          // is now Tasks (see its own doc comment, 2026-09-17 merge).
+          home: const ZoneGridScreen(initialTab: ZoneGridTab.zones),
         ),
       ),
     );

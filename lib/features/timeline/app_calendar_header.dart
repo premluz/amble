@@ -150,21 +150,6 @@ class AppCalendarHeader extends ConsumerWidget {
                 tooltip: 'Sync',
                 onTap: null,
               ),
-              SizedBox(width: theme.spacingSm),
-              // Entry point into the Weekly Zone Authoring Grid — flagged
-              // per the work order's own "add the minimum needed, flag
-              // your choice" instruction: no existing "open weekly zone
-              // grid" affordance exists anywhere yet. Placed in this row
-              // rather than a new nav destination or a Settings entry,
-              // since this row is already shared by both Timeline tabs
-              // and already hosts the other Zone-adjacent utility icon
-              // (Edit Mode) — a natural home for a second Zone-related
-              // entry point rather than inventing new chrome elsewhere.
-              AppSubtleIconButton(
-                icon: Icons.view_week_outlined,
-                tooltip: 'Weekly zone grid',
-                onTap: () => showZoneGridScreen(context),
-              ),
               if (FeatureFlags.zoneEnabled) ...[
                 SizedBox(width: theme.spacingSm),
                 const _SpatialZoneViewSwitcher(),
@@ -176,6 +161,13 @@ class AppCalendarHeader extends ConsumerWidget {
               // CONSTITUTION.md design principle (a text link "so it
               // reads as a mode switch, not an action") on direct
               // instruction — see docs/DECISIONS.md for the reversal.
+              //
+              // **2026-09-17 — single entry point.** Used to sit alongside
+              // a SEPARATE "Weekly zone grid" icon that pushed
+              // `ZoneGridScreen` on its own — requested directly to merge
+              // into "one entry point instead of 2." Tapping this now
+              // opens the merged Edit screen (Tasks/Zones tabs) rather
+              // than toggling `editModeEnabledProvider` in place.
               _EditModeIconButton(theme: theme),
             ],
           ),
@@ -366,10 +358,18 @@ class _EditModeIconButton extends ConsumerWidget {
       // control, no different shape).
       icon: enabled ? Icons.close_rounded : Icons.edit_outlined,
       tooltip: enabled ? 'Done' : 'Edit',
-      // Same state the two-finger long-press gesture toggles — see
-      // edit_mode_provider.dart's own "two entry points, converging on
-      // the same state" contract, unchanged by this restyle.
-      onTap: () => ref.read(editModeEnabledProvider.notifier).toggle(),
+      // **2026-09-17 — opens the merged Edit screen** (Tasks/Zones tabs)
+      // rather than toggling `editModeEnabledProvider` in place. The
+      // two-finger long-press gesture (`timeline_screen.dart`) is a
+      // SEPARATE, still-unchanged entry point straight into in-place Edit
+      // Mode on the plain Timeline — this button no longer duplicates
+      // that path, it opens the dedicated screen instead. `enabled` can
+      // still be true here from that gesture (or from a resumed
+      // navigation), in which case tapping just closes it the same way
+      // the long-press itself would.
+      onTap: () => enabled
+          ? ref.read(editModeEnabledProvider.notifier).toggle()
+          : showEditScreen(context),
       // Accent-colored while active, so the mode still has a persistent
       // visual signal now that it's an icon rather than literal "Done"
       // text — the wiggle animation on the tasks themselves is the other

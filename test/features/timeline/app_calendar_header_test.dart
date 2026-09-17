@@ -16,6 +16,7 @@ void main() {
   Future<ProviderContainer> pumpHeader(
     WidgetTester tester, {
     DateTime? initialDate,
+    List<NavigatorObserver> navigatorObservers = const [],
   }) async {
     late ProviderContainer container;
     await tester.pumpWidget(
@@ -44,6 +45,7 @@ void main() {
                 useMaterial3: true,
                 extensions: [AmbleTheme.light],
               ),
+              navigatorObservers: navigatorObservers,
               home: const Scaffold(body: AppCalendarHeader()),
             );
           },
@@ -109,18 +111,43 @@ void main() {
     expect(find.byTooltip('Switch to Task view'), findsOneWidget);
   });
 
-  testWidgets('the Edit Mode control is a pen icon, and tapping it toggles '
-      'editModeEnabledProvider', (tester) async {
-    final container = await pumpHeader(tester);
-    expect(container.read(editModeEnabledProvider), isFalse);
-    expect(find.byIcon(Icons.edit_outlined), findsOneWidget);
+  testWidgets(
+    'the Edit Mode control is a pen icon, and tapping it opens the merged '
+    'Edit screen rather than toggling editModeEnabledProvider in place',
+    (tester) async {
+      // **2026-09-17** — was a direct in-place toggle; now opens
+      // `ZoneGridScreen` (Tasks/Zones tabs), requested directly: "one
+      // entry point instead of 2 in the header." `editModeEnabledProvider`
+      // itself is untouched by THIS tap — it's `ZoneGridScreen`'s own
+      // `_syncEditMode` that turns Edit Mode on once that screen mounts
+      // (covered by `zone_grid_edit_screen_merge_test.dart`, which has
+      // the real Hive setup this isolated suite intentionally doesn't).
+      final pushedRoutes = <Route<void>>[];
+      final observer = _RoutePushObserver(pushedRoutes.add);
+      await pumpHeader(tester, navigatorObservers: [observer]);
+      expect(find.byIcon(Icons.edit_outlined), findsOneWidget);
 
-    await tester.tap(find.byTooltip('Edit'));
-    await tester.pump();
+      await tester.tap(find.byTooltip('Edit'));
+      await tester.pump();
+      // The pushed `ZoneGridScreen` genuinely fails to BUILD here — this
+      // suite has no Hive boxes set up at all (by design, per its own
+      // "in isolation" doc comment), and that screen's embedded
+      // TimelineScreen needs real repositories. `didPush` (checked below)
+      // already fires synchronously as part of `Navigator.push`, before
+      // that failed build — this test only needs to know a route WAS
+      // pushed, not that it rendered, so the expected build error is
+      // consumed rather than left to fail the test.
+      tester.takeException();
 
-    expect(container.read(editModeEnabledProvider), isTrue);
-    expect(find.byTooltip('Done'), findsOneWidget);
-  });
+      expect(
+        pushedRoutes.whereType<MaterialPageRoute<void>>(),
+        isNotEmpty,
+        reason:
+            'tapping the pen icon must push a new route (the merged '
+            'Edit screen), not just flip a provider in place',
+      );
+    },
+  );
 
   testWidgets('tapping the month name steps the visible week forward by 7 '
       'days', (tester) async {
@@ -239,5 +266,16 @@ class _FixedZoneViewEnabled extends ZoneViewEnabledSetting {
   @override
   Future<void> set(bool value) async {
     state = value;
+  }
+}
+
+class _RoutePushObserver extends NavigatorObserver {
+  _RoutePushObserver(this.onPush);
+
+  final void Function(Route<void>) onPush;
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    onPush(route as Route<void>);
   }
 }
