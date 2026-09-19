@@ -398,9 +398,21 @@ class _PlacementLine extends StatelessWidget {
       right: 0,
       child: FractionalTranslation(
         translation: const Offset(0, -0.5),
+        // pillAlignment: start — design-system consolidation, requested
+        // directly ("should be consistent on left"): every other accent-bg
+        // hour indicator in the app (task edit/resize, zone resize) is
+        // left-aligned over the gutter; this was the one remaining
+        // right-aligned case (an explicit earlier request, "time on the
+        // right," now superseded). The full-width hairline (`showLine`,
+        // unchanged) still needs the full `left: 0, right: 0` box to
+        // stretch across — only the PILL's own end of the Row moves, via
+        // TaskEdgeTimeLabel's new `pillAlignment` param, rather than
+        // dropping `right:` the way the shrink-wrapped (showLine: false)
+        // callers do. See docs/DESIGN_SYSTEM.md.
         child: TaskEdgeTimeLabel(
           theme: theme,
           time: TimeOfDay.fromDateTime(time),
+          pillAlignment: TaskEdgeTimeLabelAlignment.start,
         ),
       ),
     );

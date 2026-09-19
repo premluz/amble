@@ -11,12 +11,16 @@ import '../../core/widgets/app_option_switch_option.dart';
 import '../../core/widgets/app_tab_switch.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
 import '../../core/widgets/app_undo_toast.dart';
+import '../../core/widgets/selected_pill_border.dart';
 import '../../shared/models/zone.dart';
+import '../../shared/providers/preferences_providers.dart';
 import '../../shared/providers/zone_providers.dart';
 import '../../shared/services/zone_cascade_reschedule.dart';
 import '../../shared/services/zone_group_move.dart';
 import '../timeline/edit_mode_provider.dart';
 import '../timeline/edit_selection_provider.dart';
+import '../timeline/task_edge_time_label.dart';
+import '../timeline/timeline_pinch_zoom.dart';
 import '../timeline/timeline_screen.dart';
 import '../zones/zone_form_screen.dart';
 import 'new_zone_sheet.dart';
@@ -35,8 +39,6 @@ Future<void> showEditScreen(
 }) => Navigator.of(context).push<void>(
   MaterialPageRoute(builder: (_) => ZoneGridScreen(initialTab: initialTab)),
 );
-
-const _pixelsPerMinute = 44.0 / 60;
 
 /// Options for both `AppTabSwitch<ZoneGridTab>` call sites below — a
 /// module-level const rather than rebuilt per build(), since neither the
@@ -68,7 +70,6 @@ const _zoneGridTabOptions = [
 /// up width here rather than gaining any; the padding has to come from
 /// somewhere.
 const _axisWidth = 60.0;
-const _gridHeight = 1440 * _pixelsPerMinute;
 
 /// **2026-09-17 — the merged Edit screen.** Was "the Weekly Zone
 /// Authoring Grid" alone, opened from its own separate header icon
@@ -119,6 +120,17 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   double _fillDx = 0;
   ZoneGroupGestureKind? _moveKind;
   double _moveDy = 0;
+
+  // Shared with the spatial Task view — ONE setting, adjustable here via
+  // pinch-to-zoom (TimelinePinchZoom, wrapping the scrollable grid below)
+  // — see TimelinePixelsPerMinuteSetting's own doc comment. Was a
+  // hardcoded `const _pixelsPerMinute = 44.0 / 60` (≈0.733); the default
+  // shared value (1.5) roughly doubles this screen's own vertical
+  // density from what it was, an intended consequence of unifying the
+  // two previously-independent scales into one, not a regression.
+  double get _pixelsPerMinute =>
+      ref.watch(timelinePixelsPerMinuteSettingProvider);
+  double get _gridHeight => 1440 * _pixelsPerMinute;
 
   @override
   void initState() {
@@ -642,10 +654,19 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                   ),
                 ),
                 Expanded(
-                  child: Stack(
-                    key: _viewportKey,
-                    children: [
-                      SingleChildScrollView(
+                  // TimelinePinchZoom wraps the whole viewport — pinch
+                  // works in both view mode (the opaque
+                  // 'zone-paint-surface' GestureDetector below owns
+                  // long-press) and edit mode (that same detector owns
+                  // pan instead) without needing to change based on
+                  // `_editing`, since TimelinePinchZoom observes pointers
+                  // passively rather than claiming the gesture arena —
+                  // see that widget's own doc comment.
+                  child: TimelinePinchZoom(
+                    child: Stack(
+                      key: _viewportKey,
+                      children: [
+                        SingleChildScrollView(
                         controller: _scroll,
                         // Every hour label is centred ON its own tick line,
                         // so the 00:00 label at the very top extends half a
@@ -870,20 +891,30 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                                               preview.startMinutes) *
                                           _pixelsPerMinute,
                                       child: IgnorePointer(
-                                        child: DecoratedBox(
+                                        // SelectedPillBorder, not a
+                                        // hand-rolled Border.all — design-
+                                        // system consolidation, requested
+                                        // directly ("this blue border
+                                        // needs to have consistent style
+                                        // so it doesn't diverge... should
+                                        // be the style of current select
+                                        // zone/task"). Was a single,
+                                        // square-cornered, 60%-alpha ring
+                                        // with no dark separator — see
+                                        // docs/DESIGN_SYSTEM.md for the
+                                        // canonical shape this now
+                                        // matches exactly.
+                                        child: SelectedPillBorder(
                                           key: const ValueKey(
                                             'zone-paint-selection',
                                           ),
-                                          decoration: BoxDecoration(
-                                            color: theme.colorAccent.withValues(
-                                              alpha: .09,
-                                            ),
-                                            border: Border.all(
-                                              color: theme.colorAccent
-                                                  .withValues(alpha: .6),
-                                              width: theme.borderWidthHairline,
-                                            ),
+                                          theme: theme,
+                                          contentRadius: BorderRadius.circular(
+                                            theme.radiusMd,
                                           ),
+                                          fillColor: theme.colorAccent
+                                              .withValues(alpha: .09),
+                                          child: const SizedBox.expand(),
                                         ),
                                       ),
                                     ),
@@ -916,6 +947,21 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                                             ),
                                           ),
                                         ),
+                                    // TaskEdgeTimeLabel, not a plain accent-
+                                    // colored Text — design-system
+                                    // consolidation, requested directly:
+                                    // every other "show the hour" moment in
+                                    // the app (task create/edit, zone
+                                    // resize) already uses this shared
+                                    // accent-BACKGROUND pill; this was the
+                                    // one remaining plain-text case with no
+                                    // background at all. Two separate
+                                    // labels (start/end), matching the
+                                    // pending-create pill's own two-label
+                                    // shape, rather than one combined
+                                    // "start – end" string, since
+                                    // TaskEdgeTimeLabel takes one TimeOfDay.
+                                    // See docs/DESIGN_SYSTEM.md.
                                     Positioned(
                                       left: _axisWidth,
                                       top: math.max(
@@ -925,11 +971,30 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                                             theme.spacingLg,
                                       ),
                                       child: IgnorePointer(
-                                        child: Text(
-                                          '${_time(preview.startMinutes)} – ${_time(preview.endMinutes)}',
-                                          style: theme.textCaption.copyWith(
-                                            color: theme.colorAccent,
+                                        child: TaskEdgeTimeLabel(
+                                          theme: theme,
+                                          time: TimeOfDay(
+                                            hour: preview.startMinutes ~/ 60,
+                                            minute: preview.startMinutes % 60,
                                           ),
+                                          showLine: false,
+                                        ),
+                                      ),
+                                    ),
+                                    Positioned(
+                                      left: _axisWidth,
+                                      top:
+                                          preview.endMinutes *
+                                              _pixelsPerMinute +
+                                          theme.spacingXs,
+                                      child: IgnorePointer(
+                                        child: TaskEdgeTimeLabel(
+                                          theme: theme,
+                                          time: TimeOfDay(
+                                            hour: preview.endMinutes ~/ 60,
+                                            minute: preview.endMinutes % 60,
+                                          ),
+                                          showLine: false,
                                         ),
                                       ),
                                     ),
@@ -958,6 +1023,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                         ),
                       ),
                     ],
+                  ),
                   ),
                 ),
               ],
@@ -1057,9 +1123,6 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
     );
   }
 }
-
-String _time(int minutes) =>
-    '${(minutes ~/ 60).toString().padLeft(2, '0')}:${(minutes % 60).toString().padLeft(2, '0')}';
 
 /// The paint preview. **No blocked/"Overlap" state** — confirmed directly
 /// ("never prevent action"): an overlapping paint is always allowed, and

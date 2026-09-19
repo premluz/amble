@@ -24,6 +24,46 @@ import 'resize_handle.dart';
 /// `max(strict time-span height, minIntrinsicHeight)`.
 const zoneContainerRowHeight = 44.0;
 
+/// The exact "start - end (duration)" text a Zone view row shows for one
+/// task's schedule — factored out of [_ZoneTaskRow]'s own build method so
+/// [ZoneDayTimeline]'s unzoned-task rows can render an identical leading
+/// time column (same format, same three independent toggles) rather than
+/// duplicating this logic. See [_ZoneTaskRow]'s own former inline comment
+/// for the toggle-priority reasoning this preserves unchanged:
+/// `startTimeOnlyVisible` wins outright over `timeRangeVisible`/
+/// `durationVisible` when more than one is set.
+String zoneTaskTimeLabel(
+  BuildContext context, {
+  required DateTime? scheduledAt,
+  required int? durationMinutes,
+  required bool timeRangeVisible,
+  required bool durationVisible,
+  required bool startTimeOnlyVisible,
+}) {
+  if (startTimeOnlyVisible) {
+    return scheduledAt == null
+        ? '--:--'
+        : TimeOfDay.fromDateTime(scheduledAt).format(context);
+  }
+  if (!timeRangeVisible) {
+    return durationVisible && durationMinutes != null
+        ? '(${formatDurationLabel(durationMinutes)})'
+        : '';
+  }
+  if (scheduledAt == null) return '--:--';
+  if (durationMinutes == null) {
+    return TimeOfDay.fromDateTime(scheduledAt).format(context);
+  }
+  final startTime = TimeOfDay.fromDateTime(scheduledAt);
+  final endTime = TimeOfDay.fromDateTime(
+    scheduledAt.add(Duration(minutes: durationMinutes)),
+  );
+  return durationVisible
+      ? '${startTime.format(context)} - ${endTime.format(context)} '
+            '(${formatDurationLabel(durationMinutes)})'
+      : '${startTime.format(context)} - ${endTime.format(context)}';
+}
+
 /// The Spatial Zone View's real layout container for one [Zone] — unlike
 /// [ZoneBackgroundBlock] (the Spatial Task View's purely decorative
 /// background treatment, unchanged by this widget), this genuinely owns
@@ -494,7 +534,13 @@ class _Header extends StatelessWidget {
     );
 
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      // center, not start — matches the task rows inside this same zone
+      // (and standalone task rows outside a zone), which default to
+      // Row's own center alignment. `start` here had no stated reason and
+      // top-anchored the title/time-range text, reading as visibly lower/
+      // misaligned relative to a task row's title one row down. Reported
+      // directly from a screenshot comparison.
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Expanded(
           child: Text(
@@ -675,35 +721,16 @@ class _ZoneTaskRow extends StatelessWidget {
     // and `durationVisible` are two independent pieces (either, both, or
     // neither can be on) — requested directly: "Hide/show start end should
     // also affect zone view," matching TaskCapsuleTextRow's own contract.
-    //
-    // `startTimeOnlyVisible` is checked FIRST and wins outright — per
-    // AskUserQuestion, the more specific request takes priority over
-    // `timeRangeVisible`/`durationVisible` if a caller somehow has both
-    // toggles on. "Start time only" means exactly that: no duration
-    // suffix, no end time, regardless of what the other two toggles say.
-    final String timeLabel;
-    if (startTimeOnlyVisible) {
-      timeLabel = scheduledAt == null
-          ? '--:--'
-          : TimeOfDay.fromDateTime(scheduledAt).format(context);
-    } else if (!timeRangeVisible) {
-      timeLabel = durationVisible && durationMinutes != null
-          ? '(${formatDurationLabel(durationMinutes)})'
-          : '';
-    } else if (scheduledAt == null) {
-      timeLabel = '--:--';
-    } else if (durationMinutes == null) {
-      timeLabel = TimeOfDay.fromDateTime(scheduledAt).format(context);
-    } else {
-      final startTime = TimeOfDay.fromDateTime(scheduledAt);
-      final endTime = TimeOfDay.fromDateTime(
-        scheduledAt.add(Duration(minutes: durationMinutes)),
-      );
-      timeLabel = durationVisible
-          ? '${startTime.format(context)} - ${endTime.format(context)} '
-                '(${formatDurationLabel(durationMinutes)})'
-          : '${startTime.format(context)} - ${endTime.format(context)}';
-    }
+    // `startTimeOnlyVisible` wins outright over the other two — see
+    // [zoneTaskTimeLabel]'s own doc comment.
+    final timeLabel = zoneTaskTimeLabel(
+      context,
+      scheduledAt: scheduledAt,
+      durationMinutes: durationMinutes,
+      timeRangeVisible: timeRangeVisible,
+      durationVisible: durationVisible,
+      startTimeOnlyVisible: startTimeOnlyVisible,
+    );
 
     // Was `final emoji = category?.emoji;`, used below purely as a proxy
     // for "does this task have a category at all" (`category?.emoji` is

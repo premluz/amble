@@ -567,17 +567,65 @@ abstract class _$DevZoneCardFlat extends $Notifier<bool> {
 }
 
 /// Zone (list) view only — when on, hides every zone container that has
-/// no member task and no matched external event. Defaults to false.
+/// no member [Task] AND no matched [ExternalCalendarEvent], leaving only
+/// zones that actually contain something. Requested directly: "add config
+/// in dev to hide zones that have no items inside in zone view only."
+///
+/// A deliberate, scoped OVERRIDE of `ZoneContainmentResult.containments`'
+/// own documented default ("regardless of whether it has any member
+/// tasks, so an empty zone still renders its container per the confirmed
+/// spec" — see `zone_containment.dart`) — that default is still correct
+/// for the normal case; this is an opt-in dev toggle for comparing the
+/// alternative, not a change to the underlying containment logic itself.
+///
+/// Task view and the Zone (grid) Authoring screen are unaffected — this
+/// only touches [ZoneDayTimeline]'s own row list.
+///
+/// Defaults to false (current shipped behavior: every zone renders,
+/// empty or not) — this toggle only ever REMOVES rows, never adds a
+/// display mode that didn't exist.
 
 @ProviderFor(DevHideEmptyZones)
 final devHideEmptyZonesProvider = DevHideEmptyZonesProvider._();
 
 /// Zone (list) view only — when on, hides every zone container that has
-/// no member task and no matched external event. Defaults to false.
+/// no member [Task] AND no matched [ExternalCalendarEvent], leaving only
+/// zones that actually contain something. Requested directly: "add config
+/// in dev to hide zones that have no items inside in zone view only."
+///
+/// A deliberate, scoped OVERRIDE of `ZoneContainmentResult.containments`'
+/// own documented default ("regardless of whether it has any member
+/// tasks, so an empty zone still renders its container per the confirmed
+/// spec" — see `zone_containment.dart`) — that default is still correct
+/// for the normal case; this is an opt-in dev toggle for comparing the
+/// alternative, not a change to the underlying containment logic itself.
+///
+/// Task view and the Zone (grid) Authoring screen are unaffected — this
+/// only touches [ZoneDayTimeline]'s own row list.
+///
+/// Defaults to false (current shipped behavior: every zone renders,
+/// empty or not) — this toggle only ever REMOVES rows, never adds a
+/// display mode that didn't exist.
 final class DevHideEmptyZonesProvider
     extends $NotifierProvider<DevHideEmptyZones, bool> {
   /// Zone (list) view only — when on, hides every zone container that has
-  /// no member task and no matched external event. Defaults to false.
+  /// no member [Task] AND no matched [ExternalCalendarEvent], leaving only
+  /// zones that actually contain something. Requested directly: "add config
+  /// in dev to hide zones that have no items inside in zone view only."
+  ///
+  /// A deliberate, scoped OVERRIDE of `ZoneContainmentResult.containments`'
+  /// own documented default ("regardless of whether it has any member
+  /// tasks, so an empty zone still renders its container per the confirmed
+  /// spec" — see `zone_containment.dart`) — that default is still correct
+  /// for the normal case; this is an opt-in dev toggle for comparing the
+  /// alternative, not a change to the underlying containment logic itself.
+  ///
+  /// Task view and the Zone (grid) Authoring screen are unaffected — this
+  /// only touches [ZoneDayTimeline]'s own row list.
+  ///
+  /// Defaults to false (current shipped behavior: every zone renders,
+  /// empty or not) — this toggle only ever REMOVES rows, never adds a
+  /// display mode that didn't exist.
   DevHideEmptyZonesProvider._()
     : super(
         from: null,
@@ -605,7 +653,26 @@ final class DevHideEmptyZonesProvider
   }
 }
 
-String _$devHideEmptyZonesHash() => r'devhideemptyzones00000000000000000000000';
+String _$devHideEmptyZonesHash() => r'cd86169a8ce0bf488ddb312a1e85c7965935454f';
+
+/// Zone (list) view only — when on, hides every zone container that has
+/// no member [Task] AND no matched [ExternalCalendarEvent], leaving only
+/// zones that actually contain something. Requested directly: "add config
+/// in dev to hide zones that have no items inside in zone view only."
+///
+/// A deliberate, scoped OVERRIDE of `ZoneContainmentResult.containments`'
+/// own documented default ("regardless of whether it has any member
+/// tasks, so an empty zone still renders its container per the confirmed
+/// spec" — see `zone_containment.dart`) — that default is still correct
+/// for the normal case; this is an opt-in dev toggle for comparing the
+/// alternative, not a change to the underlying containment logic itself.
+///
+/// Task view and the Zone (grid) Authoring screen are unaffected — this
+/// only touches [ZoneDayTimeline]'s own row list.
+///
+/// Defaults to false (current shipped behavior: every zone renders,
+/// empty or not) — this toggle only ever REMOVES rows, never adds a
+/// display mode that didn't exist.
 
 abstract class _$DevHideEmptyZones extends $Notifier<bool> {
   bool build();
@@ -625,19 +692,70 @@ abstract class _$DevHideEmptyZones extends $Notifier<bool> {
   }
 }
 
-/// Zone view's member task rows only — when on, each row shows just its
-/// task's start time. Defaults to false.
+/// Zone view's member task rows ONLY — when on, each row shows just its
+/// task's START time (e.g. "9:00 AM"), never the "start - end" range
+/// [DevTimelineTaskTimeRangeVisible] shows. Requested directly: "we need
+/// to add control show time Start time (zone view), this will add task
+/// start time only (we have similar show start end time switch, but this
+/// one only start time)."
+///
+/// A SEPARATE, independent toggle from [DevTimelineTaskTimeRangeVisible]
+/// — confirmed via AskUserQuestion — rather than a third value replacing
+/// that boolean. If a caller somehow has both on at once, start-time-only
+/// WINS (confirmed via AskUserQuestion): it is the more specific request,
+/// and [_ZoneTaskRow]'s own branch order enforces this.
+///
+/// The zone HEADER's own time range is unaffected (confirmed via
+/// AskUserQuestion) — this only touches each member task's row, never
+/// [ZoneContainerBlock]'s own title/time header.
+///
+/// Defaults to false (current shipped behavior unchanged) — this toggle
+/// only ever ADDS a display mode, never removes the existing one.
 
 @ProviderFor(DevZoneTaskStartTimeVisible)
 final devZoneTaskStartTimeVisibleProvider =
     DevZoneTaskStartTimeVisibleProvider._();
 
-/// Zone view's member task rows only — when on, each row shows just its
-/// task's start time. Defaults to false.
+/// Zone view's member task rows ONLY — when on, each row shows just its
+/// task's START time (e.g. "9:00 AM"), never the "start - end" range
+/// [DevTimelineTaskTimeRangeVisible] shows. Requested directly: "we need
+/// to add control show time Start time (zone view), this will add task
+/// start time only (we have similar show start end time switch, but this
+/// one only start time)."
+///
+/// A SEPARATE, independent toggle from [DevTimelineTaskTimeRangeVisible]
+/// — confirmed via AskUserQuestion — rather than a third value replacing
+/// that boolean. If a caller somehow has both on at once, start-time-only
+/// WINS (confirmed via AskUserQuestion): it is the more specific request,
+/// and [_ZoneTaskRow]'s own branch order enforces this.
+///
+/// The zone HEADER's own time range is unaffected (confirmed via
+/// AskUserQuestion) — this only touches each member task's row, never
+/// [ZoneContainerBlock]'s own title/time header.
+///
+/// Defaults to false (current shipped behavior unchanged) — this toggle
+/// only ever ADDS a display mode, never removes the existing one.
 final class DevZoneTaskStartTimeVisibleProvider
     extends $NotifierProvider<DevZoneTaskStartTimeVisible, bool> {
-  /// Zone view's member task rows only — when on, each row shows just its
-  /// task's start time. Defaults to false.
+  /// Zone view's member task rows ONLY — when on, each row shows just its
+  /// task's START time (e.g. "9:00 AM"), never the "start - end" range
+  /// [DevTimelineTaskTimeRangeVisible] shows. Requested directly: "we need
+  /// to add control show time Start time (zone view), this will add task
+  /// start time only (we have similar show start end time switch, but this
+  /// one only start time)."
+  ///
+  /// A SEPARATE, independent toggle from [DevTimelineTaskTimeRangeVisible]
+  /// — confirmed via AskUserQuestion — rather than a third value replacing
+  /// that boolean. If a caller somehow has both on at once, start-time-only
+  /// WINS (confirmed via AskUserQuestion): it is the more specific request,
+  /// and [_ZoneTaskRow]'s own branch order enforces this.
+  ///
+  /// The zone HEADER's own time range is unaffected (confirmed via
+  /// AskUserQuestion) — this only touches each member task's row, never
+  /// [ZoneContainerBlock]'s own title/time header.
+  ///
+  /// Defaults to false (current shipped behavior unchanged) — this toggle
+  /// only ever ADDS a display mode, never removes the existing one.
   DevZoneTaskStartTimeVisibleProvider._()
     : super(
         from: null,
@@ -666,7 +784,27 @@ final class DevZoneTaskStartTimeVisibleProvider
 }
 
 String _$devZoneTaskStartTimeVisibleHash() =>
-    r'devzonetaskstarttimevisible0000000000000';
+    r'9a510080127131ef0cef5416b9a4238ad69e7072';
+
+/// Zone view's member task rows ONLY — when on, each row shows just its
+/// task's START time (e.g. "9:00 AM"), never the "start - end" range
+/// [DevTimelineTaskTimeRangeVisible] shows. Requested directly: "we need
+/// to add control show time Start time (zone view), this will add task
+/// start time only (we have similar show start end time switch, but this
+/// one only start time)."
+///
+/// A SEPARATE, independent toggle from [DevTimelineTaskTimeRangeVisible]
+/// — confirmed via AskUserQuestion — rather than a third value replacing
+/// that boolean. If a caller somehow has both on at once, start-time-only
+/// WINS (confirmed via AskUserQuestion): it is the more specific request,
+/// and [_ZoneTaskRow]'s own branch order enforces this.
+///
+/// The zone HEADER's own time range is unaffected (confirmed via
+/// AskUserQuestion) — this only touches each member task's row, never
+/// [ZoneContainerBlock]'s own title/time header.
+///
+/// Defaults to false (current shipped behavior unchanged) — this toggle
+/// only ever ADDS a display mode, never removes the existing one.
 
 abstract class _$DevZoneTaskStartTimeVisible extends $Notifier<bool> {
   bool build();
@@ -787,182 +925,6 @@ abstract class _$DevTimelineListOnlyImportant extends $Notifier<bool> {
             as $ClassProviderElement<
               AnyNotifier<bool, bool>,
               bool,
-              Object?,
-              Object?
-            >;
-    return element.handleCreate(ref, build);
-  }
-}
-
-/// Vertical timeline scale — pixels per minute — for the Spatial Task
-/// View. Requested directly as a scratch config so the right value can be
-/// dialed in live, separate from the Zone view's own scale below: at the
-/// Task view's original fixed 1.5, a short (e.g. 30-minute) Zone-view
-/// container barely fit itsS own header, let alone a task row, which is
-/// what caused the reported "missing gap between adjacent zones" (the
-/// container was forced to grow past its gap-shrunk floor on nearly every
-/// zone, not just unusually packed ones).
-
-@ProviderFor(DevTaskViewPixelsPerMinute)
-final devTaskViewPixelsPerMinuteProvider =
-    DevTaskViewPixelsPerMinuteProvider._();
-
-/// Vertical timeline scale — pixels per minute — for the Spatial Task
-/// View. Requested directly as a scratch config so the right value can be
-/// dialed in live, separate from the Zone view's own scale below: at the
-/// Task view's original fixed 1.5, a short (e.g. 30-minute) Zone-view
-/// container barely fit itsS own header, let alone a task row, which is
-/// what caused the reported "missing gap between adjacent zones" (the
-/// container was forced to grow past its gap-shrunk floor on nearly every
-/// zone, not just unusually packed ones).
-final class DevTaskViewPixelsPerMinuteProvider
-    extends $NotifierProvider<DevTaskViewPixelsPerMinute, double> {
-  /// Vertical timeline scale — pixels per minute — for the Spatial Task
-  /// View. Requested directly as a scratch config so the right value can be
-  /// dialed in live, separate from the Zone view's own scale below: at the
-  /// Task view's original fixed 1.5, a short (e.g. 30-minute) Zone-view
-  /// container barely fit itsS own header, let alone a task row, which is
-  /// what caused the reported "missing gap between adjacent zones" (the
-  /// container was forced to grow past its gap-shrunk floor on nearly every
-  /// zone, not just unusually packed ones).
-  DevTaskViewPixelsPerMinuteProvider._()
-    : super(
-        from: null,
-        argument: null,
-        retry: null,
-        name: r'devTaskViewPixelsPerMinuteProvider',
-        isAutoDispose: false,
-        dependencies: null,
-        $allTransitiveDependencies: null,
-      );
-
-  @override
-  String debugGetCreateSourceHash() => _$devTaskViewPixelsPerMinuteHash();
-
-  @$internal
-  @override
-  DevTaskViewPixelsPerMinute create() => DevTaskViewPixelsPerMinute();
-
-  /// {@macro riverpod.override_with_value}
-  Override overrideWithValue(double value) {
-    return $ProviderOverride(
-      origin: this,
-      providerOverride: $SyncValueProvider<double>(value),
-    );
-  }
-}
-
-String _$devTaskViewPixelsPerMinuteHash() =>
-    r'a87bf724e2657d9726b687607ac425287e474c42';
-
-/// Vertical timeline scale — pixels per minute — for the Spatial Task
-/// View. Requested directly as a scratch config so the right value can be
-/// dialed in live, separate from the Zone view's own scale below: at the
-/// Task view's original fixed 1.5, a short (e.g. 30-minute) Zone-view
-/// container barely fit itsS own header, let alone a task row, which is
-/// what caused the reported "missing gap between adjacent zones" (the
-/// container was forced to grow past its gap-shrunk floor on nearly every
-/// zone, not just unusually packed ones).
-
-abstract class _$DevTaskViewPixelsPerMinute extends $Notifier<double> {
-  double build();
-  @$mustCallSuper
-  @override
-  WhenComplete runBuild() {
-    final ref = this.ref as $Ref<double, double>;
-    final element =
-        ref.element
-            as $ClassProviderElement<
-              AnyNotifier<double, double>,
-              double,
-              Object?,
-              Object?
-            >;
-    return element.handleCreate(ref, build);
-  }
-}
-
-/// Same as [DevTaskViewPixelsPerMinute], for the Spatial Zone View —
-/// independently adjustable, not derived from the Task view's own value.
-///
-/// Previously defaulted to double the Task view's (3.0) — a short (e.g.
-/// 30-minute) Zone-view container barely fit its own header, let alone a
-/// task row, at 1.5. Default changed to 1.5 anyway (matching the Task
-/// view's own) per direct request; the two remain independently
-/// adjustable at runtime if that constraint bites again.
-
-@ProviderFor(DevZoneViewPixelsPerMinute)
-final devZoneViewPixelsPerMinuteProvider =
-    DevZoneViewPixelsPerMinuteProvider._();
-
-/// Same as [DevTaskViewPixelsPerMinute], for the Spatial Zone View —
-/// independently adjustable, not derived from the Task view's own value.
-///
-/// Previously defaulted to double the Task view's (3.0) — a short (e.g.
-/// 30-minute) Zone-view container barely fit its own header, let alone a
-/// task row, at 1.5. Default changed to 1.5 anyway (matching the Task
-/// view's own) per direct request; the two remain independently
-/// adjustable at runtime if that constraint bites again.
-final class DevZoneViewPixelsPerMinuteProvider
-    extends $NotifierProvider<DevZoneViewPixelsPerMinute, double> {
-  /// Same as [DevTaskViewPixelsPerMinute], for the Spatial Zone View —
-  /// independently adjustable, not derived from the Task view's own value.
-  ///
-  /// Previously defaulted to double the Task view's (3.0) — a short (e.g.
-  /// 30-minute) Zone-view container barely fit its own header, let alone a
-  /// task row, at 1.5. Default changed to 1.5 anyway (matching the Task
-  /// view's own) per direct request; the two remain independently
-  /// adjustable at runtime if that constraint bites again.
-  DevZoneViewPixelsPerMinuteProvider._()
-    : super(
-        from: null,
-        argument: null,
-        retry: null,
-        name: r'devZoneViewPixelsPerMinuteProvider',
-        isAutoDispose: false,
-        dependencies: null,
-        $allTransitiveDependencies: null,
-      );
-
-  @override
-  String debugGetCreateSourceHash() => _$devZoneViewPixelsPerMinuteHash();
-
-  @$internal
-  @override
-  DevZoneViewPixelsPerMinute create() => DevZoneViewPixelsPerMinute();
-
-  /// {@macro riverpod.override_with_value}
-  Override overrideWithValue(double value) {
-    return $ProviderOverride(
-      origin: this,
-      providerOverride: $SyncValueProvider<double>(value),
-    );
-  }
-}
-
-String _$devZoneViewPixelsPerMinuteHash() =>
-    r'49f716180f59c531c0b1feb8675728ac1bd69888';
-
-/// Same as [DevTaskViewPixelsPerMinute], for the Spatial Zone View —
-/// independently adjustable, not derived from the Task view's own value.
-///
-/// Previously defaulted to double the Task view's (3.0) — a short (e.g.
-/// 30-minute) Zone-view container barely fit its own header, let alone a
-/// task row, at 1.5. Default changed to 1.5 anyway (matching the Task
-/// view's own) per direct request; the two remain independently
-/// adjustable at runtime if that constraint bites again.
-
-abstract class _$DevZoneViewPixelsPerMinute extends $Notifier<double> {
-  double build();
-  @$mustCallSuper
-  @override
-  WhenComplete runBuild() {
-    final ref = this.ref as $Ref<double, double>;
-    final element =
-        ref.element
-            as $ClassProviderElement<
-              AnyNotifier<double, double>,
-              double,
               Object?,
               Object?
             >;

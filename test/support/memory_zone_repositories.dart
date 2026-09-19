@@ -1,5 +1,6 @@
 import 'package:amble/shared/models/zone.dart';
 import 'package:amble/shared/models/zone_facet.dart';
+import 'package:amble/shared/repositories/preferences_repository.dart';
 import 'package:amble/shared/repositories/zone_repository.dart';
 import 'package:amble/shared/repositories/zone_facet_repository.dart';
 
@@ -33,4 +34,24 @@ class MemoryZoneFacetRepository implements ZoneFacetRepository {
   Future<void> delete(String id) async {
     rows.remove(id);
   }
+}
+
+class MemoryPreferencesRepository implements PreferencesRepository {
+  final values = <String, dynamic>{};
+
+  @override
+  T? getValue<T>(String key) => values[key] as T?;
+
+  @override
+  Future<void> setValue<T>(String key, T value) async {
+    values[key] = value;
+  }
+
+  @override
+  Future<void> removeValue(String key) async {
+    values.remove(key);
+  }
+
+  @override
+  List<String> keys() => values.keys.toList();
 }

@@ -282,7 +282,13 @@ final class HasCompletedOnboardingProvider
 }
 
 String _$hasCompletedOnboardingHash() =>
-    r'hascompletedonboarding00000000000000000000';
+    r'eded00ea67a975f32b7de180048a6d6b8c606c9b';
+
+/// Whether the onboarding Profile quiz has been completed or explicitly
+/// skipped — see [PreferenceKeys.hasCompletedOnboarding]'s own doc
+/// comment. `keepAlive: true` for the same reason as [HasSeenSplash]:
+/// read by the root `MaterialApp` to decide its `home:`, not
+/// screen-scoped state.
 
 abstract class _$HasCompletedOnboarding extends $Notifier<bool> {
   bool build();
@@ -489,9 +495,9 @@ abstract class _$ShowHourLabelsSetting extends $Notifier<bool> {
 /// (`_TimelineConnectors`) renders on the Spatial Task View. Requested
 /// directly — configurable show/hide, Task view only (Zone view has no
 /// equivalent connector concept, its containers own child layout
-/// directly). Defaults to **true**, matching the connector's existing
-/// unconditional-when-`showHourLabels` behavior, so a fresh install is
-/// visually unchanged.
+/// directly). Defaults to **false** — changed 2026-09-19, requested
+/// directly ("disable show timeline connects as default"), reversing the
+/// original fresh-install-unchanged default above.
 
 @ProviderFor(ShowTimelineConnectorsSetting)
 final showTimelineConnectorsSettingProvider =
@@ -501,18 +507,18 @@ final showTimelineConnectorsSettingProvider =
 /// (`_TimelineConnectors`) renders on the Spatial Task View. Requested
 /// directly — configurable show/hide, Task view only (Zone view has no
 /// equivalent connector concept, its containers own child layout
-/// directly). Defaults to **true**, matching the connector's existing
-/// unconditional-when-`showHourLabels` behavior, so a fresh install is
-/// visually unchanged.
+/// directly). Defaults to **false** — changed 2026-09-19, requested
+/// directly ("disable show timeline connects as default"), reversing the
+/// original fresh-install-unchanged default above.
 final class ShowTimelineConnectorsSettingProvider
     extends $NotifierProvider<ShowTimelineConnectorsSetting, bool> {
   /// Whether the gray thread connecting consecutive tasks
   /// (`_TimelineConnectors`) renders on the Spatial Task View. Requested
   /// directly — configurable show/hide, Task view only (Zone view has no
   /// equivalent connector concept, its containers own child layout
-  /// directly). Defaults to **true**, matching the connector's existing
-  /// unconditional-when-`showHourLabels` behavior, so a fresh install is
-  /// visually unchanged.
+  /// directly). Defaults to **false** — changed 2026-09-19, requested
+  /// directly ("disable show timeline connects as default"), reversing the
+  /// original fresh-install-unchanged default above.
   ShowTimelineConnectorsSettingProvider._()
     : super(
         from: null,
@@ -541,15 +547,15 @@ final class ShowTimelineConnectorsSettingProvider
 }
 
 String _$showTimelineConnectorsSettingHash() =>
-    r'0608b838ebf3c1dca510ac4060f9ea841f0dfaba';
+    r'1959d3f41059f1aa44501e652a4cf9bf06f1c4bc';
 
 /// Whether the gray thread connecting consecutive tasks
 /// (`_TimelineConnectors`) renders on the Spatial Task View. Requested
 /// directly — configurable show/hide, Task view only (Zone view has no
 /// equivalent connector concept, its containers own child layout
-/// directly). Defaults to **true**, matching the connector's existing
-/// unconditional-when-`showHourLabels` behavior, so a fresh install is
-/// visually unchanged.
+/// directly). Defaults to **false** — changed 2026-09-19, requested
+/// directly ("disable show timeline connects as default"), reversing the
+/// original fresh-install-unchanged default above.
 
 abstract class _$ShowTimelineConnectorsSetting extends $Notifier<bool> {
   bool build();
@@ -562,6 +568,138 @@ abstract class _$ShowTimelineConnectorsSetting extends $Notifier<bool> {
             as $ClassProviderElement<
               AnyNotifier<bool, bool>,
               bool,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
+
+/// The Timeline's own vertical time scale — pixels per minute — shared by
+/// BOTH the spatial Task view and the Zone Grid/Edit screen. Requested
+/// directly, alongside pinch-to-zoom: "we can set scale size in dev
+/// settings... let's add pinch zoom in out timeline spatial in view and
+/// edit modes (zones also) to zoom in and out scale" — confirmed via
+/// AskUserQuestion as ONE shared, PERSISTED setting (not two independent
+/// per-view values, and not a debug-only in-memory one), superseding:
+/// - `DevTaskViewPixelsPerMinute`/`DevZoneViewPixelsPerMinute`
+///   (`dev_config.dart`) — `kDebugMode`-only, in-memory, reset on every
+///   restart; this is now the real thing those were a placeholder for.
+/// - The Zone Grid's own previously-hardcoded `const _pixelsPerMinute =
+///   44.0/60` (`zone_grid_screen.dart`) — a compile-time constant with no
+///   setting behind it at all.
+///
+/// Clamped to [minPixelsPerMinute]/[maxPixelsPerMinute] (1.0–4.0),
+/// matching the exact extremes the old dev-only preset chips already
+/// exposed (`1.0, 1.5, 2.0, 3.0, 4.0`) — no new, previously-untested
+/// extremes. Defaults to 1.5, the pre-existing default both old
+/// mechanisms already used.
+
+@ProviderFor(TimelinePixelsPerMinuteSetting)
+final timelinePixelsPerMinuteSettingProvider =
+    TimelinePixelsPerMinuteSettingProvider._();
+
+/// The Timeline's own vertical time scale — pixels per minute — shared by
+/// BOTH the spatial Task view and the Zone Grid/Edit screen. Requested
+/// directly, alongside pinch-to-zoom: "we can set scale size in dev
+/// settings... let's add pinch zoom in out timeline spatial in view and
+/// edit modes (zones also) to zoom in and out scale" — confirmed via
+/// AskUserQuestion as ONE shared, PERSISTED setting (not two independent
+/// per-view values, and not a debug-only in-memory one), superseding:
+/// - `DevTaskViewPixelsPerMinute`/`DevZoneViewPixelsPerMinute`
+///   (`dev_config.dart`) — `kDebugMode`-only, in-memory, reset on every
+///   restart; this is now the real thing those were a placeholder for.
+/// - The Zone Grid's own previously-hardcoded `const _pixelsPerMinute =
+///   44.0/60` (`zone_grid_screen.dart`) — a compile-time constant with no
+///   setting behind it at all.
+///
+/// Clamped to [minPixelsPerMinute]/[maxPixelsPerMinute] (1.0–4.0),
+/// matching the exact extremes the old dev-only preset chips already
+/// exposed (`1.0, 1.5, 2.0, 3.0, 4.0`) — no new, previously-untested
+/// extremes. Defaults to 1.5, the pre-existing default both old
+/// mechanisms already used.
+final class TimelinePixelsPerMinuteSettingProvider
+    extends $NotifierProvider<TimelinePixelsPerMinuteSetting, double> {
+  /// The Timeline's own vertical time scale — pixels per minute — shared by
+  /// BOTH the spatial Task view and the Zone Grid/Edit screen. Requested
+  /// directly, alongside pinch-to-zoom: "we can set scale size in dev
+  /// settings... let's add pinch zoom in out timeline spatial in view and
+  /// edit modes (zones also) to zoom in and out scale" — confirmed via
+  /// AskUserQuestion as ONE shared, PERSISTED setting (not two independent
+  /// per-view values, and not a debug-only in-memory one), superseding:
+  /// - `DevTaskViewPixelsPerMinute`/`DevZoneViewPixelsPerMinute`
+  ///   (`dev_config.dart`) — `kDebugMode`-only, in-memory, reset on every
+  ///   restart; this is now the real thing those were a placeholder for.
+  /// - The Zone Grid's own previously-hardcoded `const _pixelsPerMinute =
+  ///   44.0/60` (`zone_grid_screen.dart`) — a compile-time constant with no
+  ///   setting behind it at all.
+  ///
+  /// Clamped to [minPixelsPerMinute]/[maxPixelsPerMinute] (1.0–4.0),
+  /// matching the exact extremes the old dev-only preset chips already
+  /// exposed (`1.0, 1.5, 2.0, 3.0, 4.0`) — no new, previously-untested
+  /// extremes. Defaults to 1.5, the pre-existing default both old
+  /// mechanisms already used.
+  TimelinePixelsPerMinuteSettingProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'timelinePixelsPerMinuteSettingProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$timelinePixelsPerMinuteSettingHash();
+
+  @$internal
+  @override
+  TimelinePixelsPerMinuteSetting create() => TimelinePixelsPerMinuteSetting();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(double value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<double>(value),
+    );
+  }
+}
+
+String _$timelinePixelsPerMinuteSettingHash() =>
+    r'fe3b2c9400c2f4265cf47854e8bdede8263d81f9';
+
+/// The Timeline's own vertical time scale — pixels per minute — shared by
+/// BOTH the spatial Task view and the Zone Grid/Edit screen. Requested
+/// directly, alongside pinch-to-zoom: "we can set scale size in dev
+/// settings... let's add pinch zoom in out timeline spatial in view and
+/// edit modes (zones also) to zoom in and out scale" — confirmed via
+/// AskUserQuestion as ONE shared, PERSISTED setting (not two independent
+/// per-view values, and not a debug-only in-memory one), superseding:
+/// - `DevTaskViewPixelsPerMinute`/`DevZoneViewPixelsPerMinute`
+///   (`dev_config.dart`) — `kDebugMode`-only, in-memory, reset on every
+///   restart; this is now the real thing those were a placeholder for.
+/// - The Zone Grid's own previously-hardcoded `const _pixelsPerMinute =
+///   44.0/60` (`zone_grid_screen.dart`) — a compile-time constant with no
+///   setting behind it at all.
+///
+/// Clamped to [minPixelsPerMinute]/[maxPixelsPerMinute] (1.0–4.0),
+/// matching the exact extremes the old dev-only preset chips already
+/// exposed (`1.0, 1.5, 2.0, 3.0, 4.0`) — no new, previously-untested
+/// extremes. Defaults to 1.5, the pre-existing default both old
+/// mechanisms already used.
+
+abstract class _$TimelinePixelsPerMinuteSetting extends $Notifier<double> {
+  double build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<double, double>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<double, double>,
+              double,
               Object?,
               Object?
             >;
@@ -781,19 +919,121 @@ abstract class _$TaskSizeSetting extends $Notifier<TaskSize> {
 
 /// Which rung of the task-title-FONT scale (`TaskFontSize.sm`/`md`/`lg`)
 /// the Timeline renders title text at — independent of [TaskSizeSetting]'s
-/// own badge/pill diameter.
+/// own badge/pill diameter. Requested directly: "Settings in appearance
+/// separately font size and separately pill size, let's split this, and
+/// should affect all pills its text."
+///
+/// `main.dart` reads this to `copyWith` the right `textTaskTitle*` field
+/// onto the active `AmbleTheme`, mirroring [TaskSizeSetting]'s own
+/// mechanism exactly — see `_resolveFontSize`.
+///
+/// **One-time migration, not a plain default** (confirmed via
+/// AskUserQuestion): before this split, [TaskSizeSetting]'s own single
+/// value drove BOTH the badge size and the font rung together (paired by
+/// NAME — `TaskSize.sm` resolved to `textTaskTitleSm`, etc.). An absent
+/// [PreferenceKeys.taskFontSize] means this user's device predates the
+/// split, so [build] resolves it from whatever [TaskSizeSetting] currently
+/// holds — by name, `TaskSize.sm` -> `TaskFontSize.sm` — rather than
+/// silently resetting an existing user's font size to a fresh default the
+/// moment this control becomes independent. A genuinely fresh install
+/// (where [TaskSizeSetting] ALSO has nothing stored) falls through to that
+/// same by-name mapping applied to `TaskSize`'s own default (`md`), so it
+/// still lands on `TaskFontSize.md` — identical to [TaskSizeSetting]'s own
+/// plain default, just reached via one extra (harmless) hop.
+///
+/// `build()` deliberately never WRITES — only resolves the value to
+/// return, in memory. Real bug, caught by the full test suite hanging
+/// indefinitely: an earlier version persisted the migrated value
+/// immediately from inside `build()` via `unawaited(...)`, and any test
+/// that mounted the app and tore down its Hive boxes before that
+/// fire-and-forget write finished deadlocked on `deleteFromDisk()` — the
+/// exact "unawaited Hive write still in flight when the test returned"
+/// class of bug this codebase has hit before (see docs/ERROR_LOG.md). A
+/// provider's `build()` performing I/O as a side effect is the wrong
+/// place for this regardless of the test-hang symptom; [migrateIfNeeded]
+/// below is the explicit, awaited, launch-time equivalent of every other
+/// one-time migration in this app (see `main()`'s own
+/// `materializeDueRecurrences`/`migrateToWeeklySchedule` calls).
 
 @ProviderFor(TaskFontSizeSetting)
 final taskFontSizeSettingProvider = TaskFontSizeSettingProvider._();
 
 /// Which rung of the task-title-FONT scale (`TaskFontSize.sm`/`md`/`lg`)
 /// the Timeline renders title text at — independent of [TaskSizeSetting]'s
-/// own badge/pill diameter.
+/// own badge/pill diameter. Requested directly: "Settings in appearance
+/// separately font size and separately pill size, let's split this, and
+/// should affect all pills its text."
+///
+/// `main.dart` reads this to `copyWith` the right `textTaskTitle*` field
+/// onto the active `AmbleTheme`, mirroring [TaskSizeSetting]'s own
+/// mechanism exactly — see `_resolveFontSize`.
+///
+/// **One-time migration, not a plain default** (confirmed via
+/// AskUserQuestion): before this split, [TaskSizeSetting]'s own single
+/// value drove BOTH the badge size and the font rung together (paired by
+/// NAME — `TaskSize.sm` resolved to `textTaskTitleSm`, etc.). An absent
+/// [PreferenceKeys.taskFontSize] means this user's device predates the
+/// split, so [build] resolves it from whatever [TaskSizeSetting] currently
+/// holds — by name, `TaskSize.sm` -> `TaskFontSize.sm` — rather than
+/// silently resetting an existing user's font size to a fresh default the
+/// moment this control becomes independent. A genuinely fresh install
+/// (where [TaskSizeSetting] ALSO has nothing stored) falls through to that
+/// same by-name mapping applied to `TaskSize`'s own default (`md`), so it
+/// still lands on `TaskFontSize.md` — identical to [TaskSizeSetting]'s own
+/// plain default, just reached via one extra (harmless) hop.
+///
+/// `build()` deliberately never WRITES — only resolves the value to
+/// return, in memory. Real bug, caught by the full test suite hanging
+/// indefinitely: an earlier version persisted the migrated value
+/// immediately from inside `build()` via `unawaited(...)`, and any test
+/// that mounted the app and tore down its Hive boxes before that
+/// fire-and-forget write finished deadlocked on `deleteFromDisk()` — the
+/// exact "unawaited Hive write still in flight when the test returned"
+/// class of bug this codebase has hit before (see docs/ERROR_LOG.md). A
+/// provider's `build()` performing I/O as a side effect is the wrong
+/// place for this regardless of the test-hang symptom; [migrateIfNeeded]
+/// below is the explicit, awaited, launch-time equivalent of every other
+/// one-time migration in this app (see `main()`'s own
+/// `materializeDueRecurrences`/`migrateToWeeklySchedule` calls).
 final class TaskFontSizeSettingProvider
     extends $NotifierProvider<TaskFontSizeSetting, TaskFontSize> {
   /// Which rung of the task-title-FONT scale (`TaskFontSize.sm`/`md`/`lg`)
-  /// the Timeline renders title text at — independent of
-  /// [TaskSizeSetting]'s own badge/pill diameter.
+  /// the Timeline renders title text at — independent of [TaskSizeSetting]'s
+  /// own badge/pill diameter. Requested directly: "Settings in appearance
+  /// separately font size and separately pill size, let's split this, and
+  /// should affect all pills its text."
+  ///
+  /// `main.dart` reads this to `copyWith` the right `textTaskTitle*` field
+  /// onto the active `AmbleTheme`, mirroring [TaskSizeSetting]'s own
+  /// mechanism exactly — see `_resolveFontSize`.
+  ///
+  /// **One-time migration, not a plain default** (confirmed via
+  /// AskUserQuestion): before this split, [TaskSizeSetting]'s own single
+  /// value drove BOTH the badge size and the font rung together (paired by
+  /// NAME — `TaskSize.sm` resolved to `textTaskTitleSm`, etc.). An absent
+  /// [PreferenceKeys.taskFontSize] means this user's device predates the
+  /// split, so [build] resolves it from whatever [TaskSizeSetting] currently
+  /// holds — by name, `TaskSize.sm` -> `TaskFontSize.sm` — rather than
+  /// silently resetting an existing user's font size to a fresh default the
+  /// moment this control becomes independent. A genuinely fresh install
+  /// (where [TaskSizeSetting] ALSO has nothing stored) falls through to that
+  /// same by-name mapping applied to `TaskSize`'s own default (`md`), so it
+  /// still lands on `TaskFontSize.md` — identical to [TaskSizeSetting]'s own
+  /// plain default, just reached via one extra (harmless) hop.
+  ///
+  /// `build()` deliberately never WRITES — only resolves the value to
+  /// return, in memory. Real bug, caught by the full test suite hanging
+  /// indefinitely: an earlier version persisted the migrated value
+  /// immediately from inside `build()` via `unawaited(...)`, and any test
+  /// that mounted the app and tore down its Hive boxes before that
+  /// fire-and-forget write finished deadlocked on `deleteFromDisk()` — the
+  /// exact "unawaited Hive write still in flight when the test returned"
+  /// class of bug this codebase has hit before (see docs/ERROR_LOG.md). A
+  /// provider's `build()` performing I/O as a side effect is the wrong
+  /// place for this regardless of the test-hang symptom; [migrateIfNeeded]
+  /// below is the explicit, awaited, launch-time equivalent of every other
+  /// one-time migration in this app (see `main()`'s own
+  /// `materializeDueRecurrences`/`migrateToWeeklySchedule` calls).
   TaskFontSizeSettingProvider._()
     : super(
         from: null,
@@ -822,7 +1062,45 @@ final class TaskFontSizeSettingProvider
 }
 
 String _$taskFontSizeSettingHash() =>
-    r'taskfontsizesetting00000000000000000000000';
+    r'9c9a5ec16c1f7c22693d838e0a96db15c81d781a';
+
+/// Which rung of the task-title-FONT scale (`TaskFontSize.sm`/`md`/`lg`)
+/// the Timeline renders title text at — independent of [TaskSizeSetting]'s
+/// own badge/pill diameter. Requested directly: "Settings in appearance
+/// separately font size and separately pill size, let's split this, and
+/// should affect all pills its text."
+///
+/// `main.dart` reads this to `copyWith` the right `textTaskTitle*` field
+/// onto the active `AmbleTheme`, mirroring [TaskSizeSetting]'s own
+/// mechanism exactly — see `_resolveFontSize`.
+///
+/// **One-time migration, not a plain default** (confirmed via
+/// AskUserQuestion): before this split, [TaskSizeSetting]'s own single
+/// value drove BOTH the badge size and the font rung together (paired by
+/// NAME — `TaskSize.sm` resolved to `textTaskTitleSm`, etc.). An absent
+/// [PreferenceKeys.taskFontSize] means this user's device predates the
+/// split, so [build] resolves it from whatever [TaskSizeSetting] currently
+/// holds — by name, `TaskSize.sm` -> `TaskFontSize.sm` — rather than
+/// silently resetting an existing user's font size to a fresh default the
+/// moment this control becomes independent. A genuinely fresh install
+/// (where [TaskSizeSetting] ALSO has nothing stored) falls through to that
+/// same by-name mapping applied to `TaskSize`'s own default (`md`), so it
+/// still lands on `TaskFontSize.md` — identical to [TaskSizeSetting]'s own
+/// plain default, just reached via one extra (harmless) hop.
+///
+/// `build()` deliberately never WRITES — only resolves the value to
+/// return, in memory. Real bug, caught by the full test suite hanging
+/// indefinitely: an earlier version persisted the migrated value
+/// immediately from inside `build()` via `unawaited(...)`, and any test
+/// that mounted the app and tore down its Hive boxes before that
+/// fire-and-forget write finished deadlocked on `deleteFromDisk()` — the
+/// exact "unawaited Hive write still in flight when the test returned"
+/// class of bug this codebase has hit before (see docs/ERROR_LOG.md). A
+/// provider's `build()` performing I/O as a side effect is the wrong
+/// place for this regardless of the test-hang symptom; [migrateIfNeeded]
+/// below is the explicit, awaited, launch-time equivalent of every other
+/// one-time migration in this app (see `main()`'s own
+/// `materializeDueRecurrences`/`migrateToWeeklySchedule` calls).
 
 abstract class _$TaskFontSizeSetting extends $Notifier<TaskFontSize> {
   TaskFontSize build();
@@ -845,7 +1123,26 @@ abstract class _$TaskFontSizeSetting extends $Notifier<TaskFontSize> {
 /// Which corner-rounding a task/zone/Inbox pill badge renders at
 /// (`PillShape.small`/`rounded`/`full`) — one global setting spanning
 /// every pill-shaped surface in the app, mirroring [TaskSizeSetting]'s own
-/// mechanism exactly. Defaults to `PillShape.small`.
+/// mechanism exactly. `main.dart` reads this to `copyWith` the right
+/// `radiusPill` value onto the active `AmbleTheme` before it reaches
+/// `MaterialApp`, so every existing call site (`TaskCapsuleBlock`,
+/// `ZoneContainerBlock`, the Inbox row's own badge) picks it up
+/// automatically without itself knowing this setting exists. Since
+/// 2026-09-19, `AppButton`'s pill shape and `AppTabSwitch`'s track also
+/// read the same active `radiusPill` — the setting is no longer scoped to
+/// task/zone/Inbox badges alone, any pill-shaped control in the app tracks
+/// it.
+///
+/// Requested directly: "we have squary rounded shape of pills but rounded
+/// on inbox ... let's make it configurable in admin ... this should affect
+/// globally, in edit tasks etc."
+///
+/// Defaults to `PillShape.full` — changed 2026-09-19 from the original
+/// `PillShape.small` default, requested directly: "all buttons and other
+/// related should be fully rounded... we actually have config rounding 3
+/// variants for task pill we should use that fully rounded to match." The
+/// setting itself, and its other two rungs, are unchanged — only which
+/// rung a fresh install starts on.
 
 @ProviderFor(PillShapeSetting)
 final pillShapeSettingProvider = PillShapeSettingProvider._();
@@ -853,13 +1150,51 @@ final pillShapeSettingProvider = PillShapeSettingProvider._();
 /// Which corner-rounding a task/zone/Inbox pill badge renders at
 /// (`PillShape.small`/`rounded`/`full`) — one global setting spanning
 /// every pill-shaped surface in the app, mirroring [TaskSizeSetting]'s own
-/// mechanism exactly. Defaults to `PillShape.small`.
+/// mechanism exactly. `main.dart` reads this to `copyWith` the right
+/// `radiusPill` value onto the active `AmbleTheme` before it reaches
+/// `MaterialApp`, so every existing call site (`TaskCapsuleBlock`,
+/// `ZoneContainerBlock`, the Inbox row's own badge) picks it up
+/// automatically without itself knowing this setting exists. Since
+/// 2026-09-19, `AppButton`'s pill shape and `AppTabSwitch`'s track also
+/// read the same active `radiusPill` — the setting is no longer scoped to
+/// task/zone/Inbox badges alone, any pill-shaped control in the app tracks
+/// it.
+///
+/// Requested directly: "we have squary rounded shape of pills but rounded
+/// on inbox ... let's make it configurable in admin ... this should affect
+/// globally, in edit tasks etc."
+///
+/// Defaults to `PillShape.full` — changed 2026-09-19 from the original
+/// `PillShape.small` default, requested directly: "all buttons and other
+/// related should be fully rounded... we actually have config rounding 3
+/// variants for task pill we should use that fully rounded to match." The
+/// setting itself, and its other two rungs, are unchanged — only which
+/// rung a fresh install starts on.
 final class PillShapeSettingProvider
     extends $NotifierProvider<PillShapeSetting, PillShape> {
   /// Which corner-rounding a task/zone/Inbox pill badge renders at
   /// (`PillShape.small`/`rounded`/`full`) — one global setting spanning
-  /// every pill-shaped surface in the app, mirroring [TaskSizeSetting]'s
-  /// own mechanism exactly. Defaults to `PillShape.small`.
+  /// every pill-shaped surface in the app, mirroring [TaskSizeSetting]'s own
+  /// mechanism exactly. `main.dart` reads this to `copyWith` the right
+  /// `radiusPill` value onto the active `AmbleTheme` before it reaches
+  /// `MaterialApp`, so every existing call site (`TaskCapsuleBlock`,
+  /// `ZoneContainerBlock`, the Inbox row's own badge) picks it up
+  /// automatically without itself knowing this setting exists. Since
+  /// 2026-09-19, `AppButton`'s pill shape and `AppTabSwitch`'s track also
+  /// read the same active `radiusPill` — the setting is no longer scoped to
+  /// task/zone/Inbox badges alone, any pill-shaped control in the app tracks
+  /// it.
+  ///
+  /// Requested directly: "we have squary rounded shape of pills but rounded
+  /// on inbox ... let's make it configurable in admin ... this should affect
+  /// globally, in edit tasks etc."
+  ///
+  /// Defaults to `PillShape.full` — changed 2026-09-19 from the original
+  /// `PillShape.small` default, requested directly: "all buttons and other
+  /// related should be fully rounded... we actually have config rounding 3
+  /// variants for task pill we should use that fully rounded to match." The
+  /// setting itself, and its other two rungs, are unchanged — only which
+  /// rung a fresh install starts on.
   PillShapeSettingProvider._()
     : super(
         from: null,
@@ -887,7 +1222,31 @@ final class PillShapeSettingProvider
   }
 }
 
-String _$pillShapeSettingHash() => r'pillshapesetting0000000000000000000000000';
+String _$pillShapeSettingHash() => r'd4daac13d088ceaf416a049014904c44884d97b7';
+
+/// Which corner-rounding a task/zone/Inbox pill badge renders at
+/// (`PillShape.small`/`rounded`/`full`) — one global setting spanning
+/// every pill-shaped surface in the app, mirroring [TaskSizeSetting]'s own
+/// mechanism exactly. `main.dart` reads this to `copyWith` the right
+/// `radiusPill` value onto the active `AmbleTheme` before it reaches
+/// `MaterialApp`, so every existing call site (`TaskCapsuleBlock`,
+/// `ZoneContainerBlock`, the Inbox row's own badge) picks it up
+/// automatically without itself knowing this setting exists. Since
+/// 2026-09-19, `AppButton`'s pill shape and `AppTabSwitch`'s track also
+/// read the same active `radiusPill` — the setting is no longer scoped to
+/// task/zone/Inbox badges alone, any pill-shaped control in the app tracks
+/// it.
+///
+/// Requested directly: "we have squary rounded shape of pills but rounded
+/// on inbox ... let's make it configurable in admin ... this should affect
+/// globally, in edit tasks etc."
+///
+/// Defaults to `PillShape.full` — changed 2026-09-19 from the original
+/// `PillShape.small` default, requested directly: "all buttons and other
+/// related should be fully rounded... we actually have config rounding 3
+/// variants for task pill we should use that fully rounded to match." The
+/// setting itself, and its other two rungs, are unchanged — only which
+/// rung a fresh install starts on.
 
 abstract class _$PillShapeSetting extends $Notifier<PillShape> {
   PillShape build();
@@ -900,6 +1259,97 @@ abstract class _$PillShapeSetting extends $Notifier<PillShape> {
             as $ClassProviderElement<
               AnyNotifier<PillShape, PillShape>,
               PillShape,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
+
+/// Whether a Tag's color fills the WHOLE pill (`TagColorStyle.pill`) or
+/// just the small badge behind its icon, with the rest of the pill paled
+/// (`TagColorStyle.iconOnly`) — one global setting spanning every
+/// pill-shaped surface in the app, mirroring [PillShapeSetting]'s own
+/// mechanism exactly. Requested directly: "add config in admin that lets
+/// [you] manage what gets the tag color as per tag (the pill or just the
+/// icon...)."
+///
+/// Defaults to `TagColorStyle.pill` — today's existing, unchanged look.
+
+@ProviderFor(TagColorStyleSetting)
+final tagColorStyleSettingProvider = TagColorStyleSettingProvider._();
+
+/// Whether a Tag's color fills the WHOLE pill (`TagColorStyle.pill`) or
+/// just the small badge behind its icon, with the rest of the pill paled
+/// (`TagColorStyle.iconOnly`) — one global setting spanning every
+/// pill-shaped surface in the app, mirroring [PillShapeSetting]'s own
+/// mechanism exactly. Requested directly: "add config in admin that lets
+/// [you] manage what gets the tag color as per tag (the pill or just the
+/// icon...)."
+///
+/// Defaults to `TagColorStyle.pill` — today's existing, unchanged look.
+final class TagColorStyleSettingProvider
+    extends $NotifierProvider<TagColorStyleSetting, TagColorStyle> {
+  /// Whether a Tag's color fills the WHOLE pill (`TagColorStyle.pill`) or
+  /// just the small badge behind its icon, with the rest of the pill paled
+  /// (`TagColorStyle.iconOnly`) — one global setting spanning every
+  /// pill-shaped surface in the app, mirroring [PillShapeSetting]'s own
+  /// mechanism exactly. Requested directly: "add config in admin that lets
+  /// [you] manage what gets the tag color as per tag (the pill or just the
+  /// icon...)."
+  ///
+  /// Defaults to `TagColorStyle.pill` — today's existing, unchanged look.
+  TagColorStyleSettingProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'tagColorStyleSettingProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$tagColorStyleSettingHash();
+
+  @$internal
+  @override
+  TagColorStyleSetting create() => TagColorStyleSetting();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(TagColorStyle value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<TagColorStyle>(value),
+    );
+  }
+}
+
+String _$tagColorStyleSettingHash() =>
+    r'8d4cb94bccd275dd238f8adc2d966e5cba92525a';
+
+/// Whether a Tag's color fills the WHOLE pill (`TagColorStyle.pill`) or
+/// just the small badge behind its icon, with the rest of the pill paled
+/// (`TagColorStyle.iconOnly`) — one global setting spanning every
+/// pill-shaped surface in the app, mirroring [PillShapeSetting]'s own
+/// mechanism exactly. Requested directly: "add config in admin that lets
+/// [you] manage what gets the tag color as per tag (the pill or just the
+/// icon...)."
+///
+/// Defaults to `TagColorStyle.pill` — today's existing, unchanged look.
+
+abstract class _$TagColorStyleSetting extends $Notifier<TagColorStyle> {
+  TagColorStyle build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<TagColorStyle, TagColorStyle>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<TagColorStyle, TagColorStyle>,
+              TagColorStyle,
               Object?,
               Object?
             >;
@@ -989,45 +1439,69 @@ abstract class _$TrackedBehaviorViewModeSetting
   }
 }
 
-/// Whether the Timeline renders in Zone view — Zones as real layout
-/// containers owning their child tasks' positions (see
-/// `ZoneContainerBlock`) — instead of the default Task view (where Zones
-/// are purely decorative background, see `ZoneBackgroundBlock`).
+/// Whether the merged Timeline nav destination renders in Zone view —
+/// Zones as real layout containers owning their child tasks' positions
+/// (see `ZoneContainerBlock`) — instead of the default Task view (where
+/// Zones are purely decorative background, see `ZoneBackgroundBlock`).
+///
+/// **2026-09-17 — live again.** Between 2026-09-12 and this date, Task
+/// view and Zone view were two permanent, separate nav tabs and
+/// `TimelineScreen` ignored this setting entirely (each tab forced its
+/// own `TimelineDisplayMode`). Requested directly to consolidate back
+/// into one nav item that toggles on a second tap or via
+/// `AppCalendarHeader`'s own switcher button — this is that toggle's
+/// real, read state again, not a harmless unread field.
 ///
 /// `keepAlive: true` for the same reason as the other settings above.
 /// Defaults to **false** when nothing is stored, so a fresh install (or an
 /// existing one) keeps today's Task view unless the user opts in. Only
-/// ever surfaced as a Settings toggle when `FeatureFlags.zoneEnabled` is
-/// also true — the setting itself has no opinion on the flag; the
-/// Settings screen decides visibility.
+/// ever surfaced (Dev settings toggle, header switcher button) when
+/// `FeatureFlags.zoneEnabled` is also true — the setting itself has no
+/// opinion on the flag; each surface decides its own visibility.
 
 @ProviderFor(ZoneViewEnabledSetting)
 final zoneViewEnabledSettingProvider = ZoneViewEnabledSettingProvider._();
 
-/// Whether the Timeline renders in Zone view — Zones as real layout
-/// containers owning their child tasks' positions (see
-/// `ZoneContainerBlock`) — instead of the default Task view (where Zones
-/// are purely decorative background, see `ZoneBackgroundBlock`).
+/// Whether the merged Timeline nav destination renders in Zone view —
+/// Zones as real layout containers owning their child tasks' positions
+/// (see `ZoneContainerBlock`) — instead of the default Task view (where
+/// Zones are purely decorative background, see `ZoneBackgroundBlock`).
+///
+/// **2026-09-17 — live again.** Between 2026-09-12 and this date, Task
+/// view and Zone view were two permanent, separate nav tabs and
+/// `TimelineScreen` ignored this setting entirely (each tab forced its
+/// own `TimelineDisplayMode`). Requested directly to consolidate back
+/// into one nav item that toggles on a second tap or via
+/// `AppCalendarHeader`'s own switcher button — this is that toggle's
+/// real, read state again, not a harmless unread field.
 ///
 /// `keepAlive: true` for the same reason as the other settings above.
 /// Defaults to **false** when nothing is stored, so a fresh install (or an
 /// existing one) keeps today's Task view unless the user opts in. Only
-/// ever surfaced as a Settings toggle when `FeatureFlags.zoneEnabled` is
-/// also true — the setting itself has no opinion on the flag; the
-/// Settings screen decides visibility.
+/// ever surfaced (Dev settings toggle, header switcher button) when
+/// `FeatureFlags.zoneEnabled` is also true — the setting itself has no
+/// opinion on the flag; each surface decides its own visibility.
 final class ZoneViewEnabledSettingProvider
     extends $NotifierProvider<ZoneViewEnabledSetting, bool> {
-  /// Whether the Timeline renders in Zone view — Zones as real layout
-  /// containers owning their child tasks' positions (see
-  /// `ZoneContainerBlock`) — instead of the default Task view (where Zones
-  /// are purely decorative background, see `ZoneBackgroundBlock`).
+  /// Whether the merged Timeline nav destination renders in Zone view —
+  /// Zones as real layout containers owning their child tasks' positions
+  /// (see `ZoneContainerBlock`) — instead of the default Task view (where
+  /// Zones are purely decorative background, see `ZoneBackgroundBlock`).
+  ///
+  /// **2026-09-17 — live again.** Between 2026-09-12 and this date, Task
+  /// view and Zone view were two permanent, separate nav tabs and
+  /// `TimelineScreen` ignored this setting entirely (each tab forced its
+  /// own `TimelineDisplayMode`). Requested directly to consolidate back
+  /// into one nav item that toggles on a second tap or via
+  /// `AppCalendarHeader`'s own switcher button — this is that toggle's
+  /// real, read state again, not a harmless unread field.
   ///
   /// `keepAlive: true` for the same reason as the other settings above.
   /// Defaults to **false** when nothing is stored, so a fresh install (or an
   /// existing one) keeps today's Task view unless the user opts in. Only
-  /// ever surfaced as a Settings toggle when `FeatureFlags.zoneEnabled` is
-  /// also true — the setting itself has no opinion on the flag; the
-  /// Settings screen decides visibility.
+  /// ever surfaced (Dev settings toggle, header switcher button) when
+  /// `FeatureFlags.zoneEnabled` is also true — the setting itself has no
+  /// opinion on the flag; each surface decides its own visibility.
   ZoneViewEnabledSettingProvider._()
     : super(
         from: null,
@@ -1058,17 +1532,25 @@ final class ZoneViewEnabledSettingProvider
 String _$zoneViewEnabledSettingHash() =>
     r'7c3de9f0588b791f6a7c4af625e84f5ef2d5fc81';
 
-/// Whether the Timeline renders in Zone view — Zones as real layout
-/// containers owning their child tasks' positions (see
-/// `ZoneContainerBlock`) — instead of the default Task view (where Zones
-/// are purely decorative background, see `ZoneBackgroundBlock`).
+/// Whether the merged Timeline nav destination renders in Zone view —
+/// Zones as real layout containers owning their child tasks' positions
+/// (see `ZoneContainerBlock`) — instead of the default Task view (where
+/// Zones are purely decorative background, see `ZoneBackgroundBlock`).
+///
+/// **2026-09-17 — live again.** Between 2026-09-12 and this date, Task
+/// view and Zone view were two permanent, separate nav tabs and
+/// `TimelineScreen` ignored this setting entirely (each tab forced its
+/// own `TimelineDisplayMode`). Requested directly to consolidate back
+/// into one nav item that toggles on a second tap or via
+/// `AppCalendarHeader`'s own switcher button — this is that toggle's
+/// real, read state again, not a harmless unread field.
 ///
 /// `keepAlive: true` for the same reason as the other settings above.
 /// Defaults to **false** when nothing is stored, so a fresh install (or an
 /// existing one) keeps today's Task view unless the user opts in. Only
-/// ever surfaced as a Settings toggle when `FeatureFlags.zoneEnabled` is
-/// also true — the setting itself has no opinion on the flag; the
-/// Settings screen decides visibility.
+/// ever surfaced (Dev settings toggle, header switcher button) when
+/// `FeatureFlags.zoneEnabled` is also true — the setting itself has no
+/// opinion on the flag; each surface decides its own visibility.
 
 abstract class _$ZoneViewEnabledSetting extends $Notifier<bool> {
   bool build();
@@ -1637,75 +2119,6 @@ abstract class _$SlackIconEmojiSetting extends $Notifier<String?> {
             as $ClassProviderElement<
               AnyNotifier<String?, String?>,
               String?,
-              Object?,
-              Object?
-            >;
-    return element.handleCreate(ref, build);
-  }
-}
-
-/// Whether a Tag's color fills the WHOLE pill or just the small badge
-/// behind its icon, with the rest of the pill paled — one global setting
-/// spanning every pill-shaped surface in the app, mirroring
-/// [PillShapeSetting]'s own mechanism exactly. Defaults to
-/// `TagColorStyle.pill`.
-
-@ProviderFor(TagColorStyleSetting)
-final tagColorStyleSettingProvider = TagColorStyleSettingProvider._();
-
-/// Whether a Tag's color fills the WHOLE pill or just the small badge
-/// behind its icon, with the rest of the pill paled — one global setting
-/// spanning every pill-shaped surface in the app, mirroring
-/// [PillShapeSetting]'s own mechanism exactly. Defaults to
-/// `TagColorStyle.pill`.
-final class TagColorStyleSettingProvider
-    extends $NotifierProvider<TagColorStyleSetting, TagColorStyle> {
-  /// Whether a Tag's color fills the WHOLE pill or just the small badge
-  /// behind its icon, with the rest of the pill paled — one global
-  /// setting spanning every pill-shaped surface in the app, mirroring
-  /// [PillShapeSetting]'s own mechanism exactly. Defaults to
-  /// `TagColorStyle.pill`.
-  TagColorStyleSettingProvider._()
-    : super(
-        from: null,
-        argument: null,
-        retry: null,
-        name: r'tagColorStyleSettingProvider',
-        isAutoDispose: false,
-        dependencies: null,
-        $allTransitiveDependencies: null,
-      );
-
-  @override
-  String debugGetCreateSourceHash() => _$tagColorStyleSettingHash();
-
-  @$internal
-  @override
-  TagColorStyleSetting create() => TagColorStyleSetting();
-
-  /// {@macro riverpod.override_with_value}
-  Override overrideWithValue(TagColorStyle value) {
-    return $ProviderOverride(
-      origin: this,
-      providerOverride: $SyncValueProvider<TagColorStyle>(value),
-    );
-  }
-}
-
-String _$tagColorStyleSettingHash() =>
-    r'tagcolorstylesetting0000000000000000000000000';
-
-abstract class _$TagColorStyleSetting extends $Notifier<TagColorStyle> {
-  TagColorStyle build();
-  @$mustCallSuper
-  @override
-  WhenComplete runBuild() {
-    final ref = this.ref as $Ref<TagColorStyle, TagColorStyle>;
-    final element =
-        ref.element
-            as $ClassProviderElement<
-              AnyNotifier<TagColorStyle, TagColorStyle>,
-              TagColorStyle,
               Object?,
               Object?
             >;

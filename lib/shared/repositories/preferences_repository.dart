@@ -173,4 +173,15 @@ abstract final class PreferenceKeys {
   /// chosen yet; the sync button is disabled until one is set (see
   /// `SettingsScreen`).
   static const String calendarSyncTargetId = 'calendarSyncTargetId';
+
+  /// The Timeline's own vertical time scale — pixels per minute — shared
+  /// by BOTH the spatial Task view and the Zone Grid/Edit screen (one
+  /// zoom level, not two independent ones; requested directly). Absent
+  /// (null) defaults to 1.5 — see [TimelinePixelsPerMinuteSetting].
+  /// Supersedes the two previous `kDebugMode`-only, in-memory-only dev
+  /// providers (`DevTaskViewPixelsPerMinute`/`DevZoneViewPixelsPerMinute`
+  /// in `dev_config.dart`) and the Zone Grid's own previously-hardcoded
+  /// `44.0/60` constant, now that pinch-to-zoom makes this a real,
+  /// persisted user-facing setting rather than a debug scratch value.
+  static const String timelinePixelsPerMinute = 'timelinePixelsPerMinute';
 }

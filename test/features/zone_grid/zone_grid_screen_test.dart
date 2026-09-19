@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
+import 'package:amble/shared/providers/preferences_providers.dart';
 import 'package:amble/shared/providers/zone_providers.dart';
 import 'package:amble/shared/providers/zone_facet_providers.dart';
 import 'package:amble/features/zone_grid/zone_grid_screen.dart';
@@ -24,6 +25,9 @@ void main() {
       overrides: [
         zoneRepositoryProvider.overrideWithValue(repository),
         zoneFacetRepositoryProvider.overrideWithValue(facets),
+        preferencesRepositoryProvider.overrideWithValue(
+          MemoryPreferencesRepository(),
+        ),
       ],
     );
   });
@@ -55,9 +59,12 @@ void main() {
     // (~36px of JetBrains Mono at 12px) still fits between the two 8px
     // insets without wrapping.
     const axisWidth = 60.0;
+    // 1.5 px/minute — TimelinePixelsPerMinuteSetting's own default, now
+    // shared with the spatial Task view (was a hardcoded 44/60 here).
+    const pixelsPerMinute = 1.5;
     return Offset(
       rect.left + axisWidth + (day - .5) * (rect.width - axisWidth) / 7,
-      rect.top + minute * 44 / 60,
+      rect.top + minute * pixelsPerMinute,
     );
   }
 

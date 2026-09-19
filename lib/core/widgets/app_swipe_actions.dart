@@ -210,6 +210,21 @@ class _AppSwipeActionsState extends State<AppSwipeActions>
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     final revealed = _offset > 0 ? widget.startAction : widget.endAction;
 
+    // Both actions null ("swipe fully disabled here right now" — e.g. a
+    // Timeline task row in Edit Mode, where the resize handles' own
+    // vertical drag must be the only claimant) means the horizontal
+    // recognizer isn't installed AT ALL, not merely installed-but-inert.
+    // Real bug, caught by a test: an always-installed
+    // HorizontalDragGestureRecognizer still enters the SAME gesture arena
+    // as a descendant's own drag recognizer even when `_allows()` clamps
+    // its own movement to zero in `_handleDragUpdate` — which was enough
+    // to interrupt a sibling `ResizeHandle`'s vertical drag mid-gesture
+    // (start fired, update/end never did) once this widget started
+    // wrapping Timeline task rows that already owned their own vertical
+    // drag gestures. An empty `gestures` map claims nothing, so a
+    // descendant's own recognizer wins outright with no competitor.
+    final bothDisabled = widget.startAction == null && widget.endAction == null;
+
     return RawGestureDetector(
       // RawGestureDetector, NOT GestureDetector — and this is load-bearing.
       // A plain GestureDetector here sits ABOVE the child in the tree, so a
@@ -222,18 +237,20 @@ class _AppSwipeActionsState extends State<AppSwipeActions>
       //
       // Same defect, same session, as `place_task_line.dart`'s own
       // tap-vs-long-press arena note — see it for the fuller writeup.
-      gestures: <Type, GestureRecognizerFactory>{
-        HorizontalDragGestureRecognizer:
-            GestureRecognizerFactoryWithHandlers<
-              HorizontalDragGestureRecognizer
-            >(
-              () => HorizontalDragGestureRecognizer(debugOwner: this),
-              (HorizontalDragGestureRecognizer recognizer) => recognizer
-                ..onStart = _handleDragStart
-                ..onUpdate = _handleDragUpdate
-                ..onEnd = _handleDragEnd,
-            ),
-      },
+      gestures: bothDisabled
+          ? const <Type, GestureRecognizerFactory>{}
+          : <Type, GestureRecognizerFactory>{
+              HorizontalDragGestureRecognizer:
+                  GestureRecognizerFactoryWithHandlers<
+                    HorizontalDragGestureRecognizer
+                  >(
+                    () => HorizontalDragGestureRecognizer(debugOwner: this),
+                    (HorizontalDragGestureRecognizer recognizer) => recognizer
+                      ..onStart = _handleDragStart
+                      ..onUpdate = _handleDragUpdate
+                      ..onEnd = _handleDragEnd,
+                  ),
+            },
       child: Stack(
         children: [
           if (revealed != null)

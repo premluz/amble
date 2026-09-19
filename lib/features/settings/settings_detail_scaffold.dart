@@ -36,6 +36,12 @@ class SettingsDetailScaffold extends StatelessWidget {
                     icon: Icons.arrow_back_rounded,
                     onPressed: () => Navigator.of(context).pop(),
                     shape: AppButtonShape.circle,
+                    // Ghost, not primary (its old default) — a back/nav
+                    // control is chrome, not the screen's action, and
+                    // should never compete visually with a real CTA.
+                    // Requested directly as part of the app-wide button
+                    // unification pass.
+                    variant: AppButtonVariant.ghost,
                   ),
                   SizedBox(width: theme.spacingMd),
                   // textTitle — every page and sheet title in the app

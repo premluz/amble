@@ -984,52 +984,31 @@ class _DeveloperSettingsScreenState
             ),
           ),
           SizedBox(height: theme.spacingSm),
-          // Vertical timeline scale — independently configurable per view,
-          // requested directly. The Zone view starts at double the Task
-          // view's own 1.5, since a short zone container barely fit its
-          // header at the shared old scale (see
-          // DevZoneViewPixelsPerMinute's own doc comment).
+          // Vertical timeline scale — ONE shared, PERSISTED setting as of
+          // 2026-09-19 (pinch-to-zoom), superseding the previous
+          // independent-per-view, debug-only, in-memory dev providers —
+          // see TimelinePixelsPerMinuteSetting's own doc comment. Kept
+          // here (not removed) as a quick way to jump to an exact preset
+          // value while testing pinch's own extremes, rather than
+          // pinching by feel to hit 1.0/4.0 precisely.
           SettingsPanel(
             theme: theme,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Timeline scale (debug build only, resets on restart)',
+                  'Timeline scale (pixels/minute) — shared by Task and '
+                  'Zone views; pinch to zoom on either',
                   style: theme.textBody.copyWith(
                     color: theme.colorTextSecondary,
                   ),
                 ),
-                SizedBox(height: theme.spacingMd),
-                Text(
-                  'Task view (pixels/minute)',
-                  style: theme.textBody.copyWith(
-                    color: theme.colorTextPrimary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
                 SizedBox(height: theme.spacingSm),
                 _PixelsPerMinuteChipRow(
                   theme: theme,
-                  value: ref.watch(devTaskViewPixelsPerMinuteProvider),
+                  value: ref.watch(timelinePixelsPerMinuteSettingProvider),
                   onChanged: (value) => ref
-                      .read(devTaskViewPixelsPerMinuteProvider.notifier)
-                      .set(value),
-                ),
-                SizedBox(height: theme.spacingMd),
-                Text(
-                  'Zone view (pixels/minute)',
-                  style: theme.textBody.copyWith(
-                    color: theme.colorTextPrimary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                SizedBox(height: theme.spacingSm),
-                _PixelsPerMinuteChipRow(
-                  theme: theme,
-                  value: ref.watch(devZoneViewPixelsPerMinuteProvider),
-                  onChanged: (value) => ref
-                      .read(devZoneViewPixelsPerMinuteProvider.notifier)
+                      .read(timelinePixelsPerMinuteSettingProvider.notifier)
                       .set(value),
                 ),
               ],
@@ -1074,6 +1053,11 @@ class _DeveloperSettingsScreenState
                 SizedBox(height: theme.spacingSm),
                 AppButton(
                   label: 'Clear everything',
+                  // Secondary, matching every sibling "Clear..." button on
+                  // this screen and the app-wide button unification pass
+                  // (settings actions are equal-weight utilities, no
+                  // single dominant CTA).
+                  variant: AppButtonVariant.secondary,
                   onPressed: _devClearBusy ? null : _clearEverything,
                   isLoading: _devClearBusy,
                 ),

@@ -62,6 +62,7 @@ class AmbleWidgetbookApp extends StatelessWidget {
                     icon: Icons.arrow_back_rounded,
                     shape: AppButtonShape.circle,
                     variant: context.variantKnob(),
+                    size: context.sizeKnob(),
                     onPressed: _noop,
                   ),
                 ),

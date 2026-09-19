@@ -40,6 +40,11 @@ class TemplateListScreen extends StatelessWidget {
                     icon: Icons.arrow_back_rounded,
                     onPressed: () => Navigator.of(context).pop(),
                     shape: AppButtonShape.circle,
+                    // Ghost, not primary — app-wide button unification
+                    // pass, requested directly ("only one primary [per
+                    // screen]"); the add button below stays primary as
+                    // this screen's one real action.
+                    variant: AppButtonVariant.ghost,
                   ),
                   SizedBox(width: theme.spacingMd),
                   Expanded(child: Text('Templates', style: theme.textTitle)),

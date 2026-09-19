@@ -344,10 +344,24 @@ class AppButton extends StatelessWidget {
     final labelText = label;
     final iconData = icon;
     if (iconData != null && labelText != null) {
+      // `CrossAxisAlignment.center` alone still let the icon read as
+      // sitting slightly higher than the label — Text reserves vertical
+      // space for its font's full line height (ascent+descent+leading),
+      // which is taller than Icon's tight square box, so centering each
+      // widget's own bounding box does not center their visual glyphs
+      // against each other. Wrapping the icon in a SizedBox at the
+      // text style's own line height (fontSize * height) makes its
+      // bounding box match Text's, so centering the two now centers what
+      // you actually see, not just their boxes.
+      final lineHeight = textStyle.fontSize! * (textStyle.height ?? 1.0);
       return Row(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Icon(iconData, color: foreground, size: textStyle.fontSize),
+          SizedBox(
+            height: lineHeight,
+            child: Icon(iconData, color: foreground, size: textStyle.fontSize),
+          ),
           SizedBox(width: theme.spacingXs),
           Text(labelText, style: textStyle),
         ],
@@ -370,7 +384,17 @@ class AppButton extends StatelessWidget {
   Widget _buildCircle(BuildContext context, AmbleTheme theme, bool isDisabled) {
     final isPrimary = variant == AppButtonVariant.primary;
     final isSecondary = variant == AppButtonVariant.secondary;
-    final size = isPrimary ? theme.spacingXl * 1.5 : theme.spacingXl;
+    // Diameter now follows the SAME AppButtonSize scale as the text/pill
+    // shapes — requested directly ("icon only missing size variants
+    // should also have the same sizes and paddings"). Previously fixed at
+    // spacingXl/spacingXl*1.5 regardless of `size`, so every icon-only
+    // button was one size no matter what was passed.
+    final diameter = appButtonHeightFor(theme, size);
+    // Icon itself scales with the circle rather than staying pinned to
+    // spacingLg, so a xs circle doesn't end up with an icon that visually
+    // overflows its own smaller diameter, and an xl circle doesn't end up
+    // with a visually undersized icon rattling around in it.
+    final iconSize = diameter * 0.5;
 
     final background = isPrimary
         ? theme.colorAccent
@@ -381,11 +405,11 @@ class AppButton extends StatelessWidget {
 
     final content =
         child ??
-        (icon != null ? Icon(icon, size: theme.spacingLg, color: foreground) : null);
+        (icon != null ? Icon(icon, size: iconSize, color: foreground) : null);
 
     final filled = Container(
-      width: size,
-      height: size,
+      width: diameter,
+      height: diameter,
       alignment: Alignment.center,
       decoration: BoxDecoration(color: background, shape: BoxShape.circle),
       child: content,

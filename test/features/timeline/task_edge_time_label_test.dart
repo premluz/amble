@@ -124,4 +124,60 @@ void main() {
       expect(hasHairline, isTrue);
     });
   });
+
+  // Design-system consolidation (2026-09-19), requested directly: "hour
+  // start end has blue bg on create/edit task (on create is on right, on
+  // edit is on left) should be consistent on left." pillAlignment lets the
+  // one full-width-hairline caller (the placement line) keep its box
+  // stretched edge-to-edge while still moving the PILL itself to the left
+  // — see docs/DESIGN_SYSTEM.md.
+  group('pillAlignment', () {
+    testWidgets('defaults to start (left) — the pill is the FIRST Row '
+        'child, with the hairline after it', (tester) async {
+      await pump(tester, const TimeOfDay(hour: 8, minute: 0));
+
+      final row = tester.widget<Row>(find.byType(Row));
+      // Row's own children list, in build order: pill, gap, hairline for
+      // `start`; hairline, gap, pill for `end`. Identify the pill by its
+      // Container ancestor carrying the accent-fill decoration, rather
+      // than by position alone, so this assertion fails loudly if the
+      // ordering assumption ever changes.
+      final firstChild = row.children.first;
+      expect(
+        firstChild,
+        isA<Container>().having(
+          (c) => (c.decoration! as BoxDecoration).color,
+          'decoration.color',
+          AmbleTheme.light.colorAccent,
+        ),
+      );
+    });
+
+    testWidgets('pillAlignment: end puts the hairline first, pill last — '
+        'the placement line\'s own explicit opt-in', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
+          home: Scaffold(
+            body: TaskEdgeTimeLabel(
+              theme: AmbleTheme.light,
+              time: const TimeOfDay(hour: 8, minute: 0),
+              pillAlignment: TaskEdgeTimeLabelAlignment.end,
+            ),
+          ),
+        ),
+      );
+
+      final row = tester.widget<Row>(find.byType(Row));
+      final lastChild = row.children.last;
+      expect(
+        lastChild,
+        isA<Container>().having(
+          (c) => (c.decoration! as BoxDecoration).color,
+          'decoration.color',
+          AmbleTheme.light.colorAccent,
+        ),
+      );
+    });
+  });
 }

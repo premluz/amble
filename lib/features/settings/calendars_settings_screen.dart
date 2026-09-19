@@ -211,6 +211,10 @@ class _CalendarsSettingsScreenState
                     );
                     return AppButton(
                       label: 'Sync to Calendar',
+                      // Secondary, not primary — app-wide button
+                      // unification pass, requested directly ("in
+                      // settings should not be primary").
+                      variant: AppButtonVariant.secondary,
                       isLoading: _syncBusy,
                       onPressed: (_syncBusy || targetId == null)
                           ? null

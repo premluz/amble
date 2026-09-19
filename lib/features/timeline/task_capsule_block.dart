@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/dev_config.dart' show TimelineTaskTextLayout;
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/app_swipe_actions.dart';
 import '../../core/widgets/selected_pill_border.dart';
 import '../../shared/models/category.dart';
 import '../../shared/models/tag_color_style.dart';
@@ -86,6 +87,7 @@ class TaskCapsuleBlock extends StatelessWidget {
     this.onResizeTopUpdate,
     this.onResizeTopEnd,
     this.tagColorStyle = TagColorStyle.pill,
+    this.onAddNote,
   });
 
   final Task task;
@@ -136,6 +138,19 @@ class TaskCapsuleBlock extends StatelessWidget {
   /// `StatelessWidget` with no provider access, same reasoning as
   /// [category] above; the caller resolves it once and passes it down.
   final bool editModeEnabled;
+
+  /// Swipe-right ("add a note") handler — see [AppSwipeActions]. Null
+  /// disables that direction entirely, same "null means unavailable"
+  /// contract every other optional callback on this widget already uses
+  /// ([onResizeEnd] etc.). The caller is expected to pass null while
+  /// [editModeEnabled] is true, mirroring how the resize handles gate
+  /// themselves on that same flag — swipe actions and Edit Mode's own
+  /// drag-to-resize/select gestures would otherwise compete for the same
+  /// horizontal-ish gesture attention. Swipe-left ("mark done/undone")
+  /// reuses [onToggleComplete] directly rather than a second new
+  /// callback — it's already the exact same action the trailing checkbox
+  /// performs.
+  final VoidCallback? onAddNote;
 
   /// Whether this task is currently SELECTED (multi-task edit mode) —
   /// rendered as an accent ring on the pill's own coloured rail.
@@ -1253,7 +1268,52 @@ class TaskCapsuleBlock extends StatelessWidget {
     // they're on the plain `outwardShiftFactor` default like every other
     // caller. `_buildFrostedWrapper` is kept as its own method from those
     // attempts (harmless, and it keeps this method readable).
-    return _buildFrostedWrapper(theme: theme, isLifted: isLifted, card: card);
+    final wrapped = _buildFrostedWrapper(
+      theme: theme,
+      isLifted: isLifted,
+      card: card,
+    );
+
+    // AppSwipeActions is ALWAYS mounted, never conditionally wrapped —
+    // same reasoning as `_buildFrostedWrapper` above (see its own long
+    // comment): swapping this wrapper in/out based on `editModeEnabled`
+    // would insert/remove an ancestor render object around the same
+    // gesture-tracking subtree the move-drag/resize handlers depend on,
+    // which is exactly the class of bug already fixed once for
+    // `isLifted`. Passing null actions (the same "null disables" contract
+    // every optional callback on this widget already uses) is what
+    // actually turns the swipe off in Edit Mode, not the wrapper's
+    // presence.
+    //
+    // Requested directly: "slide left done... if done mark undone...
+    // slide right add note... on timeline spatial and non spatial only
+    // (not on edit)." Swipe-left reuses onToggleComplete unchanged (the
+    // exact action the trailing checkbox already performs); swipe-right
+    // is the new onAddNote callback.
+    final editActive = editModeEnabled;
+    return AppSwipeActions(
+      startAction: (editActive || onAddNote == null)
+          ? null
+          : AppSwipeAction(
+              icon: Icons.edit_note_rounded,
+              background: theme.colorAccent,
+              semanticLabel: 'Add note',
+              onActivate: onAddNote!,
+            ),
+      endAction: (editActive || onToggleComplete == null)
+          ? null
+          : AppSwipeAction(
+              icon: isCompleted
+                  ? Icons.replay_rounded
+                  : Icons.check_rounded,
+              background: isCompleted
+                  ? theme.colorTextSecondary
+                  : theme.colorAccent,
+              semanticLabel: isCompleted ? 'Mark undone' : 'Mark done',
+              onActivate: onToggleComplete!,
+            ),
+      child: wrapped,
+    );
   }
 
   /// The always-present frosted card wrapper — extracted from [build]

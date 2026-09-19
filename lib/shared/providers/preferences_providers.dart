@@ -178,9 +178,9 @@ class ShowHourLabelsSetting extends _$ShowHourLabelsSetting {
 /// (`_TimelineConnectors`) renders on the Spatial Task View. Requested
 /// directly — configurable show/hide, Task view only (Zone view has no
 /// equivalent connector concept, its containers own child layout
-/// directly). Defaults to **true**, matching the connector's existing
-/// unconditional-when-`showHourLabels` behavior, so a fresh install is
-/// visually unchanged.
+/// directly). Defaults to **false** — changed 2026-09-19, requested
+/// directly ("disable show timeline connects as default"), reversing the
+/// original fresh-install-unchanged default above.
 @Riverpod(keepAlive: true)
 class ShowTimelineConnectorsSetting extends _$ShowTimelineConnectorsSetting {
   @override
@@ -188,7 +188,7 @@ class ShowTimelineConnectorsSetting extends _$ShowTimelineConnectorsSetting {
     return ref
             .read(preferencesRepositoryProvider)
             .getValue<bool>(PreferenceKeys.showTimelineConnectors) ??
-        true;
+        false;
   }
 
   Future<void> set(bool value) async {
@@ -196,6 +196,51 @@ class ShowTimelineConnectorsSetting extends _$ShowTimelineConnectorsSetting {
         .read(preferencesRepositoryProvider)
         .setValue(PreferenceKeys.showTimelineConnectors, value);
     state = value;
+  }
+}
+
+/// The Timeline's own vertical time scale — pixels per minute — shared by
+/// BOTH the spatial Task view and the Zone Grid/Edit screen. Requested
+/// directly, alongside pinch-to-zoom: "we can set scale size in dev
+/// settings... let's add pinch zoom in out timeline spatial in view and
+/// edit modes (zones also) to zoom in and out scale" — confirmed via
+/// AskUserQuestion as ONE shared, PERSISTED setting (not two independent
+/// per-view values, and not a debug-only in-memory one), superseding:
+/// - `DevTaskViewPixelsPerMinute`/`DevZoneViewPixelsPerMinute`
+///   (`dev_config.dart`) — `kDebugMode`-only, in-memory, reset on every
+///   restart; this is now the real thing those were a placeholder for.
+/// - The Zone Grid's own previously-hardcoded `const _pixelsPerMinute =
+///   44.0/60` (`zone_grid_screen.dart`) — a compile-time constant with no
+///   setting behind it at all.
+///
+/// Clamped to [minPixelsPerMinute]/[maxPixelsPerMinute] (1.0–4.0),
+/// matching the exact extremes the old dev-only preset chips already
+/// exposed (`1.0, 1.5, 2.0, 3.0, 4.0`) — no new, previously-untested
+/// extremes. Defaults to 1.5, the pre-existing default both old
+/// mechanisms already used.
+@Riverpod(keepAlive: true)
+class TimelinePixelsPerMinuteSetting
+    extends _$TimelinePixelsPerMinuteSetting {
+  /// The most zoomed-out this setting will clamp to.
+  static const double minPixelsPerMinute = 1.0;
+
+  /// The most zoomed-in this setting will clamp to.
+  static const double maxPixelsPerMinute = 4.0;
+
+  @override
+  double build() {
+    final stored = ref
+        .read(preferencesRepositoryProvider)
+        .getValue<double>(PreferenceKeys.timelinePixelsPerMinute);
+    return stored?.clamp(minPixelsPerMinute, maxPixelsPerMinute) ?? 1.5;
+  }
+
+  Future<void> set(double value) async {
+    final clamped = value.clamp(minPixelsPerMinute, maxPixelsPerMinute);
+    await ref
+        .read(preferencesRepositoryProvider)
+        .setValue(PreferenceKeys.timelinePixelsPerMinute, clamped);
+    state = clamped;
   }
 }
 

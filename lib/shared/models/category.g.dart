@@ -21,9 +21,9 @@ class CategoryAdapter extends TypeAdapter<Category> {
       name: fields[1] as String,
       colorToken: (fields[2] as num).toInt(),
       emoji: fields[3] as String,
+      iconCodePoint: (fields[6] as num?)?.toInt(),
       isBuiltIn: fields[4] == null ? false : fields[4] as bool,
       schemaVersion: fields[5] == null ? 1 : (fields[5] as num).toInt(),
-      iconCodePoint: (fields[6] as num?)?.toInt(),
     );
   }
 

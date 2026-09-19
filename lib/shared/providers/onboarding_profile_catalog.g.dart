@@ -8,7 +8,6 @@ part of 'onboarding_profile_catalog.dart';
 
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
-
 /// Parses [onboardingProfileCatalogAssetPath] into the list of
 /// [OnboardingProfile]s the quiz scores against and the browse-all-profiles
 /// screen lists. `keepAlive: true` — this is fixed, bundled content read
@@ -69,4 +68,4 @@ final class OnboardingProfileCatalogProvider
 }
 
 String _$onboardingProfileCatalogHash() =>
-    r'onboardingprofilecatalog0000000000000000000';
+    r'959dd0481553c51b58878f9f1b40dab0566dfcdf';

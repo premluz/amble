@@ -188,6 +188,10 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
             SizedBox(height: theme.spacingMd),
             AppButton(
               label: 'Export backup',
+              // Secondary, not primary — settings actions are equal-weight
+              // utilities, no single dominant CTA. App-wide button
+              // unification pass, requested directly.
+              variant: AppButtonVariant.secondary,
               onPressed: _busy ? null : _export,
             ),
             SizedBox(height: theme.spacingSm),

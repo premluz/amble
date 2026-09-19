@@ -210,38 +210,6 @@ class DevTimelineListOnlyImportant extends _$DevTimelineListOnlyImportant {
   void set(bool value) => state = value;
 }
 
-/// Vertical timeline scale — pixels per minute — for the Spatial Task
-/// View. Requested directly as a scratch config so the right value can be
-/// dialed in live, separate from the Zone view's own scale below: at the
-/// Task view's original fixed 1.5, a short (e.g. 30-minute) Zone-view
-/// container barely fit itsS own header, let alone a task row, which is
-/// what caused the reported "missing gap between adjacent zones" (the
-/// container was forced to grow past its gap-shrunk floor on nearly every
-/// zone, not just unusually packed ones).
-@Riverpod(keepAlive: true)
-class DevTaskViewPixelsPerMinute extends _$DevTaskViewPixelsPerMinute {
-  @override
-  double build() => 1.5;
-
-  void set(double value) => state = value;
-}
-
-/// Same as [DevTaskViewPixelsPerMinute], for the Spatial Zone View —
-/// independently adjustable, not derived from the Task view's own value.
-///
-/// Previously defaulted to double the Task view's (3.0) — a short (e.g.
-/// 30-minute) Zone-view container barely fit its own header, let alone a
-/// task row, at 1.5. Default changed to 1.5 anyway (matching the Task
-/// view's own) per direct request; the two remain independently
-/// adjustable at runtime if that constraint bites again.
-@Riverpod(keepAlive: true)
-class DevZoneViewPixelsPerMinute extends _$DevZoneViewPixelsPerMinute {
-  @override
-  double build() => 1.5;
-
-  void set(double value) => state = value;
-}
-
 /// Whether `FreeWindowBlock` (the "1h 40m window, add a task" prompt
 /// shown for large gaps between tasks on the Task view) renders at all.
 /// Requested directly as a scratch on/off toggle.

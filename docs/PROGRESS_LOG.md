@@ -4222,3 +4222,25 @@ Requested directly as the deferred follow-up to the button-system work. Skip and
 **Found and fixed a real test-infrastructure bug while adding coverage**: a new test hung indefinitely from a missing `tester.runAsync` around a real Hive write — the exact bug class already documented twice in `docs/ERROR_LOG.md`, missed on a newly-written test. Two red herrings (a concurrently-active `flutter run` on a physical device; stale Hive `.lock` files from this session's own killed diagnostic processes) cost real time before rereading the existing docs surfaced the actual, simpler cause. Fixed by copying the established `runAsync` helper shape verbatim.
 
 **Verification**: new `test/features/splash/splash_carousel_screen_test.dart` (6 cases). `flutter analyze`: clean (2 expected placeholder-field warnings only). Full `flutter test`: 1278/1278.
+
+## 2026-09-19 (same day) — Pinch-to-zoom on the Timeline's vertical scale (Task view + Zone Grid, both view and edit modes)
+
+Requested directly: "We can set scale size in dev settings / Let's add pinch zoom in out timeline spatial in view and edit modes (zones ealso) to zoom in and out scale." The old mechanism was two independent `kDebugMode`-only in-memory dev providers plus a third, separate hardcoded constant on the Zone Grid — no shared source of truth, nothing persisted. Full reasoning and API in `docs/DECISIONS.md`.
+
+**New shared, persisted setting**: `TimelinePixelsPerMinuteSetting` (`preferences_providers.dart`), backed by `PreferenceKeys.timelinePixelsPerMinute`, clamped to 1.0–4.0, defaulting to 1.5 (unchanged from before). Both `dev_config.dart`'s old providers and the Zone Grid's hardcoded `44.0/60` constant were removed outright.
+
+**New `TimelinePinchZoom`** (`lib/features/timeline/timeline_pinch_zoom.dart`) — a passive `Listener`-based widget (same pattern as `TwoFingerLongPress`), chosen specifically over `GestureDetector(onScale...)` so it coexists with the Zone Grid's existing opaque `'zone-paint-surface'` `GestureDetector` without competing for the gesture arena. Wraps the Task view's whole viewport in `timeline_screen.dart` and the Zone Grid's viewport in `zone_grid_screen.dart` — pinch works in both screens' normal and Edit Mode alike, no branching needed.
+
+**Dev Settings panel** collapsed from two chip-rows to one, now reading/writing the shared setting — kept as a quick way to jump to exact preset values while testing.
+
+**Verification**: new `test/features/timeline/timeline_pinch_zoom_test.dart` (6 cases). `zone_grid_screen_test.dart` needed a new `MemoryPreferencesRepository` (added to `test/support/memory_zone_repositories.dart`) and its `point()` helper's hardcoded pixel-scale math updated to the new default. `flutter analyze lib/ test/`: clean (pre-existing, unrelated warnings only). Full `flutter test`: 1308/1308.
+
+## 2026-09-19 (same day) — Fixed unzoned task title misalignment in Zone view (non-spatial)
+
+Reported directly as a follow-up: "still see title of task that is outside zone in zone view nonspatial is off." Confirmed via AskUserQuestion: a zoned task row (`_ZoneTaskRow`) shows a leading time column before its badge, but an unzoned task (rendered via `TaskCapsuleBlock`, `compactText: true`) showed its time INLINE within the title text instead of as a separate leading column — so its badge/title sat further left than a zoned task's.
+
+**Fix**: extracted `_ZoneTaskRow`'s inline `timeLabel` formatting into a new shared `zoneTaskTimeLabel()` function (`zone_container_block.dart`), reused by `ZoneDayTimeline`'s unzoned `Task()` branch to render an identical leading time column ahead of `TaskCapsuleBlock`, which now gets `timeRangeVisible: false, durationVisible: false` so its own inline text carries the bare title only. The row is wrapped in `IntrinsicHeight` (not a fixed height) so `TaskCapsuleBlock` still sizes itself naturally.
+
+**Verified the residual few-pixel gaps seen while writing tests were NOT bugs**: `_ZoneTaskRow`'s own `Flexible(flex: 2)` time column genuinely ellipsizes against long "start - end (duration)" strings even with a single row in a narrow zone (a pre-existing characteristic, confirmed via `RenderParagraph.didExceedMaxLines`), and an empty test-only `categoryById` map made `_ZoneTaskRow` skip its badge entirely (`hasCategory` false) while `TaskCapsuleBlock` always renders a fallback badge — neither reflects real usage, where every task always resolves a real `Category` (even "General" is a seeded row).
+
+**Verification**: new test in `zone_day_timeline_list_test.dart` (short, non-clipping time strings + a real resolved category, matching production) proving a zoned and unzoned task title now share the same x-origin. Updated the pre-existing "spacingMd inset" test to key off the row's own `IntrinsicHeight` rather than `TaskCapsuleBlock`'s top-left, now that a leading time column sits ahead of it. `flutter analyze lib/ test/`: clean. Full `flutter test`: 1309/1309.

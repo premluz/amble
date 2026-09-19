@@ -34,6 +34,8 @@ void main() {
     bool devZoneCardFlat = false,
     bool devHideEmptyZones = false,
     bool devIconsVisible = true,
+    bool devZoneTaskStartTimeVisible = false,
+    Map<String, Category> categoryById = const <String, Category>{},
   }) async {
     tester.view.physicalSize = const Size(390, 1400);
     tester.view.devicePixelRatio = 1.0;
@@ -48,7 +50,7 @@ void main() {
             zones: zones,
             externalEvents: externalEvents,
             theme: AmbleTheme.light,
-            categoryById: const <String, Category>{},
+            categoryById: categoryById,
             selectedDate: day,
             onTaskTap: (_) {},
             onToggleComplete: (_) {},
@@ -58,6 +60,7 @@ void main() {
             devZoneCardFlat: devZoneCardFlat,
             devHideEmptyZones: devHideEmptyZones,
             devIconsVisible: devIconsVisible,
+            devZoneTaskStartTimeVisible: devZoneTaskStartTimeVisible,
           ),
         ),
       ),
@@ -448,17 +451,26 @@ void main() {
       // left (see its own `EdgeInsets.fromLTRB` — unchanged by this fix).
       // An unzoned row must now sit that same spacingMd further right than
       // the zone container's own left edge, not flush with it.
+      //
+      // Checked against the unzoned ROW's own outer Padding (keyed), not
+      // TaskCapsuleBlock's own top-left directly — 2026-09-19 added a
+      // leading time column ahead of TaskCapsuleBlock on this row (see
+      // ZoneDayTimeline's own Task() branch doc comment), so
+      // TaskCapsuleBlock itself no longer starts at the row's own left
+      // edge the way it used to.
       final theme = AmbleTheme.light;
       final zoneLeft = tester.getTopLeft(find.byType(ZoneContainerBlock)).dx;
-      final unzonedTaskLeft = tester
-          .getTopLeft(find.byType(TaskCapsuleBlock))
+      final unzonedRowLeft = tester
+          .getTopLeft(
+            find.byKey(ValueKey('unzoned-task-row-${unzonedTask.id}')),
+          )
           .dx;
 
       expect(
-        unzonedTaskLeft,
+        unzonedRowLeft,
         moreOrLessEquals(zoneLeft + theme.spacingMd, epsilon: 0.5),
         reason:
-            'an unzoned task must sit spacingMd right of the zone '
+            'an unzoned task row must sit spacingMd right of the zone '
             'container\'s own left edge — matching where a zoned task\'s '
             'own badge sits inside that container\'s spacingMd padding, '
             'not flush with the container\'s outer edge',
@@ -583,6 +595,88 @@ void main() {
               'an out-of-zone task title must share the same origin as '
               'every in-zone row, not drift to the centre when its own '
               'text column happens to be narrow',
+        );
+      },
+    );
+
+    // Regression coverage for the actual reported bug: "still see title of
+    // task that is outside zone in zone view nonspatial is off." With
+    // time visible (the default), a ZONED task row shows a leading time
+    // column ahead of its badge (`_ZoneTaskRow`'s own `Flexible(flex: 2)`
+    // time column), but an unzoned task rendered via `TaskCapsuleBlock`
+    // used to show its time INLINE within the title text instead — no
+    // separate leading column at all — so its badge (and title) sat
+    // further LEFT than a zoned task's. Fixed by giving the unzoned row
+    // its own matching leading time column (same [zoneTaskTimeLabel]
+    // format) and suppressing TaskCapsuleBlock's own inline time text for
+    // this call site.
+    testWidgets(
+      'a zoned task title and an unzoned task title share one x-origin '
+      'when time is visible (the default) — the reported misalignment',
+      (tester) async {
+        // `devZoneTaskStartTimeVisible: true` — a short, fixed-width
+        // "start time only" string ("7:00 AM"), deliberately short enough
+        // to stay well under `_ZoneTaskRow`'s own `Flexible(flex: 2)` time
+        // column's cap. The full "start - end (duration)" string this
+        // toggle normally shows is wide enough to genuinely ellipsize
+        // against that same cap even with just one row in the whole list
+        // (confirmed while writing this test — a PRE-EXISTING
+        // characteristic of `_ZoneTaskRow`'s own narrow column, unrelated
+        // to this fix), which would make an exact-pixel title-origin
+        // comparison meaningless: the zoned title's own x already shifts
+        // left by however many characters got clipped, for a reason this
+        // test isn't about at all.
+        //
+        // A real resolved `Category` — this suite's own `pump` otherwise
+        // passes an empty `categoryById`, under which `_ZoneTaskRow`'s
+        // `hasCategory` is false and it renders NO badge at all, while
+        // `TaskCapsuleBlock` always renders one (a "General" fallback
+        // glyph) regardless — a real, pre-existing asymmetry between the
+        // two row types that would make an empty-category comparison
+        // apples-to-oranges. Every task in the real app always resolves a
+        // real `Category` (even "General" is a seeded row, never
+        // actually null — see `category_providers.dart`), so a real one
+        // here matches production, where both rows do render a badge.
+        final category = Category(
+          id: BuiltInCategoryIds.work,
+          name: 'Work',
+          colorToken: 0,
+          emoji: '💼',
+          isBuiltIn: true,
+        );
+        final zone = zoneAt('z1', 'Morning ritual', 7, 9);
+        final zonedTask = Task.create(
+          title: 'ZonedTask',
+          scheduledAt: DateTime(2026, 9, 2, 7),
+          durationMinutes: 30,
+          categoryId: BuiltInCategoryIds.work,
+        );
+        final unzonedTask = Task.create(
+          title: 'UnzonedTask',
+          scheduledAt: DateTime(2026, 9, 2, 21),
+          durationMinutes: 30,
+          categoryId: BuiltInCategoryIds.work,
+        );
+
+        await pump(
+          tester,
+          zones: [zone],
+          tasks: [zonedTask, unzonedTask],
+          devZoneTaskStartTimeVisible: true,
+          categoryById: {BuiltInCategoryIds.work: category},
+        );
+
+        expect(
+          tester.getTopLeft(find.text('UnzonedTask')).dx,
+          moreOrLessEquals(
+            tester.getTopLeft(find.text('ZonedTask')).dx,
+            epsilon: 0.5,
+          ),
+          reason:
+              'an unzoned task title must share the same x-origin as a '
+              'zoned task title when both show their own time — an '
+              'unzoned row needs the same leading time column a zoned '
+              'row already has, or its badge/title sit further left',
         );
       },
     );
