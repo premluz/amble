@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_floating_create_button.dart';
-import '../../core/widgets/app_subtle_icon_button.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
 import '../../shared/models/tracked_behavior.dart';
 import '../../shared/models/tracked_behavior_view_mode.dart';
@@ -99,10 +99,12 @@ class TrackedBehaviorListScreen extends ConsumerWidget {
                         // reasoning.
                         child: Text('Tracked', style: theme.textTitle),
                       ),
-                      AppSubtleIconButton(
+                      AppButton(
                         icon: viewMode.icon,
+                        shape: AppButtonShape.circle,
+                        variant: AppButtonVariant.secondary,
                         tooltip: viewMode.label,
-                        onTap: () => ref
+                        onPressed: () => ref
                             .read(
                               trackedBehaviorViewModeSettingProvider.notifier,
                             )

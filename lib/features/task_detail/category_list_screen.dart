@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
-import '../../core/widgets/app_icon_button.dart';
+import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_press_feedback.dart';
 import '../../shared/models/category.dart';
 import '../../shared/providers/category_providers.dart';
@@ -50,15 +50,17 @@ class CategoryListScreen extends StatelessWidget {
               padding: EdgeInsets.all(theme.spacingScreenPadding),
               child: Row(
                 children: [
-                  AppIconButton(
+                  AppButton(
                     icon: Icons.arrow_back_rounded,
                     onPressed: () => Navigator.of(context).pop(),
+                    shape: AppButtonShape.circle,
                   ),
                   SizedBox(width: theme.spacingMd),
                   Expanded(child: Text('Tags', style: theme.textTitle)),
-                  AppIconButton(
+                  AppButton(
                     icon: Icons.add_rounded,
                     onPressed: () => showAddCategoryModal(context),
+                    shape: AppButtonShape.circle,
                   ),
                 ],
               ),

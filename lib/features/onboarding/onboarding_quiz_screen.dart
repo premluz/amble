@@ -94,7 +94,7 @@ class _OnboardingQuizScreenState extends ConsumerState<OnboardingQuizScreen> {
                     label: 'Skip',
                     variant: AppButtonVariant.secondary,
                     shape: AppButtonShape.pill,
-                    size: AppButtonSize.regular,
+                    size: AppButtonSize.md,
                     onPressed: () async {
                       await _skip();
                     },

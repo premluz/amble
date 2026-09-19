@@ -327,15 +327,24 @@ void main() {
     'regenerates untouched future instances under it — a touched one is '
     'left alone',
     (tester) async {
+      // The rule's `daysOfWeek` must include the template's OWN anchor
+      // weekday — `_daysFromToday(0)` is today, whatever weekday that
+      // happens to be on a given test run, not a fixed Thursday (a stale
+      // hardcoded `DateTime.thursday` here silently drifted out of sync
+      // with `scheduledAt` and masked a real bug in
+      // `_reanchorTemplateIfExcludedByRule`, which correctly re-anchors a
+      // template whose own day the rule doesn't cover — see
+      // docs/ERROR_LOG.md's 2026-09-19 entry).
+      final today = _daysFromToday(0);
       final template = Task.create(
         title: 'Standup',
-        scheduledAt: _daysFromToday(0), // a Thursday
+        scheduledAt: today,
         durationMinutes: 15,
         categoryId: BuiltInCategoryIds.work,
         recurrenceId: 'series-1',
         recurrenceRule: RecurrenceRule(
           frequency: RecurrenceFrequency.weekly,
-          daysOfWeek: [DateTime.thursday],
+          daysOfWeek: [today.weekday],
         ),
       );
       // A future, untouched instance under the OLD rule — should be
@@ -378,10 +387,14 @@ void main() {
       await _tapAndSettle(tester, find.text('Save'));
 
       final saved = box.values.toList();
+      // The template's OWN weekday is still covered by the new rule
+      // (Monday was only ADDED alongside it), so it stays the template —
+      // `_reanchorTemplateIfExcludedByRule` is a no-op here, unlike the
+      // narrowing case covered in task_providers_test.dart.
       final savedTemplate = saved.firstWhere((t) => t.id == template.id);
       expect(
         savedTemplate.recurrenceRule!.daysOfWeek,
-        containsAll([DateTime.monday, DateTime.thursday]),
+        containsAll([DateTime.monday, today.weekday]),
       );
 
       expect(saved.any((t) => t.id == futureUntouched.id), isFalse);
@@ -402,15 +415,19 @@ void main() {
     'editing days from a NON-template instance still updates the shared '
     'template',
     (tester) async {
+      // Same reasoning as the previous test: the rule must cover the
+      // template's OWN real anchor weekday, not a hardcoded day that
+      // silently drifts out of sync with `_daysFromToday(0)`.
+      final today = _daysFromToday(0);
       final template = Task.create(
         title: 'Standup',
-        scheduledAt: _daysFromToday(0),
+        scheduledAt: today,
         durationMinutes: 15,
         categoryId: BuiltInCategoryIds.work,
         recurrenceId: 'series-1',
         recurrenceRule: RecurrenceRule(
           frequency: RecurrenceFrequency.weekly,
-          daysOfWeek: [DateTime.thursday],
+          daysOfWeek: [today.weekday],
         ),
       );
       final instance = Task.create(
@@ -436,10 +453,12 @@ void main() {
       await _tapAndSettle(tester, find.text('MON'));
       await _tapAndSettle(tester, find.text('Save'));
 
+      // The template's own weekday is still covered by the new rule
+      // (Monday was only added alongside it), so it stays the template.
       final savedTemplate = box.get(template.id)!;
       expect(
         savedTemplate.recurrenceRule!.daysOfWeek,
-        containsAll([DateTime.monday, DateTime.thursday]),
+        containsAll([DateTime.monday, today.weekday]),
       );
     },
   );

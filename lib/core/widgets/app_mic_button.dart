@@ -3,11 +3,11 @@ import 'package:flutter/material.dart';
 import '../tokens/semantic_theme.dart';
 import 'app_press_feedback.dart';
 
-/// A circular, icon-only adaptive mic button — same shape as [AppIconButton]
-/// but with a second visual state for "actively listening," since a mic
-/// button (unlike a plain icon button) has to show the user dictation is
-/// live. Cupertino on iOS, Material elsewhere; screens never reach for
-/// `CupertinoButton`/`FloatingActionButton` directly, per
+/// A circular, icon-only adaptive mic button — same shape as [AppButton]'s
+/// circle shape, but with a second visual state for "actively listening,"
+/// since a mic button (unlike a plain icon button) has to show the user
+/// dictation is live. Cupertino on iOS, Material elsewhere; screens never
+/// reach for `CupertinoButton`/`FloatingActionButton` directly, per
 /// docs/CONSTITUTION.md design principle 4.
 class AppMicButton extends StatelessWidget {
   const AppMicButton({
@@ -30,8 +30,8 @@ class AppMicButton extends StatelessWidget {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     final size = theme.spacingXl * 1.5;
 
-    // Same single-interaction treatment as [AppIconButton], whose shape
-    // this mirrors — see AppPressFeedback's doc comment for why the
+    // Same single-interaction treatment as [AppButton]'s circle shape,
+    // which this mirrors — see AppPressFeedback's doc comment for why the
     // Cupertino/Material branch was dropped in favour of one wrapper.
     return AppPressFeedback(
       onTap: onPressed,

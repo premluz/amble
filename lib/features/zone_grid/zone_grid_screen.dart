@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
-import '../../core/widgets/app_subtle_icon_button.dart';
+import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_floating_create_button.dart';
+import '../../core/widgets/app_option_switch_option.dart';
+import '../../core/widgets/app_tab_switch.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
 import '../../core/widgets/app_undo_toast.dart';
 import '../../shared/models/zone.dart';
@@ -35,6 +37,14 @@ Future<void> showEditScreen(
 );
 
 const _pixelsPerMinute = 44.0 / 60;
+
+/// Options for both `AppTabSwitch<ZoneGridTab>` call sites below — a
+/// module-level const rather than rebuilt per build(), since neither the
+/// values nor labels ever change.
+const _zoneGridTabOptions = [
+  AppOptionSwitchOption(value: ZoneGridTab.tasks, label: 'Tasks'),
+  AppOptionSwitchOption(value: ZoneGridTab.zones, label: 'Zones'),
+];
 
 /// The hour-label column's full width, INCLUDING the 8px breathing room on
 /// each side of the label text (see the label `Positioned` in `build`).
@@ -475,17 +485,19 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                 child: Row(
                   children: [
                     Expanded(
-                      child: _TabSwitcher(
-                        theme: theme,
-                        tab: _tab,
+                      child: AppTabSwitch<ZoneGridTab>(
+                        options: _zoneGridTabOptions,
+                        value: _tab,
                         onChanged: _switchTab,
                       ),
                     ),
                     SizedBox(width: theme.spacingSm),
-                    AppSubtleIconButton(
+                    AppButton(
                       icon: Icons.close_rounded,
+                      shape: AppButtonShape.circle,
+                      variant: AppButtonVariant.secondary,
                       tooltip: 'Close',
-                      onTap: () => Navigator.of(context).pop(),
+                      onPressed: () => Navigator.of(context).pop(),
                     ),
                   ],
                 ),
@@ -525,29 +537,33 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                       // "Zones" with Events reserved and non-interactive; see
                       // `zone_grid_tab.dart`'s own doc comment for the rename.
                       Expanded(
-                        child: _TabSwitcher(
-                          theme: theme,
-                          tab: _tab,
+                        child: AppTabSwitch<ZoneGridTab>(
+                          options: _zoneGridTabOptions,
+                          value: _tab,
                           onChanged: _switchTab,
                         ),
                       ),
                       SizedBox(width: theme.spacingSm),
-                      AppSubtleIconButton(
+                      AppButton(
                         icon: _editing
                             ? Icons.check_rounded
                             : Icons.edit_outlined,
+                        shape: AppButtonShape.circle,
+                        variant: AppButtonVariant.secondary,
                         tooltip: _editing ? 'Finish editing' : 'Edit zones',
-                        onTap: () {
+                        onPressed: () {
                           _cancelPaint();
                           ref.read(zoneEditSelectionProvider.notifier).clear();
                           setState(() => _editing = !_editing);
                         },
                       ),
                       SizedBox(width: theme.spacingSm),
-                      AppSubtleIconButton(
+                      AppButton(
                         icon: Icons.close_rounded,
+                        shape: AppButtonShape.circle,
+                        variant: AppButtonVariant.secondary,
                         tooltip: 'Close zones',
-                        onTap: () => Navigator.of(context).pop(),
+                        onPressed: () => Navigator.of(context).pop(),
                       ),
                     ],
                   ),
@@ -564,10 +580,12 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                           ),
                         ),
                         if (selected.length == 1)
-                          AppSubtleIconButton(
+                          AppButton(
                             icon: Icons.tune_rounded,
+                            shape: AppButtonShape.circle,
+                            variant: AppButtonVariant.secondary,
                             tooltip: 'Edit placement',
-                            onTap: () {
+                            onPressed: () {
                               final zone = zones
                                   .where((z) => selected.contains(z.id))
                                   .firstOrNull;
@@ -576,10 +594,12 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                               }
                             },
                           ),
-                        AppSubtleIconButton(
+                        AppButton(
                           icon: Icons.delete_outline_rounded,
+                          shape: AppButtonShape.circle,
+                          variant: AppButtonVariant.secondary,
                           tooltip: 'Remove placements',
-                          onTap: () => _write(() async {
+                          onPressed: () => _write(() async {
                             for (final id in selected.toList()) {
                               await ref
                                   .read(zoneListProvider.notifier)
@@ -590,10 +610,12 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                                 .clear();
                           }),
                         ),
-                        AppSubtleIconButton(
+                        AppButton(
                           icon: Icons.deselect_rounded,
+                          shape: AppButtonShape.circle,
+                          variant: AppButtonVariant.secondary,
                           tooltip: 'Clear selection',
-                          onTap: () => ref
+                          onPressed: () => ref
                               .read(zoneEditSelectionProvider.notifier)
                               .clear(),
                         ),
@@ -1067,86 +1089,10 @@ class _Phantom extends StatelessWidget {
   );
 }
 
-/// Tasks / Zones, per the reviewed mockup — restored on direct request
-/// after a rewrite replaced it with a "Your usual week" heading.
-///
-/// **2026-09-17 — both segments now wired.** Was "Events" / "Zones" with
-/// Events genuinely inert (no `onTap` at all, reserved for a future
-/// calendar-events grid never built) — see `zone_grid_tab.dart`'s own
-/// doc comment for the rename/repurposing.
-class _TabSwitcher extends StatelessWidget {
-  const _TabSwitcher({
-    required this.theme,
-    required this.tab,
-    required this.onChanged,
-  });
-  final AmbleTheme theme;
-  final ZoneGridTab tab;
-  final ValueChanged<ZoneGridTab> onChanged;
-
-  @override
-  Widget build(BuildContext context) => DecoratedBox(
-    decoration: BoxDecoration(
-      color: theme.colorSurfaceSecondary,
-      borderRadius: BorderRadius.circular(theme.radiusLg),
-    ),
-    child: Row(
-      children: [
-        Expanded(
-          child: _Segment(
-            theme: theme,
-            label: 'Tasks',
-            selected: tab == ZoneGridTab.tasks,
-            onTap: () => onChanged(ZoneGridTab.tasks),
-          ),
-        ),
-        Expanded(
-          child: _Segment(
-            theme: theme,
-            label: 'Zones',
-            selected: tab == ZoneGridTab.zones,
-            onTap: () => onChanged(ZoneGridTab.zones),
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-class _Segment extends StatelessWidget {
-  const _Segment({
-    required this.theme,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-  final AmbleTheme theme;
-  final String label;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    behavior: HitTestBehavior.opaque,
-    child: Container(
-      padding: EdgeInsets.symmetric(vertical: theme.spacingSm),
-      decoration: selected
-          ? BoxDecoration(
-              color: theme.colorSurfacePrimary,
-              borderRadius: BorderRadius.circular(theme.radiusLg),
-            )
-          : null,
-      child: Text(
-        label,
-        textAlign: TextAlign.center,
-        style: theme.textBody.copyWith(
-          color: onTap == null
-              ? theme.colorTextTertiary
-              : theme.colorTextPrimary,
-          fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
-        ),
-      ),
-    ),
-  );
-}
+// Tasks / Zones switcher — was a private, 2-option-only `_TabSwitcher`/
+// `_Segment` pair here; promoted to the shared `AppTabSwitch<T>`
+// (core/widgets/app_tab_switch.dart) 2026-09-19 so the same segmented-
+// control shape could be reused for other mutually-exclusive option rows
+// without a second private copy. See that widget's own doc comment for
+// the full history and `_zoneGridTabOptions` above for this screen's
+// options list.

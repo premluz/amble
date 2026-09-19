@@ -117,7 +117,7 @@ class _TaskStartTimeModalState extends State<TaskStartTimeModal> {
           SizedBox(height: theme.spacingLg),
           AppButton(
             label: 'Done',
-            size: AppButtonSize.large,
+            size: AppButtonSize.lg,
             shape: AppButtonShape.pill,
             onPressed: () {
               final hour = _hour;

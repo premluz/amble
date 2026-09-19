@@ -4190,3 +4190,35 @@ Requested directly: "we have 2 inactive tabs on edit zone screen. We need to mak
 **Two real Riverpod gotchas hit and fixed — full detail in docs/ERROR_LOG.md**: an `autoDispose` provider toggled with no live watcher got silently reset before the next frame could observe it (fixed with the host screen holding its own `ref.watch`); and writing to a provider from `dispose()` needed both a captured `ProviderContainer` (not `ref`) and a `scheduleMicrotask` deferral, guarded by `try`/`on StateError` for a container that's already gone.
 
 **Verification**: new `test/features/zone_grid/zone_grid_edit_screen_merge_test.dart` (4 cases, real-Hive pump pushed from a real `Navigator`) covers opening on Tasks, switching both directions, and Edit Mode resetting on close. Updated `zone_grid_screen_test.dart`, the `zone_grid_screenshot_main.dart` dev preview, and `app_calendar_header_test.dart`'s Edit Mode case (now asserts a route push via `NavigatorObserver` rather than an in-place toggle). `flutter analyze`: clean. Full `flutter test`: 1266/1266.
+
+## 2026-09-19 — Unified button system: `AppButton` gains `ghost`, configurable icon/label content, and a `circle` shape; `AppIconButton`/`AppSubtleIconButton` deleted
+
+Requested directly, scoped explicitly before touching code (per the ≥3-files-affected rule): "we already use multiple buttons across screens, sheets, settings pages... we need to systematize this." Surfaced while scoping onboarding-carousel layout changes (Skip/Back repositioning, image/video slide support) that also needed a proper button hierarchy — those onboarding changes were confirmed as a separate, deferred follow-up; this task was the button system alone.
+
+**`AppButton`** (`lib/core/widgets/app_button.dart`) gained: `AppButtonVariant.ghost` (transparent at rest, tap feedback only via the existing `AppPressFeedback` ripple — no new color token needed); `AppButtonShape.circle`, rendered through its own `_buildCircle` path rather than forced through the rectangular platform-button machinery; configurable content (`label` alone, `icon` alone, both together with icon leading, or a `child` escape hatch); and `tooltip`/`iconColor`/`borderColor` params carried over from `AppSubtleIconButton`.
+
+**`AppIconButton` and `AppSubtleIconButton` deleted outright** (confirmed: full migration now, not a gradual opt-in) — all 6 + 10 call sites across `template_list_screen.dart`, `settings_detail_scaffold.dart`, `category_list_screen.dart`, `zone_list_screen.dart`, `onboarding_profile_browse_screen.dart`, `app_floating_create_button.dart`, `tracked_behavior_list_screen.dart`, `zone_grid_screen.dart`, and `app_calendar_header.dart` (including its `child:`-content "Today" button and `iconColor`/`borderColor`-overridden Edit Mode toggle) moved to `AppButton(shape: circle, variant: ...)`. `AppMicButton` was left as its own widget (distinct two-state fill logic, not part of the ask) — only its stale doc-comment references to the deleted `AppIconButton` were updated, along with similar stale references in `app_step_scaffold.dart`, `app_calendar_header.dart`'s file doc comment, and one test comment.
+
+**Found and logged, not fixed**: a pre-existing, unrelated `task_providers_test.dart` recurrence-narrowing failure (daily → 5 weekdays leaves one weekend instance behind), confirmed via `git stash` to already fail on `main` before this session. Logged to `docs/ERROR_LOG.md` per direct instruction.
+
+**Verification**: new `test/core/widgets/app_button_test.dart` (13 cases) ports every case from the deleted `app_subtle_icon_button_test.dart` plus new coverage for the ghost variant, icon+label content, and the primary circle rendering. `app_floating_create_button_test.dart` updated to assert against `AppButton`. `flutter analyze`: clean (pre-existing warnings only). Full `flutter test`: all green except the one pre-existing, logged recurrence failure above.
+
+## 2026-09-19 (same day) — Fixed the recurrence-narrowing bug logged above
+
+Requested directly as an immediate follow-up. Root cause: `_deleteUntouchedFutureInstances` deliberately never deletes the series TEMPLATE row, but `generateRecurrenceInstances` also treats the template's own day as already-occupied regardless of whether a NEW rule still covers it — so narrowing a rule away from the template's own weekday stranded it as a stray instance the new rule would never have generated.
+
+**Fix**: new `recurrenceRuleIncludesWeekday()` helper (`recurrence_generator.dart`) plus `_reanchorTemplateIfExcludedByRule()` in `updateTaskWithChangedRecurrence` (`task_providers.dart`), which promotes the earliest surviving sibling to template and removes the stale one — reusing the existing `_promoteSuccessorTemplate` pattern, previously only wired to an explicit template delete.
+
+**Found and fixed a second, independent bug while verifying**: two `edit_schedule_repeats_test.dart` fixtures hardcoded a rule day (`DateTime.thursday`) alongside a real-date anchor (`_daysFromToday(0)`) that had silently drifted out of sync since whenever the test was written. Fixed by deriving the rule's day from the same real date instead.
+
+**Verification**: `flutter analyze lib/ test/`: clean. Full `flutter test`: 1272/1272 — full green, no regressions. Full detail in `docs/DECISIONS.md` and the updated `docs/ERROR_LOG.md` entry.
+
+## 2026-09-19 (same day) — Onboarding carousel refinement: Skip top-right, Back top-left, image/video slide support
+
+Requested directly as the deferred follow-up to the button-system work. Skip and Back now share a top row above the PageView (Back left, hidden on the first slide; Skip right, hidden on the last — unchanged) rather than stacking below the CTA, both using the new `AppButtonVariant.ghost` from the button system. `_SlideContent` gained optional `imageAsset`/`videoAsset` fields (video > image > icon-in-circle fallback); `_SlideView` became stateful to own a `VideoPlayerController` with error-fallback handling. None of the 4 current slides supply real media yet — still placeholder icon+text, unchanged.
+
+**New dependency, confirmed before adding**: `video_player: ^2.14.0` (official Flutter team package) — no viable alternative for in-app video without a platform-backed player.
+
+**Found and fixed a real test-infrastructure bug while adding coverage**: a new test hung indefinitely from a missing `tester.runAsync` around a real Hive write — the exact bug class already documented twice in `docs/ERROR_LOG.md`, missed on a newly-written test. Two red herrings (a concurrently-active `flutter run` on a physical device; stale Hive `.lock` files from this session's own killed diagnostic processes) cost real time before rereading the existing docs surfaced the actual, simpler cause. Fixed by copying the established `runAsync` helper shape verbatim.
+
+**Verification**: new `test/features/splash/splash_carousel_screen_test.dart` (6 cases). `flutter analyze`: clean (2 expected placeholder-field warnings only). Full `flutter test`: 1278/1278.

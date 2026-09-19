@@ -23,5 +23,11 @@ abstract final class SpacingPrimitives {
   static const space7Point75 = 30.0;
   static const space8 = 32.0;
   static const space9 = 40.0;
+
+  /// Sits between [space9] (40) and [space10] (56) — the "lg" rung of the
+  /// button-size scale (`AmbleTheme.sizeButtonLg`), confirmed directly at
+  /// 48 to clear the standard 44-48px minimum tap target while leaving
+  /// [space10] free for "xl".
+  static const space9Point5 = 48.0;
   static const space10 = 56.0;
 }

@@ -561,7 +561,64 @@ class TaskList extends _$TaskList {
     await ref.read(taskRepositoryProvider).saveTask(template);
     _syncNotificationInBackground(template);
     await _materializeSeries(template);
+    await _reanchorTemplateIfExcludedByRule(template);
     _refresh();
+  }
+
+  /// If [template]'s own `recurrenceRule` no longer generates an occurrence
+  /// on the weekday [template] itself sits on (e.g. narrowing a daily
+  /// series to weekdays-only when the template happened to be created on a
+  /// Saturday), promotes the earliest surviving sibling to take over as the
+  /// series' template and deletes the stale one — mirroring
+  /// [_promoteSuccessorTemplate]'s "hand the rule to a successor" shape,
+  /// but triggered by a rule CHANGE excluding the template's own day rather
+  /// than an explicit delete.
+  ///
+  /// Real bug, found and logged 2026-09-19, fixed here: the template row
+  /// is deliberately exempt from [_deleteUntouchedFutureInstances] (it's
+  /// the row being edited, not one of its own generated instances) and
+  /// from [generateRecurrenceInstances]'s own day-occupancy check (its day
+  /// reads as already "taken" regardless of whether the NEW rule would
+  /// still generate it) — so narrowing the rule away from the template's
+  /// own day left it stranded as a visible instance the new rule would
+  /// never have produced on its own.
+  ///
+  /// A no-op when the template's day still matches (the overwhelmingly
+  /// common case — most rule edits don't relocate the anchor) or when no
+  /// sibling exists yet to promote (nothing generated in the window, e.g.
+  /// an `endDate` in the past — leaving the lone stray template is still
+  /// better than deleting the series' only remaining row).
+  Future<void> _reanchorTemplateIfExcludedByRule(Task template) async {
+    final anchor = template.scheduledAt;
+    final rule = template.recurrenceRule;
+    if (anchor == null || rule == null) return;
+
+    final stillIncluded = recurrenceRuleIncludesWeekday(
+      rule,
+      weekday: anchor.weekday,
+      anchorWeekday: anchor.weekday,
+    );
+    if (stillIncluded) return;
+
+    final repository = ref.read(taskRepositoryProvider);
+    final candidates =
+        repository
+            .getTasks()
+            .where(
+              (task) =>
+                  task.recurrenceId == template.recurrenceId &&
+                  task.id != template.id &&
+                  task.scheduledAt != null,
+            )
+            .toList()
+          ..sort((a, b) => a.scheduledAt!.compareTo(b.scheduledAt!));
+    if (candidates.isEmpty) return;
+
+    final successor = candidates.first;
+    successor.recurrenceRule = rule;
+    await repository.saveTask(successor);
+    await repository.deleteTask(template.id);
+    await _cancelNotificationSafely(template.id);
   }
 
   /// Saves [task]'s own field changes — including a moved `scheduledAt`

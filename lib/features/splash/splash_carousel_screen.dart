@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:video_player/video_player.dart';
 
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
@@ -182,16 +183,30 @@ class _SlideContent {
     required this.category,
     required this.headline,
     required this.body,
+    this.imageAsset,
+    this.videoAsset,
   });
 
   final IconData icon;
 
   /// Which category's pastel tint/icon-color pair this slide borrows —
   /// purely for visual variety across slides, no connection to the
-  /// user's actual task categories.
+  /// user's actual task categories. Still used as [icon]'s own tint when
+  /// neither [imageAsset] nor [videoAsset] is set, and as the fallback if
+  /// [videoAsset] fails to initialize.
   final TaskCategoryToken category;
   final String headline;
   final String body;
+
+  /// A bundled asset path (e.g. `assets/onboarding/slide1.png`) shown
+  /// full-bleed instead of the icon-in-circle when set. Ignored when
+  /// [videoAsset] is also set — video takes priority per slide.
+  final String? imageAsset;
+
+  /// A bundled video asset path, taking priority over [imageAsset] and
+  /// [icon] when set. Falls back to [imageAsset] (or the icon) if the
+  /// video fails to load — see [_SlideView]'s error handling.
+  final String? videoAsset;
 }
 
 /// Draft value-proposition copy — flagged as a placeholder for review, not
@@ -250,7 +265,13 @@ class _Carousel extends StatelessWidget {
   final ValueChanged<int> onPageChanged;
   final VoidCallback onFinish;
 
+  bool get _isFirstSlide => page == 0;
   bool get _isLastSlide => page == _slides.length - 1;
+
+  void _goToPreviousPage() => controller.previousPage(
+    duration: theme.motionNormal,
+    curve: theme.curveStandard,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -261,6 +282,34 @@ class _Carousel extends StatelessWidget {
       ),
       child: Column(
         children: [
+          // Back (top-left) and Skip (top-right) share this row rather
+          // than stacking below the CTA — requested directly, matching
+          // the questionnaire's own Skip placement. Back is hidden on the
+          // first slide (nothing to go back to, same reasoning as Skip
+          // already being hidden on the last one); Skip stays hidden on
+          // the last slide, unchanged from before.
+          SizedBox(
+            height: theme.spacingXl * 1.5,
+            child: Row(
+              children: [
+                if (!_isFirstSlide)
+                  AppButton(
+                    icon: Icons.arrow_back_rounded,
+                    shape: AppButtonShape.circle,
+                    variant: AppButtonVariant.ghost,
+                    tooltip: 'Back',
+                    onPressed: _goToPreviousPage,
+                  ),
+                const Spacer(),
+                if (!_isLastSlide)
+                  AppButton(
+                    label: 'Skip',
+                    variant: AppButtonVariant.ghost,
+                    onPressed: onFinish,
+                  ),
+              ],
+            ),
+          ),
           Expanded(
             child: PageView(
               controller: controller,
@@ -282,7 +331,7 @@ class _Carousel extends StatelessWidget {
           SizedBox(height: theme.spacingLg),
           AppButton(
             label: _isLastSlide ? 'Get started' : 'Next',
-            size: AppButtonSize.large,
+            size: AppButtonSize.lg,
             shape: AppButtonShape.pill,
             onPressed: _isLastSlide
                 ? onFinish
@@ -291,45 +340,119 @@ class _Carousel extends StatelessWidget {
                     curve: theme.curveStandard,
                   ),
           ),
-          if (!_isLastSlide) ...[
-            SizedBox(height: theme.spacingSm),
-            AppButton(
-              label: 'Skip',
-              variant: AppButtonVariant.secondary,
-              shape: AppButtonShape.pill,
-              onPressed: onFinish,
-            ),
-          ],
         ],
       ),
     );
   }
 }
 
-class _SlideView extends StatelessWidget {
+class _SlideView extends StatefulWidget {
   const _SlideView({required this.theme, required this.slide});
 
   final AmbleTheme theme;
   final _SlideContent slide;
 
   @override
+  State<_SlideView> createState() => _SlideViewState();
+}
+
+class _SlideViewState extends State<_SlideView> {
+  VideoPlayerController? _videoController;
+
+  /// True once [_videoController] has either initialized successfully or
+  /// failed — gates showing the video at all, so a still-loading player
+  /// doesn't flash an empty black rectangle before falling back.
+  bool _videoReady = false;
+  bool _videoFailed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initVideoIfNeeded();
+  }
+
+  void _initVideoIfNeeded() {
+    final videoAsset = widget.slide.videoAsset;
+    if (videoAsset == null) return;
+
+    final controller = VideoPlayerController.asset(videoAsset);
+    _videoController = controller;
+    controller
+        .initialize()
+        .then((_) {
+          if (!mounted) return;
+          setState(() => _videoReady = true);
+          controller
+            ..setLooping(true)
+            ..play();
+        })
+        // A missing/corrupt bundled asset is a real possibility worth
+        // falling back from gracefully rather than crashing the whole
+        // carousel — falls through to imageAsset, then the icon, same as
+        // videoAsset simply being null.
+        .onError((error, stackTrace) {
+          if (!mounted) return;
+          setState(() => _videoFailed = true);
+        });
+  }
+
+  @override
+  void dispose() {
+    _videoController?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final theme = widget.theme;
+    final slide = widget.slide;
     final tint = theme.categoryColors[slide.category]!;
     final iconColor = theme.categoryIconColors[slide.category]!;
+
+    final showVideo =
+        slide.videoAsset != null && _videoReady && !_videoFailed;
+    final showImage = !showVideo && slide.imageAsset != null;
 
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Container(
-          width: theme.spacingXl * 3,
-          height: theme.spacingXl * 3,
-          decoration: BoxDecoration(color: tint, shape: BoxShape.circle),
-          child: Icon(
-            slide.icon,
-            size: theme.spacingXl * 1.5,
-            color: iconColor,
+        // The image takes most of the screen when present — full-bleed
+        // within the slide's own available space, not boxed into the same
+        // fixed circle the icon fallback uses. `Expanded` inside a
+        // `Column` that is itself already inside the carousel's own
+        // `Expanded` `PageView` needs no extra constraint: the slide's
+        // full vertical space is already bounded by the PageView.
+        if (showVideo || showImage)
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: theme.spacingLg),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(theme.radiusXl),
+                child: showVideo
+                    ? FittedBox(
+                        fit: BoxFit.cover,
+                        clipBehavior: Clip.hardEdge,
+                        child: SizedBox(
+                          width: _videoController!.value.size.width,
+                          height: _videoController!.value.size.height,
+                          child: VideoPlayer(_videoController!),
+                        ),
+                      )
+                    : Image.asset(slide.imageAsset!, fit: BoxFit.cover),
+              ),
+            ),
+          )
+        else
+          Container(
+            width: theme.spacingXl * 3,
+            height: theme.spacingXl * 3,
+            decoration: BoxDecoration(color: tint, shape: BoxShape.circle),
+            child: Icon(
+              slide.icon,
+              size: theme.spacingXl * 1.5,
+              color: iconColor,
+            ),
           ),
-        ),
         SizedBox(height: theme.spacingXl),
         Text(
           slide.headline,

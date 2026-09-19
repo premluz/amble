@@ -356,8 +356,9 @@ class StepScaffold extends StatelessWidget {
                                   crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
                                     // Fixed circle size (matching
-                                    // AppIconButton's own established
-                                    // standalone-icon-button size) rather
+                                    // AppButton's own established
+                                    // circle-shape standalone-icon-button
+                                    // size) rather
                                     // than trying to match AppButton's own
                                     // padding-driven height via intrinsic
                                     // sizing — that combination (
@@ -405,7 +406,7 @@ class StepScaffold extends StatelessWidget {
                                         ),
                                         child: AppButton(
                                           label: primaryLabel,
-                                          size: AppButtonSize.large,
+                                          size: AppButtonSize.lg,
                                           shape: AppButtonShape.pill,
                                           onPressed: onPrimaryPressed,
                                           isLoading: isPrimaryLoading,

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
-import '../../core/widgets/app_icon_button.dart';
+import '../../core/widgets/app_button.dart';
 import '../../shared/models/onboarding_profile.dart';
 import '../../shared/providers/onboarding_profile_catalog.dart';
 import '../../shared/services/onboarding_materializer.dart';
@@ -68,9 +68,10 @@ class _OnboardingProfileBrowseScreenState
               padding: EdgeInsets.all(theme.spacingScreenPadding),
               child: Row(
                 children: [
-                  AppIconButton(
+                  AppButton(
                     icon: Icons.arrow_back_rounded,
                     onPressed: () => Navigator.of(context).pop(),
+                    shape: AppButtonShape.circle,
                   ),
                   SizedBox(width: theme.spacingMd),
                   Expanded(child: Text('All profiles', style: theme.textTitle)),

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
-import '../../core/widgets/app_icon_button.dart';
+import '../../core/widgets/app_button.dart';
 import 'task_template_form.dart';
 import 'template_list_view.dart';
 
@@ -36,15 +36,17 @@ class TemplateListScreen extends StatelessWidget {
               padding: EdgeInsets.all(theme.spacingScreenPadding),
               child: Row(
                 children: [
-                  AppIconButton(
+                  AppButton(
                     icon: Icons.arrow_back_rounded,
                     onPressed: () => Navigator.of(context).pop(),
+                    shape: AppButtonShape.circle,
                   ),
                   SizedBox(width: theme.spacingMd),
                   Expanded(child: Text('Templates', style: theme.textTitle)),
-                  AppIconButton(
+                  AppButton(
                     icon: Icons.add_rounded,
                     onPressed: () => showTaskTemplateForm(context),
+                    shape: AppButtonShape.circle,
                   ),
                 ],
               ),

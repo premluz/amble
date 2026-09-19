@@ -98,7 +98,7 @@ class _OnboardingProfileResultScreenState
               const Spacer(),
               AppButton(
                 label: 'Use this profile',
-                size: AppButtonSize.large,
+                size: AppButtonSize.lg,
                 shape: AppButtonShape.pill,
                 isLoading: _isMaterializing,
                 onPressed: _isMaterializing ? null : () => _choose(profile),

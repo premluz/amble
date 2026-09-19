@@ -95,7 +95,7 @@ void main() {
       final button = tester.widget<AppButton>(find.byType(AppButton));
       expect(button.label, 'Done');
       expect(button.shape, AppButtonShape.pill);
-      expect(button.size, AppButtonSize.large);
+      expect(button.size, AppButtonSize.lg);
     },
   );
 

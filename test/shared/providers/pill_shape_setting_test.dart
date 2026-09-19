@@ -42,10 +42,12 @@ void main() {
     await box.deleteFromDisk();
   });
 
-  test('defaults to PillShape.small on a fresh install — NOT a silent no-op '
-      'of the pre-existing hardcoded shape, a deliberate step up (see '
-      'PillShapeSetting\'s own doc comment)', () {
-    expect(container.read(pillShapeSettingProvider), PillShape.small);
+  test('defaults to PillShape.full on a fresh install — requested directly '
+      '("all buttons and other related should be fully rounded"), '
+      'superseding the small default this test originally covered (see '
+      'PillShapeSetting\'s own doc comment and docs/ERROR_LOG.md '
+      '2026-09-19)', () {
+    expect(container.read(pillShapeSettingProvider), PillShape.full);
   });
 
   for (final shape in PillShape.values) {

@@ -518,9 +518,19 @@ void main() {
         ),
       );
 
+      // The ORIGINAL template (2026-08-20, a Thursday) is excluded by the
+      // new Mon/Wed/Fri rule, so it is re-anchored to a successor rather
+      // than staying the template under a rule that would never have
+      // generated its own day — see _reanchorTemplateIfExcludedByRule and
+      // docs/ERROR_LOG.md's 2026-09-19 entry. Whichever row now carries
+      // the rule is what matters here, not that it's still `template.id`.
       final refreshedTemplate = container
           .read(taskListProvider)
-          .firstWhere((t) => t.id == template.id);
+          .firstWhere(
+            (t) =>
+                t.recurrenceId == template.recurrenceId &&
+                t.isRecurrenceTemplate,
+          );
       expect(
         refreshedTemplate.recurrenceRule?.frequency,
         RecurrenceFrequency.weekly,

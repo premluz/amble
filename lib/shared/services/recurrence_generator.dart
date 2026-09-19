@@ -3,6 +3,31 @@ import '../models/recurrence_frequency.dart';
 import '../models/recurrence_rule.dart';
 import '../models/task.dart';
 
+/// Whether [rule] would ever generate an occurrence on [weekday]
+/// (`DateTime.monday`..`DateTime.sunday`), given the series' own anchor
+/// weekday for a `weekly` rule with no explicit `daysOfWeek` — the same
+/// "same weekday as the template" default `_occurrences` applies during
+/// real generation, kept here as its own pure check so a caller can ask
+/// "does the rule still cover this day" without generating a whole window.
+///
+/// `daily` always returns true — every calendar day is a candidate
+/// regardless of weekday.
+bool recurrenceRuleIncludesWeekday(
+  RecurrenceRule rule, {
+  required int weekday,
+  required int anchorWeekday,
+}) {
+  switch (rule.frequency) {
+    case RecurrenceFrequency.daily:
+      return true;
+    case RecurrenceFrequency.weekly:
+      final weekdays = (rule.daysOfWeek == null || rule.daysOfWeek!.isEmpty)
+          ? <int>[anchorWeekday]
+          : rule.daysOfWeek!;
+      return weekdays.contains(weekday);
+  }
+}
+
 /// How far ahead recurring instances are materialized.
 ///
 /// A rolling window rather than generating to `endDate`, per

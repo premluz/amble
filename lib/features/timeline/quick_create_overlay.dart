@@ -425,7 +425,7 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay> {
                                     child: Center(
                                       child: AppButton(
                                         label: 'Schedule',
-                                        size: AppButtonSize.regular,
+                                        size: AppButtonSize.md,
                                         shape: AppButtonShape.pill,
                                         onPressed: _isSaving ? null : _schedule,
                                       ),

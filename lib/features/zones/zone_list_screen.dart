@@ -2,12 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
-import '../../core/widgets/app_icon_button.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_text_field.dart';
 import '../../core/widgets/app_press_feedback.dart';
 import '../../core/widgets/app_sheet.dart';
-import '../../core/widgets/app_subtle_icon_button.dart';
 import '../../shared/models/zone_facet.dart';
 import '../../shared/providers/zone_facet_providers.dart';
 import '../../shared/providers/zone_providers.dart';
@@ -35,15 +33,17 @@ class ZoneListScreen extends StatelessWidget {
               padding: EdgeInsets.all(theme.spacingScreenPadding),
               child: Row(
                 children: [
-                  AppIconButton(
+                  AppButton(
                     icon: Icons.arrow_back_rounded,
                     onPressed: () => Navigator.of(context).pop(),
+                    shape: AppButtonShape.circle,
                   ),
                   SizedBox(width: theme.spacingMd),
                   Expanded(child: Text('Zone names', style: theme.textTitle)),
-                  AppIconButton(
+                  AppButton(
                     icon: Icons.add_rounded,
                     onPressed: () => showZoneNameSheet(context),
+                    shape: AppButtonShape.circle,
                   ),
                 ],
               ),
@@ -158,10 +158,12 @@ class _ZoneNameFormState extends ConsumerState<_ZoneNameForm> {
                 ),
               ),
               if (widget.facet != null)
-                AppSubtleIconButton(
+                AppButton(
                   icon: Icons.delete_outline_rounded,
+                  shape: AppButtonShape.circle,
+                  variant: AppButtonVariant.secondary,
                   tooltip: 'Remove name',
-                  onTap: _saving
+                  onPressed: _saving
                       ? null
                       : () async {
                           try {

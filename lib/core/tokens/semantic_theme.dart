@@ -55,6 +55,11 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     required this.sizeTaskBadgeLg,
     required this.sizeTaskBadgeXl,
     required this.sizeTaskBadge,
+    required this.sizeButtonXs,
+    required this.sizeButtonSm,
+    required this.sizeButtonMd,
+    required this.sizeButtonLg,
+    required this.sizeButtonXl,
     required this.radiusSm,
     required this.radiusMd,
     required this.radiusLg,
@@ -300,6 +305,28 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   /// `main.dart` via `AmbleTheme.copyWith` before the palette reaches
   /// [MaterialApp]'s `extensions`.
   final double sizeTaskBadge;
+
+  /// The button-family height scale — `AppButton`, `AppTabSwitch`, and
+  /// `AppConnectedButtons` all pick a rung by their own `size` parameter
+  /// (its own enum, not this scale's name directly, mirroring
+  /// [AppButtonShape]/[AppButtonVariant]'s own separation of "what the
+  /// call site asks for" from "what pixel value that resolves to"). Fixed
+  /// design values, unlike [sizeTaskBadge] — there is no user-facing
+  /// "Button size" setting, so these are plain constants rather than an
+  /// "active" resolved field.
+  ///
+  /// 44-48px is the standard minimum comfortable tap target (iOS HIG /
+  /// Material both land in that range) — [sizeButtonLg] (48) is the
+  /// baseline "real tap target" rung; [sizeButtonMd] (40) still clears 40,
+  /// the smaller end of what's broadly considered acceptable for a
+  /// button that isn't the primary action on a dense row; [sizeButtonXs]/
+  /// [sizeButtonSm] are for compact icon-only or inline contexts where the
+  /// surrounding row itself is the tap target, not the control alone.
+  final double sizeButtonXs;
+  final double sizeButtonSm;
+  final double sizeButtonMd;
+  final double sizeButtonLg;
+  final double sizeButtonXl;
 
   // Radii`
   // Corner radii, named by SIZE rather than by component. A component
@@ -559,6 +586,11 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     // Default rung: md — Task view's own prior fixed size, now the
     // starting point for the "Task size" setting.
     sizeTaskBadge: SpacingPrimitives.space7,
+    sizeButtonXs: SpacingPrimitives.space7Point5,
+    sizeButtonSm: SpacingPrimitives.space8,
+    sizeButtonMd: SpacingPrimitives.space9,
+    sizeButtonLg: SpacingPrimitives.space9Point5,
+    sizeButtonXl: SpacingPrimitives.space10,
     radiusSm: RadiusPrimitives.radiusSm,
     radiusMd: RadiusPrimitives.radiusMd,
     radiusLg: RadiusPrimitives.radiusLg,
@@ -570,10 +602,12 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     radiusPillSmall: RadiusPrimitives.radiusMd,
     radiusPillRounded: RadiusPrimitives.radiusXl,
     radiusPillFull: RadiusPrimitives.radiusFull,
-    // Default rung: PillShapeSetting.build() defaults to PillShape.small
-    // for a fresh install — see that provider's own doc comment for why
-    // small (not the pre-existing radiusSm=4 shape) is the new default.
-    radiusPill: RadiusPrimitives.radiusMd,
+    // Default rung: PillShapeSetting.build() defaults to PillShape.full —
+    // requested directly ("all buttons and other related should be fully
+    // rounded"), main.dart's _resolvePillShape overrides this at runtime
+    // for the real app; this const just keeps a bare AmbleTheme.light
+    // (tests, the Widgetbook gallery) matching that same real default.
+    radiusPill: RadiusPrimitives.radiusFull,
     radiusModal: RadiusPrimitives.radiusModal,
     borderWidthHairline: SpacingPrimitives.space1,
     borderWidthConnector: 3.0,
@@ -811,6 +845,11 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     // Default rung: md — Task view's own prior fixed size, now the
     // starting point for the "Task size" setting.
     sizeTaskBadge: SpacingPrimitives.space7,
+    sizeButtonXs: SpacingPrimitives.space7Point5,
+    sizeButtonSm: SpacingPrimitives.space8,
+    sizeButtonMd: SpacingPrimitives.space9,
+    sizeButtonLg: SpacingPrimitives.space9Point5,
+    sizeButtonXl: SpacingPrimitives.space10,
     radiusSm: RadiusPrimitives.radiusSm,
     radiusMd: RadiusPrimitives.radiusMd,
     radiusLg: RadiusPrimitives.radiusLg,
@@ -819,7 +858,8 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     radiusPillSmall: RadiusPrimitives.radiusMd,
     radiusPillRounded: RadiusPrimitives.radiusXl,
     radiusPillFull: RadiusPrimitives.radiusFull,
-    radiusPill: RadiusPrimitives.radiusMd,
+    // Same default-rung reasoning as the light palette's own comment above.
+    radiusPill: RadiusPrimitives.radiusFull,
     radiusModal: RadiusPrimitives.radiusModal,
     borderWidthHairline: SpacingPrimitives.space1,
     borderWidthConnector: 3.0,
@@ -986,6 +1026,11 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     double? sizeTaskBadgeLg,
     double? sizeTaskBadgeXl,
     double? sizeTaskBadge,
+    double? sizeButtonXs,
+    double? sizeButtonSm,
+    double? sizeButtonMd,
+    double? sizeButtonLg,
+    double? sizeButtonXl,
     double? radiusSm,
     double? radiusMd,
     double? radiusLg,
@@ -1060,6 +1105,11 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       sizeTaskBadgeLg: sizeTaskBadgeLg ?? this.sizeTaskBadgeLg,
       sizeTaskBadgeXl: sizeTaskBadgeXl ?? this.sizeTaskBadgeXl,
       sizeTaskBadge: sizeTaskBadge ?? this.sizeTaskBadge,
+      sizeButtonXs: sizeButtonXs ?? this.sizeButtonXs,
+      sizeButtonSm: sizeButtonSm ?? this.sizeButtonSm,
+      sizeButtonMd: sizeButtonMd ?? this.sizeButtonMd,
+      sizeButtonLg: sizeButtonLg ?? this.sizeButtonLg,
+      sizeButtonXl: sizeButtonXl ?? this.sizeButtonXl,
       radiusSm: radiusSm ?? this.radiusSm,
       radiusMd: radiusMd ?? this.radiusMd,
       radiusLg: radiusLg ?? this.radiusLg,
@@ -1214,6 +1264,11 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       sizeTaskBadgeLg: _lerpDouble(sizeTaskBadgeLg, other.sizeTaskBadgeLg, t),
       sizeTaskBadgeXl: _lerpDouble(sizeTaskBadgeXl, other.sizeTaskBadgeXl, t),
       sizeTaskBadge: _lerpDouble(sizeTaskBadge, other.sizeTaskBadge, t),
+      sizeButtonXs: _lerpDouble(sizeButtonXs, other.sizeButtonXs, t),
+      sizeButtonSm: _lerpDouble(sizeButtonSm, other.sizeButtonSm, t),
+      sizeButtonMd: _lerpDouble(sizeButtonMd, other.sizeButtonMd, t),
+      sizeButtonLg: _lerpDouble(sizeButtonLg, other.sizeButtonLg, t),
+      sizeButtonXl: _lerpDouble(sizeButtonXl, other.sizeButtonXl, t),
       radiusSm: _lerpDouble(radiusSm, other.radiusSm, t),
       radiusMd: _lerpDouble(radiusMd, other.radiusMd, t),
       radiusLg: _lerpDouble(radiusLg, other.radiusLg, t),

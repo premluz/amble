@@ -275,7 +275,7 @@ class _AppWheelTimePickerState extends State<AppWheelTimePicker> {
           SizedBox(height: theme.spacingLg),
           AppButton(
             label: 'Done',
-            size: AppButtonSize.large,
+            size: AppButtonSize.lg,
             shape: AppButtonShape.pill,
             onPressed: () => Navigator.of(context).pop((_hour, _minute)),
           ),

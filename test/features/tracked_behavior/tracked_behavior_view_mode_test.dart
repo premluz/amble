@@ -165,7 +165,7 @@ void main() {
       // Uncompleted baseline first — confirms the accent fill is genuinely
       // conditional on completion, not always on. Scoped to descendants of
       // the row itself — a bare find.byType(Container) also catches the
-      // bottom bar's own "+" AppIconButton, which fills with the SAME
+      // bottom bar's own "+" AppButton (circle shape), which fills with the SAME
       // colorAccent for an unrelated reason (its own press-feedback
       // circle), producing a false positive.
       await pumpList(tester, behaviors: [behavior]);

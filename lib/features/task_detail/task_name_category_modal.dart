@@ -178,7 +178,7 @@ class _TaskNameCategoryModalState extends ConsumerState<TaskNameCategoryModal> {
           SizedBox(height: theme.spacingLg),
           AppButton(
             label: 'Done',
-            size: AppButtonSize.large,
+            size: AppButtonSize.lg,
             shape: AppButtonShape.pill,
             onPressed: () => Navigator.of(context).pop(),
           ),

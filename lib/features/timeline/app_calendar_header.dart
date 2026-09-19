@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/feature_flags.dart';
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_press_feedback.dart';
-import '../../core/widgets/app_subtle_icon_button.dart';
 import '../../shared/providers/preferences_providers.dart';
 import '../zone_grid/zone_grid_screen.dart';
 import 'edit_mode_provider.dart';
@@ -59,10 +59,12 @@ DateTime _startOfWeek(DateTime date) {
 /// relocation of it).
 ///
 /// Icons are "very subtle outline" per direct reference, not the app's
-/// existing filled-accent `AppIconButton` (that circle reads as a primary
-/// action; these three are secondary utility controls) — `AppSubtleIconButton`
-/// (`core/widgets/`), promoted out of this file 2026-09-12 so the Tracked
-/// tab's own view-cycle switcher can use the identical style.
+/// filled-accent primary circle style (that reads as a primary action;
+/// these three are secondary utility controls) — `AppButton`'s circle
+/// shape with `AppButtonVariant.secondary` (`core/widgets/app_button.dart`),
+/// promoted out of this file 2026-09-12 (as the now-retired
+/// `AppSubtleIconButton`) so the Tracked tab's own view-cycle switcher
+/// could use the identical style.
 ///
 /// **While Edit Mode is active**, this widget collapses to JUST the Edit
 /// Mode toggle itself (now showing a close/X glyph), top-right, in the
@@ -145,10 +147,12 @@ class AppCalendarHeader extends ConsumerWidget {
               // Sync — placeholder only per direct confirmation (device-
               // calendar pull/push is a separate future task); tapping
               // currently does nothing.
-              const AppSubtleIconButton(
+              const AppButton(
                 icon: Icons.sync_rounded,
+                shape: AppButtonShape.circle,
+                variant: AppButtonVariant.secondary,
                 tooltip: 'Sync',
-                onTap: null,
+                onPressed: null,
               ),
               if (FeatureFlags.zoneEnabled) ...[
                 SizedBox(width: theme.spacingSm),
@@ -298,9 +302,11 @@ class _TodayButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return AppSubtleIconButton(
+    return AppButton(
+      shape: AppButtonShape.circle,
+      variant: AppButtonVariant.secondary,
       tooltip: 'Today',
-      onTap: () => ref.read(selectedDateProvider.notifier).goToToday(),
+      onPressed: () => ref.read(selectedDateProvider.notifier).goToToday(),
       child: Text(
         '${today.day}',
         style: theme.textCaption.copyWith(
@@ -327,15 +333,17 @@ class _SpatialZoneViewSwitcher extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final zoneViewEnabled = ref.watch(zoneViewEnabledSettingProvider);
-    return AppSubtleIconButton(
+    return AppButton(
       // Icon shows the view a tap will switch TO — matching Tracked's own
       // `viewMode.icon` convention (the icon names the destination, not
       // the current state).
       icon: zoneViewEnabled
           ? Icons.view_timeline_outlined
           : Icons.grid_view_rounded,
+      shape: AppButtonShape.circle,
+      variant: AppButtonVariant.secondary,
       tooltip: zoneViewEnabled ? 'Switch to Task view' : 'Switch to Timeline',
-      onTap: () => ref
+      onPressed: () => ref
           .read(zoneViewEnabledSettingProvider.notifier)
           .set(!zoneViewEnabled),
     );
@@ -350,13 +358,15 @@ class _EditModeIconButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final enabled = ref.watch(editModeEnabledProvider);
-    return AppSubtleIconButton(
+    return AppButton(
       // Reported directly: while Edit Mode is active, the SAME control
       // that opened it becomes its close button — a close (X) glyph, not
       // the pen icon still sitting there with no visible way to exit —
       // styled identically to the other top-right icons (no separate
       // control, no different shape).
       icon: enabled ? Icons.close_rounded : Icons.edit_outlined,
+      shape: AppButtonShape.circle,
+      variant: AppButtonVariant.secondary,
       tooltip: enabled ? 'Done' : 'Edit',
       // **2026-09-17 — opens the merged Edit screen** (Tasks/Zones tabs)
       // rather than toggling `editModeEnabledProvider` in place. The
@@ -367,7 +377,7 @@ class _EditModeIconButton extends ConsumerWidget {
       // still be true here from that gesture (or from a resumed
       // navigation), in which case tapping just closes it the same way
       // the long-press itself would.
-      onTap: () => enabled
+      onPressed: () => enabled
           ? ref.read(editModeEnabledProvider.notifier).toggle()
           : showEditScreen(context),
       // Accent-colored while active, so the mode still has a persistent

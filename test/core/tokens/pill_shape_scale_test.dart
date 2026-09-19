@@ -42,9 +42,10 @@ void main() {
       );
     });
 
-    test('the ACTIVE radiusPill field defaults to the small rung, matching '
-        'PillShapeSetting\'s own default', () {
-      expect(AmbleTheme.light.radiusPill, AmbleTheme.light.radiusPillSmall);
+    test('the ACTIVE radiusPill field defaults to the full rung, matching '
+        'PillShapeSetting\'s own default (changed 2026-09-19 from small — '
+        'see that provider\'s own doc comment)', () {
+      expect(AmbleTheme.light.radiusPill, AmbleTheme.light.radiusPillFull);
     });
   });
 

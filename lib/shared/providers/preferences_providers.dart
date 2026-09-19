@@ -344,20 +344,22 @@ class TaskFontSizeSetting extends _$TaskFontSizeSetting {
 /// `radiusPill` value onto the active `AmbleTheme` before it reaches
 /// `MaterialApp`, so every existing call site (`TaskCapsuleBlock`,
 /// `ZoneContainerBlock`, the Inbox row's own badge) picks it up
-/// automatically without itself knowing this setting exists.
+/// automatically without itself knowing this setting exists. Since
+/// 2026-09-19, `AppButton`'s pill shape and `AppTabSwitch`'s track also
+/// read the same active `radiusPill` — the setting is no longer scoped to
+/// task/zone/Inbox badges alone, any pill-shaped control in the app tracks
+/// it.
 ///
 /// Requested directly: "we have squary rounded shape of pills but rounded
 /// on inbox ... let's make it configurable in admin ... this should affect
 /// globally, in edit tasks etc."
 ///
-/// Defaults to `PillShape.small` — NOT a silent no-op default. The
-/// pre-existing hardcoded task/zone badge corner (`radiusSm`, 4px) is
-/// replaced by `radiusPillSmall` (8px, Material 3's own "small" component
-/// corner — confirmed via AskUserQuestion), a deliberate, visible step up
-/// chosen to match a real design-system scale rather than reusing the old
-/// value unchanged. The Inbox badge's own prior shape (`BoxShape.circle`,
-/// always fully round regardless of this setting) is superseded entirely —
-/// it now resolves to the same active rung as every other pill.
+/// Defaults to `PillShape.full` — changed 2026-09-19 from the original
+/// `PillShape.small` default, requested directly: "all buttons and other
+/// related should be fully rounded... we actually have config rounding 3
+/// variants for task pill we should use that fully rounded to match." The
+/// setting itself, and its other two rungs, are unchanged — only which
+/// rung a fresh install starts on.
 @Riverpod(keepAlive: true)
 class PillShapeSetting extends _$PillShapeSetting {
   @override
@@ -365,7 +367,7 @@ class PillShapeSetting extends _$PillShapeSetting {
     return ref
             .read(preferencesRepositoryProvider)
             .getValue<PillShape>(PreferenceKeys.pillShape) ??
-        PillShape.small;
+        PillShape.full;
   }
 
   Future<void> set(PillShape value) async {

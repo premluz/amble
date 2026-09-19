@@ -364,10 +364,10 @@ class _QuickCaptureFormState extends ConsumerState<_QuickCaptureForm> {
                   // Reported directly, twice: first the shape (AppButton's
                   // plain default is the smaller-radius `rounded` shape,
                   // not the pill the other Done uses), then the size
-                  // (AppButton's default `AppButtonSize.regular`, not the
+                  // (AppButton's default `AppButtonSize.md`, not the
                   // `large` StepScaffold's own primary button uses).
                   shape: AppButtonShape.pill,
-                  size: AppButtonSize.large,
+                  size: AppButtonSize.lg,
                 ),
               ),
             ],

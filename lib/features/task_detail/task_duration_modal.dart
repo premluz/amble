@@ -190,7 +190,7 @@ class _TaskDurationModalState extends State<TaskDurationModal> {
           SizedBox(height: theme.spacingLg),
           AppButton(
             label: 'Done',
-            size: AppButtonSize.large,
+            size: AppButtonSize.lg,
             shape: AppButtonShape.pill,
             onPressed: () {
               // A task must have SOME duration — floor at 1 minute rather

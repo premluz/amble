@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
+import 'package:amble/core/widgets/app_button.dart';
 import 'package:amble/core/widgets/app_floating_create_button.dart';
-import 'package:amble/core/widgets/app_icon_button.dart';
 
 /// Replaces `AppBottomExtensionBar`'s own "+" (2026-09-12, requested
 /// directly from a reference screenshot: "nav is just 5 items + its
@@ -28,7 +28,7 @@ void main() {
       isNull,
       reason: 'anchored from the right, not the left',
     );
-    expect(find.byType(AppIconButton), findsOneWidget);
+    expect(find.byType(AppButton), findsOneWidget);
   });
 
   testWidgets('tapping invokes onPressed', (tester) async {
@@ -46,7 +46,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.byType(AppIconButton));
+    await tester.tap(find.byType(AppButton));
     expect(pressed, isTrue);
   });
 

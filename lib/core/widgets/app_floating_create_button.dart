@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../tokens/semantic_theme.dart';
-import 'app_icon_button.dart';
+import 'app_button.dart';
 
 /// The "+" create button, floating independently above the bottom nav
 /// pill — not sharing a pane with it. Replaces the old `AppBottomExtensionBar`
@@ -43,8 +43,9 @@ class AppFloatingCreateButton extends StatelessWidget {
             opacity: opacity,
             duration: theme.motionFast,
             curve: theme.curveStandard,
-            child: AppIconButton(
+            child: AppButton(
               icon: Icons.add_rounded,
+              shape: AppButtonShape.circle,
               onPressed: onPressed ?? () {},
             ),
           ),

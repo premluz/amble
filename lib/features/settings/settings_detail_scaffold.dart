@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
-import '../../core/widgets/app_icon_button.dart';
+import '../../core/widgets/app_button.dart';
 
 /// Shared "back button + title" chrome for every Settings sub-page —
 /// mirrors `ZoneListScreen`'s own header exactly, so Permissions/
@@ -32,9 +32,10 @@ class SettingsDetailScaffold extends StatelessWidget {
               padding: EdgeInsets.all(theme.spacingScreenPadding),
               child: Row(
                 children: [
-                  AppIconButton(
+                  AppButton(
                     icon: Icons.arrow_back_rounded,
                     onPressed: () => Navigator.of(context).pop(),
+                    shape: AppButtonShape.circle,
                   ),
                   SizedBox(width: theme.spacingMd),
                   // textTitle — every page and sheet title in the app
