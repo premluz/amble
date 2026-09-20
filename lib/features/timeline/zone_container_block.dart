@@ -615,6 +615,7 @@ class ZoneContainerBlock extends StatelessWidget {
                       event: row,
                       durationVisible: durationVisible,
                       timeRangeVisible: timeRangeVisible,
+                      startTimeOnlyVisible: startTimeOnlyVisible,
                     ),
                 ],
               ],
@@ -1237,6 +1238,7 @@ class _ZoneExternalEventRow extends StatelessWidget {
     required this.event,
     this.durationVisible = true,
     this.timeRangeVisible = true,
+    this.startTimeOnlyVisible = false,
   });
 
   final AmbleTheme theme;
@@ -1252,18 +1254,34 @@ class _ZoneExternalEventRow extends StatelessWidget {
   /// toggles normally.
   final bool timeRangeVisible;
 
+  /// See [ZoneContainerBlock.startTimeOnlyVisible]. **2026-09-20 — now
+  /// also reaches event rows**, not just `_ZoneTaskRow`. Reported
+  /// directly: with `timeRangeVisible`'s own dev toggle back to its
+  /// default OFF, an imported event's start time stopped showing at all
+  /// — unlike a native task row, which was never actually dependent on
+  /// that toggle in the first place (`startTimeOnlyVisible` wins outright
+  /// over it there, and defaults true). This brings event rows to the
+  /// same real behavior task rows already had, rather than the two kinds
+  /// of row disagreeing about whether the "Show time" toggle can hide a
+  /// start time entirely.
+  final bool startTimeOnlyVisible;
+
   @override
   Widget build(BuildContext context) {
-    final startTime = TimeOfDay.fromDateTime(event.start);
-    final endTime = TimeOfDay.fromDateTime(event.end);
     final durationMinutes = event.end.difference(event.start).inMinutes;
-    final timeRange = timeRangeVisible
-        ? '${startTime.format(context)} - ${endTime.format(context)}'
-        : null;
-    final durationLabel = durationVisible
-        ? '(${formatDurationLabel(durationMinutes)})'
-        : null;
-    final timeLabel = [?timeRange, ?durationLabel].join(' ');
+    // Reuses the same helper `_ZoneTaskRow`/the unzoned task row already
+    // compute their own time label with — `scheduledAt`/`durationMinutes`
+    // are generic enough that this event's own start/duration slot in
+    // directly, rather than this row hand-rolling an equivalent
+    // computation that could silently drift from the task rows' own.
+    final timeLabel = zoneTaskTimeLabel(
+      context,
+      scheduledAt: event.start,
+      durationMinutes: durationMinutes,
+      timeRangeVisible: timeRangeVisible,
+      durationVisible: durationVisible,
+      startTimeOnlyVisible: startTimeOnlyVisible,
+    );
 
     return SizedBox(
       height: zoneContainerRowHeight,
@@ -1276,33 +1294,28 @@ class _ZoneExternalEventRow extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         child: Row(
           children: [
-            // Same flex: 2 / flex: 3 time/title split as _ZoneTaskRow, so
-            // the two row kinds visually line up in the merged list.
-            //
-            // Collapsed ENTIRELY when there's no time text — the column
-            // and its trailing gap both, mirroring `_ZoneTaskRow`'s own
-            // `if (timeLabel.isNotEmpty)` guard. Reported directly against
-            // a screenshot with time hidden: "3 different alignment for
-            // text... imported from other calendar (indent)." Without the
-            // guard the empty `Text` collapsed to zero width but the
-            // trailing `SizedBox(width: spacingSm)` survived, indenting
-            // the badge and title of every imported row by exactly 8px
-            // against the task rows beside them (measured: badge 24.0 vs
-            // 16.0, title 56.0 vs 48.0).
-            if (timeLabel.isNotEmpty) ...[
-              Flexible(
-                flex: 2,
-                child: Text(
-                  timeLabel,
-                  style: theme.textTaskTitleZone.copyWith(
-                    color: theme.colorTextSecondary,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+            // **2026-09-20 — now uses [ZoneRowTimeLabel], same as
+            // `_ZoneTaskRow`.** Reported directly: an imported event's
+            // time never got the same left-pulled treatment native
+            // tasks' own time labels do — this row rendered its time as
+            // ordinary in-flow text instead of escaping back to
+            // [zoneRowTimeLabelEdgeInset], so it visibly sat further
+            // right than a task row's time beside it. `leftPaddingToEscape`
+            // is the identical value `_ZoneTaskRow` uses (this row lives
+            // inside the same zone card), and the `SizedBox(height:
+            // theme.sizeTaskBadge)` wrapper matches that same fix's own
+            // vertical-alignment half — the label centers against the
+            // badge's height, not the row's full height.
+            if (timeLabel.isNotEmpty)
+              SizedBox(
+                height: theme.sizeTaskBadge,
+                child: ZoneRowTimeLabel(
+                  theme: theme,
+                  text: timeLabel,
+                  leftPaddingToEscape: zoneContentLeftInset + theme.spacingMd,
+                  reservedWidth: zoneRowTimeLabelReservedWidth,
                 ),
               ),
-              SizedBox(width: theme.spacingSm),
-            ],
             // The same dashed calendar badge Task view's own imported
             // events already show — requested directly: "on the zone view,
             // the imported items from calendar should be rendered in the

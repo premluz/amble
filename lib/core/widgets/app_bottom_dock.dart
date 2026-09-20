@@ -69,17 +69,17 @@ class AppBottomDock extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _DockPane(
+        AppDockPane(
           theme: theme,
           children: [
-            _DockIconButton(
+            AppDockIconButton(
               theme: theme,
               icon: Icons.view_agenda_outlined,
               tooltip: 'List',
               selected: activeView == AppBottomDockView.list,
               onTap: () => onSelectView(AppBottomDockView.list),
             ),
-            _DockIconButton(
+            AppDockIconButton(
               theme: theme,
               icon: Icons.view_timeline_outlined,
               tooltip: 'Timeline',
@@ -89,10 +89,10 @@ class AppBottomDock extends StatelessWidget {
           ],
         ),
         SizedBox(width: theme.spacingSm),
-        _DockPane(
+        AppDockPane(
           theme: theme,
           children: [
-            _DockIconButton(
+            AppDockIconButton(
               theme: theme,
               icon: Icons.edit_outlined,
               // "Edit Day", not bare "Edit" — `AppCalendarHeader`'s own
@@ -109,10 +109,10 @@ class AppBottomDock extends StatelessWidget {
           ],
         ),
         SizedBox(width: theme.spacingSm),
-        _DockPane(
+        AppDockPane(
           theme: theme,
           children: [
-            _DockIconButton(
+            AppDockIconButton(
               theme: theme,
               icon: Icons.favorite_border_rounded,
               tooltip: 'What Matters',
@@ -132,8 +132,16 @@ class AppBottomDock extends StatelessWidget {
 /// stadium shape). [AppBottomDock] renders three of these side by side
 /// rather than one pane holding all four buttons — see that widget's own
 /// doc comment for why.
-class _DockPane extends StatelessWidget {
-  const _DockPane({required this.theme, required this.children});
+///
+/// Promoted out of this file (2026-09-20, was private `_DockPane`) so
+/// other screens' own bottom docks can share the identical pane styling
+/// instead of each re-implementing it — the Tracked screen's own
+/// view-mode switcher (`AppTrackedViewDock`) was the second call site
+/// that prompted this, per docs/DECISIONS.md's "two duplicates accepted,
+/// three gets promoted" rule (promoted ahead of a third copy appearing,
+/// since the pattern was already about to be reused).
+class AppDockPane extends StatelessWidget {
+  const AppDockPane({super.key, required this.theme, required this.children});
 
   final AmbleTheme theme;
   final List<Widget> children;
@@ -159,8 +167,12 @@ class _DockPane extends StatelessWidget {
   }
 }
 
-class _DockIconButton extends StatelessWidget {
-  const _DockIconButton({
+/// One icon button inside an [AppDockPane] — ghost-variant circle, accent
+/// color when [selected]. Promoted alongside [AppDockPane] for the same
+/// reason — see that widget's own doc comment.
+class AppDockIconButton extends StatelessWidget {
+  const AppDockIconButton({
+    super.key,
     required this.theme,
     required this.icon,
     required this.tooltip,

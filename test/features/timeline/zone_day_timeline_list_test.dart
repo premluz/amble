@@ -430,6 +430,37 @@ void main() {
       expect(find.textContaining('Dentist'), findsOneWidget);
     });
 
+    // Reported directly: with `devTimeRangeVisible` at its real app
+    // default (false — "should be disabled as default"), an imported
+    // event's start time stopped showing at all in zone view. A native
+    // task row was never actually affected by that toggle in the first
+    // place — `devZoneTaskStartTimeVisible` (real app default: true)
+    // wins outright over it there. This pins that an event row now gets
+    // the same override, matching the app's own real default
+    // combination rather than this suite's own opted-out defaults.
+    testWidgets('an unzoned external event\'s start time still shows when '
+        'startTimeOnlyVisible wins over a false timeRangeVisible — '
+        'matching a real task row\'s own actual default behavior', (
+      tester,
+    ) async {
+      final event = ExternalCalendarEvent(
+        id: 'evt-2',
+        title: 'Standup',
+        start: DateTime(2026, 9, 2, 9, 30),
+        end: DateTime(2026, 9, 2, 10),
+        sourceCalendarId: 'cal-1',
+      );
+
+      await pump(
+        tester,
+        externalEvents: [event],
+        devTimeRangeVisible: false,
+        devZoneTaskStartTimeVisible: true,
+      );
+
+      expect(find.textContaining('9:30'), findsOneWidget);
+    });
+
     testWidgets(
       'independent of devDurationVisible — both, either, or neither can '
       'be on',
@@ -806,6 +837,91 @@ void main() {
         moreOrLessEquals(zoneLeft + theme.spacingMd, epsilon: 0.5),
       );
     });
+
+    // Reported directly: an imported event's time never got the same
+    // left-pulled treatment native tasks' own time labels do — it used
+    // to render as ordinary in-flow text instead of escaping back to
+    // `zoneRowTimeLabelEdgeInset` via `ZoneRowTimeLabel`, the same
+    // mechanism `_ZoneTaskRow`/the unzoned task row above already use.
+    testWidgets(
+      'an unzoned external event\'s time label escapes to the SAME x as '
+      'an unzoned task\'s time label — both use ZoneRowTimeLabel now',
+      (tester) async {
+        final task = Task.create(
+          title: 'A task',
+          scheduledAt: DateTime(2026, 9, 2, 9),
+          durationMinutes: 30,
+          categoryId: BuiltInCategoryIds.work,
+        );
+        final event = ExternalCalendarEvent(
+          id: 'e1',
+          title: 'Dentist',
+          start: DateTime(2026, 9, 2, 14),
+          end: DateTime(2026, 9, 2, 15),
+          sourceCalendarId: 'cal-1',
+        );
+
+        await pump(tester, tasks: [task], externalEvents: [event]);
+
+        final labelLefts = tester
+            .widgetList<ZoneRowTimeLabel>(find.byType(ZoneRowTimeLabel))
+            .map((w) => w.leftPaddingToEscape)
+            .toSet();
+
+        expect(
+          labelLefts,
+          hasLength(1),
+          reason:
+              'the task row and the event row must use the exact same '
+              'leftPaddingToEscape, or their labels would land at '
+              'different x positions despite both claiming to escape '
+              'to the same edge inset',
+        );
+      },
+    );
+
+    // Reported directly against a screenshot: an unzoned row's time text
+    // sat visibly off the badge's own vertical center. Root cause: this
+    // row's enclosing `Row` used to be `stretch`ed (to give
+    // `TaskCapsuleBlock` its full natural height, up to the completion
+    // checkbox's 48px tap target) — which also stretched the ZERO-WIDTH
+    // `ZoneRowTimeLabel` box to that same full height, centering the
+    // label within it. But the badge inside `TaskCapsuleBlock` is
+    // `topCenter`-anchored at `theme.sizeTaskBadge` from the row's own
+    // TOP, not centered in whatever the row's tallest sibling happens to
+    // be — the exact same "centers within the wrong box" failure already
+    // fixed once for the title text (see `TaskCapsuleBlock`'s own
+    // `textHeaderHeight` comment), never applied to this label.
+    testWidgets(
+      'an unzoned row\'s time label is vertically centered against the '
+      'BADGE\'s own height, not the whole (possibly taller) row',
+      (tester) async {
+        final task = Task.create(
+          title: 'Out of zone',
+          scheduledAt: DateTime(2026, 9, 2, 14),
+          durationMinutes: 30,
+          categoryId: BuiltInCategoryIds.work,
+        );
+
+        await pump(tester, tasks: [task]);
+
+        final theme = AmbleTheme.light;
+        final pillTop = tester.getTopLeft(find.byType(TaskCapsuleBlock)).dy;
+        final expectedLabelCenter = pillTop + theme.sizeTaskBadge / 2;
+
+        final labelRect = tester.getRect(find.byType(ZoneRowTimeLabel));
+
+        expect(
+          labelRect.center.dy,
+          moreOrLessEquals(expectedLabelCenter, epsilon: 1),
+          reason:
+              'the time label must center within a sizeTaskBadge-tall '
+              'region at the row\'s own top, matching the badge\'s own '
+              'anchor — not the row\'s full (possibly 48px, checkbox-'
+              'driven) stretched height',
+        );
+      },
+    );
   });
 
   // Requested directly: "add config in dev to hide zones that have no

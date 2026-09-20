@@ -91,6 +91,10 @@ void main() {
     (tester) async {
       await pumpList(tester, behaviors: [makeBehavior()]);
 
+      // All three dock buttons are always present now
+      // (`AppTrackedViewDock`) — this only confirms the button EXISTS;
+      // the weekday-initials assertions below are what actually confirm
+      // Weekly is the ACTIVE mode.
       expect(find.byTooltip('Weekly view'), findsOneWidget);
       // The weekly row's own weekday initials.
       expect(find.text('M'), findsOneWidget);
@@ -110,23 +114,28 @@ void main() {
     await tester.pump();
   }
 
+  // **2026-09-20 — no longer a single cycling button.** Requested
+  // directly: "add that bottom nav with 3 icons connected for changing
+  // views (and remove the top single icon)" — all three
+  // (`AppTrackedViewDock`) are always visible and tapped directly now,
+  // rather than one button cycling through the three in a fixed order.
   testWidgets(
-    'tapping the switcher cycles Weekly → Monthly → Six-monthly → Weekly',
+    'tapping each of the three dock buttons switches directly to that '
+    'view — Weekly, Monthly, Six-monthly all reachable in any order',
     (tester) async {
       await pumpList(tester, behaviors: [makeBehavior()]);
 
       expect(find.byTooltip('Weekly view'), findsOneWidget);
 
-      await tapSwitcher(tester, find.byTooltip('Weekly view'));
-      expect(find.byTooltip('Monthly view'), findsOneWidget);
+      await tapSwitcher(tester, find.byTooltip('Monthly view'));
       // The monthly grid shows numbered day cells, e.g. day 1.
       expect(find.text('1'), findsOneWidget);
 
-      await tapSwitcher(tester, find.byTooltip('Monthly view'));
-      expect(find.byTooltip('Six-month view'), findsOneWidget);
-
       await tapSwitcher(tester, find.byTooltip('Six-month view'));
-      expect(find.byTooltip('Weekly view'), findsOneWidget);
+
+      await tapSwitcher(tester, find.byTooltip('Weekly view'));
+      // Back to the weekly row's own weekday initials.
+      expect(find.text('M'), findsOneWidget);
     },
   );
 
@@ -136,15 +145,23 @@ void main() {
     (tester) async {
       await pumpList(tester, behaviors: [makeBehavior()]);
 
-      await tapSwitcher(tester, find.byTooltip('Weekly view'));
-      expect(find.byTooltip('Monthly view'), findsOneWidget);
+      // **2026-09-20** — all three tooltips are always present now
+      // (`AppTrackedViewDock`), so `find.byTooltip('Monthly view')`
+      // alone can no longer signal "Monthly is the ACTIVE view" the way
+      // it could with the old one-button cycle. The monthly grid's own
+      // numbered day cell ("1") is what actually only renders in that
+      // mode, so that's the real persistence signal here — `findsWidgets`
+      // (at least one), not `findsOneWidget`: a "1" can legitimately
+      // appear more than once in the grid (e.g. two visible months).
+      await tapSwitcher(tester, find.byTooltip('Monthly view'));
+      expect(find.text('1'), findsWidgets);
 
       // Rebuild the whole screen from scratch — the setting must still
       // read back as Monthly, proving it was actually persisted via
       // PreferencesRepository rather than held only in local widget
       // state.
       await pumpList(tester, behaviors: [makeBehavior()]);
-      expect(find.byTooltip('Monthly view'), findsOneWidget);
+      expect(find.text('1'), findsWidgets);
     },
   );
 

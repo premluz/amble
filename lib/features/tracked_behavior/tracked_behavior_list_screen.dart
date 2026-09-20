@@ -2,38 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
-import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_floating_create_button.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
 import '../../shared/models/tracked_behavior.dart';
-import '../../shared/models/tracked_behavior_view_mode.dart';
 import '../../shared/providers/preferences_providers.dart';
 import '../../shared/providers/tracked_behavior_providers.dart';
+import 'app_tracked_view_dock.dart';
 import 'tracked_behavior_form.dart';
 import 'tracked_behavior_row.dart';
-
-extension on TrackedBehaviorViewMode {
-  /// Weekly → Monthly → Six-monthly → Weekly — mirrors
-  /// `TimelineViewMode.next()`'s exact cycling shape, one global setting
-  /// for the whole screen (confirmed directly, over a per-card switcher).
-  TrackedBehaviorViewMode get next => switch (this) {
-    TrackedBehaviorViewMode.weekly => TrackedBehaviorViewMode.monthly,
-    TrackedBehaviorViewMode.monthly => TrackedBehaviorViewMode.sixMonthly,
-    TrackedBehaviorViewMode.sixMonthly => TrackedBehaviorViewMode.weekly,
-  };
-
-  IconData get icon => switch (this) {
-    TrackedBehaviorViewMode.weekly => Icons.view_week_outlined,
-    TrackedBehaviorViewMode.monthly => Icons.calendar_view_month_outlined,
-    TrackedBehaviorViewMode.sixMonthly => Icons.grid_view_rounded,
-  };
-
-  String get label => switch (this) {
-    TrackedBehaviorViewMode.weekly => 'Weekly view',
-    TrackedBehaviorViewMode.monthly => 'Monthly view',
-    TrackedBehaviorViewMode.sixMonthly => 'Six-month view',
-  };
-}
 
 /// The "Tracked" bottom-nav destination — every saved [TrackedBehavior],
 /// tap to edit, "+" to add.
@@ -77,46 +53,19 @@ class TrackedBehaviorListScreen extends ConsumerWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Same bump as the Inbox screen's identical header —
-                // requested directly, together. The view-cycle switcher
-                // moved up here (2026-09-12, "move to the top right
-                // functional icons like we do on timeline") from the old
-                // bottom extension bar's own `leading` slot, styled with
-                // the same subtle-outline circle `AppCalendarHeader`'s
-                // utility icons use rather than a plain `IconButton`.
-                Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    theme.spacingScreenPadding,
-                    theme.spacingLg,
-                    theme.spacingScreenPadding,
-                    theme.spacingMd,
-                  ),
-                  child: Row(
-                    children: [
-                      // **2026-09-20 — page title removed.** Requested
-                      // directly: "Inbox and Tracked no need page title
-                      // any more since tab shows it" — the top nav's own
-                      // "Tracked" tab label already names this screen.
-                      // Was `Expanded(child: Text('Tracked', style:
-                      // theme.textTitle))`; a bare `Spacer()` keeps the
-                      // view-cycle switcher pinned to the trailing edge
-                      // exactly as before, just with nothing filling the
-                      // leading space now.
-                      const Spacer(),
-                      AppButton(
-                        icon: viewMode.icon,
-                        shape: AppButtonShape.circle,
-                        variant: AppButtonVariant.secondary,
-                        tooltip: viewMode.label,
-                        onPressed: () => ref
-                            .read(
-                              trackedBehaviorViewModeSettingProvider.notifier,
-                            )
-                            .set(viewMode.next),
-                      ),
-                    ],
-                  ),
-                ),
+                // **2026-09-20 — the whole header row is gone.** Page
+                // title removed first ("Inbox and Tracked no need page
+                // title any more since tab shows it"), and the view-cycle
+                // switcher that used to sit alongside it moved to its own
+                // bottom dock (`AppTrackedViewDock`, alongside
+                // `AppFloatingCreateButton` below) — requested directly:
+                // "add that bottom nav with 3 icons connected for
+                // changing views (and remove the top single icon)."
+                // Nothing was left in this header once both pieces moved
+                // out, so the `Padding`/`Row` wrapper went with them; no
+                // replacement top clearance is needed — matches
+                // `inbox_screen.dart`'s own identical header removal,
+                // where the top nav shell above already provides it.
                 Expanded(
                   // Stack, so top/bottom fades overlay the list's own
                   // scrolling content directly — reversed back from an
@@ -192,10 +141,27 @@ class TrackedBehaviorListScreen extends ConsumerWidget {
             // Floating independently above the bottom nav pill now
             // (2026-09-12, matching every other screen's own
             // `AppFloatingCreateButton`), rather than sharing a bottom bar
-            // with the view-cycle switcher (which moved to the top-right
-            // header row above).
+            // with the view-cycle switcher.
             AppFloatingCreateButton(
               onPressed: () => showTrackedBehaviorForm(context),
+            ),
+            // The view-mode switcher's new home — bottom-left, matching
+            // `AppBottomDock`'s own placement on the Day screen exactly
+            // (`Positioned(left: spacingMd, bottom: spacingMd)` inside a
+            // top-false `SafeArea`), so both screens' floating docks sit
+            // at the identical spot.
+            Positioned(
+              left: theme.spacingMd,
+              bottom: theme.spacingMd,
+              child: SafeArea(
+                top: false,
+                child: AppTrackedViewDock(
+                  activeMode: viewMode,
+                  onSelectMode: (mode) => ref
+                      .read(trackedBehaviorViewModeSettingProvider.notifier)
+                      .set(mode),
+                ),
+              ),
             ),
           ],
         ),

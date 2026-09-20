@@ -82,17 +82,20 @@ class DevTimelineTaskDurationVisible extends _$DevTimelineTaskDurationVisible {
 /// (which matched List view's previous always-shown time range before
 /// this toggle existed).
 ///
-/// **Flipped back to ON as of 2026-09-20** (confirmed directly): reported
-/// as a real gap that an imported calendar event's own start time never
-/// showed in the merged Zone/List view — this toggle gates BOTH task rows
-/// and imported-event rows there, and defaulting it off meant every fresh
-/// session opened with times hidden across the whole view by default,
-/// which reads as a missing feature rather than a deliberate choice.
+/// **Briefly flipped to ON on 2026-09-20**, then reverted back to OFF the
+/// same day (confirmed directly — "should be disabled as default"). The
+/// actual gap that prompted the earlier flip — an imported calendar
+/// event's own start time never showing at all in Zone/List view — was a
+/// real bug, but the fix for it was alignment, not this toggle: imported
+/// events weren't sharing native tasks' own left-escaping
+/// [ZoneRowTimeLabel] position at all (see that fix's own entry). This
+/// toggle's default going back to OFF is unrelated to that fix and does
+/// not reopen it.
 @Riverpod(keepAlive: true)
 class DevTimelineTaskTimeRangeVisible
     extends _$DevTimelineTaskTimeRangeVisible {
   @override
-  bool build() => true;
+  bool build() => false;
 
   void set(bool value) => state = value;
 }

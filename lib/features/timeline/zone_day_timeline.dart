@@ -10,7 +10,6 @@ import '../../shared/models/external_calendar_event.dart';
 import '../../shared/models/task.dart';
 import '../../shared/models/zone.dart';
 import '../../shared/services/zone_containment.dart';
-import 'duration_label.dart';
 import 'external_event_block.dart' show showExternalCalendarEventInfo;
 import 'external_event_capsule_block.dart' show DashedPillRail;
 import 'task_capsule_block.dart';
@@ -375,7 +374,14 @@ class ZoneDayTimeline extends StatelessWidget {
                             startTimeOnlyVisible: devZoneTaskStartTimeVisible,
                           );
                           return Row(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            // `start`, not `stretch` — see the time
+                            // label's own comment just below for why.
+                            // `TaskCapsuleBlock` still gets its full
+                            // natural height inside its own `Expanded`
+                            // regardless of this row's cross-axis
+                            // alignment; only the LABEL needed to stop
+                            // stretching.
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               // Escapes back to the spatial Task view's own
                               // hour-label position via [ZoneRowTimeLabel] —
@@ -407,13 +413,40 @@ class ZoneDayTimeline extends StatelessWidget {
                               // shared x-origin this file's own alignment
                               // test pins. `_ZoneTaskRow` dropped its
                               // matching spacer for the same reason.
+                              // **2026-09-20 — vertical misalignment fix.**
+                              // Reported directly against a screenshot: an
+                              // unzoned row's time text sat visibly off
+                              // the badge's own vertical center. Root
+                              // cause: with the enclosing `Row` previously
+                              // `stretch`ed (to give `TaskCapsuleBlock`
+                              // its full natural height, up to the
+                              // completion checkbox's 48px tap target),
+                              // this zero-width label was ALSO stretched
+                              // to that same full height and centered
+                              // within it — but the badge inside
+                              // `TaskCapsuleBlock` is `topCenter`-anchored
+                              // at [theme.sizeTaskBadge] from the row's
+                              // TOP (see that widget's own hardened
+                              // `textHeaderHeight` comment on exactly this
+                              // "centers within the wrong box" failure
+                              // mode, previously fixed for the title
+                              // text but never applied here). Pinning
+                              // this label to a `sizeTaskBadge`-tall box
+                              // at the row's own top gives it the
+                              // identical vertical anchor the badge
+                              // itself uses, regardless of how tall the
+                              // row grows around it.
                               if (timeLabel.isNotEmpty)
-                                ZoneRowTimeLabel(
-                                  theme: theme,
-                                  text: timeLabel,
-                                  leftPaddingToEscape:
-                                      zoneContentLeftInset + theme.spacingMd,
-                                  reservedWidth: zoneRowTimeLabelReservedWidth,
+                                SizedBox(
+                                  height: theme.sizeTaskBadge,
+                                  child: ZoneRowTimeLabel(
+                                    theme: theme,
+                                    text: timeLabel,
+                                    leftPaddingToEscape:
+                                        zoneContentLeftInset + theme.spacingMd,
+                                    reservedWidth:
+                                        zoneRowTimeLabelReservedWidth,
+                                  ),
                                 ),
                               Expanded(
                                 child: TaskCapsuleBlock(
@@ -467,6 +500,7 @@ class ZoneDayTimeline extends StatelessWidget {
                     event: row,
                     durationVisible: devDurationVisible,
                     timeRangeVisible: devTimeRangeVisible,
+                    startTimeOnlyVisible: devZoneTaskStartTimeVisible,
                   ),
                 ),
                 _ => const SizedBox.shrink(),
@@ -511,6 +545,7 @@ class _UnzonedEventRow extends StatelessWidget {
     required this.event,
     this.durationVisible = true,
     this.timeRangeVisible = true,
+    this.startTimeOnlyVisible = false,
   });
 
   final AmbleTheme theme;
@@ -522,18 +557,25 @@ class _UnzonedEventRow extends StatelessWidget {
   /// also affect zone view."
   final bool timeRangeVisible;
 
+  /// See [ZoneDayTimeline.devZoneTaskStartTimeVisible]. **2026-09-20 —
+  /// now also reaches this row**, not just zoned/unzoned task rows —
+  /// see `_ZoneExternalEventRow`'s own matching doc comment for why.
+  final bool startTimeOnlyVisible;
+
   @override
   Widget build(BuildContext context) {
-    final startTime = TimeOfDay.fromDateTime(event.start);
-    final endTime = TimeOfDay.fromDateTime(event.end);
     final durationMinutes = event.end.difference(event.start).inMinutes;
-    final timeRange = timeRangeVisible
-        ? '${startTime.format(context)} - ${endTime.format(context)}'
-        : null;
-    final durationLabel = durationVisible
-        ? '(${formatDurationLabel(durationMinutes)})'
-        : null;
-    final timeLabel = [?timeRange, ?durationLabel].join(' ');
+    // Reuses the same helper the task rows already compute their own
+    // time label with — see `_ZoneExternalEventRow`'s own matching
+    // comment.
+    final timeLabel = zoneTaskTimeLabel(
+      context,
+      scheduledAt: event.start,
+      durationMinutes: durationMinutes,
+      timeRangeVisible: timeRangeVisible,
+      durationVisible: durationVisible,
+      startTimeOnlyVisible: startTimeOnlyVisible,
+    );
 
     return SizedBox(
       height: zoneContainerRowHeight,
@@ -546,27 +588,28 @@ class _UnzonedEventRow extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         child: Row(
           children: [
-            // Collapsed ENTIRELY when there's no time text — the column
-            // and its trailing gap both, mirroring `_ZoneTaskRow`'s and
-            // `_ZoneExternalEventRow`'s own guards. Without it the empty
-            // `Text` collapsed to zero width but the gap SURVIVED, and
-            // measured: this row's title sat at 64.0 against every other
-            // row kind's 72.0 — the same 8px `spacingSm` leak reported
-            // in-zone as "imported from other calendar (indent)."
-            if (timeLabel.isNotEmpty) ...[
-              Flexible(
-                flex: 2,
-                child: Text(
-                  timeLabel,
-                  style: theme.textTaskTitle.copyWith(
-                    color: theme.colorTextSecondary,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+            // **2026-09-20 — now uses [ZoneRowTimeLabel], same as the
+            // unzoned TASK row above and `_ZoneTaskRow`.** Reported
+            // directly: an imported event's time never got the same
+            // left-pulled treatment native tasks' own time labels do —
+            // this row rendered its time as ordinary in-flow text
+            // instead of escaping back to [zoneRowTimeLabelEdgeInset],
+            // so it visibly sat further right than a task row's time
+            // beside it. `leftPaddingToEscape` is the identical value
+            // the unzoned task row above uses (this row sits inside the
+            // same `Padding(left: spacingMd)` wrapper), and the
+            // `SizedBox(height: theme.sizeTaskBadge)` wrapper matches
+            // that same fix's own vertical-alignment half.
+            if (timeLabel.isNotEmpty)
+              SizedBox(
+                height: theme.sizeTaskBadge,
+                child: ZoneRowTimeLabel(
+                  theme: theme,
+                  text: timeLabel,
+                  leftPaddingToEscape: zoneContentLeftInset + theme.spacingMd,
+                  reservedWidth: zoneRowTimeLabelReservedWidth,
                 ),
               ),
-              SizedBox(width: theme.spacingSm),
-            ],
             // The same dashed calendar badge an IN-ZONE imported row
             // already shows (`_ZoneExternalEventRow`) — reported directly:
             // "standup is imported task but doesn't show icon with dotted

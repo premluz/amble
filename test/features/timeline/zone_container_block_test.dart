@@ -475,6 +475,29 @@ void main() {
         expect(find.text('Team sync'), findsOneWidget);
       },
     );
+
+    // Reported directly: with `timeRangeVisible`'s own dev toggle at its
+    // real app default (false — "should be disabled as default"), an
+    // imported event's start time stopped showing at all. A native task
+    // row was never actually dependent on that toggle in the first place
+    // — `startTimeOnlyVisible` (real app default: true) wins outright
+    // over it there. This pins that an event row now gets the identical
+    // override, matching the app's own real default combination.
+    testWidgets(
+      'an event row\'s start time still shows when startTimeOnlyVisible '
+      'wins over a false timeRangeVisible — matching a real task row\'s '
+      'own actual default behavior',
+      (tester) async {
+        await pump(
+          tester,
+          externalEvents: [event],
+          timeRangeVisible: false,
+          startTimeOnlyVisible: true,
+        );
+
+        expect(find.textContaining('10:00'), findsOneWidget);
+      },
+    );
   });
 
   testWidgets(
