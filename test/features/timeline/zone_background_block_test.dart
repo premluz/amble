@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
+import 'package:amble/features/timeline/edit_mode_wiggle.dart';
 import 'package:amble/features/timeline/task_capsule_block.dart';
 import 'package:amble/features/timeline/task_overlap_layout.dart';
 import 'package:amble/features/timeline/zone_background_block.dart';
@@ -511,6 +512,86 @@ void main() {
         // Same values the very first test in this file already pins for
         // the un-overridden case (07:00-08:00 against a 06:00 rangeStart).
         expect(band.top, 90.0);
+      },
+    );
+  });
+
+  // Requested directly: "wiggling is not anymore [a] pattern... any
+  // reference can be removed." A selected zone on the spatial Task view
+  // used to wiggle (`EditModeWiggle`); it now shows the same accent
+  // selection ring every other selected block in the app uses
+  // (`SelectedPillBorder`), matching `ZoneGridBlock`'s own treatment.
+  group('selection ring (2026-09-19)', () {
+    Future<void> pump(WidgetTester tester, {required bool editModeEnabled}) {
+      return tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
+          home: Scaffold(
+            body: SizedBox(
+              width: 400,
+              height: 400,
+              child: Stack(
+                children: [
+                  ZoneBackgroundBlock(
+                    theme: AmbleTheme.light,
+                    zone: zone,
+                    day: day,
+                    rangeStart: rangeStart,
+                    pixelsPerMinute: pixelsPerMinute,
+                    left: 56,
+                    width: 300,
+                    editModeEnabled: editModeEnabled,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('not selected: no accent ring, no wiggle widget at all', (
+      tester,
+    ) async {
+      await pump(tester, editModeEnabled: false);
+
+      expect(find.byType(EditModeWiggle), findsNothing);
+      final accentBorders = tester
+          .widgetList<DecoratedBox>(find.byType(DecoratedBox))
+          .map((w) => w.decoration)
+          .whereType<BoxDecoration>()
+          .where(
+            (d) => switch (d.border) {
+              Border(:final top) => top.color == AmbleTheme.light.colorAccent,
+              _ => false,
+            },
+          );
+      expect(accentBorders, isEmpty);
+    });
+
+    testWidgets(
+      'selected: shows the accent selection ring, still no wiggle widget',
+      (tester) async {
+        await pump(tester, editModeEnabled: true);
+
+        expect(find.byType(EditModeWiggle), findsNothing);
+        final accentBorders = tester
+            .widgetList<DecoratedBox>(find.byType(DecoratedBox))
+            .map((w) => w.decoration)
+            .whereType<BoxDecoration>()
+            .where(
+              (d) => switch (d.border) {
+                Border(:final top) => top.color == AmbleTheme.light.colorAccent,
+                _ => false,
+              },
+            );
+        expect(
+          accentBorders,
+          isNotEmpty,
+          reason:
+              'a selected zone must show the shared accent selection ring '
+              '(SelectedPillBorder), replacing the wiggle it used to show',
+        );
       },
     );
   });

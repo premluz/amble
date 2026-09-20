@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show OverflowBoxFit;
 
 import '../../core/dev_config.dart' show TimelineTaskTextLayout;
 import '../../core/tokens/semantic_theme.dart';
@@ -88,6 +89,7 @@ class TaskCapsuleBlock extends StatelessWidget {
     this.onResizeTopEnd,
     this.tagColorStyle = TagColorStyle.pill,
     this.onAddNote,
+    this.whatMattersFaded = false,
   });
 
   final Task task;
@@ -151,6 +153,19 @@ class TaskCapsuleBlock extends StatelessWidget {
   /// callback — it's already the exact same action the trailing checkbox
   /// performs.
   final VoidCallback? onAddNote;
+
+  /// Whether the "What Matters" lens is on AND this task's own
+  /// `isImportant` is false — the Spatial (Task) view's half of that
+  /// lens: reported directly on what the transition should be here ("on
+  /// spatial they just fade out," unlike the Zone/List view's own
+  /// fade-and-reflow, since a spatial pill sits at a fixed time-axis
+  /// position other pills must NOT shift to fill). Stays in the tree,
+  /// faded and non-interactive, rather than being removed outright, so
+  /// the fade is an actual animation rather than an instant disappearance.
+  /// Plain `bool`, not a Riverpod watch — same reasoning as
+  /// [editModeEnabled]; the caller resolves `whatMattersEnabled` and this
+  /// task's `isImportant` once and passes the combined flag down.
+  final bool whatMattersFaded;
 
   /// Whether this task is currently SELECTED (multi-task edit mode) —
   /// rendered as an accent ring on the pill's own coloured rail.
@@ -613,6 +628,53 @@ class TaskCapsuleBlock extends StatelessWidget {
           Opacity(
             // Step 0 of the entrance stagger — the pill leads.
             opacity: _staggeredOpacity(entranceProgress, 0),
+            // `OverflowBox` + `SizedBox(height: pillHeight)` — load-
+            // bearing, not decorative. Real bug, reported directly:
+            // "editing smallest existing task the bottom dot resize
+            // handle is completely outside and far." The outer Row is
+            // `IntrinsicHeight` + `stretch` (see `textHeaderHeight`'s own
+            // doc comment above for the identical problem already fixed
+            // on the TEXT column), so without escaping that stretch this
+            // Stack silently grew to the Row's tallest sibling — the
+            // trailing checkbox's fixed `spacingMinTapTarget` (48px), or
+            // more once `maxPillHeight` clamps a clustered task's
+            // `pillHeight` well below even that. The `AnimatedContainer`
+            // pill inside still painted at the correct small `pillHeight`
+            // (its own `alignment: topCenter` kept its TOP pinned, which
+            // is why only the BOTTOM handle visibly drifted away), but
+            // `Positioned(bottom: 0, ...)` on the resize handles was
+            // resolving against the STRETCHED Stack, not the pill's own
+            // true bottom edge.
+            //
+            // A bare `SizedBox(height: pillHeight)` alone does NOT fix
+            // this — confirmed the hard way (a widget test still measured
+            // the stretched height): `stretch` hands this subtree a TIGHT
+            // height constraint from the Row, and a plain `SizedBox`'s own
+            // `height` is only a preference within LOOSE constraints, not
+            // an override of an incoming TIGHT one. The same "child ends
+            // up stretched anyway" trap [textHeaderHeight]'s own doc
+            // comment already documents for the text column (see its
+            // "three combinators tried and measured wrong" note) — this
+            // needs the identical `OverflowBox(minHeight: 0, maxHeight:
+            // infinity)` escape hatch, which decouples this subtree from
+            // the Row's own imposed height entirely, before the fixed
+            // `SizedBox(height: pillHeight)` inside it can actually hold.
+            //
+            // `fit: OverflowBoxFit.deferToChild` — unlike
+            // `textHeaderHeight`'s Column (already inside a `Flexible`
+            // downstream, so the default `OverflowBoxFit.max` never
+            // mattered there), this `Opacity` is a bare `Row` child with
+            // no width constraint of its own, so the Row hands it an
+            // UNBOUNDED max width. `OverflowBoxFit.max` (the default)
+            // sizes the box itself to `constraints.biggest` — infinite
+            // here — confirmed via a real layout exception
+            // (`RenderConstrainedOverflowBox... given an infinite size`)
+            // the first time this was tried with the default fit, even
+            // with `minWidth`/`maxWidth` pinned on the CHILD's own
+            // constraints. `deferToChild` sizes the box to its child's
+            // actual size instead, which is exactly what a fixed-width
+            // `SizedBox(height: pillHeight)` child needs here.
+            //
             // Wrapped in a Stack (a genuinely NEW, always-present
             // ancestor, not a conditional swap) so the resize handle can
             // overlay the pill's bottom edge as a SIBLING of the move-drag
@@ -622,158 +684,204 @@ class TaskCapsuleBlock extends StatelessWidget {
             // both vertical-drag recognizers in the same gesture arena,
             // and a drag starting on the handle also fired the pill's own
             // onDragStart. Siblings never share an arena the same way.
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                GestureDetector(
-                  onTap: onTap,
-                  onLongPress: onLongPress,
-                  onVerticalDragStart: onDragStart,
-                  onVerticalDragUpdate: onDragUpdate,
-                  onVerticalDragEnd: onDragEnd,
-                  behavior: HitTestBehavior.opaque,
-                  // Animated so a duration change GROWS or shrinks the pill
-                  // into its new height instead of snapping — requested
-                  // directly ("extends pill (change duration case) so user can
-                  // see it happening"). No state plumbing needed: the height
-                  // already derives from the task's own duration, so animating
-                  // this container covers every path that can change it (the
-                  // edit modal, a cascade reschedule, anything future).
-                  child: AnimatedContainer(
-                    // motionSlow, matching the entrance stagger's own pace:
-                    // both are "watch this happen" beats rather than responses
-                    // to a gesture, and at motionNormal the resize was over
-                    // almost as soon as it started (reported directly).
-                    //
-                    // Zero while a resize drag is live, though — see
-                    // [isResizing]. Under a finger the pill has to track the
-                    // gesture exactly; the "watch this happen" pacing above is
-                    // for duration changes the user did NOT drag out.
-                    duration: isResizing ? Duration.zero : theme.motionSlow,
-                    curve: theme.curveStandard,
-                    width: badgeSize,
-                    height: pillHeight,
-                    alignment: Alignment.topCenter,
-                    // Flush with the pill's own top edge — nudged up a
-                    // further 2px per direct feedback (second alignment
-                    // pass): spacingXs/2 (2px) still read as slightly low
-                    // next to the title.
-                    padding: EdgeInsets.zero,
-                    // theme.radiusPill — the ACTIVE rung of the "Pill
-                    // shape" setting (small/rounded/full), not
-                    // radiusTaskPill (always fully round, used by
-                    // AppButton/the theme selector/the tracked-behavior
-                    // form, none of which this setting should touch —
-                    // confirmed via AskUserQuestion as the wrong scope for
-                    // those). Was hardcoded to radiusSm (4px) before this
-                    // setting existed; requested directly ("we have squary
-                    // rounded shape of pills but rounded on inbox ... this
-                    // should affect globally").
-                    //
-                    // Selection reads as a two-ring border on the rail —
-                    // requested directly, replacing the wiggle that used to
-                    // signal it, then refined again: a single accent ring
-                    // disappeared against a pill that happened to already be
-                    // blue, so a thin dark separator ring now sits between
-                    // the accent ring and the fill, regardless of the pill's
-                    // own color. See [SelectedPillBorder]'s own doc comment.
-                    // Unselected keeps the exact same box (color, radius, no
-                    // border) as before this feature existed at all.
-                    // Unselected paints the fill here and nothing else.
-                    // SELECTED paints nothing here at all — the whole
-                    // two-ring treatment (accent ring, dark separator,
-                    // fill) is delegated to `SelectedPillBorder` on the
-                    // child below, so there is exactly ONE implementation
-                    // of that shape in the codebase.
-                    //
-                    // This used to hand-nest its own copy of those rings,
-                    // and the copy had a real bug the shared widget does
-                    // not: it set `color:` AND `border:` in a SINGLE
-                    // `BoxDecoration`, and Flutter paints a decoration's
-                    // fill across the FULL box — including underneath the
-                    // border stroke. `colorScrim` is 40% alpha (measured),
-                    // so the pill fill showed THROUGH the separator ring
-                    // and blended it into a soft, half-lit extra ring.
-                    // Reported directly, twice: "we still have one more
-                    // inner dark softer/transparent something."
-                    decoration: isSelected
-                        ? const BoxDecoration()
-                        : BoxDecoration(
-                            color: badgeColor,
-                            borderRadius: BorderRadius.circular(
-                              theme.radiusPill,
-                            ),
-                          ),
-                    // Deliberately NOT faded while lifted — corrected
-                    // directly after a first pass hid it: this glyph is the
-                    // pill's identity and stays visible the whole time,
-                    // including mid-drag. Also stays visible for
-                    // `contentHidden` (a resting cluster member) — reversing
-                    // an earlier decision that faded it there too, per direct
-                    // feedback: the cluster's own row list has no icon of its
-                    // own (see `OverlapClusterBlock`'s doc comment), so the
-                    // pill is the only place a clustered task's category
-                    // reads at all. Only the title/time text and checkbox
-                    // still fade for `contentHidden` (see the row further
-                    // down) — those genuinely duplicate the cluster's own row
-                    // list, but the emoji does not.
-                    //
-                    // Tabler icon (`categoryVisual.icon`) where one
-                    // resolves — matches the same glyph now shown on the
-                    // category picker's chips during create/edit (see
-                    // `CategoryGlyph`'s own doc comment). Falls back to the
-                    // legacy `.emoji` text only for a pre-migration task
-                    // with no live `Category` row to read an icon from.
-                    // Unlike the emoji this replaces, a monochrome Tabler
-                    // icon carries no color of its own, so it's tinted via
-                    // `glyphColorOn(categoryVisual.pillColor)` rather than
-                    // `categoryVisual.iconColor` directly — a CUSTOM
-                    // category's `iconColor` is the exact same swatch as
-                    // its `pillColor` (see `resolveCategoryVisual`'s own
-                    // doc comment), which would make the icon invisible
-                    // against its own background; `glyphColorOn` picks
-                    // white/black by contrast instead, for both the
-                    // built-in and custom case alike.
-                    // `glyphHidden` (the drag ghost) is the ONE case that also
-                    // drops the glyph — see its own doc comment.
-                    //
-                    // The glyph itself is wrapped in the dark separator
-                    // ring + fill (see [SelectedPillBorder]'s doc comment)
-                    // only while selected, inset by the accent border's own
-                    // width so the two rings stay concentric. Unselected,
-                    // `badgeColor` already lives on the outer decoration
-                    // above and this whole inner wrapper is skipped — the
-                    // child is the bare emoji, same three widgets
-                    // (`Opacity` -> `Text`) as before this feature existed,
-                    // not extra empty layers left in the tree for a case
-                    // that needs none of them.
-                    child: isSelected
-                        ? SizedBox.expand(
-                            // `AnimatedContainer`'s own `alignment:
-                            // topCenter` wraps ITS child in an `Align`,
-                            // which lets that child shrink-wrap to its
-                            // natural size instead of filling the box —
-                            // without forcing this layer to expand, the
-                            // rings below would hug just the emoji's own
-                            // tiny bounds rather than the full pill.
-                            child: SelectedPillBorder(
-                              theme: theme,
-                              contentRadius: BorderRadius.circular(
-                                theme.radiusPill,
+            child: OverflowBox(
+              alignment: Alignment.topCenter,
+              minHeight: 0,
+              maxHeight: double.infinity,
+              fit: OverflowBoxFit.deferToChild,
+              child: SizedBox(
+                height: pillHeight,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    GestureDetector(
+                      onTap: onTap,
+                      onLongPress: onLongPress,
+                      onVerticalDragStart: onDragStart,
+                      onVerticalDragUpdate: onDragUpdate,
+                      onVerticalDragEnd: onDragEnd,
+                      behavior: HitTestBehavior.opaque,
+                      // Animated so a duration change GROWS or shrinks the pill
+                      // into its new height instead of snapping — requested
+                      // directly ("extends pill (change duration case) so user can
+                      // see it happening"). No state plumbing needed: the height
+                      // already derives from the task's own duration, so animating
+                      // this container covers every path that can change it (the
+                      // edit modal, a cascade reschedule, anything future).
+                      child: AnimatedContainer(
+                        // motionSlow, matching the entrance stagger's own pace:
+                        // both are "watch this happen" beats rather than responses
+                        // to a gesture, and at motionNormal the resize was over
+                        // almost as soon as it started (reported directly).
+                        //
+                        // Zero while a resize drag is live, though — see
+                        // [isResizing]. Under a finger the pill has to track the
+                        // gesture exactly; the "watch this happen" pacing above is
+                        // for duration changes the user did NOT drag out.
+                        duration: isResizing ? Duration.zero : theme.motionSlow,
+                        curve: theme.curveStandard,
+                        width: badgeSize,
+                        height: pillHeight,
+                        alignment: Alignment.topCenter,
+                        // Flush with the pill's own top edge — nudged up a
+                        // further 2px per direct feedback (second alignment
+                        // pass): spacingXs/2 (2px) still read as slightly low
+                        // next to the title.
+                        padding: EdgeInsets.zero,
+                        // theme.radiusPill — the ACTIVE rung of the "Pill
+                        // shape" setting (small/rounded/full), not
+                        // radiusTaskPill (always fully round, used by
+                        // AppButton/the theme selector/the tracked-behavior
+                        // form, none of which this setting should touch —
+                        // confirmed via AskUserQuestion as the wrong scope for
+                        // those). Was hardcoded to radiusSm (4px) before this
+                        // setting existed; requested directly ("we have squary
+                        // rounded shape of pills but rounded on inbox ... this
+                        // should affect globally").
+                        //
+                        // Selection reads as a two-ring border on the rail —
+                        // requested directly, replacing the wiggle that used to
+                        // signal it, then refined again: a single accent ring
+                        // disappeared against a pill that happened to already be
+                        // blue, so a thin dark separator ring now sits between
+                        // the accent ring and the fill, regardless of the pill's
+                        // own color. See [SelectedPillBorder]'s own doc comment.
+                        // Unselected keeps the exact same box (color, radius, no
+                        // border) as before this feature existed at all.
+                        // Unselected paints the fill here and nothing else.
+                        // SELECTED paints nothing here at all — the whole
+                        // two-ring treatment (accent ring, dark separator,
+                        // fill) is delegated to `SelectedPillBorder` on the
+                        // child below, so there is exactly ONE implementation
+                        // of that shape in the codebase.
+                        //
+                        // This used to hand-nest its own copy of those rings,
+                        // and the copy had a real bug the shared widget does
+                        // not: it set `color:` AND `border:` in a SINGLE
+                        // `BoxDecoration`, and Flutter paints a decoration's
+                        // fill across the FULL box — including underneath the
+                        // border stroke. `colorScrim` is 40% alpha (measured),
+                        // so the pill fill showed THROUGH the separator ring
+                        // and blended it into a soft, half-lit extra ring.
+                        // Reported directly, twice: "we still have one more
+                        // inner dark softer/transparent something."
+                        decoration: isSelected
+                            ? const BoxDecoration()
+                            : BoxDecoration(
+                                color: badgeColor,
+                                borderRadius: BorderRadius.circular(
+                                  theme.radiusPill,
+                                ),
                               ),
-                              fillColor: badgeColor,
-                              child: Align(
-                                alignment: Alignment.topCenter,
-                                // Fixed badgeSize square, glyph CENTERED
-                                // inside it — not just top-aligned in
-                                // whatever space Align gives it. An emoji
-                                // Text happened to read as centered here
-                                // by coincidence (its own font
-                                // ascent/leading roughly matched); a
-                                // Tabler Icon's tight glyph bounds sat
-                                // flush to the very top instead, reported
-                                // directly as needing "new alignments...
-                                // lacks padding."
+                        // Deliberately NOT faded while lifted — corrected
+                        // directly after a first pass hid it: this glyph is the
+                        // pill's identity and stays visible the whole time,
+                        // including mid-drag. Also stays visible for
+                        // `contentHidden` (a resting cluster member) — reversing
+                        // an earlier decision that faded it there too, per direct
+                        // feedback: the cluster's own row list has no icon of its
+                        // own (see `OverlapClusterBlock`'s doc comment), so the
+                        // pill is the only place a clustered task's category
+                        // reads at all. Only the title/time text and checkbox
+                        // still fade for `contentHidden` (see the row further
+                        // down) — those genuinely duplicate the cluster's own row
+                        // list, but the emoji does not.
+                        //
+                        // Tabler icon (`categoryVisual.icon`) where one
+                        // resolves — matches the same glyph now shown on the
+                        // category picker's chips during create/edit (see
+                        // `CategoryGlyph`'s own doc comment). Falls back to the
+                        // legacy `.emoji` text only for a pre-migration task
+                        // with no live `Category` row to read an icon from.
+                        // Unlike the emoji this replaces, a monochrome Tabler
+                        // icon carries no color of its own, so it's tinted via
+                        // `glyphColorOn(categoryVisual.pillColor)` rather than
+                        // `categoryVisual.iconColor` directly — a CUSTOM
+                        // category's `iconColor` is the exact same swatch as
+                        // its `pillColor` (see `resolveCategoryVisual`'s own
+                        // doc comment), which would make the icon invisible
+                        // against its own background; `glyphColorOn` picks
+                        // white/black by contrast instead, for both the
+                        // built-in and custom case alike.
+                        // `glyphHidden` (the drag ghost) is the ONE case that also
+                        // drops the glyph — see its own doc comment.
+                        //
+                        // The glyph itself is wrapped in the dark separator
+                        // ring + fill (see [SelectedPillBorder]'s doc comment)
+                        // only while selected, inset by the accent border's own
+                        // width so the two rings stay concentric. Unselected,
+                        // `badgeColor` already lives on the outer decoration
+                        // above and this whole inner wrapper is skipped — the
+                        // child is the bare emoji, same three widgets
+                        // (`Opacity` -> `Text`) as before this feature existed,
+                        // not extra empty layers left in the tree for a case
+                        // that needs none of them.
+                        child: isSelected
+                            ? SizedBox.expand(
+                                // `AnimatedContainer`'s own `alignment:
+                                // topCenter` wraps ITS child in an `Align`,
+                                // which lets that child shrink-wrap to its
+                                // natural size instead of filling the box —
+                                // without forcing this layer to expand, the
+                                // rings below would hug just the emoji's own
+                                // tiny bounds rather than the full pill.
+                                child: SelectedPillBorder(
+                                  theme: theme,
+                                  contentRadius: BorderRadius.circular(
+                                    theme.radiusPill,
+                                  ),
+                                  fillColor: badgeColor,
+                                  child: Align(
+                                    alignment: Alignment.topCenter,
+                                    // Fixed badgeSize square, glyph CENTERED
+                                    // inside it — not just top-aligned in
+                                    // whatever space Align gives it. An emoji
+                                    // Text happened to read as centered here
+                                    // by coincidence (its own font
+                                    // ascent/leading roughly matched); a
+                                    // Tabler Icon's tight glyph bounds sat
+                                    // flush to the very top instead, reported
+                                    // directly as needing "new alignments...
+                                    // lacks padding."
+                                    //
+                                    // The SizedBox here is load-bearing, not
+                                    // decorative — real bug, reported directly:
+                                    // "when task selected on timeline (not in
+                                    // edit mode) the icon gets in the middle,
+                                    // should stay on top." `_PillGlyph` itself
+                                    // wraps its content in a bare `Center` with
+                                    // no size of its own (see its own build
+                                    // method), so without a tight box here it
+                                    // grew to fill `Align`'s full available
+                                    // height (this whole pill, via the
+                                    // `SizedBox.expand` above) and centered
+                                    // within THAT — not within a badgeSize
+                                    // square the way the unselected branch
+                                    // below already does correctly.
+                                    child: SizedBox(
+                                      width: badgeSize,
+                                      height: badgeSize,
+                                      child: _PillGlyph(
+                                        categoryVisual: categoryVisual,
+                                        badgeSize: badgeSize,
+                                        railColor: categoryColor,
+                                        iconOnlyBadgeColor: iconOnlyBadgeColor,
+                                        hidden: glyphHidden,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              )
+                            // Same fixed badgeSize-square + Center fix as the
+                            // selected branch above — this AnimatedContainer's
+                            // own `alignment: topCenter` (set higher up) only
+                            // pins the child to the top of the WHOLE pill
+                            // height, not a centered badgeSize square, which
+                            // is what left a Tabler Icon looking flush to the
+                            // top edge instead of centered in its badge.
+                            : SizedBox(
+                                width: badgeSize,
+                                height: badgeSize,
                                 child: _PillGlyph(
                                   categoryVisual: categoryVisual,
                                   badgeSize: badgeSize,
@@ -782,101 +890,83 @@ class TaskCapsuleBlock extends StatelessWidget {
                                   hidden: glyphHidden,
                                 ),
                               ),
-                            ),
-                          )
-                        // Same fixed badgeSize-square + Center fix as the
-                        // selected branch above — this AnimatedContainer's
-                        // own `alignment: topCenter` (set higher up) only
-                        // pins the child to the top of the WHOLE pill
-                        // height, not a centered badgeSize square, which
-                        // is what left a Tabler Icon looking flush to the
-                        // top edge instead of centered in its badge.
-                        : SizedBox(
-                            width: badgeSize,
-                            height: badgeSize,
-                            child: _PillGlyph(
-                              categoryVisual: categoryVisual,
-                              badgeSize: badgeSize,
-                              railColor: categoryColor,
-                              iconOnlyBadgeColor: iconOnlyBadgeColor,
-                              hidden: glyphHidden,
-                            ),
+                      ),
+                    ),
+                    // The resize handle — visible only in Edit Mode, and only
+                    // when the caller actually wired resize callbacks (both
+                    // conditions must hold; see [onResizeStart]'s own doc
+                    // comment for why null callbacks mean "not resizable
+                    // here"). A small dedicated hit target at the pill's own
+                    // bottom edge — deliberately NOT the whole pill (that's
+                    // the move-drag's territory) and a genuine SIBLING of the
+                    // pill's GestureDetector above (both are direct children
+                    // of this Stack), never nested inside it — see the doc
+                    // comment on the outer Opacity/Stack wrap for the bug that
+                    // ordering fixes.
+                    // **2026-09-12 — bigger resize targets.** Requested
+                    // directly: "handle hit/active area should be larger
+                    // outward... we need affordance for all resize and move 3
+                    // different interactive hotspots... and sides also
+                    // difficult to catch." Genuinely-outward growth turned
+                    // out to be impossible (a box past the pill's bounds
+                    // paints but never hit-tests — see
+                    // `taskResizeHandleHeightFor` for the probe), so each
+                    // handle grows INWARD from its edge while its visible bar
+                    // stays pinned to that edge via `barAlignment`. Flush at
+                    // the edge now (was `-spacingXs`), since an overhanging
+                    // strip was dead area that only looked grabbable.
+                    // `isSelected`, not just `editModeEnabled` — corrected
+                    // directly: "edit mode tasks shows handles for resize
+                    // without selecting, that's another thing to change
+                    // actually, should only show after tapping/selecting
+                    // task." Every task in Edit Mode showed resize handles
+                    // regardless of selection, while the selection BORDER
+                    // already required `isSelected` — the two were
+                    // decoupled. Handles now gate on the same condition the
+                    // border does, so a task reads as "editable right now"
+                    // consistently: no border, no handles until selected.
+                    if (editModeEnabled && isSelected && onResizeTopEnd != null)
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        child: ResizeHandle(
+                          theme: theme,
+                          height: taskResizeHandleHeightFor(
+                            theme: theme,
+                            blockHeight: pillHeight,
                           ),
-                  ),
+                          barAlignment: Alignment.topCenter,
+                          // Back to the plain `1.0` default (no override) now
+                          // that the frosted wrapper no longer clips at rest
+                          // — see the `clipBehavior` comment on that wrapper.
+                          // This used to be a `0.5` compromise, which was the
+                          // most that stayed VISIBLE under that clip.
+                          onDragStart: onResizeTopStart,
+                          onDragUpdate: onResizeTopUpdate,
+                          onDragEnd: onResizeTopEnd,
+                        ),
+                      ),
+                    if (editModeEnabled && isSelected && onResizeEnd != null)
+                      Positioned(
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        child: ResizeHandle(
+                          theme: theme,
+                          height: taskResizeHandleHeightFor(
+                            theme: theme,
+                            blockHeight: pillHeight,
+                          ),
+                          barAlignment: Alignment.bottomCenter,
+                          onDragStart: onResizeStart,
+                          onDragUpdate: onResizeUpdate,
+                          onDragEnd: onResizeEnd,
+                        ),
+                      ),
+                  ],
                 ),
-                // The resize handle — visible only in Edit Mode, and only
-                // when the caller actually wired resize callbacks (both
-                // conditions must hold; see [onResizeStart]'s own doc
-                // comment for why null callbacks mean "not resizable
-                // here"). A small dedicated hit target at the pill's own
-                // bottom edge — deliberately NOT the whole pill (that's
-                // the move-drag's territory) and a genuine SIBLING of the
-                // pill's GestureDetector above (both are direct children
-                // of this Stack), never nested inside it — see the doc
-                // comment on the outer Opacity/Stack wrap for the bug that
-                // ordering fixes.
-                // **2026-09-12 — bigger resize targets.** Requested
-                // directly: "handle hit/active area should be larger
-                // outward... we need affordance for all resize and move 3
-                // different interactive hotspots... and sides also
-                // difficult to catch." Genuinely-outward growth turned
-                // out to be impossible (a box past the pill's bounds
-                // paints but never hit-tests — see
-                // `taskResizeHandleHeightFor` for the probe), so each
-                // handle grows INWARD from its edge while its visible bar
-                // stays pinned to that edge via `barAlignment`. Flush at
-                // the edge now (was `-spacingXs`), since an overhanging
-                // strip was dead area that only looked grabbable.
-                // `isSelected`, not just `editModeEnabled` — corrected
-                // directly: "edit mode tasks shows handles for resize
-                // without selecting, that's another thing to change
-                // actually, should only show after tapping/selecting
-                // task." Every task in Edit Mode showed resize handles
-                // regardless of selection, while the selection BORDER
-                // already required `isSelected` — the two were
-                // decoupled. Handles now gate on the same condition the
-                // border does, so a task reads as "editable right now"
-                // consistently: no border, no handles until selected.
-                if (editModeEnabled && isSelected && onResizeTopEnd != null)
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    child: ResizeHandle(
-                      theme: theme,
-                      height: taskResizeHandleHeightFor(
-                        theme: theme,
-                        blockHeight: pillHeight,
-                      ),
-                      barAlignment: Alignment.topCenter,
-                      // Back to the plain `1.0` default (no override) now
-                      // that the frosted wrapper no longer clips at rest
-                      // — see the `clipBehavior` comment on that wrapper.
-                      // This used to be a `0.5` compromise, which was the
-                      // most that stayed VISIBLE under that clip.
-                      onDragStart: onResizeTopStart,
-                      onDragUpdate: onResizeTopUpdate,
-                      onDragEnd: onResizeTopEnd,
-                    ),
-                  ),
-                if (editModeEnabled && isSelected && onResizeEnd != null)
-                  Positioned(
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    child: ResizeHandle(
-                      theme: theme,
-                      height: taskResizeHandleHeightFor(
-                        theme: theme,
-                        blockHeight: pillHeight,
-                      ),
-                      barAlignment: Alignment.bottomCenter,
-                      onDragStart: onResizeStart,
-                      onDragUpdate: onResizeUpdate,
-                      onDragEnd: onResizeEnd,
-                    ),
-                  ),
-              ],
+              ),
             ),
           ),
           // Zero-width in split layout, where the whole row is exactly one
@@ -1291,7 +1381,7 @@ class TaskCapsuleBlock extends StatelessWidget {
     // exact action the trailing checkbox already performs); swipe-right
     // is the new onAddNote callback.
     final editActive = editModeEnabled;
-    return AppSwipeActions(
+    final swiped = AppSwipeActions(
       startAction: (editActive || onAddNote == null)
           ? null
           : AppSwipeAction(
@@ -1303,9 +1393,7 @@ class TaskCapsuleBlock extends StatelessWidget {
       endAction: (editActive || onToggleComplete == null)
           ? null
           : AppSwipeAction(
-              icon: isCompleted
-                  ? Icons.replay_rounded
-                  : Icons.check_rounded,
+              icon: isCompleted ? Icons.replay_rounded : Icons.check_rounded,
               background: isCompleted
                   ? theme.colorTextSecondary
                   : theme.colorAccent,
@@ -1313,6 +1401,20 @@ class TaskCapsuleBlock extends StatelessWidget {
               onActivate: onToggleComplete!,
             ),
       child: wrapped,
+    );
+    // What Matters, Spatial half: fade only, in place — no reflow, unlike
+    // the Zone/List view's own fade-and-collapse (see this field's own
+    // doc comment for why). `IgnorePointer` while faded so a mid-
+    // transition or fully-faded pill can't still be tapped/dragged/
+    // swiped.
+    return IgnorePointer(
+      ignoring: whatMattersFaded,
+      child: AnimatedOpacity(
+        opacity: whatMattersFaded ? 0.0 : 1.0,
+        duration: theme.motionNormal,
+        curve: theme.curveStandard,
+        child: swiped,
+      ),
     );
   }
 

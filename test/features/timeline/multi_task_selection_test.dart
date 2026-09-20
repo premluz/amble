@@ -7,20 +7,25 @@ import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/timeline/edit_mode_provider.dart';
 import 'package:amble/features/timeline/edit_selection_provider.dart';
+import 'package:amble/features/timeline/pending_task_draft_provider.dart';
+import 'package:amble/features/timeline/task_capsule_block.dart';
 import 'package:amble/features/timeline/timeline_screen.dart';
 import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/models/task.dart';
+import 'package:amble/shared/models/task_template.dart';
 import 'package:amble/shared/models/tracked_behavior.dart';
 import 'package:amble/shared/models/zone.dart';
 import 'package:amble/shared/providers/category_providers.dart';
 import 'package:amble/shared/providers/notification_providers.dart';
 import 'package:amble/shared/providers/preferences_providers.dart';
 import 'package:amble/shared/providers/task_providers.dart';
+import 'package:amble/shared/providers/task_template_providers.dart';
 import 'package:amble/shared/providers/tracked_behavior_providers.dart';
 import 'package:amble/shared/providers/zone_providers.dart';
 import 'package:amble/shared/repositories/hive_category_repository.dart';
 import 'package:amble/shared/repositories/hive_preferences_repository.dart';
 import 'package:amble/shared/repositories/hive_task_repository.dart';
+import 'package:amble/shared/repositories/hive_task_template_repository.dart';
 import 'package:amble/shared/repositories/hive_tracked_behavior_repository.dart';
 import 'package:amble/shared/repositories/hive_zone_repository.dart';
 
@@ -46,6 +51,11 @@ void main() {
   late Box<Zone> zoneBox;
   late Box<TrackedBehavior> trackedBehaviorBox;
   late Box<dynamic> preferencesBox;
+  // Only ever touched once a quick-create draft actually mounts
+  // (`QuickCreateOverlay` -> `TemplateChipStrip` reads it) — added
+  // alongside the "tapping empty space still starts a draft as normal"
+  // sanity check below, the first test in this file to render that far.
+  late Box<TaskTemplate> templateBox;
   late ProviderContainer? capturedContainer;
 
   setUp(() async {
@@ -61,6 +71,7 @@ void main() {
       'test_tracked_behaviors_$suffix',
     );
     preferencesBox = await Hive.openBox<dynamic>('test_preferences_$suffix');
+    templateBox = await Hive.openBox<TaskTemplate>('test_templates_$suffix');
     capturedContainer = null;
   });
 
@@ -70,6 +81,7 @@ void main() {
     await zoneBox.close();
     await trackedBehaviorBox.close();
     await preferencesBox.close();
+    await templateBox.close();
   });
 
   Future<void> pumpTimeline(
@@ -108,6 +120,9 @@ void main() {
           ),
           notificationServiceProvider.overrideWithValue(
             FakeNotificationService(),
+          ),
+          taskTemplateRepositoryProvider.overrideWithValue(
+            HiveTaskTemplateRepository(templateBox),
           ),
           // Fixed initial values, not a post-frame toggle from inside the
           // widget tree — driving `.toggle()`/`.set()` from a Consumer's
@@ -210,6 +225,201 @@ void main() {
     expect(capturedContainer!.read(editSelectionProvider), isEmpty);
   });
 
+  /// Locates a task's own PILL — the only thing carrying the move/sweep
+  /// drag detector. Split layout puts the pill and the title/time row as
+  /// SIBLINGS, so dragging from the title text hits no drag handler at
+  /// all (confirmed the hard way: every sweep assertion read an empty
+  /// selection until this finder replaced `find.text`). Same helper
+  /// `multi_task_group_move_test.dart` already uses for its own drags.
+  Finder pillFor(String title) => find.byWidgetPredicate(
+    (widget) => widget is TaskCapsuleBlock && widget.task.title == title,
+  );
+
+  // Requested directly: "let's use multi select on tasks also... with
+  // selector zone and sweeping tap and drag on task." A drag beginning on
+  // an UNSELECTED task sweeps every task the finger crosses into the
+  // selection; a drag beginning on an already-SELECTED one keeps its
+  // existing group move-to-reschedule meaning (both confirmed via
+  // AskUserQuestion).
+  group('drag-to-multi-select sweep (2026-09-20)', () {
+    testWidgets(
+      'dragging from an UNSELECTED task across a neighbour selects BOTH, '
+      'not just the one the drag started on',
+      (tester) async {
+        final a = makeTask('Focus block', hour: 9);
+        final b = makeTask('Standup', hour: 10);
+        await pumpTimeline(tester, tasks: [a, b]);
+        expect(capturedContainer!.read(editSelectionProvider), isEmpty);
+
+        final gesture = await tester.startGesture(
+          tester.getCenter(pillFor('Focus block')),
+        );
+        await tester.pump();
+        await gesture.moveTo(tester.getCenter(pillFor('Standup')));
+        await tester.pump();
+        await gesture.up();
+        await tester.pump();
+
+        expect(capturedContainer!.read(editSelectionProvider), {a.id, b.id});
+      },
+    );
+
+    // **2026-09-20 — replaced a test that asserted the WRONG visual.**
+    // An earlier pass read "not seeing blue on tasks" as a missing
+    // per-task selection ring and asserted `SelectedPillBorder` on each
+    // swept capsule — which passed, while the real app still looked
+    // wrong. Corrected directly: "the swipe sweep selection has nothing
+    // to do with a pale border... it's sweeping on top of everything, in
+    // the same way as sweep tap and sweep all the empty timeline of a
+    // zone... it always follows the finger as the finger moves."
+    //
+    // So the affordance under test is a MARQUEE that exists only WHILE
+    // the finger is down — which is exactly what the old test could
+    // never have caught, since it only ever looked after `gesture.up()`.
+    testWidgets(
+      'a live marquee is drawn WHILE sweeping, and disappears once the '
+      'finger lifts — the selection it made stays',
+      (tester) async {
+        final a = makeTask('Focus block', hour: 9);
+        final b = makeTask('Standup', hour: 10);
+        await pumpTimeline(tester, tasks: [a, b]);
+
+        final marquee = find.byKey(const ValueKey('task-sweep-selection'));
+        expect(
+          marquee,
+          findsNothing,
+          reason: 'no marquee before a sweep has started',
+        );
+
+        final from = tester.getCenter(pillFor('Focus block'));
+        final to = tester.getCenter(pillFor('Standup'));
+        final gesture = await tester.startGesture(from);
+        await tester.pump();
+        // Stepped, not a single `moveTo` — a one-shot jump produces a
+        // drag START with no UPDATEs at all in this harness (verified
+        // with a throwaway probe: zero `onDragUpdate` calls for ANY drag
+        // driven that way, sweep or ordinary move). The marquee only
+        // grows on updates, so the test has to move the way a finger
+        // actually does or it measures nothing.
+        const steps = 8;
+        for (var i = 1; i <= steps; i++) {
+          await gesture.moveTo(Offset.lerp(from, to, i / steps)!);
+          await tester.pump();
+        }
+
+        expect(
+          marquee,
+          findsOneWidget,
+          reason:
+              'the marquee must be visible mid-sweep — this is the whole '
+              'affordance, and it only exists while the finger is down',
+        );
+        expect(
+          tester.getRect(marquee).height,
+          greaterThan(0),
+          reason: 'a zero-height marquee would be invisible in practice',
+        );
+
+        await gesture.up();
+        await tester.pump();
+
+        expect(
+          marquee,
+          findsNothing,
+          reason: 'the marquee is torn down on release',
+        );
+        expect(capturedContainer!.read(editSelectionProvider), {
+          a.id,
+          b.id,
+        }, reason: 'the selection the sweep produced must survive it');
+      },
+    );
+
+    testWidgets(
+      'the sweep is ADDITIVE — crossing back over a task already swept '
+      'leaves it selected rather than toggling it off',
+      (tester) async {
+        final a = makeTask('Focus block', hour: 9);
+        final b = makeTask('Standup', hour: 10);
+        await pumpTimeline(tester, tasks: [a, b]);
+
+        final gesture = await tester.startGesture(
+          tester.getCenter(pillFor('Focus block')),
+        );
+        await tester.pump();
+        await gesture.moveTo(tester.getCenter(pillFor('Standup')));
+        await tester.pump();
+        // Back onto the first task, then forward again — a wobbly drag
+        // must not undo its own work.
+        await gesture.moveTo(tester.getCenter(pillFor('Focus block')));
+        await tester.pump();
+        await gesture.moveTo(tester.getCenter(pillFor('Standup')));
+        await tester.pump();
+        await gesture.up();
+        await tester.pump();
+
+        expect(capturedContainer!.read(editSelectionProvider), {a.id, b.id});
+      },
+    );
+
+    testWidgets(
+      'a drag starting on an ALREADY-SELECTED task does NOT sweep — it '
+      'stays a move, leaving the selection exactly as it was',
+      (tester) async {
+        final a = makeTask('Focus block', hour: 9);
+        final b = makeTask('Standup', hour: 10);
+        await pumpTimeline(tester, tasks: [a, b]);
+
+        await tester.tap(find.text('Focus block'));
+        await tester.pump();
+        expect(capturedContainer!.read(editSelectionProvider), {a.id});
+
+        final gesture = await tester.startGesture(
+          tester.getCenter(pillFor('Focus block')),
+        );
+        await tester.pump();
+        await gesture.moveTo(tester.getCenter(pillFor('Standup')));
+        await tester.pump();
+        await gesture.up();
+        await tester.pump();
+
+        expect(
+          capturedContainer!.read(editSelectionProvider),
+          {a.id},
+          reason:
+              'moving a selected task must not sweep others into the '
+              'selection on the way past',
+        );
+      },
+    );
+
+    testWidgets(
+      'with multi-task mode OFF, a drag on a task still moves it rather '
+      'than sweeping — the selection stays empty',
+      (tester) async {
+        final a = makeTask('Focus block', hour: 9);
+        final b = makeTask('Standup', hour: 10);
+        await pumpTimeline(tester, tasks: [a, b], multiTaskEditMode: false);
+
+        final gesture = await tester.startGesture(
+          tester.getCenter(pillFor('Focus block')),
+        );
+        await tester.pump();
+        await gesture.moveTo(tester.getCenter(pillFor('Standup')));
+        await tester.pump();
+        await gesture.up();
+        // A real move runs a settle animation whose timer outlives a
+        // single `pump` — drained here so the test doesn't end with a
+        // pending timer. (The sweep cases above need no such drain:
+        // a sweep never lifts or settles anything.)
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pump(const Duration(milliseconds: 400));
+
+        expect(capturedContainer!.read(editSelectionProvider), isEmpty);
+      },
+    );
+  });
+
   testWidgets('selecting one task does not select a second, unrelated task', (
     tester,
   ) async {
@@ -275,6 +485,68 @@ void main() {
       expect(capturedContainer!.read(editModeEnabledProvider), isTrue);
     },
   );
+
+  // Requested directly: "on timeline view selected item through long
+  // press when tapped outside once it removes selection completely —
+  // let's adopt this for our multiselected in edit modes." Mirrors
+  // `armedEditTaskProvider`'s own established rule exactly (see
+  // `onEmptyTap`'s own doc comment in timeline_screen.dart): a tap on
+  // empty space while something is selected ONLY clears the selection —
+  // it must never also start a quick-create draft on that same tap.
+  group('tapping empty space clears the selection (2026-09-20)', () {
+    testWidgets(
+      'tapping empty Timeline space while tasks are multi-selected clears '
+      'the selection and does NOT also start a quick-create draft',
+      (tester) async {
+        final a = makeTask('Focus block', hour: 9);
+        final b = makeTask('Standup', hour: 10);
+        await pumpTimeline(tester, tasks: [a, b]);
+
+        await tester.tap(find.text('Focus block'));
+        await tester.pump();
+        await tester.tap(find.text('Standup'));
+        await tester.pump();
+        expect(capturedContainer!.read(editSelectionProvider), {a.id, b.id});
+
+        // Empty background, well clear of either task's own pill — same
+        // fixed offset `tap_empty_space_quick_create_test.dart` already
+        // established for this exact 430x932 viewport.
+        await tester.tapAt(const Offset(220, 700));
+        await tester.pump();
+
+        expect(
+          capturedContainer!.read(editSelectionProvider),
+          isEmpty,
+          reason: 'the tap must clear the multi-task selection',
+        );
+        expect(
+          capturedContainer!.read(pendingTaskDraftProvider),
+          isNull,
+          reason:
+              'a tap that only dismissed a selection must never also '
+              'start a quick-create draft on the same tap — the exact '
+              'bug already fixed once for the single-task armed case',
+        );
+      },
+    );
+
+    testWidgets(
+      'with nothing selected, tapping empty Timeline space still starts '
+      'a quick-create draft as normal — the new clearing rule does not '
+      'swallow the ordinary case',
+      (tester) async {
+        final task = makeTask('Focus block', hour: 9);
+        await pumpTimeline(tester, tasks: [task]);
+
+        expect(capturedContainer!.read(editSelectionProvider), isEmpty);
+
+        await tester.tapAt(const Offset(220, 700));
+        await tester.pump();
+
+        expect(capturedContainer!.read(pendingTaskDraftProvider), isNotNull);
+      },
+    );
+  });
 }
 
 class _FixedEditModeEnabled extends EditModeEnabled {

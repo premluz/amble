@@ -77,6 +77,11 @@ abstract final class PreferenceKeys {
   /// Settings when `FeatureFlags.zoneEnabled` is also true.
   static const String zoneViewEnabled = 'zoneViewEnabled';
 
+  /// Whether the "What Matters" lens is on — hides every [Task] with
+  /// `isImportant == false` entirely, in both Timeline display modes.
+  /// Absent (null) defaults to false. See [WhatMattersEnabledSetting].
+  static const String whatMattersEnabled = 'whatMattersEnabled';
+
   /// Whether the gray thread connecting consecutive tasks renders on the
   /// Spatial Task View. Absent (null) defaults to true — see
   /// [ShowTimelineConnectorsSetting]. Task view only (Zone view has no

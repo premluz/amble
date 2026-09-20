@@ -512,6 +512,42 @@ class ZoneViewEnabledSetting extends _$ZoneViewEnabledSetting {
   }
 }
 
+/// Whether the "What Matters" lens is on — a persistent dock toggle
+/// (`AppBottomDock`) that hides every [Task] with `isImportant == false`
+/// entirely from the Timeline, in BOTH display modes (spatial and zone).
+/// Requested directly as part of the nav redesign's bottom dock, reusing
+/// the existing [Task.isImportant] flag rather than new data (confirmed
+/// via AskUserQuestion). Reported directly on what "fades/collapses"
+/// should mean here: "hide from view as if they were not there" — a real
+/// filter, not a visual dimming.
+///
+/// Distinct from the pre-existing `DevTimelineListOnlyImportant` dev
+/// toggle (`core/dev_config.dart`), which stays as its own separate,
+/// debug-only scratch flag, List-view-only and independent of this one —
+/// this is the real, persisted, user-facing equivalent, reachable in
+/// release builds and applying to both Timeline modes.
+///
+/// `keepAlive: true` for the same reason as [ZoneViewEnabledSetting] —
+/// read by the Timeline screen, not screen-scoped state. Defaults to
+/// **false** when nothing is stored.
+@Riverpod(keepAlive: true)
+class WhatMattersEnabledSetting extends _$WhatMattersEnabledSetting {
+  @override
+  bool build() {
+    return ref
+            .read(preferencesRepositoryProvider)
+            .getValue<bool>(PreferenceKeys.whatMattersEnabled) ??
+        false;
+  }
+
+  Future<void> set(bool value) async {
+    await ref
+        .read(preferencesRepositoryProvider)
+        .setValue(PreferenceKeys.whatMattersEnabled, value);
+    state = value;
+  }
+}
+
 /// Whether 2–3 mutually-overlapping tasks stay individual capsule blocks
 /// (naive spatial overlap) instead of being replaced by one aggregate
 /// `OverlapClusterBlock`.

@@ -11,9 +11,10 @@ part of 'edit_selection_provider.dart';
 /// The set of task ids currently selected under Edit Mode's multi-task
 /// route (`DevMultiTaskEditMode`, `core/dev_config.dart`) — requested
 /// directly: with multi-task mode on, tapping a task selects it instead of
-/// opening its detail sheet, and wiggle becomes the SELECTION indicator
-/// (only selected blocks wiggle) rather than the mode indicator every
-/// block shows under ordinary (single-task) Edit Mode.
+/// opening its detail sheet, and an accent selection border
+/// (`SelectedPillBorder`) becomes the SELECTION indicator (only selected
+/// blocks show it) rather than the mode indicator every block shows under
+/// ordinary (single-task) Edit Mode.
 ///
 /// Screen-local, ephemeral UI state — same reasoning and shape as
 /// [EditModeEnabled] (`edit_mode_provider.dart`): plain `autoDispose`, not
@@ -31,9 +32,10 @@ final editSelectionProvider = EditSelectionProvider._();
 /// The set of task ids currently selected under Edit Mode's multi-task
 /// route (`DevMultiTaskEditMode`, `core/dev_config.dart`) — requested
 /// directly: with multi-task mode on, tapping a task selects it instead of
-/// opening its detail sheet, and wiggle becomes the SELECTION indicator
-/// (only selected blocks wiggle) rather than the mode indicator every
-/// block shows under ordinary (single-task) Edit Mode.
+/// opening its detail sheet, and an accent selection border
+/// (`SelectedPillBorder`) becomes the SELECTION indicator (only selected
+/// blocks show it) rather than the mode indicator every block shows under
+/// ordinary (single-task) Edit Mode.
 ///
 /// Screen-local, ephemeral UI state — same reasoning and shape as
 /// [EditModeEnabled] (`edit_mode_provider.dart`): plain `autoDispose`, not
@@ -49,9 +51,10 @@ final class EditSelectionProvider
   /// The set of task ids currently selected under Edit Mode's multi-task
   /// route (`DevMultiTaskEditMode`, `core/dev_config.dart`) — requested
   /// directly: with multi-task mode on, tapping a task selects it instead of
-  /// opening its detail sheet, and wiggle becomes the SELECTION indicator
-  /// (only selected blocks wiggle) rather than the mode indicator every
-  /// block shows under ordinary (single-task) Edit Mode.
+  /// opening its detail sheet, and an accent selection border
+  /// (`SelectedPillBorder`) becomes the SELECTION indicator (only selected
+  /// blocks show it) rather than the mode indicator every block shows under
+  /// ordinary (single-task) Edit Mode.
   ///
   /// Screen-local, ephemeral UI state — same reasoning and shape as
   /// [EditModeEnabled] (`edit_mode_provider.dart`): plain `autoDispose`, not
@@ -94,9 +97,10 @@ String _$editSelectionHash() => r'312cc83a174914eef58ecb5849f8e1b3a1d9e6cf';
 /// The set of task ids currently selected under Edit Mode's multi-task
 /// route (`DevMultiTaskEditMode`, `core/dev_config.dart`) — requested
 /// directly: with multi-task mode on, tapping a task selects it instead of
-/// opening its detail sheet, and wiggle becomes the SELECTION indicator
-/// (only selected blocks wiggle) rather than the mode indicator every
-/// block shows under ordinary (single-task) Edit Mode.
+/// opening its detail sheet, and an accent selection border
+/// (`SelectedPillBorder`) becomes the SELECTION indicator (only selected
+/// blocks show it) rather than the mode indicator every block shows under
+/// ordinary (single-task) Edit Mode.
 ///
 /// Screen-local, ephemeral UI state — same reasoning and shape as
 /// [EditModeEnabled] (`edit_mode_provider.dart`): plain `autoDispose`, not
@@ -133,12 +137,13 @@ abstract class _$EditSelection extends $Notifier<Set<String>> {
 /// the same "selected" concept, and mixing their ids in one `Set<String>`
 /// would make membership checks ambiguous about which kind of thing is
 /// selected). **New 2026-09-06** (confirmed directly — zones should not
-/// wiggle/be draggable in multi-task mode unless selected, mirroring the
+/// be draggable in multi-task mode unless selected, mirroring the
 /// existing task rule exactly): with multi-task mode on, tapping a zone's
-/// header selects it instead of starting a move-drag, and wiggle becomes
-/// the SELECTION indicator for zones too (only the selected zone wiggles)
-/// rather than the mode indicator every zone shows under ordinary
-/// (single-task) Edit Mode.
+/// header selects it instead of starting a move-drag, and the same accent
+/// selection border (`SelectedPillBorder`) becomes the SELECTION
+/// indicator for zones too (only the selected zone shows it) rather than
+/// the mode indicator every zone shows under ordinary (single-task) Edit
+/// Mode.
 ///
 /// **Widened to genuine multi-select 2026-09-12** (was `String?`,
 /// single-select). The original shape was justified by "there is no
@@ -170,12 +175,13 @@ final zoneEditSelectionProvider = ZoneEditSelectionProvider._();
 /// the same "selected" concept, and mixing their ids in one `Set<String>`
 /// would make membership checks ambiguous about which kind of thing is
 /// selected). **New 2026-09-06** (confirmed directly — zones should not
-/// wiggle/be draggable in multi-task mode unless selected, mirroring the
+/// be draggable in multi-task mode unless selected, mirroring the
 /// existing task rule exactly): with multi-task mode on, tapping a zone's
-/// header selects it instead of starting a move-drag, and wiggle becomes
-/// the SELECTION indicator for zones too (only the selected zone wiggles)
-/// rather than the mode indicator every zone shows under ordinary
-/// (single-task) Edit Mode.
+/// header selects it instead of starting a move-drag, and the same accent
+/// selection border (`SelectedPillBorder`) becomes the SELECTION
+/// indicator for zones too (only the selected zone shows it) rather than
+/// the mode indicator every zone shows under ordinary (single-task) Edit
+/// Mode.
 ///
 /// **Widened to genuine multi-select 2026-09-12** (was `String?`,
 /// single-select). The original shape was justified by "there is no
@@ -205,12 +211,13 @@ final class ZoneEditSelectionProvider
   /// the same "selected" concept, and mixing their ids in one `Set<String>`
   /// would make membership checks ambiguous about which kind of thing is
   /// selected). **New 2026-09-06** (confirmed directly — zones should not
-  /// wiggle/be draggable in multi-task mode unless selected, mirroring the
+  /// be draggable in multi-task mode unless selected, mirroring the
   /// existing task rule exactly): with multi-task mode on, tapping a zone's
-  /// header selects it instead of starting a move-drag, and wiggle becomes
-  /// the SELECTION indicator for zones too (only the selected zone wiggles)
-  /// rather than the mode indicator every zone shows under ordinary
-  /// (single-task) Edit Mode.
+  /// header selects it instead of starting a move-drag, and the same accent
+  /// selection border (`SelectedPillBorder`) becomes the SELECTION
+  /// indicator for zones too (only the selected zone shows it) rather than
+  /// the mode indicator every zone shows under ordinary (single-task) Edit
+  /// Mode.
   ///
   /// **Widened to genuine multi-select 2026-09-12** (was `String?`,
   /// single-select). The original shape was justified by "there is no
@@ -258,7 +265,7 @@ final class ZoneEditSelectionProvider
   }
 }
 
-String _$zoneEditSelectionHash() => r'9311b33740fc9bd0fad06300a56bad5c06ac45a9';
+String _$zoneEditSelectionHash() => r'361386de51e92ff766a5ef222ee2dc747f7a4900';
 
 /// The set of ZONE ids currently selected under Edit Mode's multi-task
 /// route — a separate provider from [EditSelection] (which holds TASK ids)
@@ -267,12 +274,13 @@ String _$zoneEditSelectionHash() => r'9311b33740fc9bd0fad06300a56bad5c06ac45a9';
 /// the same "selected" concept, and mixing their ids in one `Set<String>`
 /// would make membership checks ambiguous about which kind of thing is
 /// selected). **New 2026-09-06** (confirmed directly — zones should not
-/// wiggle/be draggable in multi-task mode unless selected, mirroring the
+/// be draggable in multi-task mode unless selected, mirroring the
 /// existing task rule exactly): with multi-task mode on, tapping a zone's
-/// header selects it instead of starting a move-drag, and wiggle becomes
-/// the SELECTION indicator for zones too (only the selected zone wiggles)
-/// rather than the mode indicator every zone shows under ordinary
-/// (single-task) Edit Mode.
+/// header selects it instead of starting a move-drag, and the same accent
+/// selection border (`SelectedPillBorder`) becomes the SELECTION
+/// indicator for zones too (only the selected zone shows it) rather than
+/// the mode indicator every zone shows under ordinary (single-task) Edit
+/// Mode.
 ///
 /// **Widened to genuine multi-select 2026-09-12** (was `String?`,
 /// single-select). The original shape was justified by "there is no

@@ -81,11 +81,18 @@ class DevTimelineTaskDurationVisible extends _$DevTimelineTaskDurationVisible {
 /// "show time off as default"), reversing its original launch default
 /// (which matched List view's previous always-shown time range before
 /// this toggle existed).
+///
+/// **Flipped back to ON as of 2026-09-20** (confirmed directly): reported
+/// as a real gap that an imported calendar event's own start time never
+/// showed in the merged Zone/List view — this toggle gates BOTH task rows
+/// and imported-event rows there, and defaulting it off meant every fresh
+/// session opened with times hidden across the whole view by default,
+/// which reads as a missing feature rather than a deliberate choice.
 @Riverpod(keepAlive: true)
 class DevTimelineTaskTimeRangeVisible
     extends _$DevTimelineTaskTimeRangeVisible {
   @override
-  bool build() => false;
+  bool build() => true;
 
   void set(bool value) => state = value;
 }
@@ -179,12 +186,18 @@ class DevHideEmptyZones extends _$DevHideEmptyZones {
 /// AskUserQuestion) — this only touches each member task's row, never
 /// [ZoneContainerBlock]'s own title/time header.
 ///
-/// Defaults to false (current shipped behavior unchanged) — this toggle
-/// only ever ADDS a display mode, never removes the existing one.
+/// **Defaults to true as of 2026-09-20** (requested directly: "keep dev
+/// setting hour start as default") — reversing the original "off, adds a
+/// display mode" default now that this row's own time text has been
+/// aligned/restyled to match the spatial Task view's hour labels
+/// (`ZoneRowTimeLabel`, see docs/DESIGN_SYSTEM.md), which was all done
+/// under the assumption this is the mode Zone view actually ships with.
+/// Still a real, independently toggleable dev setting — this only changes
+/// its OUT-OF-THE-BOX state, not whether it can be turned off.
 @Riverpod(keepAlive: true)
 class DevZoneTaskStartTimeVisible extends _$DevZoneTaskStartTimeVisible {
   @override
-  bool build() => false;
+  bool build() => true;
 
   void set(bool value) => state = value;
 }
@@ -271,12 +284,13 @@ class DevTrackedTabInCycle extends _$DevTrackedTabInCycle {
 /// Whether Edit Mode's multi-task selection route is active — requested
 /// directly as a "configurable" alternative to the single-task Edit Mode
 /// that already ships (see `edit_mode_provider.dart`/CONSTITUTION.md's
-/// "Edit Mode" section). With this on, tap becomes select/deselect
-/// (wiggle becomes the SELECTION indicator instead of the mode indicator
-/// — only selected blocks wiggle), and drag/resize/delete on any selected
-/// block acts on the whole selection. With it off, Edit Mode is
-/// byte-for-byte the existing single-task behavior (every block wiggles,
-/// tap opens the detail sheet, drag/resize/delete each act on one task).
+/// "Edit Mode" section). With this on, tap becomes select/deselect (an
+/// accent selection border becomes the SELECTION indicator instead of
+/// the mode indicator — only selected blocks show it), and drag/resize/
+/// delete on any selected block acts on the whole selection. With it
+/// off, Edit Mode is byte-for-byte the existing single-task behavior
+/// (every block shows the border, tap opens the detail sheet, drag/
+/// resize/delete each act on one task).
 ///
 /// **Default flipped to ON as of 2026-09-06** (confirmed directly — "turn
 /// on as default multi edit view"), reversing this provider's own

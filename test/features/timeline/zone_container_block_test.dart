@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tabler_icons_plus/tabler_icons_plus.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
+import 'package:amble/core/widgets/app_swipe_actions.dart';
 import 'package:amble/features/timeline/completion_checkbox.dart';
 import 'package:amble/features/timeline/external_event_capsule_block.dart'
     show DashedPillRail;
@@ -42,7 +43,10 @@ void main() {
     bool showCompletionCheckbox = true,
     Map<String, Category> categoriesById = const {},
     bool flatStyle = false,
+    bool whatMattersEnabled = false,
     List<Task>? tasksOverride,
+    ValueChanged<Task>? onToggleComplete,
+    ValueChanged<Task>? onAddNote,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -63,6 +67,9 @@ void main() {
               startTimeOnlyVisible: startTimeOnlyVisible,
               showCompletionCheckbox: showCompletionCheckbox,
               flatStyle: flatStyle,
+              whatMattersEnabled: whatMattersEnabled,
+              onToggleComplete: onToggleComplete,
+              onAddNote: onAddNote,
             ),
           ),
         ),
@@ -70,24 +77,39 @@ void main() {
     );
   }
 
-  // Regression test for a real bug, reported directly: "task name should
-  // be same font size as time and duration of task in zone mode, atm in
-  // list mode and task mode font is larger of time and task name" — the
-  // in-container row's title used textBody while its time/duration line
-  // used the smaller textCaption, unlike Task/List mode where both use
-  // textBody.
-  testWidgets('the task title and its time line render at the same font size', (
-    tester,
-  ) async {
-    await pump(tester);
+  // **2026-09-20 — superseded, deliberately.** This test used to assert
+  // the title and time line render at the SAME font size, fixed at the
+  // time by moving the time line off `textCaption` onto `textBody` to
+  // match the title. Requested directly, again, against a side-by-side
+  // screenshot: this time text is semantically the spatial Timeline's
+  // hour label, not a second copy of the task title, so it now follows
+  // THAT convention (`textCaption` + `colorTextSecondary`, matching
+  // `TaskBoundaryMarkers` exactly) — smaller than the title again, which
+  // is the intended, current behavior, not a regression of the earlier
+  // fix. See `_ZoneTaskRow`'s own doc comment on its time `Text`.
+  testWidgets(
+    'the time line renders at textCaption\'s size, matching the spatial '
+    'Timeline\'s own hour-label size — smaller than the task title beside '
+    'it, by design',
+    (tester) async {
+      await pump(tester);
 
-    final titleText = tester.widget<Text>(find.text('Deep work'));
-    final timeText = tester.widget<Text>(
-      find.textContaining('9:00', findRichText: false),
-    );
+      final theme = AmbleTheme.light;
+      final titleText = tester.widget<Text>(find.text('Deep work'));
+      final timeText = tester.widget<Text>(
+        find.textContaining('9:00', findRichText: false),
+      );
 
-    expect(titleText.style?.fontSize, timeText.style?.fontSize);
-  });
+      expect(timeText.style?.fontSize, theme.textCaption.fontSize);
+      expect(
+        titleText.style?.fontSize,
+        isNot(timeText.style?.fontSize),
+        reason:
+            'the title stays at textTaskTitleZone\'s larger size — only '
+            'the time line moved to match the spatial hour-label scale',
+      );
+    },
+  );
 
   // Regression test for a real bug, reported directly: "some items when
   // selected as 'done' in zone view are not crossed out and greyed out,
@@ -233,6 +255,43 @@ void main() {
       expect(find.textContaining('3h 50m'), findsNothing);
     });
 
+    // **2026-09-20 — rewired onto `ZoneRowTimeLabel`'s own `Positioned`
+    // escape, replacing the earlier `Transform.translate` version.** Same
+    // target position, different mechanism — see `ZoneRowTimeLabel`'s own
+    // class doc comment (`zone_container_block.dart`) and
+    // docs/DESIGN_SYSTEM.md's "Zone row hour label" section for the full
+    // "why not just reuse TaskBoundaryMarkers directly" reasoning this
+    // widget now documents in one shared place instead of a comment
+    // repeated at each call site.
+    //
+    // This widget is pumped WITHOUT `ZoneDayTimeline`'s own list inset,
+    // so what it isolates is exactly the card-padding half: the time
+    // text must sit `spacingMd - zoneContentLeftInset` relative to the
+    // card, which lands at the spatial view's own 16px once the real
+    // list adds its own [zoneContentLeftInset] (90) on top.
+    testWidgets('the time text escapes to the spatial view\'s own hour-label '
+        'position rather than starting at the card\'s inner edge', (
+      tester,
+    ) async {
+      await pump(tester, startTimeOnlyVisible: true);
+
+      final theme = AmbleTheme.light;
+      final cardLeft = tester.getTopLeft(find.byType(ZoneContainerBlock)).dx;
+      final timeLeft = tester
+          .getTopLeft(find.textContaining('9:00 AM', findRichText: false))
+          .dx;
+
+      expect(
+        timeLeft - cardLeft,
+        moreOrLessEquals(theme.spacingMd - zoneContentLeftInset, epsilon: 0.5),
+        reason:
+            'the time text must land a full zoneContentLeftInset (90) '
+            'left of the card padding it would otherwise start at, so '
+            'that once ZoneDayTimeline adds its own 90px list inset '
+            'the text lands at the spatial view\'s own 16px',
+      );
+    });
+
     testWidgets('WINS over timeRangeVisible when both are somehow true — '
         'the more specific request takes priority', (tester) async {
       await pump(
@@ -254,14 +313,20 @@ void main() {
       expect(find.textContaining('12:50 PM'), findsOneWidget);
     });
 
-    testWidgets('the label renders in colorTextTertiary, the more subtle '
-        'of the two muted text tokens', (tester) async {
+    // **2026-09-20 — superseded, deliberately.** Was `colorTextTertiary`,
+    // matching the Zone Authoring Grid's own hour-axis labels at the
+    // time. Requested directly, again: this row's time text is
+    // semantically the spatial Timeline's hour label, so it now matches
+    // `TaskBoundaryMarkers`' `colorTextSecondary` instead — see
+    // `_ZoneTaskRow`'s own doc comment.
+    testWidgets('the label renders in colorTextSecondary, matching the spatial '
+        'Timeline\'s own hour labels', (tester) async {
       await pump(tester, startTimeOnlyVisible: true);
 
       final timeText = tester.widget<Text>(
         find.textContaining('9:00 AM', findRichText: false),
       );
-      expect(timeText.style?.color, AmbleTheme.light.colorTextTertiary);
+      expect(timeText.style?.color, AmbleTheme.light.colorTextSecondary);
     });
 
     testWidgets('does not affect the zone header\'s own time range', (
@@ -913,7 +978,8 @@ void main() {
     );
 
     testWidgets(
-      'the badge stays offset (unchanged) when time IS visible — no regression',
+      'the badge lines up with the zone name even when time IS visible — '
+      'the time label no longer reserves row width',
       (tester) async {
         await pump(tester, categoriesById: {category.id: category});
 
@@ -929,11 +995,18 @@ void main() {
               .first,
         );
 
-        // With a real time label rendering, the badge legitimately sits
-        // well to the right of the header — this is the EXISTING,
-        // unchanged behavior; only the empty-time-label case was ever
-        // the bug.
-        expect(badgeRect.left, greaterThan(headerRect.left + 50));
+        // **2026-09-20 — inverted, deliberately.** This used to assert the
+        // badge sat >50px RIGHT of the header whenever a time label was
+        // showing, on the reasoning that the reserved time column
+        // legitimately pushed it there. Reported directly against a
+        // screenshot with that gap marked out as dead space: "red band ...
+        // is unnecessary space pushing tasks right," and clarified that a
+        // task should sit at "the same left padding as top (so small
+        // space)" inside its zone. `zoneRowTimeLabelReservedWidth` is 0
+        // now, so the badge lines up with the zone name above it whether
+        // or not a time label is rendering — the label paints in the
+        // escaped hour gutter, outside the row's own layout entirely.
+        expect(badgeRect.left, closeTo(headerRect.left, 1));
       },
     );
 
@@ -1000,4 +1073,289 @@ void main() {
       expect(timeRange.style?.color, AmbleTheme.light.colorTextTertiary);
     },
   );
+
+  // Requested directly: "wire for zoned" — swipe-to-reveal (mark done/
+  // undone, add note), previously scoped out for tasks inside a zone
+  // container (see docs/DECISIONS.md), now wired through
+  // ZoneContainerBlock -> _ZoneTaskRow the same way TaskCapsuleBlock
+  // already wires it for tasks outside a zone.
+  group('swipe-to-reveal (2026-09-19)', () {
+    testWidgets('both swipe actions are wired when both callbacks are '
+        'passed', (tester) async {
+      await pump(tester, onToggleComplete: (_) {}, onAddNote: (_) {});
+
+      final swipe = tester.widget<AppSwipeActions>(
+        find.byType(AppSwipeActions),
+      );
+      expect(swipe.startAction, isNotNull);
+      expect(swipe.endAction, isNotNull);
+    });
+
+    testWidgets('a null onToggleComplete/onAddNote leaves the matching '
+        'side disabled', (tester) async {
+      await pump(tester);
+
+      final swipe = tester.widget<AppSwipeActions>(
+        find.byType(AppSwipeActions),
+      );
+      expect(swipe.startAction, isNull);
+      expect(swipe.endAction, isNull);
+    });
+
+    testWidgets('the end (swipe-left) action shows "mark done" on a '
+        'pending task and calls onToggleComplete with that task', (
+      tester,
+    ) async {
+      Task? toggled;
+      await pump(tester, onToggleComplete: (t) => toggled = t);
+
+      final swipe = tester.widget<AppSwipeActions>(
+        find.byType(AppSwipeActions),
+      );
+      expect(swipe.endAction!.semanticLabel, 'Mark done');
+      swipe.endAction!.onActivate();
+      expect(toggled, task);
+    });
+
+    testWidgets('the end (swipe-left) action shows "mark undone" on a '
+        'completed task', (tester) async {
+      final completedTask = Task.create(
+        title: 'Deep work',
+        scheduledAt: DateTime(2026, 9, 4, 9),
+        durationMinutes: 230,
+        categoryId: BuiltInCategoryIds.work,
+      )..status = TaskStatus.completed;
+
+      await pump(
+        tester,
+        tasksOverride: [completedTask],
+        onToggleComplete: (_) {},
+      );
+
+      final swipe = tester.widget<AppSwipeActions>(
+        find.byType(AppSwipeActions),
+      );
+      expect(swipe.endAction!.semanticLabel, 'Mark undone');
+    });
+
+    testWidgets('the start (swipe-right) action is "add note" and calls '
+        'onAddNote with that task', (tester) async {
+      Task? noted;
+      await pump(tester, onAddNote: (t) => noted = t);
+
+      final swipe = tester.widget<AppSwipeActions>(
+        find.byType(AppSwipeActions),
+      );
+      expect(swipe.startAction!.semanticLabel, 'Add note');
+      swipe.startAction!.onActivate();
+      expect(noted, task);
+    });
+
+    testWidgets('a row\'s own move-to-reschedule drag still fires '
+        'end-to-end once wrapped in AppSwipeActions — the gesture-arena '
+        'regression this pattern already guards against for tasks '
+        'outside a zone', (tester) async {
+      Task? draggedTask;
+      double? capturedTop;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
+          home: Scaffold(
+            body: SizedBox(
+              key: stackKey,
+              width: 400,
+              child: ZoneContainerBlock(
+                theme: AmbleTheme.light,
+                zone: zone,
+                tasks: [task],
+                categoriesById: {BuiltInCategoryIds.work: category},
+                stackAncestorKey: stackKey,
+                onToggleComplete: (_) {},
+                onAddNote: (_) {},
+                onRowDragStart: (t, top) {
+                  draggedTask = t;
+                  capturedTop = top;
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // **2026-09-20 — the drag handle moved to the BADGE.** It used to
+      // live on the time column, but `zoneRowTimeLabelReservedWidth` went
+      // to 0 so a task sits at its zone card's own left padding (see that
+      // constant's own doc comment) — and a zero-width box can't be
+      // hit-tested, so the time column stopped being a viable grip. The
+      // badge carries drag-to-reschedule for every categorised row now,
+      // and stays just as narrow, which is what keeps the gesture from
+      // fighting the Timeline's own vertical scroll.
+      await tester.drag(
+        find.byIcon(TablerIcons.briefcase),
+        const Offset(0, 20),
+      );
+      await tester.pump();
+
+      expect(draggedTask, task);
+      expect(capturedTop, isNotNull);
+    });
+  });
+
+  // Direct, isolated coverage of `ZoneRowTimeLabel` itself — everything
+  // above exercises it indirectly through `_ZoneTaskRow`'s own real
+  // padding numbers; this pins the widget's own contract against
+  // ARBITRARY padding values, so a future caller (a third row kind) can
+  // trust the math without re-deriving it against one specific nesting.
+  group('ZoneRowTimeLabel (2026-09-20)', () {
+    Future<void> pumpLabel(
+      WidgetTester tester, {
+      required double leftPaddingToEscape,
+      double reservedWidth = zoneRowTimeLabelReservedWidth,
+    }) {
+      return tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: Padding(
+                padding: EdgeInsets.only(left: leftPaddingToEscape),
+                child: ZoneRowTimeLabel(
+                  theme: AmbleTheme.light,
+                  text: '9:00 AM',
+                  leftPaddingToEscape: leftPaddingToEscape,
+                  reservedWidth: reservedWidth,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets(
+      'the label text lands EXACTLY zoneRowTimeLabelEdgeInset from the '
+      'true screen edge, regardless of how much padding it had to escape',
+      (tester) async {
+        for (final padding in [0.0, 16.0, 40.0, 100.0]) {
+          await pumpLabel(tester, leftPaddingToEscape: padding);
+
+          final textLeft = tester.getTopLeft(find.text('9:00 AM')).dx;
+          expect(
+            textLeft,
+            moreOrLessEquals(zoneRowTimeLabelEdgeInset, epsilon: 0.5),
+            reason:
+                'with leftPaddingToEscape=$padding, the label must still '
+                'land at the same fixed screen-edge distance every other '
+                'padding value produces',
+          );
+        }
+      },
+    );
+
+    testWidgets(
+      'the reserved box itself stays put — only its text child escapes',
+      (tester) async {
+        await pumpLabel(tester, leftPaddingToEscape: 40);
+
+        final boxLeft = tester.getTopLeft(find.byType(ZoneRowTimeLabel)).dx;
+        expect(
+          boxLeft,
+          moreOrLessEquals(40, epsilon: 0.5),
+          reason:
+              'the reserved SizedBox must stay exactly where its caller '
+              'placed it in the Row, so following siblings (a badge, a '
+              'title) are never shifted by the label\'s own escape',
+        );
+      },
+    );
+
+    testWidgets('styled as textCaption + colorTextSecondary, matching '
+        'TaskBoundaryMarkers\' own hour labels exactly', (tester) async {
+      await pumpLabel(tester, leftPaddingToEscape: 40);
+
+      final theme = AmbleTheme.light;
+      final text = tester.widget<Text>(find.text('9:00 AM'));
+      expect(text.style?.fontSize, theme.textCaption.fontSize);
+      expect(text.style?.color, theme.colorTextSecondary);
+    });
+  });
+
+  // Requested directly: "on zone view (nonspatial) as the fade out they
+  // make room for others to shift up" — WhatMattersRow's own animated
+  // fade+collapse, wrapping every member task row. See that widget's own
+  // doc comment for why `child` stays mounted (never conditionally
+  // omitted) so `AnimatedSize`/`AnimatedOpacity` have something real to
+  // animate.
+  group('What Matters', () {
+    testWidgets(
+      'whatMattersEnabled false (default): a non-important task row stays '
+      'fully visible',
+      (tester) async {
+        final unimportant = Task.create(
+          title: 'Not important',
+          scheduledAt: DateTime(2026, 9, 4, 9),
+          durationMinutes: 30,
+          categoryId: BuiltInCategoryIds.work,
+        );
+        await pump(tester, tasksOverride: [unimportant]);
+
+        final opacityWidget = tester.widget<AnimatedOpacity>(
+          find.byType(AnimatedOpacity).first,
+        );
+        expect(opacityWidget.opacity, 1.0);
+      },
+    );
+
+    testWidgets('whatMattersEnabled true: a non-important task row fades to 0 '
+        'opacity but stays mounted', (tester) async {
+      final unimportant = Task.create(
+        title: 'Not important',
+        scheduledAt: DateTime(2026, 9, 4, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      );
+      await pump(
+        tester,
+        whatMattersEnabled: true,
+        tasksOverride: [unimportant],
+      );
+
+      final opacityWidget = tester.widget<AnimatedOpacity>(
+        find.byType(AnimatedOpacity).first,
+      );
+      expect(opacityWidget.opacity, 0.0);
+      expect(
+        find.text('Not important'),
+        findsOneWidget,
+        reason:
+            'the row must stay mounted through the fade — AnimatedSize '
+            'has nothing to animate between if the child is swapped out '
+            'the instant the toggle flips',
+      );
+    });
+
+    testWidgets(
+      'whatMattersEnabled true: an IMPORTANT task row is unaffected',
+      (tester) async {
+        final important = Task.create(
+          title: 'Important task',
+          scheduledAt: DateTime(2026, 9, 4, 9),
+          durationMinutes: 30,
+          categoryId: BuiltInCategoryIds.work,
+          isImportant: true,
+        );
+        await pump(
+          tester,
+          whatMattersEnabled: true,
+          tasksOverride: [important],
+        );
+
+        final opacityWidget = tester.widget<AnimatedOpacity>(
+          find.byType(AnimatedOpacity).first,
+        );
+        expect(opacityWidget.opacity, 1.0);
+      },
+    );
+  });
 }

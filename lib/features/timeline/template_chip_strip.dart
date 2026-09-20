@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/app_badge_chip.dart';
 import '../../shared/models/category.dart';
 import '../../shared/models/task_template.dart';
 import '../../shared/providers/category_providers.dart';
@@ -127,50 +128,26 @@ class TemplateChip extends StatelessWidget {
     // a full-size badge against.
     final badgeSize = theme.spacingLg;
 
-    return GestureDetector(
+    return AppBadgeChip(
+      theme: theme,
+      selected: selected,
       onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        // Tighter vertically than horizontally — these are short, wide
-        // chips, not square cards.
-        padding: EdgeInsets.symmetric(
-          horizontal: theme.spacingMd,
-          vertical: theme.spacingXs,
-        ),
-        decoration: BoxDecoration(
-          color: theme.colorSurfaceSecondary,
-          borderRadius: BorderRadius.circular(theme.radiusXl),
-          border: selected ? Border.all(color: theme.colorAccent) : null,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // 0.65, not CategoryBadge's own 0.55 default — reported
-            // directly ("Badge on add task sheet icons too small"): a
-            // Tabler icon's thin stroke reads smaller than an emoji
-            // glyph did at the identical nominal size, on this app's
-            // smallest badge (`spacingLg`, vs. `sizeTaskBadge`
-            // everywhere else CategoryBadge's default ratio was tuned
-            // for).
-            CategoryBadge(
-              theme: theme,
-              category: category,
-              size: badgeSize,
-              glyphSizeRatio: 0.65,
-            ),
-            SizedBox(width: theme.spacingSm),
-            // No duration line here, unlike TemplateRow — see
-            // TemplateChipStrip's own doc comment on why duration is
-            // deliberately absent from this context entirely.
-            Text(
-              template.title,
-              style: theme.textBody.copyWith(fontWeight: FontWeight.w700),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
+      leading: CategoryBadge(
+        theme: theme,
+        category: category,
+        size: badgeSize,
+        // 0.65, not CategoryBadge's own 0.55 default — reported directly
+        // ("Badge on add task sheet icons too small"): a Tabler icon's
+        // thin stroke reads smaller than an emoji glyph did at the
+        // identical nominal size, on this app's smallest badge
+        // (`spacingLg`, vs. `sizeTaskBadge` everywhere else CategoryBadge's
+        // default ratio was tuned for).
+        glyphSizeRatio: 0.65,
       ),
+      // No duration line here, unlike TemplateRow — see
+      // TemplateChipStrip's own doc comment on why duration is
+      // deliberately absent from this context entirely.
+      label: template.title,
     );
   }
 }

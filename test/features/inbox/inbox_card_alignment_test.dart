@@ -195,35 +195,33 @@ void main() {
     }
   });
 
-  // Reversed back (2026-09-09) alongside the fade-overlays-the-list fix
-  // above: originally "the heading in the inbox is also being covered by
-  // this gradient" was fixed by moving the fade INTO the heading's own
-  // background. Now that the fade lives in the Expanded content area
-  // instead (so it can actually blend against scrolling content), the
-  // title staying clear of it is no longer a paint-order question within
-  // one Stack — it's a LAYOUT question: the fixed heading and the
-  // Expanded content area are separate Column children, so the title's
-  // own bounds and the fade's own bounds can never overlap at all.
-  testWidgets(
-    'the "Inbox" title never visually overlaps the top scroll-fade — they '
-    'occupy separate, non-overlapping regions of the screen',
-    (tester) async {
-      await pumpInbox(tester);
-
-      final titleRect = tester.getRect(find.text('Inbox'));
-      final topFade = find.byWidgetPredicate(
-        (w) => w is AppTopScrollFade && !w.fromBottom,
-      );
-      final fadeRect = tester.getRect(topFade);
-
-      expect(
-        titleRect.overlaps(fadeRect),
-        isFalse,
-        reason:
-            'the title and the fade must occupy separate regions — the '
-            'title in the fixed heading above, the fade over the '
-            'scrolling content below it',
-      );
-    },
-  );
+  // **2026-09-20 — commented out alongside the title it covers.** The
+  // "Inbox" page title was removed — requested directly: "Inbox and
+  // Tracked no need page title any more since tab shows it" — so there's
+  // no `Text('Inbox')` left to find. Kept commented rather than deleted,
+  // matching how the title itself was retired in `inbox_screen.dart`;
+  // restoring one means restoring both.
+  //
+  // testWidgets(
+  //   'the "Inbox" title never visually overlaps the top scroll-fade — '
+  //   'they occupy separate, non-overlapping regions of the screen',
+  //   (tester) async {
+  //     await pumpInbox(tester);
+  //
+  //     final titleRect = tester.getRect(find.text('Inbox'));
+  //     final topFade = find.byWidgetPredicate(
+  //       (w) => w is AppTopScrollFade && !w.fromBottom,
+  //     );
+  //     final fadeRect = tester.getRect(topFade);
+  //
+  //     expect(
+  //       titleRect.overlaps(fadeRect),
+  //       isFalse,
+  //       reason:
+  //           'the title and the fade must occupy separate regions — '
+  //           'the title in the fixed heading above, the fade over the '
+  //           'scrolling content below it',
+  //     );
+  //   },
+  // );
 }

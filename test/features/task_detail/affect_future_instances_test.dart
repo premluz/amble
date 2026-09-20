@@ -154,6 +154,8 @@ void main() {
 
     expect(find.text('Affect future instances'), findsNothing);
 
+    await _tapAndSettle(tester, find.text('Time'));
+
     final picker = tester.widget<AppWheelPicker>(find.byType(AppWheelPicker));
     picker.onChanged(14, 0);
     await tester.pumpAndSettle();
@@ -213,6 +215,8 @@ void main() {
       showTaskDetailSheet(navigatorKey.currentContext!, task: template);
       await tester.pumpAndSettle();
 
+      await _tapAndSettle(tester, find.text('Time'));
+
       final picker = tester.widget<AppWheelPicker>(find.byType(AppWheelPicker));
       picker.onChanged(14, 0);
       await tester.pumpAndSettle();
@@ -253,6 +257,8 @@ void main() {
 
       showTaskDetailSheet(navigatorKey.currentContext!, task: template);
       await tester.pumpAndSettle();
+
+      await _tapAndSettle(tester, find.text('Time'));
 
       final picker = tester.widget<AppWheelPicker>(find.byType(AppWheelPicker));
       picker.onChanged(14, 0);
@@ -298,6 +304,8 @@ void main() {
       );
       showTaskDetailSheet(navigatorKey.currentContext!, task: template);
       await tester.pumpAndSettle();
+
+      await _tapAndSettle(tester, find.text('Time'));
 
       final picker = tester.widget<AppWheelPicker>(find.byType(AppWheelPicker));
       picker.onChanged(14, 0);

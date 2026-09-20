@@ -1,8 +1,11 @@
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_button.dart';
 import 'package:amble/core/widgets/app_connected_buttons.dart';
+import 'package:amble/core/widgets/app_bottom_dock.dart';
+import 'package:amble/core/widgets/app_date_accordion.dart';
 import 'package:amble/core/widgets/app_option_switch_option.dart';
 import 'package:amble/core/widgets/app_tab_switch.dart';
+import 'package:amble/core/widgets/app_top_nav.dart';
 import 'package:flutter/material.dart';
 import 'package:widgetbook/widgetbook.dart';
 
@@ -137,6 +140,43 @@ class AmbleWidgetbookApp extends StatelessWidget {
             ),
           ],
         ),
+        WidgetbookFolder(
+          name: 'Navigation',
+          children: [
+            WidgetbookComponent(
+              name: 'AppDateAccordion',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Collapsed by default',
+                  builder: (context) => const _DateAccordionDemo(),
+                ),
+                WidgetbookUseCase(
+                  name: 'Expanded on load',
+                  builder: (context) =>
+                      const _DateAccordionDemo(initiallyExpanded: true),
+                ),
+              ],
+            ),
+            WidgetbookComponent(
+              name: 'AppTopNav',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Day / Inbox / Tracked',
+                  builder: (context) => const _TopNavDemo(),
+                ),
+              ],
+            ),
+            WidgetbookComponent(
+              name: 'AppBottomDock',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'List / Timeline / Edit / What Matters',
+                  builder: (context) => const _BottomDockDemo(),
+                ),
+              ],
+            ),
+          ],
+        ),
       ],
       addons: [
         ThemeAddon<ThemeData>(
@@ -157,10 +197,8 @@ class AmbleWidgetbookApp extends StatelessWidget {
               ),
             ),
           ],
-          themeBuilder: (context, theme, child) => Theme(
-            data: theme,
-            child: child,
-          ),
+          themeBuilder: (context, theme, child) =>
+              Theme(data: theme, child: child),
         ),
       ],
     );
@@ -236,8 +274,7 @@ class _TabSwitchManyOptionsDemo extends StatefulWidget {
       _TabSwitchManyOptionsDemoState();
 }
 
-class _TabSwitchManyOptionsDemoState
-    extends State<_TabSwitchManyOptionsDemo> {
+class _TabSwitchManyOptionsDemoState extends State<_TabSwitchManyOptionsDemo> {
   String _value = 'all';
 
   static const _options = [
@@ -330,6 +367,97 @@ class _ConnectedButtonsThreeOptionsDemoState
         variant: widget.variant,
         size: widget.size,
         onChanged: (value) => setState(() => _value = value),
+      ),
+    );
+  }
+}
+
+/// Wraps a stateful demo around [AppDateAccordion] — the widget owns its
+/// own expanded/collapsed state internally, but `selectedDate` is a real
+/// caller-driven value (swiping the week strip or tapping a day cell
+/// must visibly move it), so this demo holds that one piece of state the
+/// same way `AppCalendarHeader` itself does.
+class _DateAccordionDemo extends StatefulWidget {
+  const _DateAccordionDemo({this.initiallyExpanded = false});
+
+  final bool initiallyExpanded;
+
+  @override
+  State<_DateAccordionDemo> createState() => _DateAccordionDemoState();
+}
+
+class _DateAccordionDemoState extends State<_DateAccordionDemo> {
+  late DateTime _selectedDate = DateTime.now();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: AppDateAccordion(
+        selectedDate: _selectedDate,
+        initiallyExpanded: widget.initiallyExpanded,
+        onDateSelected: (date) => setState(() => _selectedDate = date),
+      ),
+    );
+  }
+}
+
+/// Wraps a stateful demo around [AppTopNav] — a use case needs a real,
+/// changeable selected index (tapping a different destination must
+/// visibly move the highlight), the same shape `AmbleHome` itself drives
+/// it with.
+class _TopNavDemo extends StatefulWidget {
+  const _TopNavDemo();
+
+  @override
+  State<_TopNavDemo> createState() => _TopNavDemoState();
+}
+
+class _TopNavDemoState extends State<_TopNavDemo> {
+  int _selectedIndex = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: AppTopNav(
+        destinations: const ['Day', 'Inbox', 'Tracked'],
+        selectedIndex: _selectedIndex,
+        onDestinationSelected: (index) =>
+            setState(() => _selectedIndex = index),
+        onSettingsTap: () {},
+      ),
+    );
+  }
+}
+
+/// Wraps a stateful demo around [AppBottomDock] — List/Timeline need a
+/// real, changeable active view, and What Matters needs a real,
+/// changeable on/off state, so both are held here rather than passed as
+/// fixed props (the "Edit" tap has no state of its own — it just opens a
+/// screen — so it's left a no-op in this gallery context).
+class _BottomDockDemo extends StatefulWidget {
+  const _BottomDockDemo();
+
+  @override
+  State<_BottomDockDemo> createState() => _BottomDockDemoState();
+}
+
+class _BottomDockDemoState extends State<_BottomDockDemo> {
+  AppBottomDockView _activeView = AppBottomDockView.timeline;
+  bool _whatMattersEnabled = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: AppBottomDock(
+        activeView: _activeView,
+        onSelectView: (view) => setState(() => _activeView = view),
+        onEditTap: () {},
+        whatMattersEnabled: _whatMattersEnabled,
+        onWhatMattersTap: () =>
+            setState(() => _whatMattersEnabled = !_whatMattersEnabled),
       ),
     );
   }

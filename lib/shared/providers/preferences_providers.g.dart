@@ -1570,6 +1570,133 @@ abstract class _$ZoneViewEnabledSetting extends $Notifier<bool> {
   }
 }
 
+/// Whether the "What Matters" lens is on — a persistent dock toggle
+/// (`AppBottomDock`) that hides every [Task] with `isImportant == false`
+/// entirely from the Timeline, in BOTH display modes (spatial and zone).
+/// Requested directly as part of the nav redesign's bottom dock, reusing
+/// the existing [Task.isImportant] flag rather than new data (confirmed
+/// via AskUserQuestion). Reported directly on what "fades/collapses"
+/// should mean here: "hide from view as if they were not there" — a real
+/// filter, not a visual dimming.
+///
+/// Distinct from the pre-existing `DevTimelineListOnlyImportant` dev
+/// toggle (`core/dev_config.dart`), which stays as its own separate,
+/// debug-only scratch flag, List-view-only and independent of this one —
+/// this is the real, persisted, user-facing equivalent, reachable in
+/// release builds and applying to both Timeline modes.
+///
+/// `keepAlive: true` for the same reason as [ZoneViewEnabledSetting] —
+/// read by the Timeline screen, not screen-scoped state. Defaults to
+/// **false** when nothing is stored.
+
+@ProviderFor(WhatMattersEnabledSetting)
+final whatMattersEnabledSettingProvider = WhatMattersEnabledSettingProvider._();
+
+/// Whether the "What Matters" lens is on — a persistent dock toggle
+/// (`AppBottomDock`) that hides every [Task] with `isImportant == false`
+/// entirely from the Timeline, in BOTH display modes (spatial and zone).
+/// Requested directly as part of the nav redesign's bottom dock, reusing
+/// the existing [Task.isImportant] flag rather than new data (confirmed
+/// via AskUserQuestion). Reported directly on what "fades/collapses"
+/// should mean here: "hide from view as if they were not there" — a real
+/// filter, not a visual dimming.
+///
+/// Distinct from the pre-existing `DevTimelineListOnlyImportant` dev
+/// toggle (`core/dev_config.dart`), which stays as its own separate,
+/// debug-only scratch flag, List-view-only and independent of this one —
+/// this is the real, persisted, user-facing equivalent, reachable in
+/// release builds and applying to both Timeline modes.
+///
+/// `keepAlive: true` for the same reason as [ZoneViewEnabledSetting] —
+/// read by the Timeline screen, not screen-scoped state. Defaults to
+/// **false** when nothing is stored.
+final class WhatMattersEnabledSettingProvider
+    extends $NotifierProvider<WhatMattersEnabledSetting, bool> {
+  /// Whether the "What Matters" lens is on — a persistent dock toggle
+  /// (`AppBottomDock`) that hides every [Task] with `isImportant == false`
+  /// entirely from the Timeline, in BOTH display modes (spatial and zone).
+  /// Requested directly as part of the nav redesign's bottom dock, reusing
+  /// the existing [Task.isImportant] flag rather than new data (confirmed
+  /// via AskUserQuestion). Reported directly on what "fades/collapses"
+  /// should mean here: "hide from view as if they were not there" — a real
+  /// filter, not a visual dimming.
+  ///
+  /// Distinct from the pre-existing `DevTimelineListOnlyImportant` dev
+  /// toggle (`core/dev_config.dart`), which stays as its own separate,
+  /// debug-only scratch flag, List-view-only and independent of this one —
+  /// this is the real, persisted, user-facing equivalent, reachable in
+  /// release builds and applying to both Timeline modes.
+  ///
+  /// `keepAlive: true` for the same reason as [ZoneViewEnabledSetting] —
+  /// read by the Timeline screen, not screen-scoped state. Defaults to
+  /// **false** when nothing is stored.
+  WhatMattersEnabledSettingProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'whatMattersEnabledSettingProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$whatMattersEnabledSettingHash();
+
+  @$internal
+  @override
+  WhatMattersEnabledSetting create() => WhatMattersEnabledSetting();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(bool value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<bool>(value),
+    );
+  }
+}
+
+String _$whatMattersEnabledSettingHash() =>
+    r'5881a0dd2da92799b07565e6af3cb5ff39d69ee6';
+
+/// Whether the "What Matters" lens is on — a persistent dock toggle
+/// (`AppBottomDock`) that hides every [Task] with `isImportant == false`
+/// entirely from the Timeline, in BOTH display modes (spatial and zone).
+/// Requested directly as part of the nav redesign's bottom dock, reusing
+/// the existing [Task.isImportant] flag rather than new data (confirmed
+/// via AskUserQuestion). Reported directly on what "fades/collapses"
+/// should mean here: "hide from view as if they were not there" — a real
+/// filter, not a visual dimming.
+///
+/// Distinct from the pre-existing `DevTimelineListOnlyImportant` dev
+/// toggle (`core/dev_config.dart`), which stays as its own separate,
+/// debug-only scratch flag, List-view-only and independent of this one —
+/// this is the real, persisted, user-facing equivalent, reachable in
+/// release builds and applying to both Timeline modes.
+///
+/// `keepAlive: true` for the same reason as [ZoneViewEnabledSetting] —
+/// read by the Timeline screen, not screen-scoped state. Defaults to
+/// **false** when nothing is stored.
+
+abstract class _$WhatMattersEnabledSetting extends $Notifier<bool> {
+  bool build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<bool, bool>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<bool, bool>,
+              bool,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
+
 /// Whether 2–3 mutually-overlapping tasks stay individual capsule blocks
 /// (naive spatial overlap) instead of being replaced by one aggregate
 /// `OverlapClusterBlock`.

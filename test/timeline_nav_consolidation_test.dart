@@ -137,27 +137,25 @@ void main() {
     return container;
   }
 
-  testWidgets(
-    'the nav bar has ONE Timeline destination, not separate Task view / '
-    'Timeline tabs',
-    (tester) async {
-      await pumpHome(tester);
+  testWidgets('the top nav has ONE Day destination, not separate Task view / '
+      'Timeline labels', (tester) async {
+    await pumpHome(tester);
 
-      expect(find.byTooltip('Timeline'), findsOneWidget);
-      expect(find.byTooltip('Task view'), findsNothing);
-    },
-  );
+    expect(find.text('Day'), findsOneWidget);
+    expect(find.text('Timeline'), findsNothing);
+    expect(find.text('Task view'), findsNothing);
+  });
 
-  testWidgets('tapping the already-selected Timeline destination again toggles '
+  testWidgets('tapping the already-selected Day destination again toggles '
       'zoneViewEnabledSettingProvider', (tester) async {
     final container = await pumpHome(tester);
     expect(container.read(zoneViewEnabledSettingProvider), isFalse);
 
-    await tapAndSettle(tester, find.byTooltip('Timeline'));
+    await tapAndSettle(tester, find.text('Day'));
 
     expect(container.read(zoneViewEnabledSettingProvider), isTrue);
 
-    await tapAndSettle(tester, find.byTooltip('Timeline'));
+    await tapAndSettle(tester, find.text('Day'));
 
     expect(container.read(zoneViewEnabledSettingProvider), isFalse);
   });
@@ -173,7 +171,7 @@ void main() {
       expect(container.read(zoneViewEnabledSettingProvider), isTrue);
       expect(find.byTooltip('Switch to Task view'), findsOneWidget);
 
-      await tapAndSettle(tester, find.byTooltip('Timeline'));
+      await tapAndSettle(tester, find.text('Day'));
 
       expect(container.read(zoneViewEnabledSettingProvider), isFalse);
       expect(find.byTooltip('Switch to Timeline'), findsOneWidget);
@@ -186,11 +184,11 @@ void main() {
     (tester) async {
       final container = await pumpHome(tester);
 
-      await tapAndSettle(tester, find.byTooltip('Timeline'));
+      await tapAndSettle(tester, find.text('Day'));
       expect(container.read(zoneViewEnabledSettingProvider), isTrue);
 
-      await tapAndSettle(tester, find.byTooltip('Inbox'));
-      await tapAndSettle(tester, find.byTooltip('Timeline'));
+      await tapAndSettle(tester, find.text('Inbox'));
+      await tapAndSettle(tester, find.text('Day'));
 
       // Navigating away and back is a plain "open" tap, not a same-index
       // repeat — must land on whatever was already selected, not flip it.

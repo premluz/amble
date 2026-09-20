@@ -250,7 +250,13 @@ void main() {
     final saved = box.values.single;
     expect(saved.title, 'Take a walk');
     expect(saved.templateId, template.id);
-    expect(saved.notes, 'Around the block');
+    // TaskTemplate.notes ('Around the block') seeds the Edit form's
+    // DESCRIPTION field, which now writes to Task.description, not
+    // Task.notes — see task_detail_sheet.dart's `_seedFromTemplate`.
+    // Task.notes is a separate, per-occurrence snapshot field the
+    // template-picker never touches.
+    expect(saved.description, 'Around the block');
+    expect(saved.notes, isNull);
     expect(saved.durationMinutes, 30);
   });
 

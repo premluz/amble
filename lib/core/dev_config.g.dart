@@ -709,8 +709,14 @@ abstract class _$DevHideEmptyZones extends $Notifier<bool> {
 /// AskUserQuestion) — this only touches each member task's row, never
 /// [ZoneContainerBlock]'s own title/time header.
 ///
-/// Defaults to false (current shipped behavior unchanged) — this toggle
-/// only ever ADDS a display mode, never removes the existing one.
+/// **Defaults to true as of 2026-09-20** (requested directly: "keep dev
+/// setting hour start as default") — reversing the original "off, adds a
+/// display mode" default now that this row's own time text has been
+/// aligned/restyled to match the spatial Task view's hour labels
+/// (`ZoneRowTimeLabel`, see docs/DESIGN_SYSTEM.md), which was all done
+/// under the assumption this is the mode Zone view actually ships with.
+/// Still a real, independently toggleable dev setting — this only changes
+/// its OUT-OF-THE-BOX state, not whether it can be turned off.
 
 @ProviderFor(DevZoneTaskStartTimeVisible)
 final devZoneTaskStartTimeVisibleProvider =
@@ -733,8 +739,14 @@ final devZoneTaskStartTimeVisibleProvider =
 /// AskUserQuestion) — this only touches each member task's row, never
 /// [ZoneContainerBlock]'s own title/time header.
 ///
-/// Defaults to false (current shipped behavior unchanged) — this toggle
-/// only ever ADDS a display mode, never removes the existing one.
+/// **Defaults to true as of 2026-09-20** (requested directly: "keep dev
+/// setting hour start as default") — reversing the original "off, adds a
+/// display mode" default now that this row's own time text has been
+/// aligned/restyled to match the spatial Task view's hour labels
+/// (`ZoneRowTimeLabel`, see docs/DESIGN_SYSTEM.md), which was all done
+/// under the assumption this is the mode Zone view actually ships with.
+/// Still a real, independently toggleable dev setting — this only changes
+/// its OUT-OF-THE-BOX state, not whether it can be turned off.
 final class DevZoneTaskStartTimeVisibleProvider
     extends $NotifierProvider<DevZoneTaskStartTimeVisible, bool> {
   /// Zone view's member task rows ONLY — when on, each row shows just its
@@ -754,8 +766,14 @@ final class DevZoneTaskStartTimeVisibleProvider
   /// AskUserQuestion) — this only touches each member task's row, never
   /// [ZoneContainerBlock]'s own title/time header.
   ///
-  /// Defaults to false (current shipped behavior unchanged) — this toggle
-  /// only ever ADDS a display mode, never removes the existing one.
+  /// **Defaults to true as of 2026-09-20** (requested directly: "keep dev
+  /// setting hour start as default") — reversing the original "off, adds a
+  /// display mode" default now that this row's own time text has been
+  /// aligned/restyled to match the spatial Task view's hour labels
+  /// (`ZoneRowTimeLabel`, see docs/DESIGN_SYSTEM.md), which was all done
+  /// under the assumption this is the mode Zone view actually ships with.
+  /// Still a real, independently toggleable dev setting — this only changes
+  /// its OUT-OF-THE-BOX state, not whether it can be turned off.
   DevZoneTaskStartTimeVisibleProvider._()
     : super(
         from: null,
@@ -784,7 +802,7 @@ final class DevZoneTaskStartTimeVisibleProvider
 }
 
 String _$devZoneTaskStartTimeVisibleHash() =>
-    r'9a510080127131ef0cef5416b9a4238ad69e7072';
+    r'20c53e10b6bdc35f4331efe2e5bac0f40028f05d';
 
 /// Zone view's member task rows ONLY — when on, each row shows just its
 /// task's START time (e.g. "9:00 AM"), never the "start - end" range
@@ -803,8 +821,14 @@ String _$devZoneTaskStartTimeVisibleHash() =>
 /// AskUserQuestion) — this only touches each member task's row, never
 /// [ZoneContainerBlock]'s own title/time header.
 ///
-/// Defaults to false (current shipped behavior unchanged) — this toggle
-/// only ever ADDS a display mode, never removes the existing one.
+/// **Defaults to true as of 2026-09-20** (requested directly: "keep dev
+/// setting hour start as default") — reversing the original "off, adds a
+/// display mode" default now that this row's own time text has been
+/// aligned/restyled to match the spatial Task view's hour labels
+/// (`ZoneRowTimeLabel`, see docs/DESIGN_SYSTEM.md), which was all done
+/// under the assumption this is the mode Zone view actually ships with.
+/// Still a real, independently toggleable dev setting — this only changes
+/// its OUT-OF-THE-BOX state, not whether it can be turned off.
 
 abstract class _$DevZoneTaskStartTimeVisible extends $Notifier<bool> {
   bool build();
@@ -1232,12 +1256,13 @@ abstract class _$DevTrackedTabInCycle extends $Notifier<bool> {
 /// Whether Edit Mode's multi-task selection route is active — requested
 /// directly as a "configurable" alternative to the single-task Edit Mode
 /// that already ships (see `edit_mode_provider.dart`/CONSTITUTION.md's
-/// "Edit Mode" section). With this on, tap becomes select/deselect
-/// (wiggle becomes the SELECTION indicator instead of the mode indicator
-/// — only selected blocks wiggle), and drag/resize/delete on any selected
-/// block acts on the whole selection. With it off, Edit Mode is
-/// byte-for-byte the existing single-task behavior (every block wiggles,
-/// tap opens the detail sheet, drag/resize/delete each act on one task).
+/// "Edit Mode" section). With this on, tap becomes select/deselect (an
+/// accent selection border becomes the SELECTION indicator instead of
+/// the mode indicator — only selected blocks show it), and drag/resize/
+/// delete on any selected block acts on the whole selection. With it
+/// off, Edit Mode is byte-for-byte the existing single-task behavior
+/// (every block shows the border, tap opens the detail sheet, drag/
+/// resize/delete each act on one task).
 ///
 /// **Default flipped to ON as of 2026-09-06** (confirmed directly — "turn
 /// on as default multi edit view"), reversing this provider's own
@@ -1258,12 +1283,13 @@ final devMultiTaskEditModeProvider = DevMultiTaskEditModeProvider._();
 /// Whether Edit Mode's multi-task selection route is active — requested
 /// directly as a "configurable" alternative to the single-task Edit Mode
 /// that already ships (see `edit_mode_provider.dart`/CONSTITUTION.md's
-/// "Edit Mode" section). With this on, tap becomes select/deselect
-/// (wiggle becomes the SELECTION indicator instead of the mode indicator
-/// — only selected blocks wiggle), and drag/resize/delete on any selected
-/// block acts on the whole selection. With it off, Edit Mode is
-/// byte-for-byte the existing single-task behavior (every block wiggles,
-/// tap opens the detail sheet, drag/resize/delete each act on one task).
+/// "Edit Mode" section). With this on, tap becomes select/deselect (an
+/// accent selection border becomes the SELECTION indicator instead of
+/// the mode indicator — only selected blocks show it), and drag/resize/
+/// delete on any selected block acts on the whole selection. With it
+/// off, Edit Mode is byte-for-byte the existing single-task behavior
+/// (every block shows the border, tap opens the detail sheet, drag/
+/// resize/delete each act on one task).
 ///
 /// **Default flipped to ON as of 2026-09-06** (confirmed directly — "turn
 /// on as default multi edit view"), reversing this provider's own
@@ -1282,12 +1308,13 @@ final class DevMultiTaskEditModeProvider
   /// Whether Edit Mode's multi-task selection route is active — requested
   /// directly as a "configurable" alternative to the single-task Edit Mode
   /// that already ships (see `edit_mode_provider.dart`/CONSTITUTION.md's
-  /// "Edit Mode" section). With this on, tap becomes select/deselect
-  /// (wiggle becomes the SELECTION indicator instead of the mode indicator
-  /// — only selected blocks wiggle), and drag/resize/delete on any selected
-  /// block acts on the whole selection. With it off, Edit Mode is
-  /// byte-for-byte the existing single-task behavior (every block wiggles,
-  /// tap opens the detail sheet, drag/resize/delete each act on one task).
+  /// "Edit Mode" section). With this on, tap becomes select/deselect (an
+  /// accent selection border becomes the SELECTION indicator instead of
+  /// the mode indicator — only selected blocks show it), and drag/resize/
+  /// delete on any selected block acts on the whole selection. With it
+  /// off, Edit Mode is byte-for-byte the existing single-task behavior
+  /// (every block shows the border, tap opens the detail sheet, drag/
+  /// resize/delete each act on one task).
   ///
   /// **Default flipped to ON as of 2026-09-06** (confirmed directly — "turn
   /// on as default multi edit view"), reversing this provider's own
@@ -1334,12 +1361,13 @@ String _$devMultiTaskEditModeHash() =>
 /// Whether Edit Mode's multi-task selection route is active — requested
 /// directly as a "configurable" alternative to the single-task Edit Mode
 /// that already ships (see `edit_mode_provider.dart`/CONSTITUTION.md's
-/// "Edit Mode" section). With this on, tap becomes select/deselect
-/// (wiggle becomes the SELECTION indicator instead of the mode indicator
-/// — only selected blocks wiggle), and drag/resize/delete on any selected
-/// block acts on the whole selection. With it off, Edit Mode is
-/// byte-for-byte the existing single-task behavior (every block wiggles,
-/// tap opens the detail sheet, drag/resize/delete each act on one task).
+/// "Edit Mode" section). With this on, tap becomes select/deselect (an
+/// accent selection border becomes the SELECTION indicator instead of
+/// the mode indicator — only selected blocks show it), and drag/resize/
+/// delete on any selected block acts on the whole selection. With it
+/// off, Edit Mode is byte-for-byte the existing single-task behavior
+/// (every block shows the border, tap opens the detail sheet, drag/
+/// resize/delete each act on one task).
 ///
 /// **Default flipped to ON as of 2026-09-06** (confirmed directly — "turn
 /// on as default multi edit view"), reversing this provider's own

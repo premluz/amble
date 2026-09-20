@@ -9,10 +9,11 @@
 //
 // Modes:
 //   task — Task view (showHourLabels/zoneViewEnabled off), Edit Mode ON at
-//          launch, seeded with one task to show the resize handle + wiggle.
+//          launch, seeded with one task to show the resize handle + the
+//          accent selection border.
 //   zone — Zone view (zoneViewEnabled on), Edit Mode ON at launch, seeded
 //          with one zone (containing one task) to show both resize
-//          handles + wiggle.
+//          handles + the accent selection border.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';

@@ -363,4 +363,80 @@ void main() {
       expect(a.hasSameFieldsAs(b), isFalse);
     });
   });
+
+  // `description` — what the task IS, template-level (propagates across a
+  // recurring series the way title/duration/category do). Distinct from
+  // `notes`, a per-occurrence daily snapshot that never propagates — see
+  // both fields' own doc comments on Task, and
+  // `recurrence_generator_test.dart`'s coverage of the generation-time
+  // split between them.
+  group('description', () {
+    test('survives a JSON round-trip', () {
+      final task = Task.create(
+        title: 'Take a walk',
+        description: 'Loop around the block, not just to the corner',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.health,
+      );
+
+      final restored = Task.fromJson(task.toJson());
+
+      expect(
+        restored.description,
+        'Loop around the block, not just to the corner',
+      );
+    });
+
+    test('a backup exported before this field existed still imports — '
+        'description defaults to null, not required', () {
+      final legacyJson = Task.create(
+        title: 'Legacy task',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      ).toJson()..remove('description');
+
+      final restored = Task.fromJson(legacyJson);
+
+      expect(restored.description, isNull);
+    });
+
+    test('an ordinary task has no description by default', () {
+      final task = Task.create(
+        title: 'Ordinary',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      );
+
+      expect(task.description, isNull);
+    });
+
+    test('hasSameFieldsAs distinguishes tasks differing only by '
+        'description', () {
+      final a = Task.create(
+        title: 'Same',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      );
+      final b = Task.fromJson(a.toJson())..description = 'Now it has one';
+
+      expect(a.hasSameFieldsAs(b), isFalse);
+    });
+
+    test('is independent of notes — setting one leaves the other null', () {
+      final task = Task.create(
+        title: 'Take a walk',
+        description: 'What this task IS',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.health,
+      )..notes = 'How today actually went';
+
+      expect(task.description, 'What this task IS');
+      expect(task.notes, 'How today actually went');
+    });
+  });
 }

@@ -292,7 +292,17 @@ class _TaskDetailFlow extends ConsumerStatefulWidget {
 
 class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
   late final TextEditingController _titleController;
-  late final TextEditingController _notesController;
+  // Bound to `Task.description`, not `Task.notes` — this is the form's
+  // "what this task is" field (template-level, propagates across a
+  // recurring series like title/duration/category), distinct from the
+  // per-occurrence `notes` snapshot edited via the swipe-right sheet
+  // (`add_task_note_sheet.dart`). Named `_descriptionController`
+  // throughout this live flow; the field/widget is still called
+  // `_NameDescriptionPane`/`notesController` in a few spots below where
+  // renaming would touch the dead `_EditDetailsForm`/`_EditScheduleForm`
+  // backups' own (otherwise unreferenced) copies of the same widget too —
+  // see this widget's own doc comment.
+  late final TextEditingController _descriptionController;
 
   /// The DATE the task lands on. Always set — it defaults to today, and
   /// the date field shows "Today" from the start.
@@ -310,6 +320,17 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
   bool _repeats = false;
   late Set<int> _selectedDays;
   String? _behaviorId;
+
+  /// Whether the Time wheel / Duration presets are expanded — both
+  /// collapsed by default (create AND edit alike, confirmed via
+  /// AskUserQuestion), requested directly: "in edit task time wheels
+  /// should be collapsed, also duration." Tapping the summary row
+  /// (`_LinkFieldRow`'s own `onTap`) expands the matching control
+  /// inline; picking a value doesn't auto-collapse it back — same "stays
+  /// open until you explicitly close it" convention the Repeats section
+  /// already uses for its own day-chip row (`if (repeats) ...`).
+  bool _timeExpanded = false;
+  bool _durationExpanded = false;
 
   /// The value [_behaviorId] started at, so [_save] can tell whether it
   /// actually changed this edit — meaningful only when [widget.task] is
@@ -390,7 +411,7 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
   late final int? _initialDurationMinutes;
   late final TimeOfDay? _initialTimeOfDay;
   late final String _initialCategoryId;
-  late final String _initialNotes;
+  late final String _initialDescription;
   late final bool _initialNotificationsEnabled;
   late final bool _initialIsImportant;
   late final Set<int> _initialSelectedDays;
@@ -440,7 +461,9 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
     _titleController = TextEditingController(
       text: seed?.title ?? widget.initialTitle ?? '',
     );
-    _notesController = TextEditingController(text: seed?.notes ?? '');
+    _descriptionController = TextEditingController(
+      text: seed?.description ?? '',
+    );
     _scheduledAt = widget.initialScheduledAt;
     // Only an existing (Inbox) task or a duplicate arrives with a real
     // time/duration; a fresh create starts with both unset so the fields
@@ -517,7 +540,7 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
     _initialDurationMinutes = _durationMinutes;
     _initialTimeOfDay = _timeOfDay;
     _initialCategoryId = _categoryId;
-    _initialNotes = _notesController.text;
+    _initialDescription = _descriptionController.text;
     _initialNotificationsEnabled = _notificationsEnabled;
     _initialIsImportant = _isImportant;
     _initialSelectedDays = Set.of(_selectedDays);
@@ -528,7 +551,7 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
   @override
   void dispose() {
     _titleController.dispose();
-    _notesController.dispose();
+    _descriptionController.dispose();
     super.dispose();
   }
 
@@ -635,7 +658,7 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
     // reset) but so a write that throws doesn't leave the button stuck
     // showing a spinner forever with no way to retry.
     try {
-      final notes = _notesController.text.trim();
+      final description = _descriptionController.text.trim();
       final notifier = ref.read(taskListProvider.notifier);
       final existing = widget.task;
 
@@ -646,7 +669,7 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
       if (existing == null) {
         final created = await notifier.createTask(
           title: title,
-          notes: notes.isEmpty ? null : notes,
+          description: description.isEmpty ? null : description,
           scheduledAt: scheduledAt,
           durationMinutes: durationMinutes,
           categoryId: _categoryId,
@@ -667,7 +690,7 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
         final previousDuration = existing.durationMinutes;
 
         existing.title = title;
-        existing.notes = notes.isEmpty ? null : notes;
+        existing.description = description.isEmpty ? null : description;
         // Real bug, reported directly: editing a recurring instance's own
         // time here (not via drag-reschedule, the only other path that
         // already did this) left `originalScheduledAt` null, so
@@ -795,7 +818,7 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
         _timeOfDay != _initialTimeOfDay ||
         _durationMinutes != _initialDurationMinutes ||
         _categoryId != _initialCategoryId ||
-        _notesController.text != _initialNotes ||
+        _descriptionController.text != _initialDescription ||
         _notificationsEnabled != _initialNotificationsEnabled ||
         _isImportant != _initialIsImportant ||
         _repeats != (_wasRecurring ?? false) ||
@@ -952,7 +975,10 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
   void _seedFromTemplate(TaskTemplate template) {
     setState(() {
       _titleController.text = template.title;
-      _notesController.text = template.notes ?? '';
+      // `TaskTemplate.notes` — a separate model/field from `Task.notes`;
+      // this is the quick-drop drawer template's own stored text, which
+      // maps onto this form's description field.
+      _descriptionController.text = template.notes ?? '';
       _durationMinutes = template.durationMinutes;
       _categoryId = template.categoryId;
       _behaviorId = template.behaviorId;
@@ -1055,7 +1081,7 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
         body: _ScheduleFieldsStage(
           theme: theme,
           titleController: _titleController,
-          notesController: _notesController,
+          descriptionController: _descriptionController,
           showScheduleFields: !_isNameStage,
           onNameSubmitted: _confirmNameStage,
           // The create flow already carried `behaviorId` through its save
@@ -1072,6 +1098,12 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
           onTimeChanged: (value) => setState(() => _timeOfDay = value),
           onDurationChanged: (value) =>
               setState(() => _durationMinutes = value),
+          timeExpanded: _timeExpanded,
+          onTimeExpandedChanged: (value) =>
+              setState(() => _timeExpanded = value),
+          durationExpanded: _durationExpanded,
+          onDurationExpandedChanged: (value) =>
+              setState(() => _durationExpanded = value),
           notificationsEnabled: _notificationsEnabled,
           onNotificationsEnabledChanged: (value) =>
               setState(() => _notificationsEnabled = value),
@@ -1112,8 +1144,11 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
 }
 
 /// Stage 2 of the create flow — everything after the name: the live
-/// preview, Category, Date, Time, Duration (with its presets and wheel now
-/// inline rather than behind their own modal), Repeat, and Notifications.
+/// preview, Category, Date, Time, Duration (with its presets and wheel
+/// inline rather than behind their own modal — collapsed by default,
+/// requested directly: "in edit task time wheels should be collapsed,
+/// also duration," confirmed via AskUserQuestion to apply to create too
+/// since both share this exact widget), Repeat, and Notifications.
 /// Requested directly, matching the mockup's three-screenshot sequence.
 ///
 /// Each top-level pane runs its own staggered fade+slide entrance on first
@@ -1124,7 +1159,7 @@ class _ScheduleFieldsStage extends ConsumerWidget {
   const _ScheduleFieldsStage({
     required this.theme,
     required this.titleController,
-    required this.notesController,
+    required this.descriptionController,
     required this.showScheduleFields,
     required this.behaviorId,
     required this.onBehaviorChanged,
@@ -1136,6 +1171,10 @@ class _ScheduleFieldsStage extends ConsumerWidget {
     required this.onDateChanged,
     required this.onTimeChanged,
     required this.onDurationChanged,
+    required this.timeExpanded,
+    required this.onTimeExpandedChanged,
+    required this.durationExpanded,
+    required this.onDurationExpandedChanged,
     required this.notificationsEnabled,
     required this.onNotificationsEnabledChanged,
     required this.isImportant,
@@ -1153,7 +1192,7 @@ class _ScheduleFieldsStage extends ConsumerWidget {
 
   final AmbleTheme theme;
   final TextEditingController titleController;
-  final TextEditingController notesController;
+  final TextEditingController descriptionController;
 
   /// False while stage 1 (Name only) is still active — Category onward
   /// stay out of the tree entirely rather than just invisible, so the
@@ -1196,6 +1235,15 @@ class _ScheduleFieldsStage extends ConsumerWidget {
   final ValueChanged<DateTime> onDateChanged;
   final ValueChanged<TimeOfDay> onTimeChanged;
   final ValueChanged<int> onDurationChanged;
+
+  /// Whether the Time wheel / Duration presets currently render at all —
+  /// both collapsed by default. See `_TaskDetailFlowState`'s own field
+  /// doc comment for the full request.
+  final bool timeExpanded;
+  final ValueChanged<bool> onTimeExpandedChanged;
+  final bool durationExpanded;
+  final ValueChanged<bool> onDurationExpandedChanged;
+
   final bool notificationsEnabled;
   final ValueChanged<bool> onNotificationsEnabledChanged;
 
@@ -1239,30 +1287,38 @@ class _ScheduleFieldsStage extends ConsumerWidget {
               onTap: onDateTap,
             ),
             SizedBox(height: theme.spacingMd),
-            // The resolved range, live: end = start + duration. No tap
-            // target — the wheel below is what sets the start time now
-            // (requested directly: "the wheeler is actually for time"),
-            // so this row is a read-out rather than a button.
-            _PlainFieldRow(
+            // Collapsed by default (both create and edit, confirmed via
+            // AskUserQuestion) — requested directly: "in edit task time
+            // wheels should be collapsed, also duration." Tapping this
+            // summary row toggles the wheel below it, rather than
+            // opening a separate modal — the wheel expands INLINE in
+            // this same pane. `_LinkFieldRow`, now that the row itself is
+            // tappable again — its accent-colored value is what signals
+            // "tap me" the same way Date already does. The previous
+            // non-tappable `_PlainFieldRow` this row used is now dead
+            // code and was removed.
+            _LinkFieldRow(
               theme: theme,
               label: 'Time',
               value: (startTime == null || endTime == null)
                   ? '--:-- - --:--'
                   : '${_formatTime(startTime)} - ${_formatTime(endTime)}',
-              onTap: null,
+              onTap: () => onTimeExpandedChanged(!timeExpanded),
             ),
-            SizedBox(height: theme.spacingMd),
-            SizedBox(
-              height: theme.spacingXl * 5,
-              child: AppWheelPicker(
-                hourCount: 24,
-                minuteStep: 5,
-                initialHour: time?.hour ?? 0,
-                initialMinute: time?.minute ?? 0,
-                onChanged: (hour, minute) =>
-                    onTimeChanged(TimeOfDay(hour: hour, minute: minute)),
+            if (timeExpanded) ...[
+              SizedBox(height: theme.spacingMd),
+              SizedBox(
+                height: theme.spacingXl * 5,
+                child: AppWheelPicker(
+                  hourCount: 24,
+                  minuteStep: 5,
+                  initialHour: time?.hour ?? 0,
+                  initialMinute: time?.minute ?? 0,
+                  onChanged: (hour, minute) =>
+                      onTimeChanged(TimeOfDay(hour: hour, minute: minute)),
+                ),
               ),
-            ),
+            ],
             SizedBox(height: theme.spacingMd),
             _LinkFieldRow(
               theme: theme,
@@ -1272,26 +1328,25 @@ class _ScheduleFieldsStage extends ConsumerWidget {
                   : (presetMinutes.contains(duration)
                         ? presetLabel(duration)
                         : _formatDuration(duration)),
-              // No tap target: presets are the only way to change
-              // duration now — requested directly ("Duration no have
-              // wheeler but presets only").
-              onTap: null,
+              onTap: () => onDurationExpandedChanged(!durationExpanded),
             ),
-            SizedBox(height: theme.spacingMd),
-            Row(
-              children: [
-                for (final (index, preset) in presetMinutes.indexed) ...[
-                  if (index > 0) SizedBox(width: theme.spacingXs),
-                  Expanded(
-                    child: AppSelectableChip(
-                      label: presetLabel(preset),
-                      selected: duration == preset,
-                      onTap: () => onDurationChanged(preset),
+            if (durationExpanded) ...[
+              SizedBox(height: theme.spacingMd),
+              Row(
+                children: [
+                  for (final (index, preset) in presetMinutes.indexed) ...[
+                    if (index > 0) SizedBox(width: theme.spacingXs),
+                    Expanded(
+                      child: AppSelectableChip(
+                        label: presetLabel(preset),
+                        selected: duration == preset,
+                        onTap: () => onDurationChanged(preset),
+                      ),
                     ),
-                  ),
+                  ],
                 ],
-              ],
-            ),
+              ),
+            ],
           ],
         ),
       ),
@@ -1375,7 +1430,7 @@ class _ScheduleFieldsStage extends ConsumerWidget {
           _NameDescriptionPane(
             theme: theme,
             titleController: titleController,
-            notesController: notesController,
+            descriptionController: descriptionController,
             autofocusName: !showScheduleFields,
             onNameSubmitted: onNameSubmitted,
           ),
@@ -1461,14 +1516,14 @@ class _NameDescriptionPane extends StatefulWidget {
   const _NameDescriptionPane({
     required this.theme,
     required this.titleController,
-    required this.notesController,
+    required this.descriptionController,
     required this.autofocusName,
     required this.onNameSubmitted,
   });
 
   final AmbleTheme theme;
   final TextEditingController titleController;
-  final TextEditingController notesController;
+  final TextEditingController descriptionController;
 
   /// Whether the Name field should grab focus/keyboard the moment this
   /// pane first mounts — true for a genuine stage-1 entry (a from-scratch
@@ -1495,7 +1550,7 @@ class _NameDescriptionPaneState extends State<_NameDescriptionPane> {
   // task" open, which skips stage 1 with notes already set) — the link
   // exists to avoid showing an EMPTY field by default, not to hide notes
   // that already exist.
-  late bool _showDescription = widget.notesController.text.isNotEmpty;
+  late bool _showDescription = widget.descriptionController.text.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -1521,7 +1576,7 @@ class _NameDescriptionPaneState extends State<_NameDescriptionPane> {
           if (_showDescription) ...[
             SizedBox(height: theme.spacingSm),
             AppTextField(
-              controller: widget.notesController,
+              controller: widget.descriptionController,
               label: 'Description',
               maxLines: 3,
               // AppTextField owns its own internal FocusNode rather than
@@ -1540,7 +1595,7 @@ class _NameDescriptionPaneState extends State<_NameDescriptionPane> {
               // it, so this can't fight the reveal itself.
               onFocusChanged: (hasFocus) {
                 if (hasFocus) return;
-                if (widget.notesController.text.trim().isEmpty) {
+                if (widget.descriptionController.text.trim().isEmpty) {
                   setState(() => _showDescription = false);
                 }
               },
@@ -1698,57 +1753,6 @@ class _LinkFieldRow extends StatelessWidget {
               value,
               style: theme.textBody.copyWith(
                 color: theme.colorAccent,
-                fontWeight: FontWeight.w700,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.right,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Same row shape as [_LinkFieldRow], but the value reads as plain body
-/// text rather than a link — the Time row, which is tap-to-open but
-/// resolves to a value the mockup shows in the ordinary text colour.
-class _PlainFieldRow extends StatelessWidget {
-  const _PlainFieldRow({
-    required this.theme,
-    required this.label,
-    required this.value,
-    required this.onTap,
-  });
-
-  final AmbleTheme theme;
-  final String label;
-  final String value;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: theme.textBody.copyWith(color: theme.colorTextPrimary),
-          ),
-          // Same defensive Flexible/ellipsis as _LinkFieldRow — this
-          // value (a time range) is normally short and bounded, but
-          // nothing stops it from growing (a locale with a longer time
-          // format, for instance), so it gets the same protection rather
-          // than relying on the content always staying short.
-          Flexible(
-            child: Text(
-              value,
-              style: theme.textBody.copyWith(
-                color: theme.colorTextPrimary,
                 fontWeight: FontWeight.w700,
               ),
               maxLines: 1,
@@ -3289,11 +3293,24 @@ class _BehaviorPickerPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // `AppPane`'s own `title:` param renders ABOVE and OUTSIDE the card
+    // (see its own doc comment) — every sibling section on this screen
+    // (Important, Notifications) instead renders its own label as a
+    // plain `Text` INSIDE the pane, so this was the one section reading
+    // visually inconsistent with the rest of the form. Requested
+    // directly: "tracked behaviour header should be inside pane like
+    // others."
     return AppPane(
-      title: 'Tracked behavior',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Padding(
+            padding: EdgeInsets.only(bottom: theme.spacingSm),
+            child: Text(
+              'Tracked behavior',
+              style: theme.textBody.copyWith(color: theme.colorTextPrimary),
+            ),
+          ),
           if (behaviors.isEmpty)
             Text(
               'No tracked behaviors yet — create one in Settings.',

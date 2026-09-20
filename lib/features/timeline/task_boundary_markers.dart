@@ -137,10 +137,28 @@ class TaskBoundaryMarkers extends StatelessWidget {
                   alignment: columnWidth == null
                       ? Alignment.centerLeft
                       : Alignment.centerRight,
-                  child: Text(
-                    TimeOfDay.fromDateTime(tick.time).format(context),
-                    style: theme.textCaption.copyWith(
-                      color: theme.colorTextSecondary,
+                  // Requested directly: the blue accent time badge shown
+                  // while creating/editing a task (`TaskEdgeTimeLabel`)
+                  // pads its own text `theme.spacingSm` in from its box's
+                  // left edge, but this plain gutter label had NO internal
+                  // padding at all — same box origin (`leftInset`), so the
+                  // gutter's own hour text sat visibly left of the badge's
+                  // text instead of lining up with it. Only applied when
+                  // `columnWidth` is null (the Timeline's own left-aligned
+                  // gutter); the zone-grid's right-aligned column usage
+                  // already matches the badge with zero padding on its own
+                  // separate call site (`zone_grid_screen.dart`), which
+                  // gets the same fix directly rather than through this
+                  // shared widget.
+                  child: Padding(
+                    padding: columnWidth == null
+                        ? EdgeInsets.only(left: theme.spacingSm)
+                        : EdgeInsets.zero,
+                    child: Text(
+                      TimeOfDay.fromDateTime(tick.time).format(context),
+                      style: theme.textCaption.copyWith(
+                        color: theme.colorTextSecondary,
+                      ),
                     ),
                   ),
                 ),

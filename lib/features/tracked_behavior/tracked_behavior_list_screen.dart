@@ -93,12 +93,16 @@ class TrackedBehaviorListScreen extends ConsumerWidget {
                   ),
                   child: Row(
                     children: [
-                      Expanded(
-                        // textTitle, not textHeadline — see the matching
-                        // change on Inbox's own heading for the full
-                        // reasoning.
-                        child: Text('Tracked', style: theme.textTitle),
-                      ),
+                      // **2026-09-20 — page title removed.** Requested
+                      // directly: "Inbox and Tracked no need page title
+                      // any more since tab shows it" — the top nav's own
+                      // "Tracked" tab label already names this screen.
+                      // Was `Expanded(child: Text('Tracked', style:
+                      // theme.textTitle))`; a bare `Spacer()` keeps the
+                      // view-cycle switcher pinned to the trailing edge
+                      // exactly as before, just with nothing filling the
+                      // leading space now.
+                      const Spacer(),
                       AppButton(
                         icon: viewMode.icon,
                         shape: AppButtonShape.circle,

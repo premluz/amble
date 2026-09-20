@@ -16,6 +16,7 @@ class Task extends HiveObject implements ScheduledBlock {
     required this.id,
     required this.title,
     this.notes,
+    this.description,
     this.scheduledAt,
     this.durationMinutes,
     this.originalScheduledAt,
@@ -50,6 +51,7 @@ class Task extends HiveObject implements ScheduledBlock {
   Task.create({
     required String title,
     String? notes,
+    String? description,
     required DateTime scheduledAt,
     required int durationMinutes,
     required String categoryId,
@@ -62,6 +64,7 @@ class Task extends HiveObject implements ScheduledBlock {
          id: _uuid.v4(),
          title: title,
          notes: notes,
+         description: description,
          scheduledAt: scheduledAt,
          durationMinutes: durationMinutes,
          recurrenceId: recurrenceId,
@@ -86,8 +89,27 @@ class Task extends HiveObject implements ScheduledBlock {
   @HiveField(1)
   String title;
 
+  /// A per-occurrence snapshot — requested directly against a recurring
+  /// series, e.g. "how did today's run actually go." Never propagates:
+  /// each materialized instance gets its own independent copy at creation
+  /// time (see [generateRecurrenceInstances]) and keeps it regardless of
+  /// what a LATER edit to [description] or any other template field does
+  /// to the rest of the series. Distinct from [description] — see that
+  /// field's own doc comment for the difference.
   @HiveField(2)
   String? notes;
+
+  /// What the task IS — template-level, same as [title]/[categoryId]/
+  /// [durationMinutes]: editing it on a recurring series (via the same
+  /// "affect future instances" path those fields already use) changes
+  /// every future instance, not just the one being edited. Requested
+  /// directly, distinguishing this from [notes]: "description was meant
+  /// to be something that describes task, and for repeated tasks, is the
+  /// same and stays the same until edited, and when edited affects the
+  /// series... Note is something that is recorded against task as
+  /// snapshot on each day."
+  @HiveField(20)
+  String? description;
 
   /// Null for an unscheduled (Inbox) task. See [isScheduled].
   @HiveField(3)
@@ -266,6 +288,7 @@ class Task extends HiveObject implements ScheduledBlock {
     'id': id,
     'title': title,
     'notes': notes,
+    'description': description,
     'scheduledAt': scheduledAt?.toIso8601String(),
     'durationMinutes': durationMinutes,
     'originalScheduledAt': originalScheduledAt?.toIso8601String(),
@@ -333,6 +356,9 @@ class Task extends HiveObject implements ScheduledBlock {
       id: id,
       title: title,
       notes: json['notes'] as String?,
+      // Same "old exports still import" contract — a backup exported
+      // before this field existed has no description at all.
+      description: json['description'] as String?,
       scheduledAt: _parseNullableDateTime(json['scheduledAt']),
       durationMinutes: json['durationMinutes'] as int?,
       originalScheduledAt: _parseNullableDateTime(json['originalScheduledAt']),
@@ -385,6 +411,7 @@ class Task extends HiveObject implements ScheduledBlock {
   bool hasSameFieldsAs(Task other) {
     return title == other.title &&
         notes == other.notes &&
+        description == other.description &&
         scheduledAt == other.scheduledAt &&
         durationMinutes == other.durationMinutes &&
         originalScheduledAt == other.originalScheduledAt &&

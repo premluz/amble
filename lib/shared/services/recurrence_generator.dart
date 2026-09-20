@@ -114,7 +114,15 @@ List<Task> generateRecurrenceInstances({
     generated.add(
       Task.create(
           title: template.title,
-          notes: template.notes,
+          // `notes` is deliberately NOT copied here — requested directly:
+          // "note is something that is recorded against task as snapshot
+          // on each day," distinct from [description] (copied below),
+          // which behaves like every other template-level field. Each
+          // freshly generated occurrence starts with no note of its own;
+          // the template's own `notes` value (if any predates this
+          // change, or was set directly on the template row for some
+          // other reason) is never propagated onto instances.
+          description: template.description,
           scheduledAt: occurrence,
           durationMinutes: template.durationMinutes ?? _fallbackDurationMinutes,
           categoryId: template.categoryId ?? BuiltInCategoryIds.general,

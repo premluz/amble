@@ -391,6 +391,40 @@ void main() {
       );
     });
 
+    test('copies the template\'s description onto every instance, but never '
+        'its notes — description is template-level (what the task IS), '
+        'notes is a per-occurrence daily snapshot', () {
+      final template = Task.create(
+        title: 'Morning run',
+        description: 'Loop the park, easy pace',
+        scheduledAt: anchor,
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.health,
+        recurrenceId: 'series-1',
+        recurrenceRule: RecurrenceRule(frequency: RecurrenceFrequency.daily),
+      )..notes = 'Felt great today';
+
+      final generated = generateRecurrenceInstances(
+        template: template,
+        existingInstances: [template],
+        now: now,
+        windowWeeks: 1,
+      );
+
+      expect(generated, isNotEmpty);
+      for (final instance in generated) {
+        expect(instance.description, 'Loop the park, easy pace');
+        expect(
+          instance.notes,
+          isNull,
+          reason:
+              'each freshly generated occurrence starts with no note of '
+              'its own, regardless of what the template\'s own notes '
+              'field (if any) happens to hold',
+        );
+      }
+    });
+
     test('a task with no rule generates nothing', () {
       final ordinary = Task.create(
         title: 'Ordinary',

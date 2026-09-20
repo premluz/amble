@@ -9,8 +9,9 @@ part 'armed_edit_task_provider.g.dart';
 ///
 /// Deliberately separate from [EditModeEnabled] (`edit_mode_provider.dart`)
 /// rather than reusing it — that provider is a single GLOBAL switch which,
-/// once on, wiggles every task on the Timeline at once via its own toolbar
-/// button. This is the opposite shape: exactly one task (or none) is armed
+/// once on, shows the accent selection border on every task on the
+/// Timeline at once via its own toolbar button. This is the opposite
+/// shape: exactly one task (or none) is armed
 /// at a time, entered by long-pressing that one task specifically, and the
 /// rest of the Timeline stays in its ordinary single-tap-opens-sheet state
 /// throughout — confirmed via AskUserQuestion as new, per-task behavior,

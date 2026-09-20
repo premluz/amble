@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/selected_pill_border.dart';
 import '../../shared/models/zone.dart';
-import 'edit_mode_wiggle.dart';
 import 'resize_handle.dart';
 import 'task_edge_time_label.dart';
 
@@ -96,7 +96,6 @@ class ZoneBackgroundBlock extends StatelessWidget {
     this.liveStartMinutes,
     this.liveEndMinutes,
     this.editModeEnabled = false,
-    this.phaseOffset = 0,
     this.onResizeTopStart,
     this.onResizeTopUpdate,
     this.onResizeTopEnd,
@@ -169,16 +168,23 @@ class ZoneBackgroundBlock extends StatelessWidget {
   final int? liveStartMinutes;
   final int? liveEndMinutes;
 
-  /// Edit Mode's persistent visual signal — see `edit_mode_wiggle.dart`.
-  /// Applied HERE, inside the `Positioned` this widget itself returns,
-  /// rather than by the caller wrapping this whole widget in
-  /// `EditModeWiggle`: that widget inserts a `Transform` between its child
-  /// and whatever comes after it, which breaks the `Positioned` below —
-  /// `Positioned` must be a direct `Stack` child (`ZoneContainerBlock`'s own
-  /// caller in `zone_day_timeline.dart` follows the same
-  /// `Positioned(child: EditModeWiggle(...))` order).
+  /// Whether this zone is currently selected in Edit Mode — drives the
+  /// resize handles, the accent selection ring on the fill, and the live
+  /// move/resize time badges. Despite the name (kept for the caller's own
+  /// `interactionEnabled` wiring — see `timeline_screen.dart`'s own
+  /// `_interactionEnabled`), this is really "selected", not merely "Edit
+  /// Mode is on": `_interactionEnabled` already folds in `_isSelected`
+  /// before this is passed, so `false` covers both "Edit Mode is off" and
+  /// "Edit Mode is on but this zone isn't the selected one."
+  ///
+  /// **No longer drives a wiggle** — task wiggle was already replaced by
+  /// an accent selection ring (`SelectedPillBorder`, see
+  /// `TaskCapsuleBlock`'s own doc comment); this zone block now gets the
+  /// same treatment, closing the one remaining wiggle call site that was
+  /// still actually reachable on the spatial Task view. Requested
+  /// directly: "wiggling is not anymore [a] pattern... any reference can
+  /// be removed."
   final bool editModeEnabled;
-  final double phaseOffset;
 
   /// The TOP-edge handle's drag handlers — changes [Zone.startMinutes]
   /// only. Null callbacks mean "no handle rendered here," matching
@@ -269,102 +275,117 @@ class ZoneBackgroundBlock extends StatelessWidget {
       // again here would just shave a few extra, unaccounted-for pixels
       // off a value that's already correct.
       height: collapsedHeight ?? strictHeight - zoneBackgroundGap,
-      child: EditModeWiggle(
-        enabled: editModeEnabled,
-        phaseOffset: phaseOffset,
-        // A genuinely new Stack ancestor (same discipline as
-        // ZoneContainerBlock's own resize-handle wrap) so the two handles
-        // can overlay this block's top/bottom edges without disturbing the
-        // fill or the header's own drag detector beneath them.
-        // StackFit.expand: a bare (non-Positioned) child of a Stack sizes
-        // to its own intrinsic size by default (StackFit.loose), which
-        // collapsed the fill below to zero — the whole reason the zone
-        // background stopped rendering entirely after this Stack wrap was
-        // added. expand stretches it back to the outer Positioned's own
-        // tight top/left/width/height, matching what the plain DecoratedBox
-        // got for free before this Stack existed.
-        child: Stack(
-          fit: StackFit.expand,
-          clipBehavior: Clip.none,
-          children: [
-            // Fill — the WHOLE block is now the tap/drag target (not a
-            // header strip with its own title/time label). Requested
-            // directly — "What I see is the addition of a title inside the
-            // zone, which we didn't ask for. Let's remove this title, and
-            // let's make the zone editable on top so it wiggles" —
-            // reversing the earlier header-row design (which mirrored
-            // `ZoneContainerBlock`'s own header) in favor of the plain
-            // fill itself being the target, with no visible label added.
-            //
-            // IgnorePointer wraps the GestureDetector (not the reverse) so
-            // `ignoring: true` genuinely stops the detector from claiming
-            // the gesture at all, letting a tap meant for a task pill or
-            // the placement line underneath fall through — matches this
-            // block's original purely-decorative contract whenever
-            // there's nothing to select or move here (Edit Mode off, or on
-            // but this isn't a draggable/selectable zone).
-            IgnorePointer(
-              ignoring: onMoveEnd == null && onHeaderTap == null,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: onHeaderTap,
-                onVerticalDragStart: onMoveStart,
-                onVerticalDragUpdate: onMoveUpdate,
-                onVerticalDragEnd: onMoveEnd,
-                child: DecoratedBox(
-                  // Plain, non-colored surface — matches the Zone list
-                  // row (Settings → Manage → Zones) and the Tracked
-                  // behavior card, requested directly: "the zone card
-                  // make the color of the card [same as] on manage...
-                  // as card on tracked... non colored." Was
-                  // `colorZoneBackground`, a distinct zone-tint fill.
-                  decoration: BoxDecoration(
-                    color: theme.colorSurfaceSecondary,
-                    borderRadius: BorderRadius.circular(theme.radiusMd),
-                  ),
-                ),
+      // A genuinely new Stack ancestor (same discipline as
+      // ZoneContainerBlock's own resize-handle wrap) so the two handles
+      // can overlay this block's top/bottom edges without disturbing the
+      // fill or the header's own drag detector beneath them.
+      // StackFit.expand: a bare (non-Positioned) child of a Stack sizes
+      // to its own intrinsic size by default (StackFit.loose), which
+      // collapsed the fill below to zero — the whole reason the zone
+      // background stopped rendering entirely after this Stack wrap was
+      // added. expand stretches it back to the outer Positioned's own
+      // tight top/left/width/height, matching what the plain DecoratedBox
+      // got for free before this Stack existed.
+      child: Stack(
+        fit: StackFit.expand,
+        clipBehavior: Clip.none,
+        children: [
+          // Fill — the WHOLE block is now the tap/drag target (not a
+          // header strip with its own title/time label). Requested
+          // directly — "What I see is the addition of a title inside the
+          // zone, which we didn't ask for. Let's remove this title, and
+          // let's make the zone editable on top" — reversing the earlier
+          // header-row design (which mirrored `ZoneContainerBlock`'s own
+          // header) in favor of the plain fill itself being the target,
+          // with no visible label added.
+          //
+          // IgnorePointer wraps the GestureDetector (not the reverse) so
+          // `ignoring: true` genuinely stops the detector from claiming
+          // the gesture at all, letting a tap meant for a task pill or
+          // the placement line underneath fall through — matches this
+          // block's original purely-decorative contract whenever
+          // there's nothing to select or move here (Edit Mode off, or on
+          // but this isn't a draggable/selectable zone).
+          IgnorePointer(
+            ignoring: onMoveEnd == null && onHeaderTap == null,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onHeaderTap,
+              onVerticalDragStart: onMoveStart,
+              onVerticalDragUpdate: onMoveUpdate,
+              onVerticalDragEnd: onMoveEnd,
+              // Selected gets the SAME accent selection ring every other
+              // selected block in the app uses (`SelectedPillBorder`) —
+              // replacing the wiggle this zone used to signal selection
+              // with, requested directly: "wiggling is not anymore [a]
+              // pattern... any reference can be removed." `editModeEnabled`
+              // here is really "this zone is the selected one" (see that
+              // field's own doc comment), so the ring and the wiggle it
+              // replaces gate on the exact same condition.
+              child: editModeEnabled
+                  ? SelectedPillBorder(
+                      theme: theme,
+                      contentRadius: BorderRadius.circular(theme.radiusMd),
+                      fillColor: theme.colorSurfaceSecondary,
+                      child: const SizedBox.expand(),
+                    )
+                  : DecoratedBox(
+                      // Plain, non-colored surface — matches the Zone
+                      // list row (Settings → Manage → Zones) and the
+                      // Tracked behavior card, requested directly: "the
+                      // zone card make the color of the card [same as]
+                      // on manage... as card on tracked... non colored."
+                      // Was `colorZoneBackground`, a distinct zone-tint
+                      // fill.
+                      decoration: BoxDecoration(
+                        color: theme.colorSurfaceSecondary,
+                        borderRadius: BorderRadius.circular(theme.radiusMd),
+                      ),
+                    ),
+            ),
+          ),
+          if (editModeEnabled && onResizeTopEnd != null)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: ResizeHandle(
+                theme: theme,
+                onDragStart: onResizeTopStart,
+                onDragUpdate: onResizeTopUpdate,
+                onDragEnd: onResizeTopEnd,
               ),
             ),
-            if (editModeEnabled && onResizeTopEnd != null)
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: ResizeHandle(
-                  theme: theme,
-                  onDragStart: onResizeTopStart,
-                  onDragUpdate: onResizeTopUpdate,
-                  onDragEnd: onResizeTopEnd,
-                ),
+          if (editModeEnabled && onResizeBottomEnd != null)
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: ResizeHandle(
+                theme: theme,
+                onDragStart: onResizeBottomStart,
+                onDragUpdate: onResizeBottomUpdate,
+                onDragEnd: onResizeBottomEnd,
               ),
-            if (editModeEnabled && onResizeBottomEnd != null)
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: ResizeHandle(
-                  theme: theme,
-                  onDragStart: onResizeBottomStart,
-                  onDragUpdate: onResizeBottomUpdate,
-                  onDragEnd: onResizeBottomEnd,
-                ),
-              ),
-            // Live move/resize time badges, pinned over the hour gutter
-            // on the LEFT — same "always on left" treatment
-            // `_DraggableTaskBlock` uses for tasks, extended to zones:
-            // "also should be show for zones." `-(left - gutterWidth's
-            // own offset)` walks this Positioned back from the block's
-            // local origin (`left - zoneBackgroundOffset`, this widget's
-            // own outer `Positioned.left`) to the day column's true x=0.
-            // Each edge renders independently — a resize sets only the
-            // edge that's actually moving (the other stays null), while
-            // a move sets both (they shift together).
-            ..._liveZoneEdgeLabels(
-              gutterOffset: -(left - zoneBackgroundOffset),
-              height: strictHeight - zoneBackgroundGap,
             ),
-          ],
-        ),
+          // Live move/resize time badges, pinned INSIDE the hour gutter
+          // itself, not just at the task-pill area's own left edge —
+          // corrected directly: "the blue time from to, should not be
+          // on top and bottom of task but on the left timeline where we
+          // [see] hours of day." `-(left - zoneBackgroundOffset)` walks
+          // this Positioned back from the block's local origin (`left -
+          // zoneBackgroundOffset`, this widget's own outer
+          // `Positioned.left`) to the day column's true x=0 — the SAME
+          // `+ theme.spacingSm` then lands it at the shared gutter label
+          // x every hour tick (`TaskBoundaryMarkers`) already uses. Each
+          // edge renders independently — a resize sets only the edge
+          // that's actually moving (the other stays null), while a move
+          // sets both (they shift together).
+          ..._liveZoneEdgeLabels(
+            gutterOffset: -(left - zoneBackgroundOffset) + theme.spacingSm,
+            height: strictHeight - zoneBackgroundGap,
+          ),
+        ],
       ),
     );
   }

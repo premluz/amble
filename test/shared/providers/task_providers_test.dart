@@ -606,6 +606,54 @@ void main() {
       expect(refreshedTemplate.durationMinutes, 45);
     });
 
+    test('updateTaskWithChangedRecurrence on a FUTURE instance propagates a '
+        'description edit onto the TEMPLATE, unlike category (which stays '
+        'local) — description is template-level, requested directly: '
+        '"description... for repeated tasks, is the same and stays the '
+        'same until edited, and when edited affects the series"', () async {
+      final notifier = container.read(taskListProvider.notifier);
+      final today = DateTime.now();
+      final anchor = DateTime(today.year, today.month, today.day, 8);
+      final template = await notifier.createTask(
+        title: 'Journal',
+        description: 'Write three pages, longhand',
+        scheduledAt: anchor,
+        durationMinutes: 10,
+        categoryId: BuiltInCategoryIds.personal,
+        recurrenceRule: RecurrenceRule(frequency: RecurrenceFrequency.daily),
+      );
+      final rule = template.recurrenceRule!;
+
+      final futureInstance = container
+          .read(taskListProvider)
+          .firstWhere(
+            (t) =>
+                t.recurrenceId == template.recurrenceId &&
+                t.id != template.id &&
+                t.scheduledAt!.isAfter(DateTime.now()),
+          );
+
+      futureInstance.description = 'Write three pages, typed';
+      await notifier.updateTaskWithChangedRecurrence(futureInstance, rule);
+
+      final refreshedTemplate = container
+          .read(taskListProvider)
+          .firstWhere((t) => t.id == template.id);
+      expect(refreshedTemplate.description, 'Write three pages, typed');
+
+      // A freshly regenerated future occurrence picks up the NEW
+      // description from the template, not the stale original.
+      final regeneratedInstance = container
+          .read(taskListProvider)
+          .firstWhere(
+            (t) =>
+                t.recurrenceId == template.recurrenceId &&
+                t.id != template.id &&
+                t.scheduledAt!.isAfter(DateTime.now()),
+          );
+      expect(regeneratedInstance.description, 'Write three pages, typed');
+    });
+
     test('updateTaskThisInstanceOnly saves only the edited instance — the '
         'series template and every other instance are untouched', () async {
       // The "just this occurrence" half of the recurring-edit scope

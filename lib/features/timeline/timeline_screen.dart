@@ -9,8 +9,10 @@ import '../../core/feature_flags.dart';
 import '../../core/haptics.dart';
 import '../../core/haptics_provider.dart';
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/app_bottom_dock.dart';
 import '../../core/widgets/app_floating_create_button.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
+import '../../core/widgets/selected_pill_border.dart';
 import '../../shared/models/category.dart';
 import '../../shared/models/external_calendar_event.dart';
 import '../../shared/models/scheduled_block.dart';
@@ -31,9 +33,11 @@ import '../../shared/services/overlap_checker.dart';
 import '../../shared/services/overlap_cluster.dart';
 import '../../shared/services/zone_cascade_reschedule.dart';
 import '../../shared/services/zone_containment.dart';
+import '../../shared/services/zone_selection_order.dart';
 import '../tracked_behavior/behavior_outcome_prompt.dart';
 import '../task_detail/task_detail_sheet.dart';
 import '../task_detail/task_remove.dart';
+import '../zone_grid/zone_grid_screen.dart';
 import 'app_calendar_header.dart';
 import 'timeline_pinch_zoom.dart';
 import 'collapsed_stack_layout.dart';
@@ -312,6 +316,21 @@ class TimelineScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     final tasks = ref.watch(tasksForSelectedDayProvider);
+    // "What Matters" lens (bottom dock) — hides every Task with
+    // `isImportant == false`, in BOTH display modes (spatial and zone).
+    // Reported directly on the transition this needs: "on zone view
+    // (nonspatial) as the fade out they make room for others to shift up.
+    // on spatial they just fade out" — a real per-row animation, not an
+    // instant list truncation, so `tasks` itself stays UNFILTERED here.
+    // Each row/capsule receives this flag and its own task's
+    // `isImportant` instead, and fades (spatial) or fades-and-collapses
+    // (zone) itself while staying mounted through the transition. See
+    // `TaskCapsuleBlock.whatMattersFaded`/`_ZoneTaskRow`'s own doc
+    // comments for the actual animation. Distinct from
+    // `devListOnlyImportant` below (a separate, List-mode-only, instant
+    // dev scratch toggle) — see WhatMattersEnabledSetting's own doc
+    // comment.
+    final whatMattersEnabled = ref.watch(whatMattersEnabledSettingProvider);
     final selectedDate = ref.watch(selectedDateProvider);
     // Resolved once here (the ConsumerWidget root) and threaded down as a
     // plain field, same pattern as showHourLabels/disableClustering below
@@ -587,10 +606,22 @@ class TimelineScreen extends ConsumerWidget {
                                       // "Only Amble tasks" toggle. Mirrors the
                                       // List-view `filteredExternalEvents`
                                       // pattern below exactly.
+                                      //
+                                      // **2026-09-20** — also hidden by What
+                                      // Matters. Reported directly: "The
+                                      // show important only should hide
+                                      // imported also." An imported
+                                      // calendar event has no
+                                      // `isImportant` flag at all (it's
+                                      // read-only, external data) — What
+                                      // Matters treats it the same way as
+                                      // a non-important Task: gone
+                                      // entirely while the lens is on.
                                       externalEvents:
                                           ref.watch(
-                                            devHideImportedTasksProvider,
-                                          )
+                                                devHideImportedTasksProvider,
+                                              ) ||
+                                              whatMattersEnabled
                                           ? const <ExternalCalendarEvent>[]
                                           : externalEvents,
                                       theme: theme,
@@ -617,6 +648,7 @@ class TimelineScreen extends ConsumerWidget {
                                       tagColorStyle: ref.watch(
                                         tagColorStyleSettingProvider,
                                       ),
+                                      whatMattersEnabled: whatMattersEnabled,
                                       devIconsVisible: ref.watch(
                                         devTimelineTaskIconsVisibleProvider,
                                       ),
@@ -694,7 +726,22 @@ class TimelineScreen extends ConsumerWidget {
                                       theme: theme,
                                       categoryById: categoryById,
                                       zones: zones,
-                                      externalEvents: externalEvents,
+                                      // What Matters also hides imported
+                                      // calendar events entirely on the
+                                      // Spatial view — reported directly:
+                                      // "the show important only should
+                                      // hide imported also." An imported
+                                      // event has no `isImportant` field
+                                      // (it's read-only, external data),
+                                      // so it's treated the same as a
+                                      // non-important Task: gone while
+                                      // the lens is on. Mirrors the
+                                      // ZoneDayTimeline call site's own
+                                      // identical `whatMattersEnabled`
+                                      // check above.
+                                      externalEvents: whatMattersEnabled
+                                          ? const <ExternalCalendarEvent>[]
+                                          : externalEvents,
                                       selectedDate: selectedDate,
                                       // **2026-09-12 — no longer read from the
                                       // setting.** List view (this being
@@ -754,31 +801,55 @@ class TimelineScreen extends ConsumerWidget {
                                       // pushed from here.
                                       onEmptyTap: (tappedAt) {
                                         // Tapping outside a long-press-armed
-                                        // task closes its edit/wiggle state —
-                                        // requested directly, the other half of
-                                        // "long press on task should enable its
-                                        // edit mode... tapping outside closes
-                                        // that mode." See _effectiveOnLongPress
-                                        // for the arming side.
+                                        // task closes its armed/selected
+                                        // state — requested directly, the
+                                        // other half of "long press on task
+                                        // should enable its edit mode...
+                                        // tapping outside closes that mode."
+                                        // See _effectiveOnLongPress for the
+                                        // arming side.
                                         //
                                         // **2026-09-12 — a tap while a task IS
                                         // armed now ONLY closes the arm.**
                                         // Reported directly: "tap anywhere on
                                         // the screen [while a task is
-                                        // wiggling]... its not triggering
-                                        // (task creation if tapped on
-                                        // timeline) but stopping wiggling."
-                                        // The original behavior started a
+                                        // armed]... its not triggering (task
+                                        // creation if tapped on timeline) but
+                                        // stopping [the selection]." The
+                                        // original behavior started a
                                         // quick-create draft on the SAME tap
                                         // that closed the arm — a tap meant
-                                        // only to dismiss the wiggle was
+                                        // only to dismiss the selection was
                                         // silently also creating a task.
+                                        //
+                                        // **2026-09-20 — the same rule now
+                                        // covers multi-task selection too.**
+                                        // Requested directly: "on timeline
+                                        // view selected item through long
+                                        // press when tapped outside once it
+                                        // removes selection completely —
+                                        // let's adopt this for our
+                                        // multiselected in edit modes." A
+                                        // non-empty [editSelectionProvider]
+                                        // is the multi-task analogue of
+                                        // "something is armed" — same
+                                        // clear-and-swallow shape, so a tap
+                                        // meant only to deselect never also
+                                        // starts a quick-create draft.
                                         final wasArmed =
                                             ref.read(armedEditTaskProvider) !=
-                                            null;
+                                                null ||
+                                            ref
+                                                .read(editSelectionProvider)
+                                                .isNotEmpty;
                                         ref
                                             .read(
                                               armedEditTaskProvider.notifier,
+                                            )
+                                            .clear();
+                                        ref
+                                            .read(
+                                              editSelectionProvider.notifier,
                                             )
                                             .clear();
                                         if (wasArmed) return;
@@ -988,6 +1059,39 @@ class TimelineScreen extends ConsumerWidget {
                     ).add(Duration(minutes: viewedMinutes)),
                   );
                 },
+              ),
+            // The Day screen's own contextual control dock — "List ·
+            // Timeline · Edit · What Matters," requested directly as the
+            // bottom half of the nav redesign: "Bottom: choose how to work
+            // with your day." Positioned bottom-left, independently of
+            // AppFloatingCreateButton's bottom-right "+" (same "floating,
+            // not welded together" reasoning that widget's own doc
+            // comment already establishes). Hidden under the exact same
+            // conditions as the "+" — Edit Mode and a live quick-create
+            // draft both already take over this screen's bottom real
+            // estate.
+            if (showHeader &&
+                !editModeEnabled &&
+                ref.watch(pendingTaskDraftProvider) == null)
+              Positioned(
+                left: theme.spacingMd,
+                bottom: theme.spacingMd,
+                child: SafeArea(
+                  top: false,
+                  child: AppBottomDock(
+                    activeView: zoneViewEnabled
+                        ? AppBottomDockView.list
+                        : AppBottomDockView.timeline,
+                    onSelectView: (view) => ref
+                        .read(zoneViewEnabledSettingProvider.notifier)
+                        .set(view == AppBottomDockView.list),
+                    onEditTap: () => showEditScreen(context),
+                    whatMattersEnabled: whatMattersEnabled,
+                    onWhatMattersTap: () => ref
+                        .read(whatMattersEnabledSettingProvider.notifier)
+                        .set(!whatMattersEnabled),
+                  ),
+                ),
               ),
           ],
         ),
@@ -1339,6 +1443,36 @@ class _DayTimelineState extends State<_DayTimeline> {
   /// rendered on screen (see `_DraggableTaskBlock.deleteTargetKey`'s own
   /// doc comment).
   final _deleteTargetKey = GlobalKey();
+
+  /// Anchors the day's own coordinate space, so a drag-to-multi-select
+  /// sweep can convert its GLOBAL pointer position into the same local
+  /// y-axis `blockTops` is expressed in. Hit-testing against that map
+  /// (rather than against each block's RenderBox) is what lets the sweep
+  /// find tasks it has not touched yet — a `RenderBox` hit test only ever
+  /// reports what is directly under the finger, which is the block that
+  /// STARTED the drag, since that block holds the pointer for the whole
+  /// gesture.
+  final _dayStackKey = GlobalKey();
+
+  /// The live drag-to-multi-select marquee's own vertical extent, in this
+  /// day's LOCAL coordinates (the same space [_blockTops] uses) — null
+  /// whenever no sweep is in flight.
+  ///
+  /// Requested directly, after an earlier attempt mistook this feature for
+  /// a per-task selection ring: "the swipe sweep selection... it's sweeping
+  /// on top of everything, in the same way as sweep tap and sweep all the
+  /// empty timeline of a zone. There is nothing to obscure it. It's always
+  /// on top. It always follows the finger as the finger moves."
+  ///
+  /// So the visible affordance is a MARQUEE — one accent-tinted rectangle
+  /// spanning drag-start to the finger's current position, drawn over
+  /// everything — not a ring on each task it catches. Mirrors the Weekly
+  /// Zone Authoring Grid's own paint-selection preview exactly (see
+  /// `zone_grid_screen.dart`'s `'zone-paint-selection'` overlay), including
+  /// its `SelectedPillBorder` + translucent-accent-fill shape, rather than
+  /// inventing a second "you are selecting right now" visual language.
+  double? _sweepAnchorY;
+  double? _sweepCurrentY;
 
   /// True while ANY task is being dragged with Edit Mode active — drives
   /// the delete target's fade-in/out. A count rather than a bool so two
@@ -2044,6 +2178,7 @@ class _DayTimelineState extends State<_DayTimeline> {
                           : 0),
                 ),
                 child: SizedBox(
+                  key: _dayStackKey,
                   height: dayHeight,
                   child: Stack(
                     // A dragged block's lift shadow extends well beyond the block's
@@ -2108,53 +2243,85 @@ class _DayTimelineState extends State<_DayTimeline> {
                       // section, this does NOT filter by whether any task
                       // actually references the zone — every persisted zone
                       // renders for its time range regardless.
+                      // Consumer, not a bare `for` — the SELECTED zone must
+                      // paint LAST among its siblings, see
+                      // `selectedZonesLast`'s own doc comment. Reading the
+                      // selection here (rather than sorting inside
+                      // `_DraggableZoneBlock` itself, which only knows its
+                      // OWN zone's selection, not its siblings') is the
+                      // only place that can see every zone's state at once
+                      // to reorder them.
                       if (widget.showHourLabels)
-                        for (final zone in widget.zones)
-                          // Wiggle applies here too — Edit Mode's persistent
-                          // signal covers every visible Zone rendering.
-                          // Move/resize now live here too (**2026-09-06**,
-                          // reversed from the earlier purely-decorative
-                          // scope — see `_DraggableZoneBlock`'s own doc
-                          // comment), via the same `_commitZoneCascade`
-                          // path `ZoneContainerBlock` (Zone view) uses.
-                          _DraggableZoneBlock(
-                            key: ValueKey(zone.id),
-                            theme: theme,
-                            zone: zone,
-                            day: widget.selectedDate,
-                            rangeStart: rangeStart,
-                            pixelsPerMinute: widget.pixelsPerMinute,
-                            left: hourGutterWidth,
-                            // Hugs the PILL COLUMN rather than spanning the
-                            // whole row — the time and task-name columns
-                            // sit outside the zone band, on the plain page.
-                            // Sized to THIS zone's own occupied lanes so the
-                            // space right of its pills matches the space
-                            // left of them; see `_zoneBackgroundWidth` for
-                            // why that beat the earlier uniform-width rule
-                            // where the two clashed.
-                            width: _zoneBackgroundWidth(ghostSlots, theme),
-                            editModeEnabled: widget.editModeEnabled,
-                            phaseOffset: (zone.id.hashCode % 1000) / 1000,
-                            onZoneResize: widget.onZoneResize,
-                            onZoneMove: widget.onZoneMove,
-                            // Same shared delete target every task drag
-                            // already uses — requested directly: "zones
-                            // cant see remove... dragging zone should
-                            // remove zone appear like with tasks."
-                            deleteTargetKey: widget.editModeEnabled
-                                ? _deleteTargetKey
-                                : null,
-                            onDeleteTargetVisibilityChanged: (visible) =>
-                                setState(
-                                  () => _deleteTargetVisibleCount += visible
-                                      ? 1
-                                      : -1,
-                                ),
-                            onDeleteTargetArmedChanged: (armed) =>
-                                setState(() => _deleteTargetArmed = armed),
-                            onDeleteZone: widget.onDeleteZone,
-                          ),
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final selected = ref.watch(
+                              zoneEditSelectionProvider,
+                            );
+                            final ordered = selectedZonesLast(
+                              widget.zones,
+                              selected,
+                            );
+                            return Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                for (final zone in ordered)
+                                  // Wiggle applies here too — Edit Mode's
+                                  // persistent signal covers every visible
+                                  // Zone rendering. Move/resize now live
+                                  // here too (**2026-09-06**, reversed
+                                  // from the earlier purely-decorative
+                                  // scope — see `_DraggableZoneBlock`'s
+                                  // own doc comment), via the same
+                                  // `_commitZoneCascade` path
+                                  // `ZoneContainerBlock` (Zone view) uses.
+                                  _DraggableZoneBlock(
+                                    key: ValueKey(zone.id),
+                                    theme: theme,
+                                    zone: zone,
+                                    day: widget.selectedDate,
+                                    rangeStart: rangeStart,
+                                    pixelsPerMinute: widget.pixelsPerMinute,
+                                    left: hourGutterWidth,
+                                    // Hugs the PILL COLUMN rather than
+                                    // spanning the whole row — the time and
+                                    // task-name columns sit outside the
+                                    // zone band, on the plain page. Sized
+                                    // to THIS zone's own occupied lanes so
+                                    // the space right of its pills matches
+                                    // the space left of them; see
+                                    // `_zoneBackgroundWidth` for why that
+                                    // beat the earlier uniform-width rule
+                                    // where the two clashed.
+                                    width: _zoneBackgroundWidth(
+                                      ghostSlots,
+                                      theme,
+                                    ),
+                                    // Zones are purely decorative on the
+                                    // Task Edit tab now — requested
+                                    // directly: "turn off edit zones (tap
+                                    // on zones) on tasks edit." Always
+                                    // `false` here regardless of
+                                    // `widget.editModeEnabled` (Task Edit
+                                    // Mode still applies to TASKS as
+                                    // normal — this only stops zones from
+                                    // becoming tap-selectable/resizable/
+                                    // movable/deletable alongside it).
+                                    // Zone editing still lives on the
+                                    // merged Edit screen's own dedicated
+                                    // Zones tab (`ZoneGridScreen`,
+                                    // `ZoneGridBlock`), unaffected by this.
+                                    editModeEnabled: false,
+                                    onZoneResize: null,
+                                    onZoneMove: null,
+                                    deleteTargetKey: null,
+                                    onDeleteTargetVisibilityChanged: null,
+                                    onDeleteTargetArmedChanged: null,
+                                    onDeleteZone: null,
+                                  ),
+                              ],
+                            );
+                          },
+                        ),
                       // The zone's name, rotated down the RIGHT edge of the day
                       // — requested directly ("can't see vertical zone name on
                       // task view"), styled like the hour labels on the opposite
@@ -2521,6 +2688,18 @@ class _DayTimelineState extends State<_DayTimeline> {
                                 ),
                             onDeleteTargetArmedChanged: (armed) =>
                                 setState(() => _deleteTargetArmed = armed),
+                            // Non-null ONLY in multi-task mode, which is
+                            // also what makes a drag on an unselected task
+                            // mean "sweep" instead of "move" — see
+                            // `_DraggableTaskBlockState._sweepingSelection`.
+                            // Resolved here because only this widget knows
+                            // every sibling's laid-out position.
+                            // The multi-task-mode gate lives inside the
+                            // block itself (which has provider access);
+                            // this just hands it the resolver.
+                            onSweepSelect: (ref, global) =>
+                                _sweepSelectAt(ref, global, slots, blockTops),
+                            onSweepEnd: _endSweepMarquee,
                           )
                         else if (slot.block
                             case final ExternalCalendarEvent event)
@@ -2756,6 +2935,42 @@ class _DayTimelineState extends State<_DayTimeline> {
                           pixelsPerMinute: widget.pixelsPerMinute,
                           controller: _placeLineController,
                         ),
+                      // The live drag-to-multi-select marquee — LAST in
+                      // this list, so it paints above every task, the
+                      // zone bands, the now-line and the placement line
+                      // alike. Requested directly: "it's sweeping on top
+                      // of everything... there is nothing to obscure it.
+                      // It's always on top. It always follows the finger."
+                      //
+                      // Deliberately the SAME shape the Weekly Zone
+                      // Authoring Grid's own paint-selection preview uses
+                      // (`zone_grid_screen.dart`'s `'zone-paint-selection'`
+                      // overlay): `SelectedPillBorder` over a translucent
+                      // accent fill, wrapped in `IgnorePointer` so it can
+                      // never intercept the very drag that is drawing it.
+                      // One "you are selecting right now" visual language
+                      // across both surfaces rather than two.
+                      if (_sweepAnchorY case final anchor?)
+                        if (_sweepCurrentY case final current?)
+                          Positioned(
+                            left: hourGutterWidth,
+                            right: rightEdgeInset,
+                            top: math.min(anchor, current),
+                            height: (current - anchor).abs(),
+                            child: IgnorePointer(
+                              child: SelectedPillBorder(
+                                key: const ValueKey('task-sweep-selection'),
+                                theme: theme,
+                                contentRadius: BorderRadius.circular(
+                                  theme.radiusMd,
+                                ),
+                                fillColor: theme.colorAccent.withValues(
+                                  alpha: .09,
+                                ),
+                                child: const SizedBox.expand(),
+                              ),
+                            ),
+                          ),
                     ],
                   ),
                 ),
@@ -3200,6 +3415,70 @@ class _DayTimelineState extends State<_DayTimeline> {
     _pillWidth(theme),
   );
 
+  /// Adds whichever task's block currently sits under [global] to the
+  /// multi-task selection — the read side of a drag-to-multi-select
+  /// sweep (see `_DraggableTaskBlockState._sweepingSelection` for the
+  /// gesture half, and `_DraggableTaskBlock.onSweepSelect` for why
+  /// this is resolved by the parent rather than by the dragged block).
+  ///
+  /// Hit-tested against [blockTops] plus each task's own pill height in
+  /// the day's own local coordinates, NOT via a RenderBox hit test: the
+  /// block that started the drag holds the pointer for the whole gesture,
+  /// so a real hit test would keep reporting that same block and the
+  /// sweep would never find anything else.
+  ///
+  /// Purely additive — a task already selected is skipped rather than
+  /// toggled off, so re-crossing one (or wobbling inside it) can't undo
+  /// the sweep's own work.
+  /// [ref] is supplied by the CALLING block (a `ConsumerState`) rather
+  /// than held here — `_DayTimelineState` is a plain `State` with no
+  /// provider access of its own, and converting it to a `ConsumerState`
+  /// purely for this would be a much wider change than the feature needs.
+  void _sweepSelectAt(
+    WidgetRef ref,
+    Offset global,
+    List<TaskLayoutSlot> slots,
+    Map<String, double> blockTops,
+  ) {
+    final box = _dayStackKey.currentContext?.findRenderObject();
+    if (box is! RenderBox) return;
+    final theme = Theme.of(context).extension<AmbleTheme>()!;
+    final localY = box.globalToLocal(global).dy;
+    // Drives the live marquee — see [_sweepAnchorY]'s own doc comment.
+    // The anchor is whatever Y the sweep first reported; every later
+    // event only moves the trailing edge, so the rectangle grows in
+    // whichever direction the finger actually travels.
+    setState(() {
+      _sweepAnchorY ??= localY;
+      _sweepCurrentY = localY;
+    });
+    final selection = ref.read(editSelectionProvider);
+    final notifier = ref.read(editSelectionProvider.notifier);
+    for (final slot in slots) {
+      if (slot.block case final Task task) {
+        final top = blockTops[task.id];
+        if (top == null) continue;
+        final height = math.max(
+          (task.durationMinutes ?? 0) * widget.pixelsPerMinute,
+          theme.sizeTaskBadge,
+        );
+        if (localY < top || localY >= top + height) continue;
+        if (selection.contains(task.id)) continue;
+        notifier.toggle(task.id);
+      }
+    }
+  }
+
+  /// Tears the live marquee down once the sweeping finger lifts — the
+  /// selection it produced stays, only the moving rectangle goes away.
+  void _endSweepMarquee() {
+    if (_sweepAnchorY == null && _sweepCurrentY == null) return;
+    setState(() {
+      _sweepAnchorY = null;
+      _sweepCurrentY = null;
+    });
+  }
+
   /// How wide [zone]'s background block should be: just the pill column,
   /// widened by one pill per extra overlap lane in use inside the zone's
   /// own time window.
@@ -3414,7 +3693,6 @@ class _DraggableZoneBlock extends ConsumerStatefulWidget {
     required this.left,
     required this.width,
     required this.editModeEnabled,
-    required this.phaseOffset,
     this.onZoneResize,
     this.onZoneMove,
     this.deleteTargetKey,
@@ -3431,7 +3709,6 @@ class _DraggableZoneBlock extends ConsumerStatefulWidget {
   final double left;
   final double width;
   final bool editModeEnabled;
-  final double phaseOffset;
 
   /// See [_DayTimeline.onZoneResize]/[_DayTimeline.onZoneMove] — passed
   /// straight through from there.
@@ -3507,7 +3784,7 @@ class _DraggableZoneBlockState extends ConsumerState<_DraggableZoneBlock> {
   /// tapping the header toggles this zone's selection instead of starting
   /// a move — the same "tap becomes select/deselect" rule multi-task mode
   /// already gives tasks. **New 2026-09-06** (confirmed directly — zones
-  /// should not wiggle/be draggable in multi-task mode unless selected).
+  /// should not be draggable in multi-task mode unless selected).
   // Reachable in PLAIN Edit Mode now too, not just multi-task mode —
   // corrected directly, alongside `_interactionEnabled`'s own matching
   // fix: gating resize handles on `_isSelected` unconditionally is only
@@ -3542,19 +3819,19 @@ class _DraggableZoneBlockState extends ConsumerState<_DraggableZoneBlock> {
   bool get _isSelected =>
       ref.watch(zoneEditSelectionProvider).contains(widget.zone.id);
 
-  /// Whether wiggle/handles/the move-header actually render right now —
-  /// mirrors `_DraggableTaskBlockState`'s own `editAffordanceActive` exactly:
-  /// multi-task mode flips what "active" means from "Edit Mode is on" (every
-  /// zone) to "this zone is selected" (only the selected one), since
-  /// otherwise Edit Mode's own active-state signal would be indistinguishable
-  /// from the selection signal if both used the same motion on every zone at
-  /// once.
+  /// Whether the selection ring/handles/the move-header actually render
+  /// right now — mirrors `_DraggableTaskBlockState`'s own
+  /// `editAffordanceActive` exactly: multi-task mode flips what "active"
+  /// means from "Edit Mode is on" (every zone) to "this zone is selected"
+  /// (only the selected one), since otherwise Edit Mode's own active-state
+  /// signal would be indistinguishable from the selection signal if both
+  /// used the same visual on every zone at once.
   // Gated on `_isSelected` unconditionally now — corrected directly:
   // "edit mode tasks shows handles for resize without selecting, that's
   // another thing to change, should only show after tapping/selecting
   // task." This used to short-circuit to `true` outside multi-task mode,
-  // showing every zone's resize handles/wiggle the instant plain Edit
-  // Mode turned on, with no select step at all — the same decoupled-
+  // showing every zone's resize handles/selection ring the instant plain
+  // Edit Mode turned on, with no select step at all — the same decoupled-
   // from-selection gap fixed on `TaskCapsuleBlock`'s own resize handles.
   bool get _interactionEnabled {
     if (!widget.editModeEnabled) return false;
@@ -3709,11 +3986,10 @@ class _DraggableZoneBlockState extends ConsumerState<_DraggableZoneBlock> {
       previewHeight: previewHeight,
       liveStartMinutes: liveStartMinutes,
       liveEndMinutes: liveEndMinutes,
-      // Drives wiggle/handle/header visibility — see `_interactionEnabled`'s
-      // own doc comment for why this differs from plain
-      // `widget.editModeEnabled` under multi-task mode.
+      // Drives the selection ring/handle/header visibility — see
+      // `_interactionEnabled`'s own doc comment for why this differs from
+      // plain `widget.editModeEnabled` under multi-task mode.
       editModeEnabled: interactionEnabled,
-      phaseOffset: widget.phaseOffset,
       onHeaderTap: _effectiveOnHeaderTap,
       onResizeTopStart: !interactionEnabled
           ? null
@@ -4066,7 +4342,24 @@ class _DraggableTaskBlock extends ConsumerStatefulWidget {
     this.onDeleteTargetVisibilityChanged,
     this.onDeleteTargetArmedChanged,
     this.tagColorStyle = TagColorStyle.pill,
+    this.onSweepSelect,
+    this.onSweepEnd,
   });
+
+  /// Reports a live drag-to-multi-select sweep's current GLOBAL pointer
+  /// position, so the parent can add whichever task now sits under the
+  /// finger. Resolved by the parent rather than here because only
+  /// `_DayTimelineState` knows every sibling's laid-out position
+  /// (`blockTops`) — an individual block can't hit-test its neighbours.
+  ///
+  /// Takes this block's own [WidgetRef] because that parent is a plain
+  /// `State` with no provider access of its own.
+  final void Function(WidgetRef ref, Offset global)? onSweepSelect;
+
+  /// Fired when a sweep's finger lifts, so the parent can tear down the
+  /// live marquee — see `_DayTimelineState._sweepAnchorY`. The SELECTION
+  /// the sweep produced is untouched; only the moving rectangle goes.
+  final VoidCallback? onSweepEnd;
 
   final Task task;
   final AmbleTheme theme;
@@ -4230,6 +4523,30 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
   double _dragOffset = 0;
   bool _isDragging = false;
 
+  /// True for the whole duration of a drag that began on an UNSELECTED
+  /// task while multi-task mode is on — that drag means "sweep tasks into
+  /// the selection", not "move this task in time". Requested directly:
+  /// "let's use multi select on tasks also... with selector zone and
+  /// sweeping tap and drag on task."
+  ///
+  /// Captured ONCE, in `onDragStart`, and read by update/end — deliberately
+  /// NOT re-derived per event from `_isSelected`. The sweep selects its own
+  /// origin task immediately, which flips `_isSelected` true and rebuilds
+  /// this block; re-deriving would make the gesture change meaning
+  /// mid-drag (sweep -> group move) after the very first task it selected.
+  /// That exact "selecting rewires the in-flight gesture" trap is what
+  /// sank a first attempt at this same feature on ZONES, where the
+  /// callbacks themselves were gated on `selected` and so were swapped out
+  /// from under a live drag. Gating on a latched field instead of on
+  /// selection is what makes this safe.
+  bool _sweepingSelection = false;
+
+  /// Every task id this sweep has already added, so re-crossing one is a
+  /// genuine no-op rather than a toggle — the sweep is purely ADDITIVE
+  /// (confirmed via AskUserQuestion for the zone version of this same
+  /// gesture; a wobbly drag must not undo its own work).
+  final _sweptTaskIds = <String>{};
+
   /// Routes a tap to selection instead of the detail sheet while Edit
   /// Mode's multi-task route is on (`DevMultiTaskEditMode`,
   /// `core/dev_config.dart`) — requested directly. Off (the default),
@@ -4284,7 +4601,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
       // `lift` rather than `tap`: a long-press that arms edit mode is the
       // same class of event as picking a block up — the user is entering a
       // held state, and the haptic is the only cue that the press has
-      // registered before the wiggle starts.
+      // registered before the selection border appears.
       _playHaptic(AmbleHaptic.lift);
       ref.read(armedEditTaskProvider.notifier).arm(widget.task.id);
     };
@@ -4297,8 +4614,9 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
   /// global mode being on doesn't imply any one task is armed.
   bool get _isArmed => ref.watch(armedEditTaskProvider) == widget.task.id;
 
-  /// Drives THIS block's own wiggle/resize-handle visibility — either the
-  /// existing global Edit Mode is on, or this one task is long-press-armed.
+  /// Drives THIS block's own selection-border/resize-handle visibility —
+  /// either the existing global Edit Mode is on, or this one task is
+  /// long-press-armed.
   /// Deliberately NOT used for the drag-to-delete-target machinery (that
   /// stays gated on `widget.editModeEnabled` alone, unchanged) — delete via
   /// drag-to-target is a whole-Edit-Mode feature per CONSTITUTION.md, not
@@ -4766,6 +5084,9 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                 .firstOrNull,
             pixelsPerMinute: widget.pixelsPerMinute,
             tagColorStyle: widget.tagColorStyle,
+            whatMattersFaded:
+                ref.watch(whatMattersEnabledSettingProvider) &&
+                !widget.task.isImportant,
             // Selection reads as an accent ring on the pill's own rail —
             // requested directly, replacing the wiggle that used to signal
             // it, and matching `ZoneGridBlock`'s own selected treatment.
@@ -4773,11 +5094,11 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
             // `_isArmed` too, not just multi-task selection — requested
             // directly: "edit on long press on timeline (not in edit mode
             // screen) should have same edit style." A long-press-armed
-            // task already gets the wiggle and its resize handles (see
-            // `_editActive`); it was the ONE edit-ish state that never got
-            // the border, so the same gesture looked different depending
-            // on which way you entered edit. Both routes now render the
-            // one shared `SelectedPillBorder`.
+            // task already gets its resize handles (see `_editActive`); it
+            // was the ONE edit-ish state that never got the border, so the
+            // same gesture looked different depending on which way you
+            // entered edit. Both routes now render the one shared
+            // `SelectedPillBorder`.
             isSelected: (multiTaskEditMode && _isSelected) || _isArmed,
             onTap: _effectiveOnTap,
             onLongPress: _effectiveOnLongPress,
@@ -4842,6 +5163,32 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
             onDragStart: !widget.isDraggable
                 ? null
                 : (details) {
+                    // A drag beginning on an UNSELECTED task in multi-task
+                    // mode is a selection sweep, not a move — decided here,
+                    // ONCE, and latched (see `_sweepingSelection`). Every
+                    // move-specific side effect below (lift haptic, delete
+                    // target, drag ghost) is skipped for a sweep, since
+                    // none of them describe what that gesture does.
+                    if (multiTaskEditMode &&
+                        widget.onSweepSelect != null &&
+                        !_isSelected) {
+                      _sweepingSelection = true;
+                      _sweptTaskIds.clear();
+                      _playHaptic(AmbleHaptic.selection);
+                      // The ORIGIN task is selected by id, not by
+                      // hit-testing `details.globalPosition`: a vertical
+                      // drag is only recognised once the finger has moved
+                      // past touch slop, so by the time this fires the
+                      // pointer can already sit over the NEXT block —
+                      // measured, and it silently skipped the very task
+                      // the drag began on. We know which task that is
+                      // without looking at coordinates at all.
+                      ref
+                          .read(editSelectionProvider.notifier)
+                          .toggle(widget.task.id);
+                      widget.onSweepSelect!(ref, details.globalPosition);
+                      return;
+                    }
                     _playHaptic(AmbleHaptic.lift);
                     _lastSnapTickDelta = 0;
                     _deleteTargetWasArmed = false;
@@ -4859,6 +5206,11 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
             onDragUpdate: !widget.isDraggable
                 ? null
                 : (details) {
+                    // Latched at drag-start — see `_sweepingSelection`.
+                    if (_sweepingSelection) {
+                      widget.onSweepSelect?.call(ref, details.globalPosition);
+                      return;
+                    }
                     setState(() => _dragOffset += details.delta.dy);
                     _lastDragGlobalPosition = details.globalPosition;
                     // One tick per crossed 5-minute increment, so the drag
@@ -4907,6 +5259,18 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
             onDragEnd: !widget.isDraggable
                 ? null
                 : (_) async {
+                    // A sweep has nothing to commit — it only ever wrote to
+                    // the selection, which is already up to date, and none
+                    // of the move-specific teardown below applies (it never
+                    // lifted, never showed a delete target, never offset).
+                    if (_sweepingSelection) {
+                      _sweepingSelection = false;
+                      _sweptTaskIds.clear();
+                      // Tears down the live marquee — the selection it
+                      // produced stays; only the rectangle goes.
+                      widget.onSweepEnd?.call();
+                      return;
+                    }
                     // Drop the lift (shadow/scale) immediately regardless of
                     // outcome — that's the tactile "released" feedback and
                     // shouldn't wait on I/O. The haptic goes here for the
@@ -5383,6 +5747,15 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                   widget.task,
                   widget.pixelsPerMinute,
                 ),
+                // This Stack's local x=0 is `widget.left + columnOffset`
+                // (the combined layout's own outer `left`, above) — walk
+                // back past BOTH to reach the day column's true x=0, then
+                // forward to the shared gutter label x. See
+                // `_leftEdgeLabel`'s own doc comment for why `columnOffset`
+                // must be included here (a lane-2+ task was landing left
+                // of the gutter entirely without it).
+                leftOffset:
+                    -(widget.left + columnOffset) + widget.theme.spacingSm,
               )
             else if (editAffordanceActive)
               ..._edgeTimeLabels(
@@ -5391,6 +5764,8 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                   widget.task,
                   widget.pixelsPerMinute,
                 ),
+                leftOffset:
+                    -(widget.left + columnOffset) + widget.theme.spacingSm,
               ),
           ],
         ],
@@ -5403,22 +5778,37 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
   /// use — requested directly: "also in edit mode for selected (wiggly
   /// tasks) we need to show it," then corrected to always sit on the
   /// LEFT, over the hour gutter, like every other edge-time use: "when
-  /// wiggling on left generally all cases on left side." `height` is
-  /// this block's own resting pill height (real duration ×
+  /// wiggling on left generally all cases on left side." Corrected a
+  /// second time, more precisely: "the blue time from to, should not be
+  /// on top and bottom of task but on the left timeline where we [see]
+  /// hours of day" — the earlier fix walked the label back only to the
+  /// day column's own x=0 (the gutter's RIGHT edge, immediately beside
+  /// the task pill), which still read as hugging the task's own top/
+  /// bottom edge rather than genuinely sitting inside the hour-label
+  /// column. `leftOffset` now lands the label at [gutterLabelX] — the
+  /// SAME x `TaskBoundaryMarkers`' own hour ticks use
+  /// (`timeline_screen.dart`'s `TaskBoundaryMarkers(leftInset:
+  /// theme.spacingSm)` call) — so a task's start/end pill sits at the
+  /// exact same horizontal position as the hour grid it's replacing/
+  /// augmenting, just at the task's own y instead of a clock-hour y.
+  ///
+  /// `height` is this block's own resting pill height (real duration ×
   /// pixelsPerMinute, not `top`-adjusted) since the block itself is what
   /// is positioned by the caller — these two labels only need to know
   /// how tall it is to hang correctly off its top and bottom edges.
-  /// `left: -widget.left` walks each label back from the block's own
-  /// local origin (`widget.left`, i.e. `hourGutterWidth`) to the day
-  /// column's true x=0 — see [_liveEdgeTimeLabels]'s own doc comment for
-  /// why every one of these labels shares that same trick.
-  List<Widget> _edgeTimeLabels({required double height}) {
+  /// [leftOffset] is the caller's own local-to-gutter conversion (see
+  /// [_leftEdgeLabel]'s own doc comment for why the combined and split
+  /// layouts pass different values here).
+  List<Widget> _edgeTimeLabels({
+    required double height,
+    required double leftOffset,
+  }) {
     final start = widget.task.scheduledAt!;
     final end = start.add(Duration(minutes: widget.task.durationMinutes!));
     return [
       Positioned(
         top: 0,
-        left: -widget.left,
+        left: leftOffset,
         child: FractionalTranslation(
           translation: const Offset(0, -0.5),
           // showLine: false — reported directly: unlike the long-press
@@ -5434,7 +5824,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
       ),
       Positioned(
         top: height,
-        left: -widget.left,
+        left: leftOffset,
         child: FractionalTranslation(
           translation: const Offset(0, -0.5),
           child: TaskEdgeTimeLabel(
@@ -5478,7 +5868,10 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
   /// live pixel delta the pill's own bottom edge is visibly moving by, or
   /// the label silently stops tracking the finger the instant a resize
   /// starts.
-  List<Widget> _liveEdgeTimeLabels({required double height}) {
+  List<Widget> _liveEdgeTimeLabels({
+    required double height,
+    required double leftOffset,
+  }) {
     final baseStart = widget.task.scheduledAt!;
     if (_isResizing) {
       // Driven by the LIVE (unsnapped) duration, matching what the pill
@@ -5493,8 +5886,8 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
         Duration(minutes: _livePreviewDurationMinutes.round()),
       );
       return [
-        _leftEdgeLabel(top: 0, time: baseStart),
-        _leftEdgeLabel(top: liveHeight, time: end),
+        _leftEdgeLabel(top: 0, time: baseStart, leftOffset: leftOffset),
+        _leftEdgeLabel(top: liveHeight, time: end, leftOffset: leftOffset),
       ];
     }
     if (_isResizingTop) {
@@ -5519,8 +5912,12 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
         Duration(minutes: widget.task.durationMinutes!),
       );
       return [
-        _leftEdgeLabel(top: 0, time: start),
-        _leftEdgeLabel(top: liveHeightUnfloored, time: end),
+        _leftEdgeLabel(top: 0, time: start, leftOffset: leftOffset),
+        _leftEdgeLabel(
+          top: liveHeightUnfloored,
+          time: end,
+          leftOffset: leftOffset,
+        ),
       ];
     }
     // Move-drag: both edges shift by the same live offset, duration
@@ -5528,15 +5925,29 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
     final start = _previewStartsAt;
     final end = start.add(Duration(minutes: widget.task.durationMinutes!));
     return [
-      _leftEdgeLabel(top: 0, time: start),
-      _leftEdgeLabel(top: height, time: end),
+      _leftEdgeLabel(top: 0, time: start, leftOffset: leftOffset),
+      _leftEdgeLabel(top: height, time: end, leftOffset: leftOffset),
     ];
   }
 
-  Widget _leftEdgeLabel({required double top, required DateTime time}) {
+  /// [leftOffset] converts this block's own LOCAL x=0 to the shared
+  /// gutter label x — see [_edgeTimeLabels]'s own doc comment for why
+  /// this must be passed in rather than derived from `widget.left`
+  /// directly: the combined layout's local x=0 is `widget.left +
+  /// columnOffset` (an overlap-lane task sits further right, so simply
+  /// negating `widget.left` alone landed left of the true gutter x for
+  /// any lane past the first — a real, latent bug the old fixed
+  /// `-widget.left` formula never accounted for), while the split
+  /// layout's local x=0 is `widget.left` alone (its own lane offset is
+  /// applied to the pill internally, not to the whole box).
+  Widget _leftEdgeLabel({
+    required double top,
+    required DateTime time,
+    required double leftOffset,
+  }) {
     return Positioned(
       top: top,
-      left: -widget.left,
+      left: leftOffset,
       child: FractionalTranslation(
         translation: const Offset(0, -0.5),
         child: TaskEdgeTimeLabel(
@@ -5688,7 +6099,21 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
               // travelling with the finger, once stranded at the shared
               // column. Also hidden for a resting cluster member, whose
               // text lives in the cluster's own row list.
-              isFaded: _isDragging || (widget.contentHidden && !_isDragging),
+              //
+              // **2026-09-20 — also faded by What Matters.** Split layout
+              // (this method) renders the pill (`pillContent`, already
+              // carrying `TaskCapsuleBlock.whatMattersFaded`) and this
+              // text/checkbox row as two SEPARATE `Positioned` siblings in
+              // one `Stack` — the pill's own `AnimatedOpacity` never
+              // touches this row at all. Reported directly: "currently
+              // just pill fades out, label stays with checkbox on task
+              // view (spatial)." `ref.watch` here since this whole method
+              // lives on a `ConsumerState`, same as the pill's own read.
+              isFaded:
+                  _isDragging ||
+                  (widget.contentHidden && !_isDragging) ||
+                  (ref.watch(whatMattersEnabledSettingProvider) &&
+                      !widget.task.isImportant),
             ),
           ),
           // Edge-time badges, ALWAYS pinned over the hour gutter on the
@@ -5715,6 +6140,13 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                   widget.task,
                   widget.pixelsPerMinute,
                 ),
+                // This Stack's local x=0 is `widget.left` alone (the
+                // split layout's own outer `left`, above) — the lane
+                // offset is applied to the pill internally
+                // (`Positioned(left: columnOffset, ...)`), not to the
+                // whole box, so no `columnOffset` term is needed here
+                // unlike the combined layout's own call.
+                leftOffset: -widget.left + widget.theme.spacingSm,
               )
             else if (editAffordanceActive)
               ..._edgeTimeLabels(
@@ -5723,6 +6155,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                   widget.task,
                   widget.pixelsPerMinute,
                 ),
+                leftOffset: -widget.left + widget.theme.spacingSm,
               ),
           ],
         ],

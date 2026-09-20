@@ -244,30 +244,39 @@ void main() {
     },
   );
 
-  testWidgets('dragging a task with nothing selected still moves just that one '
-      'task (multi-task mode ON but no active selection)', (tester) async {
-    final a = makeTask('Focus block', hour: 9);
-    // Captured before the drag — see the group-move test's own comment on
-    // why (Hive returns the same object, so `a` itself gets mutated).
-    final originalA = a.scheduledAt;
-    await pumpTimeline(tester, tasks: [a]);
+  // **2026-09-20 — inverted, deliberately.** This test used to assert that
+  // dragging an UNSELECTED task in multi-task mode still moved it. That is
+  // no longer true: drag-to-multi-select now claims that exact gesture
+  // (drag from an unselected task = sweep it and everything the finger
+  // crosses into the selection), confirmed via AskUserQuestion with the
+  // tradeoff stated explicitly — "costs you the ability to drag an
+  // unselected task directly; you'd tap it first, then drag." So the
+  // behaviour this file pins is now the inverse, and the single-task move
+  // path is reached by selecting first (the test above it already covers
+  // that). See `multi_task_selection_test.dart`'s own sweep group.
+  testWidgets(
+    'dragging an UNSELECTED task in multi-task mode SWEEPS it into the '
+    'selection rather than moving it — its schedule is untouched',
+    (tester) async {
+      final a = makeTask('Focus block', hour: 9);
+      final originalA = a.scheduledAt;
+      await pumpTimeline(tester, tasks: [a]);
 
-    // No tap-to-select first — this exercises the plain single-task
-    // move path even while multi-task mode is globally on.
-    await tester.runAsync(() async {
-      await tester.drag(pillFor('Focus block'), const Offset(0, 90));
-      await tester.pump();
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-    });
-    await tester.pump(const Duration(milliseconds: 400));
+      await tester.runAsync(() async {
+        await tester.drag(pillFor('Focus block'), const Offset(0, 90));
+        await tester.pump();
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pump(const Duration(milliseconds: 400));
 
-    final saved = taskBox.get(a.id)!;
-    expect(saved.scheduledAt, isNot(originalA));
-    expect(
-      saved.scheduledAt!.difference(originalA!).inMinutes,
-      greaterThanOrEqualTo(5),
-    );
-  });
+      final saved = taskBox.get(a.id)!;
+      expect(
+        saved.scheduledAt,
+        originalA,
+        reason: 'a sweep selects; it must never reschedule anything',
+      );
+    },
+  );
 }
 
 class _FixedEditModeEnabled extends EditModeEnabled {

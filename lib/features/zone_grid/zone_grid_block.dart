@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/selected_pill_border.dart';
 import '../../shared/models/zone.dart';
-import '../timeline/edit_mode_wiggle.dart';
 import '../timeline/resize_handle.dart';
 import '../timeline/task_edge_time_label.dart';
 
@@ -16,11 +15,12 @@ import '../timeline/task_edge_time_label.dart';
 /// everywhere else in the app (`ZoneBackgroundBlock`'s own current fill,
 /// `ZoneContainerBlock`'s card). Distinguished by label text only.
 ///
-/// Mirrors `ZoneBackgroundBlock`'s exact gesture/wiggle composition
-/// (`EditModeWiggle` wrapping a `Stack` with a fill `GestureDetector` for
-/// tap+move, plus top/bottom `ResizeHandle`s) rather than inventing a
-/// parallel shape — the grid's selection/wiggle/resize story is the same
-/// story, just laid out on a week instead of a single day's time axis.
+/// Mirrors `ZoneBackgroundBlock`'s exact gesture/selection composition
+/// (a `Stack` with a fill `GestureDetector` for tap+move, plus top/bottom
+/// `ResizeHandle`s, `SelectedPillBorder` marking the selected block)
+/// rather than inventing a parallel shape — the grid's selection/resize
+/// story is the same story, just laid out on a week instead of a single
+/// day's time axis.
 class ZoneGridBlock extends StatelessWidget {
   const ZoneGridBlock({
     super.key,
@@ -29,8 +29,7 @@ class ZoneGridBlock extends StatelessWidget {
     required this.top,
     required this.height,
     required this.isSelected,
-    required this.wiggleEnabled,
-    this.phaseOffset = 0,
+    required this.dayColumnLeft,
     this.liveStartMinutes,
     this.liveEndMinutes,
     required this.onTap,
@@ -58,22 +57,22 @@ class ZoneGridBlock extends StatelessWidget {
   final double top;
   final double height;
 
+  /// This zone's own DAY COLUMN's outer `left` within the grid's shared
+  /// Stack (`_axisWidth + (day - 1) * columnWidth` at the caller) — needed
+  /// to walk the live edge labels below back to the grid's own hour-axis
+  /// x, since this block's own local coordinate space starts at the
+  /// column's left edge, not the grid's true x=0. See
+  /// [liveStartMinutes]/[liveEndMinutes]'s own `Positioned` for the exact
+  /// formula.
+  final double dayColumnLeft;
+
   /// Whether this SPECIFIC zone is part of the current multi-selection —
-  /// drives both the wiggle and the resize-handle visibility, mirroring
-  /// `ZoneBackgroundBlock`'s own `editModeEnabled && (isSelected)` gating
-  /// (this screen has no non-selection "every zone wiggles" mode — see
-  /// the screen's own doc comment on why Edit Mode here is selection-only
+  /// drives both the selection ring and the resize-handle visibility,
+  /// mirroring `ZoneBackgroundBlock`'s own `editModeEnabled` gating (this
+  /// screen has no non-selection "every zone shows a ring" mode — see the
+  /// screen's own doc comment on why Edit Mode here is selection-only
   /// from the start).
   final bool isSelected;
-
-  /// Whether wiggle actually animates right now — separate from
-  /// [isSelected] because a just-toggled-off block should stop wiggling
-  /// immediately while its resize handles are what actually gate on
-  /// [isSelected] a frame later, matching `EditModeWiggle`'s own
-  /// enabled/disabled transition contract.
-  final bool wiggleEnabled;
-
-  final double phaseOffset;
 
   /// The start/end this block would COMMIT to if the live gesture were
   /// released right now, in minutes since its own day's midnight — or
@@ -84,7 +83,7 @@ class ZoneGridBlock extends StatelessWidget {
   /// the edge actually moving (the other stays null), while a MOVE sets
   /// both, since they shift together. Rendered as the same accent-backed
   /// [TaskEdgeTimeLabel] the placement line, the pending-create pill and
-  /// Edit Mode's wiggling tasks all already use — requested directly:
+  /// Edit Mode's selected tasks all already use — requested directly:
   /// "we also should see start end time when resizing and moving on
   /// accent bg same as with tasks on edit mode."
   ///
@@ -140,123 +139,121 @@ class ZoneGridBlock extends StatelessWidget {
       left: horizontalInset,
       right: horizontalInset,
       height: height,
-      child: EditModeWiggle(
-        enabled: wiggleEnabled,
-        phaseOffset: phaseOffset,
-        child: Stack(
-          fit: StackFit.expand,
-          clipBehavior: Clip.none,
-          children: [
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onTap,
-              onVerticalDragStart: onMoveStart,
-              onVerticalDragUpdate: onMoveUpdate,
-              onVerticalDragEnd: onMoveEnd,
-              // Horizontal is a genuinely different intent from vertical
-              // here — see [onExtendStart]. Flutter's arena picks whichever
-              // axis the finger actually commits to, so the two never fire
-              // for the same gesture.
-              onHorizontalDragStart: onExtendStart,
-              onHorizontalDragUpdate: onExtendUpdate,
-              onHorizontalDragEnd: onExtendEnd,
-              child: isSelected
-                  ? SelectedPillBorder(
-                      theme: theme,
-                      contentRadius: BorderRadius.circular(theme.radiusMd),
-                      fillColor: theme.colorSurfaceSecondary,
-                      child: _RotatedTitle(theme: theme, title: zone.title),
-                    )
-                  : DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: theme.colorSurfaceSecondary,
-                        borderRadius: BorderRadius.circular(theme.radiusMd),
-                      ),
-                      child: _RotatedTitle(theme: theme, title: zone.title),
+      child: Stack(
+        fit: StackFit.expand,
+        clipBehavior: Clip.none,
+        children: [
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onTap,
+            onVerticalDragStart: onMoveStart,
+            onVerticalDragUpdate: onMoveUpdate,
+            onVerticalDragEnd: onMoveEnd,
+            // Horizontal is a genuinely different intent from vertical
+            // here — see [onExtendStart]. Flutter's arena picks whichever
+            // axis the finger actually commits to, so the two never fire
+            // for the same gesture.
+            onHorizontalDragStart: onExtendStart,
+            onHorizontalDragUpdate: onExtendUpdate,
+            onHorizontalDragEnd: onExtendEnd,
+            child: isSelected
+                ? SelectedPillBorder(
+                    theme: theme,
+                    contentRadius: BorderRadius.circular(theme.radiusMd),
+                    fillColor: theme.colorSurfaceSecondary,
+                    child: _RotatedTitle(theme: theme, title: zone.title),
+                  )
+                : DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: theme.colorSurfaceSecondary,
+                      borderRadius: BorderRadius.circular(theme.radiusMd),
                     ),
+                    child: _RotatedTitle(theme: theme, title: zone.title),
+                  ),
+          ),
+          if (isSelected && onResizeTopEnd != null)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: ResizeHandle(
+                theme: theme,
+                // `barAlignment`/`outwardShiftFactor` wired here too —
+                // this call had neither, so the default
+                // `Alignment.center` made `ResizeHandle`'s own outward
+                // push (keyed off `barAlignment.y.sign`) a no-op,
+                // leaving the dot at this box's MIDDLE — the same
+                // "still inside, not outside" gap fixed on
+                // `ZoneContainerBlock`'s equivalent handles. No
+                // clipping ancestor here (this `Stack` is
+                // `Clip.none`, same as that container's), so it gets
+                // the same full `1.5` push.
+                barAlignment: Alignment.topCenter,
+                onDragStart: onResizeTopStart,
+                onDragUpdate: onResizeTopUpdate,
+                onDragEnd: onResizeTopEnd,
+              ),
             ),
-            if (isSelected && onResizeTopEnd != null)
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: ResizeHandle(
+          if (isSelected && onResizeBottomEnd != null)
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: ResizeHandle(
+                theme: theme,
+                barAlignment: Alignment.bottomCenter,
+                onDragStart: onResizeBottomStart,
+                onDragUpdate: onResizeBottomUpdate,
+                onDragEnd: onResizeBottomEnd,
+              ),
+            ),
+          // Last in this Stack so they paint ABOVE the rail and the
+          // resize handles rather than under them — same ordering
+          // `PendingTaskPill` uses for its own pair. Each straddles its
+          // edge via a half-height `FractionalTranslation`, matching
+          // `ZoneBackgroundBlock._liveZoneEdgeLabels`.
+          //
+          // Pinned INSIDE the grid's own hour-axis column — corrected
+          // directly: "zones also blue time from to on the left." A
+          // bare `left: 0` here only reached this DAY COLUMN's own local
+          // x=0 (`horizontalInset` past its own left edge), which in the
+          // grid's shared, absolute coordinate space landed at
+          // `dayColumnLeft + horizontalInset` — day 1's block sat right
+          // at the axis's own right edge, later days far to its right,
+          // nowhere near the actual hour-tick text. `-(dayColumnLeft +
+          // horizontalInset) + theme.spacingSm` walks back to the grid's
+          // true x=0, then forward to `theme.spacingSm` — the SAME x the
+          // hour-axis labels themselves use (see `zone_grid_screen.dart`'s
+          // own `Positioned(left: theme.spacingSm, ...)` for the "HH:00"
+          // ticks). Matches the identical fix already applied to
+          // `ZoneBackgroundBlock`'s own pair on the spatial Timeline.
+          if (liveStartMinutes case final startMinutes?)
+            Positioned(
+              top: 0,
+              left: -(dayColumnLeft + horizontalInset) + theme.spacingSm,
+              child: FractionalTranslation(
+                translation: const Offset(0, -0.5),
+                child: TaskEdgeTimeLabel(
                   theme: theme,
-                  // `barAlignment`/`outwardShiftFactor` wired here too —
-                  // this call had neither, so the default
-                  // `Alignment.center` made `ResizeHandle`'s own outward
-                  // push (keyed off `barAlignment.y.sign`) a no-op,
-                  // leaving the dot at this box's MIDDLE — the same
-                  // "still inside, not outside" gap fixed on
-                  // `ZoneContainerBlock`'s equivalent handles. No
-                  // clipping ancestor here (this `Stack` is
-                  // `Clip.none`, same as that container's), so it gets
-                  // the same full `1.5` push.
-                  barAlignment: Alignment.topCenter,
-                  onDragStart: onResizeTopStart,
-                  onDragUpdate: onResizeTopUpdate,
-                  onDragEnd: onResizeTopEnd,
+                  time: _timeOfDayFromMinutes(startMinutes),
+                  showLine: false,
                 ),
               ),
-            if (isSelected && onResizeBottomEnd != null)
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: ResizeHandle(
+            ),
+          if (liveEndMinutes case final endMinutes?)
+            Positioned(
+              bottom: 0,
+              left: -(dayColumnLeft + horizontalInset) + theme.spacingSm,
+              child: FractionalTranslation(
+                translation: const Offset(0, 0.5),
+                child: TaskEdgeTimeLabel(
                   theme: theme,
-                  barAlignment: Alignment.bottomCenter,
-                  onDragStart: onResizeBottomStart,
-                  onDragUpdate: onResizeBottomUpdate,
-                  onDragEnd: onResizeBottomEnd,
+                  time: _timeOfDayFromMinutes(endMinutes),
+                  showLine: false,
                 ),
               ),
-            // Last in this Stack so they paint ABOVE the rail and the
-            // resize handles rather than under them — same ordering
-            // `PendingTaskPill` uses for its own pair. Each straddles its
-            // edge via a half-height `FractionalTranslation`, matching
-            // `ZoneBackgroundBlock._liveZoneEdgeLabels`.
-            // **Left-aligned, both of them** — requested directly. Pinned
-            // by `left` ALONE, with no `right`: `TaskEdgeTimeLabel`'s own
-            // Row uses `MainAxisAlignment.end`, so a box stretched
-            // edge-to-edge (`left: 0, right: 0`, as these were) pushes the
-            // pill to the RIGHT edge. Dropping `right` lets the Row
-            // shrink-wrap its own pill, which then sits wherever `left`
-            // puts it — no alignment parameter needed on the shared
-            // widget, and no change to its six task-side callers.
-            //
-            // This is also exactly how `ZoneBackgroundBlock` already
-            // positions its own pair (`Positioned(left: gutterOffset)`,
-            // no `right`), so the two zone surfaces now match by
-            // construction rather than by coincidence.
-            if (liveStartMinutes case final startMinutes?)
-              Positioned(
-                top: 0,
-                left: 0,
-                child: FractionalTranslation(
-                  translation: const Offset(0, -0.5),
-                  child: TaskEdgeTimeLabel(
-                    theme: theme,
-                    time: _timeOfDayFromMinutes(startMinutes),
-                    showLine: false,
-                  ),
-                ),
-              ),
-            if (liveEndMinutes case final endMinutes?)
-              Positioned(
-                bottom: 0,
-                left: 0,
-                child: FractionalTranslation(
-                  translation: const Offset(0, 0.5),
-                  child: TaskEdgeTimeLabel(
-                    theme: theme,
-                    time: _timeOfDayFromMinutes(endMinutes),
-                    showLine: false,
-                  ),
-                ),
-              ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }

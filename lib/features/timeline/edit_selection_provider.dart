@@ -5,9 +5,10 @@ part 'edit_selection_provider.g.dart';
 /// The set of task ids currently selected under Edit Mode's multi-task
 /// route (`DevMultiTaskEditMode`, `core/dev_config.dart`) — requested
 /// directly: with multi-task mode on, tapping a task selects it instead of
-/// opening its detail sheet, and wiggle becomes the SELECTION indicator
-/// (only selected blocks wiggle) rather than the mode indicator every
-/// block shows under ordinary (single-task) Edit Mode.
+/// opening its detail sheet, and an accent selection border
+/// (`SelectedPillBorder`) becomes the SELECTION indicator (only selected
+/// blocks show it) rather than the mode indicator every block shows under
+/// ordinary (single-task) Edit Mode.
 ///
 /// Screen-local, ephemeral UI state — same reasoning and shape as
 /// [EditModeEnabled] (`edit_mode_provider.dart`): plain `autoDispose`, not
@@ -42,12 +43,13 @@ class EditSelection extends _$EditSelection {
 /// the same "selected" concept, and mixing their ids in one `Set<String>`
 /// would make membership checks ambiguous about which kind of thing is
 /// selected). **New 2026-09-06** (confirmed directly — zones should not
-/// wiggle/be draggable in multi-task mode unless selected, mirroring the
+/// be draggable in multi-task mode unless selected, mirroring the
 /// existing task rule exactly): with multi-task mode on, tapping a zone's
-/// header selects it instead of starting a move-drag, and wiggle becomes
-/// the SELECTION indicator for zones too (only the selected zone wiggles)
-/// rather than the mode indicator every zone shows under ordinary
-/// (single-task) Edit Mode.
+/// header selects it instead of starting a move-drag, and the same accent
+/// selection border (`SelectedPillBorder`) becomes the SELECTION
+/// indicator for zones too (only the selected zone shows it) rather than
+/// the mode indicator every zone shows under ordinary (single-task) Edit
+/// Mode.
 ///
 /// **Widened to genuine multi-select 2026-09-12** (was `String?`,
 /// single-select). The original shape was justified by "there is no
@@ -83,6 +85,20 @@ class ZoneEditSelection extends _$ZoneEditSelection {
   /// own "only one zone at a time" behaviour, kept explicit now that
   /// [toggle] genuinely accumulates.
   void selectOnly(String zoneId) => state = {zoneId};
+
+  /// Adds [zoneId] without removing it when it's already there — the
+  /// difference from [toggle] that drag-to-multi-select needs (see
+  /// `ZoneGridScreen._sweepingZones`). A sweep crosses the same zone
+  /// repeatedly as the finger wobbles inside it, and `toggle` would
+  /// flicker it in and out of the selection.
+  ///
+  /// Leaves [state] untouched when the id is already selected, so
+  /// sweeping across one wide zone doesn't emit a rebuild per pointer
+  /// event.
+  void add(String zoneId) {
+    if (state.contains(zoneId)) return;
+    state = {...state, zoneId};
+  }
 
   void clear() {
     if (state.isEmpty) return;

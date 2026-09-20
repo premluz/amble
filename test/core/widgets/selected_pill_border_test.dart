@@ -87,6 +87,35 @@ void main() {
       );
     });
 
+    // Real bug, reported directly: "when task selected on timeline (not
+    // in edit mode) the icon gets in the middle, should stay on top."
+    // Root cause: the selected branch's `Align(alignment: topCenter,
+    // child: _PillGlyph(...))` had no fixed-size box around `_PillGlyph`
+    // the way the unselected branch's `SizedBox(badgeSize, badgeSize)`
+    // does — `_PillGlyph`'s own root is a bare `Center`, so without that
+    // box it grew to fill `Align`'s full available height (the whole
+    // pill, via the selected branch's `SizedBox.expand`) and centered
+    // within THAT instead of within a badgeSize square pinned to the top.
+    testWidgets(
+      'the glyph icon sits at the SAME y whether the task is selected or '
+      'not — selecting must never drop it to the pill\'s vertical middle',
+      (tester) async {
+        await pump(tester, isSelected: false);
+        final unselectedIconTop = tester.getTopLeft(find.byType(Icon)).dy;
+
+        await pump(tester, isSelected: true);
+        final selectedIconTop = tester.getTopLeft(find.byType(Icon)).dy;
+
+        expect(
+          selectedIconTop,
+          moreOrLessEquals(unselectedIconTop, epsilon: 1),
+          reason:
+              'selecting a task pill must not move its category icon — '
+              'it stays pinned near the pill\'s own top in both states',
+        );
+      },
+    );
+
     testWidgets('selected: the accent ring and the dark separator ring are '
         'two DIFFERENT colors, not the same ring drawn twice', (tester) async {
       await pump(tester, isSelected: true);
@@ -163,7 +192,7 @@ void main() {
                     top: 0,
                     height: 90,
                     isSelected: isSelected,
-                    wiggleEnabled: false,
+                    dayColumnLeft: 0,
                     onTap: () {},
                   ),
                 ],

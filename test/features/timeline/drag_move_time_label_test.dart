@@ -217,6 +217,51 @@ void main() {
     },
   );
 
+  // Regression coverage for the actual reported bug: "the blue time from
+  // to, should not be on top and bottom of task but on the left timeline
+  // where we [see] hours of day." The label previously sat flush against
+  // the task pill's own left edge (the day column's x=0, immediately
+  // beside the pill) rather than genuinely inside the hour-gutter column
+  // the "9 AM"/"10 AM" ticks live in.
+  testWidgets('the live edge label sits well LEFT of the task pill\'s own left '
+      'edge — inside the hour gutter, not hugging the pill', (tester) async {
+    final task = makeTask('Focus block');
+    await pumpTimeline(tester, task: task);
+
+    await tester.runAsync(() async {
+      final dragStart = tester.getCenter(pillFor('Focus block'));
+      final gesture = await tester.startGesture(dragStart);
+      for (var i = 0; i < 8; i++) {
+        await gesture.moveBy(const Offset(0, 5));
+        await tester.pump();
+      }
+
+      // .first — mid-drag there are two TaskCapsuleBlock matches (the
+      // resting slot plus the lifted drag visual); either's left edge
+      // works for this comparison since both sit in the task-pill area,
+      // well right of the gutter.
+      final pillLeft = tester.getTopLeft(pillFor('Focus block').first).dx;
+      final labelLeft = tester
+          .getTopLeft(find.byType(TaskEdgeTimeLabel).first)
+          .dx;
+
+      expect(
+        labelLeft,
+        lessThan(pillLeft - 20),
+        reason:
+            'the label must sit well inside the hour gutter, clearly '
+            'separated from the task pill it used to hug — a small gap '
+            'would still read as "hanging off the pill", not "on the '
+            'hour axis"',
+      );
+
+      await gesture.up();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+  });
+
   testWidgets('releasing the drag hides the left-edge time labels again', (
     tester,
   ) async {

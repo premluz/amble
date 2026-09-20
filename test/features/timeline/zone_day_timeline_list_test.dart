@@ -35,6 +35,7 @@ void main() {
     bool devHideEmptyZones = false,
     bool devIconsVisible = true,
     bool devZoneTaskStartTimeVisible = false,
+    bool whatMattersEnabled = false,
     Map<String, Category> categoryById = const <String, Category>{},
   }) async {
     tester.view.physicalSize = const Size(390, 1400);
@@ -61,6 +62,7 @@ void main() {
             devHideEmptyZones: devHideEmptyZones,
             devIconsVisible: devIconsVisible,
             devZoneTaskStartTimeVisible: devZoneTaskStartTimeVisible,
+            whatMattersEnabled: whatMattersEnabled,
           ),
         ),
       ),
@@ -186,6 +188,30 @@ void main() {
     expect(container.tasks.map((t) => t.id), contains(task.id));
     expect(find.textContaining('Stretch'), findsOneWidget);
   });
+
+  // Requested directly: "wire for zoned" — swipe-to-reveal's add-note
+  // action must reach ZoneContainerBlock from this screen, matching the
+  // unzoned rows' own existing wiring exactly.
+  testWidgets(
+    'ZoneContainerBlock.onAddNote is wired, matching the unzoned rows\' '
+    'own showAddTaskNoteSheet call',
+    (tester) async {
+      final zone = zoneAt('z1', 'Morning ritual', 7, 8);
+      final task = Task.create(
+        title: 'Stretch',
+        scheduledAt: DateTime(2026, 9, 2, 7, 15),
+        durationMinutes: 15,
+        categoryId: BuiltInCategoryIds.health,
+      );
+
+      await pump(tester, zones: [zone], tasks: [task]);
+
+      final container =
+          find.byType(ZoneContainerBlock).evaluate().single.widget
+              as ZoneContainerBlock;
+      expect(container.onAddNote, isNotNull);
+    },
+  );
 
   testWidgets(
     'an unzoned task renders as its own flat row, not inside any zone',
@@ -432,6 +458,69 @@ void main() {
 
   // Requested directly: "align tasks that are not in zones same with tasks
   // that have zones, so add margin that is equal zone left padding."
+  // Reported directly against a screenshot with two guide lines drawn
+  // from the spatial Task view: "the left line is the left edge of the
+  // hour in the day timeline, the second line is the left edge of the
+  // position of the zone. It's obviously misaligned." Zone view used to
+  // start its cards at just the 24px page inset, reserving no hour
+  // gutter at all — 66px left of where the spatial view's own zone band
+  // sits (`left: hourGutterWidth` = 24 page + 66 gutter = 90).
+  group('zone cards align with the spatial view\'s zone band (2026-09-20)', () {
+    testWidgets(
+      'a zone card\'s left edge sits at zoneContentLeftInset (90) from the '
+      'true screen edge — the same x the spatial view\'s zone band uses',
+      (tester) async {
+        final zone = zoneAt('z1', 'Morning ritual', 7, 8);
+        await pump(tester, zones: [zone], tasks: const []);
+
+        final cardLeft = tester.getTopLeft(find.byType(ZoneContainerBlock)).dx;
+
+        expect(
+          cardLeft,
+          moreOrLessEquals(zoneContentLeftInset, epsilon: 0.5),
+          reason:
+              'the zone card must start where the spatial view\'s own '
+              'zone band does (its 24px page inset plus its 66px hour '
+              'gutter), not at the bare page inset',
+        );
+      },
+    );
+
+    testWidgets(
+      'a zoned task row\'s own time label still escapes all the way back '
+      'to the spatial view\'s hour-label position (16px), even though its '
+      'card now starts 66px further right',
+      (tester) async {
+        final zone = zoneAt('z1', 'Morning ritual', 7, 9);
+        final zonedTask = Task.create(
+          title: 'In zone',
+          scheduledAt: DateTime(2026, 9, 2, 8),
+          durationMinutes: 30,
+          categoryId: BuiltInCategoryIds.work,
+        );
+
+        await pump(
+          tester,
+          zones: [zone],
+          tasks: [zonedTask],
+          devZoneTaskStartTimeVisible: true,
+        );
+
+        final timeLeft = tester
+            .getTopLeft(find.textContaining('8:00', findRichText: false))
+            .dx;
+
+        expect(
+          timeLeft,
+          moreOrLessEquals(zoneRowTimeLabelEdgeInset, epsilon: 0.5),
+          reason:
+              'the two guide lines in the report must BOTH match now: the '
+              'hour label at 16px and the zone card at 90px',
+        );
+      },
+    );
+  });
+
   group('unzoned rows line up with zoned rows (2026-09-15)', () {
     testWidgets('an unzoned task\'s own badge sits spacingMd further right '
         'than a bare row would, matching a zoned task\'s own inset', (
@@ -805,6 +894,88 @@ void main() {
       expect(find.textContaining('Morning ritual'), findsOneWidget);
       expect(find.textContaining('Empty zone'), findsNothing);
       expect(find.textContaining('Out of zone'), findsOneWidget);
+    });
+  });
+
+  // Requested directly: "should also hide emptied zones." What Matters
+  // hides every non-important task (each row fades/collapses on its own,
+  // via WhatMattersRow) and every external event unconditionally — a
+  // zone whose members are ALL non-important (or only had external
+  // events) renders as an empty card once that happens, even without the
+  // dev toggle above ever being turned on. `whatMattersEnabled` reuses
+  // the exact same empty-zone filter `devHideEmptyZones` does, applied
+  // automatically whenever the lens is on.
+  group('What Matters hides emptied zones (2026-09-20)', () {
+    testWidgets(
+      'whatMattersEnabled true: a zone whose only task is NOT important '
+      'is hidden entirely, same as a genuinely empty zone',
+      (tester) async {
+        final zone = zoneAt('z1', 'Morning ritual', 7, 8);
+        final unimportantTask = Task.create(
+          title: 'Not important',
+          scheduledAt: DateTime(2026, 9, 2, 7, 15),
+          durationMinutes: 15,
+          categoryId: BuiltInCategoryIds.health,
+        );
+
+        await pump(
+          tester,
+          zones: [zone],
+          tasks: [unimportantTask],
+          whatMattersEnabled: true,
+        );
+
+        expect(find.byType(ZoneContainerBlock), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'whatMattersEnabled true: a zone with at least one IMPORTANT task '
+      'still renders',
+      (tester) async {
+        final zone = zoneAt('z1', 'Morning ritual', 7, 9);
+        final important = Task.create(
+          title: 'Important task',
+          scheduledAt: DateTime(2026, 9, 2, 7, 15),
+          durationMinutes: 15,
+          categoryId: BuiltInCategoryIds.health,
+          isImportant: true,
+        );
+        final unimportant = Task.create(
+          title: 'Not important',
+          scheduledAt: DateTime(2026, 9, 2, 8, 15),
+          durationMinutes: 15,
+          categoryId: BuiltInCategoryIds.health,
+        );
+
+        await pump(
+          tester,
+          zones: [zone],
+          tasks: [important, unimportant],
+          whatMattersEnabled: true,
+        );
+
+        expect(find.byType(ZoneContainerBlock), findsOneWidget);
+      },
+    );
+
+    testWidgets('whatMattersEnabled true: a zone with no tasks and no external '
+        'events (as `TimelineScreen` already provides once What Matters '
+        'is on — see that screen\'s own filtering) is hidden entirely', (
+      tester,
+    ) async {
+      // Deliberately passes NO external events: this widget is never
+      // responsible for filtering them itself under What Matters —
+      // `TimelineScreen` already empties `externalEvents` before it
+      // ever reaches here (see that screen's own `ZoneDayTimeline`
+      // call site). This test only pins that a zone with genuinely
+      // nothing visible left in it is hidden, the same as
+      // `devHideEmptyZones`'s own equivalent case above.
+      final zone = zoneAt('z1', 'Morning ritual', 7, 9);
+
+      await pump(tester, zones: [zone], whatMattersEnabled: true);
+
+      expect(find.byType(ZoneContainerBlock), findsNothing);
     });
   });
 }

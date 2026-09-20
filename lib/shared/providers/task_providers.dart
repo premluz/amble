@@ -113,6 +113,7 @@ class TaskList extends _$TaskList {
   Future<Task> createTask({
     required String title,
     String? notes,
+    String? description,
     required DateTime scheduledAt,
     required int durationMinutes,
     required String categoryId,
@@ -128,6 +129,7 @@ class TaskList extends _$TaskList {
     final task = Task.create(
       title: title,
       notes: notes,
+      description: description,
       scheduledAt: scheduledAt,
       durationMinutes: durationMinutes,
       categoryId: categoryId,
@@ -463,6 +465,23 @@ class TaskList extends _$TaskList {
 
     final template = _findSeriesTemplate(task);
 
+    // `description` is a template-level field — same rung as title/
+    // duration/category conceptually ("what the task IS," not a per-day
+    // fact) — requested directly: editing it should change every future
+    // instance the same way a duration/time change already re-anchors
+    // the template below. NOTE: unlike duration/time, this is NOT
+    // gated behind [_showFutureInstancesToggle]/`_affectFutureInstances`
+    // — same as category (see `task_providers_test.dart`'s own confirmed
+    // "category stays LOCAL to the edited instance" case), a plain
+    // field-only edit here always reaches this method rather than
+    // `updateTaskThisInstanceOnly`. Deliberately NOT copying
+    // `categoryId` here too: that field is confirmed (by an existing,
+    // explicit test) to stay local to the edited instance under "all
+    // future occurrences" — description is a separate, new field with
+    // its own explicitly-requested propagation semantics, not a
+    // license to change category's already-settled behavior.
+    template.description = task.description;
+
     // Did the edited instance move to a different time-of-day, or change
     // duration, relative to what the series itself generates? That's a
     // RE-ANCHOR, not just a rule change.
@@ -675,18 +694,22 @@ class TaskList extends _$TaskList {
     _refresh();
   }
 
-  /// Creates a standalone copy of [source] — same title/category/notes/
-  /// schedule as the original, but a fresh UUID (via [Task.create]) and no
-  /// link to the original's recurrence series: a duplicate is a new,
-  /// independent task, not another instance of that series. Status/
-  /// completion are deliberately not copied either — a duplicate starts
-  /// fresh as `pending`, matching [Task.create]'s own defaults. Returns the
-  /// saved task so the caller can open it for review (e.g. in "Edit
-  /// details") without a second lookup.
+  /// Creates a standalone copy of [source] — same title/category/
+  /// description/schedule as the original, but a fresh UUID (via
+  /// [Task.create]) and no link to the original's recurrence series: a
+  /// duplicate is a new, independent task, not another instance of that
+  /// series. Status/completion are deliberately not copied either — a
+  /// duplicate starts fresh as `pending`, matching [Task.create]'s own
+  /// defaults. [notes] is also deliberately NOT copied — it's a snapshot
+  /// of that specific day (see its own doc comment), which a new,
+  /// independent task shouldn't inherit; [description] (what the task
+  /// IS) copies over the same way title/category do. Returns the saved
+  /// task so the caller can open it for review (e.g. in "Edit details")
+  /// without a second lookup.
   Future<Task> duplicateTask(Task source) async {
     final duplicate = Task.create(
       title: source.title,
-      notes: source.notes,
+      description: source.description,
       scheduledAt: source.scheduledAt!,
       durationMinutes: source.durationMinutes!,
       // Defensive fallback for a not-yet-backfilled source task — every

@@ -263,4 +263,132 @@ void main() {
       );
     },
   );
+
+  // Requested directly: "hours of day have different color on different
+  // screens... needs unified." This screen's own hour-axis ("HH:00")
+  // labels used to render in `colorTextTertiary`, distinct from the
+  // spatial Timeline's `TaskBoundaryMarkers`, which uses
+  // `colorTextSecondary` — unified onto the Timeline's own color.
+  testWidgets(
+    'hour-axis labels render in colorTextSecondary, matching the spatial '
+    'Timeline\'s own TaskBoundaryMarkers exactly',
+    (tester) async {
+      await pump(tester);
+
+      final theme = AmbleTheme.dark;
+      final hourLabel = tester.widget<Text>(find.text('00:00').first);
+
+      expect(hourLabel.style?.color, theme.colorTextSecondary);
+      expect(hourLabel.style?.color, isNot(theme.colorTextTertiary));
+    },
+  );
+
+  // Reported directly, twice: "when tap and drag zones let's make it
+  // multi select zones", then again after a first attempt was backed out
+  // — "on zone edit, tapping on an existing zone and sweeping does not
+  // make any selection... can't see the selection or either the border."
+  //
+  // Device logs later proved tap-to-select itself was fine all along
+  // (BLOCK_TAP/ZONE_TAP fired correctly); the genuine gap was that DRAG
+  // on a zone did nothing, because the backed-out attempt left unselected
+  // zones with null drag handlers.
+  group('drag-to-multi-select sweep (2026-09-20)', () {
+    testWidgets(
+      'dragging from an UNSELECTED zone across a neighbour selects BOTH, '
+      'and shows a live marquee while the finger is down',
+      (tester) async {
+        await container
+            .read(zoneListProvider.notifier)
+            .paintWeeklyZones(
+              title: 'Commute',
+              weekdays: {1, 2},
+              startMinutes: 240,
+              endMinutes: 300,
+            );
+        await pump(tester);
+        // Edit mode first — outside it the grid is vertically scrollable,
+        // so a drag legitimately belongs to the scroll view.
+        await tester.tap(find.byTooltip('Edit zones'));
+        await tester.pumpAndSettle();
+        container.read(zoneEditSelectionProvider.notifier).clear();
+        await tester.pump();
+
+        final marquee = find.byKey(const ValueKey('zone-sweep-selection'));
+        expect(marquee, findsNothing);
+
+        final from = point(tester, 1, 270);
+        final to = point(tester, 2, 270);
+        final gesture = await tester.startGesture(from);
+        await tester.pump();
+        // Stepped, not one `moveTo` — a single jump produces a drag START
+        // with no UPDATEs at all (verified with a probe on the task-side
+        // sweep), so the marquee would never grow and the test would
+        // measure nothing.
+        for (var i = 1; i <= 8; i++) {
+          await gesture.moveTo(Offset.lerp(from, to, i / 8)!);
+          await tester.pump();
+        }
+
+        expect(
+          marquee,
+          findsOneWidget,
+          reason: 'the marquee must be visible mid-sweep',
+        );
+        expect(
+          container.read(zoneEditSelectionProvider),
+          hasLength(2),
+          reason: 'both swept zones must end up selected',
+        );
+
+        await gesture.up();
+        await tester.pump();
+
+        expect(
+          marquee,
+          findsNothing,
+          reason: 'the marquee is torn down on release',
+        );
+        expect(
+          container.read(zoneEditSelectionProvider),
+          hasLength(2),
+          reason: 'the selection the sweep produced must survive it',
+        );
+      },
+    );
+
+    testWidgets(
+      'the sweep is ADDITIVE — crossing back over a zone already swept '
+      'leaves it selected rather than toggling it off',
+      (tester) async {
+        await container
+            .read(zoneListProvider.notifier)
+            .paintWeeklyZones(
+              title: 'Commute',
+              weekdays: {1, 2},
+              startMinutes: 240,
+              endMinutes: 300,
+            );
+        await pump(tester);
+        await tester.tap(find.byTooltip('Edit zones'));
+        await tester.pumpAndSettle();
+        container.read(zoneEditSelectionProvider.notifier).clear();
+        await tester.pump();
+
+        final from = point(tester, 1, 270);
+        final to = point(tester, 2, 270);
+        final gesture = await tester.startGesture(from);
+        await tester.pump();
+        for (final target in [to, from, to]) {
+          for (var i = 1; i <= 4; i++) {
+            await gesture.moveTo(Offset.lerp(from, target, i / 4)!);
+            await tester.pump();
+          }
+        }
+        await gesture.up();
+        await tester.pump();
+
+        expect(container.read(zoneEditSelectionProvider), hasLength(2));
+      },
+    );
+  });
 }

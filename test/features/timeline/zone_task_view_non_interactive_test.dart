@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive_ce.dart';
-import 'package:amble/core/dev_config.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/features/timeline/edit_mode_provider.dart';
 import 'package:amble/features/timeline/edit_selection_provider.dart';
@@ -11,36 +10,35 @@ import 'package:amble/features/timeline/zone_background_block.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/models/task.dart';
+import 'package:amble/shared/models/task_template.dart';
 import 'package:amble/shared/models/tracked_behavior.dart';
 import 'package:amble/shared/models/zone.dart';
 import 'package:amble/shared/providers/category_providers.dart';
 import 'package:amble/shared/providers/notification_providers.dart';
 import 'package:amble/shared/providers/preferences_providers.dart';
 import 'package:amble/shared/providers/task_providers.dart';
+import 'package:amble/shared/providers/task_template_providers.dart';
 import 'package:amble/shared/providers/tracked_behavior_providers.dart';
 import 'package:amble/shared/providers/zone_providers.dart';
 import 'package:amble/shared/repositories/hive_category_repository.dart';
 import 'package:amble/shared/repositories/hive_preferences_repository.dart';
 import 'package:amble/shared/repositories/hive_task_repository.dart';
+import 'package:amble/shared/repositories/hive_task_template_repository.dart';
 import 'package:amble/shared/repositories/hive_tracked_behavior_repository.dart';
 import 'package:amble/shared/repositories/hive_zone_repository.dart';
 
 import '../../support/fake_notification_service.dart';
 
-/// Reported directly: "zones should not wiggle (be editable) in multi mode,
-/// only when selected" — before this fix, a zone's move/resize handles
-/// (and wiggle) rendered whenever Edit Mode was on, regardless of
-/// `DevMultiTaskEditMode`, unlike a task's own identical rule (see
-/// `multi_task_selection_test.dart`). Covers the Task view's own
-/// `_DraggableZoneBlock`/`ZoneBackgroundBlock` fix — `zone_day_timeline`
-/// (Zone view) got the same fix, verified separately since it's a distinct
-/// widget tree.
+/// Requested directly: "turn off edit zones (tap on zones) on tasks edit."
+/// Zones on the spatial Task view's Edit Mode used to be tap-selectable
+/// (revealing resize handles, move-drag, and drag-to-delete) — that whole
+/// interaction is now removed. Zones render as purely decorative
+/// background bands there, same as outside Edit Mode; zone editing still
+/// lives on the merged Edit screen's own dedicated Zones tab
+/// (`ZoneGridScreen`), unaffected by this. Supersedes
+/// `zone_task_view_move_resize_test.dart`/`zone_multi_task_selection_test.dart`
+/// (both deleted — they tested exactly the interaction this removes).
 class _FixedEditModeEnabled extends EditModeEnabled {
-  @override
-  bool build() => true;
-}
-
-class _FixedDevMultiTaskEditMode extends DevMultiTaskEditMode {
   @override
   bool build() => true;
 }
@@ -51,10 +49,11 @@ void main() {
   late Box<Zone> zoneBox;
   late Box<TrackedBehavior> trackedBehaviorBox;
   late Box<dynamic> preferencesBox;
+  late Box<TaskTemplate> templateBox;
   late ProviderContainer? capturedContainer;
 
   setUp(() async {
-    Hive.init('./.dart_tool/test_hive_zone_multi_task_selection');
+    Hive.init('./.dart_tool/test_hive_zone_task_view_non_interactive');
     if (!Hive.isAdapterRegistered(0)) {
       Hive.registerAdapters();
     }
@@ -76,6 +75,7 @@ void main() {
       'test_tracked_behaviors_$stamp',
     );
     preferencesBox = await Hive.openBox<dynamic>('test_preferences_$stamp');
+    templateBox = await Hive.openBox<TaskTemplate>('test_templates_$stamp');
     capturedContainer = null;
   });
 
@@ -85,6 +85,7 @@ void main() {
     await zoneBox.close();
     await trackedBehaviorBox.close();
     await preferencesBox.close();
+    await templateBox.close();
   });
 
   Future<Zone> pumpTaskViewWithZone(WidgetTester tester) async {
@@ -114,13 +115,13 @@ void main() {
           preferencesRepositoryProvider.overrideWithValue(
             HivePreferencesRepository(preferencesBox),
           ),
+          taskTemplateRepositoryProvider.overrideWithValue(
+            HiveTaskTemplateRepository(templateBox),
+          ),
           notificationServiceProvider.overrideWithValue(
             FakeNotificationService(),
           ),
           editModeEnabledProvider.overrideWith(() => _FixedEditModeEnabled()),
-          devMultiTaskEditModeProvider.overrideWith(
-            () => _FixedDevMultiTaskEditMode(),
-          ),
         ],
         child: Consumer(
           builder: (context, ref, child) {
@@ -153,72 +154,56 @@ void main() {
       find.byType(ZoneBackgroundBlock).evaluate().single.widget
           as ZoneBackgroundBlock;
 
+  testWidgets('in Task Edit Mode, a zone has no header tap wired at all', (
+    tester,
+  ) async {
+    await pumpTaskViewWithZone(tester);
+
+    final block = findZoneBlock();
+    expect(block.onHeaderTap, isNull);
+    expect(block.editModeEnabled, isFalse);
+  });
+
   testWidgets(
-    'with multi-task mode ON and nothing selected, a zone has no move/resize '
-    'handlers wired',
+    'in Task Edit Mode, a zone has no move/resize/delete handlers wired',
     (tester) async {
       await pumpTaskViewWithZone(tester);
 
       final block = findZoneBlock();
-      expect(
-        block.onMoveEnd,
-        isNull,
-        reason:
-            'An unselected zone must not be draggable under multi-task '
-            'mode.',
-      );
+      expect(block.onMoveEnd, isNull);
       expect(block.onResizeTopEnd, isNull);
       expect(block.onResizeBottomEnd, isNull);
-      // Tap-to-select stays live even while nothing is selected — that's
-      // the only way to ever select a zone.
-      expect(block.onHeaderTap, isNotNull);
     },
   );
 
-  testWidgets('tapping a zone header selects it under multi-task mode', (
-    tester,
-  ) async {
+  testWidgets('tapping a zone\'s own fill in Task Edit Mode does not select '
+      'it — the zone selection set stays empty', (tester) async {
     final zone = await pumpTaskViewWithZone(tester);
 
-    final block = findZoneBlock();
-    block.onHeaderTap!();
+    // The zone NAME label is always IgnorePointer-wrapped (purely
+    // decorative, unrelated to this fix — see ZoneNameLabel's own doc
+    // comment), so tapping IT never reached the zone's own header
+    // GestureDetector even before this change. Tap the zone's own FILL
+    // instead — its real rendered rect, per ZoneBackgroundBlock.
+    final rect = tester.getRect(find.byType(ZoneBackgroundBlock));
+    await tester.tapAt(rect.center);
     await tester.pump();
 
     expect(
       capturedContainer!.read(zoneEditSelectionProvider),
-      contains(zone.id),
+      isNot(contains(zone.id)),
     );
-  });
-
-  testWidgets('once selected, a zone gets move/resize handlers back', (
-    tester,
-  ) async {
-    final zone = await pumpTaskViewWithZone(tester);
-
-    capturedContainer!.read(zoneEditSelectionProvider.notifier).toggle(zone.id);
-    await tester.pump();
-
-    final block = findZoneBlock();
-    expect(block.onMoveEnd, isNotNull);
-    expect(block.onResizeTopEnd, isNotNull);
-    expect(block.onResizeBottomEnd, isNotNull);
-  });
-
-  testWidgets('turning multi-task mode off clears the zone selection', (
-    tester,
-  ) async {
-    final zone = await pumpTaskViewWithZone(tester);
-
-    capturedContainer!.read(zoneEditSelectionProvider.notifier).toggle(zone.id);
-    await tester.pump();
-    expect(
-      capturedContainer!.read(zoneEditSelectionProvider),
-      contains(zone.id),
-    );
-
-    capturedContainer!.read(devMultiTaskEditModeProvider.notifier).set(false);
-    await tester.pump();
-
     expect(capturedContainer!.read(zoneEditSelectionProvider), isEmpty);
   });
+
+  testWidgets(
+    'the zone still renders as a plain decorative band — same as outside '
+    'Edit Mode, just non-interactive',
+    (tester) async {
+      await pumpTaskViewWithZone(tester);
+
+      expect(find.byType(ZoneBackgroundBlock), findsOneWidget);
+      expect(find.textContaining('Morning ritual'), findsOneWidget);
+    },
+  );
 }

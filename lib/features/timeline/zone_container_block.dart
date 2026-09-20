@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/app_swipe_actions.dart';
 import '../../shared/models/category.dart';
 import '../../shared/models/external_calendar_event.dart';
 import '../../shared/models/task.dart';
@@ -64,6 +65,155 @@ String zoneTaskTimeLabel(
       : '${startTime.format(context)} - ${endTime.format(context)}';
 }
 
+/// The reserved on-screen distance a [ZoneRowTimeLabel]'s text sits from
+/// the TRUE screen edge — 16px, matching the spatial Task view's own hour
+/// labels EXACTLY (`TaskBoundaryMarkers`, called from `timeline_screen.dart`
+/// with `leftInset: theme.spacingSm` (8) plus that widget's own further
+/// `theme.spacingSm` (8) internal text padding — 8 + 8 = 16). Kept as one
+/// named constant, not a scattered `spacingSm * 2` at each caller, so both
+/// this file and `zone_day_timeline.dart` read from the identical value.
+///
+/// See docs/DESIGN_SYSTEM.md's "Zone row hour label" section for the full
+/// reasoning behind this widget's existence and shape.
+const zoneRowTimeLabelEdgeInset = 16.0;
+
+/// The horizontal space a [ZoneRowTimeLabel] reserves in its caller's own
+/// `Row`.
+///
+/// **2026-09-20 — 66 → 0.** Clarified directly: the hour LABELS and the
+/// zone-card left edge stay aligned between the spatial and zone views
+/// (that's [zoneContentLeftInset]'s job, unchanged), but where a task
+/// starts INSIDE its zone is independent of the spatial view — "tasks sit
+/// in containers with the same left padding as top (so small space)."
+/// This box used to mirror the spatial view's own 66px hour gutter,
+/// pushing a zone row's badge a further 66px right of the card's own
+/// `spacingMd` padding, so tasks sat nowhere near the card's left edge.
+///
+/// Zero works because the label text does not live in this box at all —
+/// it escapes to [zoneRowTimeLabelEdgeInset] via a negative
+/// `Positioned.left` (see [ZoneRowTimeLabel]'s class doc comment), so
+/// nothing needs to hold space for it. A task now begins at the card's
+/// own `spacingMd` left padding, matching its `spacingMd` top padding;
+/// unzoned rows reach that same x by their own matching inset, just with
+/// no card drawn around them.
+const zoneRowTimeLabelReservedWidth = 0.0;
+
+/// How far from the TRUE screen edge Zone view's own content (a zone
+/// card, an unzoned row) starts — matching the spatial Task view's own
+/// zone band, which sits at `hourGutterWidth` (`timeline_screen.dart`) =
+/// its 66px hour gutter plus the 24px page inset every screen uses.
+///
+/// Requested directly against a screenshot with two guide lines drawn
+/// from the spatial view: "the left line is the left edge of the hour in
+/// the day timeline, the second line is the left edge of the position of
+/// the zone. It's obviously misaligned." Zone view previously started its
+/// cards at just the 24px page inset, with no gutter reserved at all —
+/// 66px left of where the spatial view's zone band begins.
+///
+/// The [ZoneRowTimeLabel]s inside those rows still escape back out to
+/// [zoneRowTimeLabelEdgeInset] (16px), which is exactly the spatial
+/// view's own hour-label position — so the two views now agree on BOTH
+/// guide lines, not just the label one.
+const zoneContentLeftInset = 90.0;
+
+/// Zone view's own hour label — the leading time text on a task row
+/// (zoned via [_ZoneTaskRow], or unzoned via `ZoneDayTimeline`'s own
+/// unzoned-task row) — styled and positioned to read as the SAME element
+/// as the spatial Task view's [zoneRowTimeLabelEdgeInset]-inset hour
+/// labels, even though the two views can't share the same LAYOUT
+/// mechanism to get there.
+///
+/// **Why not just reuse `TaskBoundaryMarkers` directly**: that widget
+/// [Positioned]s its labels against ONE shared, continuous, absolutely-
+/// positioned `Stack` spanning the whole day — every task block in the
+/// spatial Task view is a sibling in that same `Stack`, all keyed to one
+/// `pixelsPerMinute` coordinate space. Zone view has no such shared space:
+/// its rows are children of a `ListView.separated`, flowing one after
+/// another with no absolute Y a label could be `Positioned` against
+/// (and nested arbitrarily inside a zone card's own `Padding`, unlike the
+/// spatial view's flat Stack). A [Positioned] escaping to the literal
+/// screen edge would require one `Stack` spanning the ENTIRE scrolling
+/// list — but a label `Positioned` there wouldn't scroll WITH its own
+/// row, only sit fixed relative to the viewport, which is wrong for a
+/// per-row label.
+///
+/// **What this widget does instead**: a small `Stack` scoped to just this
+/// ONE row, with the label `Positioned` at a NEGATIVE `left` reaching
+/// back out through whatever padding this specific row sits inside
+/// (passed in as [leftPaddingToEscape]) to land at the same
+/// [zoneRowTimeLabelEdgeInset] the spatial view's labels sit at. This
+/// scrolls correctly (it's still an ordinary descendant of the row, which
+/// is itself an ordinary list item) while reaching visually all the way
+/// to the screen edge — the closest a per-row, list-flowed layout can get
+/// to genuinely sharing the spatial view's own [Positioned] mechanism,
+/// rather than faking the end position with `Transform.translate` (the
+/// widget this replaces — see docs/ERROR_LOG.md's entry on why a negative
+/// `Container(margin:)` broke this row's own `IntrinsicWidth` outright).
+///
+/// [reservedWidth] still occupies real space in the row's own `Row` (via
+/// [SizedBox]) — the label's own `Positioned` doesn't participate in that
+/// row's layout at all, so something still has to hold the gap between
+/// the escaped label and whatever comes after it (the category badge, or
+/// the title).
+class ZoneRowTimeLabel extends StatelessWidget {
+  const ZoneRowTimeLabel({
+    super.key,
+    required this.theme,
+    required this.text,
+    required this.leftPaddingToEscape,
+    required this.reservedWidth,
+  });
+
+  final AmbleTheme theme;
+  final String text;
+
+  /// How far LEFT of this row's own left edge the true screen edge sits —
+  /// i.e. every padding layer between this row and the screen, summed.
+  /// The label is pulled back out by exactly this much via a negative
+  /// `Positioned.left`, landing at [zoneRowTimeLabelEdgeInset] regardless
+  /// of how deep this specific row happens to be nested.
+  final double leftPaddingToEscape;
+
+  /// The horizontal space this widget claims in its caller's own `Row` —
+  /// callers size this to whatever gap they want between the escaped
+  /// label and the next element (the category badge/title), independent
+  /// of the label text's own (now off-layout) width.
+  final double reservedWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: reservedWidth,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            left: zoneRowTimeLabelEdgeInset - leftPaddingToEscape,
+            top: 0,
+            bottom: 0,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                text,
+                // `textCaption` + `colorTextSecondary` — matches
+                // `TaskBoundaryMarkers`' own hour-gutter labels on the
+                // spatial Task view EXACTLY. See this widget's own class
+                // doc comment for why the POSITION can't be shared
+                // structure the same way the STYLE now is.
+                style: theme.textCaption.copyWith(
+                  color: theme.colorTextSecondary,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// The Spatial Zone View's real layout container for one [Zone] — unlike
 /// [ZoneBackgroundBlock] (the Spatial Task View's purely decorative
 /// background treatment, unchanged by this widget), this genuinely owns
@@ -90,6 +240,7 @@ class ZoneContainerBlock extends StatelessWidget {
     this.isDropTarget = false,
     this.onTaskTap,
     this.onToggleComplete,
+    this.onAddNote,
     this.draggingTaskId,
     this.onRowDragStart,
     this.onRowDragUpdate,
@@ -110,6 +261,7 @@ class ZoneContainerBlock extends StatelessWidget {
     this.onMoveEnd,
     this.onHeaderTap,
     this.flatStyle = false,
+    this.whatMattersEnabled = false,
   });
 
   final AmbleTheme theme;
@@ -218,6 +370,12 @@ class ZoneContainerBlock extends StatelessWidget {
   /// parameter existed.
   final bool flatStyle;
 
+  /// The "What Matters" lens — a real user setting, not a dev toggle. Each
+  /// member [_ZoneTaskRow] with `task.isImportant == false` fades and
+  /// collapses via [WhatMattersRow] when this is true, rather than being
+  /// filtered out of [tasks] before it reaches this widget.
+  final bool whatMattersEnabled;
+
   // No TagColorStyle field here — see `_ZoneTaskRow`'s own doc comment on
   // why its badge (the only category-colored surface this container
   // renders) has nothing for that setting to switch between.
@@ -243,6 +401,13 @@ class ZoneContainerBlock extends StatelessWidget {
 
   final ValueChanged<Task>? onTaskTap;
   final ValueChanged<Task>? onToggleComplete;
+
+  /// Swipe-right action for each [_ZoneTaskRow] — mirrors
+  /// `ZoneDayTimeline`'s own unzoned-row wiring
+  /// (`onAddNote: () => showAddTaskNoteSheet(context, row)`). Requested
+  /// directly: "wire for zoned" (swipe-to-reveal, previously scoped out
+  /// for tasks inside a zone container — see docs/DECISIONS.md).
+  final ValueChanged<Task>? onAddNote;
 
   /// The id of the row currently being dragged, if any — that row fades
   /// in place (same treatment `OverlapClusterBlock` gives a dragged
@@ -398,39 +563,49 @@ class ZoneContainerBlock extends StatelessWidget {
                 for (final (index, row) in _mergedRows().indexed) ...[
                   if (index > 0) SizedBox(height: theme.spacingXs),
                   if (row is Task)
-                    Opacity(
-                      opacity: row.id == draggingTaskId ? 0.0 : 1.0,
-                      child: _ZoneTaskRow(
-                        // Keyed by task id so a rebuild mid-drag (the drag's
-                        // own setState fires one on every pointer move)
-                        // matches this row's element by TASK rather than by
-                        // list position — the rows re-sort by time as a drag
-                        // commits, and a position-matched element would hand
-                        // the active gesture to whichever task happened to
-                        // land on that index.
-                        key: ValueKey(row.id),
-                        theme: theme,
-                        task: row,
-                        category: row.categoryId == null
-                            ? null
-                            : categoriesById[row.categoryId],
-                        onTap: onTaskTap == null ? null : () => onTaskTap!(row),
-                        onToggleComplete: onToggleComplete == null
-                            ? null
-                            : () => onToggleComplete!(row),
-                        stackAncestorKey: stackAncestorKey,
-                        onDragStart: onRowDragStart,
-                        onDragUpdate: onRowDragUpdate == null
-                            ? null
-                            : (details) => onRowDragUpdate!(row, details),
-                        onDragEnd: onRowDragEnd == null
-                            ? null
-                            : (_) => onRowDragEnd!(row),
-                        durationVisible: durationVisible,
-                        timeRangeVisible: timeRangeVisible,
-                        startTimeOnlyVisible: startTimeOnlyVisible,
-                        showCompletionCheckbox: showCompletionCheckbox,
-                        flatStyle: flatStyle,
+                    // Keyed by task id (moved onto this outer
+                    // WhatMattersRow wrapper, above _ZoneTaskRow) so a
+                    // rebuild mid-drag (the drag's own setState fires one
+                    // on every pointer move) matches this row's element
+                    // by TASK rather than by list position — the rows
+                    // re-sort by time as a drag commits, and a position-
+                    // matched element would hand the active gesture to
+                    // whichever task happened to land on that index.
+                    WhatMattersRow(
+                      key: ValueKey(row.id),
+                      theme: theme,
+                      hidden: whatMattersEnabled && !row.isImportant,
+                      child: Opacity(
+                        opacity: row.id == draggingTaskId ? 0.0 : 1.0,
+                        child: _ZoneTaskRow(
+                          theme: theme,
+                          task: row,
+                          category: row.categoryId == null
+                              ? null
+                              : categoriesById[row.categoryId],
+                          onTap: onTaskTap == null
+                              ? null
+                              : () => onTaskTap!(row),
+                          onToggleComplete: onToggleComplete == null
+                              ? null
+                              : () => onToggleComplete!(row),
+                          onAddNote: onAddNote == null
+                              ? null
+                              : () => onAddNote!(row),
+                          stackAncestorKey: stackAncestorKey,
+                          onDragStart: onRowDragStart,
+                          onDragUpdate: onRowDragUpdate == null
+                              ? null
+                              : (details) => onRowDragUpdate!(row, details),
+                          onDragEnd: onRowDragEnd == null
+                              ? null
+                              : (_) => onRowDragEnd!(row),
+                          durationVisible: durationVisible,
+                          timeRangeVisible: timeRangeVisible,
+                          startTimeOnlyVisible: startTimeOnlyVisible,
+                          showCompletionCheckbox: showCompletionCheckbox,
+                          flatStyle: flatStyle,
+                        ),
                       ),
                     )
                   else if (row is ExternalCalendarEvent)
@@ -598,7 +773,6 @@ class _Header extends StatelessWidget {
 /// for this container's own inner list, distinct from the capsule.
 class _ZoneTaskRow extends StatelessWidget {
   const _ZoneTaskRow({
-    super.key,
     required this.theme,
     required this.task,
     required this.category,
@@ -613,6 +787,7 @@ class _ZoneTaskRow extends StatelessWidget {
     this.startTimeOnlyVisible = false,
     this.showCompletionCheckbox = true,
     this.flatStyle = false,
+    this.onAddNote,
   });
 
   final AmbleTheme theme;
@@ -620,6 +795,13 @@ class _ZoneTaskRow extends StatelessWidget {
   final Category? category;
   final VoidCallback? onTap;
   final VoidCallback? onToggleComplete;
+
+  /// Swipe-right action — mirrors `TaskCapsuleBlock.onAddNote`'s exact
+  /// "null disables" contract. Null here would mean this row's swipe
+  /// start-side is disabled; every real call site wires it (see
+  /// `ZoneContainerBlock.onAddNote`), matching `TaskCapsuleBlock`'s own
+  /// unconditional wiring for tasks outside a zone.
+  final VoidCallback? onAddNote;
   final GlobalKey stackAncestorKey;
   final void Function(Task task, double restingTop)? onDragStart;
   final GestureDragUpdateCallback? onDragUpdate;
@@ -752,241 +934,281 @@ class _ZoneTaskRow extends StatelessWidget {
     // sizeTaskBadgeXl) — reversed by this session's own direct request.
     final badgeSize = theme.sizeTaskBadge;
 
-    return SizedBox(
-      height: zoneContainerRowHeight,
-      child: DecoratedBox(
-        // Flat style only — see [flatStyle]'s own doc comment. Plain
-        // BoxDecoration() (no color/radius) is the same visual no-op the
-        // row always had, so this never affects normal style at all.
-        decoration: flatStyle
-            ? BoxDecoration(
-                color: theme.colorSurfaceSecondary,
-                borderRadius: BorderRadius.circular(theme.radiusXl),
-              )
-            : const BoxDecoration(),
-        child: GestureDetector(
-          onTap: onTap,
-          // Fallback drag handle for the one combination with nowhere else
-          // to put it: time hidden AND no category (an uncategorised task
-          // has no badge at all — `emoji` is null, so the badge-level drag
-          // handle below never renders either). Whole-row drag here is
-          // exactly what the time-column comment below says to avoid
-          // (fighting the Timeline's vertical scroll), but only for this
-          // narrow, uncommon combination — every other state keeps its
-          // narrow handle.
-          onVerticalDragStart: (timeLabel.isEmpty && !hasCategory)
-              ? (details) => _handleDragStart(context, details)
-              : null,
-          onVerticalDragUpdate: (timeLabel.isEmpty && !hasCategory)
-              ? onDragUpdate
-              : null,
-          onVerticalDragEnd: (timeLabel.isEmpty && !hasCategory)
-              ? onDragEnd
-              : null,
-          behavior: HitTestBehavior.opaque,
-          child: Row(
-            children: [
-              // Drag-to-reschedule is scoped to JUST the time/duration
-              // column, never the whole row — the same reasoning
-              // `TaskCapsuleBlock` scopes its own drag to the colored pill
-              // alone: a full-width vertical-drag target fights the
-              // timeline's own vertical scroll gesture in the arena, which
-              // showed up as drags that intermittently froze or never
-              // started at all (reported directly). Keeping the grip narrow
-              // leaves the rest of the row free to scroll the day.
-              // Flexible, not a fixed-width SizedBox: the combined
-              // "start - end (duration)" string (matching TaskCapsuleBlock's
-              // own format, requested directly) is far wider than the old
-              // start-time-only label, and this row stays single-line/
-              // fixed-height rather than growing to a second line (confirmed
-              // directly) — so the time column gets a real but bounded share
-              // of the row via `flex`, and ellipsizes rather than pushing
-              // the title out entirely on a tight row.
-              // `Flexible` is loose, but a `GestureDetector` has no
-              // intrinsic width of its own, so it expanded to the full 2/5
-              // share regardless — measured on an 800px row, this column
-              // occupied 221px for an ~88px string, and that surplus is
-              // exactly what stranded the checkbox mid-row. `IntrinsicWidth`
-              // holds the column to the width its text actually needs,
-              // while `Flexible` still caps it (so a long
-              // "9:00 - 12:50 (3h 50m)" ellipsizes rather than pushing the
-              // title out). The freed slack falls to the trailing `Spacer`,
-              // which is what pins the checkbox to the row's right edge.
-              //
-              // Collapsed entirely (`SizedBox.shrink`) when there's no time
-              // text to show — reported directly: with time/duration both
-              // hidden, `timeLabel` is `''`, but the empty `Text` inside
-              // `IntrinsicWidth` still measured ~23px (line-height/padding
-              // don't vanish just because the string is empty), plus the
-              // trailing gap below, so the badge sat 31px in instead of
-              // flush with the zone name above it. Drag-to-reschedule moves
-              // to the badge itself in this case (see below) — per direct
-              // instruction ("drag should be pill only") — rather than
-              // leaving a dead invisible strip just to keep a hit target.
-              if (timeLabel.isNotEmpty) ...[
-                Flexible(
-                  flex: 2,
-                  child: IntrinsicWidth(
-                    child: GestureDetector(
-                      onTap: onTap,
-                      onVerticalDragStart: (details) =>
-                          _handleDragStart(context, details),
-                      onVerticalDragUpdate: onDragUpdate,
-                      onVerticalDragEnd: onDragEnd,
-                      behavior: HitTestBehavior.opaque,
-                      child: Text(
-                        timeLabel,
-                        // colorTextTertiary, not colorTextSecondary —
-                        // corrected directly: "greyed out text token
-                        // subtle (same as on edit zone times > this
-                        // should be also applied on timeline (currently
-                        // lighter))". Matches the Zone Authoring Grid's
-                        // own hour-axis labels (colorTextTertiary,
-                        // zone_grid_screen.dart), the subtler of the two
-                        // muted text tokens.
-                        style: theme.textTaskTitleZone.copyWith(
-                          color: theme.colorTextTertiary,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+    // Swipe-to-reveal — requested directly ("wire for zoned"), matching
+    // TaskCapsuleBlock's own unconditional wiring exactly: swipe-left
+    // reuses onToggleComplete (the same action the trailing checkbox
+    // performs), swipe-right opens the same add-note sheet. This row has
+    // no Edit Mode concept at all (same as ZoneDayTimeline's own unzoned
+    // rows), so unlike TaskCapsuleBlock there is no `editModeEnabled`
+    // gate to null the actions out under — swipe is always active here.
+    // AppSwipeActions only claims HORIZONTAL drag (see its own doc
+    // comment), so it coexists with this row's existing VERTICAL
+    // move-to-reschedule drag without contending for the same gesture.
+    return AppSwipeActions(
+      startAction: onAddNote == null
+          ? null
+          : AppSwipeAction(
+              icon: Icons.edit_note_rounded,
+              background: theme.colorAccent,
+              semanticLabel: 'Add note',
+              onActivate: onAddNote!,
+            ),
+      endAction: onToggleComplete == null
+          ? null
+          : AppSwipeAction(
+              icon: isCompleted ? Icons.replay_rounded : Icons.check_rounded,
+              background: isCompleted
+                  ? theme.colorTextSecondary
+                  : theme.colorAccent,
+              semanticLabel: isCompleted ? 'Mark undone' : 'Mark done',
+              onActivate: onToggleComplete!,
+            ),
+      child: SizedBox(
+        height: zoneContainerRowHeight,
+        child: DecoratedBox(
+          // Flat style only — see [flatStyle]'s own doc comment. Plain
+          // BoxDecoration() (no color/radius) is the same visual no-op the
+          // row always had, so this never affects normal style at all.
+          decoration: flatStyle
+              ? BoxDecoration(
+                  color: theme.colorSurfaceSecondary,
+                  borderRadius: BorderRadius.circular(theme.radiusXl),
+                )
+              : const BoxDecoration(),
+          child: GestureDetector(
+            onTap: onTap,
+            // Fallback drag handle for the one case with nowhere else to
+            // put it: an uncategorised task, which has no badge at all
+            // (`category` is null, so the badge-level drag handle below
+            // never renders). Whole-row drag here is exactly what the
+            // time-column comment below says to avoid (fighting the
+            // Timeline's vertical scroll), but only for this uncommon
+            // case — every categorised row keeps its narrow badge handle.
+            //
+            // **2026-09-20** — no longer also conditioned on
+            // `timeLabel.isEmpty`: the time column stopped being a viable
+            // grip entirely once [zoneRowTimeLabelReservedWidth] went to
+            // 0 (a zero-width box can't be hit-tested), so whether a
+            // label is showing no longer has any bearing on where drag
+            // lives.
+            onVerticalDragStart: !hasCategory
+                ? (details) => _handleDragStart(context, details)
+                : null,
+            onVerticalDragUpdate: !hasCategory ? onDragUpdate : null,
+            onVerticalDragEnd: !hasCategory ? onDragEnd : null,
+            behavior: HitTestBehavior.opaque,
+            child: Row(
+              children: [
+                // Drag-to-reschedule is scoped to JUST the time/duration
+                // column, never the whole row — the same reasoning
+                // `TaskCapsuleBlock` scopes its own drag to the colored pill
+                // alone: a full-width vertical-drag target fights the
+                // timeline's own vertical scroll gesture in the arena, which
+                // showed up as drags that intermittently froze or never
+                // started at all (reported directly). Keeping the grip narrow
+                // leaves the rest of the row free to scroll the day.
+                // Flexible, not a fixed-width SizedBox: the combined
+                // "start - end (duration)" string (matching TaskCapsuleBlock's
+                // own format, requested directly) is far wider than the old
+                // start-time-only label, and this row stays single-line/
+                // fixed-height rather than growing to a second line (confirmed
+                // directly) — so the time column gets a real but bounded share
+                // of the row via `flex`, and ellipsizes rather than pushing
+                // the title out entirely on a tight row.
+                // `Flexible` is loose, but a `GestureDetector` has no
+                // intrinsic width of its own, so it expanded to the full 2/5
+                // share regardless — measured on an 800px row, this column
+                // occupied 221px for an ~88px string, and that surplus is
+                // exactly what stranded the checkbox mid-row. `IntrinsicWidth`
+                // holds the column to the width its text actually needs,
+                // while `Flexible` still caps it (so a long
+                // "9:00 - 12:50 (3h 50m)" ellipsizes rather than pushing the
+                // title out). The freed slack falls to the trailing `Spacer`,
+                // which is what pins the checkbox to the row's right edge.
+                //
+                // Collapsed entirely (`SizedBox.shrink`) when there's no time
+                // text to show — reported directly: with time/duration both
+                // hidden, `timeLabel` is `''`, but the empty `Text` inside
+                // `IntrinsicWidth` still measured ~23px (line-height/padding
+                // don't vanish just because the string is empty), plus the
+                // trailing gap below, so the badge sat 31px in instead of
+                // flush with the zone name above it. Drag-to-reschedule moves
+                // to the badge itself in this case (see below) — per direct
+                // instruction ("drag should be pill only") — rather than
+                // leaving a dead invisible strip just to keep a hit target.
+                // Escapes back out to the spatial Task view's own hour-
+                // label position via [ZoneRowTimeLabel]'s `Positioned` —
+                // see that widget's own class doc comment for the full
+                // "why not just reuse TaskBoundaryMarkers directly"
+                // reasoning, and docs/DESIGN_SYSTEM.md's "Zone row hour
+                // label" section. Replaces an earlier `Transform.translate`
+                // approach that worked but was a coordinate hack rather
+                // than a shared structure — requested directly, again,
+                // once the negative-margin version above it was already
+                // found to break layout outright (see docs/ERROR_LOG.md).
+                //
+                // [leftPaddingToEscape] is EVERY padding layer between
+                // this row and the true screen edge: [zoneContentLeftInset]
+                // (90, `ZoneDayTimeline`'s own list inset — the page inset
+                // PLUS the reserved hour gutter, so this view's cards line
+                // up with the spatial view's zone band) + `spacingMd` (16,
+                // [ZoneContainerBlock]'s own card padding) = 106.
+                //
+                // **2026-09-20 — no longer wrapped in a `GestureDetector`.**
+                // With [zoneRowTimeLabelReservedWidth] at 0 this box has no
+                // width to hit-test against (the text paints outside it via
+                // `Positioned`), so a gesture wrapper here was silently
+                // dead. Drag-to-reschedule moved to the badge below, which
+                // always carries it now — see its own comment.
+                if (timeLabel.isNotEmpty)
+                  ZoneRowTimeLabel(
+                    theme: theme,
+                    text: timeLabel,
+                    leftPaddingToEscape: zoneContentLeftInset + theme.spacingMd,
+                    reservedWidth: zoneRowTimeLabelReservedWidth,
+                  ),
+                if (hasCategory) ...[
+                  // Small colored rounded-square badge behind the emoji —
+                  // requested directly, matching the badge every task pill
+                  // already shows elsewhere (this view's own bare emoji
+                  // read as visually inconsistent with the rest of the app).
+                  // Uses the same iconColor this row's own completion
+                  // checkbox ring already resolves, rather than the pill's
+                  // own pale fill color, so the badge and the ring agree.
+                  // Sized and shaped to match `badgeSize`'s own comment
+                  // above — the SAME `theme.sizeTaskBadge` and
+                  // `theme.radiusPill` TaskCapsuleBlock's own pill rail
+                  // uses, not a separate enlarged circle.
+                  //
+                  // **2026-09-20 — the badge now ALWAYS carries
+                  // drag-to-reschedule**, not just when the time label is
+                  // absent. [zoneRowTimeLabelReservedWidth] went to 0 (see
+                  // that constant's own doc comment) so a task sits at its
+                  // zone card's own left padding — which means the time
+                  // column no longer occupies any row width, and a
+                  // zero-width box cannot be hit-tested. The label still
+                  // PAINTS (it escapes via `Positioned`), so it looks
+                  // unchanged, but it can't be a grip any more. The badge
+                  // is the natural home: already narrow (so it doesn't
+                  // fight the Timeline's vertical scroll, per the time
+                  // column's own reasoning) and present on every
+                  // categorised task.
+                  GestureDetector(
+                    // No `onTap` here — the outer row-level `GestureDetector`
+                    // (this whole `_ZoneTaskRow`'s own build wrapper) already
+                    // handles taps everywhere on the row, tap included; only
+                    // the DRAG gesture needs a home, since drag must stay
+                    // narrow (not span the whole row) or it fights the
+                    // Timeline's own vertical scroll.
+                    onVerticalDragStart: (details) =>
+                        _handleDragStart(context, details),
+                    onVerticalDragUpdate: onDragUpdate,
+                    onVerticalDragEnd: onDragEnd,
+                    behavior: HitTestBehavior.opaque,
+                    child: Builder(
+                      builder: (context) {
+                        // Local copy, not the widget field directly — Dart
+                        // doesn't retain a field's null-check promotion
+                        // across the closure below.
+                        final resolvedCategory = category;
+                        final badgeColor = resolvedCategory == null
+                            ? theme.colorTextSecondary
+                            : resolveCategoryVisual(
+                                theme: theme,
+                                category: resolvedCategory,
+                              ).iconColor;
+                        return Container(
+                          width: badgeSize,
+                          height: badgeSize,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: badgeColor,
+                            // theme.radiusPill, not BoxShape.circle —
+                            // requested directly ("make actually same shape
+                            // as timeline, not circle but rounded square").
+                            // Matches TaskCapsuleBlock's own pill rail
+                            // exactly, and tracks the SAME "Pill shape"
+                            // setting it does — see radiusPill's own doc
+                            // comment on AmbleTheme.
+                            borderRadius: BorderRadius.circular(
+                              theme.radiusPill,
+                            ),
+                          ),
+                          // Tabler icon via CategoryGlyph — glyphColorOn
+                          // rather than this badge's own `iconColor`
+                          // directly, matching TaskCapsuleBlock's identical
+                          // reasoning: a CUSTOM category's iconColor is the
+                          // same swatch as this badge's own fill.
+                          child: resolvedCategory == null
+                              ? Icon(
+                                  builtInIconFor(BuiltInCategoryIds.general),
+                                  size: badgeSize * 0.55,
+                                  color: glyphColorOn(badgeColor),
+                                )
+                              : CategoryGlyph(
+                                  category: resolvedCategory,
+                                  color: glyphColorOn(badgeColor),
+                                  size: badgeSize * 0.55,
+                                ),
+                        );
+                      },
                     ),
                   ),
-                ),
-                SizedBox(width: theme.spacingSm),
-              ],
-              if (hasCategory) ...[
-                // Small colored rounded-square badge behind the emoji —
-                // requested directly, matching the badge every task pill
-                // already shows elsewhere (this view's own bare emoji
-                // read as visually inconsistent with the rest of the app).
-                // Uses the same iconColor this row's own completion
-                // checkbox ring already resolves, rather than the pill's
-                // own pale fill color, so the badge and the ring agree.
-                // Sized and shaped to match `badgeSize`'s own comment
-                // above — the SAME `theme.sizeTaskBadge` and
-                // `theme.radiusPill` TaskCapsuleBlock's own pill rail
-                // uses, not a separate enlarged circle.
-                //
-                // Carries the drag-to-reschedule gesture ONLY when the time
-                // column above is gone (see its own comment) — with a
-                // visible time label, the time column keeps that job
-                // unchanged, exactly as before.
-                GestureDetector(
-                  // No `onTap` here — the outer row-level `GestureDetector`
-                  // (this whole `_ZoneTaskRow`'s own build wrapper) already
-                  // handles taps everywhere on the row, tap included; only
-                  // the DRAG gesture needs a home when the time column is
-                  // gone, since drag must stay narrow (not span the whole
-                  // row) or it fights the Timeline's own vertical scroll —
-                  // same reasoning the time column's own doc comment gives.
-                  onVerticalDragStart: timeLabel.isEmpty
-                      ? (details) => _handleDragStart(context, details)
-                      : null,
-                  onVerticalDragUpdate: timeLabel.isEmpty ? onDragUpdate : null,
-                  onVerticalDragEnd: timeLabel.isEmpty ? onDragEnd : null,
-                  behavior: HitTestBehavior.opaque,
-                  child: Builder(
-                    builder: (context) {
-                      // Local copy, not the widget field directly — Dart
-                      // doesn't retain a field's null-check promotion
-                      // across the closure below.
-                      final resolvedCategory = category;
-                      final badgeColor = resolvedCategory == null
+                  // spacingSm, not spacingXs — matches the gap between the
+                  // pill and the title text for a task OUTSIDE a zone
+                  // (TaskCapsuleBlock's own `SizedBox(width:
+                  // textCollapsed ? 0 : theme.spacingSm)`). Requested
+                  // directly: "add larger gap between 'pill' and name in
+                  // tasks inside zones... same gap as in tasks outside
+                  // zones."
+                  SizedBox(width: theme.spacingSm),
+                ],
+                // `Expanded`: the title takes ALL the row's leftover width,
+                // which both left-aligns it against the badge and pushes the
+                // trailing checkbox to the right edge — one widget doing the
+                // job the title/Spacer pair was doing badly. An earlier fix
+                // paired `Flexible(flex: 3)` with a `Spacer(flex: 100)` to
+                // pin the checkbox; that worked for the checkbox but starved
+                // the title to ~7px, so task names disappeared entirely
+                // (reported directly: "Cant see task names on zone view").
+                Expanded(
+                  child: Text(
+                    task.title,
+                    style: theme.textTaskTitleZone.copyWith(
+                      color: isCompleted
                           ? theme.colorTextSecondary
-                          : resolveCategoryVisual(
-                              theme: theme,
-                              category: resolvedCategory,
-                            ).iconColor;
-                      return Container(
-                        width: badgeSize,
-                        height: badgeSize,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: badgeColor,
-                          // theme.radiusPill, not BoxShape.circle —
-                          // requested directly ("make actually same shape
-                          // as timeline, not circle but rounded square").
-                          // Matches TaskCapsuleBlock's own pill rail
-                          // exactly, and tracks the SAME "Pill shape"
-                          // setting it does — see radiusPill's own doc
-                          // comment on AmbleTheme.
-                          borderRadius: BorderRadius.circular(theme.radiusPill),
-                        ),
-                        // Tabler icon via CategoryGlyph — glyphColorOn
-                        // rather than this badge's own `iconColor`
-                        // directly, matching TaskCapsuleBlock's identical
-                        // reasoning: a CUSTOM category's iconColor is the
-                        // same swatch as this badge's own fill.
-                        child: resolvedCategory == null
-                            ? Icon(
-                                builtInIconFor(BuiltInCategoryIds.general),
-                                size: badgeSize * 0.55,
-                                color: glyphColorOn(badgeColor),
-                              )
-                            : CategoryGlyph(
-                                category: resolvedCategory,
-                                color: glyphColorOn(badgeColor),
-                                size: badgeSize * 0.55,
-                              ),
-                      );
-                    },
+                          : theme.colorTextPrimary,
+                      fontWeight: FontWeight.w700,
+                      decoration: isCompleted
+                          ? TextDecoration.lineThrough
+                          : TextDecoration.none,
+                      decorationColor: theme.colorTextSecondary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                // spacingSm, not spacingXs — matches the gap between the
-                // pill and the title text for a task OUTSIDE a zone
-                // (TaskCapsuleBlock's own `SizedBox(width:
-                // textCollapsed ? 0 : theme.spacingSm)`). Requested
-                // directly: "add larger gap between 'pill' and name in
-                // tasks inside zones... same gap as in tasks outside
-                // zones."
-                SizedBox(width: theme.spacingSm),
-              ],
-              // `Expanded`: the title takes ALL the row's leftover width,
-              // which both left-aligns it against the badge and pushes the
-              // trailing checkbox to the right edge — one widget doing the
-              // job the title/Spacer pair was doing badly. An earlier fix
-              // paired `Flexible(flex: 3)` with a `Spacer(flex: 100)` to
-              // pin the checkbox; that worked for the checkbox but starved
-              // the title to ~7px, so task names disappeared entirely
-              // (reported directly: "Cant see task names on zone view").
-              Expanded(
-                child: Text(
-                  task.title,
-                  style: theme.textTaskTitleZone.copyWith(
-                    color: isCompleted
-                        ? theme.colorTextSecondary
-                        : theme.colorTextPrimary,
-                    fontWeight: FontWeight.w700,
-                    decoration: isCompleted
-                        ? TextDecoration.lineThrough
-                        : TextDecoration.none,
-                    decorationColor: theme.colorTextSecondary,
+                // Dropped from the Row when hidden
+                // (`ShowCompletionCheckboxSetting`), reclaiming its space.
+                // Safe to remove structurally, unlike TaskCapsuleBlock's own
+                // copy: this row's drag gesture lives on the time column
+                // above, and this checkbox is its sibling, not an ancestor —
+                // so removing it can't disturb an in-flight drag's hit-test
+                // ancestry.
+                if (showCompletionCheckbox) ...[
+                  SizedBox(width: theme.spacingSm),
+                  CompletionCheckbox(
+                    theme: theme,
+                    // Fixed color (CompletionCheckbox's own default), not the
+                    // category's — see task_capsule_block.dart's own copy of
+                    // this reasoning. The row's own emoji badge above still
+                    // carries the category's color.
+                    isCompleted: isCompleted,
+                    onToggle: onToggleComplete,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              // Dropped from the Row when hidden
-              // (`ShowCompletionCheckboxSetting`), reclaiming its space.
-              // Safe to remove structurally, unlike TaskCapsuleBlock's own
-              // copy: this row's drag gesture lives on the time column
-              // above, and this checkbox is its sibling, not an ancestor —
-              // so removing it can't disturb an in-flight drag's hit-test
-              // ancestry.
-              if (showCompletionCheckbox) ...[
-                SizedBox(width: theme.spacingSm),
-                CompletionCheckbox(
-                  theme: theme,
-                  // Fixed color (CompletionCheckbox's own default), not the
-                  // category's — see task_capsule_block.dart's own copy of
-                  // this reasoning. The row's own emoji badge above still
-                  // carries the category's color.
-                  isCompleted: isCompleted,
-                  onToggle: onToggleComplete,
-                ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
@@ -1112,6 +1334,65 @@ class _ZoneExternalEventRow extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// What Matters, Zone/List half — fades AND collapses [child] to zero
+/// height when [hidden], letting sibling rows in the enclosing list
+/// reflow up to fill the gap. Reported directly: "as the fade out they
+/// make room for others to shift up," unlike the Spatial view's own
+/// fade-only treatment (`TaskCapsuleBlock.whatMattersFaded`). Shared by
+/// both [_ZoneTaskRow] (this file) and `ZoneDayTimeline`'s own unzoned
+/// task rows — the identical animation either way, since both are just
+/// rows in a vertical list that should reflow the same way.
+///
+/// [child] stays mounted (never conditionally omitted from the tree) —
+/// `AnimatedSize` needs a stable child subtree to measure and animate
+/// between its old and new size; swapping it out for an already-
+/// collapsed placeholder would remove the very thing being sized,
+/// producing an instant jump instead of an observed collapse.
+class WhatMattersRow extends StatelessWidget {
+  const WhatMattersRow({
+    super.key,
+    required this.theme,
+    required this.hidden,
+    required this.child,
+  });
+
+  final AmbleTheme theme;
+  final bool hidden;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final content = IgnorePointer(
+      ignoring: hidden,
+      child: AnimatedOpacity(
+        opacity: hidden ? 0.0 : 1.0,
+        duration: theme.motionNormal,
+        curve: theme.curveStandard,
+        child: child,
+      ),
+    );
+
+    return AnimatedSize(
+      duration: theme.motionNormal,
+      curve: theme.curveStandard,
+      alignment: Alignment.topCenter,
+      child: SizedBox(
+        height: hidden ? 0 : null,
+        // Clipped ONLY while hidden — a `ClipRect` here unconditionally
+        // was a real regression: [ZoneRowTimeLabel] paints its hour text
+        // at a NEGATIVE `Positioned.left` (~90px outside this row's own
+        // bounds, escaping back to the screen edge so Zone view's times
+        // line up with the spatial view's hour gutter), and an ancestor
+        // clip eats exactly that overflow. Reported directly as "missing
+        // start hour in zone view." The clip is only actually needed
+        // while collapsing to zero height, to stop the row's own content
+        // spilling out of a box shorter than itself.
+        child: hidden ? ClipRect(child: content) : content,
       ),
     );
   }

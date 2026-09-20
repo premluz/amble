@@ -6,6 +6,7 @@ import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/main.dart';
 import 'package:amble/core/widgets/app_floating_create_button.dart';
+import 'package:amble/core/widgets/app_top_nav.dart';
 import 'package:amble/features/timeline/app_calendar_header.dart';
 import 'package:amble/features/timeline/edit_mode_provider.dart';
 import 'package:amble/features/timeline/pending_task_draft_provider.dart';
@@ -56,6 +57,14 @@ import 'support/seeded_category_box.dart';
 /// mounted throughout Edit Mode, collapsing to just its close button —
 /// so unlike the NavigationBar/"+", it is never expected to disappear
 /// from the tree here.
+///
+/// **2026-09-20** — the bottom `NavigationBar` is gone, replaced by the
+/// top-placed [AppTopNav] (see docs/PROGRESS_LOG.md's matching entry).
+/// Unlike the old floating pill, the top nav is a small, static row that
+/// doesn't compete with Edit Mode or the quick-create overlay for screen
+/// space, so it is NO LONGER hidden by either — this file's assertions
+/// were updated to expect it to stay visible throughout. The
+/// [AppFloatingCreateButton] suppression behavior is unchanged.
 void main() {
   late Box<Task> taskBox;
   late Box<dynamic> prefsBox;
@@ -145,20 +154,20 @@ void main() {
   }
 
   testWidgets(
-    'the bottom NavigationBar and the floating create button are both '
-    'visible on an ordinary Task view (Edit Mode off)',
+    'the top nav and the floating create button are both visible on an '
+    'ordinary Task view (Edit Mode off)',
     (tester) async {
       final container = await pumpHome(tester);
       expect(container.read(editModeEnabledProvider), isFalse);
 
-      expect(find.byType(NavigationBar), findsOneWidget);
+      expect(find.byType(AppTopNav), findsOneWidget);
       expect(find.byType(AppFloatingCreateButton), findsOneWidget);
     },
   );
 
   testWidgets(
-    'turning Edit Mode on hides the bottom NavigationBar and the floating '
-    'create button, but keeps AppCalendarHeader mounted (collapsed to its '
+    'turning Edit Mode on hides the floating create button, but keeps the '
+    'top nav and AppCalendarHeader mounted (the header collapsed to its '
     'own close button) — turning it back off restores all three to their '
     'normal shape',
     (tester) async {
@@ -173,7 +182,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
 
-      expect(find.byType(NavigationBar), findsNothing);
+      expect(find.byType(AppTopNav), findsOneWidget);
       expect(find.byType(AppFloatingCreateButton), findsNothing);
       // Still mounted — this is the real gap this file was expanded to
       // cover: the header used to disappear entirely along with everything
@@ -185,9 +194,15 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
 
-      expect(find.byType(NavigationBar), findsOneWidget);
+      expect(find.byType(AppTopNav), findsOneWidget);
       expect(find.byType(AppFloatingCreateButton), findsOneWidget);
-      expect(find.byTooltip('Edit'), findsOneWidget);
+      // Not `find.byTooltip('Edit')` any more — `AppCalendarHeader`'s own
+      // utility icon row (Today/Sync/zone-switcher/Edit) is hidden now
+      // that `AppBottomDock` carries equivalents (requested directly:
+      // "hide top buttons... since added them at the bottom"), so the
+      // pen icon this used to check for is commented out along with the
+      // rest of that row. `AppBottomDock`'s own entry point covers this.
+      expect(find.byType(AppCalendarHeader), findsOneWidget);
     },
   );
 
@@ -207,12 +222,12 @@ void main() {
   // ONE case the whole header still disappears for, since there is no
   // control on it that a draft needs to stay reachable.
   testWidgets(
-    'starting a quick-create draft hides the bottom NavigationBar, the '
-    'floating create button, AND AppCalendarHeader; clearing it restores '
-    'all three — "only the minisheet is visible in this scenario"',
+    'starting a quick-create draft hides the floating create button AND '
+    'AppCalendarHeader, but leaves the top nav visible; clearing it '
+    'restores all three',
     (tester) async {
       final container = await pumpHome(tester);
-      expect(find.byType(NavigationBar), findsOneWidget);
+      expect(find.byType(AppTopNav), findsOneWidget);
       expect(find.byType(AppFloatingCreateButton), findsOneWidget);
       expect(find.byType(AppCalendarHeader), findsOneWidget);
 
@@ -222,7 +237,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
 
-      expect(find.byType(NavigationBar), findsNothing);
+      expect(find.byType(AppTopNav), findsOneWidget);
       expect(find.byType(AppFloatingCreateButton), findsNothing);
       expect(find.byType(AppCalendarHeader), findsNothing);
 
@@ -230,7 +245,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
 
-      expect(find.byType(NavigationBar), findsOneWidget);
+      expect(find.byType(AppTopNav), findsOneWidget);
       expect(find.byType(AppFloatingCreateButton), findsOneWidget);
       expect(find.byType(AppCalendarHeader), findsOneWidget);
     },

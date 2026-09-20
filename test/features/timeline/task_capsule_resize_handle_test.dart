@@ -351,5 +351,85 @@ void main() {
       expect(dots.first.top, lessThan(pill.top));
       expect(dots.last.bottom, greaterThan(pill.bottom));
     });
+
+    // Real bug, reported directly against a screenshot: "editing smallest
+    // existing task the bottom dot resize handle is completely outside
+    // and far." Root cause: the combined (non-split) layout's outer Row
+    // is `IntrinsicHeight` + `stretch` (same mechanism `textHeaderHeight`
+    // already documents for the TEXT column), so the pill's own
+    // `Opacity`/`Stack` — carrying both the pill AND its resize handles —
+    // silently stretched to the Row's tallest sibling (here, the
+    // trailing checkbox's fixed 48px tap target) instead of staying at
+    // the SHORT task's own small `pillHeight`. The `AnimatedContainer`
+    // pill itself still painted at the correct small height (its own
+    // `alignment: topCenter` kept the TOP pinned, which is why only the
+    // BOTTOM handle visibly drifted away in the report), but
+    // `Positioned(bottom: 0, ...)` on the handles resolved against the
+    // stretched Stack, not the pill's own true bottom edge.
+    testWidgets(
+      'on a SHORT task (5 min, below the badge floor) in the combined '
+      'layout, the bottom dot still sits at the pill\'s own true bottom '
+      'edge — not stretched down toward the trailing checkbox',
+      (tester) async {
+        final shortTask = Task.create(
+          title: 'Pack the diaper bag',
+          scheduledAt: DateTime(2026, 9, 4, 12, 35),
+          durationMinutes: 5,
+          categoryId: BuiltInCategoryIds.work,
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(
+              useMaterial3: true,
+              extensions: [AmbleTheme.light],
+            ),
+            home: Scaffold(
+              body: Align(
+                alignment: Alignment.topLeft,
+                child: TaskCapsuleBlock(
+                  task: shortTask,
+                  // splitLayout defaults to false — the combined layout
+                  // this bug was actually in.
+                  editModeEnabled: true,
+                  isSelected: true,
+                  showCompletionCheckbox: true,
+                  onResizeStart: (_) {},
+                  onResizeUpdate: (_) {},
+                  onResizeEnd: (_) {},
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final theme = AmbleTheme.light;
+        // The pill's own true height at this duration: floored at
+        // sizeTaskBadge, same formula TaskCapsuleBlock itself uses.
+        final expectedPillHeight = theme.sizeTaskBadge;
+        final pillTop = tester.getTopLeft(find.byType(TaskCapsuleBlock)).dy;
+
+        final bottomHandle = find.byType(ResizeHandle).last;
+        final dot = find.descendant(
+          of: bottomHandle,
+          matching: find.byWidgetPredicate(
+            (w) =>
+                w is Container &&
+                (w.decoration as BoxDecoration?)?.shape == BoxShape.circle,
+          ),
+        );
+        final dotCenter = tester.getRect(dot).center;
+
+        expect(
+          dotCenter.dy,
+          moreOrLessEquals(pillTop + expectedPillHeight, epsilon: 1),
+          reason:
+              'the bottom dot must straddle the pill\'s OWN true bottom '
+              'edge (top + sizeTaskBadge for a 5-minute task), not the '
+              'checkbox-stretched Row\'s much lower edge',
+        );
+      },
+    );
   });
 }

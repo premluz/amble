@@ -14,14 +14,12 @@ import 'core/dev_config.dart';
 import 'core/feature_flags.dart';
 import 'core/tokens/color_primitives.dart';
 import 'core/tokens/semantic_theme.dart';
-import 'core/tokens/spacing_primitives.dart';
 import 'core/tokens/type_primitives.dart';
+import 'core/widgets/app_top_nav.dart';
 import 'features/inbox/inbox_screen.dart';
 import 'features/onboarding/onboarding_quiz_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/splash/splash_carousel_screen.dart';
-import 'features/timeline/edit_mode_provider.dart';
-import 'features/timeline/pending_task_draft_provider.dart';
 import 'features/timeline/selected_date_provider.dart';
 import 'features/timeline/timeline_screen.dart';
 import 'features/tracked_behavior/tracked_behavior_list_screen.dart';
@@ -423,27 +421,23 @@ class AmbleHome extends ConsumerStatefulWidget {
 class _AmbleHomeState extends ConsumerState<AmbleHome> {
   int _selectedIndex = 0;
 
-  /// Shorter than Material's own `NavigationBar` default (80px) —
-  /// reported directly against a reference screenshot: "it is too big
-  /// height." Sized off `spacingXl` (40px) rather than a new literal, so
-  /// it stays a real token multiple. Back down from `* 1.6` to `* 1.4`
-  /// now that both nav icon states render at the same size again (see
-  /// the icon theme below) — the taller ratio was only ever needed to
-  /// give a since-reverted larger SELECTED icon room to breathe.
-  static const double _navBarHeight = SpacingPrimitives.space9 * 1.4;
-
-  /// **2026-09-17 — Task view and Timeline merged back into ONE nav
-  /// destination**, requested directly: "consolidate the zone view/list
-  /// non spatial, with spatial task view, meaning 1 nav item, but when
-  /// tapped again it switches view... view switch on top similar like
-  /// Tracked page." Reverses the 2026-09-12 split (see git history)
-  /// without reviving that split's own removed `DayStrip` cycle button —
-  /// the switch is now [ZoneViewEnabledSetting] itself (never fully
-  /// deleted, just unread by `TimelineScreen` since that split), read
-  /// here to pick which `TimelineDisplayMode` this one destination shows,
-  /// AND toggled by [AppCalendarHeader]'s own new switcher button
-  /// (Tracked-style) so both "tap the nav item again" and "tap the header
-  /// switcher" reach the same provider.
+  /// **2026-09-20 — top nav replaces the bottom `NavigationBar` as the
+  /// primary section switcher.** Requested directly, as a deliberate
+  /// reversal of conventional mobile navigation: "Top: choose the part of
+  /// Panta. Bottom: choose how to work with your day." Day/Inbox/Tracked
+  /// are quiet text-label destinations at the TOP now ([AppTopNav]);
+  /// Settings moved out of the destination row entirely into that same
+  /// top nav's own separate icon (confirmed directly — Tracked keeps its
+  /// existing screen with no bottom dock of its own, and "Today" is the
+  /// existing merged Timeline tab, unchanged in substance). The bottom
+  /// dock (List/Timeline/Edit/What Matters, contextual to the Day screen)
+  /// is a SEPARATE, not-yet-built piece — Edit Mode's pen icon and the
+  /// rest of `AppCalendarHeader` are untouched by this stage.
+  ///
+  /// Settings is index 3, reached only via [AppTopNav.onSettingsTap] —
+  /// it deliberately has NO entry in [_topNavLabels]/`AppTopNav`'s own
+  /// destination row, matching "Settings as separate icon on far right,"
+  /// not a fourth quiet label indistinguishable from Day/Inbox/Tracked.
   ///
   /// "Tracked" is present when [FeatureFlags.trackedBehaviorEnabled] is on
   /// (default true) AND — in a debug build only — the
@@ -468,38 +462,15 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
     const SettingsScreen(),
   ];
 
-  /// The nav destinations, kept in the SAME order as [_screens] — the two
-  /// are indexed by one shared `_selectedIndex`, so a divergence between
-  /// them would silently show the wrong screen for a tapped tab.
-  ///
-  /// No text labels — requested directly, matching the reference
-  /// screenshot's own icon-only nav. `NavigationBar`'s own default label
-  /// behavior (always visible) is overridden per-destination via
-  /// `NavigationDestinationLabelBehavior.alwaysHide` at the `NavigationBar`
-  /// call site rather than here, since that's a display-mode setting of
-  /// the bar itself, not a property of any one destination.
-  List<NavigationDestination> _destinations(bool trackedTabVisible) => [
-    const NavigationDestination(
-      icon: Icon(Icons.view_timeline_outlined),
-      label: 'Timeline',
-    ),
-    const NavigationDestination(
-      icon: Icon(Icons.inbox_rounded),
-      // Back to "Inbox", matching the in-screen heading again — requested
-      // directly ("header manage > should change to inbox actually").
-      // This label has always tracked that heading; it was "Manage" only
-      // for as long as the heading was.
-      label: 'Inbox',
-    ),
-    if (trackedTabVisible)
-      const NavigationDestination(
-        icon: Icon(Icons.track_changes_rounded),
-        label: 'Tracked',
-      ),
-    const NavigationDestination(
-      icon: Icon(Icons.settings_rounded),
-      label: 'Settings',
-    ),
+  /// The top nav's own quiet text labels — "Day" (renamed from the old
+  /// icon-only "Timeline" destination's tooltip, matching the spec's own
+  /// naming), "Inbox", and "Tracked" when visible. Kept in the SAME order
+  /// as [_screens]'s first three entries; Settings (index 3) is
+  /// deliberately excluded — see [_screens]'s own doc comment.
+  List<String> _topNavLabels(bool trackedTabVisible) => [
+    'Day',
+    'Inbox',
+    if (trackedTabVisible) 'Tracked',
   ];
 
   @override
@@ -550,189 +521,60 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
       ref.read(notificationTapProvider.notifier).consume();
     });
 
-    // Requested directly: "in edit mode we don't see main menu and days
-    // and view switching." Reported directly as a real gap: the task edit
-    // sheet's OWN full-screen route already covers this bar for free (a
-    // separate, unrelated feature), which is not true here — Edit Mode is
-    // a toggle on the same already-visible TimelineScreen, not a pushed
-    // route, so nothing hid this bar until now.
-    // Same reasoning as the Edit Mode case just above — the quick-create
-    // overlay's own small sheet is meant to cover the nav bar's own
-    // screen real estate (reported directly, from a screenshot: "should
-    // cover main nav currently it opens above main nav"), and like Edit
-    // Mode, it's a state on the same already-visible TimelineScreen rather
-    // than a pushed route, so nothing else hides this bar for it.
-    final hideBottomNav =
-        _selectedIndex == 0 &&
-        (ref.watch(editModeEnabledProvider) ||
-            ref.watch(pendingTaskDraftProvider) != null);
-
-    // Which elevation direction the floating nav pane below uses — dark
-    // mode separates by getting lighter than the page, light mode by
-    // casting a shadow onto it.
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
+    // **2026-09-20 — Edit Mode and quick-create no longer hide a bottom
+    // nav bar**, since there isn't one any more; the top nav is a small,
+    // static row (unlike the old floating pill, it doesn't compete for
+    // the same screen real-estate a full-screen Edit Mode or a
+    // bottom-docked quick-create sheet needs), so it always stays put.
+    // (The bottom DOCK described in the nav spec — List/Timeline/Edit/
+    // What Matters — is a separate, not-yet-built stage; when it lands it
+    // will need its own hide-during-Edit-Mode-and-quick-create handling,
+    // matching what this bar used to do.)
     return Scaffold(
-      body: IndexedStack(
-        index: _selectedIndex < screens.length ? _selectedIndex : 0,
-        children: screens,
-      ),
-      // A fully-rounded (stadium, not just rounded-corner) floating pill,
-      // margined on every side — reworked 2026-09-12 from the previous
-      // bottom-flush, bottom-corners-only pane (which used to connect to
-      // `AppBottomExtensionBar` stacked directly above it) into a
-      // genuinely standalone floating element, matching a reference
-      // screenshot: "match aesthetics and nav is just 5 items + its
-      // outside" (the "+" is no longer part of this bar at all — see
-      // `AppFloatingCreateButton`, positioned independently by each
-      // screen). Reported directly as a follow-up, comparing against the
-      // same reference: "make it full round not just round corners... it
-      // is too big height."
-      //
-      // Dark mode paints `colorSurfaceOverlay` (ink650, the LIGHTEST
-      // surface in the ramp). This corrects a real inversion: the bar
-      // used to paint `colorSurfacePrimary`, which in dark mode is
-      // `ink900` — the same value as the page background — so the
-      // topmost floating element was simultaneously the darkest thing on
-      // screen. Light mode keeps a white fill and separates with
-      // `shadowPane` instead, since its base is already near-white and
-      // "lighter" isn't available as a depth cue there.
-      bottomNavigationBar: hideBottomNav
-          ? null
-          : SafeArea(
-              top: false,
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  theme.spacingMd,
-                  0,
-                  theme.spacingMd,
-                  theme.spacingSm,
-                ),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: theme.colorSurfaceOverlay,
-                    // A value well past half of _navBarHeight so the
-                    // engine clamps it to a true stadium shape (fully
-                    // round ends) regardless of the pill's own height,
-                    // the same way CSS's `border-radius: 9999px` works —
-                    // rather than a fixed token that only happens to look
-                    // "full" at one specific height.
-                    borderRadius: BorderRadius.circular(999),
-                    // No border, per direct request. The earlier hairline
-                    // is gone: with the re-anchored ink ramp the overlay
-                    // surface is already the lightest step, and that
-                    // lightness difference against a near-black page is
-                    // what separates the pane — a drawn edge on top of it
-                    // read as a hard box rather than a floating surface.
-                    // Light mode still gets the shadow, which is its only
-                    // available depth cue on a near-white base.
-                    boxShadow: isDark ? null : theme.shadowPane,
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(999),
-                    // **2026-09-12 — reverted the size bump.** An earlier
-                    // pass grew the SELECTED icon specifically (reported,
-                    // at the time, as "selected item too small"), but a
-                    // screenshot then showed the real effect: with a
-                    // bigger icon inside it, Material's own circular
-                    // indicator stretches into an oval/pill to fit —
-                    // "active icon should not enlarge... ask was to
-                    // change color, not [size/shape]." Both states now
-                    // render at the SAME size (Material's own flat
-                    // default, all icons drawn at `spacingLg`, 24px) —
-                    // the indicator's `CircleBorder` below stays a clean
-                    // circle once it isn't being stretched to contain a
-                    // larger icon. A local `NavigationBarThemeData`
-                    // override (rather than the app's own `ThemeData`)
-                    // still applies just `colorTextPrimary`, since a
-                    // Theme wrapper is still needed for the indicator
-                    // color/shape overrides below.
-                    child: Theme(
-                      data: Theme.of(context).copyWith(
-                        navigationBarTheme: NavigationBarThemeData(
-                          iconTheme: WidgetStateProperty.all(
-                            IconThemeData(
-                              size: theme.spacingLg,
-                              color: theme.colorTextPrimary,
-                            ),
-                          ),
-                        ),
-                      ),
-                      child: NavigationBar(
-                        // Shorter than Material's own 80px default —
-                        // reported directly alongside the shape fix
-                        // above.
-                        height: _navBarHeight,
-                        selectedIndex: _selectedIndex < screens.length
-                            ? _selectedIndex
-                            : 0,
-                        // Tapping the Timeline destination (index 0) again
-                        // while it's already selected toggles spatial/Zone
-                        // view — the nav-tap half of "1 nav item, but when
-                        // tapped again it switches view," mirrored by
-                        // `AppCalendarHeader`'s own switcher button
-                        // reaching the same provider.
-                        onDestinationSelected: (index) {
-                          if (index == 0 && _selectedIndex == 0) {
-                            ref
-                                .read(zoneViewEnabledSettingProvider.notifier)
-                                .set(!zoneViewEnabled);
-                            return;
-                          }
-                          setState(() => _selectedIndex = index);
-                        },
-                        // No text labels under the icons — requested
-                        // directly, matching the reference screenshot's
-                        // own icon-only nav. Each destination's own
-                        // `label` (above) is kept regardless, for
-                        // accessibility (screen readers still announce
-                        // it) and as the tooltip Material shows on
-                        // long-press.
-                        labelBehavior:
-                            NavigationDestinationLabelBehavior.alwaysHide,
-                        // A filled circle behind the active icon only —
-                        // matches the reference. `colorSurfaceField`, NOT
-                        // `colorSurfaceSecondary` (corrected 2026-09-12,
-                        // follow-up report: "wrong surface (selected has
-                        // darker surface > should have ligher)" —
-                        // `colorSurfaceSecondary` is `ink700` in dark
-                        // mode, which is actually DARKER than this pane's
-                        // own `colorSurfaceOverlay` fill (`ink650`,
-                        // already the lightest step in that ramp), the
-                        // exact inversion reported. `colorSurfaceField`
-                        // sits one genuine step lighter than
-                        // `colorSurfaceOverlay` in dark mode and one step
-                        // toward the base (a visible, but not stacked-on-
-                        // top-of-two-jumps) shift in light mode — also
-                        // addresses "surface jump too big... if 2 jumps,
-                        // reduce to 1": this is a single perceptual step
-                        // off the pill's own fill, not two chained hops
-                        // from the page background.
-                        indicatorColor: theme.colorSurfaceField,
-                        indicatorShape: const CircleBorder(),
-                        // Transparent so the DecoratedBox above is what
-                        // paints — the pane owns its own fill now.
-                        backgroundColor: ColorPrimitives.transparent,
-                        // Material 3's NavigationBar applies its own
-                        // surfaceTintColor overlay by default (derived
-                        // from ColorScheme.fromSeed), which paints OVER
-                        // an explicit backgroundColor rather than being
-                        // overridden by it — a real, pre-existing
-                        // dark-mode bug found while verifying the splash
-                        // screen: the nav bar stayed white in dark mode
-                        // despite backgroundColor already being wired to
-                        // a theme token at Phase 5. Zeroing the tint out
-                        // is still required, now so the transparent fill
-                        // stays genuinely transparent. See
-                        // docs/DECISIONS.md.
-                        surfaceTintColor: ColorPrimitives.transparent,
-                        destinations: _destinations(trackedTabVisible),
-                      ),
-                    ),
-                  ),
-                ),
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                theme.spacingScreenPadding,
+                theme.spacingSm,
+                theme.spacingScreenPadding,
+                theme.spacingSm,
+              ),
+              child: AppTopNav(
+                destinations: _topNavLabels(trackedTabVisible),
+                selectedIndex:
+                    _selectedIndex < _topNavLabels(trackedTabVisible).length
+                    ? _selectedIndex
+                    : 0,
+                // Tapping the Day destination (index 0) again while it's
+                // already selected toggles spatial/Zone view — the
+                // nav-tap half of "1 nav item, but when tapped again it
+                // switches view," mirrored by `AppCalendarHeader`'s own
+                // switcher button reaching the same provider.
+                onDestinationSelected: (index) {
+                  if (index == 0 && _selectedIndex == 0) {
+                    ref
+                        .read(zoneViewEnabledSettingProvider.notifier)
+                        .set(!zoneViewEnabled);
+                    return;
+                  }
+                  setState(() => _selectedIndex = index);
+                },
+                onSettingsTap: () =>
+                    setState(() => _selectedIndex = screens.length - 1),
               ),
             ),
+            Expanded(
+              child: IndexedStack(
+                index: _selectedIndex < screens.length ? _selectedIndex : 0,
+                children: screens,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

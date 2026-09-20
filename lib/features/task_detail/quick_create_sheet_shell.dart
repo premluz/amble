@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/app_sheet_handle.dart';
 
 /// The small mode's starting/minimum height fraction.
 ///
@@ -199,10 +200,10 @@ class QuickCreateSheetHeightController extends ChangeNotifier {
 }
 
 /// The drag handle itself — rendered by `QuickCreateOverlay` at the top
-/// of its small panel. Visual style matches `ResizeHandle`'s own bar
-/// (`lib/features/timeline/resize_handle.dart`) for a consistent "this is
-/// draggable" affordance across the app, though this widget lives here
-/// rather than reusing that one directly — its own drag drives a
+/// of its small panel. Draws the bar via the shared [AppSheetHandle] (see
+/// its own doc comment for the exact token values), wrapped in this
+/// widget's own gesture handling rather than reusing a bigger shared
+/// widget for the drag itself — its own drag drives a
 /// [QuickCreateSheetHeightController], not a task/zone resize callback
 /// triple, a different enough contract to not force a shared signature
 /// onto both.
@@ -291,14 +292,20 @@ class QuickCreateSheetHandle extends StatelessWidget {
       // the whole surrounding row is the hit target, so the drag catches
       // the way Android's own non-modal bottom sheet header does rather
       // than demanding a precise hit on a hairline.
+      //
+      // Top-aligned with a small top inset, not centered in the whole
+      // (button-height) row — requested directly against a screenshot:
+      // "move the handle higher up." Centering in the full row put it at
+      // the same vertical mid-point as the X/Schedule buttons beside it,
+      // reading as one more control in that row rather than a separate
+      // "sheet can be dragged" affordance sitting above the row's real
+      // content. `AppButton.subtleTint`-colored, not `colorTextSecondary`
+      // — see [AppSheetHandle]'s own doc comment.
       child: Align(
-        child: Container(
-          width: theme.spacingXl * 1.2,
-          height: 4,
-          decoration: BoxDecoration(
-            color: theme.colorTextSecondary,
-            borderRadius: BorderRadius.circular(theme.radiusSm),
-          ),
+        alignment: Alignment.topCenter,
+        child: Padding(
+          padding: EdgeInsets.only(top: theme.spacingXs),
+          child: AppSheetHandle(theme: theme),
         ),
       ),
     );

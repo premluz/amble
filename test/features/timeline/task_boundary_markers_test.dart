@@ -206,10 +206,11 @@ void main() {
       },
     );
 
-    testWidgets('without columnWidth (default), a label stays left-anchored at '
-        'leftInset — unchanged from before this parameter existed', (
-      tester,
-    ) async {
+    testWidgets('without columnWidth (default), a label sits leftInset PLUS '
+        'theme.spacingSm in — matching the blue accent time badge\'s own '
+        'internal left padding (TaskEdgeTimeLabel), requested directly so '
+        'the Timeline\'s plain hour text lines up with that badge\'s text '
+        'instead of sitting visibly left of it', (tester) async {
       const leftInset = 24.0;
       await tester.pumpWidget(
         MaterialApp(
@@ -236,7 +237,7 @@ void main() {
           )
           .first;
       final labelLeft = tester.getTopLeft(label).dx;
-      expect(labelLeft, closeTo(leftInset, 0.5));
+      expect(labelLeft, closeTo(leftInset + AmbleTheme.light.spacingSm, 0.5));
     });
   });
 }

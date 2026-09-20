@@ -307,11 +307,23 @@ class PendingTaskPill extends StatelessWidget {
             ),
           ),
           // The draft's own start/end, one accent label per edge — see
-          // this field's own doc comment. Full row width (like the title
-          // above), centred on each edge via the same -0.5
-          // FractionalTranslation the placement line itself uses, and
-          // last in this Stack's child list so they paint above the rail
-          // and the resize handles rather than underneath them.
+          // this field's own doc comment. Pinned INSIDE the hour gutter
+          // itself, not merely at this pill's own left edge — corrected
+          // directly: "the blue time from to, should not be on top and
+          // bottom of task but on the left timeline where we [see] hours
+          // of day." `-left + theme.spacingSm` walks the label back from
+          // this pill's own local origin (`left`, this widget's outer
+          // `Positioned.left`) to the day column's true x=0, then forward
+          // to the shared gutter label x every hour tick
+          // (`TaskBoundaryMarkers`) already uses — same formula
+          // `_DraggableTaskBlockState`'s own edge labels use. No `right:`
+          // here (unlike the title row above, which genuinely needs the
+          // full width to reach the shared text column) — dropping it
+          // lets the box shrink-wrap to the pill's own size and sit
+          // exactly at `left`, the same "drop right:" mechanism
+          // `TaskEdgeTimeLabel`'s own doc comment describes. Last in this
+          // Stack's child list so they paint above the rail and the
+          // resize handles rather than underneath them.
           //
           // showLine: false — reported directly: unlike the long-press
           // placement line (which marks a drop point on otherwise-empty
@@ -320,8 +332,7 @@ class PendingTaskPill extends StatelessWidget {
           // placement aid. Just the accent time badge.
           Positioned(
             top: 0,
-            left: 0,
-            right: 0,
+            left: -left + theme.spacingSm,
             child: FractionalTranslation(
               translation: const Offset(0, -0.5),
               child: TaskEdgeTimeLabel(
@@ -333,8 +344,7 @@ class PendingTaskPill extends StatelessWidget {
           ),
           Positioned(
             bottom: 0,
-            left: 0,
-            right: 0,
+            left: -left + theme.spacingSm,
             child: FractionalTranslation(
               translation: const Offset(0, 0.5),
               child: TaskEdgeTimeLabel(

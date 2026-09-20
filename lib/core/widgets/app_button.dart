@@ -54,7 +54,7 @@ double appButtonHeightFor(AmbleTheme theme, AppButtonSize size) =>
 /// - [AppButtonVariant.primary] — filled [AmbleTheme.colorAccent], the
 ///   one "this is the main action" surface.
 /// - [AppButtonVariant.secondary] — a translucent, BLURRED surface (see
-///   [_secondaryTint]) rather than an opaque fill or a bare hairline
+///   [subtleTint]) rather than an opaque fill or a bare hairline
 ///   outline — reads as "the next surface up," not a fully contrasted
 ///   block. Both the rounded/pill text-button shape AND the circle
 ///   icon-only shape share this exact treatment now; the circle shape no
@@ -134,7 +134,16 @@ class AppButton extends StatelessWidget {
   /// timeline block, which needs to read as substantial from a distance;
   /// a button is a smaller, closer-read control, so a lighter touch than
   /// that reference still applies, just not as light as the original).
-  static Color _secondaryTint(AmbleTheme theme) =>
+  ///
+  /// Public (not `_secondaryTint`) so other "subtle, on any surface"
+  /// treatments can reference the exact same value instead of picking
+  /// their own alpha — e.g. [AppSheetHandle]'s bar, requested directly:
+  /// "make it lighter color use token colors available e.g. button
+  /// subtle color." A value used twice becomes a token (CONSTITUTION.md
+  /// design principle 5); this is that token for "subtle neutral tint,"
+  /// promoted the moment a second caller needed it rather than each
+  /// hand-picking its own alpha on [AmbleTheme.colorTextPrimary].
+  static Color subtleTint(AmbleTheme theme) =>
       theme.colorTextPrimary.withValues(alpha: 0.16);
 
   @override
@@ -166,9 +175,11 @@ class AppButton extends StatelessWidget {
     // through on it — the fill stays its normal enabled color, and only
     // the label swaps for a spinner.
     final Color? background = isPrimary
-        ? (isLoading || !isDisabled ? theme.colorAccent : theme.colorSurfaceField)
+        ? (isLoading || !isDisabled
+              ? theme.colorAccent
+              : theme.colorSurfaceField)
         : null; // secondary/ghost never use a flat Color background — see
-    // _secondaryTint's blur layer and the ghost no-fill branch below.
+    // subtleTint's blur layer and the ghost no-fill branch below.
     final foreground = isGhost
         ? theme.colorTextPrimary
         : (isSecondary
@@ -324,7 +335,7 @@ class AppButton extends StatelessWidget {
         ),
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: _secondaryTint(theme),
+            color: subtleTint(theme),
             borderRadius: radius,
           ),
           child: child,
@@ -398,7 +409,7 @@ class AppButton extends StatelessWidget {
 
     final background = isPrimary
         ? theme.colorAccent
-        : (isSecondary ? (borderColor ?? _secondaryTint(theme)) : null);
+        : (isSecondary ? (borderColor ?? subtleTint(theme)) : null);
     final foreground = isPrimary
         ? theme.colorSurfacePrimary
         : (iconColor ?? theme.colorTextPrimary);

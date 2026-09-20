@@ -959,11 +959,11 @@ class _DeveloperSettingsScreenState
                           SizedBox(height: theme.spacingXs),
                           Text(
                             'When on (default), tapping a task in Edit '
-                            'Mode selects it (wiggle becomes the '
-                            'selection indicator) instead of opening its '
-                            'detail sheet — drag/resize/delete then act '
-                            'on every selected task together. Turn off '
-                            'for the original single-task Edit Mode.',
+                            'Mode selects it (an accent border becomes '
+                            'the selection indicator) instead of opening '
+                            'its detail sheet — drag/resize/delete then '
+                            'act on every selected task together. Turn '
+                            'off for the original single-task Edit Mode.',
                             style: theme.textBody.copyWith(
                               color: theme.colorTextSecondary,
                             ),

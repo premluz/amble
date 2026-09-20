@@ -48,30 +48,23 @@ class InboxScreen extends ConsumerWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Top/bottom bumped from spacingMd/spacingSm to spacingLg/
-                // spacingMd — requested directly, alongside the Tracked
-                // screen's identical header (same values there, same
-                // reasoning): "for inbox and tracked also might need to
-                // increase the heading section."
-                Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    theme.spacingScreenPadding,
-                    theme.spacingLg,
-                    theme.spacingScreenPadding,
-                    theme.spacingMd,
-                  ),
-                  // "Inbox", not "Manage" — requested directly: "It's
-                  // Inbox screen with header manage > should change to
-                  // inbox actually, adding notes..." The screen collects
-                  // unscheduled notes, so "Inbox" names what it holds
-                  // rather than what you do to it.
-                  // textTitle, not textHeadline — requested directly:
-                  // "headings inbox, tracked, settings (page headings)
-                  // same size as month selector on timeline view." The
-                  // month selector (`app_calendar_header.dart`) uses
-                  // textTitle deliberately, at 1/3 textHeadline's size.
-                  child: Text('Inbox', style: theme.textTitle),
-                ),
+                // **2026-09-20 — page title removed.** Requested directly:
+                // "Inbox and Tracked no need page title any more since
+                // tab shows it" — the top nav's own "Inbox" tab label
+                // already names this screen, so a second, redundant
+                // "Inbox" heading directly below it was pure repetition.
+                // Commented out rather than deleted, matching this
+                // session's other "keep for restore" instructions.
+                //
+                // Padding(
+                //   padding: EdgeInsets.fromLTRB(
+                //     theme.spacingScreenPadding,
+                //     theme.spacingLg,
+                //     theme.spacingScreenPadding,
+                //     theme.spacingMd,
+                //   ),
+                //   child: Text('Inbox', style: theme.textTitle),
+                // ),
                 Expanded(
                   // Stack, so top/bottom fades overlay the list's own
                   // scrolling content directly — reversed back from an

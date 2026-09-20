@@ -127,52 +127,50 @@ void main() {
   // background — never the list actually scrolling underneath it. The
   // fade now overlays the scrolling content directly, matching the
   // Timeline's own fade and the Inbox screen's identical fix.
-  testWidgets(
-    'the top scroll-fade overlays the scrolling list directly, and the '
-    '"Tracked" title never visually overlaps it',
-    (tester) async {
-      await pumpList(
-        tester,
-        behaviors: [
-          TrackedBehavior.create(
-            title: 'Exercise',
-            targetType: BehaviorTargetType.count,
-            targetAmount: 3,
-            timesPerWeek: 3,
-          ),
-        ],
-      );
-
-      final topFade = find.byWidgetPredicate(
-        (w) => w is AppTopScrollFade && !w.fromBottom,
-      );
-
-      // The fade shares a Stack with the actual scrolling content (the
-      // behavior list), so it visually overlays it.
-      final sharedStack = find.ancestor(
-        of: topFade,
-        matching: find.byType(Stack),
-      );
-      expect(
-        find.descendant(
-          of: sharedStack.first,
-          matching: find.byType(TrackedBehaviorRow),
+  testWidgets('the top scroll-fade overlays the scrolling list directly', (
+    tester,
+  ) async {
+    await pumpList(
+      tester,
+      behaviors: [
+        TrackedBehavior.create(
+          title: 'Exercise',
+          targetType: BehaviorTargetType.count,
+          targetAmount: 3,
+          timesPerWeek: 3,
         ),
-        findsWidgets,
-        reason:
-            'the top fade must share a Stack with the actual scrolling '
-            'content, so it visually overlays it rather than only ever '
-            "blending against its own separate header's flat background",
-      );
+      ],
+    );
 
-      // The title and the fade occupy separate, non-overlapping regions
-      // — the title in the fixed heading above, the fade over the
-      // scrolling content below it.
-      final titleRect = tester.getRect(find.text('Tracked'));
-      final fadeRect = tester.getRect(topFade);
-      expect(titleRect.overlaps(fadeRect), isFalse);
-    },
-  );
+    final topFade = find.byWidgetPredicate(
+      (w) => w is AppTopScrollFade && !w.fromBottom,
+    );
+
+    // The fade shares a Stack with the actual scrolling content (the
+    // behavior list), so it visually overlays it.
+    final sharedStack = find.ancestor(
+      of: topFade,
+      matching: find.byType(Stack),
+    );
+    expect(
+      find.descendant(
+        of: sharedStack.first,
+        matching: find.byType(TrackedBehaviorRow),
+      ),
+      findsWidgets,
+      reason:
+          'the top fade must share a Stack with the actual scrolling '
+          'content, so it visually overlays it rather than only ever '
+          "blending against its own separate header's flat background",
+    );
+
+    // **2026-09-20 — the title/fade overlap check is gone.** The
+    // "Tracked" page title itself was removed — requested directly:
+    // "Inbox and Tracked no need page title any more since tab shows
+    // it" — so there's no `Text('Tracked')` left to check against the
+    // fade. The fade-overlays-the-list assertion above is unaffected
+    // and still applies.
+  });
 
   testWidgets('shows an empty state when nothing is tracked', (tester) async {
     await pumpList(tester);

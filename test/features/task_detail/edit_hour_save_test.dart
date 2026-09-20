@@ -157,6 +157,13 @@ void main() {
       showTaskDetailSheet(navigatorKey.currentContext!, task: task);
       await tester.pumpAndSettle();
 
+      // The wheel is collapsed by default — tap the "Time" summary row's
+      // own label to expand it before the wheel exists in the tree at
+      // all. See task_detail_sheet.dart's _ScheduleFieldsStage
+      // (`timeExpanded`); the whole row (label + value) is one opaque
+      // tap target, so tapping the label alone is enough.
+      await _tapAndSettle(tester, find.text('Time'));
+
       // Drive the wheel's own onChanged directly rather than a scroll
       // gesture — ListWheelScrollView drag simulation is fragile, and the
       // widget already exposes a plain callback (see
@@ -204,6 +211,8 @@ void main() {
       showTaskDetailSheet(navigatorKey.currentContext!, task: task);
       await tester.pumpAndSettle();
 
+      await _tapAndSettle(tester, find.text('Time'));
+
       final picker = tester.widget<AppWheelPicker>(find.byType(AppWheelPicker));
       picker.onChanged(14, 0);
       await tester.pumpAndSettle();
@@ -222,4 +231,121 @@ void main() {
       expect(box.get(task.id)!.scheduledAt, DateTime(2026, 9, 4, 14, 0));
     },
   );
+
+  // Requested directly: "in edit task time wheels should be collapsed,
+  // also duration." Confirmed via AskUserQuestion: collapsed by default
+  // (both Time and Duration), tapping the summary row expands the
+  // control INLINE below it.
+  group('Time/Duration collapsed by default (2026-09-19)', () {
+    testWidgets(
+      'the Time wheel and Duration presets are both absent until their '
+      'own summary row is tapped',
+      (tester) async {
+        final task = Task.create(
+          title: 'Standup',
+          scheduledAt: DateTime(2026, 9, 4, 9),
+          durationMinutes: 30,
+          categoryId: BuiltInCategoryIds.work,
+        );
+        await tester.runAsync(() => box.put(task.id, task));
+
+        final navigatorKey = await _pumpHost(
+          tester,
+          box: box,
+          categoryBox: categoryBox,
+          trackedBehaviorBox: trackedBehaviorBox,
+          templateBox: templateBox,
+        );
+        showTaskDetailSheet(navigatorKey.currentContext!, task: task);
+        await tester.pumpAndSettle();
+
+        expect(find.byType(AppWheelPicker), findsNothing);
+        expect(find.text('15m'), findsNothing);
+      },
+    );
+
+    testWidgets('tapping the Time row expands the wheel inline', (
+      tester,
+    ) async {
+      final task = Task.create(
+        title: 'Standup',
+        scheduledAt: DateTime(2026, 9, 4, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      );
+      await tester.runAsync(() => box.put(task.id, task));
+
+      final navigatorKey = await _pumpHost(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+        trackedBehaviorBox: trackedBehaviorBox,
+        templateBox: templateBox,
+      );
+      showTaskDetailSheet(navigatorKey.currentContext!, task: task);
+      await tester.pumpAndSettle();
+
+      await _tapAndSettle(tester, find.text('Time'));
+
+      expect(find.byType(AppWheelPicker), findsOneWidget);
+      // Duration stays collapsed — the two are independent.
+      expect(find.text('15m'), findsNothing);
+    });
+
+    testWidgets('tapping the Duration row expands the preset chips inline', (
+      tester,
+    ) async {
+      final task = Task.create(
+        title: 'Standup',
+        scheduledAt: DateTime(2026, 9, 4, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      );
+      await tester.runAsync(() => box.put(task.id, task));
+
+      final navigatorKey = await _pumpHost(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+        trackedBehaviorBox: trackedBehaviorBox,
+        templateBox: templateBox,
+      );
+      showTaskDetailSheet(navigatorKey.currentContext!, task: task);
+      await tester.pumpAndSettle();
+
+      await _tapAndSettle(tester, find.text('Duration'));
+
+      expect(find.text('15m'), findsOneWidget);
+      // Time stays collapsed — the two are independent.
+      expect(find.byType(AppWheelPicker), findsNothing);
+    });
+
+    testWidgets('tapping an expanded row again collapses it back', (
+      tester,
+    ) async {
+      final task = Task.create(
+        title: 'Standup',
+        scheduledAt: DateTime(2026, 9, 4, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      );
+      await tester.runAsync(() => box.put(task.id, task));
+
+      final navigatorKey = await _pumpHost(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+        trackedBehaviorBox: trackedBehaviorBox,
+        templateBox: templateBox,
+      );
+      showTaskDetailSheet(navigatorKey.currentContext!, task: task);
+      await tester.pumpAndSettle();
+
+      await _tapAndSettle(tester, find.text('Time'));
+      expect(find.byType(AppWheelPicker), findsOneWidget);
+
+      await _tapAndSettle(tester, find.text('Time'));
+      expect(find.byType(AppWheelPicker), findsNothing);
+    });
+  });
 }
