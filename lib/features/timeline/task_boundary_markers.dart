@@ -137,28 +137,37 @@ class TaskBoundaryMarkers extends StatelessWidget {
                   alignment: columnWidth == null
                       ? Alignment.centerLeft
                       : Alignment.centerRight,
-                  // Requested directly: the blue accent time badge shown
-                  // while creating/editing a task (`TaskEdgeTimeLabel`)
-                  // pads its own text `theme.spacingSm` in from its box's
-                  // left edge, but this plain gutter label had NO internal
-                  // padding at all — same box origin (`leftInset`), so the
-                  // gutter's own hour text sat visibly left of the badge's
-                  // text instead of lining up with it. Only applied when
-                  // `columnWidth` is null (the Timeline's own left-aligned
-                  // gutter); the zone-grid's right-aligned column usage
-                  // already matches the badge with zero padding on its own
-                  // separate call site (`zone_grid_screen.dart`), which
-                  // gets the same fix directly rather than through this
-                  // shared widget.
-                  child: Padding(
-                    padding: columnWidth == null
-                        ? EdgeInsets.only(left: theme.spacingSm)
-                        : EdgeInsets.zero,
-                    child: Text(
-                      TimeOfDay.fromDateTime(tick.time).format(context),
-                      style: theme.textCaption.copyWith(
-                        color: theme.colorTextSecondary,
-                      ),
+                  // **2026-09-21 — the internal `spacingSm` left padding
+                  // is GONE.** It was added so this plain hour text would
+                  // line up with `TaskEdgeTimeLabel`'s badge text (that
+                  // badge pads its own text `spacingSm` in from its pill,
+                  // so at a shared box origin the two texts disagreed by
+                  // 8px). The premise was that both boxes start at the
+                  // same x — they do not. The badge's box is deliberately
+                  // placed at `spacingSm` (see `_DraggableTaskBlock`'s own
+                  // `leftOffset: ... + theme.spacingSm`), precisely so its
+                  // padded text lands at 8 + 8 = 16 — the shared side
+                  // inset. This label's box already sits AT that inset, so
+                  // padding it again pushed the hour to 24 and it was the
+                  // only thing in the app not on the 16px line.
+                  //
+                  // Reported directly against a screenshot with the extra
+                  // space marked in yellow beside the intended inset in
+                  // red: "the day hours are pushed further... they are not
+                  // aligned like the non-spatial view." Removing this also
+                  // widens the hour-to-zone gap by the same 8px, which was
+                  // the second half of the same report.
+                  //
+                  // The non-spatial view's own `ZoneRowTimeLabel` has
+                  // never had internal padding — it places its `Text`
+                  // directly at `zoneRowTimeLabelEdgeInset`. With this
+                  // gone the two views construct the position the same
+                  // way, which is what stops them drifting again.
+                  child: Text(
+                    TimeOfDay.fromDateTime(tick.time).format(context),
+                    // textCaptionMono — a time label, not a name.
+                    style: theme.textCaptionMono.copyWith(
+                      color: theme.colorTextSecondary,
                     ),
                   ),
                 ),
@@ -179,7 +188,9 @@ class TaskBoundaryMarkers extends StatelessWidget {
   bool _isHiddenByNowLabel(DateTime time, AmbleTheme theme) {
     final now = hideLabelNear;
     if (now == null) return false;
-    final caption = theme.textCaption;
+    // textCaptionMono — measuring the same monospace time-label text
+    // this collision check guards (see the `Text` above).
+    final caption = theme.textCaptionMono;
     final lineHeight = (caption.fontSize ?? 0) * (caption.height ?? 1);
     final minutesApart = time.difference(now).inMinutes.abs();
     return minutesApart * pixelsPerMinute < lineHeight;

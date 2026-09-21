@@ -206,11 +206,24 @@ void main() {
       },
     );
 
-    testWidgets('without columnWidth (default), a label sits leftInset PLUS '
-        'theme.spacingSm in — matching the blue accent time badge\'s own '
-        'internal left padding (TaskEdgeTimeLabel), requested directly so '
-        'the Timeline\'s plain hour text lines up with that badge\'s text '
-        'instead of sitting visibly left of it', (tester) async {
+    // **2026-09-21 — inverted, deliberately.** This asserted the label sat
+    // at `leftInset + spacingSm`, pinning an internal 8px padding added so
+    // this plain hour text would line up with `TaskEdgeTimeLabel`'s badge
+    // text. That rationale rested on a false premise — that both boxes
+    // start at the same x. They do not: the badge's box is placed at
+    // `spacingSm` deliberately (see `_DraggableTaskBlock`'s own
+    // `leftOffset: ... + theme.spacingSm`) so its padded text lands at
+    // 8 + 8 = 16, the shared side inset. This label's box already sits AT
+    // that inset, so padding it again put the hour at 24 — the only thing
+    // in the app off the 16px line, and visible on device as the spatial
+    // view's hours sitting further right than the non-spatial view's.
+    //
+    // The label must now render exactly AT `leftInset`, with no internal
+    // padding of its own, the same way the non-spatial view's
+    // `ZoneRowTimeLabel` has always placed its own `Text`.
+    testWidgets('without columnWidth (default), a label renders exactly AT '
+        'leftInset — no internal padding of its own, matching how the '
+        'non-spatial view places the same hour text', (tester) async {
       const leftInset = 24.0;
       await tester.pumpWidget(
         MaterialApp(
@@ -237,7 +250,7 @@ void main() {
           )
           .first;
       final labelLeft = tester.getTopLeft(label).dx;
-      expect(labelLeft, closeTo(leftInset + AmbleTheme.light.spacingSm, 0.5));
+      expect(labelLeft, closeTo(leftInset, 0.5));
     });
   });
 }

@@ -5,6 +5,7 @@ import 'package:amble/core/widgets/app_bottom_dock.dart';
 import 'package:amble/core/widgets/app_date_accordion.dart';
 import 'package:amble/core/widgets/app_option_switch_option.dart';
 import 'package:amble/core/widgets/app_tab_switch.dart';
+import 'package:amble/core/widgets/app_voice_waveform.dart';
 import 'package:amble/core/widgets/app_top_nav.dart';
 import 'package:flutter/material.dart';
 import 'package:widgetbook/widgetbook.dart';
@@ -172,6 +173,53 @@ class AmbleWidgetbookApp extends StatelessWidget {
                 WidgetbookUseCase(
                   name: 'List / Timeline / Edit / What Matters',
                   builder: (context) => const _BottomDockDemo(),
+                ),
+              ],
+            ),
+          ],
+        ),
+        // Added for the voice-capture flow (`voice_capture_screen.dart`)
+        // — a genuinely reusable component per direct request ("make it
+        // a reusable component that we have in Storybook because we'll
+        // be reusing it"). Separate use cases per state (idle/listening/
+        // loud), not a knob: `level`/`isActive` together describe a
+        // content-shape difference (a still, paused waveform vs. a live
+        // one), the same reasoning `AppButton`'s icon-only/label/loading
+        // use cases already follow — see this file's own class doc
+        // comment.
+        WidgetbookFolder(
+          name: 'Voice',
+          children: [
+            WidgetbookComponent(
+              name: 'AppVoiceWaveform',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Idle (paused)',
+                  builder: (context) => Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: AppVoiceWaveform(
+                      theme: AmbleTheme.light,
+                      level: 0,
+                      isActive: false,
+                    ),
+                  ),
+                ),
+                WidgetbookUseCase(
+                  name: 'Listening (mid level)',
+                  builder: (context) => Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: AppVoiceWaveform(
+                      theme: AmbleTheme.light,
+                      level: 0.5,
+                    ),
+                  ),
+                ),
+                WidgetbookUseCase(
+                  name: 'Listening (loud)',
+                  builder: (context) => Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: AppVoiceWaveform(theme: AmbleTheme.light, level: 1),
+                  ),
                 ),
               ],
             ),

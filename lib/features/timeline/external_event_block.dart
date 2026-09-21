@@ -161,7 +161,8 @@ class ExternalEventBlock extends StatelessWidget {
                           text:
                               '${TimeOfDay.fromDateTime(event.start).format(context)} – '
                               '${TimeOfDay.fromDateTime(event.end).format(context)}  ',
-                          style: theme.textCaption.copyWith(
+                          // textCaptionMono — a time range, not a name.
+                          style: theme.textCaptionMono.copyWith(
                             color: theme.colorTextSecondary,
                           ),
                         ),
@@ -189,7 +190,8 @@ class ExternalEventBlock extends StatelessWidget {
                       Text(
                         '${TimeOfDay.fromDateTime(event.start).format(context)} – '
                         '${TimeOfDay.fromDateTime(event.end).format(context)}',
-                        style: theme.textCaption.copyWith(
+                        // textCaptionMono — a time range, not a name.
+                        style: theme.textCaptionMono.copyWith(
                           color: theme.colorTextSecondary,
                         ),
                         maxLines: 1,
@@ -235,7 +237,8 @@ void showExternalCalendarEventInfo({
         Text(
           '${TimeOfDay.fromDateTime(event.start).format(context)} – '
           '${TimeOfDay.fromDateTime(event.end).format(context)}',
-          style: theme.textBody.copyWith(color: theme.colorTextSecondary),
+          // textBodyMono — a time range, not a name.
+          style: theme.textBodyMono.copyWith(color: theme.colorTextSecondary),
         ),
         if (event.sourceCalendarName != null) ...[
           SizedBox(height: theme.spacingXs),

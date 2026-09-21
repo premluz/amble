@@ -147,4 +147,23 @@ today") — a genuinely different capability from the Track 1 integration
 above, not a redundant second path to the same thing.
 
 
+## Subscription (RevenueCat) — confirmed in scope, 2026-09-21
+
+Not previously listed anywhere in this file — confirmed directly as an
+explicit scope addition before building, per this file's own "stop and
+check" rule. `purchases_flutter`/`purchases_ui_flutter` were already
+present in `pubspec.yaml` from outside this session (see
+`docs/PROGRESS_LOG.md`'s 2026-09-21 "working-tree note").
+
+A single `panta_pro` entitlement (RevenueCat dashboard), gating whichever
+future features are decided to be paid — no specific paid feature is
+scoped yet, only the plumbing: SDK configuration, live entitlement state,
+RevenueCat's own prebuilt Paywall and Customer Center UI, and a
+"Subscription" Settings row surfacing them. Three products configured in
+the dashboard (`lifetime`, `yearly`, `monthly`), attached to a dashboard
+Offering — product/offering configuration itself is dashboard state, not
+code. See `docs/DECISIONS.md`'s matching entry for the architecture
+(`PurchasesRepository`, `isPantaProProvider`) and the API-key handling.
+
+
 

@@ -94,8 +94,6 @@ class _NewZoneSheetState extends ConsumerState<NewZoneSheet> {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     final names = [...ref.watch(zoneFacetListProvider)]
       ..sort((a, b) => a.name.compareTo(b.name));
-    const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    final days = widget.target.weekdays.toList()..sort();
     return Positioned(
       left: 0,
       right: 0,
@@ -132,24 +130,28 @@ class _NewZoneSheetState extends ConsumerState<NewZoneSheet> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Close left, primary action right — unified with the
+                  // Timeline quick-create task sheet's own header row
+                  // (`QuickCreateOverlay`), requested directly. No title
+                  // text here, matching that sheet, which also has none.
                   Row(
                     children: [
-                      Expanded(child: Text('New zone', style: theme.textTitle)),
                       HeaderCircleButton(
                         theme: theme,
                         icon: Icons.close,
                         onTap: _saving ? () {} : widget.onDismiss,
                       ),
+                      const Spacer(),
+                      AppButton(
+                        label: 'Add zone',
+                        size: AppButtonSize.md,
+                        shape: AppButtonShape.pill,
+                        isLoading: _saving,
+                        onPressed: _save,
+                      ),
                     ],
                   ),
-                  SizedBox(height: theme.spacingSm),
-                  Text(
-                    'Every ${days.map((d) => dayLabels[d - 1]).join(', ')}',
-                    style: theme.textCaption.copyWith(
-                      color: theme.colorTextSecondary,
-                    ),
-                  ),
-                  SizedBox(height: theme.spacingSm),
+                  SizedBox(height: theme.spacingMd),
                   // Bare — the shared style for every entity's name.
                   AppTextField(
                     controller: _title,
@@ -222,15 +224,6 @@ class _NewZoneSheetState extends ConsumerState<NewZoneSheet> {
                         ),
                       ),
                     ),
-                  SizedBox(height: theme.spacingMd),
-                  SizedBox(
-                    width: double.infinity,
-                    child: AppButton(
-                      label: 'Add zone',
-                      isLoading: _saving,
-                      onPressed: _save,
-                    ),
-                  ),
                 ],
               ),
             ),

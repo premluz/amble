@@ -54,6 +54,8 @@ dependencies:
   device_calendar: ^4.3.3
   tabler_icons_plus: ^3.46.0
   video_player: ^2.14.0
+  purchases_flutter: ^10.13.1
+  purchases_ui_flutter: ^10.13.1
 
 dev_dependencies:
   flutter_test:
@@ -162,3 +164,25 @@ flutter:
           weight: 700
         - asset: assets/fonts/JetBrainsMono-ExtraBold.ttf
           weight: 800
+    # DM Sans (OFL-1.1, bundled locally in assets/fonts/, see
+    # assets/fonts/DMSans-OFL.txt) — the app's second font family, added
+    # for the dual-font typography policy: DM Sans for headlines, names,
+    # labels, buttons and body copy; JetBrains Mono kept for timeline
+    # times, durations, counts, stats, technical metadata, and zone
+    # names specifically. Referenced by name via
+    # TypePrimitives.fontFamilySans. A single VARIABLE font file (not
+    # per-weight static TTFs like JetBrains Mono above) — Google Fonts'
+    # own distribution of DM Sans ships only the variable instance;
+    # Flutter resolves each `weight:` entry against the file's own wght
+    # axis, so multiple entries pointing at the same asset is the
+    # correct, supported pattern here, not a workaround.
+    - family: DM Sans
+      fonts:
+        - asset: assets/fonts/DMSans-Variable.ttf
+          weight: 400
+        - asset: assets/fonts/DMSans-Variable.ttf
+          weight: 500
+        - asset: assets/fonts/DMSans-Variable.ttf
+          weight: 600
+        - asset: assets/fonts/DMSans-Variable.ttf
+          weight: 700

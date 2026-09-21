@@ -16,6 +16,7 @@ import 'permissions_settings_screen.dart';
 import 'settings_detail_scaffold.dart';
 import 'settings_panel.dart';
 import 'slack_settings_screen.dart';
+import 'subscription_settings_screen.dart';
 
 /// The real home for export/import and notification preferences — the
 /// permanent replacement for Phase 7's temporary "Backup" bottom-nav tab.
@@ -123,6 +124,17 @@ class SettingsScreen extends StatelessWidget {
                   ],
                 ),
               ),
+
+              if (FeatureFlags.subscriptionEnabled) ...[
+                SizedBox(height: theme.spacingMd),
+                SettingsPanel(
+                  theme: theme,
+                  child: SettingsLinkRow(
+                    label: 'Subscription',
+                    onTap: () => showSubscriptionSettingsScreen(context),
+                  ),
+                ),
+              ],
 
               SizedBox(height: theme.spacingMd),
               SettingsPanel(

@@ -3,7 +3,8 @@ import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show FontLoader;
 
-/// Loads the app's real bundled JetBrains Mono into the test environment.
+/// Loads the app's real bundled fonts (JetBrains Mono + DM Sans) into the
+/// test environment.
 ///
 /// `flutter test` otherwise renders every `Text` in a fallback font whose
 /// metrics differ wildly from the real one — docs/ERROR_LOG.md already
@@ -15,11 +16,19 @@ import 'package:flutter/services.dart' show FontLoader;
 /// font and 57.6 in JetBrains Mono. Tuning a column against the former
 /// would size it for a font no user ever sees.
 Future<void> loadAppFonts() async {
-  final loader = FontLoader('JetBrains Mono');
+  final monoLoader = FontLoader('JetBrains Mono');
   for (final weight in const ['Regular', 'Medium', 'Bold']) {
     final bytes = File('assets/fonts/JetBrainsMono-$weight.ttf')
         .readAsBytesSync();
-    loader.addFont(Future.value(ByteData.sublistView(bytes)));
+    monoLoader.addFont(Future.value(ByteData.sublistView(bytes)));
   }
-  await loader.load();
+  await monoLoader.load();
+
+  // DM Sans ships as one variable font file (see pubspec.yaml's own `DM
+  // Sans` block for why) — a single addFont covers every weight, unlike
+  // JetBrains Mono's per-weight static files above.
+  final sansLoader = FontLoader('DM Sans');
+  final sansBytes = File('assets/fonts/DMSans-Variable.ttf').readAsBytesSync();
+  sansLoader.addFont(Future.value(ByteData.sublistView(sansBytes)));
+  await sansLoader.load();
 }

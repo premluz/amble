@@ -19,14 +19,20 @@ import '../../support/load_app_fonts.dart';
 void main() {
   setUpAll(loadAppFonts);
 
-  /// The production values: `_hourGutterWidth` and `spacingScreenPadding`
-  /// from `timeline_screen.dart`. Kept in sync by the guard test below.
-  // 66, narrowed from 72 — requested directly, "smaller for tasks screen".
-  // This is the floor that still satisfies the ≥8px clearance assertion
-  // below (widest label 57.6px), so the overlap rule this file exists to
-  // protect survives the change.
-  const gutterWidth = 66.0;
-  const screenPadding = 28.0;
+  /// **2026-09-21 — derived from the tokens, not copied from them.**
+  /// These were two hardcoded numbers (66 and 28) meant to mirror
+  /// production, and both had already gone stale: production's side inset
+  /// was 24 at the time, not 28. That is the same copy-drift the whole
+  /// horizontal spacing system was just consolidated to prevent
+  /// (`horizontal_spacing_system_test.dart`), so this file stops keeping
+  /// its own copies too.
+  ///
+  /// The label column is what remains of [AmbleTheme.spacingHourGutter]
+  /// once the side inset is taken off the front — that column is what a
+  /// label must fit inside, and what it must never paint out of into the
+  /// pill column beyond.
+  final screenPadding = AmbleTheme.light.spacingScreenPadding;
+  final gutterWidth = AmbleTheme.light.spacingHourGutter - screenPadding;
 
   Future<Map<String, ({double box, double intrinsic})>> measure(
     WidgetTester tester, {
@@ -103,19 +109,13 @@ void main() {
     );
   });
 
-  test('the width these tests assert against matches production', () {
-    // `_hourGutterWidth` is private, so it cannot be imported. Reading the
-    // source keeps this file honest: widen the real gutter without
-    // updating `gutterWidth` above and this fails loudly, rather than the
-    // overflow tests silently passing against a stale number.
-    final source = File('lib/features/timeline/timeline_screen.dart')
-        .readAsStringSync();
-    final match = RegExp(r'const _hourGutterWidth = ([\d.]+);')
-        .firstMatch(source);
-
-    expect(match, isNotNull, reason: '_hourGutterWidth declaration not found');
-    expect(double.parse(match!.group(1)!), gutterWidth);
-  });
+  // **2026-09-21 — this guard is no longer needed and is gone.** It read
+  // the private `_hourGutterWidth` out of `timeline_screen.dart` to catch
+  // this file's own hardcoded copy going stale. Both the constant and the
+  // copies are now replaced by `AmbleTheme.spacingHourGutter`, which this
+  // file reads directly — so there is nothing left to fall out of sync,
+  // and `horizontal_spacing_system_test.dart` owns the equivalent
+  // cross-view check (including that the constant is not reintroduced).
 
   testWidgets('the old 56px gutter genuinely overflowed — the reported bug', (
     tester,
@@ -151,18 +151,75 @@ void main() {
       isFalse,
       reason: 'columnWidth right-aligns the labels; the screen must omit it',
     );
-    // Was `theme.spacingScreenPadding` (24px), pinning the earlier "same
-    // padding as the rotated zone names on the other side" request. That is
-    // superseded: the Timeline and the Weekly Zone Authoring Grid must now
-    // share ONE hour-gutter inset, confirmed directly as "both 8 px" after
-    // the two screens read visibly differently side by side.
-    //
-    // `spacingSm` at this one call site rather than repointing
-    // `spacingScreenPadding`, which governs horizontal margins app-wide.
+    // **2026-09-21 — back to spacingScreenPadding (24px), superseding the
+    // "both 8px, matching the zone grid axis" decision this test used to
+    // pin.** Reported directly against a screenshot: the hour labels sat
+    // visibly closer to the true screen edge than Day/Inbox/Tracked and
+    // the settings gear above them — "day in inbox tracked and settings
+    // should have same side padding as hours in timeline (that should be
+    // global content padding)." Scoped to just the Timeline, confirmed
+    // directly — the Weekly Zone Authoring Grid's own axis lives in a
+    // fixed, tightly-sized 60px gutter that can't take a wider inset
+    // without real layout work, and stays at its own 8px for now.
     expect(
-      args.contains('leftInset: theme.spacingSm'),
+      args.contains('leftInset: theme.spacingScreenPadding'),
       isTrue,
-      reason: 'the hour gutter must sit at 8px, matching the zone grid axis',
+      reason:
+          'the hour gutter must match spacingScreenPadding (24px), the '
+          'same inset Day/Inbox/Tracked and every other screen uses',
+    );
+  });
+
+  /// Reported directly, TWICE now (this exact class of bug already once
+  /// before, in the opposite direction — see this file's own git history):
+  /// "current hour not aligned with day hours on timeline." `TaskBoundary
+  /// Markers` and `CurrentTimeIndicator` are two separate widgets sharing
+  /// ONE visual column — each hardcodes its own `leftInset` at its own
+  /// call site rather than reading a shared constant, so nothing stops
+  /// the two from silently drifting apart again the next time either one
+  /// changes alone. Reads both call sites directly, the same "keep the
+  /// source honest" pattern the rest of this file already uses, so a
+  /// future edit to just one of them fails loudly here instead of
+  /// shipping a visible misalignment.
+  test('TaskBoundaryMarkers and CurrentTimeIndicator share the SAME '
+      'leftInset — they render in one shared hour-gutter column', () {
+    final source = File('lib/features/timeline/timeline_screen.dart')
+        .readAsStringSync();
+
+    final markersIndex = source.indexOf('TaskBoundaryMarkers(');
+    final indicatorIndex = source.indexOf('CurrentTimeIndicator(');
+    expect(
+      markersIndex,
+      isNot(-1),
+      reason: 'TaskBoundaryMarkers call site not found',
+    );
+    expect(
+      indicatorIndex,
+      isNot(-1),
+      reason: 'CurrentTimeIndicator call site not found',
+    );
+
+    // `leftInset:` is a non-comment code line at both call sites — matching
+    // straight from each widget's own start (rather than `(.*?)\),\n`, which
+    // can stop early at an unrelated `),` inside a doc comment before ever
+    // reaching the real closing paren) is what keeps this test honest.
+    String? leftInsetAfter(int index) => RegExp(
+      r'^\s*leftInset:\s*(\S+?),\s*$',
+      multiLine: true,
+    ).firstMatch(source.substring(index, index + 2500))?.group(1);
+
+    final markersLeftInset = leftInsetAfter(markersIndex);
+    final indicatorLeftInset = leftInsetAfter(indicatorIndex);
+
+    expect(markersLeftInset, isNotNull);
+    expect(
+      indicatorLeftInset,
+      markersLeftInset,
+      reason:
+          'CurrentTimeIndicator\'s leftInset (currently '
+          '$indicatorLeftInset) must match TaskBoundaryMarkers\' own '
+          '(currently $markersLeftInset) — otherwise "now" visibly '
+          'fails to line up with the hour ticks beside it',
     );
   });
 }

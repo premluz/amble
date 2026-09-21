@@ -391,4 +391,87 @@ void main() {
       },
     );
   });
+
+  // Reported directly: "in edit mode on top we should only have 2 tabs
+  // task and zones and close on the bottom tool nav... in zones edit and
+  // close (close on the leftmost)." The top row used to carry the
+  // Tasks/Zones switch PLUS Edit/Close icons; both icons moved to a
+  // floating bottom dock.
+  group('top row / bottom dock restructure (2026-09-20)', () {
+    testWidgets(
+      'the tab switch sits ABOVE both Edit and Close — confirming they '
+      'moved out of the top row into a bottom dock, not that they no '
+      'longer exist anywhere',
+      (tester) async {
+        await pump(tester);
+
+        final tabSwitchTop = tester.getTopLeft(find.text('Tasks')).dy;
+        final editTop = tester.getTopLeft(find.byTooltip('Edit zones')).dy;
+        final closeTop = tester.getTopLeft(find.byTooltip('Close zones')).dy;
+
+        expect(
+          editTop,
+          greaterThan(tabSwitchTop + 100),
+          reason:
+              'Edit must sit well below the tab switch (a bottom dock, '
+              'not the same top row it used to share)',
+        );
+        expect(
+          closeTop,
+          greaterThan(tabSwitchTop + 100),
+          reason:
+              'Close must sit well below the tab switch (a bottom dock, '
+              'not the same top row it used to share)',
+        );
+      },
+    );
+
+    testWidgets(
+      'the bottom dock on the Zones tab has both Close and Edit, Close '
+      'leftmost',
+      (tester) async {
+        await pump(tester);
+
+        final closeRect = tester.getRect(find.byTooltip('Close zones'));
+        final editRect = tester.getRect(find.byTooltip('Edit zones'));
+
+        expect(closeRect.left, lessThan(editRect.left));
+      },
+    );
+
+    testWidgets('tapping the bottom dock\'s Close pops the screen', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: ThemeData(extensions: [AmbleTheme.dark]),
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: Center(
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).push<void>(
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            const ZoneGridScreen(initialTab: ZoneGridTab.zones),
+                      ),
+                    ),
+                    child: const Text('open'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Close zones'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ZoneGridScreen), findsNothing);
+    });
+  });
 }

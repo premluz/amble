@@ -279,9 +279,10 @@ TimeOfDay _timeOfDayFromMinutes(int minutes) {
 /// constraint of its own will happily stretch a short title's letters
 /// apart to fill a tall block, since `Center`+unconstrained `Text` inside
 /// a rotated axis has nothing telling it to stay compact. This renders at
-/// `theme.textCaption` (the same fixed, compact size `ZoneNameLabel`
+/// `theme.textCaptionMono` (the same fixed, compact size `ZoneNameLabel`
 /// already uses for zone titles elsewhere — see
-/// `zone_background_block.dart`) wrapped in a `FittedBox` that only
+/// `zone_background_block.dart`; the Mono variant per the dual-font
+/// policy's zone-name carve-out) wrapped in a `FittedBox` that only
 /// SHRINKS (`BoxFit.scaleDown`) when a block is too short for even the
 /// compact size, never grows past it.
 class _RotatedTitle extends StatelessWidget {
@@ -305,7 +306,11 @@ class _RotatedTitle extends StatelessWidget {
                 title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: theme.textCaption.copyWith(
+                // textCaptionMono, not textCaption — a zone NAME, the one
+                // explicit carve-out in the dual-font policy (2026-09-21):
+                // zone names stay monospace even though the rest of this
+                // token's call sites moved to DM Sans.
+                style: theme.textCaptionMono.copyWith(
                   color: theme.colorTextPrimary,
                   fontWeight: FontWeight.w600,
                 ),

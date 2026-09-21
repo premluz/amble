@@ -667,7 +667,14 @@ class _ExistingZoneRow extends StatelessWidget {
                 children: [
                   Text(
                     zone.name,
-                    style: theme.textBody.copyWith(fontWeight: FontWeight.w700),
+                    // textBodyMono, not textBody — a zone NAME, the one
+                    // explicit carve-out in the dual-font policy
+                    // (2026-09-21): zone names stay monospace even
+                    // though the rest of this token's call sites moved
+                    // to DM Sans.
+                    style: theme.textBodyMono.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),

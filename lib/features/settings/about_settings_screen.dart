@@ -44,7 +44,12 @@ class _AboutSettingsScreenState extends State<AboutSettingsScreen> {
         theme: theme,
         child: Text(
           _appVersion == null ? 'Amble' : 'Amble $_appVersion',
-          style: theme.textBody.copyWith(color: theme.colorTextSecondary),
+          // textBodyMono, not textBody — this line's whole reason for
+          // being is the VERSION number ("version numbers... → stay
+          // monospace" per the dual-font policy). The "Amble" wordmark
+          // shares the line rather than warranting a Text.rich split for
+          // one low-traffic About-screen row.
+          style: theme.textBodyMono.copyWith(color: theme.colorTextSecondary),
         ),
       ),
     );

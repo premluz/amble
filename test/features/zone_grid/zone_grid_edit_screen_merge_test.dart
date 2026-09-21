@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive_ce.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/hive_registrar.g.dart';
+import 'package:amble/features/timeline/app_calendar_header.dart';
 import 'package:amble/features/timeline/edit_mode_provider.dart';
 import 'package:amble/features/timeline/timeline_screen.dart';
 import 'package:amble/features/zone_grid/zone_grid_screen.dart';
@@ -148,18 +149,38 @@ void main() {
     return container;
   }
 
+  // **2026-09-20 — the embedded TimelineScreen's own header is BACK**
+  // (`showHeader: true`, its own default), showing the real
+  // `AppCalendarHeader` (the date accordion) — requested directly:
+  // "Tasks edit mode should also have calendar." That header's own close
+  // (X) button is suppressed (`calendarHeaderShowsCloseButton: false`),
+  // since Close now lives in this screen's own bottom dock — not the
+  // whole header, as the previous `showHeader: false` approach did.
+  //
+  // No Today button either — reported directly, again, after an earlier
+  // pass restored one: "on edit task we show button with number 'today's
+  // day'... this button should not be there."
   testWidgets(
     'opening on the Tasks tab shows the spatial Timeline with Edit Mode '
-    'already on, and hides its own inner header (no duplicate close button)',
+    'already on, its own calendar header with no Today button, and '
+    'exactly ONE close button (the bottom dock\'s, not a second one from '
+    'the header)',
     (tester) async {
       final container = await pumpEditScreen(tester);
 
       expect(find.byType(TimelineScreen), findsOneWidget);
       expect(container.read(editModeEnabledProvider), isTrue);
-      // One "Close" tooltip from the merged screen's own top row — a
-      // second one would mean the embedded TimelineScreen's own
-      // Edit-Mode-collapsed header rendered too (the bug `showHeader:
-      // false` exists to prevent).
+      expect(
+        find.byType(AppCalendarHeader),
+        findsOneWidget,
+        reason:
+            'the Tasks tab must show its own calendar header again, not '
+            'suppress it entirely',
+      );
+      expect(find.byTooltip('Today'), findsNothing);
+      // Exactly one "Close" tooltip — the bottom dock's. A second would
+      // mean AppCalendarHeader's own Edit-Mode close (X) rendered too
+      // despite calendarHeaderShowsCloseButton: false.
       expect(find.byTooltip('Close'), findsOneWidget);
     },
   );
@@ -214,6 +235,48 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(container.read(editModeEnabledProvider), isFalse);
+    },
+  );
+
+  // Reported directly: closing the Edit screen briefly flashed a
+  // container between the top nav and the calendar, holding an
+  // accent-bordered circular button with no icon in it. That is
+  // `AppCalendarHeader`'s Edit-Mode close (X) row on the DAY screen,
+  // which stays mounted underneath (`main.dart`'s `IndexedStack`) and
+  // watches this same provider.
+  //
+  // The test above already asserted the flag ends false, and passed
+  // throughout — it pumps three times before checking, so a reset landing
+  // one frame late is invisible to it. The bug was entirely about WHEN:
+  // `dispose()` resets via `scheduleMicrotask` (Riverpod refuses writes
+  // during the pop's tree-finalize pass), so for one frame the Day screen
+  // rebuilt with Edit Mode still on.
+  //
+  // This pins the timing instead of the end state: immediately after the
+  // tap, with NO pump, the flag must already be false.
+  testWidgets(
+    'tapping Close turns Edit Mode off in the SAME frame as the tap, not '
+    'a frame later — otherwise the screen underneath flashes its own '
+    'Edit-Mode header during the pop',
+    (tester) async {
+      final container = await pumpEditScreen(tester);
+      expect(container.read(editModeEnabledProvider), isTrue);
+
+      await tester.tap(find.byTooltip('Close'));
+
+      expect(
+        container.read(editModeEnabledProvider),
+        isFalse,
+        reason:
+            'Edit Mode must already be off before any frame is pumped — a '
+            'deferred reset leaves the Day screen underneath rendering '
+            'its Edit-Mode close row for one visible frame',
+      );
+
+      // Drain the pop so the test leaves no pending timers behind.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 300));
     },
   );
 }

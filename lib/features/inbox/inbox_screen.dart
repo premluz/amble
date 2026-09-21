@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/tokens/type_primitives.dart';
 import '../../core/widgets/app_floating_create_button.dart';
 import '../../core/widgets/app_press_feedback.dart';
 import '../../core/widgets/app_swipe_actions.dart';
+import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
 import '../../shared/models/task.dart';
 import '../../shared/models/task_category.dart';
@@ -14,6 +16,7 @@ import '../timeline/duration_label.dart';
 import '../timeline/task_category_token_mapping.dart';
 import 'inbox_tasks_provider.dart';
 import 'quick_capture_sheet.dart';
+import 'voice_capture_screen.dart';
 
 /// "Manage" — unscheduled tasks awaiting prioritization. Tapping a task
 /// opens the existing task detail screen ([showTaskDetailSheet]) to give
@@ -182,6 +185,26 @@ class InboxScreen extends ConsumerWidget {
             // rather than welded into a bar shared with the nav below.
             AppFloatingCreateButton(
               onPressed: () => showQuickCaptureSheet(context),
+            ),
+            // The voice-capture entry point — "sits next to the plus,"
+            // requested directly. A sibling `Positioned` at the same
+            // bottom-right corner, offset left by one button's own width
+            // plus the standard gap, rather than a pixel constant, so it
+            // stays correctly spaced if the create button's own size ever
+            // changes.
+            Positioned(
+              right: theme.spacingMd + theme.sizeButtonMd + theme.spacingMd,
+              bottom: theme.spacingMd,
+              child: SafeArea(
+                top: false,
+                child: AppButton(
+                  icon: Icons.mic_none_rounded,
+                  shape: AppButtonShape.circle,
+                  variant: AppButtonVariant.secondary,
+                  tooltip: 'Speak your tasks',
+                  onPressed: () => showVoiceCaptureScreen(context),
+                ),
+              ),
             ),
           ],
         ),
@@ -375,8 +398,13 @@ class _DurationBadge extends StatelessWidget {
         ),
         child: Text(
           formatDurationLabel(minutes),
+          // fontFamily stays monospace — a duration value, not a title,
+          // even though it borrows textTaskTitleSm for its size. Direct
+          // override rather than a new token so this keeps tracking that
+          // token's own size (see this class's own doc comment).
           style: theme.textTaskTitleSm.copyWith(
             color: theme.colorTextSecondary,
+            fontFamily: TypePrimitives.fontFamily,
           ),
         ),
       ),

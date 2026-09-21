@@ -156,7 +156,8 @@ class _CurrentTimeIndicatorState extends State<CurrentTimeIndicator> {
                     ),
                     child: Text(
                       TimeOfDay.fromDateTime(_now).format(context),
-                      style: theme.textCaption.copyWith(
+                      // textCaptionMono — a time label, not a name.
+                      style: theme.textCaptionMono.copyWith(
                         color: theme.colorTextPrimary,
                         fontWeight: FontWeight.w700,
                       ),

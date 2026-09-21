@@ -26,6 +26,73 @@ one level up to whole visual treatments, not just individual values.
 
 ---
 
+## Horizontal spacing — two values, no third
+
+The app has exactly **two** horizontal measurements. Every screen derives
+from them; nothing re-states them, and nothing invents a third.
+
+| Token | Value | What it measures |
+| --- | --- | --- |
+| `theme.spacingScreenPadding` | 16 | Screen edge → page content. The top nav's "Day", the settings gear opposite it, page titles, list rows, sheet bodies, **and the Timeline's hour labels in both the spatial and non-spatial views.** |
+| `theme.spacingHourGutter` | 90 | Screen edge → Timeline *content* (a task pill, a zone card). The hour labels occupy the space between this and `spacingScreenPadding`. |
+
+**The rule:** any horizontal distance from a screen edge is one of these
+two tokens. If you are about to write a number, an arithmetic expression
+combining a token with a literal (`66 + spacingScreenPadding`), or a new
+top-level `const` for a side inset — stop; that is the drift this section
+exists to prevent.
+
+### Why it is written down
+
+Added 2026-09-21 after a screenshot marked the intended inset down both
+screen edges and showed the top nav, the calendar under it, and the
+timeline's hour labels each landing somewhere different. Reported
+directly: *"we need a coherent system that can manage this spacing without
+drift."*
+
+The drift was structural, not careless. The same two distances were
+expressed three different ways:
+
+- the spatial Timeline built its gutter as `66 + spacingScreenPadding`;
+- the non-spatial Zone view hardcoded the same distance as a top-level
+  `const zoneContentLeftInset = 90.0`;
+- the page inset was a separate token at 24, so the hour labels (16) and
+  the nav above them (24) disagreed by 8px.
+
+Because `90` and `66 + 24` were *equal by coincidence*, the two views
+looked aligned — right up until the page inset changed, at which point
+they silently came apart. The non-spatial view was named as the reference
+("the right size of it comes from the non-spatial view"), so
+`spacingScreenPadding` moved **out** to 16 to meet the hour label already
+sitting there, rather than the hour moving in.
+
+### How it is enforced
+
+`test/core/tokens/horizontal_spacing_system_test.dart` pins the system:
+
+- both themes agree on both values (a per-theme side inset would move the
+  page's edge when the user switched theme);
+- `zoneRowTimeLabelEdgeInset == spacingScreenPadding` and
+  `zoneContentLeftInset == spacingHourGutter` — these two are top-level
+  `const`s in the non-spatial view, which **cannot read the theme**, so
+  nothing in the type system stops them from disagreeing. This is the
+  check that catches it;
+- the gutter still leaves ≥8px clearance beside the widest hour label
+  ("12:00 AM", 57.6px), the overlap rule from a real reported bug;
+- `timeline_screen.dart` reads the token and has not reintroduced a local
+  `_hourGutterWidth` constant.
+
+### The one exception
+
+The **Weekly Zone Authoring Grid** (`zone_grid_screen.dart`) keeps its own
+denser axis (`_axisWidth`, 60) and its own 8px label inset. Confirmed
+directly: *"edit zone view has its own more dense space, which is fine,
+keep it as is."* It is a distinct authoring surface, not a page view of
+the day, and its axis width also drives tap-target maths for
+drag-to-paint. Do not fold it into the tokens above.
+
+---
+
 ## Selection border — `SelectedPillBorder`
 
 **File**: `lib/core/widgets/selected_pill_border.dart`
@@ -480,6 +547,93 @@ resolving against intrinsics), and `Transform` alone works but leaves the
 a comment at each call site instead of owned by one shared widget. Add a
 new call site here, with its own correct `leftPaddingToEscape`, rather
 than reinventing the escape math inline.
+
+---
+
+## Full-screen modal route — `pushFullScreenRoute`
+
+The app's first full-screen (not slide-up-sheet) modal convention. Added
+for the voice-capture flow (`voice_capture_screen.dart`), requested
+directly as a component to reuse: "make it a reusable component... we'll
+be reusing it" applied one level up, to the route shape itself, not just
+the waveform inside it.
+
+Every OTHER modal in the app is `pushAppSheetRoute` (above) — a partial
+reveal from 50% up, with a scrim behind it, because something of the
+screen underneath stays visible and relevant. `pushFullScreenRoute` is
+for the opposite case: a screen that takes over completely, where nothing
+behind it matters until the user leaves.
+
+```dart
+Future<T?> pushFullScreenRoute<T>(BuildContext context, WidgetBuilder builder)
+```
+
+- `opaque: true`, no `barrierColor` — a full-screen page has nothing left
+  showing behind it, so it needs no scrim.
+- Entrance starts at 15% of the screen's own height (`_fullScreenEntranceOffset`),
+  not the sheet's 50% — this fills the whole screen, so it should read as
+  arriving immediately, not revealing from partway up.
+- Shares every timing/easing token with `pushAppSheetRoute`:
+  `AmbleTheme.motionNormal` in, `AmbleTheme.motionFast` out,
+  `AmbleTheme.curveDecelerate`/`curveStandard`. One motion language across
+  every modal in the app, whichever shape it takes.
+
+**Current call site**: `voice_capture_screen.dart`'s `showVoiceCaptureScreen`.
+
+**Never**: a bare `Navigator.push(MaterialPageRoute(...))` with Flutter's
+default transition for a full-screen feature — that is what a handful of
+plain settings/list screens still do (`backup_settings_screen.dart`,
+`zone_list_screen.dart`), predating this convention, but any NEW
+full-screen feature should use this route instead, the same way any new
+modal reaches for `pushAppSheetRoute` rather than hand-rolling a
+`PageRouteBuilder`.
+
+---
+
+## Live audio waveform — `AppVoiceWaveform`
+
+`lib/core/widgets/app_voice_waveform.dart`. A row of bars whose heights
+track a live amplitude value — added for the voice-capture flow, and
+built deliberately SDK-agnostic per direct request ("make it a reusable
+component... we'll be reusing it"): it takes a plain `double` (`level`,
+0.0-1.0), never a `speech_to_text` package type, so any future caller can
+drive it from a different audio source without this widget depending on
+that package.
+
+```dart
+AppVoiceWaveform({
+  required AmbleTheme theme,
+  required double level,   // clamped internally — callers may pass a raw,
+                            // unnormalized platform sound-level value
+  bool isActive = true,    // false = flat, still baseline (paused/idle)
+  int barCount = 24,
+})
+```
+
+Internally a single `CustomPainter` driven by one continuous
+`AnimationController..repeat()` — each bar samples the SAME sine wave at
+a different phase offset, scaled by `level`, which is what makes the
+whole row ripple across rather than pulse in lockstep ("constantly moving
+across," per direct request).
+
+**Testing note**: the perpetual `repeat()` means any screen embedding
+this widget can never use `pumpAndSettle` in a widget test — it never
+settles by design. Use bounded, timed `pump()` calls instead (see
+`voice_capture_screen_test.dart`'s own `pumpScreen` helper), and when a
+test also needs to wait out a route's exit transition on the SAME screen,
+prefer many short pumps over one long one — the two animations compete
+for frame budget in the test harness, and a single long `pump(duration)`
+measured as insufficient where 20 shorter ones were not.
+
+**Current call site**: `voice_capture_screen.dart`, fed from
+`VoiceCapture`'s own `soundLevel` state. Registered in the Widgetbook
+gallery under "Voice" → "AppVoiceWaveform" (idle / listening / loud use
+cases).
+
+**Never**: a bare `AnimatedContainer` per bar with no shared phase
+relationship — that reads as several unrelated things pulsing, not one
+waveform. The shared-sine-with-per-bar-phase approach is what makes it
+read as one continuous wave.
 
 ---
 

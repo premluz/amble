@@ -73,8 +73,16 @@ String zoneTaskTimeLabel(
 /// named constant, not a scattered `spacingSm * 2` at each caller, so both
 /// this file and `zone_day_timeline.dart` read from the identical value.
 ///
-/// See docs/DESIGN_SYSTEM.md's "Zone row hour label" section for the full
-/// reasoning behind this widget's existence and shape.
+/// **Must equal [AmbleTheme.spacingScreenPadding].** This is the hour
+/// label's distance from the true screen edge, and the spatial view puts
+/// its own labels at exactly that token — so the two views only line up
+/// while these agree. A top-level `const` cannot read the theme, so the
+/// equality is pinned by `horizontal_spacing_system_test.dart` instead of
+/// being expressible in the type system.
+///
+/// See docs/DESIGN_SYSTEM.md's "Horizontal spacing" section for the rule,
+/// and its "Zone row hour label" section for the full reasoning behind
+/// this widget's existence and shape.
 const zoneRowTimeLabelEdgeInset = 16.0;
 
 /// The horizontal space a [ZoneRowTimeLabel] reserves in its caller's own
@@ -114,6 +122,14 @@ const zoneRowTimeLabelReservedWidth = 0.0;
 /// [zoneRowTimeLabelEdgeInset] (16px), which is exactly the spatial
 /// view's own hour-label position — so the two views now agree on BOTH
 /// guide lines, not just the label one.
+///
+/// **Must equal [AmbleTheme.spacingHourGutter].** The spatial view reads
+/// that token directly for the same distance; this is the non-spatial
+/// half of the same measurement. A top-level `const` cannot read the
+/// theme, so the equality is pinned by
+/// `horizontal_spacing_system_test.dart` — which is the whole point, as
+/// this value previously being an independent hardcoded `90` is exactly
+/// how the two views drifted apart.
 const zoneContentLeftInset = 90.0;
 
 /// Zone view's own hour label — the leading time text on a task row
@@ -1175,7 +1191,15 @@ class _ZoneTaskRow extends StatelessWidget {
                 Expanded(
                   child: Text(
                     task.title,
-                    style: theme.textTaskTitleZone.copyWith(
+                    // **2026-09-20 — back to textTaskTitle, not
+                    // textTaskTitleZone.** Reported directly against a
+                    // screenshot: an in-zone task's title read too large
+                    // next to an unzoned task's own title just below it
+                    // (which uses `textTaskTitle` via `TaskCapsuleBlock`)
+                    // — confirmed the outside-zone size is the one to
+                    // keep, reversing the earlier "one rung up" decision
+                    // `textTaskTitleZone` itself documents.
+                    style: theme.textTaskTitle.copyWith(
                       color: isCompleted
                           ? theme.colorTextSecondary
                           : theme.colorTextPrimary,
@@ -1338,7 +1362,12 @@ class _ZoneExternalEventRow extends StatelessWidget {
                 // Secondary (muted), not the primary/bold weight a real
                 // task's title gets — the visual signal that this row is
                 // read-only/external, not an editable Amble task.
-                style: theme.textTaskTitleZone.copyWith(
+                //
+                // textTaskTitle, not textTaskTitleZone — see
+                // `_ZoneTaskRow`'s own matching 2026-09-20 comment; this
+                // row is built to visually line up with that one, so it
+                // moved off the larger token together.
+                style: theme.textTaskTitle.copyWith(
                   color: theme.colorTextSecondary,
                 ),
                 maxLines: 1,

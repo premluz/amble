@@ -11,127 +11,98 @@ import 'oklch.dart';
 /// docs/ARCHITECTURE.md for why this one Tier 1 category is `static final`
 /// rather than `const`.
 abstract final class ColorPrimitives {
-  // Sage — primary brand ramp.
-  // Phase 13a-pastel: sage500/700/50 lightened and re-derived for a gentler
-  // accent, per direct feedback to move the light palette toward a softer,
-  // pastel character (see docs/DECISIONS.md). sage500 is the ramp's
-  // functional anchor — it's the accent/button/FAB fill, so it's tuned to
-  // hold WCAG AA (4.76:1 white-glyph, 4.56:1 vs sand50), not picked purely
-  // by eye. sage100/sage300/sage900 are left UNCHANGED: sage300 is dark
-  // mode's `colorAccent` (Phase 13a) and dark mode is explicitly out of
-  // scope this session, so its value can't move without an out-of-scope
-  // dark-mode side effect; sage900/sage700(prev)/sage50(prev) had no
-  // consumers to begin with, so sage50/sage700 were still nudged for ramp
-  // consistency around the new sage500 anchor, at zero risk.
-  static final sage50 = oklch(0.975, 0.006, 138);
-  static final sage100 = oklch(0.927, 0.014, 129);
-  static final sage300 = oklch(0.787, 0.046, 132);
-  static final sage500 = oklch(0.550, 0.060, 140);
-  static final sage700 = oklch(0.430, 0.050, 138);
-  static final sage900 = oklch(0.289, 0.024, 135);
+  // Sage — secondary green ramp (colorTaskCompleted; brand/accent duty
+  // moved to `brand500`/`brand300` below).
+  //
+  // **2026-09-20 — re-derived from a supplied hex source-of-truth.**
+  // Proposed as part of a full-palette pass (surface hierarchy + brand
+  // rebrand); OKLCH triples below are calculated FROM the given hex, not
+  // hand-picked — see docs/DECISIONS.md for the full before/after.
+  static final sage50 = oklch(0.975, 0.004, 121.6); // #F6F7F4
+  static final sage100 = oklch(0.939, 0.010, 125.7); // #E9ECE5
+  static final sage300 = oklch(0.823, 0.026, 134.3); // #BEC9B8
+  static final sage500 = oklch(0.614, 0.043, 138.2); // #788B72
+  static final sage700 = oklch(0.480, 0.038, 138.3); // #53634E
+  static final sage900 = oklch(0.299, 0.019, 138.7); // #293027
 
-  // Surface ramp — the app's neutral chrome (light mode). Zero chroma by
-  // deliberate decision, not oversight: the surface system is specified as
-  // true greys (#F7F7F7 bg / #FFFFFF pane), so the warm `sand` tint that
-  // used to carry these roles is explicitly not applied here. The four
-  // steps are a single scale — background behind panes, the pane itself,
-  // a form field's resting fill inside a pane, and that field's
-  // focused/active fill one tone darker.
-  //
-  // Lightness values are DERIVED, not eyeballed: each was solved back
-  // through this file's own oklch() pipeline to land on the intended sRGB
-  // byte, so the values survive the perceptual round-trip rather than
-  // being hand-copied past it.
-  //
-  // The 0→1 step (#F7F7F7 → #FFFFFF) is only ~3% lightness and cannot
-  // define a pane's edge on its own. That boundary is carried by
-  // `shadowPane` instead (see AmbleTheme) — a subtle drop shadow, which is
-  // what separates the two levels without either darkening the specified
-  // background or drawing a border.
-  static final surface0 = oklch(0.9746, 0.0, 0); // #F7F7F7 — app background
-  static final surface1 = oklch(1.0, 0.0, 0); // #FFFFFF — pane
-  static final surface2 = oklch(0.9204, 0.0, 0); // #E4E4E4 — field, at rest
-  static final surface3 = oklch(0.8590, 0.0, 0); // #D1D1D1 — field, active
+  // Surface ramp — light mode's field/inset/border scale.
+  // surface2/surface3 carry `colorSurfaceField`/`colorSurfaceFieldActive`
+  // (unchanged role) and, as of 2026-09-20, `colorBorder` too (was
+  // `sand300`) — "card borders" is surface3's own named role in the
+  // confirmed layering. surface0/surface1 are NOT the base/card roles —
+  // see `paper`/`cream2` below for those; a pure-white surface1 sitting
+  // directly below the pure-white floating overlay collided with it
+  // (`elevation_direction_test.dart`), so the base/card roles were moved
+  // off this ramp entirely rather than kept here.
+  static final surface0 = oklch(0.933, 0.004, 106.5); // #E9E9E6
+  static final surface1 = oklch(1.000, 0.000, 0); // #FFFFFF
+  static final surface2 = oklch(0.970, 0.005, 95.1); // #F6F5F1 — inset field
+  static final surface3 = oklch(0.872, 0.005, 106.5); // #D5D5D1 — border
 
-  // **2026-09-12 — light-mode counterparts to the re-anchored ink ramp.**
-  // Derived from the same two directly-specified dark anchors (#121110
-  // body / #171615 zone) by mirroring their RELATIONSHIP rather than their
-  // values: dark steps upward from its base in four rungs (0.178 -> 0.201
-  // -> 0.232 -> 0.270), light steps DOWNWARD toward white in the same
-  // four-rung shape (0.945 -> 0.959 -> 0.977 -> 1.0), and both carry the
-  // same faint warm chroma at hue 67.7 so the two themes read as the same
-  // product rather than one warm and one clinically grey.
-  //
-  // Deliberately additive — `surface0`-`surface3` above are untouched.
-  // Those carry the app's existing true-grey specification across many
-  // roles (form fields, focus states); re-tinting the whole scale to chase
-  // two dark-mode anchors would be a far wider visual change than was
-  // asked for. This ramp exists for the surfaces the request actually
-  // named: body, card, nested row, and the floating overlay.
-  //
-  // **Re-solved a second time, 2026-09-12** — a `colorSurfaceSecondary`
-  // that reused `cream1` (the same value as `colorSurfacePrimary`) meant
-  // light mode had only 2 visually distinct steps where dark mode has 3.
-  // Reported directly: a Manage-screen row card (`colorSurfaceSecondary`)
-  // was indistinguishable from the page it sat on in light mode, while the
-  // same rows were clearly visible in dark. `cream1`/`cream2` now form a
-  // real 2-step climb between base and overlay, mirroring
-  // `ink800`/`ink700`'s own distinctness.
-  static final cream0 = oklch(0.945, 0.0035, 67.7); // #EEECEA body/base
-  static final cream1 = oklch(0.959, 0.0030, 67.7); // #F3F1EF pane
-  static final cream2 = oklch(0.977, 0.0025, 67.7); // #F9F7F6 card/row
+  /// **2026-09-20 — the light-mode app background (`colorSurfaceBase`).**
+  /// Confirmed directly: "the website's warm paper background... feels
+  /// more like Panta" — a NEW anchor, not a repurposed existing ramp step
+  /// (distinct from both `surface0` and `cream0`). Solved to exactly
+  /// reproduce the given hex #F1F0EC.
+  static final paper = oklch(0.9540, 0.0045, 85.0); // #F1F0EC
+
+  // Cream — nested-row/content-card surface. `cream2` is
+  // `colorSurfacePrimary` (cards/content) as of 2026-09-20 — confirmed
+  // directly: "I wouldn't choose cream1 for cards: it's slightly darker
+  // than the website background, so the elevation order would feel
+  // reversed," landing on cream2 instead, one genuine step lighter than
+  // `paper`. cream0/cream1 keep their own steps in the ramp for whatever
+  // future role needs them; only cream2 is wired to a live token today.
+  static final cream0 = oklch(0.913, 0.009, 84.6); // #E5E2DC
+  static final cream1 = oklch(0.946, 0.007, 88.6); // #EFEDE8
+  static final cream2 = oklch(0.974, 0.006, 84.6); // #F8F6F2 — cards/content
 
   /// The light-mode floating overlay (nav + its adjacent day-strip pane).
-  /// Pure white, the lightest step in the ramp — light mode's elevation
-  /// direction is the inverse of dark's (moving TOWARD white rather than
-  /// away from black), and white plus `shadowPane` is what reads as
-  /// "floating above" a near-white page.
-  static final creamOverlay = oklch(1.0, 0.0, 0); // #FFFFFF nav/overlay
+  /// Pure white, the lightest step in the ramp — confirmed directly:
+  /// "reserve white for floating chrome, and use a fine border on cards
+  /// plus a soft shadow beneath floating controls" — cards (`cream2`)
+  /// separate from the overlay via `colorBorder`/`shadowPane` rather than
+  /// a lightness gap, since nothing can sit lighter than white.
+  static final creamOverlay = oklch(1.000, 0.000, 0); // #FFFFFF nav/overlay
 
   // Brand — the accent ramp. Replaces `sage` in the accent ROLE (buttons,
   // FAB, selected states, day pills); sage is retained below because
   // `colorTaskCompleted` still uses it, where green carries the meaning
   // "done" independently of branding.
   //
-  // Solved back through this file's own oklch() pipeline to reproduce the
-  // specified #3B63DB (lands on #3B62DB — 1/255 on the green channel, the
-  // same tolerance the pastel category tints were accepted at). Measured,
-  // not assumed: white-on-brand500 is 5.31:1 and brand500 on the light
-  // background is 4.96:1, both past WCAG AA for normal text.
-  static final brand500 = oklch(0.538, 0.191, 266.5);
-  // Dark mode's accent, same hue. Light enough to clear AA against
-  // `ink900` (5.12:1) — the light-mode value measures only ~2.4:1 there,
-  // so the two palettes genuinely need different anchors.
-  static final brand300 = oklch(0.700, 0.140, 266.5);
+  // **2026-09-20 — rebranded from blue (266.5°) to violet-purple.**
+  // Confirmed directly as an intentional accent change, not a tuning
+  // pass. brand500 (light mode) is the interactive-element accent;
+  // brand300 (dark mode) additionally now carries "the logo gesture,
+  // selections, and expressive brand surfaces" per the same direction —
+  // both values recalculated from the given hex, not hand-picked.
+  static final brand500 = oklch(0.519, 0.149, 287.5); // #6656B8
+  static final brand300 = oklch(0.821, 0.098, 292.6); // #C6B9FF — Flow
 
   // Sand — neutral/background ramp.
-  static final sand50 = oklch(1.0, 0.0, 0); // pure white
-  static final sand100 = oklch(1.0, 0.0, 0); // pure white (timeline canvas)
-  static final sand300 = oklch(0.919, 0.015, 90);
-  static final sand500 = oklch(0.814, 0.028, 91);
-  static final sand700 = oklch(0.611, 0.028, 89);
-  static final sand900 = oklch(0.325, 0.014, 90);
+  // **2026-09-20 — re-derived alongside the rest of the palette.**
+  static final sand50 = oklch(0.996, 0.003, 106.4); // #FEFEFC
+  static final sand100 = oklch(0.976, 0.005, 95.1); // #F8F7F3 (timeline canvas)
+  static final sand300 = oklch(0.904, 0.015, 90.2); // #E3DFD4
+  static final sand500 = oklch(0.802, 0.027, 90.1); // #C5BEAB
+  static final sand700 = oklch(0.595, 0.025, 87.2); // #857E6E
+  static final sand900 = oklch(0.318, 0.011, 84.6); // #35322C
 
   // Slate — text/ink ramp.
-  static final slate50 = oklch(0.970, 0.002, 248);
-  static final slate300 = oklch(0.780, 0.009, 248);
-  // **2026-09-12 — new rung, between slate500 and slate300.** Requested
-  // directly: zone names needed to read as "even subtler" than the
-  // existing secondary text color (`slate500`, 4.66:1 against the light
-  // base). `slate300` (already spoken for by `colorTaskSkipped`) measures
-  // only 1.7:1 — too faint to be legible text at all. Solved for ~3.35:1,
-  // just past WCAG's 3:1 floor for large/decorative text with margin for
-  // sRGB rounding: perceptibly lighter than `slate500` while still
-  // reading as a deliberate label, not a rendering glitch.
-  static final slate400 = oklch(0.600, 0.013, 252); // #7B8188, 3.35:1
-  static final slate500 = oklch(0.521, 0.013, 252);
-  static final slate700 = oklch(0.362, 0.010, 254);
-  static final slate900 = oklch(0.212, 0.005, 248);
+  static final slate50 = oklch(0.969, 0.002, 145.6); // #F4F5F4
+  static final slate300 = oklch(0.790, 0.008, 253.9); // #B7BBC0
+  // The "even subtler" rung between slate500 and slate300, ~3.35:1 —
+  // just past WCAG's 3:1 floor for large/decorative text. See git
+  // history for the original request this rung answers.
+  static final slate400 = oklch(0.614, 0.012, 248.0); // #7F858B
+  static final slate500 = oklch(0.525, 0.011, 252.9); // #666B71
+  static final slate700 = oklch(0.359, 0.008, 255.5); // #3A3D41
+  static final slate900 = oklch(0.217, 0.002, 247.9); // #191A1B
 
   // Coral — attention/alert ramp.
-  static final coral300 = oklch(0.830, 0.074, 36);
-  static final coral500 = oklch(0.683, 0.141, 36);
-  static final coral700 = oklch(0.533, 0.124, 35);
+  static final coral300 = oklch(0.851, 0.059, 35.3); // #F2C1B4
+  static final coral500 = oklch(0.694, 0.113, 35.6); // #D9826B
+  static final coral700 = oklch(0.528, 0.097, 34.6); // #9B5544
 
   // Category accent hues — one pale-tint pill fill + one saturated icon
   // glyph per task category (two colors, not one). Re-derived a second time
@@ -164,61 +135,40 @@ abstract final class ColorPrimitives {
   // contrast drops from ~4.5-4.9:1 to ~4.0-4.2:1 — still clear of the 3:1
   // floor a decorative icon glyph needs, since deepening the badge
   // necessarily narrows the gap to the icon sitting on it.
-  static final clayTint = oklch(0.900, 0.053, 36); // health pill (peach)
-  static final clay500 = oklch(0.540, 0.150, 32); // health icon, 3.97:1
-  static final ochreTint = oklch(0.900, 0.087, 153); // work pill (mint)
-  // **2026-09-12 — darkened for AA on the light base.** At L=0.550 this
-  // measured 4.27:1 against `cream0`, under the 4.5 floor; this is the
-  // green-teal reported as illegible in light mode. Hue and chroma are
-  // untouched, so the category still reads as the same color.
-  static final ochre500 = oklch(0.510, 0.110, 153); // work icon, 4.64:1
-  static final periwinkleTint = oklch(0.900, 0.074, 218); // personal pill (sky)
-  // Same AA correction as ochre500 above: 4.11:1 -> 4.63:1. Chroma backs
-  // off slightly (0.130 -> 0.095) because 0.130 is outside sRGB at the
-  // lightness this hue needs.
-  static final periwinkle500 = oklch(
-    0.515,
-    0.090,
-    216,
-  ); // personal icon, 4.63:1
-  static final berryTint = oklch(0.900, 0.056, 300); // admin pill (lavender)
-  static final berry500 = oklch(0.535, 0.140, 300); // admin icon, 4.67:1
-  // The neutral "no category chosen yet" pair. Zero chroma so it reads as
-  // absence of a category rather than a fifth meaning, at the same
-  // lightness as the four tints above so it sits in the same family. Icon
-  // lightness matches the other *500 icons for equal contrast against its
-  // own fill.
-  // Default/uncategorised pill (grey). Lightness 0.900, matching every
-  // OTHER category tint (clay/ochre/periwinkle/berry are all 0.900) rather
-  // than the 0.956 it used to sit at.
+  // **2026-09-20 — re-derived, quieter and closer to a muted-circle
+  // reference.** Confirmed directly: "color supports recognition but does
+  // not dominate the schedule." Token names/roles unchanged (health/work/
+  // personal/admin still map to clay/ochre/periwinkle/berry); only the
+  // OKLCH triples move.
   //
-  // Reported directly: "gray on light mode for default (non selected
-  // category) is too light, non legible on light mode." Measured against
-  // `colorSurfacePrimary`, the old value gave a contrast ratio of **1.01**
-  // — indistinguishable from the page — while the four colored tints all
-  // landed at 1.08-1.10. Dropping to the shared 0.900 puts the default
-  // back in family instead of treating grey as a special case.
-  static final neutralTint = oklch(0.900, 0.0, 0);
-  // Was 4.50:1 — technically at the floor, but close enough that sRGB
-  // rounding could drop it under. Nudged to 4.69:1.
-  static final neutral500 = oklch(0.520, 0.0, 0); // default icon, 4.69:1
+  // Icon lightness NUDGED DOWN from the as-specified values after the
+  // `surface0` base move (`colorSurfaceBase`, semantic_theme.dart) left
+  // all four just under 4.5:1 AA (4.39-4.47:1) — hue/chroma untouched, so
+  // the specified color character is unchanged, only how dark it reads.
+  // Re-measured at 4.58-4.60:1 against the new base. See
+  // `test/core/tokens/palette_contrast_test.dart`.
+  static final clayTint = oklch(0.904, 0.034, 35.9); // #F5D8D0 health pill
+  static final clay500 = oklch(0.529, 0.101, 31.9); // #9D5345 health icon
+  static final ochreTint = oklch(0.918, 0.025, 137.8); // #DCE8D8 work pill
+  static final ochre500 = oklch(0.512, 0.059, 140.7); // #546F4F work icon
+  static final periwinkleTint = oklch(0.908, 0.022, 263.2); // #D9E1F0 personal
+  static final periwinkle500 = oklch(0.518, 0.067, 258.6); // #51698F personal
+  static final berryTint = oklch(0.918, 0.020, 315.7); // #E9E0ED admin pill
+  static final berry500 = oklch(0.524, 0.054, 325.2); // #7A5F7B admin icon
+  // The neutral "no category chosen yet" pair — same family, zero-ish
+  // chroma, as before.
+  static final neutralTint = oklch(0.927, 0.004, 106.5); // #E7E7E4
+  static final neutral500 = oklch(0.514, 0.007, 128.6); // #666864
 
-  // Dark-mode category pills — the ORIGINAL pre-pastel mid-tone values,
-  // kept under their own names so dark mode's rendering is byte-for-byte
-  // unchanged by this session. Dark mode is explicitly out of scope; these
-  // four names used to BE clay500/ochre500/periwinkle500/berry500 before
-  // this session repurposed those names for the new light-mode icon
-  // glyphs, so they're preserved here rather than silently inherited —
-  // Phase 13a measured these exact values at 4.9-5.2:1 against `ink900`,
-  // and that measurement is only valid for these numbers, not whatever the
-  // light-mode icon color happens to become later. See docs/DECISIONS.md.
-  static final clay500Dark = oklch(0.62, 0.10, 30);
-  static final ochre500Dark = oklch(0.62, 0.10, 120);
-  static final periwinkle500Dark = oklch(0.62, 0.10, 250);
-  static final berry500Dark = oklch(0.62, 0.10, 340);
-  // Same lightness as the four above, zero chroma — the neutral default's
-  // dark-mode pill.
-  static final neutral500Dark = oklch(0.62, 0.0, 0);
+  // Dark-mode category pills — re-derived alongside light mode as of
+  // 2026-09-20 (previously explicitly out of scope; that scoping is
+  // reversed here per direct request — full palette, both themes,
+  // together).
+  static final clay500Dark = oklch(0.646, 0.079, 31.6); // #B97C70
+  static final ochre500Dark = oklch(0.635, 0.046, 140.8); // #7C9278
+  static final periwinkle500Dark = oklch(0.625, 0.053, 258.0); // #7489A8
+  static final berry500Dark = oklch(0.609, 0.058, 327.3); // #967795
+  static final neutral500Dark = oklch(0.653, 0.007, 137.8); // #8E918D
 
   // User-defined Category palette (Phase — new Category entity). Per the
   // confirmed decision (docs/DECISIONS.md): a single saturated swatch per
@@ -257,19 +207,25 @@ abstract final class ColorPrimitives {
   // that hand-tunes chroma per hue (the way `brand500`'s lightness deviates
   // from `brand300`) is real future work if any specific pair reads as too
   // close in practice, not assumed to be needed here.
+  // **2026-09-20 — re-derived alongside the rest of the palette** (dark
+  // mode no longer out of scope — see the Surface/Brand ramps above for
+  // the same reversal). Chroma/lightness now vary per-hue (solved from
+  // supplied hex) rather than held uniform at 0.62/0.15 — see the
+  // `test/core/tokens/palette_contrast_test.dart` result for whether this
+  // still clears the same AA floor the prior uniform ramp targeted.
   static final categoryPalette12 = [
-    oklch(0.62, 0.15, 15), // 0  red
-    oklch(0.62, 0.15, 45), // 1  orange
-    oklch(0.62, 0.15, 75), // 2  amber
-    oklch(0.62, 0.15, 105), // 3  yellow-green
-    oklch(0.62, 0.15, 135), // 4  green
-    oklch(0.62, 0.15, 165), // 5  teal
-    oklch(0.62, 0.15, 195), // 6  cyan
-    oklch(0.62, 0.15, 225), // 7  sky blue
-    oklch(0.62, 0.15, 255), // 8  blue
-    oklch(0.62, 0.15, 285), // 9  violet
-    oklch(0.62, 0.15, 315), // 10 magenta
-    oklch(0.62, 0.15, 345), // 11 pink/rose
+    oklch(0.650, 0.102, 13.2), // 0  red          #C5747D
+    oklch(0.654, 0.103, 46.4), // 1  orange       #C47C59
+    oklch(0.672, 0.096, 72.7), // 2  amber        #BA8C4F
+    oklch(0.660, 0.079, 104.1), // 3  yellow-green #9A955B
+    oklch(0.624, 0.063, 140.4), // 4  green        #73916D
+    oklch(0.626, 0.059, 178.1), // 5  teal         #609488
+    oklch(0.620, 0.053, 202.4), // 6  cyan         #5F9094
+    oklch(0.620, 0.057, 235.3), // 7  sky blue     #648CA4
+    oklch(0.623, 0.062, 259.8), // 8  blue         #7188AD
+    oklch(0.615, 0.074, 291.6), // 9  violet       #857DAE
+    oklch(0.613, 0.075, 322.4), // 10 magenta      #9A759F
+    oklch(0.628, 0.078, 350.2), // 11 pink/rose    #AD758F
   ];
 
   /// The light-mode counterpart to [categoryPalette12] — same 12 hues, in
@@ -296,110 +252,72 @@ abstract final class ColorPrimitives {
   /// which checks BOTH ramps against BOTH backgrounds — the point being
   /// that a swatch is only ever asserted against the background it
   /// actually renders on.
+  // **2026-09-20 — 6 of 12 nudged down from the as-specified lightness**
+  // (orange, amber, yellow-green, green, teal, blue) after the
+  // `surface0` base move left them at 4.12-4.50:1, just under the 4.5:1
+  // AA floor — hue/chroma untouched. Re-measured at 4.56-4.58:1. red,
+  // cyan, sky blue, violet, magenta, pink/rose already cleared AA as
+  // specified and are unchanged.
   static final categoryPalette12Light = [
-    oklch(0.540, 0.150, 15), // 0  red          #B54152  4.66:1
-    oklch(0.535, 0.150, 45), // 1  orange       #B04907  4.68:1
-    oklch(0.525, 0.110, 75), // 2  amber        #8F5F02  4.68:1
-    oklch(0.520, 0.110, 105), // 3  yellow-green #736C01  4.63:1
-    oklch(0.510, 0.145, 135), // 4  green        #3E7709  4.65:1
-    oklch(0.510, 0.105, 165), // 5  teal         #097957  4.63:1
-    oklch(0.510, 0.085, 195), // 6  cyan         #0A7575  4.69:1
-    oklch(0.515, 0.095, 225), // 7  sky blue     #0B7290  4.66:1
-    oklch(0.525, 0.150, 255), // 8  blue         #206ABE  4.63:1
-    oklch(0.535, 0.150, 285), // 9  violet       #675CBF  4.63:1
-    oklch(0.540, 0.150, 315), // 10 magenta      #8F4FA9  4.64:1
-    oklch(0.540, 0.150, 345), // 11 pink/rose    #A84482  4.68:1
+    oklch(0.528, 0.103, 11.4), // 0  red          #9D505C
+    oklch(0.526, 0.095, 47.6), // 1  orange       #975837
+    oklch(0.522, 0.078, 70.9), // 2  amber        #866134
+    oklch(0.517, 0.070, 104.5), // 3  yellow-green #6E6A39
+    oklch(0.513, 0.054, 142.1), // 4  green        #556F52
+    oklch(0.512, 0.050, 179.5), // 5  teal         #457067
+    oklch(0.513, 0.046, 203.7), // 6  cyan         #466F73
+    oklch(0.518, 0.051, 237.0), // 7  sky blue     #4C6D82
+    oklch(0.519, 0.069, 259.1), // 8  blue         #506991
+    oklch(0.509, 0.077, 289.9), // 9  violet       #655E8F
+    oklch(0.506, 0.063, 321.4), // 10 magenta      #76597B
+    oklch(0.521, 0.068, 348.3), // 11 pink/rose    #875970
   ];
 
-  // Ink — dark-mode surface ramp. Derived the same way as every other ramp
-  // here (deliberate OKLCH triples, not an inversion or auto-darken of the
-  // light values), per docs/DECISIONS.md's Pre-Phase 3 entry.
+  // Ink — dark-mode surface ramp.
   //
-  // Hue stays at 90 — the same warm neutral as the `sand` ramp — so dark
-  // mode reads as the same product in low light rather than a generic grey
-  // theme. Chroma is deliberately tiny (0.008–0.012) and *rises* slightly
-  // with lightness: at very low L a neutral needs almost no chroma to read
-  // as warm, and pushing it higher makes dark surfaces look muddy/brown.
-  // Lightness steps are uneven on purpose (0.185 → 0.225 → 0.285 → 0.360):
-  // perceived separation between near-black surfaces compresses, so equal
-  // steps would make the darkest pair indistinguishable on a real screen.
-  // **2026-09-12 — re-anchored from two directly-specified values.** The
-  // body color was given as #121110 and the zone/card surface as #171615;
-  // converted back through this file's own pipeline they are
-  // oklch(0.178, 0.0026, 67.7) and oklch(0.201, 0.0025, 67.7). Two things
-  // changed versus the previous ramp: everything got slightly darker, and
-  // chroma dropped roughly 3x (0.008 -> 0.0026), so dark mode now reads as
-  // a near-neutral charcoal rather than a warm brown-grey. Hue moved 90 ->
-  // 67.7 to match, which at this chroma is barely perceptible on its own
-  // but keeps the ramp internally consistent.
-  //
-  // The two given anchors set the first step (0.178 -> 0.201, a deliberate
-  // 0.023); the steps above them widen (0.031, 0.038) for the same reason
-  // the old ramp's did — perceived separation between near-black surfaces
-  // compresses, so equal steps would make the darkest pairs
-  // indistinguishable on a real screen.
-  //
-  // Verified rather than assumed: on the new (darker) body, primary text
-  // measures 15.83:1 and secondary 7.61:1 (both slightly BETTER than the
-  // old ramp's 15.63/7.52), and every dark category swatch still clears AA
-  // at 4.79:1 or above. See test/core/tokens/palette_contrast_test.dart.
-  static final ink900 = oklch(0.178, 0.0026, 67.7); // #121110 body/base
-  static final ink800 = oklch(0.201, 0.0025, 67.7); // #171615 zone/card
-  static final ink700 = oklch(0.232, 0.0026, 67.7); // #1E1D1C raised panel
-  static final ink600 = oklch(0.330, 0.0026, 67.7); // #363534 border/hairline
+  // **2026-09-20 — re-derived alongside the rest of the palette.**
+  // Confirmed directly: "keeps the calm near-black quality... while
+  // creating slightly clearer elevation steps." Hue drifts slightly per
+  // step (145.5 → 128.7 → 128.6 → 121.8 → 118.2) rather than holding one
+  // fixed warm hue — a deliberate widening of this pass, not an
+  // oversight; each step was solved independently rather than as one
+  // fixed-hue ramp.
+  static final ink900 = oklch(0.185, 0.003, 145.5); // #121312 body/base
+  static final ink800 = oklch(0.212, 0.004, 128.7); // #181917 zone/card
+  static final ink700 = oklch(0.246, 0.004, 128.6); // #20211F raised panel
+  static final ink600 = oklch(0.338, 0.007, 118.2); // #373834 border/hairline
 
   /// The floating-overlay surface (nav + its adjacent day-strip pane) —
   /// the lightest step in the dark ramp, one above [ink700]. Its own rung
   /// rather than a reuse of [ink600]: that value is the hairline/border
   /// tone and is deliberately lighter than any surface should be.
-  static final ink650 = oklch(0.270, 0.0026, 67.7); // #272625 nav/overlay
+  static final ink650 = oklch(0.279, 0.006, 121.8); // #282926 nav/overlay
 
   // Dark-mode form-field fills — the counterparts to surface2/surface3.
-  // They sit ABOVE `ink700` (the raised panel a field lives inside), which
-  // inverts light mode's direction: on a white pane a field reads as a
-  // darker inset, but on a near-black panel the same "inset" has to get
-  // LIGHTER to stay visible at all. Chroma follows the ink ramp's warm 90°
-  // rather than the light ramp's zero, so fields belong to the surface
-  // they're on instead of reading as neutral patches on a warm panel.
-  static final inkField = oklch(0.330, 0.011, 90); // field, at rest
-  static final inkFieldActive = oklch(0.395, 0.012, 90); // field, active
+  static final inkField = oklch(0.322, 0.009, 116.1); // #33342F field, rest
+  static final inkFieldActive = oklch(
+    0.391,
+    0.012,
+    113.5,
+  ); // #45463F field, active
 
-  // Sand additions for dark-mode text. Not reusing `sand50`/`sand500`: on a
-  // near-black surface `sand50` is bright enough to bloom/halo, and
-  // `sand500` doesn't clear comfortable secondary-text contrast. These two
-  // are tuned against `ink900` specifically — 15.6:1 and 7.5:1, both past
-  // WCAG AA.
-  static final sand200 = oklch(0.940, 0.008, 90); // dark-mode primary text
-  static final sand400 = oklch(0.720, 0.018, 90); // dark-mode secondary text
-  // **2026-09-12 — dark-mode counterpart to slate400 (light).** Zone names
-  // needed to read as "even subtler" than secondary text in BOTH themes,
-  // not just light. Solved against the current (re-anchored) `ink900`
-  // base for ~3.4:1 — matching light's own slate400 (3.35:1) as closely
-  // as the two ramps' different chroma/hue allow, rather than chasing an
-  // identical ratio.
-  static final sand350 = oklch(0.520, 0.018, 90); // dark-mode tertiary, 3.43:1
+  // Sand additions for dark-mode text.
+  static final sand200 = oklch(0.955, 0.005, 95.1); // #F1F0EC dark primary
+  static final sand400 = oklch(0.760, 0.013, 91.6); // #B4B1A8 dark secondary
+  static final sand350 = oklch(0.559, 0.013, 89.8); // #77746C dark tertiary
 
   // Zone background — a light, low-chroma "this is Zone territory"
   // rendering-only backdrop for the Spatial Task View (Timeline), NOT a
-  // category/task color. Deliberately distinct in hue from every existing
-  // signal on that screen so it never reads as a category or a status:
-  // hue 240 sits apart from all 4 built-in category hues (clay 32, ochre
-  // 153, periwinkle 216, berry 300) and from `colorFreeWindow`'s neutral
-  // (zero-chroma) sand tone — a viewer can't mistake a zone block for a
-  // category tint or a free-window gap indicator. Chroma is intentionally
-  // very low (0.02, versus 0.055-0.075 for the pale category tints) so it
-  // sits visually "behind" and beneath every other color on the screen,
-  // never competing with a task capsule for attention. Confirmed with the
-  // user directly (cool blue-grey over a zero-chroma neutral) before
-  // building — flagged per the work order's own instruction, not treated
-  // as a small enough choice to decide silently.
+  // category/task color.
   //
-  // Dark variant follows the same "hue 240, very low chroma" family rather
-  // than the `ink` ramp's own warm 90° hue — a zone block needs to read as
-  // the same kind of thing in both palettes, not blend into dark mode's
-  // neutral surface ramp.
-  static final zoneBackground = oklch(0.97, 0.02, 240);
-  static final zoneBackgroundDark = oklch(0.28, 0.02, 240);
+  // **2026-09-20 — moved from cool blue (hue 240) to lavender (hue
+  // ~293).** Confirmed directly: "clearly distinguishable from both the
+  // page background and white cards while remaining quiet." Still
+  // deliberately apart from every built-in category hue and the
+  // free-window neutral, and still low-chroma so it sits visually
+  // "behind" a task capsule rather than competing with it.
+  static final zoneBackground = oklch(0.915, 0.026, 293.1); // #E3E0F3
+  static final zoneBackgroundDark = oklch(0.291, 0.027, 293.8); // #2C2938
 
   static const white = Color(0xFFFFFFFF);
   static const black = Color(0xFF000000);

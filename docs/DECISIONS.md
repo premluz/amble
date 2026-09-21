@@ -2065,3 +2065,63 @@ Requested directly: "turn off edit zones (tap on zones) on tasks edit." Confirme
 Implemented at the ONE call site (`_DayTimeline`'s zone-rendering loop in `timeline_screen.dart`): `_DraggableZoneBlock` now always receives `editModeEnabled: false` and `null` for every zone-mutation callback, regardless of the real Edit Mode toggle (which still governs tasks normally). No changes needed inside `_DraggableZoneBlockState`/`ZoneBackgroundBlock` — every resize/move/tap/delete-target path there was already gated on this exact flag from the earlier multi-task-mode fix, so overriding it at the call site alone was sufficient.
 
 Two test files (`zone_task_view_move_resize_test.dart`, `zone_multi_task_selection_test.dart`) tested exactly the removed interaction and were deleted outright rather than left asserting dead behavior — replaced by `zone_task_view_non_interactive_test.dart`.
+
+## RevenueCat integration architecture (2026-09-21)
+
+`purchases_flutter`/`purchases_ui_flutter` were already added to
+`pubspec.yaml` from outside this session (flagged, unfinished, in
+`docs/PROGRESS_LOG.md`'s prior entry). This session finished the wiring
+and confirmed scope directly — see `docs/SCOPE.md`'s new "Subscription"
+entry.
+
+**API key**: `String.fromEnvironment` via a new `RevenueCatConfig`
+(`core/revenue_cat_config.dart`), read from `--dart-define`
+(`REVENUECAT_IOS_API_KEY`/`REVENUECAT_ANDROID_API_KEY`) — never a
+committed literal. Confirmed directly over adding a `.env`
+package (would be a new dependency; this repo's existing
+`bool.fromEnvironment` feature-flag convention already covers the same
+mechanism for strings). Missing key throws `StateError` at the one real
+call site rather than silently configuring with an empty string.
+
+**Repository layer**: new `PurchasesRepository` interface +
+`RevenueCatPurchasesRepository` implementation
+(`shared/repositories/`), mirroring `SyncedCalendarEventRepository`'s
+"external source of truth" shape rather than `PreferencesRepository`'s
+Hive key-value shape — RevenueCat, not Hive, owns this data, but the same
+"never call the SDK directly outside the repository layer" rule applies.
+
+**Entitlement state**: `isPantaProProvider` (bool) derives from
+`PantaCustomerInfo`, a `keepAlive` Riverpod notifier that registers a real
+RevenueCat `CustomerInfoUpdateListener` — not a one-shot read — so renewals,
+expirations, and purchases/restores made elsewhere in the app are reflected
+without a manual refresh. `main.dart` calls `configure()` then an initial
+`refresh()` before `runApp`, so the first frame already has real
+entitlement data.
+
+**UI**: RevenueCat's own prebuilt Paywall (`presentPaywallIfNeeded`) and
+Customer Center (`presentCustomerCenter`) are used as-is rather than a
+hand-rolled purchase screen — both configured/styled in the RevenueCat
+dashboard, not in this codebase. Surfaced from a new "Subscription" Settings
+row, gated by a new `FeatureFlags.subscriptionEnabled` (default ON,
+`--dart-define=subscription=false` to disable), matching every other flag's
+shape in `core/feature_flags.dart`.
+
+**Error handling**: `PurchasesErrorHelper.getErrorCode` maps a
+`PlatformException` to a typed `PurchasesErrorCode`;
+`purchaseCancelledError` surfaces no message (a normal user action, not a
+failure), `networkError`/`purchaseNotAllowedError`/`paymentPendingError`
+get short user-facing messages, anything else gets a generic fallback
+rather than leaking SDK internals into the UI.
+
+**Product/offering configuration** (`lifetime`, `yearly`, `monthly`
+products, attached to the current Offering) is dashboard state in
+RevenueCat, not code in this repo — nothing to implement here beyond the
+entitlement identifier constant (`panta_pro`) the app checks against.
+
+**Verification**: `flutter analyze` clean on every file touched (repo-wide
+analyze shows only pre-existing, unrelated warnings/errors — confirmed by
+diffing against `git status` at session start). `flutter test` has 10
+pre-existing failures in timeline/zone/task-detail suites, confirmed via
+`git stash` to fail identically with this session's `main.dart`/
+`feature_flags.dart`/`settings_screen.dart` edits removed — unrelated to
+this work, not introduced by it.

@@ -47,6 +47,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     required this.spacingXl,
     required this.spacingBlockGap,
     required this.spacingScreenPadding,
+    required this.spacingHourGutter,
     required this.spacingContentTop,
     required this.spacingMinTapTarget,
     required this.sizeMinFieldHeight,
@@ -77,8 +78,10 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     required this.textHeadline,
     required this.textTitle,
     required this.textBody,
+    required this.textBodyMono,
     required this.textLabel,
     required this.textCaption,
+    required this.textCaptionMono,
     required this.textTaskTitleSm,
     required this.textTaskTitleMd,
     required this.textTaskTitleLg,
@@ -235,7 +238,45 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   final double spacingLg;
   final double spacingXl;
   final double spacingBlockGap;
+
+  /// The app's ONE horizontal side inset — the distance from either
+  /// screen edge to the leading edge of a page's own content, on every
+  /// screen: the top nav's "Day", the settings gear opposite it, page
+  /// titles, list rows, sheet bodies, AND the Timeline's own hour labels
+  /// in both the spatial and non-spatial views.
+  ///
+  /// **16px since 2026-09-21, down from 24px.** Reported directly against
+  /// a screenshot with the intended inset marked down both edges: the top
+  /// nav and the calendar below it sat further in than the hour labels on
+  /// the timeline under them, so the page's left edge visibly stepped as
+  /// the eye travelled down. The non-spatial Zone view was named as the
+  /// reference ("the right size of it comes from the non-spatial view"),
+  /// and its hour label already sat at 16px — so the rest of the app
+  /// moves OUT to meet the hour, rather than the hour moving in.
+  ///
+  /// See docs/DESIGN_SYSTEM.md's "Horizontal spacing" section for the
+  /// rule this token anchors, and [spacingHourGutter] for the second,
+  /// separate value that governs the hour-label-to-content distance.
   final double spacingScreenPadding;
+
+  /// How far the Timeline's own content — a task pill in the spatial
+  /// view, a zone card in the non-spatial one — sits from the TRUE screen
+  /// edge, leaving room for the hour labels that occupy the space
+  /// between it and [spacingScreenPadding].
+  ///
+  /// The second of the two horizontal values the Timeline needs, and
+  /// deliberately its own token rather than an arithmetic expression
+  /// spelled out at each call site: the spatial view used to build this
+  /// as `66 + spacingScreenPadding` while the non-spatial one hardcoded
+  /// `90`, which meant the two agreed only by coincidence and silently
+  /// drifted apart the moment [spacingScreenPadding] changed. Reported
+  /// directly: "we need a coherent system that can manage this spacing
+  /// without drift."
+  ///
+  /// Excludes the Weekly Zone Authoring Grid, which keeps its own denser
+  /// axis — confirmed directly ("edit zone view has its own more dense
+  /// space, which is fine, keep it as is").
+  final double spacingHourGutter;
 
   /// The shared top offset for a scrollable's own first item/pane, under
   /// a fixed heading or [AppTopScrollFade] — one value across Tasks,
@@ -426,9 +467,41 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   // Type
   final TextStyle textHeadline;
   final TextStyle textTitle;
+
+  /// **2026-09-21 — DM Sans**, per the dual-font policy: general body
+  /// copy, descriptions, category names (via `.copyWith(fontWeight:)` at
+  /// call sites — see [textBodyMono]'s own doc comment for the one
+  /// exception this token does NOT cover).
   final TextStyle textBody;
+
+  /// The MONOSPACE twin of [textBody] — identical size/weight/height,
+  /// [TypePrimitives.fontFamily] instead of [TypePrimitives.fontFamilySans].
+  /// Added because [textBody] itself is shared between two kinds of text
+  /// that can't share one font: general body copy (→ DM Sans) and two
+  /// exception call sites that must stay monospace — the zone-list-row
+  /// zone name (`zone_form_screen.dart`) and the Settings app-version
+  /// string (`about_settings_screen.dart`). Confirmed via AskUserQuestion:
+  /// split into a dedicated token rather than a `.copyWith(fontFamily:)`
+  /// override scattered at each exception call site, so the font choice
+  /// stays centralized in the token name like every other token here.
+  final TextStyle textBodyMono;
+
   final TextStyle textLabel;
+
+  /// **2026-09-21 — DM Sans**, per the dual-font policy: generic
+  /// captions, chip/pill labels, timestamps that read as prose rather
+  /// than a raw value. See [textCaptionMono]'s own doc comment for the
+  /// exception call sites this token does NOT cover.
   final TextStyle textCaption;
+
+  /// The MONOSPACE twin of [textCaption] — same reasoning as
+  /// [textBodyMono]. [textCaption] is shared between generic captions/
+  /// chips (→ DM Sans) and genuinely numeric/temporal labels that must
+  /// stay monospace: the rotated zone-name labels (`zone_background_block
+  /// .dart`, `zone_grid_block.dart`), and time/duration text (`task_edge
+  /// _time_label.dart`, `current_time_indicator.dart`, `task_boundary
+  /// _markers.dart`, and similar numeric call sites).
+  final TextStyle textCaptionMono;
 
   /// The three fixed rungs of the task-size scale's own font size —
   /// paired with [sizeTaskBadgeSm]/[sizeTaskBadgeMd]/[sizeTaskBadgeLg]
@@ -468,6 +541,13 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   /// name one scale up)." Resolved once in `main.dart`'s
   /// `_resolveTaskSize`, the same mechanism [textTaskTitle] itself uses —
   /// every zone-view row/header reads this instead now.
+  ///
+  /// **2026-09-21 — stays [TypePrimitives.fontFamily] (monospace)**, the
+  /// one explicit carve-out in the dual-font policy: this is the zone
+  /// container's own header/name, which would otherwise read as an
+  /// ordinary title (→ DM Sans) but must stay monospace. Its only real
+  /// call site (`zone_container_block.dart`) renders nothing but a zone
+  /// name, so this token is pinned wholesale rather than split.
   final TextStyle textTaskTitleZone;
 
   // Motion
@@ -496,53 +576,60 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   final Curve curveDecelerate;
 
   static final light = AmbleTheme(
-    // The warm cream base (#EEECEA), derived to mirror dark mode's own
-    // re-anchored body color rather than staying a clinical true grey —
-    // see ColorPrimitives.cream0.
-    colorSurfaceBase: ColorPrimitives.cream0,
-    // A step ABOVE the base, not pure white — white is reserved for the
-    // floating overlay (nav/day-strip pane), which needs somewhere higher
-    // to go. A pane painted pure white left the overlay with no room and
-    // made the two indistinguishable.
-    colorSurfacePrimary: ColorPrimitives.cream1,
-    // Light mode's base is already near-white, so an overlay can't
-    // separate by getting lighter in any meaningful way — it goes pure
-    // white and relies on `shadowPane` for its edge.
+    // **2026-09-20 — the app's own "website Paper" background.** Re-
+    // pointed from `cream0`, then from an intermediate `surface0`
+    // attempt, to this NEW anchor — confirmed directly: "keep the
+    // website's warm paper background... it feels more like Panta than
+    // the cooler grey I proposed."
+    colorSurfaceBase: ColorPrimitives.paper,
+    // Cards/content surfaces — confirmed directly, choosing `cream2` over
+    // a `surface1` (pure white) attempt specifically because pure white
+    // collided with `colorSurfaceOverlay` below (also pure white,
+    // required so the floating overlay reads as the topmost layer) —
+    // see `elevation_direction_test.dart`. `cream2` sits one genuine step
+    // lighter than `paper`, preserving the base->card->overlay ordering
+    // that test enforces.
+    colorSurfacePrimary: ColorPrimitives.cream2,
+    // Light mode's base is already near the top of the ramp, so an
+    // overlay can't separate by getting lighter in any meaningful way —
+    // it goes pure white and relies on `colorBorder`/`shadowPane` for its
+    // edge, confirmed directly: "reserve white for floating chrome, and
+    // use a fine border on cards plus a soft shadow beneath floating
+    // controls."
     colorSurfaceOverlay: ColorPrimitives.creamOverlay,
-    // A nested row/card (e.g. a Manage-screen list row) — one step LIGHTER
-    // than `colorSurfacePrimary`, mirroring dark mode's `ink700` sitting
-    // one step lighter than `ink800`. **Corrected 2026-09-12**: this used
-    // to equal `colorSurfacePrimary` exactly (both `cream1`), so a row
-    // card was byte-identical to the pane behind it — reported directly,
-    // visible on the Manage screen where dark mode showed clear card
-    // separation and light mode showed none at all.
-    colorSurfaceSecondary: ColorPrimitives.cream2,
-    // **Corrected 2026-09-12.** Was `sand100` (pure white), a leftover
-    // from before the base moved off true white. That made the Timeline's
-    // whole-screen canvas measurably brighter than the cream page around
-    // it (1.175:1) — visible as a stray light patch, reported directly and
-    // most obvious in Zone view where the card fills sit close in tone to
-    // both surfaces at once. Dark mode's own `colorSurfaceTimeline` already
-    // equals `colorSurfacePrimary` (`ink800`); this now mirrors that.
-    colorSurfaceTimeline: ColorPrimitives.cream1,
+    // A nested row/card (e.g. a Manage-screen list row) — one step
+    // DARKER than `colorSurfacePrimary` (`cream2`) as of 2026-09-20,
+    // reversed from the previous "one step lighter" direction: `cream2`
+    // is now the lightest Cream step below pure white (reserved for the
+    // overlay), leaving no room for a nested row to go lighter still.
+    // Confirmed directly: a subtle darker inset reads as content nested
+    // INSIDE a card, the same "recessed" cue a text field already uses.
+    colorSurfaceSecondary: ColorPrimitives.cream1,
+    // Tracks `colorSurfacePrimary` — this token has mirrored that one 1:1
+    // since 2026-09-12, and nothing in the 2026-09-20 pass named a
+    // separate role for it.
+    colorSurfaceTimeline: ColorPrimitives.cream2,
     colorSurfaceField: ColorPrimitives.surface2,
     colorSurfaceFieldActive: ColorPrimitives.surface3,
     colorScrim: const Color(0x66000000),
-    // 36% opacity of the pane fill itself (surface1), not a separate
-    // hardcoded value — always tracks colorSurfacePrimary if that token
-    // ever changes.
-    colorSurfaceBlurOverlay: ColorPrimitives.surface1.withValues(alpha: 0.36),
+    // 36% opacity of the pane fill itself (colorSurfacePrimary's own
+    // primitive), not a separate hardcoded value.
+    colorSurfaceBlurOverlay: ColorPrimitives.cream2.withValues(alpha: 0.36),
     blurOverlaySigma: 12.0,
-    // Same primitive as colorBorder below (sand300), at low alpha — kept
+    // Same primitive as colorBorder below (surface3), at low alpha — kept
     // as a literal primitive reference rather than colorBorder.withValues
     // since these are compile-time const field initializers and colorBorder
     // isn't assigned yet at this point in the constructor call.
-    colorFreeWindow: ColorPrimitives.sand300.withValues(alpha: 0.5),
+    colorFreeWindow: ColorPrimitives.surface3.withValues(alpha: 0.5),
     colorZoneBackground: ColorPrimitives.zoneBackground,
     colorTextPrimary: ColorPrimitives.slate900,
     colorTextSecondary: ColorPrimitives.slate500,
     colorTextTertiary: ColorPrimitives.slate400,
-    colorBorder: ColorPrimitives.sand300,
+    // **2026-09-20 — re-pointed from `sand300` to `surface3`.** Confirmed
+    // directly: "card borders" is `surface3`'s own named role in the
+    // confirmed layering — "use a fine border on cards... to create
+    // separation without making the whole interface darker."
+    colorBorder: ColorPrimitives.surface3,
     colorAccent: ColorPrimitives.brand500,
     // Stays sage, deliberately: green reads as "done" independently of
     // branding, so the accent swap must not drag task status with it.
@@ -575,7 +662,8 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     spacingLg: SpacingPrimitives.space7,
     spacingXl: SpacingPrimitives.space9,
     spacingBlockGap: SpacingPrimitives.space3,
-    spacingScreenPadding: SpacingPrimitives.space7,
+    spacingScreenPadding: SpacingPrimitives.space5,
+    spacingHourGutter: SpacingPrimitives.space12,
     spacingContentTop: SpacingPrimitives.space7Point75,
     spacingMinTapTarget: 48.0,
     sizeMinFieldHeight: 60.0,
@@ -641,20 +729,29 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       ),
     ],
     textHeadline: TextStyle(
-      fontFamily: TypePrimitives.fontFamily,
+      fontFamily: TypePrimitives.fontFamilySans,
       fontSize: TypePrimitives.size6,
       fontWeight: TypePrimitives.weightBold,
       height: TypePrimitives.lineHeightTight,
       color: ColorPrimitives.slate900,
     ),
     textTitle: TextStyle(
-      fontFamily: TypePrimitives.fontFamily,
+      fontFamily: TypePrimitives.fontFamilySans,
       fontSize: TypePrimitives.size4,
       fontWeight: TypePrimitives.weightSemibold,
       height: TypePrimitives.lineHeightTight,
       color: ColorPrimitives.slate900,
     ),
     textBody: TextStyle(
+      fontFamily: TypePrimitives.fontFamilySans,
+      fontSize: TypePrimitives.size3,
+      fontWeight: TypePrimitives.weightRegular,
+      height: TypePrimitives.lineHeightNormal,
+      color: ColorPrimitives.slate900,
+    ),
+    // See textBodyMono's own doc comment — identical to textBody above,
+    // monospace instead of sans.
+    textBodyMono: TextStyle(
       fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size3,
       fontWeight: TypePrimitives.weightRegular,
@@ -662,13 +759,22 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       color: ColorPrimitives.slate900,
     ),
     textLabel: TextStyle(
-      fontFamily: TypePrimitives.fontFamily,
+      fontFamily: TypePrimitives.fontFamilySans,
       fontSize: TypePrimitives.size2,
       fontWeight: TypePrimitives.weightMedium,
       height: TypePrimitives.lineHeightNormal,
       color: ColorPrimitives.slate700,
     ),
     textCaption: TextStyle(
+      fontFamily: TypePrimitives.fontFamilySans,
+      fontSize: TypePrimitives.size1,
+      fontWeight: TypePrimitives.weightRegular,
+      height: TypePrimitives.lineHeightNormal,
+      color: ColorPrimitives.slate500,
+    ),
+    // See textCaptionMono's own doc comment — identical to textCaption
+    // above, monospace instead of sans.
+    textCaptionMono: TextStyle(
       fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size1,
       fontWeight: TypePrimitives.weightRegular,
@@ -691,21 +797,21 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     // naturally lands there on its own, confirmed directly (lg should get
     // its own genuine one-step reduction, not stay paired with md).
     textTaskTitleSm: TextStyle(
-      fontFamily: TypePrimitives.fontFamily,
+      fontFamily: TypePrimitives.fontFamilySans,
       fontSize: TypePrimitives.size0,
       fontWeight: TypePrimitives.weightRegular,
       height: TypePrimitives.lineHeightNormal,
       color: ColorPrimitives.slate900,
     ),
     textTaskTitleMd: TextStyle(
-      fontFamily: TypePrimitives.fontFamily,
+      fontFamily: TypePrimitives.fontFamilySans,
       fontSize: TypePrimitives.size1,
       fontWeight: TypePrimitives.weightRegular,
       height: TypePrimitives.lineHeightNormal,
       color: ColorPrimitives.slate900,
     ),
     textTaskTitleLg: TextStyle(
-      fontFamily: TypePrimitives.fontFamily,
+      fontFamily: TypePrimitives.fontFamilySans,
       fontSize: TypePrimitives.size2,
       fontWeight: TypePrimitives.weightRegular,
       height: TypePrimitives.lineHeightNormal,
@@ -715,7 +821,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     // starting point for the "Task size" setting (see sizeTaskBadge's own
     // matching default comment).
     textTaskTitle: TextStyle(
-      fontFamily: TypePrimitives.fontFamily,
+      fontFamily: TypePrimitives.fontFamilySans,
       fontSize: TypePrimitives.size1,
       fontWeight: TypePrimitives.weightRegular,
       height: TypePrimitives.lineHeightNormal,
@@ -723,7 +829,9 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     ),
     // Default rung: one up from md (see textTaskTitle's own default
     // comment) — lg's own size, matching main.dart's _resolveTaskSize
-    // "one step up" mapping.
+    // "one step up" mapping. fontFamily stays monospace — see this
+    // field's own doc comment on the dual-font policy's zone-name
+    // carve-out.
     textTaskTitleZone: TextStyle(
       fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size2,
@@ -834,7 +942,8 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     spacingLg: SpacingPrimitives.space7,
     spacingXl: SpacingPrimitives.space9,
     spacingBlockGap: SpacingPrimitives.space3,
-    spacingScreenPadding: SpacingPrimitives.space7,
+    spacingScreenPadding: SpacingPrimitives.space5,
+    spacingHourGutter: SpacingPrimitives.space12,
     spacingContentTop: SpacingPrimitives.space7Point75,
     spacingMinTapTarget: 48.0,
     sizeMinFieldHeight: 60.0,
@@ -893,20 +1002,29 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       ),
     ],
     textHeadline: TextStyle(
-      fontFamily: TypePrimitives.fontFamily,
+      fontFamily: TypePrimitives.fontFamilySans,
       fontSize: TypePrimitives.size6,
       fontWeight: TypePrimitives.weightBold,
       height: TypePrimitives.lineHeightTight,
       color: ColorPrimitives.sand200,
     ),
     textTitle: TextStyle(
-      fontFamily: TypePrimitives.fontFamily,
+      fontFamily: TypePrimitives.fontFamilySans,
       fontSize: TypePrimitives.size4,
       fontWeight: TypePrimitives.weightSemibold,
       height: TypePrimitives.lineHeightTight,
       color: ColorPrimitives.sand200,
     ),
     textBody: TextStyle(
+      fontFamily: TypePrimitives.fontFamilySans,
+      fontSize: TypePrimitives.size3,
+      fontWeight: TypePrimitives.weightRegular,
+      height: TypePrimitives.lineHeightNormal,
+      color: ColorPrimitives.sand200,
+    ),
+    // See textBodyMono's own doc comment — identical to textBody above,
+    // monospace instead of sans.
+    textBodyMono: TextStyle(
       fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size3,
       fontWeight: TypePrimitives.weightRegular,
@@ -914,13 +1032,22 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       color: ColorPrimitives.sand200,
     ),
     textLabel: TextStyle(
-      fontFamily: TypePrimitives.fontFamily,
+      fontFamily: TypePrimitives.fontFamilySans,
       fontSize: TypePrimitives.size2,
       fontWeight: TypePrimitives.weightMedium,
       height: TypePrimitives.lineHeightNormal,
       color: ColorPrimitives.sand400,
     ),
     textCaption: TextStyle(
+      fontFamily: TypePrimitives.fontFamilySans,
+      fontSize: TypePrimitives.size1,
+      fontWeight: TypePrimitives.weightRegular,
+      height: TypePrimitives.lineHeightNormal,
+      color: ColorPrimitives.sand400,
+    ),
+    // See textCaptionMono's own doc comment — identical to textCaption
+    // above, monospace instead of sans.
+    textCaptionMono: TextStyle(
       fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size1,
       fontWeight: TypePrimitives.weightRegular,
@@ -930,21 +1057,21 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     // Each rung shifted one step down the type scale — see the light
     // palette's identical comment above for the full reasoning.
     textTaskTitleSm: TextStyle(
-      fontFamily: TypePrimitives.fontFamily,
+      fontFamily: TypePrimitives.fontFamilySans,
       fontSize: TypePrimitives.size0,
       fontWeight: TypePrimitives.weightRegular,
       height: TypePrimitives.lineHeightNormal,
       color: ColorPrimitives.sand200,
     ),
     textTaskTitleMd: TextStyle(
-      fontFamily: TypePrimitives.fontFamily,
+      fontFamily: TypePrimitives.fontFamilySans,
       fontSize: TypePrimitives.size1,
       fontWeight: TypePrimitives.weightRegular,
       height: TypePrimitives.lineHeightNormal,
       color: ColorPrimitives.sand200,
     ),
     textTaskTitleLg: TextStyle(
-      fontFamily: TypePrimitives.fontFamily,
+      fontFamily: TypePrimitives.fontFamilySans,
       fontSize: TypePrimitives.size2,
       fontWeight: TypePrimitives.weightRegular,
       height: TypePrimitives.lineHeightNormal,
@@ -954,13 +1081,15 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     // starting point for the "Task size" setting (see sizeTaskBadge's own
     // matching default comment).
     textTaskTitle: TextStyle(
-      fontFamily: TypePrimitives.fontFamily,
+      fontFamily: TypePrimitives.fontFamilySans,
       fontSize: TypePrimitives.size1,
       fontWeight: TypePrimitives.weightRegular,
       height: TypePrimitives.lineHeightNormal,
       color: ColorPrimitives.sand200,
     ),
     // One up from md — see the light palette's identical comment above.
+    // fontFamily stays monospace — see this field's own doc comment on
+    // the dual-font policy's zone-name carve-out.
     textTaskTitleZone: TextStyle(
       fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size2,
@@ -1018,6 +1147,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     double? spacingXl,
     double? spacingBlockGap,
     double? spacingScreenPadding,
+    double? spacingHourGutter,
     double? spacingContentTop,
     double? spacingMinTapTarget,
     double? sizeMinFieldHeight,
@@ -1048,8 +1178,10 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     TextStyle? textHeadline,
     TextStyle? textTitle,
     TextStyle? textBody,
+    TextStyle? textBodyMono,
     TextStyle? textLabel,
     TextStyle? textCaption,
+    TextStyle? textCaptionMono,
     TextStyle? textTaskTitleSm,
     TextStyle? textTaskTitleMd,
     TextStyle? textTaskTitleLg,
@@ -1097,6 +1229,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       spacingXl: spacingXl ?? this.spacingXl,
       spacingBlockGap: spacingBlockGap ?? this.spacingBlockGap,
       spacingScreenPadding: spacingScreenPadding ?? this.spacingScreenPadding,
+      spacingHourGutter: spacingHourGutter ?? this.spacingHourGutter,
       spacingContentTop: spacingContentTop ?? this.spacingContentTop,
       spacingMinTapTarget: spacingMinTapTarget ?? this.spacingMinTapTarget,
       sizeMinFieldHeight: sizeMinFieldHeight ?? this.sizeMinFieldHeight,
@@ -1127,8 +1260,10 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       textHeadline: textHeadline ?? this.textHeadline,
       textTitle: textTitle ?? this.textTitle,
       textBody: textBody ?? this.textBody,
+      textBodyMono: textBodyMono ?? this.textBodyMono,
       textLabel: textLabel ?? this.textLabel,
       textCaption: textCaption ?? this.textCaption,
+      textCaptionMono: textCaptionMono ?? this.textCaptionMono,
       textTaskTitleSm: textTaskTitleSm ?? this.textTaskTitleSm,
       textTaskTitleMd: textTaskTitleMd ?? this.textTaskTitleMd,
       textTaskTitleLg: textTaskTitleLg ?? this.textTaskTitleLg,
@@ -1244,6 +1379,11 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
         other.spacingScreenPadding,
         t,
       ),
+      spacingHourGutter: _lerpDouble(
+        spacingHourGutter,
+        other.spacingHourGutter,
+        t,
+      ),
       spacingContentTop: _lerpDouble(
         spacingContentTop,
         other.spacingContentTop,
@@ -1298,8 +1438,14 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       textHeadline: TextStyle.lerp(textHeadline, other.textHeadline, t)!,
       textTitle: TextStyle.lerp(textTitle, other.textTitle, t)!,
       textBody: TextStyle.lerp(textBody, other.textBody, t)!,
+      textBodyMono: TextStyle.lerp(textBodyMono, other.textBodyMono, t)!,
       textLabel: TextStyle.lerp(textLabel, other.textLabel, t)!,
       textCaption: TextStyle.lerp(textCaption, other.textCaption, t)!,
+      textCaptionMono: TextStyle.lerp(
+        textCaptionMono,
+        other.textCaptionMono,
+        t,
+      )!,
       textTaskTitleSm: TextStyle.lerp(
         textTaskTitleSm,
         other.textTaskTitleSm,

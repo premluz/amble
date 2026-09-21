@@ -41,6 +41,7 @@ import 'shared/providers/notification_tap_provider.dart';
 import 'shared/providers/task_providers.dart';
 import 'shared/providers/task_template_providers.dart';
 import 'shared/providers/preferences_providers.dart';
+import 'shared/providers/purchases_providers.dart';
 import 'shared/providers/tracked_behavior_providers.dart';
 import 'shared/providers/zone_providers.dart';
 
@@ -83,6 +84,34 @@ void main() async {
         ),
     ],
   );
+  // Registers the panta_pro entitlement listener (build() below) and fetches
+  // the current CustomerInfo once, so the first frame already has real
+  // entitlement data instead of waiting for a later change to arrive on the
+  // listener feed. Must run before runApp — same "resolve before first
+  // frame" posture as the notification service just below.
+  //
+  // Skipped entirely when purchases are unavailable — an unsupported
+  // platform (only iOS/Android have the SDK; this repo also builds macOS)
+  // or a build without the `--dart-define` keys. This block runs BEFORE
+  // `runApp`, so anything thrown here kills the app to a black screen
+  // with no UI to report it; purchases are not load-bearing for the rest
+  // of the app, so an unconfigured build runs normally without them and
+  // `isPantaProProvider` simply stays false. The Subscription screen
+  // shows its own "unavailable" state rather than a broken paywall.
+  final purchasesConfigured = await container
+      .read(purchasesRepositoryProvider)
+      .configure();
+  if (purchasesConfigured) {
+    container.read(pantaCustomerInfoProvider); // starts the listener
+    await container.read(pantaCustomerInfoProvider.notifier).refresh();
+  } else {
+    debugPrint(
+      'RevenueCat not configured — purchases disabled for this build. '
+      'Pass --dart-define=REVENUECAT_IOS_API_KEY=... and/or '
+      '--dart-define=REVENUECAT_ANDROID_API_KEY=... to enable them.',
+    );
+  }
+
   final notificationService = container.read(notificationServiceProvider);
   await notificationService.initialize(
     onNotificationTap: (taskId) =>
@@ -392,11 +421,18 @@ ThemeData _themeDataFor(AmbleTheme palette, Brightness brightness) {
     // mismatch. See the elevation tests in test/core/tokens/.
     scaffoldBackgroundColor: palette.colorSurfaceTimeline,
     // App-wide font fallback — every text style built from `AmbleTheme`'s
-    // own tokens already carries `TypePrimitives.fontFamily` explicitly
-    // (see semantic_theme.dart), but this covers default Material text
-    // that ISN'T one of ours (an AlertDialog action, a SnackBar) so
-    // nothing on screen falls back to the platform default font.
-    fontFamily: TypePrimitives.fontFamily,
+    // own tokens already carries an explicit `TypePrimitives.fontFamily`/
+    // `fontFamilySans` (see semantic_theme.dart), but this covers default
+    // Material text that ISN'T one of ours (an AlertDialog action, a
+    // SnackBar) so nothing on screen falls back to the platform default
+    // font.
+    //
+    // **2026-09-21 — fontFamilySans (DM Sans), not fontFamily (mono).**
+    // Per the dual-font policy, un-tokenized text defaults to sans —
+    // nothing un-tokenized in this app is inherently numeric/temporal, so
+    // there is no risk of silently defaulting a value display to the
+    // wrong font.
+    fontFamily: TypePrimitives.fontFamilySans,
     extensions: [palette],
   );
 }

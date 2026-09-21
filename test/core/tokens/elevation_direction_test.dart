@@ -92,17 +92,26 @@ void main() {
   group('light mode surface separation', () {
     final light = AmbleTheme.light;
 
-    test('the overlay is visibly lighter than the base, not merely equal', () {
-      final ratio = contrastRatio(
-        light.colorSurfaceOverlay,
-        light.colorSurfaceBase,
-      );
+    // **2026-09-20 — relaxed from a minimum contrast ratio to "not
+    // identical."** The palette pass landed `colorSurfaceBase` on
+    // #F1F0EC ("paper"), deliberately close to white — confirmed
+    // directly: "nothing is lighter than #FFFFFF... reserve white for
+    // floating chrome, and use a fine border on cards plus a soft shadow
+    // beneath floating controls. That creates separation without making
+    // the whole interface darker." Base and overlay are meant to sit
+    // close in lightness now, with colorBorder/shadowPane (not a bigger
+    // lightness gap) doing the actual separating — so this only pins the
+    // real historical bug (the two being the SAME value), not a specific
+    // ratio between two close-but-genuinely-distinct tones.
+    test('the overlay is a genuinely distinct color from the base, even '
+        'though both sit close in lightness by design', () {
       expect(
-        ratio,
-        greaterThan(1.15),
+        light.colorSurfaceOverlay,
+        isNot(equals(light.colorSurfaceBase)),
         reason:
-            'overlay vs base is ${ratio.toStringAsFixed(3)}:1 — too close '
-            'to read as a separate surface',
+            'base and overlay must not be byte-identical, even though '
+            'colorBorder/shadowPane (not a lightness gap) now do the '
+            'actual separating work',
       );
     });
 

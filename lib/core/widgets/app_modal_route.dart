@@ -67,3 +67,52 @@ Future<T?> pushAppSheetRoute<T>(BuildContext context, WidgetBuilder builder) {
     ),
   );
 }
+
+/// How far up a full-screen route starts, as a fraction of its own
+/// height — much smaller than [_sheetEntranceOffset]: this fills the
+/// whole screen, so it should read as arriving immediately, not
+/// revealing from halfway the way a sheet does.
+const double _fullScreenEntranceOffset = 0.15;
+
+/// Pushes [builder] as a true full-screen takeover — [AmbleTheme]'s first
+/// full-screen (not slide-up-sheet) modal convention, added for the
+/// voice-capture flow (`voice_capture_screen.dart`) and meant to be
+/// reused by any future full-screen feature rather than each inventing
+/// its own transition.
+///
+/// Shares [pushAppSheetRoute]'s easing/timing tokens
+/// ([AmbleTheme.curveDecelerate]/[AmbleTheme.curveStandard],
+/// [AmbleTheme.motionNormal]/[AmbleTheme.motionFast]) so every modal in
+/// the app accelerates and decelerates the same way — only the shape of
+/// the transition differs: `opaque: true` (a full-screen page has nothing
+/// left showing behind it, so no scrim/barrier color is needed) and a
+/// much smaller slide offset ([_fullScreenEntranceOffset]) since the page
+/// already covers the screen rather than revealing from partway up.
+Future<T?> pushFullScreenRoute<T>(BuildContext context, WidgetBuilder builder) {
+  final theme = Theme.of(context).extension<AmbleTheme>()!;
+  return Navigator.of(context).push<T>(
+    PageRouteBuilder<T>(
+      opaque: true,
+      transitionDuration: theme.motionNormal,
+      reverseTransitionDuration: theme.motionFast,
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: theme.curveDecelerate,
+          reverseCurve: theme.curveStandard,
+        );
+        return FadeTransition(
+          opacity: curved,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, _fullScreenEntranceOffset),
+              end: Offset.zero,
+            ).animate(curved),
+            child: child,
+          ),
+        );
+      },
+      pageBuilder: (context, animation, secondaryAnimation) => builder(context),
+    ),
+  );
+}

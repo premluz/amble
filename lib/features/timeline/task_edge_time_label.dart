@@ -76,7 +76,8 @@ class TaskEdgeTimeLabel extends StatelessWidget {
       ),
       child: Text(
         time.format(context),
-        style: theme.textCaption.copyWith(
+        // textCaptionMono — a time label, not a name.
+        style: theme.textCaptionMono.copyWith(
           color: theme.colorSurfacePrimary,
           fontWeight: FontWeight.w700,
         ),

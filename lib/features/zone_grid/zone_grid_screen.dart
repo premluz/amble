@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/app_bottom_dock.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_floating_create_button.dart';
 import '../../core/widgets/app_option_switch_option.dart';
@@ -20,6 +21,7 @@ import '../../shared/services/zone_group_move.dart';
 import '../../shared/services/zone_selection_order.dart';
 import '../timeline/edit_mode_provider.dart';
 import '../timeline/edit_selection_provider.dart';
+import '../timeline/pending_task_draft_provider.dart';
 import '../timeline/task_edge_time_label.dart';
 import '../timeline/timeline_pinch_zoom.dart';
 import '../timeline/timeline_screen.dart';
@@ -86,9 +88,20 @@ const _axisWidth = 60.0;
 ///
 /// The two tab bodies are the pre-existing, otherwise-unmodified
 /// screens — this class does not merge their gesture/state systems, it
-/// swaps which one is visible. `TimelineScreen` is rendered with
-/// `showHeader: false` so its own Edit-Mode-collapsed header (just a
-/// close button) doesn't duplicate this screen's own top row.
+/// swaps which one is visible.
+///
+/// **2026-09-20 — top row reduced to a bare Tasks/Zones tab switch, no
+/// icons.** Requested directly: "in edit mode on top we should only
+/// have 2 tabs task and zones and close on the bottom tool nav... in
+/// zones edit and close (close on the leftmost)." Close (both tabs) and
+/// Edit (Zones tab only) moved into a floating bottom dock
+/// (`AppDockPane`/`AppDockIconButton`, matching the Day screen's own
+/// `AppBottomDock` visual language), Close always leftmost. The Tasks
+/// tab's embedded `TimelineScreen` also went back to `showHeader: true`
+/// (its own default) — a separate direct request: "Tasks edit mode
+/// should also have calendar" — with
+/// `calendarHeaderShowsCloseButton: false` so `AppCalendarHeader`'s own
+/// Edit-Mode close (X) doesn't duplicate the new bottom-dock Close.
 class ZoneGridScreen extends ConsumerStatefulWidget {
   const ZoneGridScreen({super.key, this.initialTab = ZoneGridTab.tasks});
 
@@ -183,6 +196,32 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
     // Same reasoning as `initState` above — this runs from an event
     // handler, not build, so no post-frame deferral is needed here.
     _syncEditMode();
+  }
+
+  /// Closes this screen, turning Edit Mode off FIRST so the Day screen
+  /// underneath never renders a frame with it still on.
+  ///
+  /// Reported directly: closing the Edit screen briefly flashed a
+  /// container between the top nav and the calendar, carrying an
+  /// accent-bordered circular button with no icon in it. That is
+  /// `AppCalendarHeader`'s own Edit-Mode close (X) row — the Day screen
+  /// sits mounted underneath this one (`main.dart`'s `IndexedStack`) and
+  /// watches the same `editModeEnabledProvider`, so while the flag is
+  /// still true it renders that row, and the glyph swaps a frame after
+  /// the accent border paints.
+  ///
+  /// [dispose] also resets the flag, but only via `scheduleMicrotask` —
+  /// Riverpod refuses writes during the pop's tree-finalize pass, so that
+  /// reset lands one frame LATE, which is the frame being seen. Doing it
+  /// here, from an ordinary event handler, means the flag is already
+  /// false before the pop reveals anything. `dispose`'s own reset stays
+  /// as the backstop for the paths that never touch this button (system
+  /// back, the iOS swipe gesture).
+  void _close() {
+    if (ref.read(editModeEnabledProvider)) {
+      ref.read(editModeEnabledProvider.notifier).toggle();
+    }
+    Navigator.of(context).pop();
   }
 
   @override
@@ -591,36 +630,71 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
       return Scaffold(
         backgroundColor: theme.colorSurfacePrimary,
         body: SafeArea(
-          child: Column(
+          bottom: false,
+          child: Stack(
             children: [
-              Padding(
-                padding: EdgeInsets.all(theme.spacingMd),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: AppTabSwitch<ZoneGridTab>(
-                        options: _zoneGridTabOptions,
-                        value: _tab,
-                        onChanged: _switchTab,
-                      ),
+              Column(
+                children: [
+                  // **2026-09-20 — bare tab switch, no icons.** Requested
+                  // directly: "in edit mode on top we should only have 2
+                  // tabs task and zones" — Close (and, on the Zones tab,
+                  // Edit) moved to a bottom dock instead (see below).
+                  Padding(
+                    padding: EdgeInsets.all(theme.spacingMd),
+                    child: AppTabSwitch<ZoneGridTab>(
+                      options: _zoneGridTabOptions,
+                      value: _tab,
+                      onChanged: _switchTab,
                     ),
-                    SizedBox(width: theme.spacingSm),
-                    AppButton(
-                      icon: Icons.close_rounded,
-                      shape: AppButtonShape.circle,
-                      variant: AppButtonVariant.secondary,
-                      tooltip: 'Close',
-                      onPressed: () => Navigator.of(context).pop(),
+                  ),
+                  // **2026-09-20 — the calendar is back.** Requested
+                  // directly: "Tasks edit mode should also have
+                  // calendar." `showHeader` flips true so `TimelineScreen`
+                  // renders its own `AppCalendarHeader` again (Today +
+                  // the date accordion, via that header's own
+                  // Edit-Mode-collapsed branch — `editModeEnabledProvider`
+                  // is already forced on for this tab by `_syncEditMode`).
+                  // `showCloseButton: false` on the embedded
+                  // `TimelineScreen`... see that widget's own field —
+                  // this screen's Close now lives in the bottom dock
+                  // instead, so the header's own X would be a duplicate.
+                  const Expanded(
+                    child: TimelineScreen(
+                      mode: TimelineDisplayMode.spatial,
+                      calendarHeaderShowsCloseButton: false,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              const Expanded(
-                child: TimelineScreen(
-                  mode: TimelineDisplayMode.spatial,
-                  showHeader: false,
+              // **2026-09-20 — hidden while a quick-create draft is
+              // live.** Reported directly: this dock painted on top of
+              // the tap-empty-space mini sheet, which is an in-tree
+              // overlay nested inside the embedded `TimelineScreen`
+              // above, not a pushed route — Stack paint order always
+              // puts a later sibling (this dock) above an entire earlier
+              // sibling's subtree, regardless of how deep the mini sheet
+              // sits inside it. Matches the Day screen's own identical
+              // gate on `AppBottomDock` (`pendingTaskDraftProvider`).
+              if (ref.watch(pendingTaskDraftProvider) == null)
+                Positioned(
+                  left: theme.spacingMd,
+                  bottom: theme.spacingMd,
+                  child: SafeArea(
+                    top: false,
+                    child: AppDockPane(
+                      theme: theme,
+                      children: [
+                        AppDockIconButton(
+                          theme: theme,
+                          icon: Icons.close_rounded,
+                          tooltip: 'Close',
+                          selected: false,
+                          onTap: _close,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
             ],
           ),
         ),
@@ -642,43 +716,15 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
           SafeArea(
             child: Column(
               children: [
+                // **2026-09-20 — bare tab switch, no icons.** See this
+                // class's own doc comment for the full change — Edit and
+                // Close moved to a bottom dock below.
                 Padding(
                   padding: EdgeInsets.all(theme.spacingMd),
-                  child: Row(
-                    children: [
-                      // Tasks / Zones tab chrome — 2026-09-17, was "Events" /
-                      // "Zones" with Events reserved and non-interactive; see
-                      // `zone_grid_tab.dart`'s own doc comment for the rename.
-                      Expanded(
-                        child: AppTabSwitch<ZoneGridTab>(
-                          options: _zoneGridTabOptions,
-                          value: _tab,
-                          onChanged: _switchTab,
-                        ),
-                      ),
-                      SizedBox(width: theme.spacingSm),
-                      AppButton(
-                        icon: _editing
-                            ? Icons.check_rounded
-                            : Icons.edit_outlined,
-                        shape: AppButtonShape.circle,
-                        variant: AppButtonVariant.secondary,
-                        tooltip: _editing ? 'Finish editing' : 'Edit zones',
-                        onPressed: () {
-                          _cancelPaint();
-                          ref.read(zoneEditSelectionProvider.notifier).clear();
-                          setState(() => _editing = !_editing);
-                        },
-                      ),
-                      SizedBox(width: theme.spacingSm),
-                      AppButton(
-                        icon: Icons.close_rounded,
-                        shape: AppButtonShape.circle,
-                        variant: AppButtonVariant.secondary,
-                        tooltip: 'Close zones',
-                        onPressed: () => Navigator.of(context).pop(),
-                      ),
-                    ],
+                  child: AppTabSwitch<ZoneGridTab>(
+                    options: _zoneGridTabOptions,
+                    value: _tab,
+                    onChanged: _switchTab,
                   ),
                 ),
                 if (selected.isNotEmpty)
@@ -1232,6 +1278,46 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                 _scrollPendingIntoView(start);
               },
             ),
+          // **2026-09-20 — Close (leftmost) and Edit, in a floating
+          // bottom dock.** Requested directly: "in zones edit and close
+          // (close on the leftmost)" — matching the Tasks tab's own new
+          // dock (Close alone) and the Day screen's `AppBottomDock`
+          // visual language.
+          Positioned(
+            left: theme.spacingMd,
+            bottom: theme.spacingMd,
+            child: SafeArea(
+              top: false,
+              child: AppDockPane(
+                theme: theme,
+                children: [
+                  AppDockIconButton(
+                    theme: theme,
+                    icon: Icons.close_rounded,
+                    tooltip: 'Close zones',
+                    selected: false,
+                    onTap: _close,
+                  ),
+                  AppDockIconButton(
+                    theme: theme,
+                    icon: _editing ? Icons.check_rounded : Icons.edit_outlined,
+                    tooltip: _editing ? 'Finish editing' : 'Edit zones',
+                    selected: _editing,
+                    onTap: () {
+                      _cancelPaint();
+                      ref.read(zoneEditSelectionProvider.notifier).clear();
+                      setState(() => _editing = !_editing);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // **2026-09-20 — moved AFTER the bottom dock above.** Reported
+          // directly: the dock painted on top of this sheet while naming
+          // a new zone, since both are plain `Positioned` siblings in the
+          // same `Stack` and the dock used to come last. Stack children
+          // paint in order, so the sheet now comes last instead.
           if (_pending case final target?)
             NewZoneSheet(
               key: ValueKey(target),

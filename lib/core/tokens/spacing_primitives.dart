@@ -30,4 +30,13 @@ abstract final class SpacingPrimitives {
   /// [space10] free for "xl".
   static const space9Point5 = 48.0;
   static const space10 = 56.0;
+
+  /// The Timeline's hour gutter (`AmbleTheme.spacingHourGutter`) — how far
+  /// a task pill or zone card sits from the true screen edge, leaving room
+  /// for the hour labels beside it. Well above the general-purpose rungs
+  /// because it measures a reserved COLUMN, not a gap between elements;
+  /// its value is set by the widest hour label ("12:00 PM") plus the side
+  /// inset on either side of it, and it was already the de-facto 90 in
+  /// both Timeline views before becoming a token.
+  static const space12 = 90.0;
 }

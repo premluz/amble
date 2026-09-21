@@ -47,4 +47,22 @@ abstract final class FeatureFlags {
     'zone',
     defaultValue: true,
   );
+
+  /// Gates the RevenueCat subscription UI surface: Settings' "Subscription"
+  /// row and the paywall/Customer Center entry points it reaches. The
+  /// underlying `panta_pro` entitlement check itself is not gated — same
+  /// "data layer always dormant-active, only the UI entry point is
+  /// switched" posture as every other flag here. See docs/SCOPE.md's
+  /// subscription entry for why this was confirmed as an explicit scope
+  /// addition before building.
+  ///
+  /// **Default ON**, confirmed directly.
+  ///
+  /// ```
+  /// flutter run --dart-define=subscription=false
+  /// ```
+  static const bool subscriptionEnabled = bool.fromEnvironment(
+    'subscription',
+    defaultValue: true,
+  );
 }

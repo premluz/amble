@@ -16,6 +16,7 @@ import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_date_accordion.dart';
 import '../../shared/providers/preferences_providers.dart';
 import '../zone_grid/zone_grid_screen.dart';
+import 'date_accordion_expanded_provider.dart';
 import 'edit_mode_provider.dart';
 import 'selected_date_provider.dart';
 
@@ -51,14 +52,28 @@ DateTime _dateOnly(DateTime date) => DateTime(date.year, date.month, date.day);
 /// have that comp"), reversing an earlier pass that hid this whole
 /// header (including its date controls) the instant Edit Mode turned on.
 class AppCalendarHeader extends ConsumerWidget {
-  const AppCalendarHeader({super.key});
+  const AppCalendarHeader({super.key, this.showCloseButton = true});
+
+  /// Whether the Edit-Mode-collapsed branch renders its own close (X)
+  /// toggle. Defaults true (the Day screen's own usage, unaffected).
+  /// `ZoneGridScreen`'s Tasks tab passes `false` — that screen has its
+  /// OWN Close button in its bottom dock, and a second one here would be
+  /// a duplicate close control. Has no effect outside Edit Mode (the
+  /// normal-mode branch never rendered this button in the first place).
+  final bool showCloseButton;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     final editModeEnabled = ref.watch(editModeEnabledProvider);
     final selectedDate = ref.watch(selectedDateProvider);
-    final today = _dateOnly(DateTime.now());
+    // **2026-09-20 — shared across every AppCalendarHeader mount.**
+    // Requested directly: "the calendar opened state should persist
+    // across views... if days opened on timeline view they should
+    // remain open on edit mode... and both spatial and non-spatial
+    // view." See `DateAccordionExpanded`'s own doc comment for why this
+    // moved off `AppDateAccordion`'s internal `State`.
+    final accordionExpanded = ref.watch(dateAccordionExpandedProvider);
 
     // **2026-09-20 — the date accordion stays visible in Edit Mode too.**
     // Requested directly: "on edit task mode, we should still have that
@@ -80,14 +95,27 @@ class AppCalendarHeader extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Spacer(),
-                _EditModeIconButton(theme: theme),
-              ],
-            ),
-            SizedBox(height: theme.spacingSm),
+            // **2026-09-20 — Today button removed from Edit Mode again.**
+            // Requested directly: "on edit task we show button with
+            // number 'today's day' that resets to current day, this
+            // button should not be there." Reverses the immediately
+            // prior "Today restored in Edit Mode" change from earlier
+            // this same session. With no button left in this row and
+            // `showCloseButton` now often false too (the merged Edit
+            // screen's Tasks tab), the whole `Row` + its own trailing
+            // gap would otherwise survive as an empty "larger pane"
+            // above the accordion — also flagged directly — so both are
+            // gone together, not just the button.
+            if (showCloseButton) ...[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Spacer(),
+                  _EditModeIconButton(theme: theme),
+                ],
+              ),
+              SizedBox(height: theme.spacingSm),
+            ],
             // Full width, not squeezed beside the icon row above — see
             // this file's own class doc comment on why the accordion's
             // expanded week strip needs to be a full-width SIBLING of the
@@ -96,6 +124,9 @@ class AppCalendarHeader extends ConsumerWidget {
               selectedDate: selectedDate,
               onDateSelected: (date) =>
                   ref.read(selectedDateProvider.notifier).goTo(date),
+              expanded: accordionExpanded,
+              onExpandedChanged: (_) =>
+                  ref.read(dateAccordionExpandedProvider.notifier).toggle(),
             ),
           ],
         ),
@@ -105,13 +136,20 @@ class AppCalendarHeader extends ConsumerWidget {
     // Laid out so the date label lands on exactly the y and x every
     // other page's own title sits at — requested directly: "title of
     // page jumps... the calendar month dropdown should be positioned
-    // same place as title of other pages." The outer top padding is
-    // `spacingLg`, matching Inbox/Tracked/Settings' own page titles,
-    // rather than the tighter `spacingSm` this header used to use.
+    // same place as title of other pages."
+    //
+    // **2026-09-21 — `spacingMd`, was `spacingLg`.** Requested directly
+    // against a side-by-side mock: "slightly less space between the main
+    // menu and the calendar." This deliberately breaks the
+    // same-y-as-other-page-titles rule above, for this screen only —
+    // confirmed via AskUserQuestion over the alternative of moving
+    // Inbox/Tracked/Settings up by the same amount to keep all four
+    // aligned. Those pages are unchanged; the Day screen's date label now
+    // sits slightly higher than their titles.
     return Padding(
       padding: EdgeInsets.fromLTRB(
         theme.spacingScreenPadding,
-        theme.spacingLg,
+        theme.spacingMd,
         theme.spacingScreenPadding,
         theme.spacingSm,
       ),
@@ -165,6 +203,9 @@ class AppCalendarHeader extends ConsumerWidget {
             selectedDate: selectedDate,
             onDateSelected: (date) =>
                 ref.read(selectedDateProvider.notifier).goTo(date),
+            expanded: accordionExpanded,
+            onExpandedChanged: (_) =>
+                ref.read(dateAccordionExpandedProvider.notifier).toggle(),
           ),
         ],
       ),
@@ -191,7 +232,8 @@ class _TodayButton extends ConsumerWidget {
       onPressed: () => ref.read(selectedDateProvider.notifier).goToToday(),
       child: Text(
         '${today.day}',
-        style: theme.textCaption.copyWith(
+        // textCaptionMono — a day number, not a name.
+        style: theme.textCaptionMono.copyWith(
           color: theme.colorTextPrimary,
           fontWeight: FontWeight.w700,
         ),

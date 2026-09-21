@@ -251,6 +251,16 @@ abstract class _$DevTimelineTaskDurationVisible extends $Notifier<bool> {
 /// "show time off as default"), reversing its original launch default
 /// (which matched List view's previous always-shown time range before
 /// this toggle existed).
+///
+/// **Briefly flipped to ON on 2026-09-20**, then reverted back to OFF the
+/// same day (confirmed directly — "should be disabled as default"). The
+/// actual gap that prompted the earlier flip — an imported calendar
+/// event's own start time never showing at all in Zone/List view — was a
+/// real bug, but the fix for it was alignment, not this toggle: imported
+/// events weren't sharing native tasks' own left-escaping
+/// [ZoneRowTimeLabel] position at all (see that fix's own entry). This
+/// toggle's default going back to OFF is unrelated to that fix and does
+/// not reopen it.
 
 @ProviderFor(DevTimelineTaskTimeRangeVisible)
 final devTimelineTaskTimeRangeVisibleProvider =
@@ -266,6 +276,16 @@ final devTimelineTaskTimeRangeVisibleProvider =
 /// "show time off as default"), reversing its original launch default
 /// (which matched List view's previous always-shown time range before
 /// this toggle existed).
+///
+/// **Briefly flipped to ON on 2026-09-20**, then reverted back to OFF the
+/// same day (confirmed directly — "should be disabled as default"). The
+/// actual gap that prompted the earlier flip — an imported calendar
+/// event's own start time never showing at all in Zone/List view — was a
+/// real bug, but the fix for it was alignment, not this toggle: imported
+/// events weren't sharing native tasks' own left-escaping
+/// [ZoneRowTimeLabel] position at all (see that fix's own entry). This
+/// toggle's default going back to OFF is unrelated to that fix and does
+/// not reopen it.
 final class DevTimelineTaskTimeRangeVisibleProvider
     extends $NotifierProvider<DevTimelineTaskTimeRangeVisible, bool> {
   /// List view only — the `04:20 - 05:20`-style time range per row.
@@ -278,6 +298,16 @@ final class DevTimelineTaskTimeRangeVisibleProvider
   /// "show time off as default"), reversing its original launch default
   /// (which matched List view's previous always-shown time range before
   /// this toggle existed).
+  ///
+  /// **Briefly flipped to ON on 2026-09-20**, then reverted back to OFF the
+  /// same day (confirmed directly — "should be disabled as default"). The
+  /// actual gap that prompted the earlier flip — an imported calendar
+  /// event's own start time never showing at all in Zone/List view — was a
+  /// real bug, but the fix for it was alignment, not this toggle: imported
+  /// events weren't sharing native tasks' own left-escaping
+  /// [ZoneRowTimeLabel] position at all (see that fix's own entry). This
+  /// toggle's default going back to OFF is unrelated to that fix and does
+  /// not reopen it.
   DevTimelineTaskTimeRangeVisibleProvider._()
     : super(
         from: null,
@@ -318,6 +348,16 @@ String _$devTimelineTaskTimeRangeVisibleHash() =>
 /// "show time off as default"), reversing its original launch default
 /// (which matched List view's previous always-shown time range before
 /// this toggle existed).
+///
+/// **Briefly flipped to ON on 2026-09-20**, then reverted back to OFF the
+/// same day (confirmed directly — "should be disabled as default"). The
+/// actual gap that prompted the earlier flip — an imported calendar
+/// event's own start time never showing at all in Zone/List view — was a
+/// real bug, but the fix for it was alignment, not this toggle: imported
+/// events weren't sharing native tasks' own left-escaping
+/// [ZoneRowTimeLabel] position at all (see that fix's own entry). This
+/// toggle's default going back to OFF is unrelated to that fix and does
+/// not reopen it.
 
 abstract class _$DevTimelineTaskTimeRangeVisible extends $Notifier<bool> {
   bool build();

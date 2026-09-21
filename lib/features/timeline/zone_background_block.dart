@@ -518,7 +518,13 @@ class ZoneNameLabel extends StatelessWidget {
           child: Center(
             child: Text(
               zone.title,
-              style: theme.textCaption.copyWith(color: theme.colorTextTertiary),
+              // textCaptionMono, not textCaption — a zone NAME, the one
+              // explicit carve-out in the dual-font policy (2026-09-21):
+              // zone names stay monospace even though the rest of this
+              // token's call sites moved to DM Sans.
+              style: theme.textCaptionMono.copyWith(
+                color: theme.colorTextTertiary,
+              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),

@@ -79,11 +79,20 @@ class AppBadgeChip extends StatelessWidget {
     final isSelectable = selected != null;
 
     final content = Stack(
+      // Centered, not the default topStart — a caller that constrains
+      // this chip to a fixed height taller than its own content (e.g.
+      // TemplateChipStrip's SizedBox) otherwise pins the Padding+Row to
+      // the top, misaligning the badge/label against the chip's own
+      // rounded fill. Reported directly against the quick-create sheet's
+      // template chips.
+      alignment: Alignment.center,
       children: [
         Padding(
+          // `spacingXs / 2`, not `spacingXs` — requested directly: the
+          // quick-create sheet's template chips read too tall top/bottom.
           padding: EdgeInsets.symmetric(
-            horizontal: theme.spacingMd,
-            vertical: theme.spacingXs,
+            horizontal: theme.spacingSm,
+            vertical: theme.spacingXs / 2,
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,

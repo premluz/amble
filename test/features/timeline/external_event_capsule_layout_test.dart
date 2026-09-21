@@ -13,8 +13,15 @@ import 'package:amble/shared/models/external_calendar_event.dart';
 ///
 /// The equivalent native-task invariant lives in
 /// `task_capsule_title_alignment_test.dart`; this is the imported-event
-/// side of the same "title is level with its icon" rule, which the user
-/// asked to be consistent across both views.
+/// side of the same rule, which the user asked to be consistent across
+/// both views.
+///
+/// **What "consistent" means here changed 2026-09-21** — see the first
+/// test's own comment. Each block kind passing its OWN centring test is
+/// not enough, because the two centre against different regions and so
+/// rest at different offsets; `imported_vs_native_title_alignment_test
+/// .dart` mounts both and compares them, which is the check that actually
+/// catches the reported misalignment.
 void main() {
   Future<void> pumpEvent(
     WidgetTester tester, {
@@ -54,34 +61,46 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets(
-    'an imported event\'s title is vertically centred on its own dashed '
-    'badge icon, at every duration',
-    (tester) async {
-      final offsets = <int, double>{};
-      for (final durationMinutes in [15, 30, 90, 180]) {
-        await pumpEvent(tester, durationMinutes: durationMinutes);
+  // **2026-09-21 — the target offset is no longer 0.** This used to
+  // assert the title sat within 1px of its own icon's centre. Reported
+  // directly, repeatedly, from device screenshots: an imported event's
+  // label still did not line up with a NATIVE task's beside it — because
+  // the native one does not rest at 0 either. It centres within
+  // `spacingMinTapTarget` (48px, its checkbox tap target) rather than the
+  // badge alone, and so rests 2px below its own icon's centre.
+  //
+  // "Level with its own icon" was therefore the wrong invariant: the one
+  // that matters is "rests where a native task's title rests," which
+  // `imported_vs_native_title_alignment_test.dart` now pins by mounting
+  // both kinds and comparing them. This test keeps the other half of the
+  // original guarantee — that the offset is CONSTANT across durations,
+  // never drifting down a long rail.
+  testWidgets('an imported event\'s title holds a constant offset from its own '
+      'dashed badge icon — the same one a native task\'s title holds, at '
+      'every duration', (tester) async {
+    final offsets = <int, double>{};
+    for (final durationMinutes in [15, 30, 90, 180]) {
+      await pumpEvent(tester, durationMinutes: durationMinutes);
 
-        final icon = tester.getRect(find.byType(Icon));
-        final title = tester.getRect(
-          find.textContaining('Daily sync', findRichText: true),
-        );
-        offsets[durationMinutes] = title.center.dy - icon.center.dy;
-      }
+      final icon = tester.getRect(find.byType(Icon));
+      final title = tester.getRect(
+        find.textContaining('Daily sync', findRichText: true),
+      );
+      offsets[durationMinutes] = title.center.dy - icon.center.dy;
+    }
 
-      for (final entry in offsets.entries) {
-        expect(
-          entry.value.abs(),
-          lessThan(1.0),
-          reason:
-              'at ${entry.key}m the title centre sat ${entry.value}px from '
-              'the icon centre — it must be level with the icon, not '
-              'pinned to the badge\'s top (measured at -4.0 before this '
-              'fix). All offsets: $offsets',
-        );
-      }
-    },
-  );
+    for (final entry in offsets.entries) {
+      expect(
+        entry.value,
+        moreOrLessEquals(offsets.values.first, epsilon: 1.0),
+        reason:
+            'at ${entry.key}m the title sat ${entry.value}px from the '
+            'icon centre, against ${offsets.values.first}px at the '
+            'shortest duration — the offset must not drift with the '
+            'rail\'s length. All offsets: $offsets',
+      );
+    }
+  });
 
   // Requested directly: "imported tasks on timeline (spatial view) should
   // also adopt length of pill to their duration, at the moment they are

@@ -10,6 +10,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
+import 'package:amble/core/widgets/app_date_accordion.dart';
+import 'package:amble/core/widgets/app_press_feedback.dart';
 import 'package:amble/features/timeline/app_calendar_header.dart';
 import 'package:amble/features/timeline/edit_mode_provider.dart';
 import 'package:amble/features/timeline/selected_date_provider.dart';
@@ -17,7 +19,7 @@ import 'package:amble/shared/providers/preferences_providers.dart';
 
 /// Covers `AppCalendarHeader` in isolation — the shared top calendar bar
 /// ("jump to today" button, sync placeholder, Edit Mode pen-icon toggle,
-/// and the [AppDateAccordion] date label + collapsible Sun-Sat week grid)
+/// and the [AppDateAccordion] date label + collapsible Mon-Sun week grid)
 /// introduced 2026-09-12 to replace the old bottom `DayStrip`'s
 /// day-navigation half. See docs/DECISIONS.md's matching entry for the
 /// full confirmed scope, and `AppDateAccordion`'s own doc comment for the
@@ -80,7 +82,7 @@ void main() {
     },
   );
 
-  testWidgets('tapping the date label reveals a full Sun-Sat week grid — 7 day '
+  testWidgets('tapping the date label reveals a full Mon-Sun week grid — 7 day '
       'cells, one per weekday header letter', (tester) async {
     await pumpHeader(tester);
 
@@ -242,11 +244,14 @@ void main() {
     await tester.tap(find.byIcon(Icons.keyboard_arrow_down_rounded));
     await tester.pumpAndSettle();
 
-    // The grid's Sunday cell for this week is 2026-09-06.
-    await tester.tap(find.text('6'));
+    // The grid's MONDAY cell for this week is 2026-09-07 — the strip is
+    // Monday-first as of 2026-09-21 (requested directly: "the order
+    // should start from Monday"). It was 2026-09-06, that week's Sunday,
+    // while the strip still led with Sunday.
+    await tester.tap(find.text('7'));
     await tester.pump();
 
-    expect(container.read(selectedDateProvider), DateTime(2026, 9, 6));
+    expect(container.read(selectedDateProvider), DateTime(2026, 9, 7));
   });
 
   // Requested directly: "top calendar (week view) on timeline and task
@@ -291,6 +296,135 @@ void main() {
     final unselectedDay = dayTexts.firstWhere((t) => t.data != '6');
     expect(selectedDay.style?.fontWeight, FontWeight.w700);
     expect(unselectedDay.style?.fontWeight, FontWeight.w500);
+  });
+
+  // **The spread rule, the ordering, and the one-cell hit target, all
+  // pinned here.** Requested directly against side-by-side mocks: "both
+  // Monday is aligned with the left edge, and Sunday is aligned with the
+  // right edge," "the order should start from Monday," and "the hit area
+  // should include day label M T W etc., and active/hover should be [a
+  // stadium] including day label."
+  //
+  // This replaces three earlier tests that each encoded a superseded
+  // rule — one asserting the first/last LETTER boxes reached the content
+  // edges (true the whole time, while the day NUMBERS underneath sat
+  // inset, so it never caught the reported bug), one asserting 7 equal
+  // columns with every cell centred (an even division, but its outermost
+  // centres sit half a column in by construction), and one asserting the
+  // first/last NUMBERS were flush.
+  //
+  // The number is no longer the thing that reaches the edge: each cell is
+  // now a stadium spanning its letter AND its number, and it is the PILL
+  // that sits flush, with the number inset by the pill's own padding.
+  // That is what the mock shows, and what makes the whole column one tap
+  // target.
+  testWidgets(
+    'the week runs Monday-first, with the first and last day PILLS flush '
+    'to the content edges and each pill covering its letter and number',
+    (tester) async {
+      // A Thursday, so the week is unambiguous and the strip's own
+      // Monday/Sunday are known dates rather than whatever today is.
+      final anchor = DateTime(2026, 9, 10);
+      await pumpHeader(tester, initialDate: anchor);
+      await tester.tap(find.byIcon(Icons.keyboard_arrow_down_rounded));
+      await tester.pumpAndSettle();
+
+      final contentRect = tester.getRect(find.byType(AppDateAccordion));
+
+      // Mon 2026-09-07 through Sun 2026-09-13. The pill is the
+      // `DecoratedBox` wrapping each day's own column.
+      Rect pillAround(String dayNumber) => tester.getRect(
+        find
+            .ancestor(
+              of: find.text(dayNumber),
+              matching: find.byType(DecoratedBox),
+            )
+            .first,
+      );
+      final mondayPill = pillAround('7');
+      final sundayPill = pillAround('13');
+
+      expect(
+        mondayPill.left,
+        moreOrLessEquals(contentRect.left, epsilon: 1),
+        reason:
+            'Monday\'s pill must sit ON the left content edge — it '
+            'painted at ${mondayPill.left} against ${contentRect.left}',
+      );
+      expect(
+        sundayPill.right,
+        moreOrLessEquals(contentRect.right, epsilon: 1),
+        reason:
+            'Sunday\'s pill must sit ON the right content edge — it '
+            'painted at ${sundayPill.right} against ${contentRect.right}',
+      );
+
+      // The pill must actually COVER the letter as well as the number —
+      // that is the whole point of folding the letter into the cell, and
+      // what makes the letter tappable. A pill that only wrapped the
+      // number would still pass the edge assertions above.
+      final mondayLetter = tester.getRect(find.text('M').first);
+      expect(
+        mondayPill.top,
+        lessThanOrEqualTo(mondayLetter.top),
+        reason:
+            'the pill must start at or above its own weekday letter, so a '
+            'tap on the letter hits the day — pill top '
+            '${mondayPill.top}, letter top ${mondayLetter.top}',
+      );
+      expect(
+        mondayPill.bottom,
+        greaterThan(mondayLetter.bottom),
+        reason: 'the pill must extend past the letter down to the number',
+      );
+    },
+  );
+
+  // The reported gap: "the hit area should include day label M T W etc."
+  // Before the letter moved inside `_WeekDayCell` it was a sibling widget
+  // in its own row, so a tap there landed on nothing at all.
+  //
+  // This asserts the letter is a DESCENDANT of the day's own tap target,
+  // which is the structural fact that makes it tappable — rather than
+  // tapping it and checking the selection, which cannot fail for the
+  // right reason: the letter now sits inside the cell, so a tap on it and
+  // a tap on the cell are the same event, and the assertion would pass
+  // even with the letter removed entirely (verified).
+  testWidgets('each weekday letter sits INSIDE its own day\'s tap target, '
+      'so tapping the letter selects that day', (tester) async {
+    final anchor = DateTime(2026, 9, 10); // a Thursday
+    await pumpHeader(tester, initialDate: anchor);
+
+    await tester.tap(find.byIcon(Icons.keyboard_arrow_down_rounded));
+    await tester.pumpAndSettle();
+
+    // Monday's cell is the tap target containing this week's "7".
+    final mondayTapTarget = find
+        .ancestor(of: find.text('7'), matching: find.byType(AppPressFeedback))
+        .first;
+
+    expect(
+      find.descendant(of: mondayTapTarget, matching: find.text('M')),
+      findsOneWidget,
+      reason:
+          'Monday\'s weekday letter must live inside the same '
+          'AppPressFeedback as its number — that is what gives the letter '
+          'a hit area and a shared press ripple',
+    );
+  });
+
+  // **2026-09-20 — superseded, deliberately, twice over.** First added
+  // ("Edit screen tasks should also have Today date") to pin the Today
+  // button's return to Edit Mode's collapsed header branch. Reported
+  // directly again, against a live screenshot: that button shouldn't be
+  // there after all — "on edit task we show button with number 'today's
+  // day' that resets to current day, this button should not be there."
+  testWidgets('no Today button in Edit Mode', (tester) async {
+    final container = await pumpHeader(tester);
+    container.read(editModeEnabledProvider.notifier).toggle();
+    await tester.pump();
+
+    expect(find.byTooltip('Today'), findsNothing);
   });
 }
 

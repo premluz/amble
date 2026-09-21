@@ -77,37 +77,29 @@ void main() {
     );
   }
 
-  // **2026-09-20 — superseded, deliberately.** This test used to assert
-  // the title and time line render at the SAME font size, fixed at the
-  // time by moving the time line off `textCaption` onto `textBody` to
-  // match the title. Requested directly, again, against a side-by-side
-  // screenshot: this time text is semantically the spatial Timeline's
-  // hour label, not a second copy of the task title, so it now follows
-  // THAT convention (`textCaption` + `colorTextSecondary`, matching
-  // `TaskBoundaryMarkers` exactly) — smaller than the title again, which
-  // is the intended, current behavior, not a regression of the earlier
-  // fix. See `_ZoneTaskRow`'s own doc comment on its time `Text`.
+  // **2026-09-20 — superseded, deliberately, twice over.** This test used
+  // to assert the title and time line render at the SAME font size, then
+  // (a later pass) that the title stayed LARGER than the time line
+  // because the title sat on `textTaskTitleZone`, one rung up from
+  // `textTaskTitle`. That larger-title rung is itself gone now (see the
+  // "the task title renders at the SAME size" test below) — at
+  // `AmbleTheme.light`'s default Task-size setting, `textTaskTitle` and
+  // `textCaption` happen to resolve to the same 12px, so title and time
+  // line coincidentally match again. What this test actually needs to
+  // pin is just the time line's own token, not a title/time-line size
+  // relationship that no longer means anything.
   testWidgets(
     'the time line renders at textCaption\'s size, matching the spatial '
-    'Timeline\'s own hour-label size — smaller than the task title beside '
-    'it, by design',
+    'Timeline\'s own hour-label size',
     (tester) async {
       await pump(tester);
 
       final theme = AmbleTheme.light;
-      final titleText = tester.widget<Text>(find.text('Deep work'));
       final timeText = tester.widget<Text>(
         find.textContaining('9:00', findRichText: false),
       );
 
       expect(timeText.style?.fontSize, theme.textCaption.fontSize);
-      expect(
-        titleText.style?.fontSize,
-        isNot(timeText.style?.fontSize),
-        reason:
-            'the title stays at textTaskTitleZone\'s larger size — only '
-            'the time line moved to match the spatial hour-label scale',
-      );
     },
   );
 
@@ -155,27 +147,25 @@ void main() {
     expect(titleText.style?.decoration, TextDecoration.none);
   });
 
-  // Requested directly: "Size of text in zone view (task name one scale
-  // up)." AmbleTheme.light's own default resolves textTaskTitle to md's
-  // size and textTaskTitleZone to lg's — one genuine rung larger, not
-  // just a different color/weight on the same size.
+  // **2026-09-20 — superseded, deliberately.** This test used to assert
+  // the in-zone title rendered one rung LARGER than the shared
+  // `textTaskTitle` token ("Size of text in zone view (task name one
+  // scale up)"). Reported directly against a screenshot: an in-zone
+  // task's title read too large next to an UNZONED task's own title just
+  // below it in the same non-spatial list (which uses `textTaskTitle` via
+  // `TaskCapsuleBlock`) — confirmed the outside-zone size is the one to
+  // keep, so `_ZoneTaskRow` moved back onto `textTaskTitle` and the two
+  // row kinds now match exactly.
   testWidgets(
-    'the task title renders one scale up from the shared textTaskTitle '
-    'token Task/List view use',
+    'the task title renders at the SAME size as the shared textTaskTitle '
+    'token Task/List view (and unzoned rows in this same list) use',
     (tester) async {
       await pump(tester);
 
       final titleText = tester.widget<Text>(find.text('Deep work'));
       expect(
         titleText.style?.fontSize,
-        AmbleTheme.light.textTaskTitleZone.fontSize,
-      );
-      expect(
-        titleText.style?.fontSize,
-        greaterThan(AmbleTheme.light.textTaskTitle.fontSize!),
-        reason:
-            'Zone view must read larger than Task/List view at the same '
-            'Task-size setting',
+        AmbleTheme.light.textTaskTitle.fontSize,
       );
     },
   );

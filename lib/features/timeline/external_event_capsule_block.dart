@@ -6,9 +6,35 @@ import 'package:tabler_icons_plus/tabler_icons_plus.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/glass_pill_surface.dart';
 import '../../shared/models/external_calendar_event.dart';
+import 'capsule_title_alignment.dart';
 import 'duration_label.dart';
 import 'task_capsule_block.dart'
     show taskDurationColumnWidth, taskTimeColumnWidth;
+
+/// How far DOWN an imported event's title sits relative to where its own
+/// badge-centred layout would otherwise put it, so that it rests at the
+/// same offset-from-its-icon a native task's title does.
+///
+/// Not a fudge factor: it is the measured, constant consequence of the two
+/// blocks centring against different regions. `TaskCapsuleBlock` centres
+/// its title within `spacingMinTapTarget` (48px — the trailing
+/// CompletionCheckbox's fixed tap target, the one sibling that can
+/// out-height a short pill), while this block has no checkbox and so
+/// centres within `sizeTaskBadge` (24px). Same nominal rule ("centred on
+/// the badge"), two different resting positions — the native lands 2px
+/// below its icon's centre, this one exactly on it.
+///
+/// Adopting the native's 48px basis directly does NOT work and was
+/// measured: the two blocks also anchor their ICONS differently (the
+/// native badge sits inside that same 48px Row region; this rail is a
+/// `Positioned(top: 0)` in a duration-height Stack), so widening only the
+/// text region moves the title alone and overshoots to 12px.
+///
+/// Pinned by `imported_vs_native_title_alignment_test.dart`, which mounts
+/// BOTH block kinds and compares them — if either side's centring basis
+/// changes, that test fails rather than this constant silently going
+/// stale.
+const _titleBaselineNudge = 2.0;
 
 /// **Reversed 2026-09-06** (confirmed directly — "the importend tasks
 /// sohuld also be same format as amble tasks... pill in zones and text
@@ -195,7 +221,17 @@ class ExternalEventCapsuleBlock extends StatelessWidget {
             // see [labelOffset]. The enclosing Stack is `Clip.none`, so a
             // label nudged past this box's own (duration-derived) height
             // still renders in full, exactly as a task's does.
-            top: labelOffset,
+            //
+            // Plus [_titleBaselineNudge] — the measured, constant
+            // difference between where this block rests its title and
+            // where `TaskCapsuleBlock` rests its own, which is what made
+            // an imported event's label read out of line with a native
+            // task's beside it. Applied to the layout `top` rather than a
+            // paint-only `Transform`, deliberately: a `Transform` shifts
+            // the rendered rect that every alignment test measures, which
+            // silently invalidates them (tried, and it broke this block's
+            // own passing test).
+            top: labelOffset + _titleBaselineNudge,
             left: textColumnLeft,
             right: textColumnRight,
             child: GestureDetector(
@@ -209,27 +245,70 @@ class ExternalEventCapsuleBlock extends StatelessWidget {
               // consistent 4px above the icon's at every duration, because
               // a 16px title top-aligned inside the 24px badge span.
               //
-              // `minHeight`, not a fixed height: a title that ever wraps
-              // taller than the badge grows instead of being clipped — the
-              // same reasoning `TaskCapsuleBlock`'s own equivalent
-              // centring uses (see `textHeaderHeight` there).
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: badgeSize),
-                // No `widthFactor` — this column must keep filling its
-                // full width (`textColumnLeft`..`textColumnRight`) so the
-                // title truncates at the same x every native task's does;
-                // only the VERTICAL centring is wanted here.
-                child: Center(
-                  heightFactor: 1,
-                  child: _ExternalEventTextRow(
-                    theme: theme,
-                    event: event,
-                    timeColumnWidth: taskTimeColumnWidth(theme),
-                    durationColumnWidth: taskDurationColumnWidth(theme),
-                    compactInlineLayout: compactText,
-                    durationVisible: durationVisible,
-                    alwaysShowTime: compactText,
-                  ),
+              // **2026-09-21 — now the SHARED [CapsuleTitleAlignment]**,
+              // the exact widget `TaskCapsuleBlock` centres its own title
+              // with. Reported directly from a device screenshot with a
+              // measured centre-line: an imported event's title read
+              // visibly higher than a native task's beside it, even
+              // though this file's own widget test measured them level.
+              // The cause was two parallel implementations of one rule —
+              // this side had a simpler `ConstrainedBox(minHeight:) +
+              // Center` that agreed with the task's three-layer
+              // combinator in the test harness but not on a real device.
+              // Requested directly: "the solution must be so that the
+              // code/classes are shared those of native, then we should
+              // achieve the correct position."
+              child: CapsuleTitleAlignment(
+                // **2026-09-21 — `spacingMinTapTarget`, matching the
+                // native block's own `textHeaderHeight`, not `badgeSize`.**
+                // Reported directly and repeatedly from device
+                // screenshots: an imported event's title did not sit level
+                // with a native task's beside it. Measured by
+                // `imported_vs_native_title_alignment_test.dart` (which
+                // mounts BOTH kinds and compares them — the gap no
+                // per-block test could see, since each measured only
+                // itself against its own badge and both passed): in the
+                // production config the native title sat 2px from its
+                // icon centre while this one sat exactly 0px.
+                //
+                // The cause is the centring BASIS, not the combinator.
+                // `TaskCapsuleBlock` centres within
+                // `spacingMinTapTarget` (48) — the trailing
+                // CompletionCheckbox's fixed tap target, the one sibling
+                // that can out-height a short pill — while this block,
+                // having no checkbox, centred within `badgeSize` (24).
+                // Two different regions, two different resting positions
+                // for the same nominal "centred on the badge" rule.
+                // Matching the native basis is what makes the two read
+                // identically side by side, which is the actual
+                // requirement.
+                //
+                // `badgeSize`, NOT `spacingMinTapTarget` directly: the two
+                // blocks anchor their ICONS differently too (the native
+                // badge sits inside the same 48px Row region its title
+                // centres in; this rail is a `Positioned(top: 0)` in a
+                // duration-height Stack), so adopting the native's 48px
+                // region here moves only the title and overshoots to 12px
+                // — measured. The [titleBaselineNudge] below carries the
+                // remaining, real difference instead.
+                headerHeight: badgeSize,
+                // This column must keep filling its full width
+                // (`textColumnLeft`..`textColumnRight`) so the title
+                // truncates at the same x every native task's does — see
+                // [CapsuleTitleAlignment.shrinkWrapWidth].
+                shrinkWrapWidth: false,
+                // The enclosing `Positioned` carries only top/left/right,
+                // so the incoming height is already unbounded — see
+                // [CapsuleTitleAlignment.escapesBoundedParentHeight].
+                escapesBoundedParentHeight: false,
+                child: _ExternalEventTextRow(
+                  theme: theme,
+                  event: event,
+                  timeColumnWidth: taskTimeColumnWidth(theme),
+                  durationColumnWidth: taskDurationColumnWidth(theme),
+                  compactInlineLayout: compactText,
+                  durationVisible: durationVisible,
+                  alwaysShowTime: compactText,
                 ),
               ),
             ),
@@ -304,7 +383,23 @@ class DashedPillRail extends StatelessWidget {
         // `external_event_title_alignment_test.dart`).
         child: Align(
           alignment: Alignment.topCenter,
+          // **2026-09-21 — a fixed badgeSize SQUARE, not height alone.**
+          // This `SizedBox` set only `height`, so it inherited the rail's
+          // full WIDTH and centred the glyph in a tall, wide box rather
+          // than the badge-sized square the native block uses
+          // (`TaskCapsuleBlock`'s own `SizedBox(width: badgeSize, height:
+          // badgeSize)`, which that file documents as load-bearing: "a
+          // Tabler Icon's tight glyph bounds sat flush to the very top
+          // instead" without it).
+          //
+          // Reported repeatedly from device screenshots, most recently
+          // with a line drawn from the icon's base showing the label not
+          // level with it. The two blocks measure identically in the
+          // widget-test harness, so the difference is in how each glyph
+          // resolves inside its box — which is exactly what an unequal
+          // box changes, and exactly what the harness's test font hides.
           child: SizedBox(
+            width: theme.sizeTaskBadge,
             height: theme.sizeTaskBadge,
             // Tabler, not a Material icon — matches every category glyph
             // elsewhere now using the Tabler set (reported directly: "the
@@ -378,7 +473,29 @@ class _ExternalEventTextRow extends StatelessWidget {
     final textStyle = theme.textTaskTitle.copyWith(
       color: theme.colorTextSecondary,
     );
-    final titleSpan = TextSpan(text: event.title, style: textStyle);
+    // **2026-09-21 — the TITLE takes `w700`, matching a native task's.**
+    // Reported repeatedly from device screenshots: an imported event's
+    // label did not sit level with a native task's beside it. This was
+    // the last real difference between the two — `TaskCapsuleTextRow`
+    // builds its own title at `fontWeight: FontWeight.w700` while this
+    // one reused the plain [textStyle] above, so the two rendered at
+    // different weights. Different weights carry different vertical
+    // metrics inside the same line box, which moves where the glyphs
+    // actually sit; it is also visible directly in the screenshot ("hh",
+    // "Daily sync" bold against "Standup", "Workshop" not).
+    //
+    // The muted COLOUR stays (that distinction is deliberate — an
+    // imported event must never read as an editable Amble object, see
+    // this widget's own class doc comment). Only the weight, which was
+    // never a deliberate part of that treatment, is brought into line.
+    // Confirmed via AskUserQuestion rather than assumed, since it does
+    // change how these rows look.
+    //
+    // Scoped to the title alone: the time/duration columns below keep
+    // [textStyle]'s regular weight, exactly as a native task's own
+    // time line does.
+    final titleStyle = textStyle.copyWith(fontWeight: FontWeight.w700);
+    final titleSpan = TextSpan(text: event.title, style: titleStyle);
     final showTime = !alwaysShowTime && durationVisible;
 
     if (compactInlineLayout) {

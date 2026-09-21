@@ -88,13 +88,18 @@ import '../zones/zone_form_screen.dart';
 /// and should be "smaller for tasks screen" while the zone grid's own axis
 /// goes the other way (see `zone_grid_screen.dart`'s `_axisWidth`).
 ///
-/// 66 is the floor that keeps `hour_gutter_overflow_test.dart`'s own
-/// invariant intact: the widest label ("12:00 AM") measures 57.6px, and
-/// that test requires ≥8px clearance so a label can never paint into the
-/// pill column — a rule written from a real reported overlap. 58 would
-/// have given the 16px gap asked for elsewhere but left 0.4px of
-/// clearance, breaking it.
-const _hourGutterWidth = 66.0;
+/// **Removed 2026-09-21** — the hour gutter is now
+/// [AmbleTheme.spacingHourGutter], measured from the TRUE screen edge
+/// rather than as a width added on top of the page inset, so the spatial
+/// and non-spatial views can read one token instead of each carrying
+/// their own arithmetic (see that token's own doc comment).
+///
+/// The invariant this constant existed to hold still applies and still
+/// lives in `hour_gutter_overflow_test.dart`: the label column — now
+/// `spacingHourGutter - spacingScreenPadding` — must stay at least 8px
+/// wider than the widest label ("12:00 AM", 57.6px), so a label can never
+/// paint into the pill column. At 90 − 16 that column is 74px, leaving
+/// 16.4px of clearance.
 
 /// Vertical scale used when the hour gutter is hidden ("Show hour labels"
 /// off). Requested directly: with no hour scale on screen, the gaps
@@ -289,7 +294,12 @@ enum TimelineDisplayMode {
 /// session), not seeded data — see timeline_capsule_preview.dart for the
 /// separate dev-scaffold preview.
 class TimelineScreen extends ConsumerWidget {
-  const TimelineScreen({super.key, required this.mode, this.showHeader = true});
+  const TimelineScreen({
+    super.key,
+    required this.mode,
+    this.showHeader = true,
+    this.calendarHeaderShowsCloseButton = true,
+  });
 
   /// **2026-09-12 — no longer read from `ZoneViewEnabledSetting`.**
   /// Requested directly: Task view and Zone view become two separate,
@@ -302,15 +312,27 @@ class TimelineScreen extends ConsumerWidget {
   /// existing installs' stored preferences for no functional gain.
   final TimelineDisplayMode mode;
 
-  /// **2026-09-17 — false when hosted as the "Tasks" tab of the merged
-  /// Edit screen** (`ZoneGridScreen`, see its own doc comment). That host
-  /// already renders its own top row (Tasks/Zones tab switcher + close
-  /// button) — without this flag, `AppCalendarHeader`'s own Edit-Mode
-  /// collapse (just a close button, top-right) would render a second,
-  /// redundant close button directly underneath the host's. Confirmed
-  /// directly over leaving both: "suppress inner header on this path...
-  /// cleanest single header." Every other caller keeps the default.
+  /// Whether this screen renders its own `AppCalendarHeader` at all.
+  /// Every caller keeps the default (`true`); no current call site needs
+  /// `false` any more (see [calendarHeaderShowsCloseButton] below for the
+  /// "Tasks" tab of the merged Edit screen's own former reason to
+  /// suppress it entirely).
   final bool showHeader;
+
+  /// **2026-09-20 — the "Tasks" tab of the merged Edit screen**
+  /// (`ZoneGridScreen`) reversed its earlier `showHeader: false`.
+  /// Requested directly: "Tasks edit mode should also have calendar" —
+  /// that tab now renders the real `AppCalendarHeader` (Today + the date
+  /// accordion) instead of no header at all. But that screen also moved
+  /// its OWN Close button into a bottom dock (a separate direct request:
+  /// "in edit mode on top we should only have 2 tabs task and zones and
+  /// close on the bottom tool nav"), so `AppCalendarHeader`'s own
+  /// Edit-Mode-collapsed close (X) toggle would be a second, redundant
+  /// close control — this flag (passed straight through to
+  /// `AppCalendarHeader.showCloseButton`) lets that ONE caller suppress
+  /// just the close button while keeping Today/the accordion. Every
+  /// other caller keeps the default (`true`).
+  final bool calendarHeaderShowsCloseButton;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -480,7 +502,9 @@ class TimelineScreen extends ConsumerWidget {
                 // itself now collapses to just that close button when Edit
                 // Mode is active, so it's never removed from the tree here.
                 if (showHeader && ref.watch(pendingTaskDraftProvider) == null)
-                  const AppCalendarHeader(),
+                  AppCalendarHeader(
+                    showCloseButton: calendarHeaderShowsCloseButton,
+                  ),
                 Expanded(
                   // Whole-screen swipe-to-change-day REMOVED (requested
                   // directly) — day navigation now happens only through the
@@ -2061,9 +2085,21 @@ class _DayTimelineState extends State<_DayTimeline> {
     // timeline Stack already positions from this one value, so folding
     // the inset in here keeps them all exactly where they were while
     // letting the Stack itself span the full viewport width.
-    final hourGutterWidth =
-        (widget.showHourLabels ? _hourGutterWidth : 0.0) +
-        theme.spacingScreenPadding;
+    // **2026-09-21 — one token, not `66 + spacingScreenPadding`.** The
+    // non-spatial Zone view hardcoded its own matching value as `90`
+    // (`zoneContentLeftInset`), so the two views agreed only by
+    // coincidence and drifted apart the moment the page inset changed.
+    // Both now read [AmbleTheme.spacingHourGutter] — reported directly:
+    // "we need a coherent system that can manage this spacing without
+    // drift."
+    //
+    // Still collapses to the bare page inset when hour labels are hidden,
+    // so tasks/connectors/the now-line reclaim the gutter rather than
+    // leaving a blank margin (confirmed via AskUserQuestion over keeping
+    // the width reserved but empty).
+    final hourGutterWidth = widget.showHourLabels
+        ? theme.spacingHourGutter
+        : theme.spacingScreenPadding;
 
     /// The matching inset on the RIGHT, for children that previously
     /// stopped at the padded viewport's own edge (`right: 0`). Governs pill
@@ -2213,25 +2249,28 @@ class _DayTimelineState extends State<_DayTimeline> {
                           rangeEnd: rangeEnd,
                           pixelsPerMinute: widget.pixelsPerMinute,
                           hideLabelNear: _now,
-                          // LEFT-aligned at 8px, the SAME inset the Weekly
-                          // Zone Authoring Grid's own hour axis uses —
-                          // requested directly ("both 8 px") after the two
-                          // surfaces read visibly differently side by side.
-                          //
-                          // Deliberately `spacingSm` at this ONE call site
-                          // rather than repointing `spacingScreenPadding`:
-                          // that token governs horizontal margins on every
-                          // screen in the app, and this is a change to the
-                          // hour gutter only. It supersedes the earlier
-                          // "same padding as the rotated zone names on the
-                          // other side" request, which had set this to
-                          // `spacingScreenPadding` (24px).
+                          // **2026-09-21 — back to spacingScreenPadding
+                          // (24px), not spacingSm (8px).** Reported
+                          // directly against a screenshot: the hour
+                          // labels sat noticeably closer to the true
+                          // screen edge than "Day"/Inbox/Tracked and the
+                          // settings gear above them — "day in inbox
+                          // tracked and settings should have same side
+                          // padding as hours in timeline (that should be
+                          // global content padding)." Reverses the prior
+                          // "both 8px, matching the Zone Authoring Grid's
+                          // own axis" decision — confirmed directly this
+                          // time, scoped to just the Timeline (the Zone
+                          // grid's own axis lives in a fixed, tightly-
+                          // sized 60px gutter that can't take a wider
+                          // inset without real layout work, and wasn't
+                          // what was reported here).
                           //
                           // `columnWidth` is deliberately NOT passed: it is
                           // what switches these labels to right-aligned
                           // (see TaskBoundaryMarkers), which an earlier
-                          // request had asked for and this one reverses.
-                          leftInset: theme.spacingSm,
+                          // request had asked for and a later one reversed.
+                          leftInset: theme.spacingScreenPadding,
                         ),
                       // Zone background blocks — purely decorative, rendered
                       // BEHIND every task capsule (this Stack paints in child-
@@ -2912,16 +2951,20 @@ class _DayTimelineState extends State<_DayTimeline> {
                           rangeStart: rangeStart,
                           rangeEnd: rangeEnd,
                           pixelsPerMinute: widget.pixelsPerMinute,
-                          // `spacingSm`, matching `TaskBoundaryMarkers`'
-                          // own `leftInset` above — the two share a column,
-                          // so "now" has to start where every other hour
-                          // label starts. This was left at
-                          // `spacingScreenPadding` (24px) when those labels
-                          // moved to 8px, which is exactly the misalignment
-                          // reported ("current time with red line should be
-                          // in the same new position as the times on the
-                          // left in task view").
-                          leftInset: theme.spacingSm,
+                          // `spacingScreenPadding`, matching
+                          // `TaskBoundaryMarkers`' own `leftInset` above —
+                          // the two share a column, so "now" has to start
+                          // where every other hour label starts. This was
+                          // left at `spacingSm` (8px) when those labels
+                          // moved to `spacingScreenPadding` (24px, see
+                          // that call site's own 2026-09-21 comment),
+                          // which is exactly the same class of
+                          // misalignment this exact comment already
+                          // documents happening once before, just in the
+                          // opposite direction — reported directly again:
+                          // "current hour not aligned with day hours on
+                          // timeline."
+                          leftInset: theme.spacingScreenPadding,
                           rightInset: rightEdgeInset,
                         ),
                       // LAST, deliberately — the placement line has to paint above

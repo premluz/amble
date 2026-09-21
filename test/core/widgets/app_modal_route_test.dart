@@ -181,4 +181,99 @@ void main() {
     navigatorKey.currentState!.pop();
     await tester.pumpAndSettle();
   });
+
+  // [pushFullScreenRoute] — the app's first full-screen (not slide-up-
+  // sheet) modal convention, added for the voice-capture flow. Shares
+  // `pushAppSheetRoute`'s easing/timing tokens (see that route's own
+  // tests above) but differs in shape: no scrim, and a much smaller
+  // slide offset since a full-screen page already covers the screen
+  // rather than revealing from partway up.
+  group('pushFullScreenRoute', () {
+    testWidgets('is opaque — no scrim behind a full-screen page', (
+      tester,
+    ) async {
+      final navigatorKey = await _pumpHost(tester);
+      pushFullScreenRoute<void>(
+        navigatorKey.currentContext!,
+        (_) => const Text('Full screen'),
+      );
+      await tester.pumpAndSettle();
+
+      final route =
+          ModalRoute.of(tester.element(find.text('Full screen')))!
+              as PageRouteBuilder;
+      expect(
+        route.opaque,
+        isTrue,
+        reason:
+            'a full-screen page has nothing left showing behind it, so '
+            'unlike the sheet it needs no barrierColor/scrim',
+      );
+    });
+
+    testWidgets('starts much closer to its final position than the sheet '
+        'does — it should read as arriving immediately, not revealing '
+        'from halfway', (tester) async {
+      final navigatorKey = await _pumpHost(tester);
+      pushFullScreenRoute<void>(
+        navigatorKey.currentContext!,
+        (_) => const Text('Full screen'),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1));
+
+      final slide = tester.widget<SlideTransition>(
+        find
+            .ancestor(
+              of: find.text('Full screen'),
+              matching: find.byType(SlideTransition),
+            )
+            .first,
+      );
+      expect(
+        slide.position.value.dy,
+        closeTo(0.15, 0.05),
+        reason:
+            'the sheet starts at 0.5; a full-screen page should start '
+            'much closer to 0 so it reads as an immediate takeover',
+      );
+
+      await tester.pumpAndSettle();
+      final settled = tester.widget<SlideTransition>(
+        find
+            .ancestor(
+              of: find.text('Full screen'),
+              matching: find.byType(SlideTransition),
+            )
+            .first,
+      );
+      expect(settled.position.value.dy, 0.0);
+    });
+
+    testWidgets('shares the sheet route\'s own entrance/exit durations', (
+      tester,
+    ) async {
+      final navigatorKey = await _pumpHost(tester);
+      pushFullScreenRoute<void>(
+        navigatorKey.currentContext!,
+        (_) => const Text('Full screen'),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Full screen'), findsOneWidget);
+
+      navigatorKey.currentState!.pop();
+      await tester.pump();
+      await tester.pump(theme.motionFast + const Duration(milliseconds: 20));
+
+      expect(
+        find.text('Full screen'),
+        findsNothing,
+        reason:
+            'reverseTransitionDuration must still be motionFast, matching '
+            'the sheet route, so dismissal reads consistently across '
+            'every modal in the app',
+      );
+    });
+  });
 }
