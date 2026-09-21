@@ -104,11 +104,20 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
                 Expanded(
                   child: Padding(
                     padding: EdgeInsets.symmetric(horizontal: theme.spacingXl),
-                    child: state.committedSegments.isEmpty
+                    // Hint shows only while genuinely nothing has
+                    // happened yet — once the user has started speaking
+                    // (a live partial exists) the in-progress card itself
+                    // is the "something is happening" signal, so the
+                    // hint gives way to it exactly like it already does
+                    // once a segment commits.
+                    child:
+                        state.committedSegments.isEmpty &&
+                            state.partialText.isEmpty
                         ? VoiceCaptureHint(theme: theme)
                         : VoiceCaptureSegmentList(
                             theme: theme,
                             segments: state.committedSegments,
+                            partialText: state.partialText,
                           ),
                   ),
                 ),

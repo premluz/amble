@@ -251,9 +251,14 @@ class _DateLabelRow extends StatelessWidget {
 }
 
 /// The weekday-letter row + the Mon-Sun day grid, with swipe-to-change-
-/// week — split out of the old `AppCalendarHeader` unchanged in
-/// substance, just re-hosted as this widget's own expandable content.
-class _WeekStrip extends StatelessWidget {
+/// week and press-and-slide day scrubbing — split out of the old
+/// `AppCalendarHeader` unchanged in substance, just re-hosted as this
+/// widget's own expandable content.
+///
+/// **Stateful, not stateless** — added directly for the press-and-slide
+/// scrub (see [_onScrubMove]): tracking which day the finger is
+/// currently over, live, needs `State` this widget didn't need before.
+class _WeekStrip extends StatefulWidget {
   const _WeekStrip({
     required this.theme,
     required this.weekStart,
@@ -269,7 +274,76 @@ class _WeekStrip extends StatelessWidget {
   final ValueChanged<DateTime> onDateSelected;
 
   @override
+  State<_WeekStrip> createState() => _WeekStripState();
+}
+
+class _WeekStripState extends State<_WeekStrip> {
+  /// One key per day column, in Monday-first order — used only to read
+  /// each cell's live `RenderBox` bounds during a scrub (see
+  /// [_onScrubMove]), never for identity/rebuild purposes.
+  final _cellKeys = List.generate(7, (_) => GlobalKey());
+
+  /// The day the drag is currently over, while a scrub is in progress —
+  /// null the rest of the time. Only used to avoid re-selecting the same
+  /// day on every pointer-move event; the actual selection is reported
+  /// straight to [AppDateAccordion.onDateSelected] as it changes, not
+  /// buffered here.
+  int? _scrubbedIndex;
+
+  /// Press-and-slide day scrubbing — requested directly: holding the
+  /// finger down and sliding it across the row should "turn" through the
+  /// days it passes over, selecting whichever one the finger is
+  /// currently on top of, smoothly, rather than requiring a distinct tap
+  /// per day.
+  ///
+  /// Driven by [GestureDetector.onLongPressMoveUpdate], not
+  /// `onHorizontalDragUpdate` — a plain horizontal drag is the SAME
+  /// gesture family the week-jump swipe already owns (see [build]'s own
+  /// `GestureDetector`), and Flutter's gesture arena would have to
+  /// arbitrarily pick one recognizer to win, which is exactly what broke
+  /// `app_calendar_header_test.dart`'s swipe test when both lived on one
+  /// drag recognizer: the scrub fired mid-flick and left the selected
+  /// day wherever the finger happened to be when the SIMULATED drag
+  /// ended, not 7 days out. A long-press-triggered drag is a genuinely
+  /// different recognizer, so the two coexist without the arena having
+  /// to guess — a quick swipe never holds long enough to trigger this
+  /// one at all, and a deliberate press-and-slide never reads as a flick.
+  ///
+  /// Hit-tests [globalPosition] against each cell's own `RenderBox`
+  /// (via [_cellKeys]) rather than dividing the row width into 7 equal
+  /// slices — the cells are NOT evenly spaced (`spaceBetween` over
+  /// naturally-sized content, see [_WeekStrip]'s own historical comment
+  /// on why), so a slice-based mapping would desync from the visible
+  /// cells, especially at the row's own edges.
+  ///
+  /// The bounds checked are padded out by the SAME `theme.spacingXs`
+  /// [_WeekDayCell]'s own enlarged (but invisible) tap target uses — the
+  /// `RenderBox` behind [_cellKeys] is that cell's `Stack`, sized to the
+  /// visible pill only (a `Positioned` child painting outside a `Stack`'s
+  /// bounds doesn't grow `Stack.size`), so without this the scrub would
+  /// recognize a smaller area than an actual tap on the same cell does.
+  void _onScrubMove(Offset globalPosition) {
+    final reach = widget.theme.spacingXs;
+    for (var i = 0; i < _cellKeys.length; i++) {
+      final box = _cellKeys[i].currentContext?.findRenderObject() as RenderBox?;
+      if (box == null || !box.attached) continue;
+      final local = box.globalToLocal(globalPosition);
+      if (local.dx < -reach ||
+          local.dy < -reach ||
+          local.dx > box.size.width + reach ||
+          local.dy > box.size.height + reach) {
+        continue;
+      }
+      if (_scrubbedIndex == i) return;
+      _scrubbedIndex = i;
+      widget.onDateSelected(widget.weekStart.add(Duration(days: i)));
+      return;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final theme = widget.theme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -307,16 +381,21 @@ class _WeekStrip extends StatelessWidget {
         // tap target and selection fill spanning both — see
         // `_WeekDayCell`. A separate row made that structurally
         // impossible.
+        //
         // Horizontal swipe steps the visible week back/forward by 7
         // days — unchanged from `AppCalendarHeader`'s own original
-        // gesture, just living here now.
+        // gesture, just living here now. A SEPARATE `GestureDetector`
+        // from the press-and-slide scrub below (see [_onScrubMove]'s own
+        // doc comment on why the two must not share one drag
+        // recognizer) — a quick swipe is caught here before it holds
+        // long enough for a long-press to even register.
         GestureDetector(
           behavior: HitTestBehavior.opaque,
           onHorizontalDragEnd: (details) {
             final velocity = details.primaryVelocity ?? 0;
             if (velocity == 0) return;
-            onDateSelected(
-              selectedDate.add(Duration(days: velocity < 0 ? 7 : -7)),
+            widget.onDateSelected(
+              widget.selectedDate.add(Duration(days: velocity < 0 ? 7 : -7)),
             );
           },
           // Opaque hit-testing needs a real, non-shrinking bounding box —
@@ -337,26 +416,43 @@ class _WeekStrip extends StatelessWidget {
             // that number without widening the cell (see `_WeekDayCell`),
             // so it may overhang the content edge on the outermost days —
             // confirmed as intended.
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                for (var i = 0; i < 7; i++)
-                  _WeekDayCell(
-                    theme: theme,
-                    label: _weekdayAbbreviations[i],
-                    date: weekStart.add(Duration(days: i)),
-                    isToday: _isSameDay(
-                      weekStart.add(Duration(days: i)),
-                      today,
+            //
+            // The scrub's own `GestureDetector` wraps just the `Row`, not
+            // the whole swipe target above — a long-press has to start
+            // ON one of the day cells to mean anything (there is nothing
+            // to scrub FROM otherwise), where the swipe's hit area can
+            // reasonably start anywhere across the full strip width.
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onLongPressStart: (details) =>
+                  _onScrubMove(details.globalPosition),
+              onLongPressMoveUpdate: (details) =>
+                  _onScrubMove(details.globalPosition),
+              onLongPressEnd: (_) => _scrubbedIndex = null,
+              onLongPressCancel: () => _scrubbedIndex = null,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  for (var i = 0; i < 7; i++)
+                    _WeekDayCell(
+                      key: _cellKeys[i],
+                      theme: theme,
+                      label: _weekdayAbbreviations[i],
+                      date: widget.weekStart.add(Duration(days: i)),
+                      isToday: _isSameDay(
+                        widget.weekStart.add(Duration(days: i)),
+                        widget.today,
+                      ),
+                      isSelected: _isSameDay(
+                        widget.weekStart.add(Duration(days: i)),
+                        widget.selectedDate,
+                      ),
+                      onTap: () => widget.onDateSelected(
+                        widget.weekStart.add(Duration(days: i)),
+                      ),
                     ),
-                    isSelected: _isSameDay(
-                      weekStart.add(Duration(days: i)),
-                      selectedDate,
-                    ),
-                    onTap: () =>
-                        onDateSelected(weekStart.add(Duration(days: i))),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -367,6 +463,7 @@ class _WeekStrip extends StatelessWidget {
 
 class _WeekDayCell extends StatelessWidget {
   const _WeekDayCell({
+    super.key,
     required this.theme,
     required this.label,
     required this.date,
@@ -408,7 +505,7 @@ class _WeekDayCell extends StatelessWidget {
     // bounds, so a tap on "M" landed on nothing. Folding the letter in
     // means ONE widget owns the whole column: one tap target, one press
     // ripple, one selection fill.
-    return AppPressFeedback(
+    final pill = AppPressFeedback(
       onTap: onTap,
       // A stadium, not a circle — the pressed/selected shape now spans
       // letter + number, which is taller than it is wide.
@@ -419,7 +516,14 @@ class _WeekDayCell extends StatelessWidget {
       // being part of the visible pill, which overflowed the row by 28px
       // when tried. The inner padding below is what gives the stadium its
       // shape.
-      child: DecoratedBox(
+      // AnimatedContainer, not a bare DecoratedBox — requested directly:
+      // the selection fill should travel smoothly from day to day as a
+      // scrub crosses each one, rather than snapping. `motionFast`/
+      // `curveStandard` match every other quick state-change transition
+      // in this design system (e.g. the chevron rotation above).
+      child: AnimatedContainer(
+        duration: theme.motionFast,
+        curve: theme.curveStandard,
         decoration: BoxDecoration(
           color: background,
           borderRadius: BorderRadius.circular(theme.radiusPill),
@@ -471,6 +575,44 @@ class _WeekDayCell extends StatelessWidget {
           ),
         ),
       ),
+    );
+
+    // Hit area wider than the visible pill — requested directly ("only
+    // hit area, not visually active highlight or hover"), so this only
+    // grows what catches a tap, never the stadium fill or its padding
+    // above.
+    //
+    // A `Stack` sized to `pill` (its only non-positioned child) with a
+    // `Positioned.fill`, negative-inset `GestureDetector` layered
+    // BEHIND it — the standard way to extend a hit area past a widget's
+    // own paint bounds without changing its layout size. Critically,
+    // this whole `_WeekDayCell` still occupies exactly `pill`'s own
+    // footprint in the `spaceBetween` row above (a real `Padding` here
+    // would instead grow that footprint, shoving every cell after it
+    // further along and un-flushing the last day from the row's
+    // trailing edge — the exact regression this row's own `spaceBetween`
+    // comment documents from an earlier attempt).
+    //
+    // `theme.spacingXs` of extra reach on every side — on TOP of the
+    // `spacingSm` the pill's own padding already gives the visible hit
+    // area, so cells this close together would start overlapping hit
+    // areas with a bigger number; `spacingXs` is deliberately modest.
+    return Stack(
+      clipBehavior: Clip.none,
+      alignment: Alignment.center,
+      children: [
+        Positioned(
+          left: -theme.spacingXs,
+          top: -theme.spacingXs,
+          right: -theme.spacingXs,
+          bottom: -theme.spacingXs,
+          child: GestureDetector(
+            onTap: onTap,
+            behavior: HitTestBehavior.opaque,
+          ),
+        ),
+        pill,
+      ],
     );
   }
 }

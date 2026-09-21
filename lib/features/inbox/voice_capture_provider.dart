@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
@@ -40,12 +43,30 @@ class VoiceCapture extends _$VoiceCapture {
   /// empty each time a segment commits. [stt.SpeechToText]'s own
   /// `onResult` callback hands back the FULL recognized text for the
   /// current listen() call each time it fires (not just the delta), so
-  /// this is what [_commitSegment] reads once a segment finalizes.
+  /// this is what [_commitSegment] reads and what feeds
+  /// [VoiceCaptureState.partialText].
   String _liveText = '';
+
+  /// Fires [voiceCaptureSilenceGap] after the last recognized word to
+  /// close off the current task name — see [_restartSilenceTimer]. Ours,
+  /// not the SDK's, precisely because the SDK's equivalent (`pauseFor`)
+  /// would stop the session instead of just marking a boundary.
+  Timer? _silenceTimer;
+
+  /// Debounces session reopening — see [_reopenSession].
+  Timer? _reopenTimer;
+
+  /// Everything already committed out of the CURRENT platform
+  /// transcript, so [_onResult] can subtract it and keep only genuinely
+  /// new speech. Cleared whenever the platform starts a fresh transcript
+  /// or the session is stopped outright.
+  String _committedText = '';
 
   @override
   VoiceCaptureState build() {
     ref.onDispose(() {
+      _silenceTimer?.cancel();
+      _reopenTimer?.cancel();
       if (_speech.isListening) _speech.stop();
     });
     return const VoiceCaptureState();
@@ -60,27 +81,119 @@ class VoiceCapture extends _$VoiceCapture {
   Future<void> startListening() async {
     if (state.status == VoiceCaptureStatus.listening) return;
 
-    final available = await _speech.initialize();
+    // Registered on `initialize`, not `listen` (which has no such
+    // parameters) — the `statusListener`/`errorListener` these set
+    // persist for the life of this `_speech` instance, so [_onStatus]
+    // and [_onError] keep covering any later session the platform cuts
+    // short.
+    final available = await _speech.initialize(
+      onStatus: _onStatus,
+      onError: _onError,
+    );
     if (!available) return;
 
     _liveText = '';
-    state = state.copyWith(status: VoiceCaptureStatus.listening);
-    await _listenOnce();
+    _committedText = '';
+    state = state.copyWith(
+      status: VoiceCaptureStatus.listening,
+      partialText: '',
+    );
+    await _openSession();
   }
 
-  /// One `listen()` call, covering exactly one segment. Restarted by
-  /// [_onResult] on every silence-gap commit — the SDK call itself ends
-  /// when [voiceCaptureSilenceGap] elapses (`pauseFor`), so continuing
-  /// after a pause means a NEW `listen()` call, not one continuous stream.
-  Future<void> _listenOnce() async {
+  /// Opens a platform listen session.
+  ///
+  /// `pauseFor` is [voiceCapturePlatformPauseFor] (30s), NOT
+  /// [voiceCaptureSilenceGap] (2s) — see that constant's own doc comment.
+  /// Passing the 2s task gap here made the SDK `_stop()` the session on
+  /// every pause while our restart logic reopened it, which is the
+  /// audible drop-and-restart cycle; omitting it entirely was worse on
+  /// Android, where the OS recognizer then falls back to its own ~1s
+  /// silence default and the plugin tears down shortly after.
+  ///
+  /// The 2s silence is a TASK boundary, not a session boundary
+  /// (requested directly), so it is detected separately by
+  /// [_restartSilenceTimer]. The session itself is meant to run
+  /// continuously until [pause] or [submit] stops it; [_onStatus]
+  /// reopens it if the platform ends it anyway.
+  Future<void> _openSession() async {
     await _speech.listen(
       onResult: _onResult,
       onSoundLevelChange: _onSoundLevelChange,
       listenOptions: stt.SpeechListenOptions(
         partialResults: true,
-        pauseFor: voiceCaptureSilenceGap,
+        pauseFor: voiceCapturePlatformPauseFor,
       ),
     );
+  }
+
+  /// Commits the in-progress segment once [voiceCaptureSilenceGap] passes
+  /// with no new recognition activity — the "that task name is finished"
+  /// rule, WITHOUT touching the session. Restarted on every result so the
+  /// countdown always measures silence since the last recognized word.
+  void _restartSilenceTimer() {
+    _silenceTimer?.cancel();
+    _silenceTimer = Timer(voiceCaptureSilenceGap, () {
+      if (state.status != VoiceCaptureStatus.listening) return;
+      // Listening continues: the next words the user speaks land in a
+      // fresh segment (and so a new card), which is the whole point of
+      // the pause being a task delimiter rather than a stop.
+      _commitSegment();
+    });
+  }
+
+  /// Platform-level session status — recovery only, for a session the
+  /// PLATFORM ended on its own (OS-imposed listen cap, audio focus lost).
+  /// Nothing in this flow asks the SDK to stop any more (see
+  /// [_openSession]), so reaching a not-listening status while the user
+  /// still expects to be recording means something external cut us off
+  /// and the session has to be reopened.
+  void _onStatus(String status) {
+    if (state.status != VoiceCaptureStatus.listening) return;
+    if (status != stt.SpeechToText.doneStatus &&
+        status != stt.SpeechToText.notListeningStatus) {
+      return;
+    }
+    _reopenSession();
+  }
+
+  /// A recognizer error, which on Android also ENDS the session (the
+  /// plugin's own `onError` calls `notifyListening(false)`). The common
+  /// ones here are entirely benign for this flow — `error_no_match` and
+  /// `error_speech_timeout` just mean "that stretch held no words,"
+  /// which is exactly what happens while the user pauses between two
+  /// tasks. Treated as another reopen trigger rather than a failure: the
+  /// user asked to keep recording until they press pause, so a silent
+  /// stretch must not end the session.
+  ///
+  /// Not surfaced in [VoiceCaptureState]: there is no user-actionable
+  /// error here, and anything already committed is untouched. A
+  /// genuinely fatal condition (permissions revoked mid-session) still
+  /// leaves `_speech.isListening` false with nothing reopening
+  /// successfully, which the UI reads as the waveform going flat.
+  void _onError(SpeechRecognitionError error) {
+    if (state.status != VoiceCaptureStatus.listening) return;
+    _reopenSession();
+  }
+
+  /// Reopens a session the platform ended, for both [_onStatus] and
+  /// [_onError].
+  ///
+  /// Guarded and debounced because Android reports one teardown TWICE —
+  /// an `onError` (`error_no_match`/`error_speech_timeout`) and a
+  /// not-listening status — and calling `listen()` twice in quick
+  /// succession restarts the mic twice, which is itself audible. The
+  /// short delay also lets the plugin finish destroying the previous
+  /// recognizer (`SpeechToTextPlugin.destroyRecognizer` posts its own
+  /// 50ms teardown) before a new one is created on top of it.
+  void _reopenSession() {
+    if (_reopenTimer?.isActive ?? false) return;
+    if (_speech.isListening) return;
+    _reopenTimer = Timer(const Duration(milliseconds: 120), () {
+      if (state.status != VoiceCaptureStatus.listening) return;
+      if (_speech.isListening) return;
+      _openSession();
+    });
   }
 
   void _onSoundLevelChange(double level) {
@@ -96,29 +209,58 @@ class VoiceCapture extends _$VoiceCapture {
 
   void _onResult(SpeechRecognitionResult result) {
     if (state.status != VoiceCaptureStatus.listening) return;
-    _liveText = result.recognizedWords;
 
-    if (result.finalResult) {
-      // The `pauseFor` timeout is what produced this final result — per
-      // [voiceCaptureSilenceGap]'s own doc comment, that silence IS the
-      // segment boundary, so a non-empty final result always commits.
-      _commitSegment();
-      // Silence gap is invisible to the user — status stays `listening`
-      // and a new segment starts right away, confirmed directly.
-      if (state.status == VoiceCaptureStatus.listening) {
-        _listenOnce();
+    final words = result.recognizedWords;
+    // The platform re-delivers the whole session transcript on every
+    // callback, and keeps doing so (as a final result) even after the
+    // silence timer has already committed those words as a task. Without
+    // this guard that text would be re-adopted as live and committed a
+    // SECOND time on the next boundary, duplicating the task. Anything
+    // already committed is ignored until the user actually says
+    // something new.
+    if (_committedText.isNotEmpty) {
+      if (words.length <= _committedText.length) return;
+      if (!words.startsWith(_committedText)) {
+        // The platform restarted its transcript from scratch (a
+        // reopened session), so what arrives is genuinely new speech.
+        _committedText = '';
       }
     }
-    // Partial (non-final) results are tracked only in `_liveText` — the
-    // status card's text is static now (requested directly), so there is
-    // no UI left to push interim words to.
+
+    _liveText = _committedText.isEmpty
+        ? words
+        : words.substring(_committedText.length).trimLeft();
+    if (_liveText.isEmpty) return;
+
+    // Live, word-by-word — requested directly: the words appear in their
+    // own in-progress task card as they are recognized, rather than the
+    // whole segment landing at once when it commits.
+    state = state.copyWith(partialText: _liveText);
+
+    // Any result — partial or final — is recognition activity, so the
+    // silence countdown starts over. A `finalResult` here no longer
+    // means "the session ended" (nothing stops it any more, see
+    // [_openSession]); it is just the platform settling on its
+    // transcription, and the 2s timer alone decides where one task name
+    // ends and the next begins.
+    _restartSilenceTimer();
   }
 
   void _commitSegment() {
     final text = _liveText.trim();
     _liveText = '';
-    if (text.isEmpty) return;
-    state = state.copyWith(committedSegments: [...state.committedSegments, text]);
+    if (text.isEmpty) {
+      state = state.copyWith(partialText: '');
+      return;
+    }
+    // Remember what has been consumed so [_onResult] can tell already-
+    // committed words apart from genuinely new speech in the platform's
+    // running transcript — see its own guard.
+    _committedText = _committedText.isEmpty ? text : '$_committedText $text';
+    state = state.copyWith(
+      committedSegments: [...state.committedSegments, text],
+      partialText: '',
+    );
   }
 
   /// The explicit user action — stops the SDK session entirely and shows
@@ -129,6 +271,8 @@ class VoiceCapture extends _$VoiceCapture {
     // Whatever was said since the last committed segment is still real
     // speech the user intends to keep — commit it now rather than
     // discarding it just because they paused mid-sentence.
+    _silenceTimer?.cancel();
+    _reopenTimer?.cancel();
     _commitSegment();
     await _speech.stop();
     state = state.copyWith(status: VoiceCaptureStatus.paused, soundLevel: 0);
@@ -159,6 +303,8 @@ class VoiceCapture extends _$VoiceCapture {
       return;
     }
 
+    _silenceTimer?.cancel();
+    _reopenTimer?.cancel();
     if (_speech.isListening) await _speech.stop();
     state = state.copyWith(status: VoiceCaptureStatus.submitting);
 

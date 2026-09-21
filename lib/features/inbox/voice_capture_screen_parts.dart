@@ -45,55 +45,93 @@ class VoiceCaptureSegmentList extends StatelessWidget {
     super.key,
     required this.theme,
     required this.segments,
+    this.partialText = '',
   });
 
   final AmbleTheme theme;
+
+  /// Already-committed segments, oldest first — each one a real task.
   final List<String> segments;
+
+  /// The segment currently being spoken, not yet committed — requested
+  /// directly: as the user speaks, THIS card is what shows the words
+  /// appearing word-by-word (the status card above stays static; see
+  /// `VoiceCaptureStatusCard`). Rendered as one extra trailing row, one
+  /// visual step behind a committed one (see `_VoiceCaptureSegmentRow
+  /// .committed`) so it reads as still in progress. Empty (the default)
+  /// renders nothing extra — no in-progress card until the user has
+  /// actually started saying something.
+  final String partialText;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final showPartial = partialText.isNotEmpty;
+    return ListView.separated(
+      padding: EdgeInsets.symmetric(vertical: theme.spacingLg),
+      itemCount: segments.length + (showPartial ? 1 : 0),
+      separatorBuilder: (context, index) => SizedBox(height: theme.spacingMd),
+      itemBuilder: (context, index) {
+        final isPartialRow = index == segments.length;
+        return _VoiceCaptureSegmentRow(
+          theme: theme,
+          text: isPartialRow ? partialText : segments[index],
+          committed: !isPartialRow,
+        );
+      },
+    );
+  }
+}
+
+class _VoiceCaptureSegmentRow extends StatelessWidget {
+  const _VoiceCaptureSegmentRow({
+    required this.theme,
+    required this.text,
+    required this.committed,
+  });
+
+  final AmbleTheme theme;
+  final String text;
+
+  /// False only for the one trailing in-progress row — dims the badge and
+  /// text so it visibly reads as "still being said," not yet a real task,
+  /// distinct from every committed row above it.
+  final bool committed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
       children: [
-        SizedBox(height: theme.spacingLg),
-        // Static label, not part of the scrolling list — each pill below
-        // is a real task already created from a committed segment, not a
-        // draft waiting on Submit. Requested directly: make it explicit
-        // that tasks are created live, as the user speaks.
-        Text(
-          'Created as you speak',
-          style: theme.textCaption.copyWith(color: theme.colorTextTertiary),
-        ),
-        SizedBox(height: theme.spacingSm),
-        Expanded(
-          child: ListView.separated(
-            padding: EdgeInsets.zero,
-            itemCount: segments.length,
-            separatorBuilder: (context, index) =>
-                SizedBox(height: theme.spacingMd),
-            itemBuilder: (context, index) => Row(
-              children: [
-                Container(
-                  width: theme.sizeTaskBadge,
-                  height: theme.sizeTaskBadge,
-                  decoration: BoxDecoration(
-                    color: theme.colorSurfaceField,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                SizedBox(width: theme.spacingMd),
-                Expanded(
-                  child: Text(
-                    segments[index],
-                    style: theme.textBody.copyWith(
-                      color: theme.colorTextPrimary,
+        Container(
+          width: theme.sizeTaskBadge,
+          height: theme.sizeTaskBadge,
+          decoration: BoxDecoration(
+            color: theme.colorSurfaceField,
+            shape: BoxShape.circle,
+          ),
+          child: committed
+              ? null
+              : Center(
+                  child: SizedBox(
+                    width: theme.spacingSm,
+                    height: theme.spacingSm,
+                    child: CircularProgressIndicator(
+                      strokeWidth: theme.borderWidthHairline * 1.5,
+                      color: theme.colorTextTertiary,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-              ],
+        ),
+        SizedBox(width: theme.spacingMd),
+        Expanded(
+          child: Text(
+            text,
+            style: theme.textBody.copyWith(
+              color: committed
+                  ? theme.colorTextPrimary
+                  : theme.colorTextSecondary,
             ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],
@@ -115,11 +153,10 @@ class VoiceCaptureStatusCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isPaused = state.status == VoiceCaptureStatus.paused;
     final title = isPaused ? 'Paused' : 'Listening';
-    // Static regardless of `state.partialText` — requested directly: this
-    // card's text must not change while the user is mid-sentence. The
-    // live transcript still drives task creation (see
-    // `VoiceCaptureCreatedAsYouSpeakLabel`/`VoiceCaptureSegmentList`), it
-    // just isn't echoed back here any more.
+    // Static — requested directly: this card's text never changes while
+    // listening. The live, word-by-word transcript is shown in its OWN
+    // task card instead, in `VoiceCaptureSegmentList` below, not echoed
+    // here.
     final subtitle = isPaused
         ? 'Resume to keep adding tasks, or save what you\'ve got.'
         : 'Say everything you need to get done';

@@ -203,26 +203,35 @@ void main() {
     expect(find.text('Read'), findsOneWidget);
   });
 
-  testWidgets('a row names its unit, and shows neither the target amount '
-      'nor the weekly frequency', (tester) async {
-    await pumpList(
-      tester,
-      behaviors: [
-        TrackedBehavior.create(
-          title: 'Exercise',
-          targetType: BehaviorTargetType.duration,
-          targetAmount: 60,
-          timesPerWeek: 3,
-        ),
-      ],
-    );
+  testWidgets(
+    'a row shows only its title — no unit, target amount, or weekly '
+    'frequency',
+    (tester) async {
+      await pumpList(
+        tester,
+        behaviors: [
+          TrackedBehavior.create(
+            title: 'Exercise',
+            targetType: BehaviorTargetType.duration,
+            targetAmount: 60,
+            timesPerWeek: 3,
+          ),
+        ],
+      );
 
-    expect(find.text('Min'), findsOneWidget);
-    // The saved amount and frequency are still on the model — they just
-    // no longer surface anywhere in the UI.
-    expect(find.textContaining('60'), findsNothing);
-    expect(find.textContaining('3x'), findsNothing);
-  });
+      expect(find.text('Exercise'), findsOneWidget);
+      // **2026-09-21 — the unit line is hidden too now**, requested
+      // directly ("hide unit under name of Tracked... just keep
+      // title") — a reversal of this same row's earlier behaviour,
+      // which used to keep the unit/type line deliberately. The saved
+      // amount, frequency, AND unit are still on the model — see
+      // `describeBehaviorTarget`'s own doc comment — they just no
+      // longer surface anywhere in this row.
+      expect(find.text('Min'), findsNothing);
+      expect(find.textContaining('60'), findsNothing);
+      expect(find.textContaining('3x'), findsNothing);
+    },
+  );
 
   // Requested directly ("hide target and times per week"), confirmed to
   // apply everywhere in the UI and then confirmed again that this line

@@ -56,27 +56,19 @@ class TrackedBehaviorRow extends ConsumerWidget {
           children: [
             Row(
               children: [
+                // Just the title now — requested directly: hide the
+                // unit/type line underneath it (see
+                // `describeBehaviorTarget`'s own doc comment for the
+                // line this replaces).
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        behavior.title,
-                        style: theme.textBody.copyWith(
-                          color: theme.colorTextPrimary,
-                          fontWeight: FontWeight.w700,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      SizedBox(height: theme.spacingXs),
-                      Text(
-                        describeBehaviorTarget(behavior),
-                        style: theme.textBody.copyWith(
-                          color: theme.colorTextSecondary,
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    behavior.title,
+                    style: theme.textBody.copyWith(
+                      color: theme.colorTextPrimary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 Icon(
@@ -113,11 +105,18 @@ class TrackedBehaviorRow extends ConsumerWidget {
   }
 }
 
-/// One day cell shared by all three views — a small rounded square,
-/// filled solid accent when [completed], accent-outlined (never both)
-/// when [isToday], plain otherwise. Sized via [size] so the same widget
-/// serves the weekly row's larger cells and the six-month heatmap's much
-/// smaller ones.
+/// One day cell shared by all three views — a small circle, filled solid
+/// accent when [completed], accent-outlined (never both) when [isToday],
+/// plain otherwise. Sized via [size] so the same widget serves the
+/// weekly row's larger cells and the six-month heatmap's much smaller
+/// ones.
+///
+/// **2026-09-21 — circular, was a rounded square.** Requested directly:
+/// tracked slots should be fully rounded across every view. `BoxShape
+/// .circle` rather than a large `BorderRadius.circular`, since [size]
+/// (and therefore this cell) is always a perfect square — a circle shape
+/// stays exactly round at any size, where a fixed corner radius would
+/// under-round the larger weekly cells.
 class _DayCell extends StatelessWidget {
   const _DayCell({
     required this.theme,
@@ -141,7 +140,7 @@ class _DayCell extends StatelessWidget {
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: completed ? theme.colorAccent : theme.colorSurfaceField,
-        borderRadius: BorderRadius.circular(theme.radiusSm),
+        shape: BoxShape.circle,
         border: isToday
             ? Border.all(
                 color: theme.colorAccent,
@@ -198,25 +197,20 @@ class _WeeklyRow extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         for (var i = 0; i < 7; i++)
-          Column(
-            children: [
-              _DayCell(
-                theme: theme,
-                completed: isDayCompleted(
-                  completedDays,
-                  monday.add(Duration(days: i)),
-                ),
-                isToday: isToday(monday.add(Duration(days: i)), todayDay),
-                size: theme.spacingXl,
-              ),
-              SizedBox(height: theme.spacingXs),
-              Text(
-                _weekdayInitials[i],
-                style: theme.textCaption.copyWith(
-                  color: theme.colorTextSecondary,
-                ),
-              ),
-            ],
+          // The weekday initial sits INSIDE the circle, exactly as the
+          // monthly grid puts its day numbers inside theirs — requested
+          // directly. It used to be a separate `Text` in a `Column`
+          // below the cell, which made the two views read as different
+          // components rather than the same one labelled differently.
+          _DayCell(
+            theme: theme,
+            completed: isDayCompleted(
+              completedDays,
+              monday.add(Duration(days: i)),
+            ),
+            isToday: isToday(monday.add(Duration(days: i)), todayDay),
+            size: theme.spacingXl,
+            label: _weekdayInitials[i],
           ),
       ],
     );
@@ -383,16 +377,13 @@ class _SixMonthlyHeatmap extends StatelessWidget {
 /// "Minutes"/"Times"/"Glasses", or "Did it" for a binary one, which has
 /// no unit by definition.
 ///
-/// Deliberately carries no target amount and no weekly frequency.
-/// Requested directly ("hide target and times per week"), confirmed to
-/// apply everywhere in the UI rather than only in the create/edit form,
-/// and then confirmed again that this line should keep the unit/type
-/// rather than disappearing altogether — the row's own title is the only
-/// other thing on it.
-///
-/// A top-level function, not a row method, so a test can exercise the
-/// wording directly without mounting a widget — the same shape
-/// `_zoneSummary`/`_behaviorSummary` already use in `settings_screen.dart`.
+/// **2026-09-21 — no longer rendered in [TrackedBehaviorRow].** Requested
+/// directly: the row now shows only the title, with this unit/type line
+/// hidden underneath it. Kept as a top-level function rather than
+/// deleted — it is still exercised directly by
+/// `tracked_behavior_list_screen_test.dart`'s own `describeBehaviorTarget`
+/// group, and the wording may resurface elsewhere later (the create/edit
+/// form already shows the unit its own way).
 String describeBehaviorTarget(TrackedBehavior behavior) {
   if (behavior.isBinary) return 'Did it';
 
