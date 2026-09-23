@@ -54,7 +54,12 @@ class ZoneList extends _$ZoneList {
   bool _notificationRefreshNeeded = false;
   bool _notificationRefreshRunning = false;
 
-  void _syncNotification(Zone zone) {
+  /// Takes no argument deliberately: this rebuilds the WHOLE zone alarm
+  /// set from current repository state (`scheduleZoneCalendar`), so it
+  /// never needed the one zone that happened to trigger it — the
+  /// parameter it used to take was ignored by the body and made callers
+  /// invent a zone to pass when a delete had none left to offer.
+  void _syncNotification() {
     final service = ref.read(notificationServiceProvider);
     final repository = ref.read(zoneRepositoryProvider);
     _notificationRefreshNeeded = true;
@@ -380,7 +385,29 @@ class ZoneList extends _$ZoneList {
       }
     }
     _refresh();
-    _syncNotification(zone);
+    _syncNotification();
+  }
+
+  /// Re-saves every [zones] in one call, refreshing [state] ONCE at the
+  /// end rather than once per row — same "many writes, one refresh" fix
+  /// as [deleteZonesInBatch], applied to the RESTORE side of Undo: a
+  /// group-delete's `onUndo` was looping [updateZone] once per
+  /// snapshotted zone, so Undo made them reappear one at a time just
+  /// like delete used to remove them one at a time. Reported directly:
+  /// "when they reappear also not at once."
+  ///
+  /// Deliberately bypasses [updateZone]'s own validation and neighbour-
+  /// push logic — a restore is putting back exactly what was there
+  /// before the delete, not re-resolving placement against whatever the
+  /// board looks like NOW, so re-running collision resolution here would
+  /// risk shoving some OTHER zone out of the way a second time.
+  Future<void> restoreZonesInBatch(Iterable<Zone> zones) async {
+    final repository = ref.read(zoneRepositoryProvider);
+    for (final zone in zones) {
+      await repository.save(zone);
+      _syncNotification();
+    }
+    _refresh();
   }
 
   /// Creates a ONE-OFF zone occurrence pinned to a single calendar day.
@@ -749,7 +776,7 @@ class ZoneList extends _$ZoneList {
         zone.startMinutes = move.newStartMinutes;
         zone.endMinutes = move.newEndMinutes;
         await repository.save(zone);
-        _syncNotification(zone);
+        _syncNotification();
       }
       if (zone?.isWeeklyPlacement == true) continue;
       for (final taskMove in move.taskMoves) {
@@ -781,6 +808,42 @@ class ZoneList extends _$ZoneList {
     }
     await ref.read(notificationServiceProvider).cancelForZone(id);
     _refresh();
+  }
+
+  /// Deletes every id in [ids] in one call, refreshing [state] ONCE at the
+  /// end rather than once per row — same fix, same reasoning, as
+  /// [TaskList.deleteTasksInBatch]: multi-select Remove looping
+  /// [deleteZone] made each selected zone disappear one at a time instead
+  /// of together, since every single-zone delete self-refreshes.
+  ///
+  /// Preserves [deleteZone]'s own per-row branching (a weekly placement is
+  /// archived, not really deleted).
+  ///
+  /// **Notification cancellation is deliberately NOT awaited per row**,
+  /// unlike [deleteZone]'s own single-row path. `cancelForZone` is a real
+  /// platform-channel round trip; awaiting one per row made a multi-row
+  /// delete take visibly longer per extra row, which is what was still
+  /// being reported ("one disappears instant, then after long delay the
+  /// others") even after this method already shared one [_refresh]. The
+  /// single [_syncNotification] call afterward is strictly better than a
+  /// loop of per-id cancels anyway: it goes through the existing
+  /// coalesced `scheduleZoneCalendar` path, which rebuilds the whole
+  /// alarm set from CURRENT repository state — so the just-deleted zones
+  /// are dropped as a side effect of that rebuild, with no per-id call at
+  /// all.
+  Future<void> deleteZonesInBatch(Iterable<String> ids) async {
+    final repository = ref.read(zoneRepositoryProvider);
+    for (final id in ids) {
+      final zone = repository.getById(id);
+      if (zone?.isWeeklyPlacement == true) {
+        zone!.archived = true;
+        await repository.save(zone);
+      } else {
+        await repository.delete(id);
+      }
+    }
+    _refresh();
+    _syncNotification();
   }
 
   /// Deletes [instance] and every OTHER instance of its series that falls

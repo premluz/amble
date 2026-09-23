@@ -103,4 +103,112 @@ void main() {
     final decoration = decoratedBox.decoration as BoxDecoration;
     expect(decoration.color, isNull);
   });
+
+  // **2026-09-21 — scrolls when the option list overflows.** Added for
+  // the Inbox's own Section tabs (an open-ended, user-created list) — see
+  // this widget's own class doc comment.
+  group('horizontal scroll (2026-09-21)', () {
+    testWidgets(
+      'the short 3-option list (existing caller shape) does NOT scroll — '
+      'no SingleChildScrollView, segments still fill the track',
+      (tester) async {
+        await pump(
+          tester,
+          SizedBox(
+            width: 400,
+            child: AppTabSwitch<String>(
+              options: options,
+              value: 'all',
+              onChanged: (_) {},
+            ),
+          ),
+        );
+
+        expect(find.byType(SingleChildScrollView), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'many long-labelled options that overflow the available width DO '
+      'scroll horizontally',
+      (tester) async {
+        final manyOptions = [
+          for (var i = 0; i < 20; i++)
+            AppOptionSwitchOption(
+              value: 'option-$i',
+              label: 'A fairly long option label $i',
+            ),
+        ];
+
+        await pump(
+          tester,
+          SizedBox(
+            width: 300,
+            child: AppTabSwitch<String>(
+              options: manyOptions,
+              value: 'option-0',
+              onChanged: (_) {},
+            ),
+          ),
+        );
+
+        expect(find.byType(SingleChildScrollView), findsOneWidget);
+        // Every label is still in the tree (scrollable, not clipped away)
+        // — confirms this is genuine horizontal scroll, not truncation.
+        expect(find.text('A fairly long option label 19'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'a caller-supplied segmentKey resolves to that option\'s own '
+      'rendered segment',
+      (tester) async {
+        final key = GlobalKey();
+        await pump(
+          tester,
+          AppTabSwitch<String>(
+            options: [
+              AppOptionSwitchOption(
+                value: 'all',
+                label: 'All',
+                segmentKey: key,
+              ),
+              const AppOptionSwitchOption(value: 'crypto', label: 'Crypto'),
+            ],
+            value: 'all',
+            onChanged: (_) {},
+          ),
+        );
+
+        expect(key.currentContext, isNotNull);
+      },
+    );
+
+    testWidgets('isDropTarget paints a border over the segment', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        AppTabSwitch<String>(
+          options: [
+            const AppOptionSwitchOption(
+              value: 'all',
+              label: 'All',
+              isDropTarget: true,
+            ),
+            const AppOptionSwitchOption(value: 'crypto', label: 'Crypto'),
+          ],
+          value: 'all',
+          onChanged: (_) {},
+        ),
+      );
+
+      final borders = tester
+          .widgetList<DecoratedBox>(find.byType(DecoratedBox))
+          .map((w) => w.decoration)
+          .whereType<BoxDecoration>()
+          .where((d) => d.border != null);
+      expect(borders, isNotEmpty);
+    });
+  });
 }

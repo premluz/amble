@@ -156,12 +156,22 @@ class AppDockPane extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
         boxShadow: isDark ? null : theme.shadowPane,
       ),
+      // **2026-09-23 — equal padding on both axes.** This used to be
+      // `horizontal: spacingSm` (8) against `vertical: spacingXs` (4),
+      // which made a pane holding a SINGLE button 60x48 — a visible
+      // ellipse rather than the round button it reads as. Reported
+      // directly, twice: "single buttons should be perfect circle e.g.
+      // edit and heart at the moment are ellipse." With both axes at
+      // `spacingXs` a one-button pane is 48x48 (the button's own 40 plus
+      // 4 either side), so the 999 radius renders a true circle; a
+      // multi-button pane is unaffected in shape, just 8px narrower.
       child: Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: theme.spacingSm,
-          vertical: theme.spacingXs,
+        padding: EdgeInsets.all(theme.spacingXs),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          spacing: theme.spacingXs,
+          children: children,
         ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: children),
       ),
     );
   }
@@ -189,7 +199,13 @@ class AppDockIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: theme.spacingXs / 2),
+      // Horizontal only, and only BETWEEN buttons — a pane holding one
+      // button must come out square so its 999 radius renders a true
+      // circle rather than an ellipse (see [AppDockPane]'s own padding
+      // comment). `EdgeInsets.zero` here would weld a multi-button pane's
+      // icons together, so the separation is applied by the Row in
+      // [AppDockPane] instead, where it can skip the outer edges.
+      padding: EdgeInsets.zero,
       child: AppButton(
         icon: icon,
         shape: AppButtonShape.circle,

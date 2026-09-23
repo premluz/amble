@@ -24,7 +24,9 @@ const _monthNames = [
 /// should be Monday." Brings this strip in line with the rest of the app,
 /// which was already Monday-first everywhere else — `DateTime.weekday`'s
 /// own 1-7 numbering, the recurrence generators' `_startOfWeek`, and the
-/// task detail sheet's own `MON..SUN` repeat-day picker.
+/// task detail sheet's own Monday-first repeat-day picker (which switched
+/// from 3-letter `MON..SUN` labels to this same single-letter
+/// M/T/W/T/F/S/S format on 2026-09-22, requested directly).
 const _weekdayAbbreviations = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 /// Full weekday names, Monday-first (matching [DateTime.weekday]'s own
@@ -277,7 +279,8 @@ class _WeekStrip extends StatefulWidget {
   State<_WeekStrip> createState() => _WeekStripState();
 }
 
-class _WeekStripState extends State<_WeekStrip> {
+class _WeekStripState extends State<_WeekStrip>
+    with SingleTickerProviderStateMixin {
   /// One key per day column, in Monday-first order — used only to read
   /// each cell's live `RenderBox` bounds during a scrub (see
   /// [_onScrubMove]), never for identity/rebuild purposes.
@@ -289,6 +292,48 @@ class _WeekStripState extends State<_WeekStrip> {
   /// straight to [AppDateAccordion.onDateSelected] as it changes, not
   /// buffered here.
   int? _scrubbedIndex;
+
+  /// **2026-09-21 — swipe paging, not an instant jump.** Requested
+  /// directly: "on swipe left right the calendar we need animation and
+  /// actually 'pulling further or previous' days from behind screen and
+  /// then 'magnetic' kind of lock to land in position... currently no
+  /// animation, numbers just change." Replaces the old bare
+  /// `onHorizontalDragEnd`-only jump (still present in spirit — a
+  /// completed swipe still steps 7 days — but now the whole week visibly
+  /// slides rather than snapping in one frame).
+  ///
+  /// [_dragPixels] is the live horizontal offset while a finger is down —
+  /// the CURRENT week's row is drawn shifted by this, and the previous/
+  /// next week's row is drawn one strip-width further out in the same
+  /// direction, so dragging visibly "pulls" the adjacent week in from
+  /// off-screen rather than the numbers just changing in place. Reset to
+  /// 0 once a page settles.
+  double _dragPixels = 0;
+
+  /// The strip's own measured width — needed to know how far "one week"
+  /// is in pixels (for clamping the drag and for where the adjacent
+  /// week's row sits at rest), captured via [LayoutBuilder] in [build]
+  /// since this widget has no fixed width of its own.
+  double _stripWidth = 0;
+
+  /// Drives [_dragPixels] from wherever the finger released it to its
+  /// resting value (0, or a full ±[_stripWidth] before the week actually
+  /// steps) — the "magnetic lock" settle. `curveStandard`, not a bespoke
+  /// spring/overshoot curve: this design system has no spring token yet
+  /// (confirmed by survey — only `curveStandard`/`curveDecelerate`
+  /// exist), and `curveStandard`'s own fast-out-slow-in shape already
+  /// reads as "decisive then eased to a stop" without inventing a new
+  /// primitive for one widget.
+  late final AnimationController _settleController = AnimationController(
+    vsync: this,
+    duration: widget.theme.motionNormal,
+  );
+
+  @override
+  void dispose() {
+    _settleController.dispose();
+    super.dispose();
+  }
 
   /// Press-and-slide day scrubbing — requested directly: holding the
   /// finger down and sliding it across the row should "turn" through the
@@ -341,6 +386,68 @@ class _WeekStripState extends State<_WeekStrip> {
     }
   }
 
+  void _onPageDragUpdate(DragUpdateDetails details) {
+    if (_stripWidth <= 0) return;
+    setState(() {
+      // Clamped to one strip-width either way — past that, dragging
+      // further wouldn't reveal anything new (the week beyond the
+      // adjacent one is never drawn), so the finger would otherwise
+      // outrun the visible motion.
+      _dragPixels = (_dragPixels + details.delta.dx).clamp(
+        -_stripWidth,
+        _stripWidth,
+      );
+    });
+  }
+
+  /// Resolves the drag to a resting point — commit a full week step, or
+  /// spring back to where this page started — then animates [_dragPixels]
+  /// there. A fast flick commits regardless of how far the finger
+  /// actually travelled (matches the pre-existing velocity-only jump this
+  /// replaces); otherwise it's purely distance: past half the strip's own
+  /// width counts as "far enough," short of that snaps back. Requested
+  /// directly as "magnetic... calm but decisive."
+  void _onPageDragEnd(DragEndDetails details) {
+    final velocity = details.primaryVelocity ?? 0;
+    const flingVelocityThreshold = 400.0;
+    final pastHalfway = _dragPixels.abs() > _stripWidth / 2;
+    final committing = velocity.abs() > flingVelocityThreshold || pastHalfway;
+
+    // Sign of the COMMIT, not of the raw drag/velocity — dragging left
+    // (negative dx) reveals the NEXT week, matching this row's own
+    // pre-existing `velocity < 0 ? 7 : -7` direction convention.
+    final stepsForward =
+        committing && (velocity != 0 ? velocity < 0 : _dragPixels < 0);
+    final target = !committing
+        ? 0.0
+        : (stepsForward ? -_stripWidth : _stripWidth);
+
+    _settleController
+      ..stop()
+      ..value = 0;
+    final animation = Tween<double>(begin: _dragPixels, end: target).animate(
+      CurvedAnimation(
+        parent: _settleController,
+        curve: widget.theme.curveStandard,
+      ),
+    );
+    void tick() => setState(() => _dragPixels = animation.value);
+    animation.addListener(tick);
+    _settleController.forward().whenCompleteOrCancel(() {
+      animation.removeListener(tick);
+      if (committing) {
+        widget.onDateSelected(
+          widget.selectedDate.add(Duration(days: stepsForward ? 7 : -7)),
+        );
+      }
+      // Reset AFTER reporting the step — the caller's own rebuild (new
+      // `weekStart`) lands on the same frame this snaps back to 0, so the
+      // strip never visibly shows the old week sitting at rest before the
+      // new one takes over.
+      setState(() => _dragPixels = 0);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = widget.theme;
@@ -382,80 +489,423 @@ class _WeekStripState extends State<_WeekStrip> {
         // `_WeekDayCell`. A separate row made that structurally
         // impossible.
         //
-        // Horizontal swipe steps the visible week back/forward by 7
-        // days — unchanged from `AppCalendarHeader`'s own original
-        // gesture, just living here now. A SEPARATE `GestureDetector`
-        // from the press-and-slide scrub below (see [_onScrubMove]'s own
-        // doc comment on why the two must not share one drag
-        // recognizer) — a quick swipe is caught here before it holds
-        // long enough for a long-press to even register.
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onHorizontalDragEnd: (details) {
-            final velocity = details.primaryVelocity ?? 0;
-            if (velocity == 0) return;
-            widget.onDateSelected(
-              widget.selectedDate.add(Duration(days: velocity < 0 ? 7 : -7)),
+        // Horizontal swipe pages the visible week back/forward — a
+        // SEPARATE `GestureDetector` from the press-and-slide scrub below
+        // (see [_onScrubMove]'s own doc comment on why the two must not
+        // share one drag recognizer) — a quick swipe is caught here
+        // before it holds long enough for a long-press to even register.
+        //
+        // **2026-09-21 — the week visibly slides, not an instant jump.**
+        // Requested directly: dragging now "pulls" the adjacent week in
+        // from off-screen, following the finger live, and releasing
+        // either commits the step (a full 7-day slide-through, "magnetic"
+        // settle at the end) or springs back to the current week if the
+        // drag didn't go far/fast enough — see [_onPageDragEnd]'s own doc
+        // comment for the exact commit rule.
+        LayoutBuilder(
+          builder: (context, constraints) {
+            // Captured every build (post-frame would lag one frame behind
+            // a size change, e.g. the accordion's own first expand) —
+            // cheap, just a field write, not a real layout cost.
+            _stripWidth = constraints.maxWidth;
+
+            return GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onHorizontalDragUpdate: _onPageDragUpdate,
+              onHorizontalDragEnd: _onPageDragEnd,
+              // Opaque hit-testing needs a real, non-shrinking bounding
+              // box — `Row` alone (no longer stretched by `Expanded`
+              // children) would shrink to the sum of the 7 cells' own
+              // natural widths, leaving the gaps BETWEEN them (most of
+              // this row's actual area) unable to catch the swipe.
+              child: ClipRect(
+                child: SizedBox(
+                  width: double.infinity,
+                  child: Stack(
+                    // `Clip.none` on the Stack itself — the `ClipRect`
+                    // above already bounds the whole strip; letting the
+                    // Stack ALSO clip its children would cut off the
+                    // adjacent week's row exactly where it's supposed to
+                    // be visible (still sliding in) rather than only once
+                    // it's fully off-screen.
+                    clipBehavior: Clip.none,
+                    children: [
+                      // The week reached by continuing to drag LEFT
+                      // (finger moving toward negative dx) — sits one
+                      // strip-width to the right at rest, only entering
+                      // view as `_dragPixels` goes negative.
+                      if (_dragPixels < 0)
+                        Transform.translate(
+                          offset: Offset(_dragPixels + _stripWidth, 0),
+                          child: _WeekDayRow(
+                            theme: theme,
+                            weekStart: widget.weekStart.add(
+                              const Duration(days: 7),
+                            ),
+                            today: widget.today,
+                            selectedDate: widget.selectedDate,
+                            cellKeys: null,
+                            onDateSelected: widget.onDateSelected,
+                          ),
+                        ),
+                      if (_dragPixels > 0)
+                        Transform.translate(
+                          offset: Offset(_dragPixels - _stripWidth, 0),
+                          child: _WeekDayRow(
+                            theme: theme,
+                            weekStart: widget.weekStart.subtract(
+                              const Duration(days: 7),
+                            ),
+                            today: widget.today,
+                            selectedDate: widget.selectedDate,
+                            cellKeys: null,
+                            onDateSelected: widget.onDateSelected,
+                          ),
+                        ),
+                      Transform.translate(
+                        offset: Offset(_dragPixels, 0),
+                        child: _WeekDayRow(
+                          theme: theme,
+                          weekStart: widget.weekStart,
+                          today: widget.today,
+                          selectedDate: widget.selectedDate,
+                          // Only the settled (current) week's cells are
+                          // real day-scrub targets — mid-drag, a
+                          // long-press has nothing stable to scrub
+                          // against anyway.
+                          cellKeys: _cellKeys,
+                          onDateSelected: widget.onDateSelected,
+                          onScrubMove: _onScrubMove,
+                          onScrubEnd: () => _scrubbedIndex = null,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             );
           },
-          // Opaque hit-testing needs a real, non-shrinking bounding box —
-          // `Row` alone (no longer stretched by `Expanded` children) would
-          // shrink to the sum of the 7 cells' own natural widths, leaving
-          // the gaps BETWEEN them (most of this row's actual area) unable
-          // to catch the swipe. `SizedBox(width: double.infinity)` forces
-          // the full row width back, same as the old Expanded-per-cell
-          // shape gave for free.
-          child: SizedBox(
-            width: double.infinity,
-            // `spaceBetween` over naturally-sized cells, matching the
-            // weekday-letter row above exactly — see its own comment for
-            // the two shapes this replaced and why each was wrong. Each
-            // cell sizes to its own NUMBER, so the first number's left
-            // edge and the last number's right edge land on the row's
-            // bounds; the selected day's fixed circle is drawn behind
-            // that number without widening the cell (see `_WeekDayCell`),
-            // so it may overhang the content edge on the outermost days —
-            // confirmed as intended.
-            //
-            // The scrub's own `GestureDetector` wraps just the `Row`, not
-            // the whole swipe target above — a long-press has to start
-            // ON one of the day cells to mean anything (there is nothing
-            // to scrub FROM otherwise), where the swipe's hit area can
-            // reasonably start anywhere across the full strip width.
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onLongPressStart: (details) =>
-                  _onScrubMove(details.globalPosition),
-              onLongPressMoveUpdate: (details) =>
-                  _onScrubMove(details.globalPosition),
-              onLongPressEnd: (_) => _scrubbedIndex = null,
-              onLongPressCancel: () => _scrubbedIndex = null,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  for (var i = 0; i < 7; i++)
-                    _WeekDayCell(
-                      key: _cellKeys[i],
-                      theme: theme,
-                      label: _weekdayAbbreviations[i],
-                      date: widget.weekStart.add(Duration(days: i)),
-                      isToday: _isSameDay(
-                        widget.weekStart.add(Duration(days: i)),
-                        widget.today,
-                      ),
-                      isSelected: _isSameDay(
-                        widget.weekStart.add(Duration(days: i)),
-                        widget.selectedDate,
-                      ),
-                      onTap: () => widget.onDateSelected(
-                        widget.weekStart.add(Duration(days: i)),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
         ),
+      ],
+    );
+  }
+}
+
+/// One Mon-Sun day row, at a given [weekStart] — extracted so [_WeekStrip]
+/// can render three of these stacked (previous/current/next) for the
+/// swipe-paging slide (see that widget's own `build`). Only the CURRENT
+/// (settled) instance is wired for day-scrub (`cellKeys`/`onScrubMove`/
+/// `onScrubEnd` all non-null) — the adjacent, still-sliding rows are
+/// display-only until a page-step lands and one of them becomes current.
+class _WeekDayRow extends StatelessWidget {
+  const _WeekDayRow({
+    required this.theme,
+    required this.weekStart,
+    required this.today,
+    required this.selectedDate,
+    required this.cellKeys,
+    required this.onDateSelected,
+    this.onScrubMove,
+    this.onScrubEnd,
+  });
+
+  final AmbleTheme theme;
+  final DateTime weekStart;
+  final DateTime today;
+  final DateTime selectedDate;
+  final List<GlobalKey>? cellKeys;
+  final ValueChanged<DateTime> onDateSelected;
+  final ValueChanged<Offset>? onScrubMove;
+  final VoidCallback? onScrubEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    // **The spread rule: first and last day flush, the rest evenly
+    // between.** Requested directly against a side-by-side mock —
+    // "both Monday is aligned with the left edge, and Sunday is
+    // aligned with the right edge."
+    //
+    // Two shapes were tried and are both wrong, for opposite reasons,
+    // so they are recorded here rather than rediscovered:
+    //
+    // 1. 7 fixed `sizeButtonMd` (40px) cells under `spaceBetween` —
+    //    the BOXES reached the row's bounds, but each held a ~24px
+    //    number centred inside it, so the visible digits floated ~8px
+    //    inward. Measured on a 400px screen at the 16px inset: the
+    //    first number painted at 23.75, the last ended at 376.25,
+    //    against the 16..384 the boxes spanned.
+    // 2. 7 equal `Expanded` columns, each centring its cell — an even
+    //    division, but the outermost CENTRES sit half a column in
+    //    from the edges by construction, which is exactly the inset
+    //    the mock rejects.
+    //
+    // `spaceBetween` over naturally-sized children is the shape that
+    // actually matches: `Row` gives the first child's leading edge
+    // and the last child's trailing edge to the row's own bounds, and
+    // distributes the slack between the remaining five.
+    //
+    // Each cell renders its own letter above its own number, so one
+    // widget owns the whole column and can carry a single tap target
+    // and selection fill spanning both — see `_WeekDayCell`.
+    //
+    // **2026-09-21 — the selection fill is no longer per-cell.** Each
+    // `_WeekDayCell` used to own an `AnimatedContainer` that cross-faded
+    // its own background in/out — moving selection from one day to
+    // another read as one fill fading out while a SEPARATE fill faded in
+    // elsewhere, never as one thing travelling. Requested directly: "the
+    // active indicator (bg)... enlarges and slides and reduces size to
+    // arrive at actual size and spot like gooey kind of thing." A single
+    // shared [_WeekDaySelectionIndicator] now paints behind the whole row
+    // (see that widget's own doc comment), and `_WeekDayCell` renders no
+    // fill of its own at all any more — only the text weight/color and
+    // the today-dot still respond to `isSelected`/`isToday`.
+    final indicatorTarget =
+        selectedDate.isBefore(weekStart) ||
+            selectedDate.isAfter(weekStart.add(const Duration(days: 6)))
+        ? null
+        : selectedDate.difference(weekStart).inDays;
+
+    final row = SizedBox(
+      width: double.infinity,
+      child: _WeekDaySelectionIndicator(
+        theme: theme,
+        // Only the current (settled) row ever has real `cellKeys` to
+        // measure — the sliding adjacent pages (`onScrubMove` also null
+        // for those) render the indicator-free variant instead, since
+        // there is nothing stable to measure mid-drag and no selection
+        // ever rests on them anyway.
+        cellKeys: onScrubMove != null ? cellKeys : null,
+        selectedIndex: indicatorTarget,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            for (var i = 0; i < 7; i++)
+              _WeekDayCell(
+                key: cellKeys?[i],
+                theme: theme,
+                label: _weekdayAbbreviations[i],
+                date: weekStart.add(Duration(days: i)),
+                isToday: _isSameDay(weekStart.add(Duration(days: i)), today),
+                isSelected: _isSameDay(
+                  weekStart.add(Duration(days: i)),
+                  selectedDate,
+                ),
+                onTap: () => onDateSelected(weekStart.add(Duration(days: i))),
+              ),
+          ],
+        ),
+      ),
+    );
+
+    if (onScrubMove == null) return row;
+
+    // The scrub's own `GestureDetector` wraps just the `Row`, not the
+    // whole swipe target the caller owns — a long-press has to start ON
+    // one of the day cells to mean anything (there is nothing to scrub
+    // FROM otherwise), where the swipe's own hit area can reasonably
+    // start anywhere across the full strip width.
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onLongPressStart: (details) => onScrubMove!(details.globalPosition),
+      onLongPressMoveUpdate: (details) => onScrubMove!(details.globalPosition),
+      onLongPressEnd: (_) => onScrubEnd!(),
+      onLongPressCancel: onScrubEnd,
+      child: row,
+    );
+  }
+}
+
+/// Paints ONE shared selection fill behind [child]'s row of day cells,
+/// animating between cells rather than letting each cell cross-fade its
+/// own — requested directly: "active indicator (bg)... enlarges and
+/// slides and reduces size to arrive at actual size and spot like gooey
+/// kind of thing."
+///
+/// **How the geometry is found.** [cellKeys] are the SAME keys
+/// [_WeekStripState] already attaches to each `_WeekDayCell` for day-
+/// scrub hit-testing — this widget reads their `RenderBox` bounds (via
+/// `globalToLocal` against its own `RenderBox`) after every frame to
+/// learn where the currently-selected cell actually sits, exactly the
+/// same "resolve real geometry through a GlobalKey" technique this file
+/// already uses for scrub hit-testing and drop-target checks elsewhere
+/// in this app. There is no other way to know a cell's pixel position up
+/// front: cells are naturally sized (`spaceBetween`, not fixed columns —
+/// see this row's own historical layout comment), so their x-positions
+/// only exist once a real layout pass has actually run.
+///
+/// **A plain move, not a stretch** (2026-09-21, reversing the original
+/// "gooey" squash-and-stretch design below) — requested directly: "the
+/// 'active' highlight animation... should not have that scale width
+/// thing, just move ease (slowing toward end) fast decisive, smooth, no
+/// gooey thing." The indicator now animates a single `Rect.lerp` between
+/// [_fromRect] and [_toRect] on [AmbleTheme.curveDecelerate] (full speed
+/// immediately, then decelerating into the landing) — no union-rect
+/// stretch, no contraction phase.
+class _WeekDaySelectionIndicator extends StatefulWidget {
+  const _WeekDaySelectionIndicator({
+    required this.theme,
+    required this.cellKeys,
+    required this.selectedIndex,
+    required this.child,
+  });
+
+  final AmbleTheme theme;
+  final List<GlobalKey>? cellKeys;
+
+  /// Which of the 7 cells is selected, or null if the selected date isn't
+  /// in this row at all (only possible for the sliding adjacent-week
+  /// rows mid-drag — the current row's own selection is always one of
+  /// its 7 days by construction, since [AppDateAccordion] only ever
+  /// calls back with a date, and [_WeekStripState] derives `weekStart`
+  /// FROM `selectedDate`).
+  final int? selectedIndex;
+
+  final Widget child;
+
+  @override
+  State<_WeekDaySelectionIndicator> createState() =>
+      _WeekDaySelectionIndicatorState();
+}
+
+class _WeekDaySelectionIndicatorState extends State<_WeekDaySelectionIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: widget.theme.motionNormal,
+  );
+
+  /// Eases the controller's own raw linear value — "fast decisive...
+  /// slowing toward end," requested directly. Hoisted as a field (not
+  /// rebuilt per frame) since [AmbleTheme.curveDecelerate] doesn't change
+  /// after `initState`.
+  late final CurvedAnimation _eased = CurvedAnimation(
+    parent: _controller,
+    curve: widget.theme.curveDecelerate,
+  );
+
+  /// The indicator's own on-screen rect (in this widget's local
+  /// coordinates) at the START of the current animation — null before
+  /// the first real measurement lands, or once nothing is selected in
+  /// this row.
+  Rect? _fromRect;
+
+  /// ...and at its END — where the animation (or the very first
+  /// measurement, with no animation at all) is heading.
+  Rect? _toRect;
+
+  int? _lastSelectedIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _lastSelectedIndex = widget.selectedIndex;
+    // The first frame can't know any cell's real geometry yet — nothing
+    // has laid out. One post-frame callback resolves the initial rect
+    // with no animation (the indicator should simply BE at the selected
+    // cell on first paint, not slide in from nowhere).
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _syncToSelection(animate: false),
+    );
+  }
+
+  @override
+  void didUpdateWidget(_WeekDaySelectionIndicator oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.selectedIndex != _lastSelectedIndex) {
+      _lastSelectedIndex = widget.selectedIndex;
+      // Selection changed — resolve the NEW cell's rect once its own
+      // frame has laid out, animating from wherever the indicator
+      // currently sits.
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _syncToSelection(animate: true),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _eased.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Rect? _measureCellRect(int index) {
+    final keys = widget.cellKeys;
+    final renderBox = context.findRenderObject();
+    if (keys == null || renderBox is! RenderBox || !renderBox.attached) {
+      return null;
+    }
+    final cellBox =
+        keys[index].currentContext?.findRenderObject() as RenderBox?;
+    if (cellBox == null || !cellBox.attached) return null;
+    final topLeft = renderBox.globalToLocal(cellBox.localToGlobal(Offset.zero));
+    return topLeft & cellBox.size;
+  }
+
+  void _syncToSelection({required bool animate}) {
+    if (!mounted) return;
+    final index = widget.selectedIndex;
+    if (index == null) {
+      setState(() {
+        _fromRect = null;
+        _toRect = null;
+      });
+      return;
+    }
+    final target = _measureCellRect(index);
+    if (target == null) return;
+    setState(() {
+      _fromRect = animate ? (_toRect ?? target) : target;
+      _toRect = target;
+    });
+    if (animate && _fromRect != target) {
+      _controller
+        ..stop()
+        ..value = 0
+        ..forward();
+    } else {
+      _controller.value = 1;
+    }
+  }
+
+  /// A plain rect lerp from [_fromRect] to [_toRect] — no stretch, no
+  /// union, no contraction phase. [t] is expected to already be eased
+  /// (see [build]'s `CurvedAnimation`, `theme.curveDecelerate`), not the
+  /// controller's own raw linear value.
+  Rect _rectAt(double t) {
+    final from = _fromRect;
+    final to = _toRect;
+    if (from == null || to == null) return to ?? Rect.zero;
+    return Rect.lerp(from, to, t)!;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = widget.theme;
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        AnimatedBuilder(
+          // curveDecelerate — full speed immediately, then decelerating
+          // into the landing ("fast decisive... slowing toward end"),
+          // matching this row's other motion language rather than the
+          // controller's own raw linear value.
+          animation: _eased,
+          builder: (context, child) {
+            final rect = _rectAt(_eased.value);
+            if (_toRect == null) return const SizedBox.shrink();
+            return Positioned.fromRect(
+              rect: rect,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: theme.colorSurfaceField,
+                  borderRadius: BorderRadius.circular(theme.radiusPill),
+                ),
+              ),
+            );
+          },
+        ),
+        widget.child,
       ],
     );
   }
@@ -485,15 +935,17 @@ class _WeekDayCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Same "background marks selection, dot marks today" split
-    // `AppCalendarHeader`'s own predecessor used — kept unchanged for
-    // continuity even as the surrounding shell (accordion vs. always-on)
-    // changes around it.
-    final background = isSelected
-        ? theme.colorSurfaceField
-        : Colors.transparent;
-
-    // **2026-09-21 — the letter lives INSIDE this cell, and the fill is a
+    // **2026-09-21 — no fill of its own any more.** Used to be an
+    // `AnimatedContainer` cross-fading `theme.colorSurfaceField` in/out
+    // per cell; that background now lives entirely in the shared
+    // `_WeekDaySelectionIndicator` painted behind the whole row (see
+    // `_WeekDayRow`'s own doc comment on why) — this cell only reacts to
+    // `isSelected`/`isToday` through text weight/color and the today-dot,
+    // same "background marks selection, dot marks today" split
+    // `AppCalendarHeader`'s own predecessor used for the SHAPE of the
+    // signal, just not the ownership of the fill any more.
+    //
+    // **The letter lives INSIDE this cell, and the tap target is a
     // stadium covering both it and the number.** Requested directly
     // against a before/after mock: "the hit area should include day label
     // M T W etc., and active/hover should be [a stadium] including day
@@ -504,11 +956,11 @@ class _WeekDayCell extends StatelessWidget {
     // impossible — the two rows were separate widgets with separate
     // bounds, so a tap on "M" landed on nothing. Folding the letter in
     // means ONE widget owns the whole column: one tap target, one press
-    // ripple, one selection fill.
+    // ripple.
     final pill = AppPressFeedback(
       onTap: onTap,
-      // A stadium, not a circle — the pressed/selected shape now spans
-      // letter + number, which is taller than it is wide.
+      // A stadium, not a circle — the pressed shape now spans letter +
+      // number, which is taller than it is wide.
       borderRadius: BorderRadius.circular(theme.radiusPill),
       // No outer padding: this cell's width IS the stadium's width, and
       // the row lays seven of them out with `spaceBetween` against a
@@ -516,63 +968,60 @@ class _WeekDayCell extends StatelessWidget {
       // being part of the visible pill, which overflowed the row by 28px
       // when tried. The inner padding below is what gives the stadium its
       // shape.
-      // AnimatedContainer, not a bare DecoratedBox — requested directly:
-      // the selection fill should travel smoothly from day to day as a
-      // scrub crosses each one, rather than snapping. `motionFast`/
-      // `curveStandard` match every other quick state-change transition
-      // in this design system (e.g. the chevron rotation above).
-      child: AnimatedContainer(
-        duration: theme.motionFast,
-        curve: theme.curveStandard,
-        decoration: BoxDecoration(
-          color: background,
-          borderRadius: BorderRadius.circular(theme.radiusPill),
+      child: Padding(
+        // `spacingSm`, not `spacingXs` — requested directly: the
+        // selected-day stadium's hit/active area read too thin.
+        // Widening it eats into the `spaceBetween` gap between cells
+        // rather than growing the row's own bounds (see this row's
+        // `spaceBetween`-over-natural-width comment above).
+        padding: EdgeInsets.symmetric(
+          horizontal: theme.spacingSm,
+          vertical: theme.spacingSm,
         ),
-        child: Padding(
-          // `spacingSm`, not `spacingXs` — requested directly: the
-          // selected-day stadium's hit/active area read too thin.
-          // Widening it eats into the `spaceBetween` gap between cells
-          // rather than growing the row's own bounds (see this row's
-          // `spaceBetween`-over-natural-width comment above).
-          padding: EdgeInsets.symmetric(
-            horizontal: theme.spacingSm,
-            vertical: theme.spacingSm,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                label,
-                style: theme.textCaption.copyWith(
-                  color: theme.colorTextTertiary,
-                ),
-              ),
-              SizedBox(height: theme.spacingSm),
-              Text(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: theme.textCaption.copyWith(color: theme.colorTextTertiary),
+            ),
+            SizedBox(height: theme.spacingSm),
+            // `_dayNumberMinWidth`, not a bare Text — requested
+            // directly: a 1-digit day ("3") sized this cell narrower
+            // than a 2-digit one ("31"), so cells visibly resized as
+            // the visible week changed. Reserves enough width for two
+            // digits at all times (measured against the token's own
+            // monospace-adjacent numeral width, see that constant's own
+            // doc comment) so every cell stays the same width whether
+            // its day number is one digit or two.
+            SizedBox(
+              width: _dayNumberMinWidth(theme),
+              child: Text(
                 '${date.day}',
+                textAlign: TextAlign.center,
                 style: theme.textCaption.copyWith(
                   color: theme.colorTextPrimary,
                   fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                 ),
               ),
-              SizedBox(height: theme.spacingXs / 2),
-              SizedBox(
-                height: theme.spacingXs,
-                child: isToday
-                    ? Center(
-                        child: Container(
-                          width: theme.spacingXs,
-                          height: theme.spacingXs,
-                          decoration: BoxDecoration(
-                            color: theme.colorAccent,
-                            shape: BoxShape.circle,
-                          ),
+            ),
+            SizedBox(height: theme.spacingXs / 2),
+            SizedBox(
+              height: theme.spacingXs,
+              child: isToday
+                  ? Center(
+                      child: Container(
+                        width: theme.spacingXs,
+                        height: theme.spacingXs,
+                        decoration: BoxDecoration(
+                          color: theme.colorAccent,
+                          shape: BoxShape.circle,
                         ),
-                      )
-                    : null,
-              ),
-            ],
-          ),
+                      ),
+                    )
+                  : null,
+            ),
+          ],
         ),
       ),
     );
@@ -615,4 +1064,23 @@ class _WeekDayCell extends StatelessWidget {
       ],
     );
   }
+}
+
+/// The width reserved for [_WeekDayCell]'s own day-number `Text` —
+/// measured against "88" (two wide digits) at bold weight, the widest a
+/// real day number ever renders (the selected cell's own bold weight is
+/// wider than the unselected regular weight, so this measures the
+/// heavier one to cover both). [TextPainter], the standard way to measure
+/// text outside a real layout pass — the same technique `app_tab_switch
+/// .dart`'s own `_estimateSegmentWidth` uses for an analogous "reserve a
+/// stable width" need.
+double _dayNumberMinWidth(AmbleTheme theme) {
+  final painter = TextPainter(
+    text: TextSpan(
+      text: '88',
+      style: theme.textCaption.copyWith(fontWeight: FontWeight.w700),
+    ),
+    textDirection: TextDirection.ltr,
+  )..layout();
+  return painter.width;
 }

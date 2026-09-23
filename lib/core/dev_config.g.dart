@@ -732,6 +732,137 @@ abstract class _$DevHideEmptyZones extends $Notifier<bool> {
   }
 }
 
+/// Spatial Task View only — when on, restores each zone band's OLD
+/// dynamic width: sized off the day's own deepest overlap-lane stack
+/// (`_zoneBackgroundWidth`/`dayPillLanes` in `timeline_screen.dart`), so a
+/// day with more overlapping tasks widened every zone band. Requested
+/// directly, alongside moving the zone name label to render INSIDE the
+/// band rather than beside it: "keep that behaviour as toggle in dev
+/// mode... default to false and keep same size 100% of available
+/// container til right edge."
+///
+/// **Defaults to false** — every zone band instead spans from
+/// `hourGutterWidth` to `rightEdgeInset` (the SAME `left`/`right`, no
+/// explicit `width`, mechanism every other full-width Timeline element
+/// already uses to reach the true page edge), regardless of lane count.
+/// See docs/DESIGN_SYSTEM.md's "Zone pane indicator" section for the full
+/// reasoning and `timeline_screen.dart`'s own `_zoneBackgroundRight`
+/// call site.
+///
+/// The Weekly Zone Authoring Grid is unaffected — its own blocks were
+/// never lane-width-driven, so this toggle has nothing to do there.
+
+@ProviderFor(DevDynamicZoneWidth)
+final devDynamicZoneWidthProvider = DevDynamicZoneWidthProvider._();
+
+/// Spatial Task View only — when on, restores each zone band's OLD
+/// dynamic width: sized off the day's own deepest overlap-lane stack
+/// (`_zoneBackgroundWidth`/`dayPillLanes` in `timeline_screen.dart`), so a
+/// day with more overlapping tasks widened every zone band. Requested
+/// directly, alongside moving the zone name label to render INSIDE the
+/// band rather than beside it: "keep that behaviour as toggle in dev
+/// mode... default to false and keep same size 100% of available
+/// container til right edge."
+///
+/// **Defaults to false** — every zone band instead spans from
+/// `hourGutterWidth` to `rightEdgeInset` (the SAME `left`/`right`, no
+/// explicit `width`, mechanism every other full-width Timeline element
+/// already uses to reach the true page edge), regardless of lane count.
+/// See docs/DESIGN_SYSTEM.md's "Zone pane indicator" section for the full
+/// reasoning and `timeline_screen.dart`'s own `_zoneBackgroundRight`
+/// call site.
+///
+/// The Weekly Zone Authoring Grid is unaffected — its own blocks were
+/// never lane-width-driven, so this toggle has nothing to do there.
+final class DevDynamicZoneWidthProvider
+    extends $NotifierProvider<DevDynamicZoneWidth, bool> {
+  /// Spatial Task View only — when on, restores each zone band's OLD
+  /// dynamic width: sized off the day's own deepest overlap-lane stack
+  /// (`_zoneBackgroundWidth`/`dayPillLanes` in `timeline_screen.dart`), so a
+  /// day with more overlapping tasks widened every zone band. Requested
+  /// directly, alongside moving the zone name label to render INSIDE the
+  /// band rather than beside it: "keep that behaviour as toggle in dev
+  /// mode... default to false and keep same size 100% of available
+  /// container til right edge."
+  ///
+  /// **Defaults to false** — every zone band instead spans from
+  /// `hourGutterWidth` to `rightEdgeInset` (the SAME `left`/`right`, no
+  /// explicit `width`, mechanism every other full-width Timeline element
+  /// already uses to reach the true page edge), regardless of lane count.
+  /// See docs/DESIGN_SYSTEM.md's "Zone pane indicator" section for the full
+  /// reasoning and `timeline_screen.dart`'s own `_zoneBackgroundRight`
+  /// call site.
+  ///
+  /// The Weekly Zone Authoring Grid is unaffected — its own blocks were
+  /// never lane-width-driven, so this toggle has nothing to do there.
+  DevDynamicZoneWidthProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'devDynamicZoneWidthProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$devDynamicZoneWidthHash();
+
+  @$internal
+  @override
+  DevDynamicZoneWidth create() => DevDynamicZoneWidth();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(bool value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<bool>(value),
+    );
+  }
+}
+
+String _$devDynamicZoneWidthHash() =>
+    r'ef133209edbacd39092aede3cbd0e6a1550f1c72';
+
+/// Spatial Task View only — when on, restores each zone band's OLD
+/// dynamic width: sized off the day's own deepest overlap-lane stack
+/// (`_zoneBackgroundWidth`/`dayPillLanes` in `timeline_screen.dart`), so a
+/// day with more overlapping tasks widened every zone band. Requested
+/// directly, alongside moving the zone name label to render INSIDE the
+/// band rather than beside it: "keep that behaviour as toggle in dev
+/// mode... default to false and keep same size 100% of available
+/// container til right edge."
+///
+/// **Defaults to false** — every zone band instead spans from
+/// `hourGutterWidth` to `rightEdgeInset` (the SAME `left`/`right`, no
+/// explicit `width`, mechanism every other full-width Timeline element
+/// already uses to reach the true page edge), regardless of lane count.
+/// See docs/DESIGN_SYSTEM.md's "Zone pane indicator" section for the full
+/// reasoning and `timeline_screen.dart`'s own `_zoneBackgroundRight`
+/// call site.
+///
+/// The Weekly Zone Authoring Grid is unaffected — its own blocks were
+/// never lane-width-driven, so this toggle has nothing to do there.
+
+abstract class _$DevDynamicZoneWidth extends $Notifier<bool> {
+  bool build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<bool, bool>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<bool, bool>,
+              bool,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
+
 /// Zone view's member task rows ONLY — when on, each row shows just its
 /// task's START time (e.g. "9:00 AM"), never the "start - end" range
 /// [DevTimelineTaskTimeRangeVisible] shows. Requested directly: "we need

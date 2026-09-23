@@ -12,6 +12,7 @@ import '../../core/widgets/app_staggered_entrance.dart';
 import '../../core/widgets/app_step_scaffold.dart';
 import '../../core/widgets/app_switch.dart';
 import '../../core/widgets/app_text_field.dart';
+import '../../core/widgets/app_undo_toast.dart';
 import '../../core/widgets/app_wheel_time_picker.dart';
 import '../../core/widgets/weekday_repeat_panel.dart';
 import '../../shared/models/zone_facet.dart';
@@ -54,7 +55,13 @@ Future<ZoneFormResult?> showZoneFormScreen(
 }) {
   return pushAppSheetRoute<ZoneFormResult>(
     context,
-    (context) => _ZoneFormScreen(zone: zone, forDay: forDay),
+    // The CALLER's context (captured here, before this screen's own route
+    // exists) — what `_delete`'s own undo toast anchors to, same
+    // "rootContext" contract `showTaskDetailSheet` uses for the identical
+    // reason: this screen's own context becomes invalid the instant
+    // `_delete` pops it.
+    (routeContext) =>
+        _ZoneFormScreen(rootContext: context, zone: zone, forDay: forDay),
   );
 }
 
@@ -95,7 +102,11 @@ class ZoneFormResult {
 const int _defaultZoneDurationMinutes = 2 * 60;
 
 class _ZoneFormScreen extends ConsumerStatefulWidget {
-  const _ZoneFormScreen({this.zone, this.forDay});
+  const _ZoneFormScreen({required this.rootContext, this.zone, this.forDay});
+
+  /// See [showZoneFormScreen]'s own doc comment on this route's `_delete`
+  /// undo-toast anchor.
+  final BuildContext rootContext;
 
   final Zone? zone;
 
@@ -299,8 +310,18 @@ class _ZoneFormScreenState extends ConsumerState<_ZoneFormScreen> {
 
     final navigator = Navigator.of(context);
     final notifier = ref.read(zoneListProvider.notifier);
+    final snapshot = zone.toJson();
     navigator.pop();
     await notifier.deleteZone(zone.id);
+    // Undo (2026-09-22) — same "snapshot before delete, restore via a
+    // plain keyed re-save" mechanism `removeTask`'s own undo uses, via
+    // `Zone.toJson`/`fromJson` instead of `Task`'s.
+    if (!widget.rootContext.mounted) return;
+    AppUndoToast.show(
+      context: widget.rootContext,
+      message: "Removed '${zone.title}'",
+      onUndo: () => notifier.updateZone(Zone.fromJson(snapshot)),
+    );
   }
 
   /// Seeds this (still stage-1) form from an existing zone tapped in

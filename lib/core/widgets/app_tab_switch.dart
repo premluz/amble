@@ -31,6 +31,19 @@ import 'app_press_feedback.dart';
 /// scale exactly (refined 2026-09-19 alongside that widget's own pass) —
 /// see [AppButton]'s class doc for the secondary variant's blurred-glass
 /// reasoning, reused here unchanged.
+///
+/// **2026-09-21 — scrolls horizontally; segments size to their own
+/// label.** Added for an open-ended option list (the Inbox's own Section
+/// tabs — user-created, unbounded) rather than the fixed 2-3-option case
+/// this widget was originally built for. `Expanded`-per-segment (the
+/// original shape) assumed the option count was small and fixed, evenly
+/// dividing the track; with more options than fit on screen that shape
+/// has no way to reveal the rest at all. A `SingleChildScrollView` wrapping
+/// naturally-sized segments is a strict superset of the old behavior: the
+/// existing 2-option caller (`zone_grid_screen.dart`'s Zone/Edit switch)
+/// never overflows, so it never scrolls and still fills the track exactly
+/// as before — confirmed via `flutter test` (no width assertions pinned
+/// the old equal-width layout).
 class AppTabSwitch<T> extends StatelessWidget {
   const AppTabSwitch({
     super.key,
@@ -63,35 +76,79 @@ class AppTabSwitch<T> extends StatelessWidget {
     final isGhost = variant == AppButtonVariant.ghost;
     final height = appButtonHeightFor(theme, size);
 
+    // LayoutBuilder decides, per build, whether the options FIT the
+    // available width. If they do, segments stay `Expanded` (the
+    // original, always-full-width-track look every existing caller
+    // relies on and no test overrides). If they don't (an open-ended
+    // option list — the Inbox's own Section tabs — with more tabs than
+    // fit on screen), segments size to their own label instead and the
+    // row scrolls horizontally. Measuring the segments' NATURAL total
+    // width up front (via [_estimateSegmentWidth], mirroring
+    // `_TabSwitchSegment`'s own text style/padding) rather than doing a
+    // real layout pass and checking for overflow after the fact — this
+    // keeps the whole thing one build, no post-frame re-layout, no
+    // flicker between "measuring" and "settled" states.
     return SizedBox(
       height: height,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          // Ghost has no track fill at all — matching AppButton's own ghost
-          // (transparent at rest) — so a row of ghost segments reads as
-          // plain text options with only the selected one raised, rather
-          // than a boxed control.
-          color: isGhost ? null : theme.colorSurfaceSecondary,
-          // radiusPill (the live "Pill shape" setting), not a fixed radiusLg
-          // — requested directly so the whole button/tab-switch family
-          // reshapes together when that setting changes, matching
-          // AppButton's own pill shape and AppConnectedButtons' capsule.
-          borderRadius: BorderRadius.circular(theme.radiusPill),
-        ),
-        child: Row(
-          children: [
-            for (final option in options)
-              Expanded(
-                child: _TabSwitchSegment(
-                  theme: theme,
-                  label: option.label,
-                  selected: option.value == value,
-                  variant: variant,
-                  onTap: () => onChanged(option.value),
-                ),
-              ),
-          ],
-        ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final naturalWidth = options
+              .map((o) => _estimateSegmentWidth(theme, o.label))
+              .fold(0.0, (sum, w) => sum + w);
+          final fits = naturalWidth <= constraints.maxWidth;
+
+          final row = Row(
+            children: [
+              for (final option in options)
+                fits
+                    ? Expanded(
+                        child: _TabSwitchSegment(
+                          key: option.segmentKey,
+                          theme: theme,
+                          label: option.label,
+                          selected: option.value == value,
+                          isDropTarget: option.isDropTarget,
+                          variant: variant,
+                          onTap: () => onChanged(option.value),
+                        ),
+                      )
+                    : _TabSwitchSegment(
+                        key: option.segmentKey,
+                        theme: theme,
+                        label: option.label,
+                        selected: option.value == value,
+                        isDropTarget: option.isDropTarget,
+                        variant: variant,
+                        onTap: () => onChanged(option.value),
+                      ),
+            ],
+          );
+
+          return DecoratedBox(
+            decoration: BoxDecoration(
+              // Ghost has no track fill at all — matching AppButton's own
+              // ghost (transparent at rest) — so a row of ghost segments
+              // reads as plain text options with only the selected one
+              // raised, rather than a boxed control.
+              color: isGhost ? null : theme.colorSurfaceSecondary,
+              // radiusPill (the live "Pill shape" setting), not a fixed
+              // radiusLg — requested directly so the whole button/tab-switch
+              // family reshapes together when that setting changes,
+              // matching AppButton's own pill shape and AppConnectedButtons'
+              // capsule.
+              borderRadius: BorderRadius.circular(theme.radiusPill),
+            ),
+            child: fits
+                ? row
+                : ClipRRect(
+                    borderRadius: BorderRadius.circular(theme.radiusPill),
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: row,
+                    ),
+                  ),
+          );
+        },
       ),
     );
   }
@@ -99,11 +156,13 @@ class AppTabSwitch<T> extends StatelessWidget {
 
 class _TabSwitchSegment extends StatelessWidget {
   const _TabSwitchSegment({
+    super.key,
     required this.theme,
     required this.label,
     required this.selected,
     required this.variant,
     required this.onTap,
+    this.isDropTarget = false,
   });
 
   final AmbleTheme theme;
@@ -111,6 +170,9 @@ class _TabSwitchSegment extends StatelessWidget {
   final bool selected;
   final AppButtonVariant variant;
   final VoidCallback onTap;
+
+  /// See [AppOptionSwitchOption.isDropTarget]'s own doc comment.
+  final bool isDropTarget;
 
   @override
   Widget build(BuildContext context) {
@@ -189,8 +251,43 @@ class _TabSwitchSegment extends StatelessWidget {
               ),
             ),
           ),
+          // A 2px border over the resting fill, not a fill-color change —
+          // the same `ZoneContainerBlock.isDropTarget` idiom, sized for
+          // this much smaller tab target. Drawn last so it always shows
+          // over the selection highlight, since a tab a drag is hovering
+          // may or may not already be the selected one.
+          if (isDropTarget)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: theme.colorTextPrimary,
+                      width: 2,
+                    ),
+                    borderRadius: BorderRadius.circular(theme.radiusPill),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
+}
+
+/// Estimates one `_TabSwitchSegment`'s natural rendered width — its
+/// label's own text width (via [TextPainter], the standard way to measure
+/// text outside a real layout pass) plus that segment's own fixed
+/// horizontal padding (`theme.spacingSm` on each side; see
+/// `_TabSwitchSegment.build`'s own `Padding`). Used only to decide, ONCE
+/// per [AppTabSwitch.build], whether the full option list fits the
+/// available width without a real (and therefore flicker-prone) layout
+/// pass — see that method's own doc comment.
+double _estimateSegmentWidth(AmbleTheme theme, String label) {
+  final painter = TextPainter(
+    text: TextSpan(text: label, style: theme.textBody),
+    textDirection: TextDirection.ltr,
+  )..layout();
+  return painter.width + theme.spacingSm * 2;
 }

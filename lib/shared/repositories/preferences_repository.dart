@@ -189,4 +189,16 @@ abstract final class PreferenceKeys {
   /// `44.0/60` constant, now that pinch-to-zoom makes this a real,
   /// persisted user-facing setting rather than a debug scratch value.
   static const String timelinePixelsPerMinute = 'timelinePixelsPerMinute';
+
+  /// Whether every pre-existing [Task]'s `createdAt` has been backfilled.
+  /// Absent (null) defaults to false — a fresh install has nothing to
+  /// backfill (every task it ever creates already stamps a real value),
+  /// but an existing install upgrading to this version has old rows whose
+  /// `createdAt` would otherwise silently read as "now" on every single
+  /// launch (the constructor's own `?? DateTime.now()` fallback for
+  /// missing on-disk data) — jumping to the top of the newest-first Inbox
+  /// sort again and again. Gated exactly like [categoriesSeeded] so the
+  /// backfill write happens once, not on every launch. See
+  /// `TaskList.backfillCreatedAtIfNeeded` (`main.dart`).
+  static const String taskCreatedAtBackfilled = 'taskCreatedAtBackfilled';
 }

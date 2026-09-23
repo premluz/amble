@@ -77,7 +77,18 @@ Future<void> _pumpActionSheet(
       ),
     ),
   );
-  showTaskActionSheet(navigatorKey.currentContext!, task: task);
+  // `navigatorKey.currentContext` is the Navigator's OWN element — sitting
+  // structurally ABOVE the Overlay that same Navigator builds internally,
+  // not a descendant of it. `Overlay.of(context, rootOverlay: true)`
+  // (which `removeTask`'s own undo toast now calls) walks UP from
+  // whatever context it's given, so starting from the Navigator's own
+  // context never finds that Overlay — "No Overlay widget found," even
+  // though one genuinely exists a level below. Every real call site in
+  // app code passes an ordinary descendant widget's context instead (see
+  // `inbox_screen.dart`'s own `showQuickCaptureSheet` calls); this test
+  // now does the same via the mounted Scaffold's own element.
+  final scaffoldContext = tester.element(find.byType(Scaffold));
+  showTaskActionSheet(scaffoldContext, task: task);
   await tester.pumpAndSettle();
 }
 
@@ -114,7 +125,12 @@ void main() {
     await trackedBehaviorBox.close();
   });
 
-  testWidgets('Remove on a PLAIN task deletes it', (tester) async {
+  // Requested directly: "let's build undo change mechanism." Tapping
+  // Remove now shows an AppUndoToast; tapping ITS "Undo" restores the
+  // exact task (via Task.toJson/fromJson, the same round-trip export/
+  // import already proves correct) rather than leaving it deleted.
+  testWidgets('Remove on a PLAIN task shows an Undo toast, and Undo '
+      'restores it', (tester) async {
     final task = Task.create(
       title: 'Standup',
       scheduledAt: _daysFromToday(0),
@@ -131,8 +147,23 @@ void main() {
       task: task,
     );
     await _tapAndSettle(tester, find.text('Remove'));
+    // `_remove`'s own `await removeTask(...)` inserts the toast's
+    // OverlayEntry only once the delete's own await resolves — a moment
+    // after `_tapAndSettle`'s `pumpAndSettle()` already decided nothing
+    // else was scheduled and returned. One more `pump()` gives that
+    // late-inserted entry an actual frame to paint in before this test
+    // looks for it.
+    await tester.pump();
 
-    expect(box.get(task.id), isNull, reason: 'plain task should be deleted');
+    expect(box.get(task.id), isNull);
+    expect(find.text('Undo'), findsOneWidget);
+
+    await _tapAndSettle(tester, find.text('Undo'));
+
+    final restored = box.get(task.id);
+    expect(restored, isNotNull);
+    expect(restored!.title, 'Standup');
+    expect(restored.durationMinutes, 15);
   });
 
   testWidgets('Remove on a RECURRING task opens the scope sheet', (
@@ -202,6 +233,10 @@ void main() {
     );
     await _tapAndSettle(tester, find.text('Remove'));
     await _tapAndSettle(tester, find.text('Remove this occurrence'));
+    // See the earlier "shows an Undo toast" test's own comment: the
+    // toast's OverlayEntry is inserted only once `removeTask`'s own
+    // await resolves, a moment after `pumpAndSettle()` already returned.
+    await tester.pump();
 
     expect(box.get(template.id), isNull);
     expect(
@@ -209,6 +244,13 @@ void main() {
       isNotNull,
       reason: 'the rest of the series must survive',
     );
+
+    // Undo restores just the removed occurrence — the sibling was never
+    // touched, so it stays exactly as it already was either way.
+    await _tapAndSettle(tester, find.text('Undo'));
+
+    expect(box.get(template.id), isNotNull);
+    expect(box.get(sibling.id), isNotNull);
   });
 
   testWidgets('"Remove all occurrences" deletes this and future instances', (
@@ -254,6 +296,8 @@ void main() {
     );
     await _tapAndSettle(tester, find.text('Remove'));
     await _tapAndSettle(tester, find.text('Remove all occurrences'));
+    // See the earlier "shows an Undo toast" test's own comment.
+    await tester.pump();
 
     expect(box.get(template.id), isNull);
     expect(box.get(future.id), isNull, reason: 'future instances go');
@@ -262,6 +306,17 @@ void main() {
       isNotNull,
       reason: 'past instances are kept as history',
     );
+
+    // Undo restores the WHOLE series (2026-09-22) — every row
+    // `deleteTaskSeries` touched, snapshotted before it ran, not just the
+    // tapped instance. `past` was never removed, so it's untouched by the
+    // restore either way; `template`/`future` come back.
+    expect(find.text('Undo'), findsOneWidget);
+    await _tapAndSettle(tester, find.text('Undo'));
+
+    expect(box.get(template.id), isNotNull);
+    expect(box.get(future.id), isNotNull);
+    expect(box.get(past.id), isNotNull);
   });
 
   testWidgets(

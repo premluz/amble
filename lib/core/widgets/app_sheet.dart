@@ -136,38 +136,42 @@ class AppSheet {
       };
     }
 
-    // KNOWN GAP, iOS only: `showCupertinoModalPopup` exposes no
-    // equivalent of `transitionAnimationController`, so this branch keeps
-    // Cupertino's own native popup timing while the Material branch below
-    // now matches `pushAppSheetRoute`'s faster entrance. Matching it here
-    // would mean reimplementing the popup's presentation from scratch.
+    // Previously a KNOWN GAP: `showCupertinoModalPopup` exposes no
+    // equivalent of `transitionAnimationController`, and its own
+    // `CupertinoModalPopupRoute.transitionDuration` is a hardcoded getter
+    // with no override point at all — so a zero-duration open/close here
+    // requires a small local `PopupRoute` in place of that call, not just
+    // a parameter change (see `_InstantCupertinoSheetRoute` below).
+    // Requested directly: "remove animation completely for switching
+    // views... change screens no animation."
     if (isCupertino) {
-      return showCupertinoModalPopup<T>(
-        context: context,
-        builder: (sheetContext) => Container(
-          decoration: BoxDecoration(
-            // `colorSurfaceOverlay`, the TOP of the elevation ramp — that
-            // token's own doc comment names "a modal's own surface" as its
-            // purpose. This previously painted `colorSurfaceBase`, i.e.
-            // level 0: literally the same value as the page behind it, so
-            // a sheet read as flat against the background rather than as a
-            // layer above it. Reported directly: "sheets across the app
-            // should have next surface level to bg."
-            color: theme.colorSurfaceOverlay,
-            borderRadius: BorderRadius.vertical(
-              top: Radius.circular(theme.radiusModal),
+      return Navigator.of(context).push<T>(
+        _InstantCupertinoSheetRoute<T>(
+          builder: (sheetContext) => Container(
+            decoration: BoxDecoration(
+              // `colorSurfaceOverlay`, the TOP of the elevation ramp — that
+              // token's own doc comment names "a modal's own surface" as its
+              // purpose. This previously painted `colorSurfaceBase`, i.e.
+              // level 0: literally the same value as the page behind it, so
+              // a sheet read as flat against the background rather than as a
+              // layer above it. Reported directly: "sheets across the app
+              // should have next surface level to bg."
+              color: theme.colorSurfaceOverlay,
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(theme.radiusModal),
+              ),
             ),
-          ),
-          // showCupertinoModalPopup has no Material ancestor, but sheet
-          // content may still need one (e.g. a Material TextField) — an
-          // adaptive layer that can only safely host Cupertino widgets
-          // isn't a useful abstraction. Transparent so it doesn't fight
-          // the Cupertino background above.
-          child: Material(
-            type: MaterialType.transparency,
-            child: SafeArea(
-              top: false,
-              child: liftedForKeyboard(sheetContext, content(sheetContext)),
+            // showCupertinoModalPopup has no Material ancestor, but sheet
+            // content may still need one (e.g. a Material TextField) — an
+            // adaptive layer that can only safely host Cupertino widgets
+            // isn't a useful abstraction. Transparent so it doesn't fight
+            // the Cupertino background above.
+            child: Material(
+              type: MaterialType.transparency,
+              child: SafeArea(
+                top: false,
+                child: liftedForKeyboard(sheetContext, content(sheetContext)),
+              ),
             ),
           ),
         ),
@@ -194,15 +198,16 @@ class AppSheet {
       // released only once the sheet reached `dismissed`, and a sheet
       // left open at teardown leaked its ticker.
       //
-      // Matches `pushAppSheetRoute`'s own timing so bottom sheets and
-      // full-screen sheet routes feel alike: decelerate in over
-      // motionNormal, standard curve out over the shorter motionFast (a
-      // sheet on its way out has nothing left to show).
+      // Zero duration — requested directly: "remove animation completely
+      // for switching views... change screens no animation." Curves are
+      // kept (harmless, resolve instantly at zero duration) rather than
+      // dropping `sheetAnimationStyle` entirely, which would fall back to
+      // Flutter's own slower default instead of a true instant open/close.
       sheetAnimationStyle: AnimationStyle(
         curve: theme.curveDecelerate,
-        duration: theme.motionNormal,
+        duration: Duration.zero,
         reverseCurve: theme.curveStandard,
-        reverseDuration: theme.motionFast,
+        reverseDuration: Duration.zero,
       ),
       // Without this, Material caps the sheet at a fixed fraction of the
       // screen (9/16) regardless of the keyboard — a content-sized sheet
@@ -225,4 +230,56 @@ class AppSheet {
       ),
     );
   }
+}
+
+/// A minimal, zero-duration stand-in for `CupertinoModalPopupRoute` —
+/// same bottom-anchored, barrier-dimmed popup shape, but with a plain
+/// `Duration.zero` transition instead of that route's own hardcoded
+/// `SpringSimulation` (its `transitionDuration` is a getter with no
+/// override point, so matching Flutter's exact spring here isn't
+/// possible without this replacement route). No slide/fade content
+/// transition at all: [buildTransitions] returns [child] unchanged,
+/// since a zero-duration animation has no visible frames to shape
+/// anyway. Barrier color matches Cupertino's own default
+/// (`kCupertinoModalBarrierColor`) so the dimmed-background look is
+/// otherwise identical to what `showCupertinoModalPopup` produced.
+class _InstantCupertinoSheetRoute<T> extends PopupRoute<T> {
+  _InstantCupertinoSheetRoute({required this.builder});
+
+  final WidgetBuilder builder;
+
+  @override
+  Duration get transitionDuration => Duration.zero;
+
+  @override
+  Duration get reverseTransitionDuration => Duration.zero;
+
+  @override
+  bool get barrierDismissible => true;
+
+  @override
+  String get barrierLabel => 'Dismiss';
+
+  @override
+  Color get barrierColor => kCupertinoModalBarrierColor;
+
+  @override
+  Widget buildPage(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+  ) {
+    return CupertinoUserInterfaceLevel(
+      data: CupertinoUserInterfaceLevelData.elevated,
+      child: Builder(builder: builder),
+    );
+  }
+
+  @override
+  Widget buildTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) => child;
 }

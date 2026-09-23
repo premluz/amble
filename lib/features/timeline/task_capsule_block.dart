@@ -61,7 +61,6 @@ class TaskCapsuleBlock extends StatelessWidget {
     this.dragPreviewStartsAt,
     this.maxTextWidth,
     this.durationMinutesOverride,
-    this.entranceProgress = 1,
     this.isLifted = false,
     this.isResizing = false,
     this.onDragStart,
@@ -256,13 +255,6 @@ class TaskCapsuleBlock extends StatelessWidget {
   /// 0 → 1 while a newly-created task is arriving on the Timeline; 1 (the
   /// default) for every block that isn't animating in.
   ///
-  /// The block's parts don't all fade together — they come in one after
-  /// another, pill first and checkbox last, per direct request ("pill >
-  /// name > time > icons below > checkbox"). Each part's own opacity is
-  /// derived from this single value by [_staggeredOpacity], so the whole
-  /// sequence is driven by one animation rather than five.
-  final double entranceProgress;
-
   /// Caps the time/title column's width so a task that shares its slot
   /// with an overlapping neighbour truncates rather than running its text
   /// under the next column's pill. Null means "take the remaining width",
@@ -628,8 +620,7 @@ class TaskCapsuleBlock extends StatelessWidget {
           // which fought the timeline's vertical scroll gesture. See the
           // doc comment on onDragStart above.
           Opacity(
-            // Step 0 of the entrance stagger — the pill leads.
-            opacity: _staggeredOpacity(entranceProgress, 0),
+            opacity: 1,
             // `OverflowBox` + `SizedBox(height: pillHeight)` — load-
             // bearing, not decorative. Real bug, reported directly:
             // "editing smallest existing task the bottom dot resize
@@ -1063,9 +1054,7 @@ class TaskCapsuleBlock extends StatelessWidget {
                             TimelineTaskTextLayout.stacked) ...[
                           // Step 1 of the entrance stagger — the name.
                           Opacity(
-                            opacity: textRegionHidden
-                                ? 0
-                                : _staggeredOpacity(entranceProgress, 1),
+                            opacity: textRegionHidden ? 0 : 1,
                             child: Text(
                               task.title,
                               style: titleTextStyle.copyWith(
@@ -1092,9 +1081,7 @@ class TaskCapsuleBlock extends StatelessWidget {
                           SizedBox(height: theme.spacingXs),
                           // Step 2 of the entrance stagger — the time line.
                           Opacity(
-                            opacity: textRegionHidden
-                                ? 0
-                                : _staggeredOpacity(entranceProgress, 2),
+                            opacity: textRegionHidden ? 0 : 1,
                             child: Text(
                               timeLine,
                               style: titleTextStyle.copyWith(
@@ -1112,12 +1099,7 @@ class TaskCapsuleBlock extends StatelessWidget {
                           // entrance stagger still reads the same, just on
                           // one Text.rich instead of two Text widgets.
                           Opacity(
-                            opacity: textRegionHidden
-                                ? 0
-                                : math.min(
-                                    _staggeredOpacity(entranceProgress, 1),
-                                    _staggeredOpacity(entranceProgress, 2),
-                                  ),
+                            opacity: textRegionHidden ? 0 : 1,
                             child: Text.rich(
                               TextSpan(
                                 children: [
@@ -1173,8 +1155,7 @@ class TaskCapsuleBlock extends StatelessWidget {
                             // with the cluster list's own indicator icons.
                             opacity: textRegionHidden
                                 ? 0.0
-                                : (isLifted ? 0.0 : 1.0) *
-                                      _staggeredOpacity(entranceProgress, 3),
+                                : (isLifted ? 0.0 : 1.0),
                             duration: theme.motionFast,
                             curve: Curves.easeOut,
                             child: Row(
@@ -1233,8 +1214,7 @@ class TaskCapsuleBlock extends StatelessWidget {
                 // the lift fade for the same reason as the icon row above.
                 opacity: (textRegionHidden || !showCompletionCheckbox)
                     ? 0.0
-                    : (isLifted ? 0.0 : 1.0) *
-                          _staggeredOpacity(entranceProgress, 4),
+                    : (isLifted ? 0.0 : 1.0),
                 duration: theme.motionFast,
                 curve: Curves.easeOut,
                 child: IgnorePointer(
@@ -1474,27 +1454,6 @@ class TaskCapsuleBlock extends StatelessWidget {
 /// Whole hours render as "1h"/"2h"; anything with leftover minutes (or under
 /// an hour) renders as total minutes, e.g. "30m"/"90m" — matches the format
 /// requested directly rather than always showing "H:MM".
-/// How many parts the entrance stagger runs across — pill, name, time,
-/// icon row, checkbox, in that order.
-const _staggerSteps = 5;
-
-/// How much of the whole entrance each part's own fade occupies. Greater
-/// than `1 / _staggerSteps`, so consecutive parts OVERLAP rather than
-/// fading strictly one-after-another — a fully sequential version reads as
-/// five separate events instead of one block arriving.
-const _staggerFadeFraction = 0.5;
-
-/// One part's opacity at overall [progress], for the part at [index] in
-/// the stagger order. Each part stays at 0 until its own slot begins, then
-/// fades over [_staggerFadeFraction] of the total.
-double _staggeredOpacity(double progress, int index) {
-  // The last part must still reach full opacity at progress == 1, so the
-  // starts are spread across whatever room the fade width leaves.
-  final start = (index / (_staggerSteps - 1)) * (1 - _staggerFadeFraction);
-  final local = (progress - start) / _staggerFadeFraction;
-  return local.clamp(0.0, 1.0);
-}
-
 /// Which status/indicator icons apply to this task, in the order they've
 /// always rendered in ("moved", tracked-behavior, notification, repeat) —
 /// unchanged by the icons' move onto a shared row, since reordering them

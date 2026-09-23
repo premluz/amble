@@ -12,6 +12,7 @@ import 'package:amble/shared/providers/task_providers.dart';
 import 'package:amble/shared/repositories/hive_task_repository.dart';
 
 import '../../support/fake_notification_service.dart';
+import '../../support/slow_cancel_notification_service.dart';
 import '../../support/throwing_notification_service.dart';
 
 void main() {
@@ -202,6 +203,12 @@ void main() {
         completedAt: existing.completedAt,
         categoryId: existing.categoryId,
         schemaVersion: existing.schemaVersion,
+        // A REAL "already imported this exact backup" case carries the
+        // same createdAt as the local row — hasSameFieldsAs compares it
+        // like every other field (confirmed directly, over excluding it
+        // as pure metadata), so a fixture standing in for "the same task,
+        // re-imported" must copy it too, same as every field above it.
+        createdAt: existing.createdAt,
       );
 
       final result = await notifier.importTasks([identicalCopy]);
@@ -259,6 +266,8 @@ void main() {
         completedAt: unchanged.completedAt,
         categoryId: unchanged.categoryId,
         schemaVersion: unchanged.schemaVersion,
+        // See the earlier "identicalCopy" fixture's own comment above.
+        createdAt: unchanged.createdAt,
       );
       final brandNew = Task.captured(title: 'Brand new import');
 
@@ -1218,6 +1227,132 @@ void main() {
           .read(taskListProvider)
           .firstWhere((t) => t.id == created.id);
       expect(saved.zoneId, isNull);
+    });
+  });
+
+  group('deleteTasksInBatch', () {
+    test('removes every id, and taskListProvider reflects all of them at '
+        'once', () async {
+      final notifier = container.read(taskListProvider.notifier);
+      final a = await notifier.createTask(
+        title: 'A',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      );
+      final b = await notifier.createTask(
+        title: 'B',
+        scheduledAt: DateTime(2026, 8, 20, 11),
+        durationMinutes: 60,
+        categoryId: BuiltInCategoryIds.personal,
+      );
+      final c = await notifier.createTask(
+        title: 'C',
+        scheduledAt: DateTime(2026, 8, 20, 13),
+        durationMinutes: 15,
+        categoryId: BuiltInCategoryIds.health,
+      );
+
+      await notifier.deleteTasksInBatch([a.id, b.id]);
+
+      final remaining = container.read(taskListProvider);
+      expect(remaining, hasLength(1));
+      expect(remaining.single.id, c.id);
+    });
+
+    test('an id with no matching task is silently skipped, the rest still '
+        'delete', () async {
+      final notifier = container.read(taskListProvider.notifier);
+      final a = await notifier.createTask(
+        title: 'A',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      );
+
+      await notifier.deleteTasksInBatch([a.id, 'no-such-id']);
+
+      expect(container.read(taskListProvider), isEmpty);
+    });
+
+    // Regression test for "one disappears instant, then after a long delay
+    // the others" — reported directly, and still happening after this
+    // method already shared a single _refresh. The remaining cause was
+    // `cancelForTask` (a real platform-channel round trip) being awaited
+    // once per row INSIDE the delete loop, so the wait scaled with the
+    // number of selected rows.
+    //
+    // The slow fake below makes a blocking implementation fail loudly: if
+    // the cancels were still awaited in-loop, this delete could not
+    // possibly return before they finished, and the rows would not yet be
+    // gone from taskListProvider when the await resolves.
+    test('does not block on notification cancellation — the rows are gone '
+        'before the (slow) cancels finish', () async {
+      final slowService = SlowCancelNotificationService();
+      final slowContainer = ProviderContainer(
+        overrides: [
+          taskRepositoryProvider.overrideWithValue(HiveTaskRepository(box)),
+          notificationServiceProvider.overrideWithValue(slowService),
+        ],
+      );
+      addTearDown(slowContainer.dispose);
+
+      final notifier = slowContainer.read(taskListProvider.notifier);
+      final a = await notifier.createTask(
+        title: 'A',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      );
+      final b = await notifier.createTask(
+        title: 'B',
+        scheduledAt: DateTime(2026, 8, 20, 11),
+        durationMinutes: 60,
+        categoryId: BuiltInCategoryIds.personal,
+      );
+
+      await notifier.deleteTasksInBatch([a.id, b.id]);
+
+      // Both rows are already gone even though not one cancel has been
+      // allowed to complete yet.
+      expect(slowContainer.read(taskListProvider), isEmpty);
+      expect(slowService.completedCancels, isZero);
+
+      // The cancels still happen — they're deferred, not dropped.
+      slowService.releaseCancels();
+      await Future<void>.delayed(Duration.zero);
+      expect(slowService.cancelledIds, containsAll([a.id, b.id]));
+    });
+
+    test('a cancel failure never stops the remaining rows from deleting',
+        () async {
+      final throwingOnCancel = ProviderContainer(
+        overrides: [
+          taskRepositoryProvider.overrideWithValue(HiveTaskRepository(box)),
+          notificationServiceProvider.overrideWithValue(
+            ThrowingNotificationService(),
+          ),
+        ],
+      );
+      addTearDown(throwingOnCancel.dispose);
+
+      final notifier = throwingOnCancel.read(taskListProvider.notifier);
+      final a = await notifier.createTask(
+        title: 'A',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      );
+      final b = await notifier.createTask(
+        title: 'B',
+        scheduledAt: DateTime(2026, 8, 20, 11),
+        durationMinutes: 60,
+        categoryId: BuiltInCategoryIds.personal,
+      );
+
+      await notifier.deleteTasksInBatch([a.id, b.id]);
+
+      expect(throwingOnCancel.read(taskListProvider), isEmpty);
     });
   });
 

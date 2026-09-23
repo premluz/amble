@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/app_context_menu.dart';
 import '../../core/widgets/app_sheet.dart';
 import '../../shared/models/task.dart';
 import '../../shared/providers/task_providers.dart';
@@ -15,12 +15,22 @@ import 'task_remove.dart';
 Future<void> showTaskActionSheet(BuildContext context, {required Task task}) {
   return AppSheet.show<void>(
     context: context,
-    builder: (context) => _TaskActionSheetContent(task: task),
+    // The CALLER's context (captured here, before this sheet's own route
+    // exists) is what `removeTask`'s own undo toast anchors to — same
+    // "rootContext" contract `showQuickCaptureSheet` already establishes
+    // — since this sheet's own context becomes invalid the instant its
+    // `_remove` pops it, but the Timeline underneath keeps its Overlay
+    // ancestor for the toast to insert into.
+    builder: (sheetContext) =>
+        _TaskActionSheetContent(rootContext: context, task: task),
   );
 }
 
 class _TaskActionSheetContent extends ConsumerWidget {
-  const _TaskActionSheetContent({required this.task});
+  const _TaskActionSheetContent({required this.rootContext, required this.task});
+
+  /// See [showTaskActionSheet]'s own doc comment.
+  final BuildContext rootContext;
 
   final Task task;
 
@@ -74,24 +84,19 @@ class _TaskActionSheetContent extends ConsumerWidget {
     final navigator = Navigator.of(context);
     final notifier = ref.read(taskListProvider.notifier);
     navigator.pop();
-    await removeTask(navigator.context, notifier, task);
+    await removeTask(navigator.context, rootContext, notifier, task);
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context).extension<AmbleTheme>()!;
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        ActionRow(
-          theme: theme,
+    return AppContextMenu(
+      actions: [
+        AppContextMenuAction(
           icon: Icons.edit_outlined,
           label: 'Edit task',
           onTap: () => _editTask(context),
         ),
-        ActionRow(
-          theme: theme,
+        AppContextMenuAction(
           // Filled when marked, outlined when not — the same
           // state-in-the-glyph convention the completion checkbox already
           // uses, rather than a separate switch control.
@@ -101,20 +106,18 @@ class _TaskActionSheetContent extends ConsumerWidget {
           label: task.isImportant ? 'Remove important' : 'Mark important',
           onTap: () => _toggleImportant(context, ref),
         ),
-        ActionRow(
-          theme: theme,
+        AppContextMenuAction(
           icon: Icons.content_copy_outlined,
           label: 'Duplicate',
           onTap: () => _duplicate(context),
         ),
-        ActionRow(
-          theme: theme,
+        AppContextMenuAction(
           icon: Icons.delete_outline_rounded,
           label: 'Remove',
           // Reuses the existing destructive token (colorTaskAlert), the
           // same one AppAlertDialog uses for its destructive actions —
           // no new color token needed for this.
-          color: theme.colorTaskAlert,
+          isDestructive: true,
           onTap: () => _remove(context, ref),
         ),
       ],

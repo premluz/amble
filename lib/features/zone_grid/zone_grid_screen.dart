@@ -8,23 +8,31 @@ import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_bottom_dock.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_floating_create_button.dart';
+import '../../core/widgets/app_modal_route.dart';
 import '../../core/widgets/app_option_switch_option.dart';
 import '../../core/widgets/app_tab_switch.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
 import '../../core/widgets/app_undo_toast.dart';
 import '../../core/widgets/selected_pill_border.dart';
+import '../../shared/models/task.dart';
 import '../../shared/models/zone.dart';
 import '../../shared/providers/preferences_providers.dart';
+import '../../shared/providers/task_providers.dart';
 import '../../shared/providers/zone_providers.dart';
+import '../../shared/services/move_resize_undo.dart';
 import '../../shared/services/zone_cascade_reschedule.dart';
 import '../../shared/services/zone_group_move.dart';
 import '../../shared/services/zone_selection_order.dart';
+import '../task_detail/multi_task_edit_sheet.dart';
+import '../task_detail/task_detail_sheet.dart';
 import '../timeline/edit_mode_provider.dart';
 import '../timeline/edit_selection_provider.dart';
 import '../timeline/pending_task_draft_provider.dart';
 import '../timeline/task_edge_time_label.dart';
 import '../timeline/timeline_pinch_zoom.dart';
 import '../timeline/timeline_screen.dart';
+import '../timeline/zone_background_block.dart' show zoneBackgroundGap;
+import '../zones/multi_zone_edit_sheet.dart';
 import '../zones/zone_form_screen.dart';
 import 'new_zone_sheet.dart';
 import 'zone_grid_block.dart';
@@ -40,7 +48,7 @@ Future<void> showEditScreen(
   BuildContext context, {
   ZoneGridTab initialTab = ZoneGridTab.tasks,
 }) => Navigator.of(context).push<void>(
-  MaterialPageRoute(builder: (_) => ZoneGridScreen(initialTab: initialTab)),
+  instantRoute((_) => ZoneGridScreen(initialTab: initialTab)),
 );
 
 /// Options for both `AppTabSwitch<ZoneGridTab>` call sites below — a
@@ -223,6 +231,100 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
     }
     Navigator.of(context).pop();
   }
+
+  /// The selection dock's own Edit action — a single task opens the
+  /// ordinary detail sheet unchanged ([showTaskDetailSheet], the app's one
+  /// edit entry point); 2+ opens the bulk [showMultiTaskEditSheet]
+  /// (tag/track/duration/notification only), confirmed directly. Neither
+  /// path clears the selection itself — closing either sheet leaves the
+  /// user back on the same selection, in case they want to also Remove or
+  /// re-edit it.
+  void _editSelectedTasks(Set<String> selectedIds) {
+    if (selectedIds.length == 1) {
+      final task = ref.read(taskByIdProvider(selectedIds.first));
+      if (task == null) return;
+      showTaskDetailSheet(context, task: task);
+      return;
+    }
+    showMultiTaskEditSheet(context, taskIds: selectedIds.toList());
+  }
+
+  /// The selection dock's own Remove action — every selected task is
+  /// deleted via the plain single-instance path (`TaskList.deleteTask`),
+  /// NEVER the recurring-scope dialog, confirmed directly per
+  /// CONSTITUTION.md's existing group-delete rule (a per-task "this
+  /// instance or the whole series?" prompt would stack once per selected
+  /// recurring task). Mirrors the drag-to-delete-target group-delete path
+  /// already on the spatial Timeline (`timeline_screen.dart`) exactly.
+  ///
+  /// **Undo** (2026-09-22) — every selected task is snapshotted (via
+  /// [Task.toJson]) BEFORE the delete runs, same "snapshot then
+  /// restore via a plain keyed re-save" mechanism `removeTask`'s own undo
+  /// uses. One toast covers the whole batch — Undo restores every
+  /// snapshotted task, not just one, matching how this is a single group
+  /// action from the user's own perspective.
+  ///
+  /// **2026-09-22 — deletes via [TaskList.deleteTasksInBatch], not a loop
+  /// of single-item [TaskList.deleteTask] calls.** Reported directly:
+  /// selected tasks "disappear one by one" rather than together — each
+  /// single-item delete refreshes `taskListProvider` on its own, so N
+  /// selected tasks rebuilt the UI N separate times. The batch method
+  /// runs the same per-row side effects but refreshes once, after every
+  /// row is gone. Undo's own restore loop had the identical bug (reported
+  /// in the same breath: "when they reappear also not at once") — now
+  /// via [TaskList.restoreTasksInBatch] too.
+  Future<void> _removeSelectedTasks(Set<String> selectedIds) async {
+    final notifier = ref.read(taskListProvider.notifier);
+    final snapshots = selectedIds
+        .map((id) => ref.read(taskByIdProvider(id)))
+        .whereType<Task>()
+        .map((task) => task.toJson())
+        .toList();
+    await notifier.deleteTasksInBatch(selectedIds);
+    ref.read(editSelectionProvider.notifier).clear();
+    if (!mounted) return;
+    AppUndoToast.show(
+      context: context,
+      message: 'Removed ${snapshots.length} task(s)',
+      onUndo: () => notifier.restoreTasksInBatch(
+        snapshots.map(Task.fromJson),
+      ),
+    );
+  }
+
+  /// The Zones tab's own "Remove placements" action — plain deletes, no
+  /// recurring-scope dialog (a zone occurrence has no equivalent of a
+  /// task series here). Same snapshot-then-restore undo shape as
+  /// [_removeSelectedTasks] above, via [Zone.toJson]/[Zone.fromJson] (the
+  /// same round-trip export/import already proves correct) instead of
+  /// [Task]'s. Wrapped in [_write] for its existing busy-flag/error-toast
+  /// handling, matching every other mutating action on this tab.
+  ///
+  /// **2026-09-22 — deletes via [ZoneList.deleteZonesInBatch]**, same fix
+  /// and same reasoning as [_removeSelectedTasks]'s own note above:
+  /// selected zones were disappearing one at a time. Undo restores via
+  /// [ZoneList.restoreZonesInBatch] for the same reason.
+  Future<void> _removeSelectedZones(
+    Set<String> selectedIds,
+    List<Zone> zones,
+  ) => _write(() async {
+    final zoneNotifier = ref.read(zoneListProvider.notifier);
+    final snapshots = selectedIds
+        .map((id) => zones.where((z) => z.id == id).firstOrNull)
+        .whereType<Zone>()
+        .map((z) => z.toJson())
+        .toList();
+    await zoneNotifier.deleteZonesInBatch(selectedIds);
+    ref.read(zoneEditSelectionProvider.notifier).clear();
+    if (!mounted) return;
+    AppUndoToast.show(
+      context: context,
+      message: 'Removed ${snapshots.length} zone(s)',
+      onUndo: () => zoneNotifier.restoreZonesInBatch(
+        snapshots.map(Zone.fromJson),
+      ),
+    );
+  });
 
   @override
   void dispose() {
@@ -601,8 +703,23 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
       );
     }
     if (moves.isEmpty) return;
+    final zoneIds = moves.map((m) => m.zoneId).toSet();
+    final taskIds = moves
+        .expand((m) => m.taskMoves)
+        .map((t) => t.taskId)
+        .toSet();
     await _write(
-      () => ref.read(zoneListProvider.notifier).commitZoneCascade(moves),
+      () => commitZoneChangeWithUndo(
+        context,
+        ref,
+        zoneIds: zoneIds,
+        taskIds: taskIds,
+        message: zoneIds.length > 1
+            ? 'Moved ${zoneIds.length} zone(s)'
+            : 'Moved zone',
+        commit: () =>
+            ref.read(zoneListProvider.notifier).commitZoneCascade(moves),
+      ),
     );
   }
 
@@ -675,25 +792,78 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
               // sibling's subtree, regardless of how deep the mini sheet
               // sits inside it. Matches the Day screen's own identical
               // gate on `AppBottomDock` (`pendingTaskDraftProvider`).
+              //
+              // **2026-09-21 — swaps to a selection context menu (back
+              // arrow / Edit / Remove) whenever `editSelectionProvider`
+              // is non-empty.** Requested directly: "on edit task mode
+              // when item(s) selected we need selection context menu."
+              // Back-arrow CLEARS the selection only (Edit Mode itself
+              // stays active, confirmed via AskUserQuestion) rather than
+              // closing this screen the way the plain Close icon used to
+              // — a genuinely different action, hence the icon change.
               if (ref.watch(pendingTaskDraftProvider) == null)
-                Positioned(
-                  left: theme.spacingMd,
-                  bottom: theme.spacingMd,
-                  child: SafeArea(
-                    top: false,
-                    child: AppDockPane(
-                      theme: theme,
-                      children: [
-                        AppDockIconButton(
-                          theme: theme,
-                          icon: Icons.close_rounded,
-                          tooltip: 'Close',
-                          selected: false,
-                          onTap: _close,
-                        ),
-                      ],
-                    ),
-                  ),
+                Builder(
+                  builder: (context) {
+                    final selectedIds = ref.watch(editSelectionProvider);
+                    return Positioned(
+                      left: theme.spacingMd,
+                      bottom: theme.spacingMd,
+                      child: SafeArea(
+                        top: false,
+                        child: selectedIds.isEmpty
+                            ? AppDockPane(
+                                theme: theme,
+                                children: [
+                                  AppDockIconButton(
+                                    theme: theme,
+                                    // arrow_back, not close — requested
+                                    // directly: "close in edit mode
+                                    // should not be close (x) but arrow
+                                    // left." `_close` pops this whole
+                                    // screen (a real "go back"
+                                    // navigation, `Navigator.pop`), which
+                                    // is exactly what a back arrow means
+                                    // — not a dismiss/cancel X.
+                                    icon: Icons.arrow_back_rounded,
+                                    tooltip: 'Close',
+                                    selected: false,
+                                    onTap: _close,
+                                  ),
+                                ],
+                              )
+                            : AppDockPane(
+                                theme: theme,
+                                children: [
+                                  AppDockIconButton(
+                                    theme: theme,
+                                    icon: Icons.arrow_back_rounded,
+                                    tooltip: 'Clear selection',
+                                    selected: false,
+                                    onTap: () => ref
+                                        .read(editSelectionProvider.notifier)
+                                        .clear(),
+                                  ),
+                                  AppDockIconButton(
+                                    theme: theme,
+                                    icon: Icons.edit_outlined,
+                                    tooltip: 'Edit selected',
+                                    selected: false,
+                                    onTap: () =>
+                                        _editSelectedTasks(selectedIds),
+                                  ),
+                                  AppDockIconButton(
+                                    theme: theme,
+                                    icon: Icons.delete_outline_rounded,
+                                    tooltip: 'Remove selected',
+                                    selected: false,
+                                    onTap: () =>
+                                        _removeSelectedTasks(selectedIds),
+                                  ),
+                                ],
+                              ),
+                      ),
+                    );
+                  },
                 ),
             ],
           ),
@@ -738,36 +908,42 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                             style: theme.textCaption,
                           ),
                         ),
-                        if (selected.length == 1)
-                          AppButton(
-                            icon: Icons.tune_rounded,
-                            shape: AppButtonShape.circle,
-                            variant: AppButtonVariant.secondary,
-                            tooltip: 'Edit placement',
-                            onPressed: () {
+                        // Edit placement — a single selected zone opens
+                        // the ordinary [showZoneFormScreen] form
+                        // unchanged; 2+ opens the bulk
+                        // [showMultiZoneEditSheet] instead (Name/Start/
+                        // End/Date only, "Mixed" for differing values) —
+                        // same branch-on-count shape as the Tasks tab's
+                        // own selection-menu Edit action, requested
+                        // directly: "similar for zones."
+                        AppButton(
+                          icon: Icons.tune_rounded,
+                          shape: AppButtonShape.circle,
+                          variant: AppButtonVariant.secondary,
+                          tooltip: 'Edit placement',
+                          onPressed: () {
+                            if (selected.length == 1) {
                               final zone = zones
                                   .where((z) => selected.contains(z.id))
                                   .firstOrNull;
                               if (zone != null) {
                                 showZoneFormScreen(context, zone: zone);
                               }
-                            },
-                          ),
+                              return;
+                            }
+                            showMultiZoneEditSheet(
+                              context,
+                              zoneIds: selected.toList(),
+                            );
+                          },
+                        ),
                         AppButton(
                           icon: Icons.delete_outline_rounded,
                           shape: AppButtonShape.circle,
                           variant: AppButtonVariant.secondary,
                           tooltip: 'Remove placements',
-                          onPressed: () => _write(() async {
-                            for (final id in selected.toList()) {
-                              await ref
-                                  .read(zoneListProvider.notifier)
-                                  .deleteZone(id);
-                            }
-                            ref
-                                .read(zoneEditSelectionProvider.notifier)
-                                .clear();
-                          }),
+                          onPressed: () =>
+                              _removeSelectedZones(selected, zones),
                         ),
                         AppButton(
                           icon: Icons.deselect_rounded,
@@ -1293,7 +1469,11 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                 children: [
                   AppDockIconButton(
                     theme: theme,
-                    icon: Icons.close_rounded,
+                    // arrow_back, not close — same fix and same reasoning
+                    // as the Tasks tab's own dock above: `_close` pops
+                    // this whole screen, a real "go back," not a
+                    // dismiss/cancel X.
+                    icon: Icons.arrow_back_rounded,
                     tooltip: 'Close zones',
                     selected: false,
                     onTap: _close,
@@ -1353,7 +1533,18 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
       theme: theme,
       zone: zone,
       top: start * _pixelsPerMinute,
-      height: math.max(5, (end - start) * _pixelsPerMinute),
+      // zoneBackgroundGap trimmed off the BOTTOM only — mirrors
+      // ZoneBackgroundBlock's own rule on the spatial Timeline exactly
+      // (top edge lands precisely on start time; the standing gap between
+      // two back-to-back zones comes entirely from the earlier one's own
+      // bottom). Previously missing here — two zones whose times were
+      // exactly back-to-back rendered with their blocks visually
+      // touching. See docs/DESIGN_SYSTEM.md's "Zone pane indicator"
+      // section.
+      height: math.max(
+        5,
+        (end - start) * _pixelsPerMinute - zoneBackgroundGap,
+      ),
       isSelected: selected,
       dayColumnLeft: dayColumnLeft,
       liveStartMinutes: selected && _moveKind != null ? start : null,

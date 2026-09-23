@@ -19,20 +19,16 @@ import '../../support/load_app_fonts.dart';
 void main() {
   setUpAll(loadAppFonts);
 
-  /// **2026-09-21 — derived from the tokens, not copied from them.**
-  /// These were two hardcoded numbers (66 and 28) meant to mirror
-  /// production, and both had already gone stale: production's side inset
-  /// was 24 at the time, not 28. That is the same copy-drift the whole
-  /// horizontal spacing system was just consolidated to prevent
-  /// (`horizontal_spacing_system_test.dart`), so this file stops keeping
-  /// its own copies too.
-  ///
-  /// The label column is what remains of [AmbleTheme.spacingHourGutter]
-  /// once the side inset is taken off the front — that column is what a
-  /// label must fit inside, and what it must never paint out of into the
-  /// pill column beyond.
-  final screenPadding = AmbleTheme.light.spacingScreenPadding;
-  final gutterWidth = AmbleTheme.light.spacingHourGutter - screenPadding;
+  /// **2026-09-23 — reads the time column directly, not derived from a
+  /// composite.** Column 1 (`AmbleTheme.spacingTimeColumnWidth`) IS the
+  /// label column now — under the three-column contract it has its own
+  /// fixed width rather than being "whatever's left of a combined gutter
+  /// after the side inset," so there is nothing left to compute here. See
+  /// `TimelineColumns`' own doc comment in `semantic_theme.dart` and
+  /// `test/core/tokens/timeline_columns_test.dart` for the contract this
+  /// file's own numbers now come from.
+  final screenPadding = AmbleTheme.light.spacingTimelineGutter;
+  final gutterWidth = AmbleTheme.light.spacingTimeColumnWidth;
 
   Future<Map<String, ({double box, double intrinsic})>> measure(
     WidgetTester tester, {
@@ -110,12 +106,12 @@ void main() {
   });
 
   // **2026-09-21 — this guard is no longer needed and is gone.** It read
-  // the private `_hourGutterWidth` out of `timeline_screen.dart` to catch
-  // this file's own hardcoded copy going stale. Both the constant and the
-  // copies are now replaced by `AmbleTheme.spacingHourGutter`, which this
-  // file reads directly — so there is nothing left to fall out of sync,
-  // and `horizontal_spacing_system_test.dart` owns the equivalent
-  // cross-view check (including that the constant is not reintroduced).
+  // a private constant out of `timeline_screen.dart` to catch this file's
+  // own hardcoded copy going stale. Both are now replaced by the shared
+  // `AmbleTheme` column tokens, which this file reads directly — so there
+  // is nothing left to fall out of sync, and
+  // `horizontal_spacing_system_test.dart`/`timeline_columns_test.dart` own
+  // the equivalent cross-view/cross-width checks.
 
   testWidgets('the old 56px gutter genuinely overflowed — the reported bug', (
     tester,
@@ -151,22 +147,17 @@ void main() {
       isFalse,
       reason: 'columnWidth right-aligns the labels; the screen must omit it',
     );
-    // **2026-09-21 — back to spacingScreenPadding (24px), superseding the
-    // "both 8px, matching the zone grid axis" decision this test used to
-    // pin.** Reported directly against a screenshot: the hour labels sat
-    // visibly closer to the true screen edge than Day/Inbox/Tracked and
-    // the settings gear above them — "day in inbox tracked and settings
-    // should have same side padding as hours in timeline (that should be
-    // global content padding)." Scoped to just the Timeline, confirmed
-    // directly — the Weekly Zone Authoring Grid's own axis lives in a
-    // fixed, tightly-sized 60px gutter that can't take a wider inset
-    // without real layout work, and stays at its own 8px for now.
+    // **2026-09-23 — reads `theme.timelineTimeLeft` explicitly.** Column
+    // 1's own left edge under the three-column contract — see
+    // `TimelineColumns`' own doc comment. Scoped to just the Timeline; the
+    // Weekly Zone Authoring Grid's own axis lives in a fixed, tightly-sized
+    // 60px gutter that stays at its own 8px, unaffected by this contract.
     expect(
-      args.contains('leftInset: theme.spacingScreenPadding'),
+      args.contains('leftInset: theme.timelineTimeLeft'),
       isTrue,
       reason:
-          'the hour gutter must match spacingScreenPadding (24px), the '
-          'same inset Day/Inbox/Tracked and every other screen uses',
+          'the hour gutter must read theme.timelineTimeLeft, the Timeline\'s '
+          'own column-1 edge token',
     );
   });
 

@@ -222,7 +222,12 @@ void main() {
             widget is GestureDetector && widget.onHorizontalDragEnd != null,
       );
       await tester.fling(weekRowSwipeArea, const Offset(300, 0), 800);
-      await tester.pump();
+      // The swipe now animates a "magnetic" settle before the week
+      // actually steps (2026-09-21, requested directly: "pulling
+      // further/previous days... magnetic kind of lock") — the date only
+      // updates once that settle animation completes, not on the frame
+      // right after release.
+      await tester.pumpAndSettle();
 
       final after = container.read(selectedDateProvider);
       expect(
@@ -332,12 +337,17 @@ void main() {
       final contentRect = tester.getRect(find.byType(AppDateAccordion));
 
       // Mon 2026-09-07 through Sun 2026-09-13. The pill is the
-      // `DecoratedBox` wrapping each day's own column.
+      // `AppPressFeedback` wrapping each day's own column — its own
+      // selection fill is now a single shared indicator painted behind
+      // the whole row (2026-09-21, `_WeekDaySelectionIndicator`), not a
+      // per-cell `DecoratedBox` any more, but `AppPressFeedback` is still
+      // the one widget whose bounds ARE the tap target's own footprint,
+      // which is what this test actually checks.
       Rect pillAround(String dayNumber) => tester.getRect(
         find
             .ancestor(
               of: find.text(dayNumber),
-              matching: find.byType(DecoratedBox),
+              matching: find.byType(AppPressFeedback),
             )
             .first,
       );

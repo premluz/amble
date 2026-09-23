@@ -40,17 +40,21 @@ Future<void> _tapPreset(WidgetTester tester, String label) async {
   await tester.pumpAndSettle();
 }
 
-/// A selected chip is rendered by AppSelectableChip with the accent fill —
-/// checked here via the chip's own decoration rather than a separate
-/// selection-tracking mechanism, matching how the widget actually derives
-/// "selected" (from the current duration, not stored state).
+/// A selected chip is rendered by AppSelectableChip (secondary variant,
+/// the default as of 2026-09-23 — see that widget's own doc comment) as a
+/// blurred-glass `BackdropFilter` layer, not a flat fill color on its own
+/// `Container` — checked here via presence of that layer rather than a
+/// separate selection-tracking mechanism, matching how the widget actually
+/// derives "selected" (from the current duration, not stored state).
 bool _isPresetSelected(WidgetTester tester, String label) {
-  final theme = AmbleTheme.light;
-  final container = tester.widget<Container>(
-    find.ancestor(of: find.text(label), matching: find.byType(Container)).first,
-  );
-  final decoration = container.decoration! as BoxDecoration;
-  return decoration.color == theme.colorAccent;
+  return tester
+      .widgetList<BackdropFilter>(
+        find.ancestor(
+          of: find.text(label),
+          matching: find.byType(BackdropFilter),
+        ),
+      )
+      .isNotEmpty;
 }
 
 void main() {

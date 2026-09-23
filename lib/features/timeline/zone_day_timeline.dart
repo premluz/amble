@@ -245,268 +245,266 @@ class ZoneDayTimeline extends StatelessWidget {
     );
     final rows = _mergedRows(result, day);
 
-    // One-shot fade-in on first build — ZoneDayTimeline mounts fresh every
-    // time the view-cycle button lands on Zone view, so there's no prior
-    // frame to ease from; an abrupt swap otherwise reads as a rendering
-    // glitch rather than a real content change (unchanged reasoning from
-    // this view's earlier spatial version).
+    // **2026-09-22 — no one-shot fade-in on mount any more.** Requested
+    // directly: "remove animation completely for switching views."
+    // ZoneDayTimeline still mounts fresh every time the view-cycle button
+    // lands on Zone view; it now just appears immediately instead of
+    // easing in.
     return Stack(
       children: [
-        TweenAnimationBuilder<double>(
-          tween: Tween(begin: 0, end: 1),
-          duration: theme.motionNormal,
-          curve: Curves.easeOut,
-          builder: (context, opacity, child) =>
-              Opacity(opacity: opacity, child: child),
-          child: ListView.separated(
-            // LEFT is [zoneContentLeftInset] (90), not the page inset —
-            // requested directly against a screenshot with two guide
-            // lines drawn from the spatial view: this view's zone cards
-            // have to start where the spatial view's own zone BAND does
-            // (`left: hourGutterWidth`, `timeline_screen.dart`), which is
-            // the 24px page inset PLUS its 66px hour gutter. Zone view
-            // reserved no gutter at all before this, so every card sat
-            // 66px left of its spatial counterpart.
-            //
-            // RIGHT stays the ordinary page inset — the gutter only
-            // exists on the leading edge, exactly as in the spatial view.
-            //
-            // The [ZoneRowTimeLabel]s inside these rows still escape back
-            // out to 16px (see that widget's own doc comment), so the two
-            // views now line up on the hour label AND the zone edge,
-            // which are the two lines the report marked.
-            padding: EdgeInsets.only(
-              left: zoneContentLeftInset,
-              right: theme.spacingScreenPadding,
-              top: theme.spacingLg,
-              bottom: theme.spacingLg,
-            ),
-            itemCount: rows.length,
-            // A larger gap in flat style specifically — requested directly:
-            // "add gap between zones zone view (flat style)." With the
-            // zone's own card background/border gone (see `flatStyle` on
-            // `ZoneContainerBlock`), the original 4px separator reads as too
-            // tight with nothing left to visually separate one zone from the
-            // next; normal style keeps the original 4px, since its own card
-            // edges already do that job.
-            separatorBuilder: (_, _) => SizedBox(
-              height: devZoneCardFlat ? theme.spacingMd : theme.spacingXs,
-            ),
-            itemBuilder: (context, index) {
-              final row = rows[index];
-              return switch (row) {
-                ZoneContainment() => ZoneContainerBlock(
-                  theme: theme,
-                  zone: row.zone,
-                  tasks: row.tasks,
-                  externalEvents: row.externalEvents,
-                  categoriesById: categoryById,
-                  // Drag-and-drop is gone in the non-spatial list — every row
-                  // this container renders is read-only aside from tap, so
-                  // this key is never actually consulted (only reached from
-                  // `onRowDragStart`, which is never wired below).
-                  stackAncestorKey: _unusedStackKey,
-                  onTaskTap: onTaskTap,
-                  onToggleComplete: onToggleComplete,
-                  // Swipe-right — requested directly ("wire for zoned"),
-                  // matching this view's own unzoned rows below exactly
-                  // (same `showAddTaskNoteSheet` call, same "always
-                  // active, no Edit Mode concept here" reasoning).
-                  onAddNote: (task) => showAddTaskNoteSheet(context, task),
-                  durationVisible: devDurationVisible,
-                  timeRangeVisible: devTimeRangeVisible,
-                  startTimeOnlyVisible: devZoneTaskStartTimeVisible,
-                  showCompletionCheckbox: showCompletionCheckbox,
-                  flatStyle: devZoneCardFlat,
-                  whatMattersEnabled: whatMattersEnabled,
-                  onHeaderTap: onZoneHeaderTap == null
-                      ? null
-                      : () => onZoneHeaderTap!(row.zone),
-                ),
-                // Left-padded by `spacingMd` — requested directly: "align
-                // tasks that are not in zones same with tasks that have
-                // zones, so add margin that is equal zone left padding."
-                // A ZONED task's own badge sits at `spacingScreenPadding`
-                // (this list's own horizontal inset) PLUS `spacingMd`
-                // (ZoneContainerBlock's own card padding — see its
-                // `EdgeInsets.fromLTRB` there), so an unzoned row needs the
-                // exact same extra inset to line its badge up under the
-                // same left edge rather than sitting `spacingMd` further
-                // left than every zoned task beside it.
-                //
-                // A leading time column, matching `_ZoneTaskRow`'s own
-                // exact one (same [zoneTaskTimeLabel] format/toggles,
-                // width, and style) — reported directly: an unzoned row's
-                // title otherwise sat further LEFT than a zoned row's own
-                // title, since `TaskCapsuleBlock`'s `compactText` mode
-                // shows time INLINE within the title text rather than as a
-                // separate leading column the way `_ZoneTaskRow` does.
-                // `TaskCapsuleBlock` itself gets `timeRangeVisible:
-                // durationVisible: false` here so its own inline text
-                // carries the bare title only, not a second copy of the
-                // time.
-                Task() => WhatMattersRow(
-                  theme: theme,
-                  hidden: whatMattersEnabled && !row.isImportant,
-                  child: Padding(
-                    padding: EdgeInsets.only(left: theme.spacingMd),
-                    // IntrinsicHeight, not a fixed height — TaskCapsuleBlock
-                    // sizes itself naturally here (badgeSize floor, or the
-                    // 48px completion-checkbox tap target when that's
-                    // taller — see its own `textHeaderHeight` doc comment),
-                    // and the leading time column beside it only needs to
-                    // stretch to match, not impose its own fixed row height.
-                    // Keyed here, not on the outer Padding — a Padding
-                    // widget's own top-left is its PARENT's edge (before
-                    // the padding is applied), which is the wrong thing to
-                    // measure against for "how far right does this row's
-                    // own content start."
-                    child: IntrinsicHeight(
-                      key: ValueKey('unzoned-task-row-${row.id}'),
-                      child: Builder(
-                        builder: (context) {
-                          final timeLabel = zoneTaskTimeLabel(
-                            context,
-                            scheduledAt: row.scheduledAt,
-                            durationMinutes: row.durationMinutes,
-                            timeRangeVisible: devTimeRangeVisible,
-                            durationVisible: devDurationVisible,
-                            startTimeOnlyVisible: devZoneTaskStartTimeVisible,
-                          );
-                          return Row(
-                            // `start`, not `stretch` — see the time
-                            // label's own comment just below for why.
-                            // `TaskCapsuleBlock` still gets its full
-                            // natural height inside its own `Expanded`
-                            // regardless of this row's cross-axis
-                            // alignment; only the LABEL needed to stop
-                            // stretching.
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Escapes back to the spatial Task view's own
-                              // hour-label position via [ZoneRowTimeLabel] —
-                              // see that widget's own class doc comment
-                              // (`zone_container_block.dart`) for the full
-                              // "why not just reuse TaskBoundaryMarkers
-                              // directly" reasoning, and
-                              // docs/DESIGN_SYSTEM.md's "Zone row hour
-                              // label" section. Replaces an earlier
-                              // `Transform.translate` coordinate hack.
-                              //
-                              // Same [leftPaddingToEscape] total as
-                              // `_ZoneTaskRow`'s own copy of this widget
-                              // ([zoneContentLeftInset] list inset +
-                              // `spacingMd`) — this row reaches it via its
-                              // OWN `Padding(left: spacingMd)` wrapper above
-                              // rather than a zone card's padding, but the
-                              // total is identical, which is exactly what
-                              // keeps unzoned and zoned times lined up with
-                              // each other.
-                              // **2026-09-20** — no trailing `SizedBox` gap
-                              // any more. With
-                              // [zoneRowTimeLabelReservedWidth] at 0 the
-                              // label occupies no row width at all (its
-                              // text escapes via `Positioned`), so an 8px
-                              // spacer after it was pure offset — and it
-                              // pushed this unzoned row's title 8px right
-                              // of a zoned row's, breaking exactly the
-                              // shared x-origin this file's own alignment
-                              // test pins. `_ZoneTaskRow` dropped its
-                              // matching spacer for the same reason.
-                              // **2026-09-20 — vertical misalignment fix.**
-                              // Reported directly against a screenshot: an
-                              // unzoned row's time text sat visibly off
-                              // the badge's own vertical center. Root
-                              // cause: with the enclosing `Row` previously
-                              // `stretch`ed (to give `TaskCapsuleBlock`
-                              // its full natural height, up to the
-                              // completion checkbox's 48px tap target),
-                              // this zero-width label was ALSO stretched
-                              // to that same full height and centered
-                              // within it — but the badge inside
-                              // `TaskCapsuleBlock` is `topCenter`-anchored
-                              // at [theme.sizeTaskBadge] from the row's
-                              // TOP (see that widget's own hardened
-                              // `textHeaderHeight` comment on exactly this
-                              // "centers within the wrong box" failure
-                              // mode, previously fixed for the title
-                              // text but never applied here). Pinning
-                              // this label to a `sizeTaskBadge`-tall box
-                              // at the row's own top gives it the
-                              // identical vertical anchor the badge
-                              // itself uses, regardless of how tall the
-                              // row grows around it.
-                              if (timeLabel.isNotEmpty)
-                                SizedBox(
-                                  height: theme.sizeTaskBadge,
-                                  child: ZoneRowTimeLabel(
-                                    theme: theme,
-                                    text: timeLabel,
-                                    leftPaddingToEscape:
-                                        zoneContentLeftInset + theme.spacingMd,
-                                    reservedWidth:
-                                        zoneRowTimeLabelReservedWidth,
-                                  ),
-                                ),
-                              Expanded(
-                                child: TaskCapsuleBlock(
-                                  task: row,
-                                  category: row.categoryId == null
-                                      ? null
-                                      : categoryById[row.categoryId],
-                                  // Fixed badge size, matching List view's own
-                                  // individual-row look — a flat list has no
-                                  // time axis for a proportional pill height to
-                                  // read against.
-                                  durationIndicatedBySize: false,
-                                  compactText: true,
-                                  textLayout: devTextLayout,
-                                  iconsVisible: devIconsVisible,
-                                  // Both false: this row's own leading time
-                                  // column above already shows time/duration —
-                                  // see this branch's own doc comment.
-                                  durationVisible: false,
-                                  timeRangeVisible: false,
-                                  showCompletionCheckbox:
-                                      showCompletionCheckbox,
-                                  tagColorStyle: tagColorStyle,
-                                  onTap: () => onTaskTap(row),
-                                  onToggleComplete: () => onToggleComplete(row),
-                                  // Swipe-right — requested directly ("slide
-                                  // right add note"). This view has no Edit Mode
-                                  // concept at all (TaskCapsuleBlock's own
-                                  // editModeEnabled defaults to false here, never
-                                  // passed), so the swipe is always active,
-                                  // matching "on timeline spatial and non
-                                  // spatial only (not on edit)".
-                                  onAddNote: () =>
-                                      showAddTaskNoteSheet(context, row),
+        ListView.separated(
+          // LEFT is [zoneContentLeftInset] — column 2's own start under
+          // the three-column contract (`AmbleTheme.timelineZoneLeft`),
+          // the same x the spatial view's own zone band starts at.
+          //
+          // RIGHT is [AmbleTheme.spacingTimelineGutter] explicitly, not
+          // [AmbleTheme.spacingScreenPadding] — they resolve to the same
+          // primitive today, but this edge IS one of the Timeline's own
+          // four equal gaps (content-to-edge), so it reads from the
+          // Timeline's own token rather than agreeing with it by
+          // coincidence. See `TimelineColumns`' own doc comment for why
+          // that distinction is the whole point of this rebuild.
+          //
+          // The [ZoneRowTimeLabel]s inside these rows still escape back
+          // out to [zoneRowTimeLabelEdgeInset] (== `spacingTimelineGutter`,
+          // see that widget's own doc comment), so the two views line up
+          // on the hour label AND the zone edge.
+          padding: EdgeInsets.only(
+            left: zoneContentLeftInset(theme, context),
+            right: theme.spacingTimelineGutter,
+            top: theme.spacingLg,
+            bottom: theme.spacingLg,
+          ),
+          itemCount: rows.length,
+          // A larger gap in flat style specifically — requested directly:
+          // "add gap between zones zone view (flat style)." With the
+          // zone's own card background/border gone (see `flatStyle` on
+          // `ZoneContainerBlock`), the original 4px separator reads as too
+          // tight with nothing left to visually separate one zone from the
+          // next; normal style keeps the original 4px, since its own card
+          // edges already do that job.
+          separatorBuilder: (_, _) => SizedBox(
+            height: devZoneCardFlat ? theme.spacingMd : theme.spacingXs,
+          ),
+          itemBuilder: (context, index) {
+            final row = rows[index];
+            // **2026-09-22 — no per-row entrance stagger any more.**
+            // Requested directly: "remove animation completely for
+            // switching views... change screens no animation." This
+            // used to wrap each row in `AppStaggeredEntrance` (a
+            // staggered fade-in on top of the list's own whole-view
+            // fade-in below, added specifically to make the Task<->Zone
+            // view switch feel alive) — confirmed via AskUserQuestion
+            // that removing "no animation" for view switches also
+            // covers this per-item reveal, not just the whole-view
+            // crossfade.
+            return switch (row) {
+              ZoneContainment() => ZoneContainerBlock(
+                theme: theme,
+                zone: row.zone,
+                tasks: row.tasks,
+                externalEvents: row.externalEvents,
+                categoriesById: categoryById,
+                // Drag-and-drop is gone in the non-spatial list — every row
+                // this container renders is read-only aside from tap, so
+                // this key is never actually consulted (only reached from
+                // `onRowDragStart`, which is never wired below).
+                stackAncestorKey: _unusedStackKey,
+                onTaskTap: onTaskTap,
+                onToggleComplete: onToggleComplete,
+                // Swipe-right — requested directly ("wire for zoned"),
+                // matching this view's own unzoned rows below exactly
+                // (same `showAddTaskNoteSheet` call, same "always
+                // active, no Edit Mode concept here" reasoning).
+                onAddNote: (task) => showAddTaskNoteSheet(context, task),
+                durationVisible: devDurationVisible,
+                timeRangeVisible: devTimeRangeVisible,
+                startTimeOnlyVisible: devZoneTaskStartTimeVisible,
+                showCompletionCheckbox: showCompletionCheckbox,
+                flatStyle: devZoneCardFlat,
+                whatMattersEnabled: whatMattersEnabled,
+                onHeaderTap: onZoneHeaderTap == null
+                    ? null
+                    : () => onZoneHeaderTap!(row.zone),
+              ),
+              // **Mirrors [ZoneContainerBlock]'s own card LEFT padding**
+              // (`spacingLg`), so an unzoned row's badge lines up with a
+              // zoned one's. A zoned task sits inside that card and so
+              // picks the inset up from it; an unzoned row has no card of
+              // its own and has to add the same value here, or the two
+              // kinds start at different x — the reported misalignment
+              // this row's own tests pin.
+              //
+              // A leading time column, matching `_ZoneTaskRow`'s own
+              // exact one (same [zoneTaskTimeLabel] format/toggles,
+              // width, and style) — reported directly: an unzoned row's
+              // title otherwise sat further LEFT than a zoned row's own
+              // title, since `TaskCapsuleBlock`'s `compactText` mode
+              // shows time INLINE within the title text rather than as a
+              // separate leading column the way `_ZoneTaskRow` does.
+              // `TaskCapsuleBlock` itself gets `timeRangeVisible:
+              // durationVisible: false` here so its own inline text
+              // carries the bare title only, not a second copy of the
+              // time.
+              Task() => WhatMattersRow(
+                theme: theme,
+                hidden: whatMattersEnabled && !row.isImportant,
+                child: Padding(
+                  padding: EdgeInsets.only(left: theme.spacingLg),
+                  // IntrinsicHeight, not a fixed height — TaskCapsuleBlock
+                  // sizes itself naturally here (badgeSize floor, or the
+                  // 48px completion-checkbox tap target when that's
+                  // taller — see its own `textHeaderHeight` doc comment),
+                  // and the leading time column beside it only needs to
+                  // stretch to match, not impose its own fixed row height.
+                  // Keyed here, not on the outer Padding — a Padding
+                  // widget's own top-left is its PARENT's edge (before
+                  // the padding is applied), which is the wrong thing to
+                  // measure against for "how far right does this row's
+                  // own content start."
+                  child: IntrinsicHeight(
+                    key: ValueKey('unzoned-task-row-${row.id}'),
+                    child: Builder(
+                      builder: (context) {
+                        final timeLabel = zoneTaskTimeLabel(
+                          context,
+                          scheduledAt: row.scheduledAt,
+                          durationMinutes: row.durationMinutes,
+                          timeRangeVisible: devTimeRangeVisible,
+                          durationVisible: devDurationVisible,
+                          startTimeOnlyVisible: devZoneTaskStartTimeVisible,
+                        );
+                        return Row(
+                          // `start`, not `stretch` — see the time
+                          // label's own comment just below for why.
+                          // `TaskCapsuleBlock` still gets its full
+                          // natural height inside its own `Expanded`
+                          // regardless of this row's cross-axis
+                          // alignment; only the LABEL needed to stop
+                          // stretching.
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Escapes back to the spatial Task view's own
+                            // hour-label position via [ZoneRowTimeLabel] —
+                            // see that widget's own class doc comment
+                            // (`zone_container_block.dart`) for the full
+                            // "why not just reuse TaskBoundaryMarkers
+                            // directly" reasoning, and
+                            // docs/DESIGN_SYSTEM.md's "Zone row hour
+                            // label" section. Replaces an earlier
+                            // `Transform.translate` coordinate hack.
+                            //
+                            // Same [leftPaddingToEscape] total as
+                            // `_ZoneTaskRow`'s own copy of this widget
+                            // ([zoneContentLeftInset] list inset +
+                            // `spacingMd`) — this row reaches it via its
+                            // OWN `Padding(left: spacingMd)` wrapper above
+                            // rather than a zone card's padding, but the
+                            // total is identical, which is exactly what
+                            // keeps unzoned and zoned times lined up with
+                            // each other.
+                            // **2026-09-20** — no trailing `SizedBox` gap
+                            // any more. With
+                            // [zoneRowTimeLabelReservedWidth] at 0 the
+                            // label occupies no row width at all (its
+                            // text escapes via `Positioned`), so an 8px
+                            // spacer after it was pure offset — and it
+                            // pushed this unzoned row's title 8px right
+                            // of a zoned row's, breaking exactly the
+                            // shared x-origin this file's own alignment
+                            // test pins. `_ZoneTaskRow` dropped its
+                            // matching spacer for the same reason.
+                            // **2026-09-20 — vertical misalignment fix.**
+                            // Reported directly against a screenshot: an
+                            // unzoned row's time text sat visibly off
+                            // the badge's own vertical center. Root
+                            // cause: with the enclosing `Row` previously
+                            // `stretch`ed (to give `TaskCapsuleBlock`
+                            // its full natural height, up to the
+                            // completion checkbox's 48px tap target),
+                            // this zero-width label was ALSO stretched
+                            // to that same full height and centered
+                            // within it — but the badge inside
+                            // `TaskCapsuleBlock` is `topCenter`-anchored
+                            // at [theme.sizeTaskBadge] from the row's
+                            // TOP (see that widget's own hardened
+                            // `textHeaderHeight` comment on exactly this
+                            // "centers within the wrong box" failure
+                            // mode, previously fixed for the title
+                            // text but never applied here). Pinning
+                            // this label to a `sizeTaskBadge`-tall box
+                            // at the row's own top gives it the
+                            // identical vertical anchor the badge
+                            // itself uses, regardless of how tall the
+                            // row grows around it.
+                            if (timeLabel.isNotEmpty)
+                              SizedBox(
+                                height: theme.sizeTaskBadge,
+                                child: ZoneRowTimeLabel(
+                                  theme: theme,
+                                  text: timeLabel,
+                                  leftPaddingToEscape:
+                                      zoneContentLeftInset(theme, context),
+                                  reservedWidth: zoneRowTimeLabelReservedWidth,
                                 ),
                               ),
-                            ],
-                          );
-                        },
-                      ),
+                            Expanded(
+                              child: TaskCapsuleBlock(
+                                task: row,
+                                category: row.categoryId == null
+                                    ? null
+                                    : categoryById[row.categoryId],
+                                // Fixed badge size, matching List view's own
+                                // individual-row look — a flat list has no
+                                // time axis for a proportional pill height to
+                                // read against.
+                                durationIndicatedBySize: false,
+                                compactText: true,
+                                textLayout: devTextLayout,
+                                iconsVisible: devIconsVisible,
+                                // Both false: this row's own leading time
+                                // column above already shows time/duration —
+                                // see this branch's own doc comment.
+                                durationVisible: false,
+                                timeRangeVisible: false,
+                                showCompletionCheckbox: showCompletionCheckbox,
+                                tagColorStyle: tagColorStyle,
+                                onTap: () => onTaskTap(row),
+                                onToggleComplete: () => onToggleComplete(row),
+                                // Swipe-right — requested directly ("slide
+                                // right add note"). This view has no Edit Mode
+                                // concept at all (TaskCapsuleBlock's own
+                                // editModeEnabled defaults to false here, never
+                                // passed), so the swipe is always active,
+                                // matching "on timeline spatial and non
+                                // spatial only (not on edit)".
+                                onAddNote: () =>
+                                    showAddTaskNoteSheet(context, row),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
                     ),
                   ),
                 ),
-                // Same left-inset fix as the unzoned Task row above — an
-                // unmatched external event is the other kind of row that
-                // sits outside any zone container.
-                ExternalCalendarEvent() => Padding(
-                  padding: EdgeInsets.only(left: theme.spacingMd),
-                  child: _UnzonedEventRow(
-                    theme: theme,
-                    event: row,
-                    durationVisible: devDurationVisible,
-                    timeRangeVisible: devTimeRangeVisible,
-                    startTimeOnlyVisible: devZoneTaskStartTimeVisible,
-                  ),
+              ),
+              // Same left-inset fix as the unzoned Task row above — an
+              // unmatched external event is the other kind of row that
+              // sits outside any zone container.
+              ExternalCalendarEvent() => Padding(
+                padding: EdgeInsets.only(left: theme.spacingLg),
+                child: _UnzonedEventRow(
+                  theme: theme,
+                  event: row,
+                  durationVisible: devDurationVisible,
+                  timeRangeVisible: devTimeRangeVisible,
+                  startTimeOnlyVisible: devZoneTaskStartTimeVisible,
                 ),
-                _ => const SizedBox.shrink(),
-              };
-            },
-          ),
+              ),
+              _ => const SizedBox.shrink(),
+            };
+          },
         ),
         // Fades the list's own top row out under `AppCalendarHeader`
         // instead of a hard cut — reported directly against the same
@@ -606,7 +604,7 @@ class _UnzonedEventRow extends StatelessWidget {
                 child: ZoneRowTimeLabel(
                   theme: theme,
                   text: timeLabel,
-                  leftPaddingToEscape: zoneContentLeftInset + theme.spacingMd,
+                  leftPaddingToEscape: zoneContentLeftInset(theme, context),
                   reservedWidth: zoneRowTimeLabelReservedWidth,
                 ),
               ),

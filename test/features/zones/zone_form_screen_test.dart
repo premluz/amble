@@ -488,8 +488,21 @@ void main() {
       );
       await tester.runAsync(() => box.put(zone.id, zone));
 
-      final navigatorKey = await _pumpHost(tester, box: box, taskBox: taskBox);
-      unawaited(showZoneFormScreen(navigatorKey.currentContext!, zone: zone));
+      await _pumpHost(tester, box: box, taskBox: taskBox);
+      // `navigatorKey.currentContext` is the Navigator's OWN element,
+      // structurally ABOVE the Overlay it builds internally —
+      // `Overlay.of(context, rootOverlay: true)` (which `_delete`'s own
+      // undo toast now calls) walks UP from whatever context it's given,
+      // so it never finds that Overlay starting from there. Every real
+      // app call site passes an ordinary descendant widget's context
+      // instead; this test now does the same via the mounted Scaffold's
+      // own element.
+      unawaited(
+        showZoneFormScreen(
+          tester.element(find.byType(Scaffold)),
+          zone: zone,
+        ),
+      );
       await tester.pumpAndSettle();
 
       final deleteButton = find.byIcon(Icons.delete_outline_rounded);
@@ -504,6 +517,16 @@ void main() {
       expect(box.get('existing'), isNull);
       // The screen itself closed — back to the empty host.
       expect(find.text('Edit zone'), findsNothing);
+
+      // `_delete` now shows an AppUndoToast (2026-09-22) — its own
+      // `Future.delayed(duration)` auto-dismiss uses a real platform
+      // Timer, which `flutter_test`'s own teardown asserts is never left
+      // pending. Pumping past the toast's full default duration (4s,
+      // unmodified here) lets that timer fire before this test returns —
+      // same pattern `multi_task_group_delete_test.dart`'s own equivalent
+      // fix uses.
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pump();
     },
   );
 

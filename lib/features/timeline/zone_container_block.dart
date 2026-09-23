@@ -108,29 +108,34 @@ const zoneRowTimeLabelReservedWidth = 0.0;
 
 /// How far from the TRUE screen edge Zone view's own content (a zone
 /// card, an unzoned row) starts — matching the spatial Task view's own
-/// zone band, which sits at `hourGutterWidth` (`timeline_screen.dart`) =
-/// its 66px hour gutter plus the 24px page inset every screen uses.
+/// column 2 (`AmbleTheme.timelineZoneLeft`), since the non-spatial view
+/// has no separate pill-lane column of its own: one card IS this view's
+/// zone-plus-content, merged.
 ///
 /// Requested directly against a screenshot with two guide lines drawn
 /// from the spatial view: "the left line is the left edge of the hour in
 /// the day timeline, the second line is the left edge of the position of
 /// the zone. It's obviously misaligned." Zone view previously started its
-/// cards at just the 24px page inset, with no gutter reserved at all —
-/// 66px left of where the spatial view's zone band begins.
+/// cards at just the page inset, with no time-column width reserved at
+/// all, well left of where the spatial view's zone band begins.
 ///
 /// The [ZoneRowTimeLabel]s inside those rows still escape back out to
-/// [zoneRowTimeLabelEdgeInset] (16px), which is exactly the spatial
-/// view's own hour-label position — so the two views now agree on BOTH
-/// guide lines, not just the label one.
+/// [zoneRowTimeLabelEdgeInset], the same position the spatial view's own
+/// hour labels sit at — so the two views agree on both guide lines, not
+/// just the label one.
 ///
-/// **Must equal [AmbleTheme.spacingHourGutter].** The spatial view reads
-/// that token directly for the same distance; this is the non-spatial
-/// half of the same measurement. A top-level `const` cannot read the
-/// theme, so the equality is pinned by
-/// `horizontal_spacing_system_test.dart` — which is the whole point, as
-/// this value previously being an independent hardcoded `90` is exactly
-/// how the two views drifted apart.
-const zoneContentLeftInset = 90.0;
+/// **2026-09-23 — reads [AmbleTheme.timelineZoneLeft], not a frozen
+/// constant.** Rebuilt on the three-column contract (see
+/// `TimelineColumns`'s own doc comment in `semantic_theme.dart` for the
+/// full history of why the old hardcoded value stopped decomposing into
+/// anything real once the underlying tokens changed) — a top-level
+/// function, not a `const double`, since [AmbleTheme] isn't available at
+/// compile time. `test/core/tokens/horizontal_spacing_system_test.dart`
+/// pins the two views' agreement at every viewport width.
+double zoneContentLeftInset(AmbleTheme theme, [BuildContext? context]) =>
+    context == null
+    ? theme.timelineZoneLeft
+    : theme.timelineZoneLeftFor(context);
 
 /// Zone view's own hour label — the leading time text on a task row
 /// (zoned via [_ZoneTaskRow], or unzoned via `ZoneDayTimeline`'s own
@@ -211,12 +216,12 @@ class ZoneRowTimeLabel extends StatelessWidget {
               alignment: Alignment.centerLeft,
               child: Text(
                 text,
-                // `textCaption` + `colorTextSecondary` — matches
+                // `textCaptionMono` + `colorTextSecondary` — matches
                 // `TaskBoundaryMarkers`' own hour-gutter labels on the
-                // spatial Task view EXACTLY. See this widget's own class
-                // doc comment for why the POSITION can't be shared
-                // structure the same way the STYLE now is.
-                style: theme.textCaption.copyWith(
+                // spatial Task view EXACTLY, mono face included. See this
+                // widget's own class doc comment for why the POSITION
+                // can't be shared structure the same way the STYLE now is.
+                style: theme.textCaptionMono.copyWith(
                   color: theme.colorTextSecondary,
                 ),
                 maxLines: 1,
@@ -535,10 +540,18 @@ class ZoneContainerBlock extends StatelessWidget {
             // 24px, which is the "checkbox not right" regression in Zone
             // view. The row itself supplies the breathing room its own
             // trailing edge needs.
+            //
+            // LEFT is `spacingLg` (24), not `spacingMd` (16) — widened
+            // one rung up the spacing scale, requested directly against a
+            // two-view annotated screenshot: the gap between the card's
+            // own outer edge and its first pill lane read as visibly
+            // missing/too thin against the spatial view's own equivalent
+            // gap (zone band edge to first pill), which this card is
+            // meant to match.
             padding: flatStyle
                 ? EdgeInsets.zero
                 : EdgeInsets.fromLTRB(
-                    theme.spacingMd,
+                    theme.spacingLg,
                     theme.spacingMd,
                     0,
                     theme.spacingMd,
@@ -568,11 +581,25 @@ class ZoneContainerBlock extends StatelessWidget {
                   onVerticalDragStart: editModeEnabled ? onMoveStart : null,
                   onVerticalDragUpdate: editModeEnabled ? onMoveUpdate : null,
                   onVerticalDragEnd: editModeEnabled ? onMoveEnd : null,
-                  child: _Header(
-                    theme: theme,
-                    zone: zone,
-                    durationMinutes: durationMinutes,
-                    timeRangeVisible: timeRangeVisible,
+                  // `SizedBox(width: double.infinity)`, not `_Header`
+                  // directly — the parent `Column` uses `CrossAxisAlignment
+                  // .start`, which gives every child LOOSE (not tight)
+                  // width constraints, so `_Header`'s own `Row` had no real
+                  // width to divide its `Expanded` title against and could
+                  // overflow instead of ellipsizing. Surfaced directly by
+                  // widening this card's own left padding (`spacingMd` ->
+                  // `spacingLg`, above) trimmed just enough available width
+                  // to tip a short title + time-range combination over —
+                  // this fixes the underlying missing-width-constraint,
+                  // not just that one padding change.
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: _Header(
+                      theme: theme,
+                      zone: zone,
+                      durationMinutes: durationMinutes,
+                      timeRangeVisible: timeRangeVisible,
+                    ),
                   ),
                 ),
                 SizedBox(height: theme.spacingSm),
@@ -769,11 +796,15 @@ class _Header extends StatelessWidget {
         ),
         if (timeRangeVisible) ...[
           SizedBox(width: theme.spacingSm),
-          Text(
-            '${start.format(context)} - ${end.format(context)}',
-            style: theme.textCaption.copyWith(color: theme.colorTextTertiary),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          Flexible(
+            child: Text(
+              '${start.format(context)} - ${end.format(context)}',
+              style: theme.textCaption.copyWith(
+                color: theme.colorTextTertiary,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ],
       ],
@@ -1066,10 +1097,10 @@ class _ZoneTaskRow extends StatelessWidget {
                 //
                 // [leftPaddingToEscape] is EVERY padding layer between
                 // this row and the true screen edge: [zoneContentLeftInset]
-                // (90, `ZoneDayTimeline`'s own list inset — the page inset
-                // PLUS the reserved hour gutter, so this view's cards line
-                // up with the spatial view's zone band) + `spacingMd` (16,
-                // [ZoneContainerBlock]'s own card padding) = 106.
+                // (`ZoneDayTimeline`'s own list inset — `theme
+                // .timelineZoneLeft`, so this view's cards line up with
+                // the spatial view's zone band) + `spacingLg` (24,
+                // [ZoneContainerBlock]'s own card LEFT padding).
                 //
                 // **2026-09-20 — no longer wrapped in a `GestureDetector`.**
                 // With [zoneRowTimeLabelReservedWidth] at 0 this box has no
@@ -1081,7 +1112,7 @@ class _ZoneTaskRow extends StatelessWidget {
                   ZoneRowTimeLabel(
                     theme: theme,
                     text: timeLabel,
-                    leftPaddingToEscape: zoneContentLeftInset + theme.spacingMd,
+                    leftPaddingToEscape: zoneContentLeftInset(theme) + theme.spacingLg,
                     reservedWidth: zoneRowTimeLabelReservedWidth,
                   ),
                 if (hasCategory) ...[
@@ -1336,7 +1367,7 @@ class _ZoneExternalEventRow extends StatelessWidget {
                 child: ZoneRowTimeLabel(
                   theme: theme,
                   text: timeLabel,
-                  leftPaddingToEscape: zoneContentLeftInset + theme.spacingMd,
+                  leftPaddingToEscape: zoneContentLeftInset(theme) + theme.spacingLg,
                   reservedWidth: zoneRowTimeLabelReservedWidth,
                 ),
               ),

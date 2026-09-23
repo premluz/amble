@@ -8,15 +8,61 @@ import '../../core/widgets/app_press_feedback.dart';
 import '../../core/widgets/app_swipe_actions.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
+import '../../core/widgets/app_undo_toast.dart';
 import '../../shared/models/task.dart';
 import '../../shared/models/task_category.dart';
+import '../../shared/providers/section_providers.dart';
 import '../../shared/providers/task_providers.dart';
+import '../../shared/services/day_label.dart';
 import '../task_detail/task_detail_sheet.dart';
 import '../timeline/duration_label.dart';
 import '../timeline/task_category_token_mapping.dart';
+import 'inbox_section_filter_provider.dart';
+import 'inbox_section_tabs.dart';
 import 'inbox_tasks_provider.dart';
 import 'quick_capture_sheet.dart';
 import 'voice_capture_screen.dart';
+
+/// One flattened row in the Inbox list — either a day-divider header or a
+/// real task. [tasks] must already be sorted newest-first (see
+/// [inboxTasksProvider]); this only groups adjacent same-day runs, it
+/// never re-sorts.
+sealed class _InboxRow {
+  const _InboxRow();
+}
+
+class _InboxDayHeaderRow extends _InboxRow {
+  const _InboxDayHeaderRow(this.label);
+  final String label;
+}
+
+class _InboxTaskRow extends _InboxRow {
+  const _InboxTaskRow(this.task);
+  final Task task;
+}
+
+/// Inserts an [_InboxDayHeaderRow] before the first task of each new
+/// calendar day — "all tab should have subtle label separating day
+/// created... similar pattern to chat messaging separating messages
+/// belonging to that day," requested directly. [today] is a parameter for
+/// the same testability reason [dayLabel] itself takes one.
+List<_InboxRow> _groupByDay(List<Task> tasks, {required DateTime today}) {
+  final rows = <_InboxRow>[];
+  DateTime? lastDay;
+  for (final task in tasks) {
+    final day = DateTime(
+      task.createdAt.year,
+      task.createdAt.month,
+      task.createdAt.day,
+    );
+    if (lastDay == null || day != lastDay) {
+      rows.add(_InboxDayHeaderRow(dayLabel(task.createdAt, today: today)));
+      lastDay = day;
+    }
+    rows.add(_InboxTaskRow(task));
+  }
+  return rows;
+}
 
 /// "Manage" — unscheduled tasks awaiting prioritization. Tapping a task
 /// opens the existing task detail screen ([showTaskDetailSheet]) to give
@@ -30,14 +76,79 @@ import 'voice_capture_screen.dart';
 /// already has its own separate entry points (`showTemplateListScreen`/
 /// `showZoneListScreen`/`showCategoryListScreen`), so nothing becomes a
 /// dead end; this screen just stops being a second path to them.
-class InboxScreen extends ConsumerWidget {
+class InboxScreen extends ConsumerStatefulWidget {
   const InboxScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<InboxScreen> createState() => _InboxScreenState();
+}
+
+class _InboxScreenState extends ConsumerState<InboxScreen> {
+  /// The filter a live Inbox-row drag is currently hovering, or null —
+  /// lifted up to this screen (rather than owned per-row) since it drives
+  /// the tab row's own highlight, a sibling of whichever row is being
+  /// dragged. See `_DraggableInboxRow`'s own doc comment for the drag
+  /// gesture itself.
+  InboxSectionFilter? _dropTargetFilter;
+
+  /// Swipe-to-delete's own Remove action — snapshot-then-restore, same
+  /// mechanism `removeTask`'s own undo uses, needed here specifically
+  /// since a swipe has no confirmation step at all — the easiest task
+  /// removal in the app to trigger by accident.
+  Future<void> _removeTaskWithUndo(Task task, TaskList notifier) async {
+    final snapshot = task.toJson();
+    await notifier.deleteTask(task.id);
+    if (!mounted) return;
+    AppUndoToast.show(
+      context: context,
+      message: "Removed '${task.title}'",
+      onUndo: () => notifier.updateTask(Task.fromJson(snapshot)),
+    );
+  }
+
+  /// One [InboxSectionTabTargets] per distinct Section-list length —
+  /// rebuilt only when the list of filters actually changes shape, not on
+  /// every build, so a `GlobalKey` never churns mid-drag. `late` +
+  /// manually invalidated in `didChangeDependencies`/`build` rather than
+  /// a `Riverpod` provider: this is pure widget-tree bookkeeping (real
+  /// `GlobalKey`s tied to THIS screen's own element tree), not app state.
+  InboxSectionTabTargets? _targets;
+  List<InboxSectionFilter>? _targetsFor;
+
+  InboxSectionTabTargets _resolveTargets(List<InboxSectionFilter> filters) {
+    final current = _targets;
+    if (current != null && _listEquals(_targetsFor, filters)) return current;
+    final built = InboxSectionTabTargets(filters);
+    _targets = built;
+    _targetsFor = filters;
+    return built;
+  }
+
+  static bool _listEquals(
+    List<InboxSectionFilter>? a,
+    List<InboxSectionFilter> b,
+  ) {
+    if (a == null || a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
-    final tasks = ref.watch(inboxTasksProvider);
+    final tasks = ref.watch(filteredInboxTasksProvider);
+    final rows = _groupByDay(tasks, today: DateTime.now());
     final taskNotifier = ref.read(taskListProvider.notifier);
+    final sections = ref.watch(sectionListProvider);
+
+    final filters = <InboxSectionFilter>[
+      const InboxSectionFilterAll(),
+      for (final section in sections) InboxSectionFilterSection(section.id),
+      const InboxSectionFilterUnfiled(),
+    ];
+    final targets = _resolveTargets(filters);
 
     return Container(
       // Matches the Timeline's own background — requested directly:
@@ -68,6 +179,15 @@ class InboxScreen extends ConsumerWidget {
                 //   ),
                 //   child: Text('Inbox', style: theme.textTitle),
                 // ),
+                // The Section tab row — pinned above the scrolling list
+                // (a sibling in this Column, not inside the Expanded
+                // Stack below), so it never scrolls away with the list
+                // underneath it. Requested directly: "fixed so they
+                // don't scroll vertically with content."
+                InboxSectionTabs(
+                  targets: targets,
+                  dropTargetFilter: _dropTargetFilter,
+                ),
                 Expanded(
                   // Stack, so top/bottom fades overlay the list's own
                   // scrolling content directly — reversed back from an
@@ -92,7 +212,7 @@ class InboxScreen extends ConsumerWidget {
                     children: [
                       tasks.isEmpty
                           ? _EmptyInboxState(theme: theme)
-                          : ListView.separated(
+                          : ListView.builder(
                               padding: EdgeInsets.fromLTRB(
                                 theme.spacingScreenPadding,
                                 // spacingContentTop — the shared value
@@ -105,13 +225,42 @@ class InboxScreen extends ConsumerWidget {
                                 // this is purely the card-alignment fix.
                                 theme.spacingContentTop,
                                 theme.spacingScreenPadding,
-                                0,
+                                theme.spacingSm,
                               ),
-                              itemCount: tasks.length,
-                              separatorBuilder: (context, _) =>
-                                  SizedBox(height: theme.spacingSm),
+                              // Day-divider headers replace the old
+                              // ListView.separated's uniform SizedBox
+                              // gap — requested directly: "all tab
+                              // should have subtle label separating day
+                              // created... similar pattern to chat
+                              // messaging." Spacing between rows is now
+                              // baked into each row's own bottom margin
+                              // instead of a separate separatorBuilder,
+                              // since headers and tasks need DIFFERENT
+                              // amounts of it (see `_InboxDayHeader`'s
+                              // and the task row's own padding below).
+                              itemCount: rows.length,
                               itemBuilder: (context, index) {
-                                final task = tasks[index];
+                                final row = rows[index];
+                                if (row is _InboxDayHeaderRow) {
+                                  return Padding(
+                                    padding: EdgeInsets.only(
+                                      // No extra top gap before the
+                                      // very first header — spacingContentTop
+                                      // above already provides it; every
+                                      // later header gets a bigger gap
+                                      // than an ordinary inter-task one,
+                                      // so a new day genuinely reads as
+                                      // a new group.
+                                      top: index == 0 ? 0 : theme.spacingLg,
+                                      bottom: theme.spacingSm,
+                                    ),
+                                    child: _InboxDayHeader(
+                                      theme: theme,
+                                      label: row.label,
+                                    ),
+                                  );
+                                }
+                                final task = (row as _InboxTaskRow).task;
                                 void onSchedule() =>
                                     showTaskDetailSheet(context, task: task);
                                 // Swipe right schedules, swipe left removes
@@ -127,32 +276,59 @@ class InboxScreen extends ConsumerWidget {
                                 // this list belongs to a series at all —
                                 // `deleteTaskSeries`'s own assert would
                                 // fire if it were wired here.
-                                return AppSwipeActions(
-                                  key: ValueKey(task.id),
-                                  startAction: AppSwipeAction(
-                                    icon: Icons.calendar_today_rounded,
-                                    background: theme.colorAccent,
-                                    semanticLabel: 'Schedule',
-                                    onActivate: onSchedule,
+                                return Padding(
+                                  padding: EdgeInsets.only(
+                                    bottom: theme.spacingSm,
                                   ),
-                                  endAction: AppSwipeAction(
-                                    icon: Icons.delete_outline_rounded,
-                                    background: theme.colorTaskAlert,
-                                    semanticLabel: 'Remove',
-                                    destructive: true,
-                                    onActivate: () =>
-                                        taskNotifier.deleteTask(task.id),
-                                  ),
-                                  child: _InboxListItem(
-                                    task: task,
+                                  child: _DraggableInboxRow(
+                                    key: ValueKey(task.id),
                                     theme: theme,
-                                    onTap: () => showQuickCaptureSheet(
-                                      context,
-                                      task: task,
+                                    targets: targets,
+                                    onHoverChanged: (filter) => setState(
+                                      () => _dropTargetFilter = filter,
                                     ),
-                                    onToggleComplete: () =>
-                                        taskNotifier.toggleComplete(task),
-                                    onSchedule: onSchedule,
+                                    onDropped: (filter) {
+                                      setState(() => _dropTargetFilter = null);
+                                      final newSectionId = switch (filter) {
+                                        InboxSectionFilterSection(:final id) =>
+                                          id,
+                                        InboxSectionFilterUnfiled() => null,
+                                        InboxSectionFilterAll() =>
+                                          task.sectionId,
+                                      };
+                                      if (newSectionId == task.sectionId) {
+                                        return;
+                                      }
+                                      task.sectionId = newSectionId;
+                                      taskNotifier.updateTask(task);
+                                    },
+                                    startAction: AppSwipeAction(
+                                      icon: Icons.calendar_today_rounded,
+                                      background: theme.colorAccent,
+                                      semanticLabel: 'Schedule',
+                                      onActivate: onSchedule,
+                                    ),
+                                    endAction: AppSwipeAction(
+                                      icon: Icons.delete_outline_rounded,
+                                      background: theme.colorTaskAlert,
+                                      semanticLabel: 'Remove',
+                                      destructive: true,
+                                      onActivate: () =>
+                                          _removeTaskWithUndo(
+                                            task,
+                                            taskNotifier,
+                                          ),
+                                    ),
+                                    child: _InboxListItem(
+                                      task: task,
+                                      theme: theme,
+                                      onTap: () => showQuickCaptureSheet(
+                                        context,
+                                        task: task,
+                                      ),
+                                      onToggleComplete: () =>
+                                          taskNotifier.toggleComplete(task),
+                                    ),
                                   ),
                                 );
                               },
@@ -213,6 +389,144 @@ class InboxScreen extends ConsumerWidget {
   }
 }
 
+/// Long-press-then-drag an Inbox row onto one of the Section tabs at the
+/// top of the screen to file it — requested directly, confirmed as the
+/// ONLY assignment entry point (no picker modal, no long-press sheet, no
+/// quick-capture field).
+///
+/// A long-press ARMS the row (a small lift) and disables its own
+/// [AppSwipeActions] for the gesture's duration, passing `startAction:
+/// null, endAction: null` — the same fix already established for Edit
+/// Mode's own competing drag gestures (`TaskCapsuleBlock`'s own doc
+/// comment: "the caller is expected to pass null while a competing drag
+/// is active"; `AppSwipeActions`'s own doc comment confirms this is the
+/// intended escape hatch, not a workaround). A plain quick swipe never
+/// triggers this at all — it's gated behind `onLongPressStart`, so
+/// swipe-right-schedule/swipe-left-delete are unaffected by a normal tap-
+/// and-swipe gesture.
+///
+/// State (`_dragging`) lives here, in the row itself — the same shape
+/// `_DraggableTaskBlockState` (`timeline/timeline_screen.dart`) already
+/// establishes for the Timeline's own drag gesture: a caller-owned
+/// `GestureDetector` with plain drag callbacks, not a shared "draggable
+/// row" primitive (confirmed via research: no such primitive exists
+/// anywhere in this codebase to reuse).
+class _DraggableInboxRow extends StatefulWidget {
+  const _DraggableInboxRow({
+    super.key,
+    required this.theme,
+    required this.targets,
+    required this.onHoverChanged,
+    required this.onDropped,
+    required this.startAction,
+    required this.endAction,
+    required this.child,
+  });
+
+  final AmbleTheme theme;
+  final InboxSectionTabTargets targets;
+
+  /// Reports the tab a live drag is currently over (or null once it
+  /// leaves every tab) — the caller (`InboxScreen`) forwards this
+  /// straight to `InboxSectionTabs.dropTargetFilter` for the highlight.
+  final ValueChanged<InboxSectionFilter?> onHoverChanged;
+
+  /// Fired once, on release, with whichever tab the drag ended over — the
+  /// caller decides what that means for `Task.sectionId`. Never fired if
+  /// the release wasn't over any tab (the row simply settles back, no
+  /// assignment happens).
+  final ValueChanged<InboxSectionFilter> onDropped;
+
+  final AppSwipeAction startAction;
+  final AppSwipeAction endAction;
+  final Widget child;
+
+  @override
+  State<_DraggableInboxRow> createState() => _DraggableInboxRowState();
+}
+
+class _DraggableInboxRowState extends State<_DraggableInboxRow> {
+  bool _dragging = false;
+
+  void _onLongPressStart(LongPressStartDetails details) {
+    setState(() => _dragging = true);
+  }
+
+  void _onLongPressMoveUpdate(LongPressMoveUpdateDetails details) {
+    widget.onHoverChanged(widget.targets.hitTest(details.globalPosition));
+  }
+
+  void _onLongPressEnd(LongPressEndDetails details) {
+    final dropped = widget.targets.hitTest(details.globalPosition);
+    setState(() => _dragging = false);
+    widget.onHoverChanged(null);
+    if (dropped != null) widget.onDropped(dropped);
+  }
+
+  void _onLongPressCancel() {
+    setState(() => _dragging = false);
+    widget.onHoverChanged(null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = widget.theme;
+
+    return GestureDetector(
+      onLongPressStart: _onLongPressStart,
+      onLongPressMoveUpdate: _onLongPressMoveUpdate,
+      onLongPressEnd: _onLongPressEnd,
+      onLongPressCancel: _onLongPressCancel,
+      // A small lift while armed — the same `motionFast`/`curveStandard`
+      // quick-transition tokens used throughout this design system,
+      // rather than a bespoke drag animation. Purely a visual "this is
+      // now being dragged" signal; the row's own position never actually
+      // follows the finger (unlike the Timeline's own drag, which
+      // repositions the block in place) since a long list row dragging
+      // upward across its own siblings would fight the list's scroll.
+      child: AnimatedScale(
+        scale: _dragging ? 1.03 : 1.0,
+        duration: theme.motionFast,
+        curve: theme.curveStandard,
+        child: AnimatedOpacity(
+          opacity: _dragging ? 0.85 : 1.0,
+          duration: theme.motionFast,
+          curve: theme.curveStandard,
+          child: AppSwipeActions(
+            // Null while armed — suspends the swipe recognizer for the
+            // gesture's duration, per this class's own doc comment.
+            startAction: _dragging ? null : widget.startAction,
+            endAction: _dragging ? null : widget.endAction,
+            child: widget.child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The chat-style date-divider between groups of same-day tasks — subtle
+/// (tertiary text, caption size) and monospace, per the request: "all tab
+/// should have subtle label separating day created's (Mono space font)."
+/// [dayLabel]'s own doc comment covers the label text itself.
+class _InboxDayHeader extends StatelessWidget {
+  const _InboxDayHeader({required this.theme, required this.label});
+
+  final AmbleTheme theme;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      // `textCaptionMono` — the monospace twin reserved for genuinely
+      // temporal labels (see that token's own doc comment), not
+      // `textCaption`'s default DM Sans.
+      style: theme.textCaptionMono.copyWith(color: theme.colorTextTertiary),
+    );
+  }
+}
+
 class _EmptyInboxState extends StatelessWidget {
   const _EmptyInboxState({required this.theme});
 
@@ -239,7 +553,6 @@ class _InboxListItem extends StatelessWidget {
     required this.theme,
     required this.onTap,
     required this.onToggleComplete,
-    required this.onSchedule,
   });
 
   final Task task;
@@ -252,13 +565,6 @@ class _InboxListItem extends StatelessWidget {
   /// stays the lightweight rename action, never the full Schedule form.
   final VoidCallback onTap;
   final VoidCallback onToggleComplete;
-
-  /// The trailing "+" — promotes this note to a scheduled task via the
-  /// full task detail sheet, pre-filled with its title. Replaces the old
-  /// chevron, requested directly: "to the Inbox item card instead chevron
-  /// we replace chevron with + icon that then opens Create task with
-  /// populated details already."
-  final VoidCallback onSchedule;
 
   @override
   Widget build(BuildContext context) {
@@ -348,19 +654,6 @@ class _InboxListItem extends StatelessWidget {
               SizedBox(width: theme.spacingSm),
               _DurationBadge(theme: theme, minutes: minutes),
             ],
-            // A separate tap target from the card's own onTap above — same
-            // "own GestureDetector, own hit area" pattern the category
-            // badge (toggle-complete) already uses on this row, so tapping
-            // "+" promotes to Schedule without also triggering the card's
-            // rename action underneath it.
-            AppPressFeedback(
-              onTap: onSchedule,
-              shape: BoxShape.circle,
-              child: Padding(
-                padding: EdgeInsets.all(theme.spacingXs),
-                child: Icon(Icons.add_rounded, color: theme.colorTextSecondary),
-              ),
-            ),
           ],
         ),
       ),

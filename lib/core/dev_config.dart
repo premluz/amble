@@ -172,6 +172,33 @@ class DevHideEmptyZones extends _$DevHideEmptyZones {
   void set(bool value) => state = value;
 }
 
+/// Spatial Task View only — when on, restores each zone band's OLD
+/// dynamic width: sized off the day's own deepest overlap-lane stack
+/// (`_zoneBackgroundWidth`/`dayPillLanes` in `timeline_screen.dart`), so a
+/// day with more overlapping tasks widened every zone band. Requested
+/// directly, alongside moving the zone name label to render INSIDE the
+/// band rather than beside it: "keep that behaviour as toggle in dev
+/// mode... default to false and keep same size 100% of available
+/// container til right edge."
+///
+/// **Defaults to false** — every zone band instead spans from
+/// `hourGutterWidth` to `rightEdgeInset` (the SAME `left`/`right`, no
+/// explicit `width`, mechanism every other full-width Timeline element
+/// already uses to reach the true page edge), regardless of lane count.
+/// See docs/DESIGN_SYSTEM.md's "Zone pane indicator" section for the full
+/// reasoning and `timeline_screen.dart`'s own `_zoneBackgroundRight`
+/// call site.
+///
+/// The Weekly Zone Authoring Grid is unaffected — its own blocks were
+/// never lane-width-driven, so this toggle has nothing to do there.
+@Riverpod(keepAlive: true)
+class DevDynamicZoneWidth extends _$DevDynamicZoneWidth {
+  @override
+  bool build() => false;
+
+  void set(bool value) => state = value;
+}
+
 /// Zone view's member task rows ONLY — when on, each row shows just its
 /// task's START time (e.g. "9:00 AM"), never the "start - end" range
 /// [DevTimelineTaskTimeRangeVisible] shows. Requested directly: "we need

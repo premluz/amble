@@ -216,6 +216,17 @@ void main() {
     expect(taskBox.get(b.id), isNull);
     expect(taskBox.get(untouched.id), isNotNull);
     expect(capturedContainer!.read(editSelectionProvider), isEmpty);
+
+    // The group delete now shows an AppUndoToast (2026-09-22) — its own
+    // `Future.delayed(duration)` auto-dismiss uses a real platform Timer
+    // under the hood, which `flutter_test`'s own teardown asserts is
+    // never left pending when the test ends. Pumping past the toast's
+    // full default duration (4s, unmodified here) lets that timer fire
+    // and the toast clean itself up before this test returns — same
+    // "wait the real duration out" pattern `app_undo_toast_test.dart`'s
+    // own test already uses (there, over a shorter, test-only duration).
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pump();
   });
 }
 

@@ -6,6 +6,7 @@ import '../../core/feature_flags.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_alert_dialog.dart';
 import '../../core/widgets/app_button.dart';
+import '../../core/widgets/app_modal_route.dart';
 import '../../core/widgets/app_switch.dart';
 import '../../shared/models/pill_shape.dart';
 import '../../shared/models/tag_color_style.dart';
@@ -30,7 +31,7 @@ String _behaviorSummary(List<TrackedBehavior> behaviors) {
 
 Future<void> showDeveloperSettingsScreen(BuildContext context) {
   return Navigator.of(context).push<void>(
-    MaterialPageRoute(builder: (context) => const DeveloperSettingsScreen()),
+    instantRoute((context) => const DeveloperSettingsScreen()),
   );
 }
 
@@ -612,6 +613,46 @@ class _DeveloperSettingsScreenState
                     value: ref.watch(devZoneCardFlatProvider),
                     onChanged: (value) =>
                         ref.read(devZoneCardFlatProvider.notifier).set(value),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: theme.spacingSm),
+            SettingsPanel(
+              theme: theme,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Dynamic zone width (spatial view)',
+                          style: theme.textBody.copyWith(
+                            color: theme.colorTextPrimary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        SizedBox(height: theme.spacingXs),
+                        Text(
+                          'When on, a zone band on the spatial Task view '
+                          'widens with the day\'s own overlapping tasks, '
+                          'instead of always spanning the full row to the '
+                          'page edge.',
+                          style: theme.textBody.copyWith(
+                            color: theme.colorTextSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(width: theme.spacingMd),
+                  AppSwitch(
+                    value: ref.watch(devDynamicZoneWidthProvider),
+                    onChanged: (value) => ref
+                        .read(devDynamicZoneWidthProvider.notifier)
+                        .set(value),
                   ),
                 ],
               ),

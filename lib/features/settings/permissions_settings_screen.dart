@@ -3,13 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
+import '../../core/widgets/app_modal_route.dart';
 import '../../shared/providers/notification_providers.dart';
 import 'settings_detail_scaffold.dart';
 import 'settings_panel.dart';
 
 Future<void> showPermissionsSettingsScreen(BuildContext context) {
   return Navigator.of(context).push<void>(
-    MaterialPageRoute(builder: (context) => const PermissionsSettingsScreen()),
+    instantRoute((context) => const PermissionsSettingsScreen()),
   );
 }
 

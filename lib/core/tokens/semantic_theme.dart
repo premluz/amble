@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import 'color_primitives.dart';
@@ -47,7 +49,8 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     required this.spacingXl,
     required this.spacingBlockGap,
     required this.spacingScreenPadding,
-    required this.spacingHourGutter,
+    required this.spacingTimeColumnWidth,
+    required this.spacingTimelineGutter,
     required this.spacingContentTop,
     required this.spacingMinTapTarget,
     required this.sizeMinFieldHeight,
@@ -255,28 +258,44 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   /// moves OUT to meet the hour, rather than the hour moving in.
   ///
   /// See docs/DESIGN_SYSTEM.md's "Horizontal spacing" section for the
-  /// rule this token anchors, and [spacingHourGutter] for the second,
-  /// separate value that governs the hour-label-to-content distance.
+  /// rule this token anchors, and [spacingTimeColumnWidth] for the
+  /// time column it precedes.
   final double spacingScreenPadding;
 
-  /// How far the Timeline's own content — a task pill in the spatial
-  /// view, a zone card in the non-spatial one — sits from the TRUE screen
-  /// edge, leaving room for the hour labels that occupy the space
-  /// between it and [spacingScreenPadding].
+  /// The Timeline's TIME column width — column 1 of the three-column
+  /// layout both Timeline views share (time · zone/pills · content).
   ///
-  /// The second of the two horizontal values the Timeline needs, and
-  /// deliberately its own token rather than an arithmetic expression
-  /// spelled out at each call site: the spatial view used to build this
-  /// as `66 + spacingScreenPadding` while the non-spatial one hardcoded
-  /// `90`, which meant the two agreed only by coincidence and silently
-  /// drifted apart the moment [spacingScreenPadding] changed. Reported
-  /// directly: "we need a coherent system that can manage this spacing
-  /// without drift."
+  /// Fixed, and sized for the WIDEST time label either view can render
+  /// ("12:00 PM" in the spatial view's hour gutter, "06:40" on a
+  /// non-spatial task row), so the gap that follows it lands on
+  /// [spacingTimelineGutter] exactly rather than on whatever the current
+  /// row's own text happened to measure. A variable-width time column is
+  /// what made the time-to-content gap differ per row and per day.
   ///
   /// Excludes the Weekly Zone Authoring Grid, which keeps its own denser
   /// axis — confirmed directly ("edit zone view has its own more dense
   /// space, which is fine, keep it as is").
-  final double spacingHourGutter;
+  final double spacingTimeColumnWidth;
+
+  /// The single gap between every pair of Timeline columns, and between
+  /// the outer columns and the screen edge — so edge · time · gap ·
+  /// zone · gap · content · edge all read as one rhythm.
+  ///
+  /// **2026-09-23 — replaces `spacingHourGutter`.** That token was a
+  /// frozen `90` documented as "66px gutter + 24px page inset," but
+  /// [spacingScreenPadding] had since become 16, so 90 no longer
+  /// decomposed into anything real and the two views agreed only by
+  /// arithmetic coincidence. Reported directly, repeatedly, against
+  /// annotated screenshots, and finally: "can we have literally three
+  /// columns of the same size... we would have the same gap between these
+  /// columns," with the reasoning that the old structure "would mean
+  /// future problems with some other devices and sizes."
+  ///
+  /// Column 1 starts at [spacingScreenPadding]; the content column's own
+  /// left edge is therefore always
+  /// `spacingScreenPadding + spacingTimeColumnWidth + spacingTimelineGutter`
+  /// — see `timelineContentLeft`, which is the one place that sum lives.
+  final double spacingTimelineGutter;
 
   /// The shared top offset for a scrollable's own first item/pane, under
   /// a fixed heading or [AppTopScrollFade] — one value across Tasks,
@@ -663,7 +682,8 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     spacingXl: SpacingPrimitives.space9,
     spacingBlockGap: SpacingPrimitives.space3,
     spacingScreenPadding: SpacingPrimitives.space5,
-    spacingHourGutter: SpacingPrimitives.space12,
+    spacingTimeColumnWidth: SpacingPrimitives.space12,
+    spacingTimelineGutter: SpacingPrimitives.space5,
     spacingContentTop: SpacingPrimitives.space7Point75,
     spacingMinTapTarget: 48.0,
     sizeMinFieldHeight: 60.0,
@@ -943,7 +963,8 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     spacingXl: SpacingPrimitives.space9,
     spacingBlockGap: SpacingPrimitives.space3,
     spacingScreenPadding: SpacingPrimitives.space5,
-    spacingHourGutter: SpacingPrimitives.space12,
+    spacingTimeColumnWidth: SpacingPrimitives.space12,
+    spacingTimelineGutter: SpacingPrimitives.space5,
     spacingContentTop: SpacingPrimitives.space7Point75,
     spacingMinTapTarget: 48.0,
     sizeMinFieldHeight: 60.0,
@@ -1147,7 +1168,8 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     double? spacingXl,
     double? spacingBlockGap,
     double? spacingScreenPadding,
-    double? spacingHourGutter,
+    double? spacingTimeColumnWidth,
+    double? spacingTimelineGutter,
     double? spacingContentTop,
     double? spacingMinTapTarget,
     double? sizeMinFieldHeight,
@@ -1229,7 +1251,10 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       spacingXl: spacingXl ?? this.spacingXl,
       spacingBlockGap: spacingBlockGap ?? this.spacingBlockGap,
       spacingScreenPadding: spacingScreenPadding ?? this.spacingScreenPadding,
-      spacingHourGutter: spacingHourGutter ?? this.spacingHourGutter,
+      spacingTimeColumnWidth:
+          spacingTimeColumnWidth ?? this.spacingTimeColumnWidth,
+      spacingTimelineGutter:
+          spacingTimelineGutter ?? this.spacingTimelineGutter,
       spacingContentTop: spacingContentTop ?? this.spacingContentTop,
       spacingMinTapTarget: spacingMinTapTarget ?? this.spacingMinTapTarget,
       sizeMinFieldHeight: sizeMinFieldHeight ?? this.sizeMinFieldHeight,
@@ -1379,9 +1404,14 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
         other.spacingScreenPadding,
         t,
       ),
-      spacingHourGutter: _lerpDouble(
-        spacingHourGutter,
-        other.spacingHourGutter,
+      spacingTimeColumnWidth: _lerpDouble(
+        spacingTimeColumnWidth,
+        other.spacingTimeColumnWidth,
+        t,
+      ),
+      spacingTimelineGutter: _lerpDouble(
+        spacingTimelineGutter,
+        other.spacingTimelineGutter,
         t,
       ),
       spacingContentTop: _lerpDouble(
@@ -1477,4 +1507,99 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   }
 
   static double _lerpDouble(double a, double b, double t) => a + (b - a) * t;
+}
+
+/// The Timeline's three-column geometry, derived in ONE place from
+/// [AmbleTheme.spacingScreenPadding], [AmbleTheme.spacingTimeColumnWidth]
+/// and [AmbleTheme.spacingTimelineGutter].
+///
+/// Both Timeline views (spatial and non-spatial) lay out as:
+///
+/// ```
+/// | edge | TIME | gutter | ZONE/PILLS | gutter | CONTENT | edge |
+/// ```
+///
+/// with `edge` == `gutter` == [AmbleTheme.spacingTimelineGutter], so every
+/// horizontal gap on the screen is the same value.
+///
+/// **Why this exists at all**: the two views previously reached these
+/// positions through four independent mechanisms — a frozen `90` constant,
+/// a `66 + inset` sum, a lane-derived offset that changed with the day's
+/// overlap depth, and a negative-margin escape — which agreed only by
+/// arithmetic coincidence and drifted apart whenever any input changed.
+/// Reported repeatedly against annotated screenshots, and finally as "can
+/// we have literally three columns of the same size," with the reason to
+/// rebuild rather than patch: the old structure "would mean future
+/// problems with some other devices and sizes."
+extension TimelineColumns on AmbleTheme {
+  /// Column 1's left edge — the time column starts here.
+  double get timelineTimeLeft => spacingTimelineGutter;
+
+  /// Column 1's width for the clock format actually in use, rather than
+  /// for the widest one any locale could ask for.
+  ///
+  /// [spacingTimeColumnWidth] is sized for `"12:00 PM"`, which measures
+  /// exactly 96 in `textCaptionMono` — correct for a 12-hour locale, but
+  /// on a 24-hour one every label ("05:00", "13:41") measures 60, leaving
+  /// a dead 36px stripe between the time text and where zones begin.
+  /// Reported directly against annotated screenshots marking that gap in
+  /// red across both views, with zones expected to start where the gap
+  /// does.
+  ///
+  /// Measures the real rendered format via [MediaQuery.alwaysUse24HourFormat]
+  /// so a 12-hour locale keeps its full 96 and nothing clips. Never wider
+  /// than [spacingTimeColumnWidth] — this only ever reclaims slack.
+  double timelineTimeColumnWidth(BuildContext context) {
+    final use24Hour = MediaQuery.maybeOf(context)?.alwaysUse24HourFormat;
+    if (use24Hour != true) return spacingTimeColumnWidth;
+    // "13:41" — the widest a 24-hour label gets; every digit is the same
+    // advance in a monospace face, so one sample measures them all.
+    final painter = TextPainter(
+      text: TextSpan(text: '13:41', style: textCaptionMono),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    return math.min(spacingTimeColumnWidth, painter.width);
+  }
+
+  /// Column 2's left edge for the clock format in use — the context-aware
+  /// counterpart to [timelineZoneLeft], built on
+  /// [timelineTimeColumnWidth] so zones start right after the time text
+  /// instead of after a column sized for a format this device never
+  /// renders.
+  double timelineZoneLeftFor(BuildContext context) =>
+      spacingTimelineGutter +
+      timelineTimeColumnWidth(context) +
+      spacingTimelineGutter;
+
+  /// Column 2's left edge — zone bands and task pills start here.
+  ///
+  /// Format-agnostic (assumes the widest, 12-hour label). Prefer
+  /// [timelineZoneLeftFor] wherever a [BuildContext] is available; this
+  /// remains for the token-level contract tests and for callers with no
+  /// context to measure from.
+  double get timelineZoneLeft =>
+      spacingTimelineGutter + spacingTimeColumnWidth + spacingTimelineGutter;
+
+  /// Column 3's left edge — task titles/content start here, at a fixed x
+  /// that does NOT move with the day's own overlap depth.
+  double timelineContentLeft(double viewportWidth) =>
+      timelineZoneLeft + timelineZoneWidth(viewportWidth) + spacingTimelineGutter;
+
+  /// Column 2's width — the zone/pill column. Takes a third of whatever
+  /// remains after the time column and the four gaps, so columns 2 and 3
+  /// share the leftover evenly rather than column 3's start depending on
+  /// how deep the day's pills happen to stack.
+  double timelineZoneWidth(double viewportWidth) {
+    final remaining =
+        viewportWidth -
+        spacingTimeColumnWidth -
+        spacingTimelineGutter * 4;
+    return math.max(0, remaining / 2);
+  }
+
+  /// Column 3's width — the content column, running to the final gutter.
+  double timelineContentWidth(double viewportWidth) => math.max(
+    0,
+    viewportWidth - timelineContentLeft(viewportWidth) - spacingTimelineGutter,
+  );
 }

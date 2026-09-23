@@ -4,9 +4,18 @@ import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_modal_route.dart';
 import 'package:amble/core/widgets/app_sheet.dart';
 
-/// Requested directly: "make animations of sheets more modern, faster,
-/// smoother, kind of that they feel more responsive so fade in and move up
-/// from 50% of position feeling more rapid with nice easing."
+/// **2026-09-22 — both routes now open/close with NO animation at all.**
+/// Requested directly: "remove animation completely for switching
+/// views... change screens no animation." This file used to assert the
+/// "faster, modern" fade+slide entrance these routes were built with
+/// (curve, mid-flight opacity/position, entrance-vs-dismissal duration
+/// asymmetry) — see docs/DECISIONS.md's matching entry for that history.
+/// With `transitionDuration`/`reverseTransitionDuration` now
+/// `Duration.zero`, there is no intermediate frame left to sample
+/// (`pushAppSheetRoute`/`pushFullScreenRoute` both still build the same
+/// `FadeTransition`/`SlideTransition` tree, which resolves straight to
+/// its end state on the very next frame) — this file now asserts the
+/// stronger claim: exactly zero duration, both ways, for both routes.
 Future<GlobalKey<NavigatorState>> _pumpHost(WidgetTester tester) async {
   final navigatorKey = GlobalKey<NavigatorState>();
   await tester.pumpWidget(
@@ -20,115 +29,24 @@ Future<GlobalKey<NavigatorState>> _pumpHost(WidgetTester tester) async {
 }
 
 void main() {
-  final theme = AmbleTheme.light;
-
-  testWidgets('the sheet fades in as it rises, rather than sliding in fully '
-      'opaque', (tester) async {
+  testWidgets('pushAppSheetRoute opens and closes instantly — no '
+      'transition duration either way', (tester) async {
     final navigatorKey = await _pumpHost(tester);
     pushAppSheetRoute<void>(
       navigatorKey.currentContext!,
       (_) => const Text('Sheet'),
     );
-
-    // Part-way through the entrance the sheet must be partly transparent —
-    // a plain slide would already be at full opacity here.
     await tester.pump();
-    await tester.pump(theme.motionNormal ~/ 3);
 
-    final fade = tester.widget<FadeTransition>(
-      find
-          .ancestor(
-            of: find.text('Sheet'),
-            matching: find.byType(FadeTransition),
-          )
-          .first,
-    );
-    expect(fade.opacity.value, greaterThan(0.0));
-    expect(
-      fade.opacity.value,
-      lessThan(1.0),
-      reason: 'the entrance fades — it is not a plain opaque slide',
-    );
-
-    await tester.pumpAndSettle();
-    final settled = tester.widget<FadeTransition>(
-      find
-          .ancestor(
-            of: find.text('Sheet'),
-            matching: find.byType(FadeTransition),
-          )
-          .first,
-    );
-    expect(settled.opacity.value, 1.0);
-  });
-
-  testWidgets('the sheet starts half a screen up, not fully offscreen — so '
-      'it travels less distance and reads as quicker', (tester) async {
-    final navigatorKey = await _pumpHost(tester);
-    pushAppSheetRoute<void>(
-      navigatorKey.currentContext!,
-      (_) => const Text('Sheet'),
-    );
-
-    // A hair into the transition rather than exactly t=0: at zero the
-    // sheet is still fully transparent and its subtree isn't located by a
-    // text finder yet. Early enough that the slide is still near its
-    // start offset.
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 1));
-
-    final slide = tester.widget<SlideTransition>(
-      find
-          .ancestor(
-            of: find.text('Sheet'),
-            matching: find.byType(SlideTransition),
-          )
-          .first,
-    );
-    expect(
-      slide.position.value.dy,
-      closeTo(0.5, 0.05),
-      reason:
-          'a full-height slide would start at 1.0; starting at 0.5 halves '
-          'the distance travelled, which is most of what makes the '
-          'entrance feel rapid',
-    );
-
-    await tester.pumpAndSettle();
-    final settled = tester.widget<SlideTransition>(
-      find
-          .ancestor(
-            of: find.text('Sheet'),
-            matching: find.byType(SlideTransition),
-          )
-          .first,
-    );
-    expect(settled.position.value.dy, 0.0);
-  });
-
-  testWidgets('dismissal is quicker than the entrance — a sheet on its way '
-      'out has nothing left to show', (tester) async {
-    final navigatorKey = await _pumpHost(tester);
-    pushAppSheetRoute<void>(
-      navigatorKey.currentContext!,
-      (_) => const Text('Sheet'),
-    );
-    await tester.pumpAndSettle();
     expect(find.text('Sheet'), findsOneWidget);
 
-    navigatorKey.currentState!.pop();
-    // Past the (shorter) reverse duration but NOT past the entrance's —
-    // the sheet must already be gone.
-    await tester.pump();
-    await tester.pump(theme.motionFast + const Duration(milliseconds: 20));
+    final route = ModalRoute.of(tester.element(find.text('Sheet')))!;
+    expect(route.transitionDuration, Duration.zero);
+    expect(route.reverseTransitionDuration, Duration.zero);
 
-    expect(
-      find.text('Sheet'),
-      findsNothing,
-      reason:
-          'reverseTransitionDuration is motionFast; if dismissal still ran '
-          'at the entrance duration the sheet would linger here',
-    );
+    navigatorKey.currentState!.pop();
+    await tester.pump();
+    expect(find.text('Sheet'), findsNothing);
   });
 
   // Reported directly: "the small sheet only opens to its height (fast as
@@ -136,7 +54,9 @@ void main() {
   // can it actually get to the final position and keyboard follows up?"
   // Measured before the fix at a 300px second movement on an 800px-tall
   // screen. AppSheet now reserves the keyboard's REMEMBERED height, so
-  // the sheet lands once and the keyboard rises behind it.
+  // the sheet lands once and the keyboard rises behind it. Unaffected by
+  // the zero-duration change above — this is about the KEYBOARD inset,
+  // not the route's own entrance.
   testWidgets('a sheet opened after the keyboard has been seen once lands '
       'at its final position and does not move when the keyboard arrives', (
     tester,
@@ -182,12 +102,6 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  // [pushFullScreenRoute] — the app's first full-screen (not slide-up-
-  // sheet) modal convention, added for the voice-capture flow. Shares
-  // `pushAppSheetRoute`'s easing/timing tokens (see that route's own
-  // tests above) but differs in shape: no scrim, and a much smaller
-  // slide offset since a full-screen page already covers the screen
-  // rather than revealing from partway up.
   group('pushFullScreenRoute', () {
     testWidgets('is opaque — no scrim behind a full-screen page', (
       tester,
@@ -197,7 +111,7 @@ void main() {
         navigatorKey.currentContext!,
         (_) => const Text('Full screen'),
       );
-      await tester.pumpAndSettle();
+      await tester.pump();
 
       final route =
           ModalRoute.of(tester.element(find.text('Full screen')))!
@@ -211,69 +125,24 @@ void main() {
       );
     });
 
-    testWidgets('starts much closer to its final position than the sheet '
-        'does — it should read as arriving immediately, not revealing '
-        'from halfway', (tester) async {
+    testWidgets('opens and closes instantly — no transition duration '
+        'either way, matching pushAppSheetRoute', (tester) async {
       final navigatorKey = await _pumpHost(tester);
       pushFullScreenRoute<void>(
         navigatorKey.currentContext!,
         (_) => const Text('Full screen'),
       );
-
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 1));
 
-      final slide = tester.widget<SlideTransition>(
-        find
-            .ancestor(
-              of: find.text('Full screen'),
-              matching: find.byType(SlideTransition),
-            )
-            .first,
-      );
-      expect(
-        slide.position.value.dy,
-        closeTo(0.15, 0.05),
-        reason:
-            'the sheet starts at 0.5; a full-screen page should start '
-            'much closer to 0 so it reads as an immediate takeover',
-      );
-
-      await tester.pumpAndSettle();
-      final settled = tester.widget<SlideTransition>(
-        find
-            .ancestor(
-              of: find.text('Full screen'),
-              matching: find.byType(SlideTransition),
-            )
-            .first,
-      );
-      expect(settled.position.value.dy, 0.0);
-    });
-
-    testWidgets('shares the sheet route\'s own entrance/exit durations', (
-      tester,
-    ) async {
-      final navigatorKey = await _pumpHost(tester);
-      pushFullScreenRoute<void>(
-        navigatorKey.currentContext!,
-        (_) => const Text('Full screen'),
-      );
-      await tester.pumpAndSettle();
       expect(find.text('Full screen'), findsOneWidget);
+
+      final route = ModalRoute.of(tester.element(find.text('Full screen')))!;
+      expect(route.transitionDuration, Duration.zero);
+      expect(route.reverseTransitionDuration, Duration.zero);
 
       navigatorKey.currentState!.pop();
       await tester.pump();
-      await tester.pump(theme.motionFast + const Duration(milliseconds: 20));
-
-      expect(
-        find.text('Full screen'),
-        findsNothing,
-        reason:
-            'reverseTransitionDuration must still be motionFast, matching '
-            'the sheet route, so dismissal reads consistently across '
-            'every modal in the app',
-      );
+      expect(find.text('Full screen'), findsNothing);
     });
   });
 }

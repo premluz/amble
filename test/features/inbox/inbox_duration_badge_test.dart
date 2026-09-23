@@ -2,11 +2,14 @@ import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/features/inbox/inbox_screen.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/shared/models/category.dart';
+import 'package:amble/shared/models/section.dart';
 import 'package:amble/shared/models/task.dart';
 import 'package:amble/shared/providers/category_providers.dart';
 import 'package:amble/shared/providers/notification_providers.dart';
+import 'package:amble/shared/providers/section_providers.dart';
 import 'package:amble/shared/providers/task_providers.dart';
 import 'package:amble/shared/repositories/hive_category_repository.dart';
+import 'package:amble/shared/repositories/hive_section_repository.dart';
 import 'package:amble/shared/repositories/hive_task_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,6 +19,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../support/fake_notification_service.dart';
 import '../../support/seeded_category_box.dart';
+import '../../support/seeded_section_box.dart';
 
 /// Requested directly: "duration in tasks move to the right but text size
 /// 10px (smallest scale) in a 'badge' surface color next to current bg."
@@ -24,6 +28,7 @@ import '../../support/seeded_category_box.dart';
 void main() {
   late Box<Task> taskBox;
   late Box<Category> categoryBox;
+  late Box<Section> sectionBox;
 
   setUp(() async {
     Hive.init('./.dart_tool/test_hive_inbox_duration_badge');
@@ -33,11 +38,13 @@ void main() {
     final stamp = DateTime.now().microsecondsSinceEpoch;
     taskBox = await Hive.openBox<Task>('test_tasks_$stamp');
     categoryBox = await openSeededCategoryBox('test_categories_$stamp');
+    sectionBox = await openSectionBox('test_sections_$stamp');
   });
 
   tearDown(() async {
     await taskBox.close();
     await categoryBox.close();
+    await sectionBox.close();
   });
 
   Future<void> pumpInbox(WidgetTester tester, {int? durationMinutes}) async {
@@ -61,6 +68,9 @@ void main() {
           taskRepositoryProvider.overrideWithValue(HiveTaskRepository(taskBox)),
           categoryRepositoryProvider.overrideWithValue(
             HiveCategoryRepository(categoryBox),
+          ),
+          sectionRepositoryProvider.overrideWithValue(
+            HiveSectionRepository(sectionBox),
           ),
           notificationServiceProvider.overrideWithValue(
             FakeNotificationService(),
@@ -193,33 +203,24 @@ void main() {
   );
 
   testWidgets(
-    'the duration badge sits between the title and the trailing + button, '
-    'to the right of the row',
+    // The trailing "+" (schedule) button was removed from this row
+    // (2026-09-23, requested directly: "remove + icon from notes") — the
+    // swipe-right gesture (`AppSwipeActions`' own `startAction`) already
+    // does the identical `onSchedule` action, so this was a redundant
+    // second entry point, not the only one. The duration badge is now the
+    // row's own trailing element.
+    'the duration badge sits to the right of the title, at the row\'s own '
+    'trailing edge',
     (tester) async {
       await pumpInbox(tester, durationMinutes: 45);
 
-      final rowFinder = find.ancestor(
-        of: find.text('Buy milk'),
-        matching: find.byType(Row),
-      );
       final titleRect = tester.getRect(find.text('Buy milk'));
       final badgeRect = tester.getRect(find.text('45m'));
-      final plusRect = tester.getRect(
-        find.descendant(
-          of: rowFinder.first,
-          matching: find.byIcon(Icons.add_rounded),
-        ),
-      );
 
       expect(
         badgeRect.left,
         greaterThan(titleRect.right),
         reason: 'badge must sit to the right of the title text',
-      );
-      expect(
-        badgeRect.right,
-        lessThan(plusRect.left),
-        reason: 'badge must sit to the left of the trailing + button',
       );
     },
   );

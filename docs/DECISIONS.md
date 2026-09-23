@@ -2125,3 +2125,1211 @@ pre-existing failures in timeline/zone/task-detail suites, confirmed via
 `git stash` to fail identically with this session's `main.dart`/
 `feature_flags.dart`/`settings_screen.dart` edits removed — unrelated to
 this work, not introduced by it.
+
+## Paywall triggers on entering Settings (2026-09-21, same day)
+
+Requested directly: show the RevenueCat paywall when the user opens
+Settings, via `presentPaywallIfNeeded("panta_pro")`. Confirmed via
+AskUserQuestion: fires on every actual tab TRANSITION into Settings, not
+once per app session — `SettingsScreen` lives in `AmbleApp`'s
+`IndexedStack` (kept alive across tab switches), so a widget-lifecycle
+`initState` trigger there would only ever fire once per session, not each
+time the tab is (re-)selected.
+
+Implemented in `AppTopNav.onSettingsTap` (`main.dart`), the one handler
+already gating entry into the Settings tab — guarded so a repeated tap
+while already on Settings doesn't re-trigger (mirrors
+`onDestinationSelected`'s own already-selected check just above it for
+the Day tab's view toggle). Calls through
+`purchasesRepositoryProvider.presentPaywallIfNeeded`, not `RevenueCatUI`
+directly, matching `PurchasesRepository`'s access rule. Skipped when
+`FeatureFlags.subscriptionEnabled` is off or `RevenueCatConfig.isAvailable`
+is false (no API key for this build) — same guard
+`subscription_settings_screen.dart` already uses.
+
+**Verification**: `flutter analyze lib/main.dart`: clean. Full
+`flutter test`: 9 pre-existing failures (same bucket as the prior entry,
+none touching Settings/purchases/nav); no new failures introduced.
+
+## Quick-capture sheet: no title, header row of Close/mic/Done, keyboard-submit stays open (2026-09-21)
+
+Requested directly, five changes at once:
+
+1. **Field style matches quick-create's bare input** — swapped the old
+   filled/bordered `InputDecoration` for the exact zero-chrome look
+   `AppTextField`'s `AppTextFieldVariant.bare` already uses on the
+   Timeline's own quick-create ("Add title") field: `theme.textTitle`
+   sized, no fill, no border, hint in `colorTextSecondary`. Stayed a raw
+   `TextField` (not `AppTextField` itself) because the live token
+   highlighting (`_QuickCaptureTextEditingController`) needs a controller
+   hook `AppTextField` doesn't expose — every visual property was copied
+   over by hand instead.
+2. **No "New note"/"Edit note" header text** — the title row is gone
+   entirely; new-vs-edit is now only distinguished by the field's hint
+   text.
+3. **Header row: Close (top-left) — mic — Done (top-right)**, all three
+   collapsed into one row where there used to be a title+Close row above
+   the field and a separate mic+Done row below it. Done is now a small
+   `HeaderCircleButton` (check icon, accent fill) — not the large pill
+   `AppButton` Task creation's own Done button matches — so it reads as a
+   header action, not a full-width primary CTA.
+4. **Mic renders secondary, not primary** — `AppMicButton` gained a new
+   `isPrimary` flag (defaults `true`, so nothing else using it changes):
+   `false` swaps its resting fill from `colorAccent` to
+   `colorSurfaceField`/`colorTextPrimary`, matching `HeaderCircleButton`'s
+   own default neutral look, while the "actively listening" alert-color
+   state is untouched either way. Reused rather than duplicated because
+   the button's own doc comment already separates "resting fill" from
+   "listening fill" as two independent concerns.
+5. **Keyboard submit stays open; header Done closes** — `_submit` split
+   into `_doSubmit({required closeOnSuccess})`, with `_submit()` (header
+   button) always closing and `_submitAndKeepOpen()` (the keyboard's own
+   "done" key, via `TextField.onSubmitted`) clearing the field and
+   re-focusing instead, so several notes/tasks can be captured in a row
+   without reopening the sheet. An empty title, or editing an existing
+   task, still always closes regardless of which path triggered it —
+   neither has anything left to "add another" of. The undo toast on a
+   confident quick-capture parse anchors to `widget.rootContext` on both
+   paths, unchanged.
+
+**Newest-first Inbox ordering** (same session, requested directly): `Task`
+has no `createdAt` field, and `HiveTaskRepository.getTasks()` returns Hive's
+own insertion order (oldest first, since a new capture is always appended
+last) — `inboxTasksProvider` now `.reversed`s that filtered list, the
+smallest change that gives "latest always on top" without a data-model
+change. Scoped to the Inbox's own derived provider, not
+`taskListProvider` itself, so nothing else reading that provider's order
+is affected.
+
+**Verification**: `flutter analyze` clean on every file touched.
+`test/features/inbox/quick_capture_sheet_test.dart` rewritten — tests
+tied to the removed title text/large Done button were replaced with
+equivalents for the new header row and the new keyboard-stays-open
+behavior (14 tests, all passing); every other Inbox test (46 total)
+unaffected. Full `flutter test`: 12 pre-existing failures in
+timeline/zone/task-detail suites (same bucket flagged in the prior
+RevenueCat entries), none touching Inbox/quick-capture/mic — not
+introduced by this work.
+
+## MainActivity → FlutterFragmentActivity, required by the RevenueCat paywall (2026-09-21, same day)
+
+`android/app/src/main/kotlin/com/example/amble/MainActivity.kt`'s base
+class changed from `FlutterActivity` to `FlutterFragmentActivity` —
+required by `purchases_ui_flutter`'s native Android paywall/Customer
+Center (`PAYWALLS_MISSING_WRONG_ACTIVITY` otherwise; full symptom/cause in
+`docs/ERROR_LOG.md`). Not a new dependency (ships with the Flutter engine
+itself) and not a scope decision — RevenueCat's own documented, mandatory
+requirement for the exact paywall-presentation feature already confirmed
+in scope, so made directly rather than flagged as a separate ask. Every
+other override in the file (engine provider, lifecycle hooks, the Siri/
+Assistant intent wiring) is unchanged; `FlutterFragmentActivity` is a
+drop-in Flutter-embedding subclass with the same overridable surface. No
+manifest/theme change needed — confirmed the existing
+`Theme.Light.NoTitleBar`/`Theme.Black.NoTitleBar` styles don't require
+AppCompat, which only `AppCompatActivity` (not `FlutterFragmentActivity`)
+would need.
+
+**Verification**: `flutter build apk --debug` succeeds. iOS is unaffected
+(this is an Android-only native requirement) — no equivalent change was
+needed there.
+
+## Task.createdAt added; Inbox sorts by it and shows chat-style day dividers (2026-09-21)
+
+Requested directly: "notes in inbox should have created timestamp if not have already, and recent should be on top, and all tab should have subtle label separating day created's (Mono space font) Today / Yesterday / Wednesday / Fri 12 Oct... similar pattern to chat messaging." Confirmed via two AskUserQuestion rounds: `createdAt` becomes the REAL sort key (replacing the prior stand-in that reversed Hive's own insertion order, back when no timestamp field existed at all), and pre-existing tasks are backfilled once on first read rather than left null or silently recomputed to "now" on every launch.
+
+**New field**: `Task.createdAt` (`@HiveField(22)`, the next free index — every existing index is documented as never reused/renumbered once shipped). Non-nullable with a computed default (`createdAt ?? DateTime.now()` in the constructor initializer), not a bare `required DateTime`, since `Task.fromJson` still has to accept an older backup with no `createdAt` at all and fall back to something — same "old exports still import cleanly" contract every other optional field here already follows. Added to `toJson`/`fromJson`/`hasSameFieldsAs`.
+
+**`hasSameFieldsAs` including `createdAt` — confirmed directly, not assumed.** This surfaced a real edge in backup import (`TaskList.importTasks`): two exports of the literal same task should share `createdAt`, so comparing it like every other field is correct; a genuinely different task happening to share an id is still correctly flagged either way. Two existing test fixtures in `task_providers_test.dart` (`identicalCopy` in two separate tests) constructed a "same task" stand-in without copying `createdAt`, which would have made them spuriously read as conflicts — fixed by copying it, matching every other field those fixtures already copy, rather than loosening the equality check itself.
+
+**One-time backfill, mirroring `CategoryList.seedBuiltInsAndBackfillIfNeeded`'s exact shape**: `TaskList.backfillCreatedAtIfNeeded()`, gated by a new `PreferenceKeys.taskCreatedAtBackfilled`, called from `main.dart` alongside the category backfill. Since there's no way to recover an old row's TRUE original creation time (its own `scheduledAt` is when it's DUE, not when it was captured — using it would misorder an old task planned far in the future ahead of genuinely newer captures), the backfill instead freezes "now" once, spread a millisecond apart in stable id order so backfilled rows don't all tie — a reasonable stand-in specifically because this migration only ever runs once per install, never reshuffling them again on a later launch.
+
+**`inboxTasksProvider` sorts explicitly by `createdAt` (newest first)**, replacing the insertion-order reversal — a decorate-sort-undecorate pass (index-tagged, tie-broken by original index) rather than a bare `List.sort`, since Dart's own `List.sort` is not guaranteed stable and two tasks created in the same millisecond (e.g. voice capture's `submit()` looping over several segments) should keep a deterministic relative order across rebuilds.
+
+**Day-divider headers — new `dayLabel` (`shared/services/day_label.dart`), a pure function** taking `today` as a parameter (not reading `DateTime.now()` internally) for direct testability, matching `parseQuickCapture`'s own "now is an input" precedent. Returns "Today" / "Yesterday" / a bare weekday name for 2–6 days ago / "Fri 12 Oct" beyond a week — the boundary the user's own example sequence implied. No existing reusable date-divider pattern was found anywhere in this codebase (grepped broadly) — the closest precedents were 4+ private, per-file `_isSameDay` duplicates and one private `_formatDate` with no "Yesterday"/bare-weekday cases; none were extracted or touched beyond this new addition, to keep this change scoped to what was asked.
+
+**Rendering**: `InboxScreen`'s `ListView.separated` became a `ListView.builder` over a flattened `List<_InboxRow>` (`_groupByDay`), inserting an `_InboxDayHeader` before the first task of each new calendar day. Styled with `theme.textCaptionMono` (the token's own doc comment names it for "genuinely numeric/temporal labels," which a day divider is) over `colorTextTertiary` for the "subtle" ask. Per-row spacing moved from the old `separatorBuilder`'s uniform gap into each row's own bottom padding, since a header and a task now need different amounts of it.
+
+**Verification**: new `test/shared/services/day_label_test.dart` (7 cases covering the Today/Yesterday/weekday/date boundaries, including the exact 7-day edge and time-of-day being ignored), `test/features/inbox/inbox_created_at_and_day_headers_test.dart` (4 cases: real `createdAt` on capture, newest-first sort order surviving a scrambled save order, header placement above its own day's group, one header shared across same-day notes), `test/shared/providers/task_created_at_backfill_test.dart` (3 cases: the migration flag gets set, a second run is a genuine no-op, multiple pre-existing rows each get a distinct value). `flutter analyze`: clean on every touched file. Note: this session found the repo mid-edit by another concurrent session (Sections/paywall/quick-capture work already in `main.dart`/`docs/`) — ran only the affected test files plus their own directories, not the full suite, to avoid attributing that other work's in-progress state to this change.
+
+## Zone pane rounding/gap/label unified; spatial zone band width made static by default (2026-09-21)
+
+Requested directly, four related fixes to zone rendering, systematized
+into `docs/DESIGN_SYSTEM.md`'s new "Zone pane indicator" section (full
+reasoning there; summary here):
+
+1. **Corner radius unified to `theme.radiusXl`** (16) across
+   `ZoneBackgroundBlock` (spatial Timeline) and `ZoneGridBlock` (Weekly
+   Zone Authoring Grid) — both previously `theme.radiusMd` (8), a real
+   divergence from the non-spatial Zone view's own card
+   (`ZoneContainerBlock`, already `radiusXl`), named as the reference per
+   direct instruction ("use the rounding from non spatial zone view").
+2. **Standing gap between adjacent zones** (`zoneBackgroundGap`, 4.0,
+   already existed on the spatial Timeline, trimmed off a block's own
+   bottom edge) is now also applied in the Weekly Zone Authoring Grid's
+   `_block` (`zone_grid_screen.dart`) — previously missing there
+   entirely, so two back-to-back zone times rendered with touching
+   blocks. Same rule: trimmed off `height` only, never the top, so a
+   block's top edge still lands exactly on its own start time.
+3. **Zone name label moved inside its own band** on the spatial Timeline
+   — `ZoneNameLabel` gained an optional `insideBandLeft`/`insideBandWidth`
+   pair (both null preserves its old "day column's own right edge"
+   behavior, still used by List mode); the spatial call site now passes
+   both, landing the rotated label `theme.spacingSm` in from the band's
+   own right edge instead of beside it. The Weekly Zone Authoring Grid's
+   own `ZoneGridBlock` already rendered its label inside
+   (`_RotatedTitle`), so it needed no change.
+4. **Spatial zone band width defaults to static, full-row** — a new
+   `DevDynamicZoneWidth` toggle (`core/dev_config.dart`, default OFF,
+   Settings → Developer) gates the OLD lane-derived
+   `_zoneBackgroundWidth` behavior (a band widened with the day's own
+   deepest task-overlap stack). Off (now the default), every band instead
+   spans `hourGutterWidth` to `rightEdgeInset` — computed once via a new
+   `_zoneBackgroundFullWidth` helper reading the `LayoutBuilder`'s own
+   `constraints.maxWidth`, since `ZoneBackgroundBlock`'s `Positioned` only
+   takes `width` (not `right`), so the equivalent number is computed at
+   the call site rather than changing that widget's positioning
+   mechanism. Scoped to the spatial Timeline only, per direct instruction
+   ("timeline spatial view only") — the Weekly Zone Authoring Grid's own
+   blocks were never lane-width-driven, and List mode's own
+   `ZoneBackgroundBlock` call (`collapsedTop`/`collapsedHeight`-driven,
+   no real time axis) is untouched.
+
+**Verification**: `flutter analyze` clean on every file touched (repo-wide
+run: the same 18 pre-existing, unrelated issues as before this session).
+`flutter test test/features/timeline/zone_container_block_test.dart
+test/features/zone_grid/`: 77/77 passing.
+
+## Full-width zone band's left inset matches the non-spatial view (2026-09-21, same day)
+
+Requested directly, following the earlier zone-rounding/gap/width pass:
+"use same padding left for first lane as in non spatial view." The
+full-width spatial zone band (`DevDynamicZoneWidth` off, now the default)
+previously kept the ORIGINAL `zoneBackgroundOffset` (4px) left inset —
+correct for the old dynamic-lane mode, where it exists purely as a small
+visual nudge, but not matched to anything in the non-spatial Zone view.
+
+`ZoneBackgroundBlock` gained a new `leftInset` parameter (default
+`zoneBackgroundOffset`, threaded through `_DraggableZoneBlock` too). The
+full-width call site now passes `theme.spacingMd` (16px), matching
+`ZoneContainerBlock`'s own left padding before its first task row
+exactly. The dynamic-lane mode (`DevDynamicZoneWidth` on) is unchanged —
+still `zoneBackgroundOffset`.
+
+Widening `leftInset` only pushes the band's own rendered LEFT edge
+further left; `width` is grown by the identical amount so the band's
+RIGHT edge — and every task pill's own position, which this block never
+controls — stay exactly where they were. The live move/resize edge-label
+formula (`_liveZoneEdgeLabels`'s `gutterOffset`) was updated to read
+`leftInset` instead of the hardcoded `zoneBackgroundOffset` constant, so
+it still walks back to the true day-column x=0 correctly under the wider
+inset.
+
+**Verification**: `flutter analyze` clean on both touched files.
+`flutter test test/features/timeline/zone_container_block_test.dart
+test/features/zone_grid/ test/features/timeline/`: 4 failures, none
+referencing zone code, confirmed via `git stash` to fail identically
+without this session's changes — pre-existing resize/drag-mechanics
+flakiness, not a regression.
+
+## Quick-capture sheet: keyboard-flicker fix, mic sized to Done, drag-to-close handle (2026-09-21, same day)
+
+Three follow-ups to the same day's earlier quick-capture header redesign:
+
+1. **Keyboard no longer flickers on a kept-open keyboard submit** — root
+   cause and fix are a framework behavior, not app logic; see
+   `docs/ERROR_LOG.md`'s matching entry for the full mechanism. One-line
+   fix: `onEditingComplete: () {}` alongside the existing `onSubmitted`.
+2. **Mic button sized to match Done** — requested directly: "voice record
+   should be same size as done." `AppMicButton` gained an optional `size`
+   override (null keeps its existing `spacingXl * 1.5` default, so no
+   other caller changes); the quick-capture sheet passes `theme.spacingXl`
+   to match `HeaderCircleButton`'s own fixed size exactly.
+3. **Drag-to-close handle added** — requested directly: "we should have
+   sheet 'handle' that user can drag down to close." A new row above the
+   Close/mic/Done header renders the existing shared `AppSheetHandle`
+   inside its own `GestureDetector` (not reusing `QuickCreateSheetHandle`,
+   which drives that OTHER sheet's small/minimised/full fraction system —
+   this sheet has exactly one size, so it only needs a distance-or-
+   velocity threshold to decide "closed" vs. "not yet," not a height to
+   animate). Threshold mirrors `QuickCreateSheetHeightController.settle`'s
+   own "far enough OR fast enough" shape, scaled down for this sheet's
+   much shorter travel (`theme.spacingXl` px, or a 800px/s flick).
+
+**Verification**: `flutter analyze`: clean on every touched file (repo-
+wide: same 18 pre-existing issues as every prior entry this session).
+`flutter test test/features/inbox/quick_capture_sheet_test.dart`: 19/19
+passing (5 new cases: mic size, handle presence, drag-far-closes,
+short-drag-does-not-close, `onEditingComplete` wired).
+`flutter test test/features/inbox/`: 66/66 passing.
+
+## Zone Edit grid's corner radius set to radiusSm (2026-09-21, exception to the earlier unification)
+
+Requested directly: "the rounding of zone edit zone mode should be xs."
+`ZoneGridBlock` had just been moved to `theme.radiusXl` in the same-day
+zone-pane unification pass; this reverses that ONE surface back to a
+smaller rung — `theme.radiusSm` (4), the smallest on the scale (there is
+no `radiusXs` token; "xs" maps to `radiusSm`, the lowest rung that
+exists). The spatial Timeline's `ZoneBackgroundBlock` keeps `radiusXl`,
+unaffected — this is scoped to the Weekly Zone Authoring Grid alone,
+consistent with that screen's existing "its own denser space" carve-out
+(see `docs/DESIGN_SYSTEM.md`'s horizontal-spacing section). Documented as
+an explicit exception in the "Zone pane indicator" section rather than
+silently diverging.
+
+## Week-day selection indicator: plain eased move, "gooey" stretch removed (2026-09-21)
+
+Requested directly: "the 'active' highlight animation in calendar week
+days should not have that scale width thing, just move ease (slowing
+toward end) fast decisive, smooth, no gooey thing." This reverses the
+2026-09-19 "gooey" design (`_GooeySelectionIndicator`, now renamed
+`_WeekDaySelectionIndicator` since it no longer does anything gooey) that
+stretched the indicator to the union of its start/end rects at the
+animation's midpoint before contracting onto the destination — the
+"scale width thing" being removed.
+
+**New shape**: a plain `Rect.lerp(from, to, t)` with no union/stretch/
+contraction phase at all. `t` is no longer the `AnimationController`'s
+own raw linear value — a `CurvedAnimation` (`theme.curveDecelerate`,
+`Cubic(0.0, 0.0, 0.2, 1.0)` — full speed immediately, then decelerating)
+is now hoisted as a field (`_eased`) and drives both the `AnimatedBuilder`
+and the rect lookup, giving the "fast decisive... slowing toward end"
+feel requested, previously achieved only incidentally by the stretch
+parabola's own shape rather than a real easing curve.
+
+**Verification**: `flutter analyze` clean on every touched file. No
+existing or new automated test exercises this private animation's
+geometry directly — stated explicitly per CLAUDE.md's verification rule,
+not left silent. Manually checked: the class's own doc comments/call
+sites were the only place "gooey" was referenced in code, all now
+updated or correctly left as historical quotes of the original request;
+`app_calendar_header_test.dart`'s existing pill/geometry assertions
+(unrelated to the indicator's OWN shape, but exercising the same widget
+tree) still pass unchanged (9/9).
+
+## Edit Mode selection context menu + multi-task bulk-edit sheet (2026-09-21)
+
+Requested directly: "on edit task mode when item(s) selected we need
+selection context menu (at the bottom where we have close currently...
+this should be <- arrow back) edit remove. If more than 1 item selected,
+edit opens multi edit sheet (can only tag, track, duration, notification)."
+
+**Multi-select was already effectively shipped, just undiscoverable.**
+`DevMultiTaskEditMode`'s default had already flipped from OFF to ON on
+2026-09-06 (per its own doc comment in `core/dev_config.dart`), with no
+further `kDebugMode`/`FeatureFlags` gate around that read — every real
+build already had tap-to-select, group move/resize, and group
+delete-by-drag-to-target live. What was missing was purely the UI this
+session adds: nothing surfaced selection as a reachable, tappable action
+outside a drag gesture. Confirmed via AskUserQuestion to ship as the real
+default rather than gating this new UI behind the dev toggle too — the
+toggle stays in Settings → Developer as an off-ramp, not deleted.
+
+**Selection context menu** — `ZoneGridScreen`'s Tasks-tab bottom dock
+(the "Close"-only `AppDockPane` from the 2026-09-20 tabbed-Edit-screen
+merge) now reads `editSelectionProvider`: empty → unchanged plain Close;
+non-empty → back-arrow / Edit / Remove, same `AppDockPane`/
+`AppDockIconButton` visual language. Back-arrow calls
+`editSelectionProvider.notifier.clear()` only (confirmed via
+AskUserQuestion) — it does NOT pop the screen or exit Edit Mode, a
+genuinely different action from the plain Close icon it replaces.
+
+**Edit branches on selection size** (confirmed via AskUserQuestion):
+exactly one selected task → `showTaskDetailSheet(context, task: task)`,
+the app's existing single-task edit entry point, completely unchanged.
+Two or more → the new `showMultiTaskEditSheet` (`features/task_detail/
+multi_task_edit_sheet.dart`) — Tag (category, via the existing
+`TaskCategoryModal.show` picker), Track (tracked-behavior link, a small
+bespoke picker sheet — no reusable modal existed for this field), Duration
+(via the existing `TaskDurationModal.show` picker), and Notifications
+(`AppSwitch`) only. No title, no schedule/repeat — deliberately narrower
+than the single-task sheet, confirmed via AskUserQuestion: a shared title
+across several tasks has no coherent meaning, and schedule already has
+its own group-move/group-resize gesture directly on the Timeline.
+
+**"Mixed" state for differing values** (confirmed via AskUserQuestion):
+each field computes whether every selected task shares one common value;
+if not, the field shows a neutral "Mixed" placeholder rather than
+defaulting to any one task's value. A `_xTouched` bool per field tracks
+whether the user actually changed it — Save only writes a field to every
+selected task when its own `_touched` flag is true, so an untouched
+"Mixed" field never overwrites anything. The tracked-behavior field's own
+picker needed a small wrapper type (`_BehaviorPick`) to distinguish
+"explicitly chose None" from "dismissed without choosing," since both
+otherwise collapse to the identical `null` `Future<String?>` result from
+`AppSheet.show`.
+
+**Remove** deletes every selected task via `TaskList.deleteTask` (plain
+single-instance path) in a loop, then clears the selection — identical
+rule, and nearly identical code shape, to the pre-existing group-delete
+path already wired to the drag-to-delete-target gesture on the spatial
+Timeline (confirmed via AskUserQuestion to keep this consistent rather
+than inventing a second group-delete rule).
+
+**Verification**: `flutter analyze` clean on every touched/new file.
+New `test/features/zone_grid/zone_grid_selection_dock_test.dart` (6
+cases: no-selection dock unchanged, selection swaps the dock, back-arrow
+clears without closing, Edit with 1 selected opens the single-task sheet,
+Edit with 2 selected opens the multi-edit sheet, Remove deletes and
+clears). Existing `zone_grid_screen_test.dart`/
+`zone_grid_edit_screen_merge_test.dart` (22 cases) pass unchanged,
+confirming the no-selection Close path is byte-for-byte preserved. The
+new suite's first run hung for the full 10-minute test timeout on a
+direct (non-tap) real Hive write missing `tester.runAsync` — see
+`docs/ERROR_LOG.md`'s matching new entry for the fix and the follow-on
+Remove-button drain bug it also surfaced.
+
+## Zone bulk edit sheet — Name/Start/End/Date, mirroring the task version (2026-09-21, same day)
+
+Requested directly: "similar for zones but here we can change times start
+end date, and name (with zones names showing)... start end date would
+indicate mixed if not aligned."
+
+**Found, not built from scratch: the Zones tab already had a selection
+row** (`ZoneGridScreen`, above the grid — distinct from the Tasks tab's
+own bottom-dock menu built earlier the same day) with "Edit placement,"
+"Remove placements," and "Clear selection" buttons from an earlier
+session. "Edit placement" was gated to exactly one selected zone
+(`showZoneFormScreen`); this pass widens it to branch on count, same
+shape as the Tasks tab's own Edit action, rather than building a second,
+parallel selection UI.
+
+**New `showMultiZoneEditSheet`** (`features/zones/multi_zone_edit_sheet.dart`)
+— Name, Start, End, Date only. Confirmed the field set stops there:
+a zone occurrence's other fields (recurrence linkage, facet) have no
+bulk-edit meaning.
+- **Name**: a plain `TextField` whose placeholder reads "Change name"
+  (the exact wording requested) — doubles as the Mixed indicator for
+  free, since an untouched field with differing zone titles shows this
+  same placeholder rather than defaulting to any one zone's title.
+- **Start/End**: `AppSegmentedTimeField` — confirmed directly ("same as
+  in add zone") to reuse the exact widget `zone_form_screen.dart`'s own
+  Add Zone flow already uses, not `TaskStartTimeModal` (the single-task
+  sheet's own, different, time-field widget). Its `first`/`second: int?`
+  contract already renders an "hh:mm" placeholder for `null` — passing
+  `null` for a differing-across-the-selection value gives Mixed with no
+  new UI to build. The trailing wheel-picker button opens
+  `AppWheelTimePicker` (same form's own picker), not
+  `TaskStartTimeModal.show`.
+- **Date**: `showDatePicker` with the exact `firstDate`/`lastDate` config
+  `task_detail_sheet.dart`'s own `_pickDate` uses — the app's one
+  existing date-picking convention, confirmed via AskUserQuestion (no
+  custom date modal exists in either zone flow to copy instead). Shows
+  literal "Mixed" text when the selection's `anchorDate`s differ.
+
+**Same "only a touched field writes" rule** as the task version's own
+`_xTouched` flags — Save only applies a field to every selected zone when
+the user actually changed it, so an untouched Mixed field never
+overwrites anything.
+
+**Error handling — a real gap the task version didn't need**: `updateZone`
+(unlike `updateTask`) throws `ArgumentError` for an invalid resulting
+time range (e.g. a new Start left past an unchanged End). Caught and
+shown as an inline error message in the sheet rather than swallowed, per
+this app's "fail loud" rule; a failure partway through the selection
+STOPS the loop (whatever already saved stays saved) rather than
+continuing past a rejected write with no signal to the user.
+
+**`ZoneEditSelection`'s own doc comment was stale**, found while working
+here: it still described itself as "deliberately SINGLE-select
+(`String?`)," a claim already superseded on 2026-09-12 (widened to
+`Set<String>` for the grid's own multi-select sweep) but never corrected
+in `docs/CONSTITUTION.md`'s prose. Fixed alongside this work, kept
+visible as a record of the reversal rather than silently rewritten.
+
+**Verification**: `flutter analyze` clean on every touched/new file
+(repo-wide: same 18 pre-existing issues as every prior entry this
+session). New `test/features/zone_grid/zone_grid_multi_edit_test.dart`
+(3 cases: 1-selected opens the ordinary form, 2-selected opens the bulk
+sheet with all four fields, saving a shared name renames every selected
+zone) — all pass, after fixing a missing `zoneFacetRepositoryProvider`
+override in test setup (`paintWeeklyZones` reads it; the sibling task
+selection-dock test's harness never needed it since tasks don't touch
+zone facets) and a `find.byType(TextField)` ambiguity (the segmented time
+fields render their own internal `TextField`s too — fixed with a
+dedicated `Key` on the Name field). Existing zone_grid suites (28 cases)
+pass unchanged.
+
+## Multi-task edit sheet gains Important (2026-09-21, same day)
+
+Requested directly: "multi edit tasks should have also important." Added
+`Task.isImportant` to `showMultiTaskEditSheet` as a fifth field, same
+`_touched` bool + "Mixed renders as OFF" shape `notificationsEnabled`
+(its nearest sibling field) already uses — a tri-state switch doesn't
+exist in this design system, so an untouched field with differing
+`isImportant` values across the selection shows OFF, and any toggle
+counts as a deliberate choice applied to every selected task on Save.
+
+**Verification**: `flutter analyze` clean. New test case in
+`test/features/zone_grid/zone_grid_selection_dock_test.dart` (toggling
+and saving Important marks every selected task); the existing "2 tasks
+selected" assertion widened to also check for the new "Important" label.
+Both required `tester.ensureVisible` before their respective taps (the
+sheet is scrollable and Save/the new switch sit below the fold at this
+sheet's `AppSheetSize.half` height) — same established pattern this
+codebase's other sheet tests already use, not a new workaround. Full
+`test/features/zone_grid/` suite: 32/32 passing.
+
+## Undo mechanism wired onto every task/zone delete path (2026-09-22)
+
+Requested directly: "let's build undo change mechanism." Confirmed via
+AskUserQuestion: reuse the existing `AppUndoToast`/`onUndo` mechanism
+(already live on quick-capture's own confident-parse task creation)
+rather than build a genuinely different undo/redo history stack — the
+scope was "wire it onto more actions," not a new architecture.
+
+**Task removal — `removeTask` (`features/task_detail/task_remove.dart`,
+the single shared entry point for the action sheet's Remove row, the
+detail screen's delete button, and the Timeline's drag-to-delete-target)**
+now snapshots every affected row via `Task.toJson()` before deleting,
+and shows an undo toast whose `onUndo` restores via `Task.fromJson` +
+`TaskList.updateTask` (a plain keyed re-save — Hive keys by id, so this
+is exactly the "re-save the same object" restore `Task.fromJson` already
+proves correct for import).
+
+**Confirmed to cover whole-series delete too** (`deleteTaskSeries`), not
+just single-instance removes, despite that path being genuinely harder:
+`deleteTaskSeries` can both DELETE several rows and MUTATE one surviving
+row (stripping a past template's own recurrence fields, when it survives
+as history rather than being deleted). A correct restore needs every row
+that method could touch snapshotted beforehand, not just the tapped
+instance — a new `TaskList.tasksInSeries(Task)` read-only helper exposes
+the exact same candidate-row query `deleteTaskSeries` already used
+internally (kept as two separate inline queries deliberately, so neither
+can silently drift from the other), letting `removeTask`'s own undo
+snapshot capture the whole set before calling the unchanged delete
+method.
+
+**`removeTask` gained a `rootContext` param** — the same "captured before
+any pop, since the toast must outlive the sheet/screen that triggered it"
+contract `showQuickCaptureSheet` already established for its own undo
+toast. Threaded through all three call sites
+(`task_action_sheet.dart`, `task_detail_sheet.dart`,
+`timeline_screen.dart`) and one further route
+(`showTaskDetailSheet`/`_TaskDetailFlow`, which previously never carried
+a caller context at all).
+
+**Multi-select group Remove** (Edit Mode's selection dock,
+`ZoneGridScreen._removeSelectedTasks`; the Timeline's own drag-to-delete-
+target group path, extracted into `_DraggableTaskBlockState
+._removeSelectionWithUndo` specifically to satisfy a `use_build_context
+_synchronously` lint that a nested-closure inline version couldn't) —
+one toast covers the WHOLE batch, restoring every snapshotted task on
+Undo, matching how a group action reads as one thing from the user's own
+perspective rather than several independent ones.
+
+**Zone removal** — the same treatment via `Zone.toJson`/`fromJson`
+instead of `Task`'s: `zone_form_screen.dart`'s own `_delete` (gained a
+`rootContext` param the same way), the Zones tab's own "Remove
+placements" bulk action (extracted into `_removeSelectedZones` for the
+identical lint reason), and the spatial Timeline's zone drag-to-delete
+(`onDeleteZone`, using `context.mounted` — this call site is a
+`ConsumerWidget`'s own build context, not a `State`'s, so there's no
+`mounted` field to check instead).
+
+**Inbox swipe-to-delete** (`inbox_screen.dart`) also gained undo,
+specifically flagged as worth including even though it wasn't in the
+original 3-call-site `removeTask` sweep — a swipe has zero confirmation
+step at all, making it the single easiest task removal in the app to
+trigger by accident.
+
+**Two real, previously-latent bugs found and fixed while building this**
+(full write-ups in `docs/ERROR_LOG.md`):
+1. `navigatorKey.currentContext!` — a pattern used across 14+ existing
+   test files — cannot resolve `Overlay.of(rootOverlay: true)`, since it
+   returns the Navigator's own element rather than a descendant of the
+   Overlay that Navigator builds. Fixed at the 2 test call sites this
+   session's new toast calls actually exercised
+   (`task_action_sheet_remove_test.dart`, `zone_form_screen_test.dart`),
+   using `tester.element(find.byType(Scaffold))` instead — matching what
+   every real production call site already does. The other 12 files'
+   use of the same pattern is unfixed (never exercises `Overlay.of`
+   today) but is now a documented, named risk rather than an invisible
+   one.
+2. `AppUndoToast`'s own auto-dismiss used a bare `Future.delayed`, whose
+   underlying platform Timer was never cancelled when Undo fired early —
+   harmless in production (a `mounted` guard no-ops the eventual fire)
+   but a genuine resource leak, and a hard test-teardown failure whenever
+   a test exercises the early-cancel path without also draining the full
+   duration afterward. Fixed by switching to a real, cancellable `Timer`.
+
+**Verification**: `flutter analyze` clean on every touched/new file
+(repo-wide: same 18 pre-existing, unrelated issues as every prior entry
+this session). New/extended test coverage: `task_action_sheet_remove
+_test.dart` (+3 undo-specific cases, covering plain/single-occurrence/
+whole-series restore), `app_undo_toast_test.dart` (+1 case proving the
+Timer-cancel fix), plus the 2 pre-existing tests fixed for the Overlay
+bug and 2 more given the required timer-drain treatment
+(`multi_task_group_delete_test.dart`, `zone_form_screen_test.dart`'s own
+delete test). Full suite: 7 pre-existing failures, all in the
+already-established unrelated `floating_nav_pill_test.dart`/timeline-nav
+bucket confirmed throughout this session; none touch anything this work
+changed.
+
+## Undo mechanism extended to every task/zone move and resize commit (2026-09-22)
+
+Requested directly: "Let's wire the current undo build for resize and
+move actions." Same snapshot-then-restore `AppUndoToast` mechanism
+`task_remove.dart` already established for delete — extended to every
+real, reachable MOVE and RESIZE commit path, not just deletes.
+Confirmed via AskUserQuestion: **every** commit shows a toast, including
+a plain single-task move with no cascade (not only cascade/group
+commits) — matches delete's own "every write gets a toast" consistency.
+
+New shared helper `lib/shared/services/move_resize_undo.dart`:
+`commitTaskChangeWithUndo` (task moves/resizes) and
+`commitZoneChangeWithUndo` (zone cascades, which also shift assigned
+tasks via `ZoneList.commitZoneCascade`'s own `shiftTasksByMinutes` —
+both zone and task snapshots are taken before the one combined write,
+and Undo restores both together in a single toast). Both snapshot via
+each row's own `toJson()` immediately before the real write, and
+restore via `fromJson` + a plain keyed re-save
+(`TaskList.updateTask`/`ZoneList.updateZone`) — the same round-trip
+export/import already proven correct, not a new undo/redo stack.
+
+Wired call sites, all in `timeline_screen.dart` except where noted:
+- Group move (multi-task cascade, `rescheduleTaskWithCascade`)
+- Single-task cascade move
+- Single-task non-cascade move (`widget.onReschedule`)
+- Group top-resize (`resizeTasksFromTopInBatch`)
+- Group bottom-resize (`resizeTasksInBatch`)
+- Single-task top-resize
+- Single-task bottom-resize
+- Zone cascade move/resize (`_commitZoneCascade`, shared by both of
+  Timeline spatial view's `onZoneResize`/`onZoneMove` callbacks)
+- Zone Grid view's own zone cascade commit (`zone_grid_screen.dart`'s
+  `_finishMove`)
+
+**Bug found and fixed while wiring**: `Task` is a mutable Hive object,
+and two single-task resize call sites were mutating
+`widget.task.scheduledAt`/`durationMinutes` directly IN PLACE before
+calling the new helper. Since the snapshot line
+(`task.toJson()`) reads the task from `ref.read(taskListProvider)` —
+the same underlying object — mutating it first would have made the
+"pre-change" snapshot capture the already-changed value. Fixed by
+moving the mutation inside the `commit` closure the helper calls,
+so it runs strictly after the synchronous snapshot step completes.
+
+`rescheduleTask`/`onReschedule` (Zone view's own drag path) and
+`rescheduleTaskWithZone` were confirmed dead code with no reachable UI
+call site (Zone view drag-and-drop was removed per CONSTITUTION.md) —
+correctly excluded from wiring rather than wired speculatively.
+
+**Verification**: `flutter analyze` clean on `timeline_screen.dart`,
+`zone_grid_screen.dart`, `move_resize_undo.dart`. `flutter test
+test/features/timeline/ test/features/zone_grid/` — 522 passed, 0
+failed (pre-existing benign `tap()` hit-test warnings on scrolled-off
+buttons in 4 tests, not failures). Full `flutter test`: same 7
+pre-existing failures as every prior entry this session
+(`floating_nav_pill_test.dart`/`timeline_nav_consolidation_test.dart`),
+confirmed via `git stash` to fail identically with none of this
+session's changes applied — unrelated to this work.
+
+No dedicated new test coverage was added specifically for move/resize
+undo (unlike delete's own `+3` cases) — the existing move/resize test
+suites already exercise every wired commit path and continue to pass
+unchanged, since none of them assert on toast ABSENCE; a future session
+wanting explicit move/resize-undo-restore assertions (mirroring
+`task_action_sheet_remove_test.dart`'s pattern) would need new cases,
+not just the ones already run.
+
+## Hold-and-drag placement release now opens a menu — "Move all" and "New task" (2026-09-22)
+
+Requested directly: "We have long press to show indicator / On release it
+opens new task creation / Let's change on release we have context menu
+showing from position of release / Move all... New task... this opens
+fast task creation not full sheet, same as tapping once on timeline."
+Replaces the previous "release jumps straight into the full
+`showTaskDetailSheet` create form" behavior for the hold-and-drag
+placement line only (`PlaceTaskLineLayer.onPlaced` in
+`timeline_screen.dart`) — the free window block's own tap-to-create
+(`onCreateAt`) is UNCHANGED, still opening the full form directly; the
+two were split into separate callbacks (`onCreateAt` vs. the new
+`onPlaceReleased`) specifically so this narrower request didn't also
+change the free-window tap's own behavior.
+
+**Menu style — confirmed via AskUserQuestion**: a plain [AppSheet] bottom
+sheet (`lib/features/timeline/place_task_release_menu.dart`,
+`showPlaceTaskReleaseMenu`), reusing `task_remove.dart`'s own
+`ActionRow`, the same primitive `showTaskActionSheet` already uses —
+over a genuinely new floating/anchored popup at the release point, which
+this app has no existing mechanism for anywhere else.
+
+**"Move all" — confirmed via AskUserQuestion on three separate
+questions**:
+1. ONE combined direction choice, not a separate scope-filter switch and
+   direction switch: "tasks before this point" always move LATER,
+   "tasks at-or-after this point" always move EARLIER — pushing the
+   day's schedule TOWARD the picked point, never away from it. Defaults
+   to "before → later" per direct request ("defaults is move all below
+   to after").
+2. The picked h:m value is a DURATION to shift by, not a target clock
+   time — reuses `TaskList.shiftTasksByMinutes` directly (the same
+   uniform per-task-delta write Zone move/resize's own cascade commit
+   already uses), rather than a new cascade/collision-resolution write
+   path.
+3. Scope is the currently-viewed day only — no cross-day or
+   recurring-series reach, consistent with every other per-day Timeline
+   tool (cascade, resize).
+
+New files: `lib/features/timeline/move_all_sheet.dart` (the sheet:
+`AppTabSwitch<MoveAllDirection>` for the combined direction choice,
+`AppSegmentedTimeField`+`AppWheelTimePicker` for the amount — same
+wheel-picker convention `multi_zone_edit_sheet.dart` already
+established), `lib/shared/services/move_all_deltas.dart`
+(`computeMoveAllDeltas` — the pure scope-filter/sign logic, pulled out
+of the widget so it can be unit-tested directly; see this entry's own
+"Verification" for why). The Move button's commit is wrapped in
+`commitTaskChangeWithUndo` (`move_resize_undo.dart`, from the prior
+undo-wiring entry above) — "Move all" gets the same undo toast every
+other move/resize commit does, not a special case.
+
+**Verification**: `flutter analyze` clean on every touched/new file.
+`flutter test test/features/timeline/ test/shared/services/`: 757
+passed. Full `flutter test`: same 7 pre-existing, unrelated failures as
+every prior entry this session. New coverage:
+`test/shared/services/move_all_deltas_test.dart` (4 cases, the real
+scope-filter/sign logic, pure — no widget, no Hive),
+`test/features/timeline/move_all_sheet_test.dart` (2 cases, the sheet's
+own UI wiring: opens with the right default, direction toggle relabels
+the button).
+
+**A widget-test-only bug was found and worked around, not fixed**: a
+full tap-and-commit round trip through `move_all_sheet.dart`'s own Move
+button reliably threw `UnmountedRefException` inside
+`TaskList._refresh` — `taskListProvider`'s own `ref` reads as disposed
+mid-write, confirmed by instrumenting `shiftTasksByMinutes` directly
+(`ref.mounted` flips `false` between the loop's `await
+repository.saveTask(task)` and the trailing `_refresh()` call). This
+reproduces specifically when a widget's own `setState` (the Move
+button's `isLoading` flip) precedes a real Hive `await` inside
+`tester.runAsync`'s zone — every existing `runAsync`-wrapped write test
+in this codebase calls its notifier DIRECTLY (`container.read(...)
+.notifier.createTask(...)`) rather than through a button that sets
+loading state first, so none of them exercise this interaction. Not
+resolved: this is a `flutter_test`/Riverpod interaction, not a bug in
+`move_all_sheet.dart` or `TaskList` itself (nothing here suggested the
+real app is affected — no other `AppButton(isLoading:)` + real-Hive-
+write + `AppUndoToast` combination has been reported broken). Worked
+around by extracting the pure logic (`computeMoveAllDeltas`) for direct
+testing rather than continuing to chase the full round trip. Documented
+in docs/ERROR_LOG.md so a future session hitting the same shape doesn't
+re-diagnose it from scratch.
+
+## Multi-select zone/task Remove now writes in one batch, not one delete per row (2026-09-22)
+
+Reported directly: selected zones/tasks were "disappearing one by one"
+on multi-select Remove, rather than all at once. Every existing
+multi-delete call site (`zone_grid_screen.dart`'s
+`_removeSelectedTasks`/`_removeSelectedZones`, `timeline_screen.dart`'s
+`_removeSelectionWithUndo`) looped a plain `await` over the SINGLE-item
+`TaskList.deleteTask`/`ZoneList.deleteZone` — each call self-refreshes,
+so N selected rows meant N separate rebuilds.
+
+Chose "batch it, one refresh" over "add a loading spinner for the
+multi-second wait" — this codebase already has an established idiom for
+exactly this shape (`resizeTasksInBatch`, `rescheduleTaskWithCascade`,
+`commitZoneCascade`: loop the raw per-row side effects, one `_refresh()`
+after the loop), and a batch of Hive deletes is fast enough that there's
+nothing worth spinning a loader over once it's actually one write burst
+instead of N sequential ones. New `TaskList.deleteTasksInBatch`/
+`ZoneList.deleteZonesInBatch` preserve each singular method's own
+per-row side effects (recurrence-template promotion for tasks,
+weekly-placement archive-vs-real-delete for zones, notification
+cancellation for both) — not a naive raw-repository-delete loop.
+
+**Follow-up, same session**: reported still happening after the above —
+"still one disappears first then wait and other at once / and when
+reappear also not at once." The delete DIRECTION was fixed, but every
+`onUndo` restore callback (`zone_grid_screen.dart`'s own two,
+`move_resize_undo.dart`'s two, `task_remove.dart`'s whole-series
+restore) still looped `TaskList.updateTask`/`ZoneList.updateZone` once
+per snapshotted row — the identical bug, just on the RESTORE side. Fixed
+the same way: new `TaskList.restoreTasksInBatch`/`ZoneList
+.restoreZonesInBatch`, one `_refresh()` after re-saving every snapshot,
+wired into all 5 `onUndo` call sites. `restoreZonesInBatch`
+deliberately bypasses `updateZone`'s own validation and neighbour-push
+logic — restoring a snapshot puts back exactly what was there before
+the delete, not a re-edit that should re-resolve collisions against
+whatever the board looks like now.
+
+## Cluster lanes are packed, but never reordered (2026-09-22) — amends item 8
+
+Reported from a screenshot: a cluster of four (one long task plus three
+short ones that never overlap each other) still claimed four lanes, with
+obvious empty space beside the short ones. "Note that there is room in
+second lane, items from lane 3 and 4 should dock to only next lane if the
+previous can't fit."
+
+The lane numbers did not come from `layoutOverlappingTasks` — that one
+already packs correctly, and produced 2 lanes for this exact data. They
+came from `_withClusterLanes`, which per item 8 above assigned
+`lane = index within the cluster`, so a cluster of N always spanned N
+lanes regardless of free space.
+
+Item 8's rule existed for a real reason: each pill is a positional marker
+for its own row in `OverlapClusterBlock`'s list beside it, so "leftmost
+pill = topmost row" has to hold. Plain leftmost-free packing breaks that
+— a later member finding lane 0 free would sit LEFT of an earlier one.
+
+**Resolved via AskUserQuestion, over "pack freely and drop the guarantee"
+and "keep one lane per member": pack, but never move left.** New
+`clusterLanes` (`shared/services/overlap_cluster.dart`) assigns the
+leftmost lane that is genuinely free BUT never one left of the previous
+member's lane, keeping lanes non-decreasing in chronological order. That
+reclaims every lane reusable without reordering and leaves the rest
+alone. `columnCount` is now the packed lane count rather than the member
+count, so widths measured off lane depth (the zone band, the shared text
+column) stop reserving the reclaimed lanes.
+
+Mutually-overlapping members are unaffected — no lane is ever free for
+them to reuse, so they still get one lane each.
+
+**Verification**: the reported case now yields lanes `[0,1,1,1]` (2 lanes,
+was 4). 5 new tests in `overlap_cluster_test.dart`, including the
+screenshot case, the never-move-left guarantee, a non-decreasing
+invariant, and an independent re-derivation asserting no lane holds two
+genuinely-overlapping blocks. Confirmed the screenshot test fails against
+the old scheme (`[0,1,2,3]`) before passing against the new one. Full
+`flutter test`: 1473 passing, same 7 pre-existing unrelated failures.
+
+## Sheets unified: drag handle position/spacing, header CTA layout documented, Quick Capture's Done button no longer closes on success (2026-09-22)
+
+Requested directly: "let's unify all drawer sheets... in Design system
+MD define that sheets should have handles on top center, the style and
+position should be defined (reference is new task (quick add)) but
+slightly lower than currently... let's unify interaction and
+animation... there might already be a section for sheets that should
+define position of CTA top right and top left close button... spacing
+should be defined... first to unify handle position and spacing is add
+inbox note [Quick Capture]."
+
+**New DESIGN_SYSTEM.md section** ("Sheets — container, handle, header
+row") replaces the narrower `AppSheetHandle`-only section, documenting
+three things together for the first time: the `AppSheet` container
+itself (sizes, motion, keyboard-lift), the drag handle's exact position
+(`spacingSm` top inset, top-center — one rung down from the original
+`spacingXs`, confirmed as "slightly lower than currently"), and the
+header row's button layout rule (Close top-left, primary action
+top-right, both `HeaderCircleButton`-shaped or a labeled pill depending
+on whether the action has a short verb worth showing, handle painted
+BEHIND the whole row via `Positioned.fill` so its drag/tap target spans
+it). The quick-create sheet (`quick_create_sheet_shell.dart`/
+`quick_create_overlay.dart`) is named the reference implementation this
+whole shape is drawn from.
+
+**Applied to two files** as the first unification pass:
+- `quick_create_sheet_shell.dart` — handle top inset moved from
+  `spacingXs` to `spacingSm`, matching the new documented value (this
+  file IS the reference, so it needed to match its own now-written-down
+  spec).
+- `quick_capture_sheet.dart` — same top-inset bump, plus the header's
+  own primary action (the check-mark Done button) NO LONGER closes the
+  sheet on success. Confirmed via AskUserQuestion: it now calls the
+  exact same `_submit`/`_doSubmit` path the keyboard's own "done" key
+  already used — create/capture the task, clear the field, keep focus,
+  stay open. The sheet now closes only via its Close button or dragging
+  the handle down, matching the header CTA rule this same unification
+  pass just wrote down ("a sheet's primary action must not also
+  silently close it unless closing genuinely IS the whole outcome").
+  `_doSubmit`'s `closeOnSuccess` parameter was removed rather than kept
+  as dead code — the only remaining "always closes" branch is editing an
+  existing note (renaming has nothing to "add another" of), which never
+  depended on that parameter to begin with.
+
+**Verification**: `flutter analyze` clean on both files (same 18
+pre-existing repo-wide issues). 2 existing tests in
+`quick_capture_sheet_test.dart` updated to match the new behavior
+(tapping Done with text now asserts the sheet stays open, cleared and
+focused, instead of closed) — both were written against the OLD
+close-on-tap behavior and would have failed unmodified. Full `flutter
+test`: 1473 passing, same 7 pre-existing unrelated failures.
+
+## Task view's own per-pill entrance stagger on the Zone<->Task switch (2026-09-22)
+
+Requested directly: "can we actually morph items between views? ... same
+corresponding pills get into spatial mode from list mode? same labels
+move to right?" A true per-pill morph was scoped down after discussion —
+Task view's positions come from real elapsed-time math and Zone view's
+come from a non-linear list-flow layout with no shared coordinate space
+(the same constraint `ZoneRowTimeLabel`'s own doc comment documents), so
+a genuine shared-element transition would need either a real route
+push/pop (Hero) or a hand-built geometry-capture system — a large,
+separate effort. Confirmed via AskUserQuestion: smaller first step —
+keep the existing whole-view `AnimatedSwitcher` crossfade, but stagger
+each individual pill's own entrance underneath it so the switch reads as
+something arriving rather than two flat images swapping.
+
+**Zone view** (`zone_day_timeline.dart`): each `ListView.separated`
+row is now wrapped in `AppStaggeredEntrance(index: index, child: ...)` —
+this app's existing reusable stagger primitive (already used identically
+in `task_detail_sheet.dart`, `zone_form_screen.dart`,
+`tracked_behavior_form.dart`, `task_template_form.dart`,
+`add_category_modal.dart`), reused rather than inventing a new mechanism.
+Sits on top of the list's own pre-existing whole-view fade-in
+(`TweenAnimationBuilder`), unchanged.
+
+**Task view** (`timeline_screen.dart`): reuses `_DraggableTaskBlock`'s
+OWN existing entrance mechanism (`_entranceProgress`, previously only
+driven by `fadeInOnFirstBuild` for a just-created task) rather than
+wrapping the block in `AppStaggeredEntrance` — that widget's
+`FadeTransition`/`SlideTransition` wrapper is incompatible with
+`_DraggableTaskBlock`'s own internal `AnimatedPositioned` (a `Stack`
+only honours `Positioned`/`AnimatedPositioned` as a DIRECT child, so
+wrapping it in another widget would silently break its positioning
+entirely). New `entranceStaggerIndex` param; each block's own reveal is
+scheduled off `40ms * index` (matching `AppStaggeredEntrance`'s own
+private stagger constant, mirrored here rather than imported since that
+one's private too) rather than waiting behind a modal the way
+`fadeInOnFirstBuild`'s own `_scheduleReveal` does. Naturally scoped to
+exactly the Zone<->Task switch (and the app's first Task-view mount):
+the `Stack(key: ValueKey('task-view'))` this whole subtree lives in only
+remounts when `AnimatedSwitcher` swaps it in, never on an ordinary day
+change.
+
+**Two real bugs found and fixed while wiring this, both only surfaced
+once every on-screen pill staggers instead of just one just-created
+task**:
+1. `entranceScaleFor(0) == 0` is a deliberate, tested invariant (see
+   `entrance_scale_test.dart`) — the "pop in from nothing, spring to
+   120%" entrance genuinely starts at TRUE ZERO SIZE. `_DraggableTaskBlock`
+   itself is wrapped in `AnimatedScale(scale: entranceScale, ...)`, so a
+   not-yet-revealed staggered block was literally un-hit-testable for
+   however long its own delay slot lasted — caught by this app's own
+   multi-task drag tests (`multi_task_group_move_test.dart`,
+   `multi_task_group_resize_test.dart`, `multi_task_group_delete_test.dart`,
+   `zone_grid_selection_dock_test.dart`), which select/drag a pill
+   immediately after mounting, exactly what a real view switch does too.
+   Fixed by skipping the scale-from-zero spring entirely for the
+   `entranceStaggerIndex` path — it stays at a constant, always-hit-testable
+   1.0 scale, and only opacity fades. The "pop and spring" treatment stays
+   exactly as-is for `fadeInOnFirstBuild`'s own single-highlighted-task case.
+2. The stagger's own reveal was scheduled via a bare `Future.delayed` with
+   no cancel handle — same class of bug `AppUndoToast`'s own auto-dismiss
+   timer already hit and fixed (see this file's earlier 2026-09-22 entry).
+   `flutter_test` fails outright if a widget tree is disposed while one is
+   still pending, which several of the same multi-task tests hit
+   immediately (they mount and interact fast, well inside the 40ms×N
+   stagger window). Converted `_DraggableTaskBlockState`'s TWO
+   `Future.delayed` reveal paths (the stagger AND the pre-existing
+   `_scheduleReveal`) onto one shared, cancellable `Timer` field
+   (`_revealTimer`), cancelled in a new `dispose()` override.
+
+**Verification**: `flutter analyze` clean. `flutter test
+test/features/timeline/ test/features/zone_grid/`: 524 passing. New
+coverage: `test/features/timeline/task_view_entrance_stagger_test.dart`
+(2 cases) — one pins bug #1 directly (a pill must stay draggable the
+instant Task view mounts, well inside the first stagger slot's own
+delay); confirmed it actually catches the regression by reverting the
+`entranceScale` fix and observing the test fail with the identical
+"drag had no effect" signature the real bug produced, then re-verified
+passing once restored. Full `flutter test`: 1475 passing (+2), same 7
+pre-existing unrelated failures.
+
+## Repeat day chips: single first letters, not 3-letter abbreviations (2026-09-22)
+
+Requested directly: "in add task repeat section use only first letters
+of days, start with M (monday)." `_RecurrencePanel`'s
+`_weekdayAbbreviations` (`task_detail_sheet.dart`) changed from
+`['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']` to `['M', 'T', 'W',
+'T', 'F', 'S', 'S']`. Day ORDER was already Monday-first (the loop
+already ran `DateTime.monday..DateTime.sunday`) — only the label text
+changed.
+
+This actually fixes a pre-existing inconsistency: `AppDateAccordion`
+(the week-strip header elsewhere in the app) already used this exact
+single-letter format, and its own doc comment explicitly named the task
+detail sheet's `MON..SUN` picker as the one place still using the older
+3-letter style. The two now match.
+
+**Test fallout**: `edit_schedule_repeats_test.dart` used `find.text
+('MON')`/`find.text('WED')`/`find.text('TUE')` to both tap a specific
+day chip and read its selected color — single letters aren't unique
+per day (Tuesday and Thursday both read "T", Saturday and Sunday both
+read "S"), so `find.text(...)` can no longer identify one chip
+unambiguously. Added a `_dayChip(weekday)` finder locating a chip by
+its fixed Monday-first POSITION in the row instead
+(`find.byType(AppSelectableChip).at(weekday - DateTime.monday)`), and
+switched the color-comparison assertion to read each chip's own
+`AppSelectableChip.selected` field directly rather than inferring
+selection from rendered text color — a strictly more direct check than
+what it replaced.
+
+**Verification**: `flutter analyze` clean. `flutter test
+test/features/task_detail/`: 74 passing. Full `flutter test`: 1475
+passing, same 7 pre-existing unrelated failures.
+
+## All screen/view transition animations removed — instant everywhere (2026-09-22)
+
+Requested directly: "remove animation completely for switching views
+change change screens no animation." Confirmed via AskUserQuestion:
+scope is EVERYTHING — every screen/view transition mechanism in the app,
+not just one. Micro-interactions (button press feedback, checkboxes,
+drag gestures, per-field reveals within an already-open form) are
+explicitly out of scope — this is about navigation-level motion only.
+
+**What went instant, mechanism by mechanism**:
+1. **Task↔Zone view crossfade** (`timeline_screen.dart`'s
+   `AnimatedSwitcher`, ~line 553): `duration` changed from
+   `theme.motionRouteSettle` to `Duration.zero`. The `transitionBuilder`
+   itself (fade+slide, key-based "which entry is entering" comparison)
+   was left in place rather than restructured to a plain conditional —
+   at zero duration it resolves to its end state on the next frame with
+   no visible transition, the smaller and safer change.
+2. **Task view's per-pill entrance stagger** and **Zone view's own
+   per-row stagger + whole-view fade-in** — both REMOVED entirely, not
+   just zeroed. These were built in the immediately preceding session
+   specifically to make the Task↔Zone switch "feel alive" (per an
+   earlier direct request); confirmed via AskUserQuestion that "no
+   animation" supersedes that. `_DraggableTaskBlock.entranceStaggerIndex`
+   (the field, its `Timer`-scheduling `initState` branch, and its
+   `entranceScale`-skip logic) removed from `timeline_screen.dart`;
+   `AppStaggeredEntrance` wrap and the `TweenAnimationBuilder` whole-view
+   fade removed from `zone_day_timeline.dart`. The pre-existing
+   `fadeInOnFirstBuild`/`_scheduleReveal`/`_revealTimer` mechanism (for a
+   just-CREATED task's own pop-in, a different event entirely — not a
+   view switch) is UNCHANGED and stays animated, since it's outside this
+   request's own "switching views, changing screens" scope.
+3. **`pushAppSheetRoute`/`pushFullScreenRoute`** (`app_modal_route.dart`)
+   — both `transitionDuration`/`reverseTransitionDuration` changed from
+   `theme.motionNormal`/`theme.motionFast` to `Duration.zero`. Same
+   "leave the transitionsBuilder in place" reasoning as #1.
+4. **`AppSheet.show`** (`app_sheet.dart`) — Material branch:
+   `sheetAnimationStyle`'s `duration`/`reverseDuration` zeroed (curves
+   left in place, harmless at zero duration). **Cupertino branch: a real
+   gap, not a parameter change.** `showCupertinoModalPopup`'s own
+   `CupertinoModalPopupRoute.transitionDuration` is a hardcoded getter
+   with no override point at all (confirmed by reading Flutter's own
+   `cupertino/route.dart` — it drives a `SpringSimulation`, not a plain
+   curved animation). Replaced the call with a new local
+   `_InstantCupertinoSheetRoute` (`PopupRoute` subclass) mirroring the
+   same barrier/content shape but with `Duration.zero` and a no-op
+   `buildTransitions` returning `child` unchanged.
+5. **14 (actually 15 — one more found beyond the initial survey,
+   `subscription_settings_screen.dart`) plain `Navigator.push
+   (MaterialPageRoute(...))` pushes** — every Settings sub-screen, the
+   Zones/Templates/Categories list screens, the Zone Grid edit screen,
+   and 3 onboarding screens. `MaterialPageRoute` itself has no
+   duration/curve override at all, so this required a new shared helper,
+   `instantRoute<T>(WidgetBuilder)` (`app_modal_route.dart`, same file
+   as the other two route helpers) — a plain `PageRouteBuilder` with
+   `transitionDuration`/`reverseTransitionDuration: Duration.zero` and no
+   custom `transitionsBuilder` at all. All 15 call sites swapped to it
+   rather than each hand-rolling its own zero-duration
+   `PageRouteBuilder`.
+
+**Deliberately NOT touched — confirmed out of scope**:
+- The bottom nav Day/Inbox/Tracked tab switch (`IndexedStack` +
+  `setState`) — already an instant swap, nothing to change.
+- `showDialog`/`AppAlertDialog` — a confirmation popup, not a view/screen
+  transition.
+- `AppStaggeredEntrance` itself (the shared widget) and its 5 OTHER call
+  sites (task-creation's stage reveal, zone-creation's panes,
+  tracked-behavior/template/category forms) — these stagger FORM PANES
+  revealing progressively within one already-open screen, not a
+  view/screen switch; the same category of "small in-place UI tweak"
+  this session's own `AnimatedSwitcher` doc comment already distinguished
+  from a "route-level view change."
+- `motionFast`/`motionNormal`/`motionSlow` token VALUES themselves
+  (`semantic_theme.dart`/`motion_primitives.dart`) — left untouched
+  rather than zeroed globally, since 19+ other files reuse these same
+  tokens for micro-interactions (button feedback, toggles, etc.) that
+  must stay animated. Every fix above is a LOCAL override at the
+  transition's own call site, not a token change.
+- The second `AnimatedSwitcher` in `timeline_screen.dart` (~line 3035,
+  `theme.motionNormal`) — crossfades List mode's own cluster-membership
+  change (a content update within Task view, not a view switch).
+- `TaskCapsuleBlock`'s own `entranceProgress`/`_staggeredOpacity`
+  mechanism and `entranceScaleFor` — both still used by
+  `fadeInOnFirstBuild`'s just-created-task entrance (see #2 above),
+  unchanged.
+
+**Test fallout**: `task_view_entrance_stagger_test.dart` (written last
+session specifically to pin the now-removed stagger's own bug) deleted
+outright — its entire premise no longer applies. `app_modal_route_test
+.dart` rewritten: every mid-transition opacity/position/duration-
+asymmetry assertion replaced with a direct `transitionDuration ==
+Duration.zero` / `reverseTransitionDuration == Duration.zero` check
+(the keyboard-reservation test and the full-screen opaque/scrim test
+were unaffected and kept as-is). `quick_capture_sheet_test.dart`'s own
+"opens on the app's own curve and duration, not Flutter's slower
+default" test rewritten the same way — the claim being tested is now
+stronger (zero, not just faster) so the old assertion no longer applies.
+
+**Verification**: `flutter analyze` clean (same 18 pre-existing repo-
+wide issues). `flutter test test/features/timeline/
+test/features/zone_grid/ test/features/settings/
+test/features/onboarding/ test/features/zones/ test/features/inbox/
+test/features/task_detail/ test/core/widgets/app_modal_route_test.dart`:
+all passing. Full `flutter test`: 1470 passing, same 7 pre-existing
+unrelated failures (`floating_nav_pill_test.dart`/
+`timeline_nav_consolidation_test.dart`) — confirmed stable across a
+repeated fresh run after an earlier, transient parallel-worker-pool
+artifact inflated the failure count on one run.
+
+## Settings: paywall row commented out, header removed, top-nav active-state bug fixed (2026-09-22)
+
+Three requests in one message: "comment out paywall on settings," "also
+settings should not have header settings," and a real bug report —
+"currently when settings selected (1 menu item active) > none should
+be, only active state for gear icon (settings)."
+
+**1. Paywall entry point commented out**, not deleted —
+`settings_screen.dart`'s `if (FeatureFlags.subscriptionEnabled) ...`
+block (the "Subscription" row) and its `subscription_settings_screen
+.dart` import are both commented out, matching the "comment out"
+phrasing rather than removing the code outright. `FeatureFlags
+.subscriptionEnabled`, `showSubscriptionSettingsScreen`, and the pushed
+`SubscriptionSettingsScreen` itself are all untouched — re-enabling is a
+pure uncomment. A second paywall trigger exists (`main.dart`'s
+`onSettingsTap`, which calls `presentPaywallIfNeeded` on every
+transition INTO Settings) — left alone, since it's gated by the same
+`FeatureFlags.subscriptionEnabled` check and the request named the
+Settings-list row specifically ("paywall on settings" read as the
+in-list entry point, not every RevenueCat call site).
+
+**2. "Settings" header text removed** — the `Text('Settings',
+style: theme.textTitle)` + its own `SizedBox` spacer at the top of
+`SettingsScreen.build`, deleted outright (not commented — a plain
+static label, nothing to preserve for later). The first panel now
+starts directly under the screen's own `spacingScreenPadding` inset;
+the gear icon in the top nav is the entry point/label now, matching how
+Inbox has no separate in-body heading of its own either.
+
+**3. Real bug fixed: a Day/Inbox/Tracked label lit up as "active" while
+Settings was open.** Settings is index 3 in `_selectedIndex` (no entry
+in `AppTopNav`'s own `destinations` list, by design — see that file's
+own doc comment). `main.dart`'s call site used to clamp
+`selectedIndex: _selectedIndex < labels.length ? _selectedIndex : 0`
+whenever Settings' own out-of-range index was current — which silently
+substituted `0` ("Day") as the value handed to `AppTopNav`, lighting
+Day up as active even though Settings was the screen actually showing.
+
+Fixed two ways together: `main.dart` now passes `_selectedIndex`
+UNCLAMPED (harmless — `_TopNavLabel`'s own `i == selectedIndex` never
+matches a label's `i` against an out-of-range value anyway) plus a new
+`settingsSelected: _selectedIndex == screens.length - 1` flag.
+`AppTopNav` gained a `settingsSelected` parameter (default `false`,
+backward-compatible with every existing caller) that colors the gear
+icon `colorTextPrimary` when true — the SAME active/inactive contrast
+`_TopNavLabel` already uses for a selected destination, requested
+directly ("should highlight as Active (light) same as menu items in top
+nav"), rather than inventing a new highlight treatment.
+
+**Verification**: `flutter analyze` clean (same 18 pre-existing repo-
+wide issues). New `test/core/widgets/app_top_nav_test.dart` (4 cases) —
+covers the ordinary case (label lights up, gear doesn't), the
+`settingsSelected` case (only the gear lights up, every label stays
+inactive even when its own index numerically matches `selectedIndex`),
+the exact real-world shape `main.dart` now passes (an out-of-range
+index alongside `settingsSelected: true`), and the default-false
+backward-compatibility case. Widgetbook's own `_TopNavDemo` extended
+with a Settings toggle so the new state is visible in the gallery.
+`flutter test test/edit_mode_hides_main_nav_test.dart
+test/features/settings/ test/core/widgets/app_top_nav_test.dart`: all
+passing. Full `flutter test`: 1474 passing, same 7 pre-existing
+unrelated failures.
+
+## Zone view hour labels: mono font restored, Edit Mode Close is now a back arrow (2026-09-23)
+
+Reported directly, comparing the two Timeline views: "between views
+hours on spatial zone are not mono font, but spatial ther are mono there
+is a rule in design MD about it?" There wasn't a documented rule — the
+dual-font policy only existed as scattered doc comments on
+`semantic_theme.dart`'s own `textCaptionMono`/`textCaption` fields.
+Confirmed via direct investigation (not the user's guess, my own): the
+non-spatial Zone view's `ZoneRowTimeLabel` and `ZoneContainerBlock`'s own
+header time-range text both read `theme.textCaption` (DM Sans, the prose
+twin) instead of `theme.textCaptionMono` — a real, silent regression, not
+a positioning issue. Position was already correct and already pinned by
+`horizontal_spacing_system_test.dart` (both `zoneRowTimeLabelEdgeInset`
+and `spacingScreenPadding` are 16px, not 24 as an earlier stale doc
+comment claimed — corrected in the same pass).
+
+Fixed both `textCaption` → `textCaptionMono` call sites in
+`zone_container_block.dart`. Added the missing "Two-font system" section
+to docs/DESIGN_SYSTEM.md — the rule readers were missing: a `*Mono`
+token is for a genuinely numeric/temporal value (clock time, duration),
+its plain twin is DM Sans prose, and the two are not interchangeable
+"same size, different mood" options. Existing tests in
+`zone_container_block_test.dart` only ever asserted `fontSize`/`color`
+— identical between the two tokens — so the regression shipped silently
+straight through them; both tests now also assert `fontFamily`, and
+confirmed (by reverting the fix and re-running) that they genuinely
+catch it.
+
+**Separately, Edit Mode's own Close button** (both the Tasks tab's
+empty-selection dock and the Zones tab's own dock, `zone_grid_screen
+.dart`) changed from `Icons.close_rounded` to `Icons.arrow_back_rounded`
+— requested directly: "close in edit mode should not be close (x) but
+arrow left." `_close()` genuinely pops the whole screen
+(`Navigator.pop`), a real "go back" action, not a dismiss/cancel — the
+icon now matches what the action actually does.
+
+**Bottom dock circular buttons investigated, no code bug found.**
+Reported directly: "single buttons should be perfect circle e.g. edit
+and heart at the moment are ellipse[,] + (add) is slightly different
+size, should be same as the other ones." Traced the full render path
+(`AppDockIconButton` → `AppButton._buildCircle` → a `Container` with
+EQUAL, explicit `width`/`height` and `BoxShape.circle`) and confirmed
+with a direct widget-test probe (`tester.getSize`) that the Edit,
+What Matters, and "+" buttons all render at the exact same `Size(40.0,
+40.0)`, a true circle, in the current code — there is no width/height
+mismatch, asymmetric padding, or intrinsic-sizing bug anywhere in this
+path. Also confirmed Edit Mode's own selection dock (`zone_grid_screen
+.dart`) already reuses the identical shared `AppDockIconButton`/
+`AppDockPane` primitives — the "systematizing" the report asked for is
+already the case at the code level, not a separate implementation to
+unify. Flagging as a needs-visual-verification item rather than a code
+fix: given the geometry is provably correct in source, the reported
+ellipse/size-mismatch is most likely a stale build on-device, a
+device-pixel-ratio rounding artifact, or the icon GLYPHS themselves
+(`Icons.edit_outlined`, `Icons.favorite_border_rounded`) reading as
+visually asymmetric within their own square canvas — not something a
+source-level fix can address without a real device screenshot to
+diagnose against.
+
+**Verification**: `flutter analyze` clean (same 18 pre-existing repo-
+wide issues). `flutter test test/features/timeline/
+test/features/zone_grid/ test/core/tokens/horizontal_spacing_system_test
+.dart`: all passing. Full `flutter test`: 1474 passing, same 7
+pre-existing unrelated failures.
+
+**Zone view's time-label-to-content gap reversed from 0 back to
+`spacingSm` (2026-09-23).** `zoneRowTimeLabelReservedWidth` was zeroed
+out on 2026-09-20 by direct request ("tasks sit in containers with the
+same left padding as top, so small space"). Reported again against a
+wireframe: that gap now reads as too tight next to the spatial view's
+own pill-to-title gap. Confirmed via AskUserQuestion that the 2026-09-20
+decision should be reversed rather than treated as still-correct —
+`zoneRowTimeLabelReservedWidth` is now a `double Function(AmbleTheme)`
+returning `theme.spacingSm`, matching `TaskCapsuleBlock`'s own
+pill-to-title gap. The escaped-label positioning mechanism itself
+(`ZoneRowTimeLabel`'s negative `Positioned.left`) is unchanged — only
+the width this box reserves in its caller's `Row` changed.
+
+**Superseded the same day — see "Timeline rebuilt on a three-column
+contract" below.** This 0→`spacingSm` change moved the wrong gap in the
+wrong direction (the actual reported gap was Time→Content, not
+Time-label→Content-inside-a-zone-row) and was reverted back to `0`
+during the same investigation, before the real fix (the card's own
+double-inset padding) was found.
+
+**Timeline rebuilt on a three-column contract (2026-09-23).** After
+several rounds of patching individual gaps (see ERROR_LOG.md's own entry
+on the double-inset class of bug this produced twice), reported directly
+as "overcomplicated... we need to refine it properly": "can we have
+literally three columns of the same size... time would be a fixed
+column, and the zone column and content column would have the remaining
+width. We would have the same gap between these columns." Both Timeline
+views now derive every horizontal position from ONE contract —
+`AmbleTheme`'s `spacingTimeColumnWidth` (fixed, sized to fit "12:00 PM"),
+`spacingTimelineGutter` (the one gap value used four times: edge→time,
+time→zone, zone→content, content→edge), and the `TimelineColumns`
+extension that derives every column's left edge and width from those two
+plus the viewport width. Pinned in
+`test/core/tokens/timeline_columns_test.dart`, which asserts all four
+gaps equal `spacingTimelineGutter` at seven viewport widths from 320 to
+834 — the explicit fix for "future problems with some other devices and
+sizes." The content column's x no longer depends on the day's own
+overlap depth (`dayPillLanes`); overlapping pills now compress within
+column 2's own fixed width instead of pushing column 3 right.

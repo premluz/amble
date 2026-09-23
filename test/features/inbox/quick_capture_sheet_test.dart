@@ -3,7 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive_ce.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
-import 'package:amble/core/widgets/app_button.dart';
+import 'package:amble/core/widgets/app_mic_button.dart';
+import 'package:amble/core/widgets/app_sheet_handle.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/inbox/quick_capture_sheet.dart';
 import 'package:amble/shared/models/category.dart';
@@ -28,6 +29,12 @@ Future<void> _tapAndSettle(WidgetTester tester, Finder finder) async {
     await tester.pumpAndSettle();
   });
 }
+
+// The header's Done button — a small HeaderCircleButton (check icon), not
+// the large AppButton "Done"/"Save" pill Task creation uses. See
+// quick_capture_sheet.dart's own class doc comment for why (2026-09-21:
+// no title text, Close/mic/Done collapsed into one header row).
+final _doneButton = find.byIcon(Icons.check_rounded);
 
 Future<GlobalKey<NavigatorState>> _pumpHost(
   WidgetTester tester, {
@@ -79,9 +86,8 @@ void main() {
   });
 
   testWidgets(
-    'the primary button reads "Done", is pill-shaped and large, matching '
-    "Task creation's own Done button (StepScaffold's primary action) "
-    'exactly',
+    'the sheet has no title text — Close, mic and Done live in one header '
+    'row instead',
     (tester) async {
       final navigatorKey = await _pumpHost(
         tester,
@@ -91,11 +97,143 @@ void main() {
       showQuickCaptureSheet(navigatorKey.currentContext!);
       await tester.pumpAndSettle();
 
-      expect(find.text('Add'), findsNothing);
-      final button = tester.widget<AppButton>(find.byType(AppButton));
-      expect(button.label, 'Done');
-      expect(button.shape, AppButtonShape.pill);
-      expect(button.size, AppButtonSize.lg);
+      expect(find.text('New note'), findsNothing);
+      expect(find.text('Edit note'), findsNothing);
+      expect(find.byIcon(Icons.close_rounded), findsOneWidget);
+      expect(find.byType(AppMicButton), findsOneWidget);
+      expect(_doneButton, findsOneWidget);
+
+      await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
+    },
+  );
+
+  testWidgets('the mic button renders secondary (non-primary), not accent', (
+    tester,
+  ) async {
+    final navigatorKey = await _pumpHost(
+      tester,
+      box: box,
+      categoryBox: categoryBox,
+    );
+    showQuickCaptureSheet(navigatorKey.currentContext!);
+    await tester.pumpAndSettle();
+
+    final mic = tester.widget<AppMicButton>(find.byType(AppMicButton));
+    expect(mic.isPrimary, isFalse);
+
+    await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
+  });
+
+  // Requested directly: "voice record should be same size as done."
+  testWidgets(
+    'the mic button is sized to match the Done button (theme.spacingXl)',
+    (tester) async {
+      final navigatorKey = await _pumpHost(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+      );
+      showQuickCaptureSheet(navigatorKey.currentContext!);
+      await tester.pumpAndSettle();
+
+      final mic = tester.widget<AppMicButton>(find.byType(AppMicButton));
+      expect(mic.size, AmbleTheme.light.spacingXl);
+
+      await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
+    },
+  );
+
+  // Requested directly: "we should have sheet 'handle' that user can drag
+  // down to close."
+  testWidgets('a drag handle is shown above the header row', (tester) async {
+    final navigatorKey = await _pumpHost(
+      tester,
+      box: box,
+      categoryBox: categoryBox,
+    );
+    showQuickCaptureSheet(navigatorKey.currentContext!);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AppSheetHandle), findsOneWidget);
+
+    await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
+  });
+
+  testWidgets(
+    'dragging the handle down far enough closes the sheet without saving',
+    (tester) async {
+      final navigatorKey = await _pumpHost(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+      );
+      showQuickCaptureSheet(navigatorKey.currentContext!);
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'Should not be saved');
+      await tester.runAsync(() async {
+        await tester.drag(
+          find.byType(AppSheetHandle),
+          const Offset(0, 200),
+        );
+        await tester.pump();
+        await Future<void>.delayed(Duration.zero);
+        await tester.pumpAndSettle();
+      });
+
+      expect(_doneButton, findsNothing);
+      expect(box.values, isEmpty);
+    },
+  );
+
+  testWidgets(
+    'a short drag on the handle does not close the sheet',
+    (tester) async {
+      final navigatorKey = await _pumpHost(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+      );
+      showQuickCaptureSheet(navigatorKey.currentContext!);
+      await tester.pumpAndSettle();
+
+      await tester.runAsync(() async {
+        await tester.drag(find.byType(AppSheetHandle), const Offset(0, 4));
+        await tester.pump();
+        await Future<void>.delayed(Duration.zero);
+        await tester.pumpAndSettle();
+      });
+
+      expect(_doneButton, findsOneWidget);
+
+      await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
+    },
+  );
+
+  // Requested directly: "when tapping add on keyboard the sheet and
+  // keyboard collapses and expands but it should remain open." Root
+  // cause: EditableText unconditionally unfocuses on TextInputAction.done
+  // unless `onEditingComplete` is provided — the fix is that override,
+  // not anything reachable by asserting the field's focus AFTER the fact
+  // (which the existing keep-open test already does, but can't catch a
+  // transient drop that resolves before the assertion runs).
+  testWidgets(
+    'the field provides a no-op onEditingComplete, suppressing the '
+    'framework default that would otherwise unfocus on every keyboard '
+    'submit',
+    (tester) async {
+      final navigatorKey = await _pumpHost(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+      );
+      showQuickCaptureSheet(navigatorKey.currentContext!);
+      await tester.pumpAndSettle();
+
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.onEditingComplete, isNotNull);
+
+      await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
     },
   );
 
@@ -111,50 +249,121 @@ void main() {
       showQuickCaptureSheet(navigatorKey.currentContext!);
       await tester.pumpAndSettle();
 
-      await _tapAndSettle(tester, find.text('Done'));
+      await _tapAndSettle(tester, _doneButton);
 
-      expect(find.text('New note'), findsNothing);
+      expect(_doneButton, findsNothing);
       expect(box.values, isEmpty);
     },
   );
 
-  testWidgets('tapping Done with text captures it and closes the sheet', (
-    tester,
-  ) async {
-    final navigatorKey = await _pumpHost(
-      tester,
-      box: box,
-      categoryBox: categoryBox,
-    );
-    showQuickCaptureSheet(navigatorKey.currentContext!);
-    await tester.pumpAndSettle();
+  // 2026-09-22 — the header's Done button now behaves EXACTLY like the
+  // keyboard's own submit (docs/DESIGN_SYSTEM.md's "Sheets" section,
+  // requested directly: a sheet's primary action "should act the same
+  // way as Submit in keyboard... but not close modal"), so tapping Done
+  // with text keeps the sheet open rather than closing it. Only the
+  // Close button or dragging the handle down actually closes this sheet
+  // once something has been typed.
+  testWidgets(
+    'tapping Done with text captures it and keeps the sheet open, cleared '
+    'and focused for another entry',
+    (tester) async {
+      final navigatorKey = await _pumpHost(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+      );
+      showQuickCaptureSheet(navigatorKey.currentContext!);
+      await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextField), 'Buy milk');
-    await _tapAndSettle(tester, find.text('Done'));
+      await tester.enterText(find.byType(TextField), 'Buy milk');
+      await _tapAndSettle(tester, _doneButton);
 
-    expect(find.text('New note'), findsNothing);
-    expect(box.values.single.title, 'Buy milk');
-  });
+      expect(_doneButton, findsOneWidget);
+      expect(box.values.single.title, 'Buy milk');
 
-  testWidgets('a fresh capture titles the sheet "New note"', (tester) async {
-    final navigatorKey = await _pumpHost(
-      tester,
-      box: box,
-      categoryBox: categoryBox,
-    );
-    showQuickCaptureSheet(navigatorKey.currentContext!);
-    await tester.pumpAndSettle();
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.controller!.text, isEmpty);
+    },
+  );
 
-    expect(find.text('New note'), findsOneWidget);
-    expect(find.text('Edit note'), findsNothing);
-  });
+  // Requested directly: submitting from the KEYBOARD's own "done" key
+  // creates the task but leaves the sheet open, ready for another entry —
+  // now identical to tapping the header's own Done button (see the test
+  // above).
+  testWidgets(
+    'submitting from the keyboard captures the task but keeps the sheet '
+    'open, cleared and focused for another entry',
+    (tester) async {
+      final navigatorKey = await _pumpHost(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+      );
+      showQuickCaptureSheet(navigatorKey.currentContext!);
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'Buy milk');
+      await tester.runAsync(() async {
+        await tester.testTextInput.receiveAction(TextInputAction.done);
+        await tester.pump();
+        await Future<void>.delayed(Duration.zero);
+        await tester.pumpAndSettle();
+      });
+
+      // Sheet is still open — Done/mic/Close are all still present.
+      expect(_doneButton, findsOneWidget);
+      expect(box.values.single.title, 'Buy milk');
+
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.controller!.text, isEmpty);
+      expect(field.focusNode?.hasFocus ?? false, isTrue);
+
+      // A second capture in the same session, still without closing —
+      // exactly the "multiple tasks being added" behavior requested.
+      await tester.enterText(find.byType(TextField), 'Buy eggs');
+      await tester.runAsync(() async {
+        await tester.testTextInput.receiveAction(TextInputAction.done);
+        await tester.pump();
+        await Future<void>.delayed(Duration.zero);
+        await tester.pumpAndSettle();
+      });
+
+      expect(_doneButton, findsOneWidget);
+      expect(box.values.map((t) => t.title), containsAll(['Buy milk', 'Buy eggs']));
+
+      await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
+    },
+  );
+
+  testWidgets(
+    'submitting an empty title from the keyboard still closes the sheet — '
+    'nothing to keep it open for',
+    (tester) async {
+      final navigatorKey = await _pumpHost(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+      );
+      showQuickCaptureSheet(navigatorKey.currentContext!);
+      await tester.pumpAndSettle();
+
+      await tester.runAsync(() async {
+        await tester.testTextInput.receiveAction(TextInputAction.done);
+        await tester.pump();
+        await Future<void>.delayed(Duration.zero);
+        await tester.pumpAndSettle();
+      });
+
+      expect(_doneButton, findsNothing);
+      expect(box.values, isEmpty);
+    },
+  );
 
   // Requested directly: tapping an existing Inbox card reuses this same
-  // sheet, but in an EDIT mode that must actually read as different from
-  // creating a new one — "New note"/"Edit note" plus pre-filled text.
+  // sheet, but in an EDIT mode — pre-filled text and a different hint,
+  // even with no title text to distinguish the two any more.
   testWidgets(
-    'editing an existing task titles the sheet "Edit note" and pre-fills '
-    "its current title",
+    'editing an existing task pre-fills its current title',
     (tester) async {
       final existing = Task(id: 'existing-1', title: 'Buy milk');
       await tester.runAsync(() => box.put(existing.id, existing));
@@ -167,16 +376,15 @@ void main() {
       showQuickCaptureSheet(navigatorKey.currentContext!, task: existing);
       await tester.pumpAndSettle();
 
-      expect(find.text('Edit note'), findsOneWidget);
-      expect(find.text('New note'), findsNothing);
       expect(find.text('Buy milk'), findsOneWidget);
-      final button = tester.widget<AppButton>(find.byType(AppButton));
-      expect(button.label, 'Save');
+
+      await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
     },
   );
 
   testWidgets(
-    'saving an edit renames the SAME task — no second task is created',
+    'saving an edit renames the SAME task — no second task is created, and '
+    'the sheet closes even via the keyboard',
     (tester) async {
       final existing = Task(id: 'existing-1', title: 'Buy milk');
       await tester.runAsync(() => box.put(existing.id, existing));
@@ -190,9 +398,14 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.enterText(find.byType(TextField), 'Buy oat milk');
-      await _tapAndSettle(tester, find.text('Save'));
+      await tester.runAsync(() async {
+        await tester.testTextInput.receiveAction(TextInputAction.done);
+        await tester.pump();
+        await Future<void>.delayed(Duration.zero);
+        await tester.pumpAndSettle();
+      });
 
-      expect(find.text('Edit note'), findsNothing);
+      expect(_doneButton, findsNothing);
       expect(box.values, hasLength(1));
       expect(box.values.single.id, 'existing-1');
       expect(box.values.single.title, 'Buy oat milk');
@@ -200,7 +413,7 @@ void main() {
   );
 
   // Requested directly: "add to inbox should be larger and should include
-  // Close in the top right."
+  // Close in the top right." (Close later moved top-LEFT — 2026-09-21.)
   testWidgets('the Close button dismisses the sheet without saving', (
     tester,
   ) async {
@@ -215,7 +428,7 @@ void main() {
     await tester.enterText(find.byType(TextField), 'Should not be saved');
     await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
 
-    expect(find.text('New note'), findsNothing);
+    expect(_doneButton, findsNothing);
     expect(box.values, isEmpty);
   });
 
@@ -237,6 +450,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(SingleChildScrollView), findsNothing);
+
+      await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
     },
   );
 
@@ -265,6 +480,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
+
+      await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
     },
   );
 
@@ -297,6 +514,8 @@ void main() {
           "keyboard's own, so the sheet trails it instead of moving "
           'with it',
     );
+
+    await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
   });
   // Reported directly: "the new note sheet opens in two sequences: 1.
   // opens the actual sheet. 2. after a moment, the keyboard is pushing
@@ -338,16 +557,16 @@ void main() {
     await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
   });
 
-  // Reported directly twice — "small sheet on tasks manage feels
-  // sluggish", then "create note (still slow) sheet opening in manage
-  // (tasks)". The first fix set only the DURATION (via a custom
-  // transitionAnimationController); the sheet still felt slow because
-  // Flutter shapes the motion with `Easing.legacyDecelerate` for both
-  // directions regardless. `sheetAnimationStyle` sets curve AND duration,
-  // which is what actually fixed it.
+  // **2026-09-22 — the sheet now opens/closes with NO animation at all.**
+  // Requested directly: "remove animation completely for switching
+  // views... change screens no animation." This test used to assert the
+  // app's own `motionNormal`/`motionFast` curve+duration beat Flutter's
+  // slower stock bottom-sheet default (see docs/DECISIONS.md's matching
+  // entry for that history) — now it asserts the stronger claim: zero
+  // duration both ways, not just faster than Flutter's default.
   testWidgets(
-    'the sheet opens on the app\'s own curve and duration, not Flutter\'s '
-    'slower bottom-sheet defaults',
+    'the sheet opens and closes instantly — no transition duration either '
+    'way',
     (tester) async {
       final navigatorKey = await _pumpHost(
         tester,
@@ -358,18 +577,8 @@ void main() {
       await tester.pump();
 
       final route = ModalRoute.of(tester.element(find.byType(TextField)))!;
-      expect(
-        route.transitionDuration,
-        AmbleTheme.light.motionNormal,
-        reason:
-            "Flutter's stock bottom-sheet duration is longer; this is the "
-            'app-wide motionNormal',
-      );
-      expect(
-        route.reverseTransitionDuration,
-        AmbleTheme.light.motionFast,
-        reason: 'dismissal is deliberately quicker than the entrance',
-      );
+      expect(route.transitionDuration, Duration.zero);
+      expect(route.reverseTransitionDuration, Duration.zero);
 
       await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
     },

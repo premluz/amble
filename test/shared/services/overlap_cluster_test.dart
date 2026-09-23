@@ -542,4 +542,196 @@ void main() {
       );
     });
   });
+
+  group('clusterLanes', () {
+    OverlapCluster clusterOf(List<Task> tasks) {
+      final clusters = detectOverlapClusters(tasks);
+      expect(
+        clusters,
+        hasLength(1),
+        reason: 'fixture must form exactly one cluster',
+      );
+      return clusters.single;
+    }
+
+    // The reported case, from a screenshot: a run of four where only the
+    // long first task spans the rest. Standup/Daily sync/Lunch never
+    // overlap EACH OTHER, so they all belong in one reused lane — the old
+    // one-lane-per-member scheme gave them lanes 1, 2, 3 and left obvious
+    // empty space. "There is room in second lane... items from lane 3 and
+    // 4 should dock to only next lane if the previous can't fit."
+    test('later members reuse a freed lane instead of each taking a new one',
+        () {
+      final focus = _task(
+        title: 'Focus',
+        scheduledAt: DateTime(2026, 9, 22, 10),
+        durationMinutes: 240,
+      );
+      final standup = _task(
+        title: 'Standup',
+        scheduledAt: DateTime(2026, 9, 22, 10, 30),
+        durationMinutes: 30,
+      );
+      final dailySync = _task(
+        title: 'Daily sync',
+        scheduledAt: DateTime(2026, 9, 22, 11, 30),
+        durationMinutes: 60,
+      );
+      final lunch = _task(
+        title: 'Lunch',
+        scheduledAt: DateTime(2026, 9, 22, 13),
+        durationMinutes: 45,
+      );
+
+      final lanes = clusterLanes(clusterOf([focus, standup, dailySync, lunch]));
+
+      expect(lanes, [0, 1, 1, 1]);
+      expect(
+        lanes.reduce((a, b) => a > b ? a : b) + 1,
+        2,
+        reason: 'two lanes, not the four the member count would have given',
+      );
+    });
+
+    test('mutually overlapping members still get one lane each', () {
+      final a = _task(
+        title: 'A',
+        scheduledAt: DateTime(2026, 9, 22, 9),
+        durationMinutes: 120,
+      );
+      final b = _task(
+        title: 'B',
+        scheduledAt: DateTime(2026, 9, 22, 9, 15),
+        durationMinutes: 120,
+      );
+      final c = _task(
+        title: 'C',
+        scheduledAt: DateTime(2026, 9, 22, 9, 30),
+        durationMinutes: 120,
+      );
+
+      expect(clusterLanes(clusterOf([a, b, c])), [0, 1, 2]);
+    });
+
+    // The guarantee packing must not break: each pill is a positional
+    // marker for its own row in OverlapClusterBlock's list, so lanes have
+    // to stay non-decreasing in chronological order. Here lane 0 is
+    // genuinely free by the time C starts — a naive leftmost-free packer
+    // would put C there, LEFT of B, and pill order would stop matching row
+    // order. C must take a new lane instead.
+    test('a member never moves left of the previous one, even when an '
+        'earlier lane is free', () {
+      final a = _task(
+        title: 'A',
+        scheduledAt: DateTime(2026, 9, 22, 10),
+        durationMinutes: 60,
+      );
+      final b = _task(
+        title: 'B',
+        scheduledAt: DateTime(2026, 9, 22, 10, 10),
+        durationMinutes: 290,
+      );
+      final c = _task(
+        title: 'C',
+        scheduledAt: DateTime(2026, 9, 22, 11, 40),
+        durationMinutes: 60,
+      );
+
+      final lanes = clusterLanes(clusterOf([a, b, c]));
+
+      expect(lanes, [0, 1, 2]);
+      expect(
+        lanes[2],
+        isNot(0),
+        reason: 'lane 0 is free at 11:40 but taking it would reorder C '
+            'ahead of B',
+      );
+    });
+
+    test('lanes are non-decreasing for every cluster shape', () {
+      final tasks = [
+        _task(
+          title: 'A',
+          scheduledAt: DateTime(2026, 9, 22, 8),
+          durationMinutes: 300,
+        ),
+        _task(
+          title: 'B',
+          scheduledAt: DateTime(2026, 9, 22, 8, 30),
+          durationMinutes: 30,
+        ),
+        _task(
+          title: 'C',
+          scheduledAt: DateTime(2026, 9, 22, 9, 30),
+          durationMinutes: 30,
+        ),
+        _task(
+          title: 'D',
+          scheduledAt: DateTime(2026, 9, 22, 9, 45),
+          durationMinutes: 180,
+        ),
+        _task(
+          title: 'E',
+          scheduledAt: DateTime(2026, 9, 22, 10, 30),
+          durationMinutes: 30,
+        ),
+      ];
+
+      final lanes = clusterLanes(clusterOf(tasks));
+
+      for (var i = 1; i < lanes.length; i++) {
+        expect(
+          lanes[i],
+          greaterThanOrEqualTo(lanes[i - 1]),
+          reason: 'lane order must never invert against row order',
+        );
+      }
+    });
+
+    test('a member is never placed in a lane whose occupant is still '
+        'running', () {
+      final tasks = [
+        _task(
+          title: 'A',
+          scheduledAt: DateTime(2026, 9, 22, 10),
+          durationMinutes: 240,
+        ),
+        _task(
+          title: 'B',
+          scheduledAt: DateTime(2026, 9, 22, 10, 30),
+          durationMinutes: 30,
+        ),
+        _task(
+          title: 'C',
+          scheduledAt: DateTime(2026, 9, 22, 11, 30),
+          durationMinutes: 60,
+        ),
+        _task(
+          title: 'D',
+          scheduledAt: DateTime(2026, 9, 22, 13),
+          durationMinutes: 45,
+        ),
+      ];
+      final cluster = clusterOf(tasks);
+      final lanes = clusterLanes(cluster);
+
+      // Re-derive occupancy independently and assert no lane holds two
+      // blocks that genuinely overlap in time.
+      for (var i = 0; i < cluster.blocks.length; i++) {
+        for (var j = i + 1; j < cluster.blocks.length; j++) {
+          if (lanes[i] != lanes[j]) continue;
+          final first = cluster.blocks[i];
+          final second = cluster.blocks[j];
+          final overlaps =
+              first.scheduledStart.isBefore(second.scheduledEnd) &&
+              second.scheduledStart.isBefore(first.scheduledEnd);
+          expect(
+            overlaps,
+            isFalse,
+            reason: 'two overlapping blocks share lane ${lanes[i]}',
+          );
+        }
+      }
+    });
+  });
 }

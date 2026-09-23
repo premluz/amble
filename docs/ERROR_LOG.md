@@ -1274,3 +1274,491 @@ The entry above is correct about the collision but stops too early — it reads 
 **Fix:** wrapped the label `Text` in `Flexible` so it ellipsizes within whatever width the `Row` is actually given, instead of demanding its intrinsic width unconditionally.
 
 **Prevent next time:** when extracting a widget FROM one call site TO BE reused at others, "tests pass for the file I touched" is not sufficient signal — a `MainAxisSize.min` Row with an unconstrained text child only fails once a caller gives it less room than the original call site always had. Run the FULL suite (not just the touched file's own tests) before reporting a reusable-component extraction done; this is also why CLAUDE.md requires the full `flutter test` gate, not a scoped one, before "done."
+
+## Voice capture silently stopped creating new notes after the first one — a length check, not a content check, gated new speech
+
+**Symptom**: reported directly, from the full-screen "speak your tasks" voice flow: "added note (it's spinning) confirmed added note as spinner ends and then still listening but even if talking not creating new note." The first spoken task committed correctly (its own segment row, spinner while in-progress, then a real committed card); the mic stayed visibly active afterward, but nothing said next ever became a second segment.
+
+**Cause**: `VoiceCapture._onResult` (`voice_capture_provider.dart`) has to tell "the platform re-delivering the same already-committed transcript" apart from "the user said something new," since `speech_to_text` keeps re-delivering the running session transcript on every callback even after a segment has already been committed off of it — without this, that stale text would be re-adopted as live and committed a second time, duplicating the task. The guard used to check `words.length <= _committedText.length` FIRST, before ever comparing content, and `return` immediately if true. That means any later utterance no shorter than everything already committed was dropped outright — not just genuine stale re-delivery. A first segment as short as "Buy milk" made every following utterance of 8 characters or fewer disappear; a longer first segment (an ordinary full sentence) made almost any short follow-up ("Buy milk," "Call Sam") vanish the same way, since two- and three-word tasks are common and a long first sentence is not an edge case.
+
+**Fix**: dropped the length check entirely. `words.startsWith(_committedText)` already fully subsumes it — a string cannot start with a longer string, so the length comparison added nothing except a wrong-in-the-common-case early exit. Genuine stale re-delivery (`words == _committedText` exactly) still resolves correctly on its own, one line down: `words.substring(_committedText.length)` is `''`, caught by the existing `if (_liveText.isEmpty) return;` immediately after.
+
+**Rules**:
+- When a guard exists to reject ONE specific known-bad case (here: "the platform re-delivered exactly what we already committed"), a cheap proxy check (length) that happens to be true for that case is not equivalent to checking for that case — it will also reject every other input the proxy happens to share a property with. `startsWith` was already the correct, sufficient check sitting right below it; the length check was redundant on the passing path and actively wrong on the rejecting path.
+- A live streaming/session-based recognizer callback is hard to exercise with a real platform channel in a widget test (no mock registered) — add a narrow `@visibleForTesting` seam directly onto the private callback (`debugFeedResult`) rather than skipping coverage, mirroring this file's own existing `debugSetCommittedSegments` seam for the same reason.
+- Bisecting this took a fresh read of the exact code, not a plausible-sounding guess: the initial hypothesis ("a one-shot flag never re-armed") was for a DIFFERENT, unrelated voice entry point in this app (`quick_capture_sheet.dart`'s single-shot dictation) — confirmed wrong by asking the user which screen they meant before writing any fix, avoiding a change to the wrong file entirely.
+
+## RevenueCat paywall throws PAYWALLS_MISSING_WRONG_ACTIVITY on Android
+
+**Symptom**: tapping into Settings (the paywall trigger) threw
+`PlatformException(PAYWALLS_MISSING_WRONG_ACTIVITY, Make sure your
+MainActivity inherits from FlutterFragmentActivity, null, null)` on a real
+Android device, immediately after `Purchases.configure()` had already
+succeeded (confirmed via the SDK's own "Using a Test Store API key"
+log line — so this was never a missing-API-key problem, a separate
+prior gotcha already covered by `RevenueCatConfig.isAvailable`'s own
+"missing --dart-define" no-op path).
+
+**Cause**: `purchases_ui_flutter`'s native paywall and Customer Center
+views are built on Android Fragments internally, and require the host
+`MainActivity` to extend `FlutterFragmentActivity`, not the default
+`FlutterActivity` every fresh Flutter project scaffolds. This app's
+`MainActivity.kt` (`android/app/src/main/kotlin/.../MainActivity.kt`) had
+never needed Fragment support before this feature.
+
+**Fix**: `class MainActivity : FlutterActivity()` → `class MainActivity :
+FlutterFragmentActivity()`, only the base class and its import
+(`io.flutter.embedding.android.FlutterFragmentActivity`) — every override
+in the file (`provideFlutterEngine`, `shouldDestroyEngineWithHost`,
+`onResume`/`onPause`, the Siri/Assistant `AssistantActions` wiring) is
+untouched, since `FlutterFragmentActivity` is a drop-in Flutter-embedding
+subclass with the same overridable surface. No new dependency —
+`FlutterFragmentActivity` ships with the Flutter engine itself. No
+manifest/theme change was needed either: this app's existing
+`Theme.Light.NoTitleBar`/`Theme.Black.NoTitleBar` styles are plain
+platform themes, not `AppCompat`, and `FlutterFragmentActivity` (unlike
+`AppCompatActivity`) doesn't require an AppCompat theme.
+
+**Rule**: adding `purchases_ui_flutter` (or any plugin whose docs mention
+requiring `FlutterFragmentActivity`) to an existing app needs this
+`MainActivity` base-class change as part of the same work — it is not
+optional platform boilerplate, and the SDK configuring successfully
+(no error, real Test Store log line) gives no signal that the UI-showing
+half will also work. iOS was unaffected — this is an Android-only
+requirement.
+
+## Adding a field to `hasSameFieldsAs` silently broke backup-import test fixtures that built a "same task" stand-in by hand
+
+**Symptom**: after adding `Task.createdAt` and including it in `hasSameFieldsAs` (the field-by-field equality `TaskList.importTasks` uses to distinguish "already have this exact task" from "a real conflict"), two previously-green tests in `task_providers_test.dart` started failing: `result.alreadyPresent` read `0` where the test expected `1`.
+
+**Cause**: both tests built an `identicalCopy`/fixture `Task` by hand, copying each field off an `existing` task one at a time (`title: existing.title`, `scheduledAt: existing.scheduledAt`, ...) to simulate "the same task, re-imported from a backup." Neither copied `createdAt` — a field that didn't exist when those fixtures were written — so the fixture's own constructor defaulted it to a FRESH `DateTime.now()`, different from `existing.createdAt` by definition. `hasSameFieldsAs` correctly reported them as different, and `importTasks` correctly (given that input) counted them as a conflict rather than "already present."
+
+**Fix**: added `createdAt: existing.createdAt` to both fixtures, matching every other field they already copy by hand.
+
+**Rules**:
+- Any field added to a model's own equality check (`hasSameFieldsAs`, `==`, or similar) must be audited against every test fixture that constructs a "should compare equal to X" object field-by-field rather than by copying/cloning X wholesale — a hand-built stand-in silently drifts the moment a new field is added to the real model but not to the fixture's own field list.
+- This is a real signal, not just a fixture-maintenance annoyance: a test failing this way is correctly proving the new field NOW participates in a distinction (here, backup-import conflict detection) that a plausible real scenario (an old backup, exported before the field existed, imported against local data that HAS since been backfilled) can also hit for real. Confirmed directly with the user that this is the intended, correct behavior (import treats a `createdAt` mismatch as a genuine difference) rather than something to work around by excluding the field from the comparison — the test fixtures were the thing to fix, not the equality check.
+
+## Keyboard flashes closed/reopened on every "kept-open" TextField submit
+
+**Symptom**: reported directly, on the quick-capture sheet's new "submit
+keeps the sheet open for another entry" behavior: "when tapping add on
+keyboard the sheet and keyboard collapses and expands but it should
+remain open."
+
+**Cause**: `EditableText._finalizeEditing` (Flutter framework,
+`editable_text.dart`) unconditionally calls `focusNode.unfocus()` for
+`TextInputAction.done` (and every other completion-style action) UNLESS
+the `TextField`/`EditableText` was given a non-null `onEditingComplete`
+callback — this is documented framework behavior, not a bug in app code,
+and the same method's own comment references
+https://github.com/flutter/flutter/issues/84240 for exactly this
+"re-focus after an unconditional unfocus" pattern. Without
+`onEditingComplete`, every keyboard "done" press unfocuses FIRST, then
+calls `onSubmitted`, and if `onSubmitted` re-requests focus (as
+`_resetForNextCapture` does, to keep the sheet ready for another entry),
+Flutter additionally restarts the platform text input connection
+(`_scheduleRestartConnection`) to reset the soft keyboard — the visible
+"collapses and expands" flash was this whole unfocus → refocus →
+connection-restart sequence playing out on every kept-open submit.
+
+**Fix**: pass a no-op `onEditingComplete: () {}` to the `TextField`.
+Providing `onEditingComplete` at all skips the framework's default
+unfocus branch entirely (see that parameter's own doc comment); Flutter
+still calls `onSubmitted` afterward regardless, so the real submit logic
+is unaffected — only the forced unfocus is suppressed. Focus is now held
+continuously through the whole kept-open submit, so the keyboard never
+drops in the first place.
+
+**Rule**: any `TextField`/`EditableText` whose `onSubmitted` handler
+re-requests focus (a "submit but stay focused" pattern, not just "submit
+and close") needs a no-op `onEditingComplete` alongside it, or the
+framework's own unconditional pre-unfocus will produce a visible
+keyboard flicker regardless of how quickly the app re-requests focus
+afterward. A test asserting `field.focusNode?.hasFocus == true` AFTER
+the submit completes is not sufficient to catch this — a transient
+drop-and-recover still passes that assertion; the real regression test is
+asserting `onEditingComplete` is actually wired (see
+`quick_capture_sheet_test.dart`'s own new case).
+
+## New selection-dock test hung for the full 10-minute timeout — same "bare await on real Hive I/O" bug, reproduced
+
+**Symptom**: a new `zone_grid_selection_dock_test.dart` (Edit Mode
+selection context menu feature) hung indefinitely on its second test
+case, hit Dart's 10-minute test timeout, exit code 1, zero CPU progress
+in `ps aux` for the whole duration — not a slow test, a genuine deadlock.
+
+**Cause**: the exact bug this file's own earlier entries already
+document ("A bare `await` on real Hive I/O hangs under `flutter_test`'s
+synchronous zone even when it's NOT reached through a widget tap") —
+missed again despite being on record, because the call site LOOKED like
+ordinary test setup: `await container.read(taskListProvider.notifier)
+.createTask(...)` directly in a test body, no tap involved, no reason to
+suspect it needed special handling. Same root cause as every prior entry
+in this family: real Hive disk I/O deadlocks under `flutter_test`'s
+synchronous pump-based zone regardless of how the call is reached.
+
+**A second, related bug found once the first was fixed**: the test's
+Remove-button case also failed with `HiveError: Box has already been
+closed` AFTER the test had already completed — `_removeSelectedTasks`
+awaits `deleteTask` in a LOOP (one Hive write per selected task), and a
+single `Future<void>.delayed(Duration.zero)` drain (the pattern this
+file's own earlier "trailing zero-delay-drain" entry describes) only
+lets ONE queued continuation resolve, not an entire sequential chain of
+several. The second `deleteTask` in the loop was still in flight when
+the test's assertions ran and `tearDown` closed the Hive boxes out from
+under it.
+
+**Fix**: wrapped every real-I/O call (including a direct
+`notifier.createTask` in a helper, not just tap-triggered ones) in
+`tester.runAsync`. For the multi-step delete loop specifically, replaced
+the fixed single delay with a bounded POLL — `for (var i = 0; i < 20 &&
+container.read(taskListProvider).isNotEmpty; i++) { delay(20ms); pump();
+}` — that waits for the actual real-world condition (repository state
+settled) rather than guessing how many queued continuations exist.
+
+**Rules, reinforcing what's already on record rather than superseding
+it**:
+- This bug class does not announce itself by looking risky. Any direct
+  `notifier.xyz()`/`repository.xyz()` call in ANY test body backed by a
+  real Hive repository needs `runAsync`, full stop — there is no
+  "obviously safe because it's just setup" exception.
+- A drain that waits for a FIXED number of delay/pump cycles is a guess
+  about how many async hops are queued behind the I/O. A drain that
+  loops until the actual state condition is true is not a guess — prefer
+  it whenever the operation being awaited is itself a loop of several
+  sequential writes, not just one.
+- After any `kill -9` of a hung `flutter test` process, stale
+  `.dart_tool/test_hive_*/**/*.lock` files remain and must be deleted
+  before retrying — confirmed necessary here (`rm -rf
+  .dart_tool/test_hive_zone_grid_selection_dock`) after killing the stuck
+  process; skipping this step would have made the retry hang too, for an
+  unrelated reason that looks identical to the original bug.
+
+## `navigatorKey.currentContext` cannot find its own MaterialApp's root Overlay — a latent test-harness bug, surfaced only once a call finally needed one
+
+**Symptom**: building the undo mechanism's `AppUndoToast.show` calls onto
+task/zone Remove paths (`task_action_sheet_remove_test.dart`,
+`zone_form_screen_test.dart`) threw "No Overlay widget found" —
+`Overlay.of(context, rootOverlay: true)` failing from inside
+`AppUndoToast.show`, even though the test's host widget genuinely was a
+`MaterialApp` (which builds its own root `Overlay` internally).
+
+**Cause**: `navigatorKey.currentContext!` — a long-standing pattern used
+across 14+ test files in this codebase to invoke a `show*Sheet`/
+`show*Screen` function — returns the `NavigatorState`'s OWN element,
+which sits structurally ABOVE the `Overlay` that same `Navigator` builds
+as an internal child. `Overlay.of` walks UP the tree from whatever
+context it's given; starting the walk from the Navigator's own context
+never finds an Overlay that exists one level BELOW it. Every genuine
+production call site (e.g. `inbox_screen.dart`'s `showQuickCaptureSheet`
+calls) passes an ordinary descendant widget's context instead — a
+`Scaffold`, a row's own `BuildContext` — which sits below the Overlay
+insertion point and resolves correctly. `navigatorKey.currentContext!`
+had silently worked in every test that used it up to now purely because
+nothing any of those tests exercised ever called `Overlay.of` — a
+`showModalBottomSheet`/`pushAppSheetRoute`-based screen builds its OWN
+context tree fine from a Navigator-level context; only something
+reaching for the app's *root* Overlay (as `AppUndoToast` does,
+deliberately, via `rootOverlay: true`) exposes the gap.
+
+**Fix**: at each affected test's call site, use
+`tester.element(find.byType(Scaffold))` (the mounted host Scaffold's own
+element — a genuine descendant of the root Overlay) instead of
+`navigatorKey.currentContext!`, matching what real app code already
+does. Not fixed at the 14-file scale — only the 2 call sites this
+session's own new `AppUndoToast.show` calls actually exercised; the
+other 12 files' own `navigatorKey.currentContext!` usage remains a
+latent risk, not yet a real failure, since nothing in them reaches for
+`Overlay.of`.
+
+**Rule**: never use a bare `navigatorKey.currentContext` as the anchor
+context for anything that itself calls `Overlay.of`/needs a genuine
+descendant position in the tree (a toast, a tooltip overlay, anything
+using `showDialog`'s own root-navigator variant). Prefer a real mounted
+widget's element (`tester.element(find.byType(...))`, or a `Builder`'s
+own captured context) — the same rule production code already follows
+without a name for it until this incident gave it one.
+
+## `AppUndoToast`'s auto-dismiss Timer wasn't cancelled by tapping Undo
+
+**Symptom**: a new automated test that tapped a toast's own "Undo" button
+and then ended (with no further `pump()`s) failed on `flutter_test`'s own
+teardown invariant check: "A Timer is still pending even after the widget
+tree was disposed." Every assertion inside the test itself had already
+passed.
+
+**Cause**: `_ToastOverlayState.initState` scheduled its auto-dismiss via
+a bare `Future<void>.delayed(widget.duration, callback)`. Tapping Undo
+correctly removed the toast's `OverlayEntry` (via `dismiss()`), but a
+`Future.delayed` exposes no handle to cancel the platform `Timer` it
+creates under the hood — that Timer kept existing and fired at the full
+`duration` mark regardless, landing on an already-disposed `State` where
+its own `if (!mounted) return;` guard made the fire a harmless no-op in
+production. `flutter_test` treats ANY still-pending Timer at test end as
+a real failure, whether or not its callback would have done anything.
+
+**Fix**: switched to a real `Timer(widget.duration, callback)`, stored on
+the State, and cancelled it explicitly in `dispose()` (`_expireTimer
+.cancel()`) alongside the existing `AnimationController.dispose()`. Same
+behavior in production (the timer was always going to no-op once
+`mounted` went false) — this only makes the cancellation immediate and
+explicit rather than "eventually harmless."
+
+**Rule**: any `initState` that schedules a delayed one-shot callback via
+`Future.delayed` for something that can also be cancelled EARLY by a
+different code path (a user tapping Undo, closing a dialog, etc.) should
+use a real `Timer` instead specifically so `dispose()` can cancel it —
+`Future.delayed` alone provides no cancellation hook, only a `mounted`
+guard that suppresses the SYMPTOM (the callback doing something wrong)
+without addressing the underlying resource (the Timer itself) still
+existing until it fires. A test that exercises the early-cancel path
+without over-generously padding it with extra `pump()`s afterward is what
+catches this — a test that always drains the full duration regardless of
+which path was taken would never have caught it.
+
+## A widget's own `setState` + real Hive `await` inside `tester.runAsync` disposes the provider mid-write
+
+**Symptom** (2026-09-22, building `move_all_sheet.dart`'s widget test):
+a full tap-and-commit round trip through the "Move all" sheet's own Move
+button — `tester.tap(find...)` inside `tester.runAsync`, polling
+`container.read(taskListProvider)` afterward for the expected new value
+— reliably threw `UnmountedRefException` ("Cannot use the Ref of
+taskListProvider after it has been disposed") from INSIDE
+`TaskList._refresh()`'s own `ref.read(taskRepositoryProvider)` call, one
+statement after a real Hive `await repository.saveTask(task)` inside
+`TaskList.shiftTasksByMinutes`. Confirmed by temporarily instrumenting
+`shiftTasksByMinutes` with `print('mounted=${ref.mounted}')` at three
+points: `true` at entry, `true` immediately after the FIRST
+`saveTask`... then `false` once the write this test triggered actually
+ran — `ref.mounted` flips specifically DURING that real I/O `await`, not
+before or after it as a clean single transition.
+
+**Cause, as far as isolated**: every other `runAsync`-wrapped real-Hive
+test in this codebase (`zone_grid_selection_dock_test.dart`,
+`zone_grid_multi_edit_test.dart`, etc.) calls its notifier DIRECTLY —
+`container.read(taskListProvider.notifier).createTask(...)` — never
+through an actual button tap. `move_all_sheet.dart`'s own Move button
+calls `setState(() => _isSaving = true)` (to show `AppButton`'s
+`isLoading` spinner) immediately BEFORE the real Hive `await`, inside
+the SAME `runAsync` zone the tap itself ran in. That specific
+combination — a widget rebuild from `setState` immediately preceding a
+real I/O `await`, both inside `runAsync` — is what no earlier test in
+this codebase happened to exercise, and is the likely trigger (not
+conclusively isolated further; removing either the `setState` or the
+`runAsync` wrapping independently avoids the crash, but neither by
+itself proves which specific mechanism disposes the container).
+
+**Fix — worked around, not root-caused**: rather than continuing to
+chase the exact Riverpod/`flutter_test` interaction, the sheet's own
+scope-filter/sign logic (which tasks are affected, which direction, by
+how much) was pulled into a pure, no-`ref`-no-widget function
+(`computeMoveAllDeltas`, `lib/shared/services/move_all_deltas.dart`) and
+tested directly with plain `test()` cases — no `tester.runAsync`, no
+Hive, no widget tree, so nothing here can trip this. The widget test
+(`move_all_sheet_test.dart`) was narrowed to cover only the sheet's own
+UI wiring (opens, direction toggle relabels the button) — it never taps
+the real Move button.
+
+**Rule**: prefer testing a widget's own non-trivial LOGIC (selection
+filters, sign/delta computation, anything that doesn't inherently need
+`ref`/Hive/a widget tree) as a pulled-out pure function with plain
+`test()` cases, rather than only proving it indirectly through a full
+tap-and-commit widget-test round trip — this is faster, more targeted,
+AND sidesteps `flutter_test` infrastructure quirks like this one
+entirely. If a future test genuinely needs to exercise a REAL commit
+through a button that also flips `isLoading`/similar `setState` before
+its own real-I/O `await`, budget time to isolate whether it's the
+`setState`, the `runAsync` zone boundary, or something else specific —
+this entry only narrowed the trigger, it did not find the true root
+cause.
+
+## A batched write still stutters if it awaits a platform channel per row
+
+**Symptom** (2026-09-22): multi-select Remove made selected zones/tasks
+disappear one at a time — the first instantly, then each of the rest
+after a clear pause. Batching the provider writes so `_refresh()` ran
+only once did NOT fix it. Undo, batched the same way, WAS instant.
+
+**Cause**: `TaskList.deleteTasksInBatch`/`ZoneList.deleteZonesInBatch`
+each `await`ed `cancelForTask`/`cancelForZone` — a real
+`flutter_local_notifications` platform-channel round trip — once per row,
+inside the delete loop. The single shared `_refresh()` could not run
+until every one of those IPC calls had completed in sequence, so the
+total wait scaled with the number of selected rows. The Hive deletes
+themselves were never the slow part.
+
+**The diagnostic that actually found it**: the asymmetry between delete
+(staggered) and undo (instant), when both had identical batching. That
+ruled out refresh frequency as the cause and pointed at something the
+delete path did and the restore path didn't — a blocking platform call.
+Note that `_cancelNotificationSafely` is called for EVERY deleted row
+regardless of whether that row ever had an alarm scheduled, so the cost
+is paid even on tasks that never had a notification.
+
+**Fix**: take the notification layer off the critical path, matching what
+every write path here already did (`_syncNotificationInBackground` and
+`ZoneList._syncNotification` are both fire-and-forget). Tasks: do the
+Hive deletes, `_refresh()`, then cancel alarms in an `unawaited`
+background pass. Zones: call the existing coalesced `_syncNotification()`
+once — it rebuilds the whole alarm set from current repository state, so
+deleted zones' alarms drop out with no per-id call at all.
+
+**Rule**: "one `_refresh()` at the end" is only half of making a batch
+write feel atomic. Also check what else the loop `await`s per row — a
+platform channel, a permission check, anything crossing into native — and
+move it off the path that gates the UI update. When judging whether a
+batch is genuinely batched, compare a path that has the suspect call
+against one that doesn't: if the one without it is instant, the call IS
+the cost. And when writing the regression test, use a fake that never
+completes until released rather than a merely slow one — that turns "is
+this awaited?" into a hard pass/fail instead of a timing race.
+
+## A wall-clock-delayed provider clear doesn't protect what it looks like it protects
+
+**Symptom** (2026-09-23): a newly created task's pop-in/scale entrance
+animation kept replaying every time the user switched from Task view to
+Zone view and back, when it should only ever play once.
+
+**Cause**: `recentlySavedTaskProvider`'s clear was delayed by
+`Future.delayed(motionRouteSettle + motionSlow)` (~900ms) instead of
+firing as soon as it was actually consumed. That delay was added for a
+real reason — a `durationChanged` save is consumed via
+`didUpdateWidget` on a block that does NOT remount, and needs the value
+to keep resolving across several rebuilds while the edit modal finishes
+closing. But the SAME delay was also applied to the `created` case,
+which is consumed via `initState` on a block that DOES remount fresh —
+and `initState`'s `late _entranceProgress` field is read synchronously,
+in the same frame the delayed clear's own `addPostFrameCallback` is
+scheduled from. By the time the delayed clear actually runs, the value
+it's "protecting" has already been captured or not — the delay was
+inert for this path. What it actually did was leave the provider
+non-null across a view switch, so a brand-new `_DraggableTaskBlock`
+`State` (created fresh by `AnimatedSwitcher` swapping the view back in)
+saw `fadeInOnFirstBuild: true` again and replayed the whole animation.
+
+**Rule**: before delaying a "consumed, so it can't fire twice" flag's
+clear, check WHICH lifecycle method actually consumes it and WHEN,
+relative to when the delayed clear runs. A delay only protects a value
+across rebuilds that happen AFTER the delay fires (e.g. `didUpdateWidget`
+on a non-remounting widget) — it does nothing for a value that's already
+been read-and-captured by a `late` field in `initState`, on a widget that
+remounts fresh every time the flag might still be set. Two different
+consumers of the same flag can need two different clearing strategies;
+don't apply one delay to both just because they share a provider.
+
+## A shared inset value used inside an already-inset box double-applies
+
+**Symptom** (2026-09-23): Task (spatial) view's checkbox column sat
+visibly too far from the true screen edge, while the hour-label and
+pill-column gaps on the same row measured correctly.
+
+**Cause**: `_DraggableTaskBlock`'s outer `AnimatedPositioned` is already
+placed at `right: widget.rightInset` (== `rightEdgeInset`,
+page-absolute, from the true screen edge). Its own nested text row
+(title/time/checkbox) was positioned at `right: widget.textColumnRight`
+— a value (`textColumnRightInset`) that every OTHER caller in the file
+(`ExternalEventCapsuleBlock`, `_DraggablePendingTaskPill`, the
+overlap-cluster row) uses as a page-absolute inset, directly inside a
+box that spans the FULL row width (`right: 0`). Reused as-is inside a
+box that was ALREADY inset by `rightEdgeInset`, it stacked a second
+inset on top of the first — the checkbox landed at
+`rightEdgeInset + textColumnRightInset` from the true edge, not
+`textColumnRightInset` alone. This was invisible in the diff that
+introduced it because `textColumnRightInset` (`spacingMd`) and
+`rightEdgeInset` (`spacingScreenPadding`) happened to be equal tokens at
+the time, so the doubled gap read as "one inset, just a bit generous"
+rather than two stacked ones — it only became visibly wrong once
+someone actually measured it against the wireframe.
+
+**Rule**: the same named inset value can be page-absolute at some call
+sites and box-relative at others, depending on whether the `Positioned`
+it's used in sits directly under the page or nested inside another,
+already-inset box. Before reusing a shared inset constant inside a NEW
+nesting level, check what `right`/`left` the enclosing `Positioned`
+already applies — if it's non-zero, the shared constant needs to become
+`0` (or some other in-box-relative value) at that specific call site, not
+the same absolute value every other, differently-nested caller uses.
+Two tokens resolving to the same number is not evidence they're
+interchangeable; check what each one is actually being ADDED to.
+
+## The same double-inset bug recurred a second time, in a different file, same day
+
+**Symptom** (2026-09-23, same session as the entry above): the Zone
+(non-spatial) view's Time→Content gap measured ~29px against the spatial
+view's own, on the SAME "wireframe: two equal red bars" report that
+caught the spatial-view double-inset above.
+
+**Cause**: `ZoneContainerBlock`'s own card had `spacingMd` (16) as its
+LEFT padding, stacked on top of `zoneContentLeftInset` (90 at the time) —
+which already placed the card exactly where the spatial view's own
+content column started. The card's TRAILING edge had already been zeroed
+for this identical reason, with its own comment explaining the fix
+("a nested checkbox sat 40px from the screen edge (24 page + 16 card)
+against a standalone one's 24px") — but the leading edge was never given
+the same treatment, so the same class of bug persisted on the opposite
+side of the same widget.
+
+**Rule**: when one edge of a box is fixed for "this padding double-counts
+an outer inset," check the OTHER edges of the same box for the identical
+pattern before considering the bug fixed — a double-inset on the right
+and an identical double-inset on the left are not two different bugs to
+rediscover separately, they're one design mistake (padding added to a
+box whose position is already fully determined by an outer measurement)
+applied twice. The fix that already exists on one edge is a search query
+for the other edges, not just a fact about that one edge.
+
+## Four independent mechanisms computing "the same" position agree only by coincidence
+
+**Symptom** (2026-09-23): after two rounds of targeted inset fixes (see
+the two double-inset entries above), the user's report on the SAME
+wireframe still didn't resolve — each fix moved one gap and left another
+wrong, or moved a gap the wrong direction, across several iterations.
+
+**Cause**: the Timeline's horizontal layout was described by FOUR
+independent mechanisms that happened to agree numerically at one point in
+time, then silently drifted: (1) a frozen `const` (`spacingHourGutter` =
+90, originally "66 + 24" but neither addend was still current), (2) a
+lane-derived offset (`_textColumnLeft`, which grew with
+`dayPillLanes(slots)` — the day's own deepest task overlap, so the same
+column sat at a different x on a busy day than a quiet one), (3) a
+negative-margin "escape" trick (`ZoneRowTimeLabel`, positioning its text
+outside its own reserved box to reach a page-absolute x), and (4) a
+left-aligned, variable-width text column (hour labels with no
+`columnWidth` set, so the gap after them depended on which specific hour
+string was rendered). Any local fix to one of these four could not
+address the report, because the actual defect was structural: nothing in
+the type system required any of the four to agree with any other, and
+three of them varied with inputs (viewport width, day content, locale)
+that the fourth didn't.
+
+**The tell**: repeated "fix one gap, another one breaks or was never
+addressed" cycles on the SAME underlying report, especially when a
+measured value turns out to be a coincidence of specific test data (e.g.
+a gap that measured 12.75px only because that particular time string
+happened to be narrower than the column) rather than a value guaranteed
+by the layout's own structure.
+
+**Fix**: replaced all four mechanisms with ONE contract — two tokens
+(`AmbleTheme.spacingTimeColumnWidth`, fixed and sized to the widest
+label; `spacingTimelineGutter`, the single gap value used four times) and
+a `TimelineColumns` extension deriving every column's position from
+those two plus the viewport width alone. No lane count, no per-string
+text measurement, no negative-margin escape math feeds into a column
+position any more. Pinned with a test
+(`test/core/tokens/timeline_columns_test.dart`) that checks all four
+gaps equal the gutter token at seven different viewport widths — the
+kind of check that would have caught "this only works at one specific
+width/content combination" immediately, rather than after several rounds
+of screenshot-driven guessing.
+
+**Rule**: if a UI report survives two or three targeted fixes without
+resolving — especially if a fix moves the reported problem rather than
+removing it — stop patching individual call sites and check whether the
+underlying VALUES the report is about are actually derived from one
+shared source. A value that's frozen, one that's derived from unrelated
+data (day content, text width, locale), and one computed a third way are
+not "the same measurement" just because they produce a similar number on
+one test device at one point in time. When a user says a structure is
+"overcomplicated" or asks for a rebuild rather than another patch, that
+is often a correct diagnosis of exactly this pattern, not scope creep.

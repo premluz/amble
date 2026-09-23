@@ -32,12 +32,23 @@ class AppTopNav extends StatelessWidget {
     required this.selectedIndex,
     required this.onDestinationSelected,
     required this.onSettingsTap,
+    this.settingsSelected = false,
   });
 
   final List<String> destinations;
   final int selectedIndex;
   final ValueChanged<int> onDestinationSelected;
   final VoidCallback onSettingsTap;
+
+  /// Whether Settings is the currently-open screen — requested directly:
+  /// "only active state for gear icon (settings)," and "currently when
+  /// settings selected (1 menu item active) > none should be." Settings
+  /// has no entry in [destinations] (see the caller's own doc comment on
+  /// why), so a Day/Inbox/Tracked label can never legitimately report
+  /// `selected` while Settings is open — this flag is what lets the gear
+  /// icon itself carry the SAME active/light treatment [_TopNavLabel]
+  /// already gives a selected destination, instead.
+  final bool settingsSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -62,7 +73,18 @@ class AppTopNav extends StatelessWidget {
             padding: EdgeInsets.all(theme.spacingXs),
             child: Icon(
               Icons.settings_outlined,
-              color: theme.colorTextSecondary,
+              // Same active/inactive contrast a selected destination
+              // label uses (colorTextPrimary vs. colorTextTertiary) —
+              // requested directly, "should highlight as Active (light)
+              // same as menu items in top nav." Kept as
+              // colorTextSecondary rather than colorTextTertiary for the
+              // INACTIVE state specifically, matching this icon's own
+              // pre-existing resting color (a label's own inactive tone
+              // was never applied to this icon before, and changing it
+              // was not asked for — only the missing ACTIVE state was).
+              color: settingsSelected
+                  ? theme.colorTextPrimary
+                  : theme.colorTextSecondary,
               size: theme.spacingLg,
             ),
           ),

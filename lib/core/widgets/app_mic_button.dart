@@ -14,6 +14,8 @@ class AppMicButton extends StatelessWidget {
     super.key,
     required this.isListening,
     required this.onPressed,
+    this.isPrimary = true,
+    this.size,
   });
 
   /// True while dictation is actively capturing speech — swaps the icon
@@ -25,10 +27,32 @@ class AppMicButton extends StatelessWidget {
   final bool isListening;
   final VoidCallback? onPressed;
 
+  /// False renders the resting (non-listening) state as a neutral
+  /// [AmbleTheme.colorSurfaceField] fill — matching [HeaderCircleButton]'s
+  /// own default look — instead of the saturated accent fill, for a
+  /// caller that wants the mic to read as a secondary action alongside a
+  /// primary "Done"/"Save" button rather than competing with it. The
+  /// listening state is unaffected either way — it's always the alert
+  /// color, since "actively recording" is never a muted state.
+  final bool isPrimary;
+
+  /// Overrides the button's default diameter (`theme.spacingXl * 1.5`) —
+  /// null keeps that default, every existing caller's unchanged look. The
+  /// quick-capture sheet's header row passes `theme.spacingXl` here to
+  /// match [HeaderCircleButton]'s own size exactly, requested directly:
+  /// "voice record should be same size as done."
+  final double? size;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
-    final size = theme.spacingXl * 1.5;
+    final resolvedSize = size ?? theme.spacingXl * 1.5;
+    final restingColor = isPrimary
+        ? theme.colorAccent
+        : theme.colorSurfaceField;
+    final restingIconColor = isPrimary
+        ? theme.colorSurfacePrimary
+        : theme.colorTextPrimary;
 
     // Same single-interaction treatment as [AppButton]'s circle shape,
     // which this mirrors — see AppPressFeedback's doc comment for why the
@@ -39,17 +63,17 @@ class AppMicButton extends StatelessWidget {
       // Both fills (accent, and the alert color while listening) are
       // saturated, so the wash rides on the same light foreground the
       // icon uses rather than a dark one that wouldn't register.
-      rippleColor: theme.colorSurfacePrimary,
+      rippleColor: isPrimary ? theme.colorSurfacePrimary : theme.colorTextPrimary,
       child: Container(
-        width: size,
-        height: size,
+        width: resolvedSize,
+        height: resolvedSize,
         decoration: BoxDecoration(
-          color: isListening ? theme.colorTaskAlert : theme.colorAccent,
+          color: isListening ? theme.colorTaskAlert : restingColor,
           shape: BoxShape.circle,
         ),
         child: Icon(
           isListening ? Icons.stop_rounded : Icons.mic_none_rounded,
-          color: theme.colorSurfacePrimary,
+          color: isListening ? theme.colorSurfacePrimary : restingIconColor,
         ),
       ),
     );

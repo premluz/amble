@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
+import '../../core/widgets/app_modal_route.dart';
 import '../../core/widgets/app_selectable_chip.dart';
 import '../../core/widgets/app_switch.dart';
 import '../../shared/providers/calendar_providers.dart';
@@ -12,7 +13,7 @@ import 'settings_panel.dart';
 
 Future<void> showCalendarsSettingsScreen(BuildContext context) {
   return Navigator.of(context).push<void>(
-    MaterialPageRoute(builder: (context) => const CalendarsSettingsScreen()),
+    instantRoute((context) => const CalendarsSettingsScreen()),
   );
 }
 

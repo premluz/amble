@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../tokens/semantic_theme.dart';
@@ -95,6 +97,18 @@ class _ToastOverlayState extends State<_ToastOverlay>
   late final AnimationController _controller;
   late final Animation<double> _fade;
 
+  /// The auto-dismiss delay — a real [Timer], not a bare
+  /// `Future<void>.delayed`, specifically so [dispose] can [Timer.cancel]
+  /// it. A bare `Future.delayed` still schedules the identical platform
+  /// timer under the hood, but exposes no handle to cancel it — tapping
+  /// Undo (see [widget.onUndo]) removes this overlay entry well before
+  /// [widget.duration] elapses, but that timer kept existing and firing
+  /// anyway (its own `mounted` guard made the fire a harmless no-op in
+  /// production, but `flutter_test`'s teardown treats ANY still-pending
+  /// Timer as a real assertion failure — caught by a new automated test
+  /// for the undo mechanism itself, not by inspection).
+  late final Timer _expireTimer;
+
   @override
   void initState() {
     super.initState();
@@ -108,7 +122,7 @@ class _ToastOverlayState extends State<_ToastOverlay>
     );
     _controller.forward();
 
-    Future<void>.delayed(widget.duration, () async {
+    _expireTimer = Timer(widget.duration, () async {
       if (!mounted) return;
       await _controller.reverse();
       if (mounted) widget.onExpired();
@@ -117,6 +131,7 @@ class _ToastOverlayState extends State<_ToastOverlay>
 
   @override
   void dispose() {
+    _expireTimer.cancel();
     _controller.dispose();
     super.dispose();
   }

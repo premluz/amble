@@ -42,8 +42,13 @@ Future<T?> pushAppSheetRoute<T>(BuildContext context, WidgetBuilder builder) {
       // sheet is inset from the top, so what's behind it is visible and
       // needs pushing back.
       barrierColor: theme.colorScrim,
-      transitionDuration: theme.motionNormal,
-      reverseTransitionDuration: theme.motionFast,
+      // Zero duration — requested directly: "remove animation completely
+      // for switching views... change screens no animation." The
+      // transitionsBuilder below is otherwise unchanged (harmless at zero
+      // duration: it just resolves to its end state on the next frame)
+      // rather than restructuring this into a plain, non-animated push.
+      transitionDuration: Duration.zero,
+      reverseTransitionDuration: Duration.zero,
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
         final curved = CurvedAnimation(
           parent: animation,
@@ -93,8 +98,9 @@ Future<T?> pushFullScreenRoute<T>(BuildContext context, WidgetBuilder builder) {
   return Navigator.of(context).push<T>(
     PageRouteBuilder<T>(
       opaque: true,
-      transitionDuration: theme.motionNormal,
-      reverseTransitionDuration: theme.motionFast,
+      // Zero duration — see pushAppSheetRoute's own note above.
+      transitionDuration: Duration.zero,
+      reverseTransitionDuration: Duration.zero,
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
         final curved = CurvedAnimation(
           parent: animation,
@@ -114,5 +120,27 @@ Future<T?> pushFullScreenRoute<T>(BuildContext context, WidgetBuilder builder) {
       },
       pageBuilder: (context, animation, secondaryAnimation) => builder(context),
     ),
+  );
+}
+
+/// Pushes [builder] as a plain full-screen route with NO transition
+/// animation at all — the instant-navigation counterpart to a bare
+/// `Navigator.push(MaterialPageRoute(...))`, which this replaces at every
+/// call site that used to push a secondary screen (Settings sub-pages,
+/// the Zones/Templates/Categories list screens, onboarding) with
+/// Flutter's own default platform slide/fade. Requested directly: "remove
+/// animation completely for switching views... change screens no
+/// animation."
+///
+/// `MaterialPageRoute` itself exposes no duration/curve override at all
+/// (its `transitionDuration` is fixed), so going instant means a plain
+/// `PageRouteBuilder` with a zero-duration, no-op `transitionsBuilder`
+/// instead — not a parameter tweak to the widget those 14 call sites used
+/// before.
+Route<T> instantRoute<T>(WidgetBuilder builder) {
+  return PageRouteBuilder<T>(
+    pageBuilder: (context, animation, secondaryAnimation) => builder(context),
+    transitionDuration: Duration.zero,
+    reverseTransitionDuration: Duration.zero,
   );
 }

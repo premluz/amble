@@ -43,9 +43,17 @@ class AppFloatingCreateButton extends StatelessWidget {
             opacity: opacity,
             duration: theme.motionFast,
             curve: theme.curveStandard,
+            // `lg` (48), not the default `md` (40) — this button sits on
+            // the same bottom row as [AppBottomDock]'s own panes, and each
+            // of those is 48 tall (a 40px ghost button inside `spacingXs`
+            // padding). At `md` the "+" read as visibly smaller than the
+            // circles beside it; reported directly, twice: "+ is smaller."
+            // Matching the PANE, not the button inside it, is what makes
+            // the row read as one set of equal circles.
             child: AppButton(
               icon: Icons.add_rounded,
               shape: AppButtonShape.circle,
+              size: AppButtonSize.lg,
               onPressed: onPressed ?? () {},
             ),
           ),

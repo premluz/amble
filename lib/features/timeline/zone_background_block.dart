@@ -89,6 +89,7 @@ class ZoneBackgroundBlock extends StatelessWidget {
     required this.pixelsPerMinute,
     required this.left,
     required this.width,
+    this.leftInset = zoneBackgroundOffset,
     this.collapsedTop,
     this.collapsedHeight,
     this.previewTop,
@@ -128,6 +129,20 @@ class ZoneBackgroundBlock extends StatelessWidget {
   /// own `left`), so a zone block spans the same horizontal band.
   final double left;
   final double width;
+
+  /// How far LEFT of [left] the band's own rendered edge extends —
+  /// defaults to [zoneBackgroundOffset] (4px), the original "padding
+  /// around the pill column" inset. The full-width spatial call site
+  /// (`timeline_screen.dart`'s `DevDynamicZoneWidth`-off default) instead
+  /// passes `theme.spacingMd` (16px) here — requested directly: "use same
+  /// padding left for first lane as in non spatial view," matching
+  /// `ZoneContainerBlock`'s own `spacingMd` left padding before its first
+  /// task row. The band's RIGHT edge is unaffected either way — [width]
+  /// is measured from [left] regardless of [leftInset], so widening this
+  /// only extends the band further left, it never shifts where it ends.
+  /// Task pills themselves are untouched by this in every case — this
+  /// block never repositions a task, only its own decorative edge.
+  final double leftInset;
 
   /// List (collapsed) mode override — both null or both set, same contract
   /// as `ExternalEventBlock.collapsedTop`/`collapsedHeight`. List mode's
@@ -259,12 +274,14 @@ class ZoneBackgroundBlock extends StatelessWidget {
       // insetting the TASK (see `_zoneTaskTopInset` in
       // `timeline_screen.dart`), not from moving the band off its time.
       //
-      // HORIZONTALLY: still extended left by zoneBackgroundOffset, so the
-      // band reads as padding around the pill column. Only the vertical
-      // axis changed here.
+      // HORIZONTALLY: still extended left by [leftInset] (zoneBackgroundOffset
+      // by default), so the band reads as padding around the pill column.
+      // Only the vertical axis changed here. `width` grows by the SAME
+      // amount `left` moves left by, so the band's own RIGHT edge never
+      // shifts — only [leftInset] controls how far left the band starts.
       top: strictTop,
-      left: left - zoneBackgroundOffset,
-      width: width - zoneBackgroundGap,
+      left: left - leftInset,
+      width: width - zoneBackgroundGap + (leftInset - zoneBackgroundOffset),
       // The inter-zone gap only matters for the real-time cusp-precision
       // problem this constant was introduced for — two REAL back-to-back
       // zones whose blocks would otherwise visually touch. In List mode
@@ -325,7 +342,12 @@ class ZoneBackgroundBlock extends StatelessWidget {
               child: editModeEnabled
                   ? SelectedPillBorder(
                       theme: theme,
-                      contentRadius: BorderRadius.circular(theme.radiusMd),
+                      // radiusXl, not radiusMd — matches the non-spatial
+                      // Zone view's own card exactly, the named reference
+                      // for the "zone pane" corner radius everywhere it
+                      // renders. See docs/DESIGN_SYSTEM.md's "Zone pane
+                      // indicator" section.
+                      contentRadius: BorderRadius.circular(theme.radiusXl),
                       fillColor: theme.colorSurfaceSecondary,
                       child: const SizedBox.expand(),
                     )
@@ -339,7 +361,9 @@ class ZoneBackgroundBlock extends StatelessWidget {
                       // fill.
                       decoration: BoxDecoration(
                         color: theme.colorSurfaceSecondary,
-                        borderRadius: BorderRadius.circular(theme.radiusMd),
+                        // radiusXl — see docs/DESIGN_SYSTEM.md's "Zone
+                        // pane indicator" section.
+                        borderRadius: BorderRadius.circular(theme.radiusXl),
                       ),
                     ),
             ),
@@ -372,17 +396,19 @@ class ZoneBackgroundBlock extends StatelessWidget {
           // itself, not just at the task-pill area's own left edge —
           // corrected directly: "the blue time from to, should not be
           // on top and bottom of task but on the left timeline where we
-          // [see] hours of day." `-(left - zoneBackgroundOffset)` walks
-          // this Positioned back from the block's local origin (`left -
-          // zoneBackgroundOffset`, this widget's own outer
-          // `Positioned.left`) to the day column's true x=0 — the SAME
-          // `+ theme.spacingSm` then lands it at the shared gutter label
-          // x every hour tick (`TaskBoundaryMarkers`) already uses. Each
-          // edge renders independently — a resize sets only the edge
-          // that's actually moving (the other stays null), while a move
-          // sets both (they shift together).
+          // [see] hours of day." `-(left - leftInset)` walks this
+          // Positioned back from the block's local origin (`left -
+          // leftInset`, this widget's own outer `Positioned.left` —
+          // tracks whatever [leftInset] the caller actually passed, not
+          // just the [zoneBackgroundOffset] default, so this stays
+          // correct in full-width mode too) to the day column's true
+          // x=0 — the SAME `+ theme.spacingSm` then lands it at the
+          // shared gutter label x every hour tick (`TaskBoundaryMarkers`)
+          // already uses. Each edge renders independently — a resize
+          // sets only the edge that's actually moving (the other stays
+          // null), while a move sets both (they shift together).
           ..._liveZoneEdgeLabels(
-            gutterOffset: -(left - zoneBackgroundOffset) + theme.spacingSm,
+            gutterOffset: -(left - leftInset) + theme.spacingSm,
             height: strictHeight - zoneBackgroundGap,
           ),
         ],
@@ -448,9 +474,15 @@ class ZoneBackgroundBlock extends StatelessWidget {
 /// annotation framing the day rather than as content.
 ///
 /// A separate widget from [ZoneBackgroundBlock] rather than a child of it:
-/// that block now hugs the pill column (it is deliberately narrow), while
-/// this label belongs at the far right of the screen. Both are positioned
-/// from the same time math, so they still describe the same band.
+/// historically because that block hugged only the pill column while this
+/// label sat at the far right of the screen. **2026-09-21 — the spatial
+/// Timeline caller now passes [insideBandLeft]/[insideBandWidth]**, moving
+/// the label INSIDE the band it names (requested directly, alongside the
+/// zone band's own default no-longer-dynamic width — see
+/// docs/DESIGN_SYSTEM.md's "Zone pane indicator" section) rather than
+/// beside it; List mode's own call is unchanged (no band-inset params —
+/// see those fields' own doc comments). Both are still positioned from the
+/// same time math regardless, so they always describe the same band.
 ///
 /// Purely decorative, like the block itself — `IgnorePointer`ed so it can
 /// never take a tap meant for a task.
@@ -465,6 +497,8 @@ class ZoneNameLabel extends StatelessWidget {
     required this.width,
     this.collapsedTop,
     this.collapsedHeight,
+    this.insideBandLeft,
+    this.insideBandWidth,
   });
 
   final AmbleTheme theme;
@@ -490,6 +524,21 @@ class ZoneNameLabel extends StatelessWidget {
   final double? collapsedTop;
   final double? collapsedHeight;
 
+  /// Both null (the default, List mode's own call site): the label sits at
+  /// the day column's own right edge, OUTSIDE the band, its long-standing
+  /// position.
+  ///
+  /// Both set (the spatial Timeline's own call site): the label instead
+  /// positions itself INSIDE its own zone band — [insideBandLeft] is the
+  /// SAME `left` given to that band's own [ZoneBackgroundBlock] (this
+  /// widget's absolute coordinate space, not the band's local one), and
+  /// [insideBandWidth] is that band's own rendered width. The label lands
+  /// [width] + `theme.spacingSm` in from the band's own right edge, so it
+  /// reads as padded content inside the pane rather than flush against its
+  /// border.
+  final double? insideBandLeft;
+  final double? insideBandWidth;
+
   @override
   Widget build(BuildContext context) {
     final dayStart = DateTime(day.year, day.month, day.day);
@@ -503,16 +552,25 @@ class ZoneNameLabel extends StatelessWidget {
         collapsedHeight ??
         zoneEnd.difference(zoneStart).inMinutes * pixelsPerMinute;
 
+    final bandLeft = insideBandLeft;
+    final bandWidth = insideBandWidth;
+    final insideBand = bandLeft != null && bandWidth != null;
+
     return Positioned(
       top: top,
-      right: 0,
+      // Inside the band: land `width + spacingSm` short of the band's own
+      // right edge, so the rotated text reads as padded content, not
+      // flush against the pane's border. Outside it (List mode, the
+      // default): the day column's own right edge, unchanged.
+      left: insideBand ? bandLeft + bandWidth - width - theme.spacingSm : null,
+      right: insideBand ? null : 0,
       width: width,
       height: height,
       child: IgnorePointer(
-        // quarterTurns: 1 reads top-to-bottom down the right edge, matching
-        // the design. The inner Center keeps the name centered along the
-        // zone's span rather than pinned to its start, so a tall zone's
-        // label sits beside the middle of the band it names.
+        // quarterTurns: 1 reads top-to-bottom, matching the design. The
+        // inner Center keeps the name centered along the zone's span
+        // rather than pinned to its start, so a tall zone's label sits
+        // beside the middle of the band it names.
         child: RotatedBox(
           quarterTurns: 1,
           child: Center(

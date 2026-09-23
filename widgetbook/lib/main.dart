@@ -2,9 +2,11 @@ import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_button.dart';
 import 'package:amble/core/widgets/app_connected_buttons.dart';
 import 'package:amble/core/widgets/app_bottom_dock.dart';
+import 'package:amble/core/widgets/app_context_menu.dart';
 import 'package:amble/core/widgets/app_date_accordion.dart';
 import 'package:amble/core/widgets/app_option_switch_option.dart';
 import 'package:amble/core/widgets/app_tab_switch.dart';
+import 'package:amble/core/widgets/app_undo_toast.dart';
 import 'package:amble/core/widgets/app_voice_waveform.dart';
 import 'package:amble/core/widgets/app_top_nav.dart';
 import 'package:flutter/material.dart';
@@ -220,6 +222,63 @@ class AmbleWidgetbookApp extends StatelessWidget {
                     padding: const EdgeInsets.all(24),
                     child: AppVoiceWaveform(theme: AmbleTheme.light, level: 1),
                   ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        // Requested directly: "let's add toast to amble widgetbook so we
+        // reuse it everywhere" — added once AppUndoToast became the app's
+        // shared mechanism for every delete/remove action, not just
+        // quick-capture's own confident-parse creation. Demoed via a
+        // trigger button (`_UndoToastDemo`), not a static `builder` return,
+        // since the widget itself is imperative (`AppUndoToast.show`
+        // inserts its own `OverlayEntry`) rather than a plain widget with
+        // props — same "wrap a stateful demo" shape `_TabSwitchDemo`
+        // already uses for a component that needs real interaction to
+        // review meaningfully.
+        WidgetbookFolder(
+          name: 'Feedback',
+          children: [
+            WidgetbookComponent(
+              name: 'AppUndoToast',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'With Undo action',
+                  builder: (context) =>
+                      const _UndoToastDemo(withUndo: true),
+                ),
+                WidgetbookUseCase(
+                  name: 'Message only (no Undo)',
+                  builder: (context) =>
+                      const _UndoToastDemo(withUndo: false),
+                ),
+              ],
+            ),
+            // Promoted from the Task action sheet / Inbox Section tab's own
+            // long-press menu (`task_action_sheet.dart`,
+            // `inbox_section_tabs.dart`) once a THIRD near-identical
+            // hand-built "Column of ActionRow" menu appeared — same
+            // "promote and replace the duplicate" call `AppTabSwitch`
+            // itself got (see that component's own doc comment).
+            WidgetbookComponent(
+              name: 'AppContextMenu',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Plain actions',
+                  builder: (context) => const _ContextMenuDemo(
+                    withDestructive: false,
+                  ),
+                ),
+                WidgetbookUseCase(
+                  name: 'With a destructive action',
+                  builder: (context) => const _ContextMenuDemo(
+                    withDestructive: true,
+                  ),
+                ),
+                WidgetbookUseCase(
+                  name: 'Anchored popover (showAt)',
+                  builder: (context) => const _ContextMenuAnchoredDemo(),
                 ),
               ],
             ),
@@ -463,6 +522,11 @@ class _TopNavDemo extends StatefulWidget {
 
 class _TopNavDemoState extends State<_TopNavDemo> {
   int _selectedIndex = 0;
+  // Mirrors AmbleHome's own "Settings is a separate index outside the
+  // destination row" shape — tapping the gear here deselects every
+  // Day/Inbox/Tracked label instead of falling back to one of them, the
+  // real bug fixed 2026-09-22 (see main.dart's own doc comment).
+  bool _settingsSelected = false;
 
   @override
   Widget build(BuildContext context) {
@@ -470,10 +534,13 @@ class _TopNavDemoState extends State<_TopNavDemo> {
       padding: const EdgeInsets.all(24),
       child: AppTopNav(
         destinations: const ['Day', 'Inbox', 'Tracked'],
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: (index) =>
-            setState(() => _selectedIndex = index),
-        onSettingsTap: () {},
+        selectedIndex: _settingsSelected ? -1 : _selectedIndex,
+        settingsSelected: _settingsSelected,
+        onDestinationSelected: (index) => setState(() {
+          _settingsSelected = false;
+          _selectedIndex = index;
+        }),
+        onSettingsTap: () => setState(() => _settingsSelected = true),
       ),
     );
   }
@@ -506,6 +573,120 @@ class _BottomDockDemoState extends State<_BottomDockDemo> {
         whatMattersEnabled: _whatMattersEnabled,
         onWhatMattersTap: () =>
             setState(() => _whatMattersEnabled = !_whatMattersEnabled),
+      ),
+    );
+  }
+}
+
+/// `AppUndoToast` is imperative (`.show()` inserts its own `OverlayEntry`
+/// on the app's ROOT Overlay, per its own `rootOverlay: true` doc
+/// comment), not a plain widget with props — a `builder` returning it
+/// directly would have nothing to render. A trigger button is the
+/// natural demo shape instead, letting a reviewer see the real entrance/
+/// auto-dismiss/Undo-tap behavior rather than a frozen single frame of it.
+///
+/// [withUndo] toggles [AppUndoToast.show]'s own optional `onUndo` —
+/// matching that param's real "null renders a plain informational
+/// message with no action" behavior (the Weekly Zone Authoring Grid's own
+/// "this zone already exists for that day" notice), not just its more
+/// common "confirm a delete" shape.
+class _UndoToastDemo extends StatelessWidget {
+  const _UndoToastDemo({required this.withUndo});
+
+  final bool withUndo;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: AppButton(
+        label: 'Show toast',
+        onPressed: () => AppUndoToast.show(
+          context: context,
+          message: withUndo
+              ? "Removed 'Standup'"
+              : 'This zone already exists for that day',
+          onUndo: withUndo ? () {} : null,
+        ),
+      ),
+    );
+  }
+}
+
+/// Demos [AppContextMenu.showAt] — the anchored-popover alternative to
+/// [AppContextMenu.show]'s bottom sheet, opening right where the trigger
+/// is pressed rather than sliding up from the screen's bottom edge.
+/// `onTapDown` (not a button's own `onPressed`) supplies the anchor
+/// position, matching how a real long-press caller
+/// (`inbox_section_tabs.dart`) reads `details.globalPosition`.
+class _ContextMenuAnchoredDemo extends StatelessWidget {
+  const _ContextMenuAnchoredDemo();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Builder(
+        builder: (context) => GestureDetector(
+          onTapDown: (details) => AppContextMenu.showAt(
+            context,
+            position: details.globalPosition,
+            actions: [
+              AppContextMenuAction(
+                icon: Icons.edit_outlined,
+                label: 'Rename',
+                onTap: () {},
+              ),
+              AppContextMenuAction(
+                icon: Icons.delete_outline_rounded,
+                label: 'Remove',
+                isDestructive: true,
+                onTap: () {},
+              ),
+            ],
+          ),
+          child: AppButton(
+            label: 'Tap to open at this point',
+            // The wrapping GestureDetector's own onTapDown is what opens
+            // the menu (it needs the tap's position); AppButton's own
+            // onPressed is a required param but otherwise unused here.
+            onPressed: () {},
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Trigger-button demo, same shape as [_UndoToastDemo] — [AppContextMenu]
+/// is imperative ([AppContextMenu.show] inserts a real bottom-sheet route),
+/// not a plain widget with props, so a static `builder` return would show
+/// nothing meaningful on its own.
+class _ContextMenuDemo extends StatelessWidget {
+  const _ContextMenuDemo({required this.withDestructive});
+
+  final bool withDestructive;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: AppButton(
+        label: 'Open menu',
+        onPressed: () => AppContextMenu.show(
+          context,
+          actions: [
+            AppContextMenuAction(
+              icon: Icons.edit_outlined,
+              label: 'Rename',
+              onTap: () => Navigator.of(context).pop(),
+            ),
+            if (withDestructive)
+              AppContextMenuAction(
+                icon: Icons.delete_outline_rounded,
+                label: 'Remove',
+                isDestructive: true,
+                onTap: () => Navigator.of(context).pop(),
+              ),
+          ],
+        ),
       ),
     );
   }

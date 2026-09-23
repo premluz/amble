@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/app_context_menu.dart';
 import '../../core/widgets/app_sheet.dart';
 import '../../shared/models/task_template.dart';
 import '../../shared/providers/task_template_providers.dart';
-import '../task_detail/task_remove.dart';
 import 'task_template_form.dart';
 
 /// The action menu for one [TaskTemplate] row — Edit and Delete, presented

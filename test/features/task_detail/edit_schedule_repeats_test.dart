@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive_ce.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
+import 'package:amble/core/widgets/app_selectable_chip.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/task_detail/task_detail_sheet.dart';
 import 'package:amble/shared/models/recurrence_frequency.dart';
@@ -51,6 +52,19 @@ Finder _repeatsSwitch() => find.descendant(
   of: find.ancestor(of: find.text('Repeat'), matching: find.byType(Row)).first,
   matching: find.byType(Switch),
 );
+
+/// One day-of-week chip, by [weekday] (`DateTime.monday`..`DateTime.sunday`).
+///
+/// The chips' own labels are now single first letters ("M T W T F S S" —
+/// requested directly), so several no longer have unique text (Tuesday and
+/// Thursday both read "T", Saturday and Sunday both read "S") — `find
+/// .text(...)` can no longer pick one out unambiguously the way it could
+/// when every label was a distinct 3-letter abbreviation. `_RecurrencePanel`
+/// lays the seven chips out in a fixed Monday-first `Row` (see its own
+/// `for (var day = DateTime.monday; day <= DateTime.sunday; day++)` loop),
+/// so position within that row is what identifies each one instead.
+Finder _dayChip(int weekday) =>
+    find.byType(AppSelectableChip).at(weekday - DateTime.monday);
 
 // Same real-time-I/O-vs-pump-loop race as exit_confirmation_test.dart's own
 // helper — see its comment and docs/ERROR_LOG.md.
@@ -256,9 +270,10 @@ void main() {
       // The task's own weekday is pre-selected, so enabling Repeats with
       // no further taps already produces a real weekly rule. Derived from
       // the task's date rather than hardcoded, since the date is now
-      // relative to today.
-      const abbreviations = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
-      expect(find.text(abbreviations[scheduledAt.weekday - 1]), findsOneWidget);
+      // relative to today. Chip labels are single letters (M T W T F S S,
+      // requested directly) so no longer identify a day uniquely by text
+      // — `_dayChip` locates it by its fixed Monday-first position instead.
+      expect(_dayChip(scheduledAt.weekday), findsOneWidget);
 
       await _tapAndSettle(tester, find.text('Save'));
 
@@ -312,13 +327,22 @@ void main() {
       expect(switchWidget.value, isTrue);
       expect(switchWidget.onChanged, isNotNull);
 
-      final monChip = tester.widget<Text>(find.text('MON'));
-      final wedChip = tester.widget<Text>(find.text('WED'));
-      final tueChip = tester.widget<Text>(find.text('TUE'));
-      // Selected chips render with the accent fill (see _DayChip) — spot
-      // the pre-selection by color rather than a separate test hook.
-      expect(monChip.style!.color, isNot(tueChip.style!.color));
-      expect(monChip.style!.color, wedChip.style!.color);
+      // Chip labels are single letters, no longer unique per day (see
+      // `_dayChip`'s own doc comment), so this reads each chip's own
+      // `selected` field directly rather than inferring selection from
+      // its rendered text color.
+      final monChip = tester.widget<AppSelectableChip>(
+        _dayChip(DateTime.monday),
+      );
+      final wedChip = tester.widget<AppSelectableChip>(
+        _dayChip(DateTime.wednesday),
+      );
+      final tueChip = tester.widget<AppSelectableChip>(
+        _dayChip(DateTime.tuesday),
+      );
+      expect(monChip.selected, isTrue);
+      expect(wedChip.selected, isTrue);
+      expect(tueChip.selected, isFalse);
     },
   );
 
@@ -383,7 +407,7 @@ void main() {
       );
 
       // Add Monday alongside the existing Thursday.
-      await _tapAndSettle(tester, find.text('MON'));
+      await _tapAndSettle(tester, _dayChip(DateTime.monday));
       await _tapAndSettle(tester, find.text('Save'));
 
       final saved = box.values.toList();
@@ -450,7 +474,7 @@ void main() {
         templateBox: templateBox,
         task: instance,
       );
-      await _tapAndSettle(tester, find.text('MON'));
+      await _tapAndSettle(tester, _dayChip(DateTime.monday));
       await _tapAndSettle(tester, find.text('Save'));
 
       // The template's own weekday is still covered by the new rule

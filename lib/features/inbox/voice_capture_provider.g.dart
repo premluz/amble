@@ -11,28 +11,22 @@ part of 'voice_capture_provider.dart';
 /// Owns one voice-capture session — the full-screen "speak your tasks"
 /// flow's own [stt.SpeechToText] instance, separate from Quick Capture's
 /// (`quick_capture_sheet.dart`'s `_QuickCaptureFormState._speech`).
+/// Confirmed directly rather than assumed: the two need genuinely
+/// different `listen()` configs (this one needs `partialResults` and
+/// `onSoundLevelChange` for the live waveform; Quick Capture only
+/// surfaces final results, to avoid fighting its live token highlighting)
+/// and different session lifetimes (one continuous multi-segment session
+/// here vs. one single-shot dictation there).
 ///
-/// Two flows now touch the SDK directly rather than one shared instance,
-/// confirmed directly rather than assumed: they need genuinely different
-/// listen configurations (this one needs `partialResults` and
-/// `onSoundLevelChange` for the live waveform; Quick Capture deliberately
-/// only surfaces final results, see its own doc comment on why partial
-/// text would fight its live token highlighting) and have different
-/// session lifetimes (one continuous multi-segment session here vs. one
-/// single-shot dictation there). Sharing an instance would couple two
-/// screens that should be able to change independently.
-///
-/// `autoDispose` (the codegen default) — this is screen-local session
-/// state, matching [EditModeEnabled]'s own precedent
-/// (`edit_mode_provider.dart`): it should not survive past the screen
-/// that owns it, and a returning user should never silently resume an
-/// old recording session.
+/// `autoDispose` (the codegen default) — screen-local session state,
+/// matching [EditModeEnabled]'s own precedent (`edit_mode_provider.dart`):
+/// a returning user should never silently resume an old recording
+/// session.
 ///
 /// State shape ([VoiceCaptureState]/[VoiceCaptureStatus]) lives in
-/// `voice_capture_state.dart`, re-exported here so callers only ever
-/// import this one file — split out purely to keep each file under
-/// CLAUDE.md's 200-line guidance, not because the state is meant to be
-/// used independently of this notifier.
+/// `voice_capture_state.dart`, re-exported here so callers only import
+/// this one file — split purely to keep each file under CLAUDE.md's
+/// 200-line guidance.
 
 @ProviderFor(VoiceCapture)
 final voiceCaptureProvider = VoiceCaptureProvider._();
@@ -40,55 +34,43 @@ final voiceCaptureProvider = VoiceCaptureProvider._();
 /// Owns one voice-capture session — the full-screen "speak your tasks"
 /// flow's own [stt.SpeechToText] instance, separate from Quick Capture's
 /// (`quick_capture_sheet.dart`'s `_QuickCaptureFormState._speech`).
+/// Confirmed directly rather than assumed: the two need genuinely
+/// different `listen()` configs (this one needs `partialResults` and
+/// `onSoundLevelChange` for the live waveform; Quick Capture only
+/// surfaces final results, to avoid fighting its live token highlighting)
+/// and different session lifetimes (one continuous multi-segment session
+/// here vs. one single-shot dictation there).
 ///
-/// Two flows now touch the SDK directly rather than one shared instance,
-/// confirmed directly rather than assumed: they need genuinely different
-/// listen configurations (this one needs `partialResults` and
-/// `onSoundLevelChange` for the live waveform; Quick Capture deliberately
-/// only surfaces final results, see its own doc comment on why partial
-/// text would fight its live token highlighting) and have different
-/// session lifetimes (one continuous multi-segment session here vs. one
-/// single-shot dictation there). Sharing an instance would couple two
-/// screens that should be able to change independently.
-///
-/// `autoDispose` (the codegen default) — this is screen-local session
-/// state, matching [EditModeEnabled]'s own precedent
-/// (`edit_mode_provider.dart`): it should not survive past the screen
-/// that owns it, and a returning user should never silently resume an
-/// old recording session.
+/// `autoDispose` (the codegen default) — screen-local session state,
+/// matching [EditModeEnabled]'s own precedent (`edit_mode_provider.dart`):
+/// a returning user should never silently resume an old recording
+/// session.
 ///
 /// State shape ([VoiceCaptureState]/[VoiceCaptureStatus]) lives in
-/// `voice_capture_state.dart`, re-exported here so callers only ever
-/// import this one file — split out purely to keep each file under
-/// CLAUDE.md's 200-line guidance, not because the state is meant to be
-/// used independently of this notifier.
+/// `voice_capture_state.dart`, re-exported here so callers only import
+/// this one file — split purely to keep each file under CLAUDE.md's
+/// 200-line guidance.
 final class VoiceCaptureProvider
     extends $NotifierProvider<VoiceCapture, VoiceCaptureState> {
   /// Owns one voice-capture session — the full-screen "speak your tasks"
   /// flow's own [stt.SpeechToText] instance, separate from Quick Capture's
   /// (`quick_capture_sheet.dart`'s `_QuickCaptureFormState._speech`).
+  /// Confirmed directly rather than assumed: the two need genuinely
+  /// different `listen()` configs (this one needs `partialResults` and
+  /// `onSoundLevelChange` for the live waveform; Quick Capture only
+  /// surfaces final results, to avoid fighting its live token highlighting)
+  /// and different session lifetimes (one continuous multi-segment session
+  /// here vs. one single-shot dictation there).
   ///
-  /// Two flows now touch the SDK directly rather than one shared instance,
-  /// confirmed directly rather than assumed: they need genuinely different
-  /// listen configurations (this one needs `partialResults` and
-  /// `onSoundLevelChange` for the live waveform; Quick Capture deliberately
-  /// only surfaces final results, see its own doc comment on why partial
-  /// text would fight its live token highlighting) and have different
-  /// session lifetimes (one continuous multi-segment session here vs. one
-  /// single-shot dictation there). Sharing an instance would couple two
-  /// screens that should be able to change independently.
-  ///
-  /// `autoDispose` (the codegen default) — this is screen-local session
-  /// state, matching [EditModeEnabled]'s own precedent
-  /// (`edit_mode_provider.dart`): it should not survive past the screen
-  /// that owns it, and a returning user should never silently resume an
-  /// old recording session.
+  /// `autoDispose` (the codegen default) — screen-local session state,
+  /// matching [EditModeEnabled]'s own precedent (`edit_mode_provider.dart`):
+  /// a returning user should never silently resume an old recording
+  /// session.
   ///
   /// State shape ([VoiceCaptureState]/[VoiceCaptureStatus]) lives in
-  /// `voice_capture_state.dart`, re-exported here so callers only ever
-  /// import this one file — split out purely to keep each file under
-  /// CLAUDE.md's 200-line guidance, not because the state is meant to be
-  /// used independently of this notifier.
+  /// `voice_capture_state.dart`, re-exported here so callers only import
+  /// this one file — split purely to keep each file under CLAUDE.md's
+  /// 200-line guidance.
   VoiceCaptureProvider._()
     : super(
         from: null,
@@ -116,33 +98,27 @@ final class VoiceCaptureProvider
   }
 }
 
-String _$voiceCaptureHash() => r'85d7f4a12be603efe4ce74f80ed543662b67f9c7';
+String _$voiceCaptureHash() => r'91d585431590c3aee16edc8142b845d3add053e0';
 
 /// Owns one voice-capture session — the full-screen "speak your tasks"
 /// flow's own [stt.SpeechToText] instance, separate from Quick Capture's
 /// (`quick_capture_sheet.dart`'s `_QuickCaptureFormState._speech`).
+/// Confirmed directly rather than assumed: the two need genuinely
+/// different `listen()` configs (this one needs `partialResults` and
+/// `onSoundLevelChange` for the live waveform; Quick Capture only
+/// surfaces final results, to avoid fighting its live token highlighting)
+/// and different session lifetimes (one continuous multi-segment session
+/// here vs. one single-shot dictation there).
 ///
-/// Two flows now touch the SDK directly rather than one shared instance,
-/// confirmed directly rather than assumed: they need genuinely different
-/// listen configurations (this one needs `partialResults` and
-/// `onSoundLevelChange` for the live waveform; Quick Capture deliberately
-/// only surfaces final results, see its own doc comment on why partial
-/// text would fight its live token highlighting) and have different
-/// session lifetimes (one continuous multi-segment session here vs. one
-/// single-shot dictation there). Sharing an instance would couple two
-/// screens that should be able to change independently.
-///
-/// `autoDispose` (the codegen default) — this is screen-local session
-/// state, matching [EditModeEnabled]'s own precedent
-/// (`edit_mode_provider.dart`): it should not survive past the screen
-/// that owns it, and a returning user should never silently resume an
-/// old recording session.
+/// `autoDispose` (the codegen default) — screen-local session state,
+/// matching [EditModeEnabled]'s own precedent (`edit_mode_provider.dart`):
+/// a returning user should never silently resume an old recording
+/// session.
 ///
 /// State shape ([VoiceCaptureState]/[VoiceCaptureStatus]) lives in
-/// `voice_capture_state.dart`, re-exported here so callers only ever
-/// import this one file — split out purely to keep each file under
-/// CLAUDE.md's 200-line guidance, not because the state is meant to be
-/// used independently of this notifier.
+/// `voice_capture_state.dart`, re-exported here so callers only import
+/// this one file — split purely to keep each file under CLAUDE.md's
+/// 200-line guidance.
 
 abstract class _$VoiceCapture extends $Notifier<VoiceCaptureState> {
   VoiceCaptureState build();

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
+import '../../core/widgets/app_modal_route.dart';
 import '../../core/widgets/app_press_feedback.dart';
 import '../../shared/models/category.dart';
 import '../../shared/providers/category_providers.dart';
@@ -29,7 +30,7 @@ import 'category_visual.dart';
 /// recolor + list/add only, same v1 scope [ZoneListScreen] already has.
 Future<void> showCategoryListScreen(BuildContext context) {
   return Navigator.of(context).push<void>(
-    MaterialPageRoute(builder: (context) => const CategoryListScreen()),
+    instantRoute((context) => const CategoryListScreen()),
   );
 }
 

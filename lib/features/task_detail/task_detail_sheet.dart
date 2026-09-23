@@ -142,7 +142,14 @@ Future<void> showTaskDetailSheet(
   final seed = task ?? duplicateFrom;
   return _pushDetailRoute<void>(
     context,
-    (context) => _TaskDetailFlow(
+    // The CALLER's context (captured here, before this screen's own route
+    // exists) is what `removeTask`'s own undo toast anchors to via
+    // `_TaskDetailFlowState._delete` — same "rootContext" contract
+    // `showQuickCaptureSheet`/`showTaskActionSheet` already establish,
+    // since this screen's own context becomes invalid the instant
+    // `_delete` pops it.
+    (routeContext) => _TaskDetailFlow(
+      rootContext: context,
       task: task,
       duplicateFrom: duplicateFrom,
       templateId: templateId,
@@ -223,6 +230,7 @@ Future<void> showEditScheduleSheet(
 /// state object. See docs/DECISIONS.md.
 class _TaskDetailFlow extends ConsumerStatefulWidget {
   const _TaskDetailFlow({
+    required this.rootContext,
     this.task,
     this.duplicateFrom,
     this.templateId,
@@ -236,6 +244,10 @@ class _TaskDetailFlow extends ConsumerStatefulWidget {
     this.initialIsImportant = false,
     this.stayOnNameStage = false,
   });
+
+  /// See [showTaskDetailSheet]'s own doc comment on this route's `_delete`
+  /// undo-toast anchor.
+  final BuildContext rootContext;
 
   /// Set only for the Inbox "give it a schedule" case, or "Edit task" —
   /// see [showTaskDetailSheet]'s doc comment. Null for an ordinary create
@@ -891,7 +903,7 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
     final navigator = Navigator.of(context);
     final notifier = ref.read(taskListProvider.notifier);
     navigator.pop();
-    await removeTask(navigator.context, notifier, task);
+    await removeTask(navigator.context, widget.rootContext, notifier, task);
   }
 
   /// Confirms stage 1 (Name) and advances to the full form — fired by
@@ -3193,7 +3205,12 @@ class _RecurrencePanel extends StatelessWidget {
   }
 }
 
-const _weekdayAbbreviations = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+/// Single first letters, Monday-first — requested directly ("use only
+/// first letters of days, start with M (monday)"), replacing the earlier
+/// 3-letter `MON..SUN` labels. Matches `AppDateAccordion`'s own
+/// single-letter weekday column (`_weekdayAbbreviations` there), which
+/// already used this exact format.
+const _weekdayAbbreviations = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 /// Shown in the edit sheet's footer (via [StepScaffold.footerContent])
 /// only while a recurring task's start time or duration has actually

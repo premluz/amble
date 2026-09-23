@@ -116,3 +116,56 @@ Set<String> clusteredTaskIds(List<OverlapCluster> clusters) => {
   for (final cluster in clusters)
     for (final block in cluster.blocks) block.id,
 };
+
+/// One lane per member of [cluster], packed into the leftmost lane that is
+/// genuinely free — but NEVER one left of the previous member's lane.
+/// Returned in [OverlapCluster.blocks] order (chronological), one entry
+/// per member.
+///
+/// Replaces the earlier "lane index == position in the cluster" scheme
+/// (docs/DECISIONS.md item 8), reported directly from a screenshot: a run
+/// of four where only the first two genuinely overlap still claimed four
+/// lanes, leaving obvious empty space — "there is room in second lane,
+/// items from lane 3 and 4 should dock to only next lane if the previous
+/// can't fit."
+///
+/// **The non-decreasing rule is what keeps that earlier decision intact.**
+/// Item 8's real guarantee is positional: each pill is a marker for its
+/// own row in [OverlapClusterBlock]'s list beside it, so "leftmost pill =
+/// topmost row" has to stay true. Plain leftmost-free packing breaks that
+/// — a later member finding lane 0 free would sit LEFT of an earlier one,
+/// so pill order would no longer match row order. Refusing to move left of
+/// the previous member's lane recovers every lane that can be reused
+/// without reordering, and leaves the rest alone. Confirmed via
+/// AskUserQuestion over both alternatives (pack freely and drop the
+/// guarantee; or keep one lane per member).
+///
+/// Mutually-overlapping members still get one lane each — no lane is ever
+/// free for them to reuse — so the dense case this scheme was originally
+/// built for is unchanged.
+List<int> clusterLanes(OverlapCluster cluster) {
+  final laneEnds = <DateTime>[];
+  final lanes = <int>[];
+  // No member may land left of this — the previous member's own lane.
+  var floor = 0;
+
+  for (final block in cluster.blocks) {
+    var lane = -1;
+    for (var candidate = floor; candidate < laneEnds.length; candidate++) {
+      if (!laneEnds[candidate].isAfter(block.scheduledStart)) {
+        lane = candidate;
+        break;
+      }
+    }
+    if (lane == -1) {
+      lane = laneEnds.length;
+      laneEnds.add(block.scheduledEnd);
+    } else {
+      laneEnds[lane] = block.scheduledEnd;
+    }
+    lanes.add(lane);
+    floor = lane;
+  }
+
+  return lanes;
+}

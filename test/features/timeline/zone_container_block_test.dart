@@ -89,8 +89,8 @@ void main() {
   // pin is just the time line's own token, not a title/time-line size
   // relationship that no longer means anything.
   testWidgets(
-    'the time line renders at textCaption\'s size, matching the spatial '
-    'Timeline\'s own hour-label size',
+    'the time line renders at textCaptionMono\'s size and font, matching '
+    'the spatial Timeline\'s own hour labels',
     (tester) async {
       await pump(tester);
 
@@ -99,7 +99,12 @@ void main() {
         find.textContaining('9:00', findRichText: false),
       );
 
-      expect(timeText.style?.fontSize, theme.textCaption.fontSize);
+      expect(timeText.style?.fontSize, theme.textCaptionMono.fontSize);
+      // **2026-09-22** — this is the header's OWN start-end time-range
+      // text, a second real instance of the same textCaption-instead-of-
+      // textCaptionMono bug `ZoneRowTimeLabel` had (see
+      // docs/DESIGN_SYSTEM.md's "Two-font system" section).
+      expect(timeText.style?.fontFamily, theme.textCaptionMono.fontFamily);
     },
   );
 
@@ -256,9 +261,11 @@ void main() {
     //
     // This widget is pumped WITHOUT `ZoneDayTimeline`'s own list inset,
     // so what it isolates is exactly the card-padding half: the time
-    // text must sit `spacingMd - zoneContentLeftInset` relative to the
-    // card, which lands at the spatial view's own 16px once the real
-    // list adds its own [zoneContentLeftInset] (90) on top.
+    // text must sit `zoneRowTimeLabelEdgeInset - zoneContentLeftInset`
+    // relative to the card (the card itself now has no horizontal
+    // padding — see its own `EdgeInsets.fromLTRB` comment), so that once
+    // ZoneDayTimeline adds its own list inset the text lands at the
+    // spatial view's own spacingTimelineGutter.
     testWidgets('the time text escapes to the spatial view\'s own hour-label '
         'position rather than starting at the card\'s inner edge', (
       tester,
@@ -273,12 +280,15 @@ void main() {
 
       expect(
         timeLeft - cardLeft,
-        moreOrLessEquals(theme.spacingMd - zoneContentLeftInset, epsilon: 0.5),
+        moreOrLessEquals(
+          zoneRowTimeLabelEdgeInset - zoneContentLeftInset(theme),
+          epsilon: 0.5,
+        ),
         reason:
-            'the time text must land a full zoneContentLeftInset (90) '
-            'left of the card padding it would otherwise start at, so '
-            'that once ZoneDayTimeline adds its own 90px list inset '
-            'the text lands at the spatial view\'s own 16px',
+            'the time text must land zoneRowTimeLabelEdgeInset left of the '
+            'card\'s own left edge minus zoneContentLeftInset, so that '
+            'once ZoneDayTimeline adds its own list inset the text lands '
+            'at the spatial view\'s own spacingTimelineGutter',
       );
     });
 
@@ -614,15 +624,19 @@ void main() {
       final decoration = decoratedBox.decoration as BoxDecoration;
       expect(decoration.color, AmbleTheme.light.colorSurfaceSecondary);
 
-      // Asymmetric on purpose: no RIGHT padding, so the trailing
-      // completion checkbox lines up with the one on a task row outside a
-      // zone. See "a nested checkbox lines up with a standalone task
-      // row's" below for the measurement that drove this.
+      // RIGHT stays zero so the trailing completion checkbox lines up
+      // with the one on a task row outside a zone (see "a nested checkbox
+      // lines up with a standalone task row's" below).
+      //
+      // LEFT is `spacingLg` (24) — requested directly against a two-view
+      // annotated screenshot: the gap between the card's own outer edge
+      // and its first pill lane read as too thin against the spatial
+      // view's own zone-band-to-first-pill gap, which this card matches.
       final padding = tester.widget<Padding>(find.byType(Padding).first);
       expect(
         padding.padding,
         EdgeInsets.fromLTRB(
-          AmbleTheme.light.spacingMd,
+          AmbleTheme.light.spacingLg,
           AmbleTheme.light.spacingMd,
           0,
           AmbleTheme.light.spacingMd,
@@ -1283,13 +1297,29 @@ void main() {
       },
     );
 
-    testWidgets('styled as textCaption + colorTextSecondary, matching '
-        'TaskBoundaryMarkers\' own hour labels exactly', (tester) async {
+    // **2026-09-22 — fontFamily now asserted, not just fontSize.** Real
+    // bug, reported directly comparing the two Timeline views: this label
+    // read `textCaption` (DM Sans) instead of `textCaptionMono`, and the
+    // OLD version of this test only checked `fontSize`/`color` — both
+    // identical between the two tokens — so it kept passing straight
+    // through the regression. See docs/DESIGN_SYSTEM.md's "Two-font
+    // system" section.
+    testWidgets('styled as textCaptionMono + colorTextSecondary, matching '
+        'TaskBoundaryMarkers\' own hour labels exactly — including the '
+        'MONO font family, not just size/color', (tester) async {
       await pumpLabel(tester, leftPaddingToEscape: 40);
 
       final theme = AmbleTheme.light;
       final text = tester.widget<Text>(find.text('9:00 AM'));
-      expect(text.style?.fontSize, theme.textCaption.fontSize);
+      expect(text.style?.fontSize, theme.textCaptionMono.fontSize);
+      expect(text.style?.fontFamily, theme.textCaptionMono.fontFamily);
+      expect(
+        text.style?.fontFamily,
+        isNot(theme.textCaption.fontFamily),
+        reason:
+            'textCaption is the DM Sans prose twin — a time label must '
+            'never end up on it',
+      );
       expect(text.style?.color, theme.colorTextSecondary);
     });
   });

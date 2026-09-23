@@ -16,7 +16,8 @@ import 'permissions_settings_screen.dart';
 import 'settings_detail_scaffold.dart';
 import 'settings_panel.dart';
 import 'slack_settings_screen.dart';
-import 'subscription_settings_screen.dart';
+// import 'subscription_settings_screen.dart'; // see the commented-out
+// Subscription row below
 
 /// The real home for export/import and notification preferences — the
 /// permanent replacement for Phase 7's temporary "Backup" bottom-nav tab.
@@ -42,11 +43,12 @@ class SettingsScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // textTitle, not textHeadline — see Inbox's own heading for
-              // the full reasoning.
-              Text('Settings', style: theme.textTitle),
-              SizedBox(height: theme.spacingLg),
-
+              // No "Settings" header text any more — requested directly
+              // ("settings should not have header settings"). The gear
+              // icon in the top nav is itself the entry point/label now;
+              // the first panel starts directly under the top nav's own
+              // spacingScreenPadding inset (unchanged, from this
+              // SingleChildScrollView's own padding above).
               SettingsPanel(
                 theme: theme,
                 child: Column(
@@ -125,16 +127,21 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
 
-              if (FeatureFlags.subscriptionEnabled) ...[
-                SizedBox(height: theme.spacingMd),
-                SettingsPanel(
-                  theme: theme,
-                  child: SettingsLinkRow(
-                    label: 'Subscription',
-                    onTap: () => showSubscriptionSettingsScreen(context),
-                  ),
-                ),
-              ],
+              // Commented out — requested directly ("comment out paywall
+              // on settings"). FeatureFlags.subscriptionEnabled and
+              // showSubscriptionSettingsScreen are both left in place
+              // (the pushed screen itself is untouched); this only
+              // removes the Settings-list entry point.
+              // if (FeatureFlags.subscriptionEnabled) ...[
+              //   SizedBox(height: theme.spacingMd),
+              //   SettingsPanel(
+              //     theme: theme,
+              //     child: SettingsLinkRow(
+              //       label: 'Subscription',
+              //       onTap: () => showSubscriptionSettingsScreen(context),
+              //     ),
+              //   ),
+              // ],
 
               SizedBox(height: theme.spacingMd),
               SettingsPanel(

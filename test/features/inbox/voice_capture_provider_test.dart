@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive_ce.dart';
+import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/inbox/voice_capture_provider.dart';
 import 'package:amble/shared/models/category.dart';
@@ -13,6 +14,12 @@ import 'package:amble/shared/repositories/hive_task_repository.dart';
 
 import '../../support/fake_notification_service.dart';
 import '../../support/seeded_category_box.dart';
+
+SpeechRecognitionResult _result(String words, {bool isFinal = true}) {
+  return SpeechRecognitionResult([
+    SpeechRecognitionWords(words, null, -1),
+  ], isFinal ? ResultType.finalResult.value : ResultType.partial.value);
+}
 
 /// Covers [VoiceCapture]'s state machine and, per direct confirmation
 /// this session, its reuse of the SAME task-creation path Quick Capture
@@ -147,5 +154,88 @@ void main() {
     await container.read(voiceCaptureProvider.notifier).submit();
 
     expect(container.read(taskListProvider), isEmpty);
+  });
+
+  group('a second, SHORTER utterance after the first segment commits', () {
+    // Reported directly: "added note (it's spinning) confirmed added
+    // note as spinner ends and then still listening but even if talking
+    // not creating new note." The platform keeps delivering the running
+    // session transcript on every callback (see `_onResult`'s own doc
+    // comment) — `_committedText` tracks what's already been turned into
+    // a segment so that re-delivered text isn't adopted a second time.
+    // The guard compared it by raw STRING LENGTH
+    // (`words.length <= _committedText.length`), which silently drops
+    // any later utterance no longer than everything committed so far —
+    // not just the platform's own stale re-delivery of already-committed
+    // words.
+    test('is recognized as new speech, not silently dropped', () {
+      final container = makeContainer();
+      final notifier = container.read(voiceCaptureProvider.notifier);
+      notifier.debugSetListening();
+
+      // First segment: a long sentence.
+      notifier.debugFeedResult(
+        _result('Reply to Laura\'s email about the quarterly report'),
+      );
+      notifier.debugCommitSegmentNow();
+      expect(container.read(voiceCaptureProvider).committedSegments, [
+        'Reply to Laura\'s email about the quarterly report',
+      ]);
+
+      // Second utterance: much shorter than the first — a real,
+      // ordinary thing to say next, not an edge case.
+      notifier.debugFeedResult(_result('Buy milk'));
+
+      expect(
+        container.read(voiceCaptureProvider).partialText,
+        'Buy milk',
+        reason:
+            'a short second utterance must still surface as live '
+            'partial text — the bug silently dropped it because its '
+            'own length never exceeded the first (longer) committed '
+            'segment\'s length',
+      );
+    });
+
+    test('still becomes its own committed segment on the next silence gap', () {
+      final container = makeContainer();
+      final notifier = container.read(voiceCaptureProvider.notifier);
+      notifier.debugSetListening();
+
+      notifier.debugFeedResult(
+        _result('Reply to Laura\'s email about the quarterly report'),
+      );
+      notifier.debugCommitSegmentNow();
+
+      notifier.debugFeedResult(_result('Buy milk'));
+      notifier.debugCommitSegmentNow();
+
+      expect(container.read(voiceCaptureProvider).committedSegments, [
+        'Reply to Laura\'s email about the quarterly report',
+        'Buy milk',
+      ]);
+    });
+  });
+
+  test('a stale re-delivery of already-committed words is still ignored, not '
+      're-adopted as a duplicate segment', () {
+    // The other half of the same guard — removing the length check must
+    // not reopen the original "duplicate the task" bug this guard
+    // exists to prevent (see `_onResult`'s own doc comment).
+    final container = makeContainer();
+    final notifier = container.read(voiceCaptureProvider.notifier);
+    notifier.debugSetListening();
+
+    notifier.debugFeedResult(_result('Buy milk'));
+    notifier.debugCommitSegmentNow();
+
+    // The platform re-delivers the exact same transcript it already
+    // committed — nothing new was said.
+    notifier.debugFeedResult(_result('Buy milk'));
+
+    expect(container.read(voiceCaptureProvider).partialText, isEmpty);
+    expect(container.read(voiceCaptureProvider).committedSegments, [
+      'Buy milk',
+    ]);
   });
 }

@@ -12,6 +12,7 @@ import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_bottom_dock.dart';
 import '../../core/widgets/app_floating_create_button.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
+import '../../core/widgets/app_undo_toast.dart';
 import '../../core/widgets/selected_pill_border.dart';
 import '../../shared/models/category.dart';
 import '../../shared/models/external_calendar_event.dart';
@@ -34,6 +35,7 @@ import '../../shared/services/overlap_cluster.dart';
 import '../../shared/services/zone_cascade_reschedule.dart';
 import '../../shared/services/zone_containment.dart';
 import '../../shared/services/zone_selection_order.dart';
+import '../../shared/services/move_resize_undo.dart';
 import '../tracked_behavior/behavior_outcome_prompt.dart';
 import '../task_detail/task_detail_sheet.dart';
 import '../task_detail/task_remove.dart';
@@ -55,6 +57,8 @@ import 'pending_task_draft_provider.dart';
 import 'quick_create_overlay.dart';
 import 'pending_task_pill.dart';
 import 'place_task_line.dart';
+import 'place_task_release_menu.dart';
+import 'move_all_sheet.dart';
 import 'timeline_drag_math.dart';
 import 'recently_saved_task_provider.dart';
 import 'selected_date_provider.dart';
@@ -88,18 +92,18 @@ import '../zones/zone_form_screen.dart';
 /// and should be "smaller for tasks screen" while the zone grid's own axis
 /// goes the other way (see `zone_grid_screen.dart`'s `_axisWidth`).
 ///
-/// **Removed 2026-09-21** — the hour gutter is now
-/// [AmbleTheme.spacingHourGutter], measured from the TRUE screen edge
-/// rather than as a width added on top of the page inset, so the spatial
-/// and non-spatial views can read one token instead of each carrying
-/// their own arithmetic (see that token's own doc comment).
+/// **Removed 2026-09-21**, then the token it was replaced by (`AmbleTheme.
+/// spacingHourGutter`) itself replaced 2026-09-23 by the three-column
+/// contract (`AmbleTheme.spacingTimeColumnWidth`/`spacingTimelineGutter`,
+/// see `TimelineColumns`' own doc comment) — column 1 (the time column)
+/// now has a fixed width of its own rather than being derived as "gutter
+/// minus page inset."
 ///
 /// The invariant this constant existed to hold still applies and still
-/// lives in `hour_gutter_overflow_test.dart`: the label column — now
-/// `spacingHourGutter - spacingScreenPadding` — must stay at least 8px
-/// wider than the widest label ("12:00 AM", 57.6px), so a label can never
-/// paint into the pill column. At 90 − 16 that column is 74px, leaving
-/// 16.4px of clearance.
+/// lives in `hour_gutter_overflow_test.dart`: the time column
+/// (`spacingTimeColumnWidth`) must stay at least 8px wider than the widest
+/// label ("12:00 PM", 96px measured in `textCaptionMono`), so a label can
+/// never paint into the zone column beside it.
 
 /// Vertical scale used when the hour gutter is hidden ("Show hour labels"
 /// off). Requested directly: with no hour scale on screen, the gaps
@@ -138,40 +142,6 @@ double _collapsedBlockGap(AmbleTheme theme) => theme.spacingXs;
 /// [TaskCapsuleBlock]'s own `badgeSize`.
 double _pillWidth(AmbleTheme theme) => theme.sizeTaskBadge;
 
-/// The "back ease" overshoot constant `Curves.easeOutBack` itself uses
-/// (`1.70158`, a widely-used default in easing libraries) — but that
-/// constant produces a peak of only ~1.087 (confirmed by direct sampling
-/// of `Curves.easeOutBack.transform`), not the requested 120%. Solved
-/// numerically (binary search over the same "back ease" cubic family
-/// `Curves.easeOutBack` uses — `f(t) = 1 + (c1+1)(t-1)^3 + c1(t-1)^2` —
-/// for the `c1` whose overshoot peaks at exactly 1.2) rather than
-/// hand-picking a value: `entranceScaleFor`'s own tests pin the resulting
-/// peak/start/end to exact values, so this constant is verified indirectly
-/// through them, not just asserted here.
-const double _entranceOvershootConstant = 2.5923889040645722;
-
-/// A just-created task's pill entrance scale at raw (linear) entrance
-/// [progress] (0 at the moment it's revealed, 1 once the entrance is
-/// complete) — requested directly: the pill should pop in larger than its
-/// resting size (120%) and spring/bounce back down to 100%, "kind of
-/// spring easing," not just fade in at a fixed size.
-///
-/// The same cubic "back ease" family `Curves.easeOutBack` is built from
-/// (see [_entranceOvershootConstant]'s own doc comment), tuned so its
-/// overshoot peaks at exactly 1.2 (120%) rather than that curve's own
-/// ~1.087 — `Curves.easeOutBack` itself can't be rescaled to hit an
-/// arbitrary peak since its overshoot isn't a fixed fraction of its 0→1
-/// span. `progress == 0` gives 0 (the pill pops in from nothing, not from
-/// its own resting size), `progress == 1` gives exactly 1.0 (settled at
-/// its real size) — see the curve family's own math for why those two
-/// endpoints hold regardless of the overshoot constant.
-double entranceScaleFor(double progress) {
-  final x = progress - 1;
-  const c1 = _entranceOvershootConstant;
-  const c3 = c1 + 1;
-  return 1 + c3 * x * x * x + c1 * x * x;
-}
-
 /// Horizontal gap between the pills of two overlapping tasks. `spacingSm`
 /// (8), one rung up from the `spacingXs` (4) it used to be — requested
 /// directly: "slight larger gap between lanes".
@@ -194,18 +164,24 @@ const double _minPillGap = 2;
 /// column clears the widest pill run on screen and an unstacked task's
 /// name still lines up with a stacked one's.
 ///
-/// Includes the same one-pill widening the zone band gets (see
-/// `_zoneBackgroundWidth`), so text always starts clear of the band rather
-/// than on top of it — the two are derived from one lane count precisely
-/// so they can't disagree.
-double _textColumnLeft(AmbleTheme theme, List<TaskLayoutSlot> slots) =>
-    zoneBackgroundPillWidth(
-      lanes: dayPillLanes(slots),
-      pillWidth: _pillWidth(theme),
-      columnGap: _columnGap(theme),
-    ) +
-    _pillWidth(theme) +
-    theme.spacingSm;
+/// **2026-09-23 — fixed, not lane-derived.** This used to grow with
+/// `dayPillLanes(slots)` — the day's own deepest overlap — so a task's
+/// title started further right on a busy day than a quiet one, and the
+/// spatial and non-spatial views could never agree on one x since only
+/// the spatial view had "lanes" to derive from. Rebuilt on
+/// [AmbleTheme.timelineZoneWidth]/[AmbleTheme.spacingTimelineGutter]
+/// instead: column 3 (this text column) now starts at a fixed offset from
+/// column 2's own left edge (`hourGutterWidth`), regardless of the day's
+/// content. An overlapping pill run that would have pushed this column
+/// further right instead compresses within column 2's own fixed width —
+/// see `test/core/tokens/timeline_columns_test.dart` for the contract
+/// this pins.
+///
+/// Relative to `hourGutterWidth` (column 2's own left edge), matching
+/// [_DraggableTaskBlock]'s own `widget.textColumnLeft` contract — NOT
+/// page-absolute, so every call site adds it to `hourGutterWidth`.
+double _textColumnLeft(AmbleTheme theme, double viewportWidth) =>
+    theme.timelineZoneWidth(viewportWidth) + theme.spacingTimelineGutter;
 
 bool _isSameDay(DateTime a, DateTime b) =>
     a.year == b.year && a.month == b.month && a.day == b.day;
@@ -235,6 +211,7 @@ bool _isSameDay(DateTime a, DateTime b) =>
 /// in its series untouched — `computeZoneCascadeMoves` itself needed no
 /// change, only which rows are fed into it.
 void _commitZoneCascade(
+  BuildContext context,
   WidgetRef ref, {
   required String zoneId,
   required int originalStartMinutes,
@@ -265,7 +242,21 @@ void _commitZoneCascade(
   );
   if (moves == null) return;
 
-  ref.read(zoneListProvider.notifier).commitZoneCascade(moves);
+  final zoneIds = moves.map((m) => m.zoneId).toSet();
+  final taskIds = moves
+      .expand((m) => m.taskMoves)
+      .map((t) => t.taskId)
+      .toSet();
+  commitZoneChangeWithUndo(
+    context,
+    ref,
+    zoneIds: zoneIds,
+    taskIds: taskIds,
+    message: zoneIds.length > 1
+        ? 'Moved ${zoneIds.length} zone(s)'
+        : 'Moved zone',
+    commit: () => ref.read(zoneListProvider.notifier).commitZoneCascade(moves),
+  );
 }
 
 /// [TaskCapsuleBlock]'s pill height for a given task, mirrored here for the
@@ -532,12 +523,18 @@ class TimelineScreen extends ConsumerWidget {
                     child: Stack(
                       children: [
                         AnimatedSwitcher(
-                          // Task<->Zone view switch: outgoing view slides left+fades
-                          // out, incoming view slides in from the right+fades in —
-                          // requested directly. motionRouteSettle/curveStandard
-                          // (500ms, Material standard ease) since this is a
-                          // route-level view change, not a small in-place UI tweak.
-                          duration: theme.motionRouteSettle,
+                          // Task<->Zone view switch — requested directly:
+                          // "remove animation completely for switching
+                          // views... no animation." Zero duration rather
+                          // than removing AnimatedSwitcher outright: the
+                          // transitionBuilder's own "which entry is
+                          // entering" key comparison and the Stack-based
+                          // layoutBuilder below both still apply cleanly
+                          // at zero duration (children simply swap on the
+                          // next frame, no visible transition), so this
+                          // stays the smaller, safer change over
+                          // restructuring to a plain conditional.
+                          duration: Duration.zero,
                           switchInCurve: theme.curveStandard,
                           switchOutCurve: theme.curveStandard,
                           transitionBuilder: (child, animation) {
@@ -814,6 +811,32 @@ class TimelineScreen extends ConsumerWidget {
                                             initialTimeOfDay:
                                                 TimeOfDay.fromDateTime(startAt),
                                           ),
+                                      // Hold-and-drag placement release —
+                                      // requested directly: "on release we
+                                      // have context menu showing from
+                                      // position of release," replacing
+                                      // the previous "jump straight into
+                                      // the full create form" behavior.
+                                      onPlaceReleased: (droppedAt) =>
+                                          showPlaceTaskReleaseMenu(
+                                            context,
+                                            droppedAt: droppedAt,
+                                            onMoveAll: (around) =>
+                                                showMoveAllSheet(
+                                                  context,
+                                                  around: around,
+                                                ),
+                                            onNewTask: (startAt) => ref
+                                                .read(
+                                                  pendingTaskDraftProvider
+                                                      .notifier,
+                                                )
+                                                .start(
+                                                  scheduledAt: startAt,
+                                                  durationMinutes:
+                                                      quickAddDefaultMinutes,
+                                                ),
+                                          ),
                                       // Tap-empty-space quick-create, requested
                                       // directly: drops the wiggly placeholder
                                       // pill immediately (so it's visible the
@@ -971,6 +994,7 @@ class TimelineScreen extends ConsumerWidget {
                                       editModeEnabled: editModeEnabled,
                                       onDeleteTask: (task) => removeTask(
                                         context,
+                                        context,
                                         taskNotifier,
                                         task,
                                       ),
@@ -984,6 +1008,7 @@ class TimelineScreen extends ConsumerWidget {
                                             newStartMinutes,
                                             newEndMinutes,
                                           ) => _commitZoneCascade(
+                                            context,
                                             ref,
                                             zoneId: zoneId,
                                             originalStartMinutes:
@@ -999,6 +1024,7 @@ class TimelineScreen extends ConsumerWidget {
                                             newStartMinutes,
                                             newEndMinutes,
                                           ) => _commitZoneCascade(
+                                            context,
                                             ref,
                                             zoneId: zoneId,
                                             originalStartMinutes:
@@ -1016,9 +1042,33 @@ class TimelineScreen extends ConsumerWidget {
                                       // concept to ask about; a materialized
                                       // recurring instance is deleted the same
                                       // way a plain one is.
-                                      onDeleteZone: (zone) => ref
-                                          .read(zoneListProvider.notifier)
-                                          .deleteZone(zone.id),
+                                      onDeleteZone: (zone) async {
+                                        final zoneNotifier = ref.read(
+                                          zoneListProvider.notifier,
+                                        );
+                                        final snapshot = zone.toJson();
+                                        await zoneNotifier.deleteZone(
+                                          zone.id,
+                                        );
+                                        // Undo (2026-09-22) — same
+                                        // snapshot-then-restore mechanism
+                                        // `removeTask`/`zone_form_screen
+                                        // .dart`'s own `_delete` use.
+                                        // `context.mounted` — this is a
+                                        // ConsumerWidget's own `build`
+                                        // context, not a State's, so
+                                        // there's no `mounted` field to
+                                        // check instead.
+                                        if (!context.mounted) return;
+                                        AppUndoToast.show(
+                                          context: context,
+                                          message: "Removed '${zone.title}'",
+                                          onUndo: () => zoneNotifier
+                                              .updateZone(
+                                                Zone.fromJson(snapshot),
+                                              ),
+                                        );
+                                      },
                                     ),
                                     // IgnorePointer so the message never blocks a tap
                                     // on the timeline underneath (creating a task by
@@ -1185,6 +1235,7 @@ class _DayTimeline extends StatefulWidget {
     required this.onToggleComplete,
     required this.onReschedule,
     required this.onCreateAt,
+    required this.onPlaceReleased,
     required this.onEmptyTap,
     this.pendingDraft,
     required this.recentlySaved,
@@ -1266,9 +1317,17 @@ class _DayTimeline extends StatefulWidget {
   final VoidCallback onSavedTaskConsumed;
 
   /// Opens the create-task flow seeded to start at the given instant —
-  /// used by a free window's block (start of that gap) and the
-  /// hold-and-drag placement line (wherever it's released).
+  /// used by a free window's block (start of that gap).
   final ValueChanged<DateTime> onCreateAt;
+
+  /// The hold-and-drag placement line's own release (see
+  /// `PlaceTaskLineLayer.onPlaced`) — opens [showPlaceTaskReleaseMenu]
+  /// rather than jumping straight into the full create flow. Kept
+  /// separate from [onCreateAt] (not reused for it) because the free
+  /// window tap's "go straight to the full form" behavior is unchanged —
+  /// requested directly, this new menu is specific to "long press to show
+  /// indicator... on release."
+  final ValueChanged<DateTime> onPlaceReleased;
 
   /// A plain TAP (not hold-and-drag) on empty Timeline background —
   /// requested directly: drops the wiggly placeholder pill and opens the
@@ -1726,24 +1785,27 @@ class _DayTimelineState extends State<_DayTimeline> {
     // build's task list, so its position isn't laid out yet.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      // Deliberately NOT delayed like the block's own entrance is: the
-      // scroll has to be FINISHED by the time the entrance starts, or the
-      // task animates in off-screen. It runs for motionNormal (250ms)
-      // inside the entrance's own motionRouteSettle (500ms) wait, so it
-      // lands with room to spare — keep that ordering if either changes.
+      // The scroll has to land before the pill's own duration-resize
+      // grow plays, or that animation runs off-screen. It takes
+      // motionNormal (250ms) inside the reveal's own motionRouteSettle
+      // (500ms) wait, so it finishes with room to spare — keep that
+      // ordering if either changes.
       _scrollToSavedTask(saved.taskId);
-      // Cleared only AFTER the entrance has had time to play — the block
-      // reads `recentlySaved` on its first build to decide whether to
-      // fade, so clearing it any earlier would rebuild the block without
-      // the flag before it ever animated. The wait covers the modal's own
-      // dismissal (motionRouteSettle, which the block waits out before
-      // starting) PLUS the animation itself.
-      Future<void>.delayed(
-        widget.theme.motionRouteSettle + widget.theme.motionSlow,
-        () {
-          if (mounted) widget.onSavedTaskConsumed();
-        },
-      );
+
+      // Cleared immediately for BOTH change kinds, never on a delay.
+      // A view switch remounts `_DraggableTaskBlock`, and its
+      // `_heldDurationMinutes` is a `late` field captured from
+      // `widget.growFromMinutes` at that new `initState` — so any value
+      // still sitting in `recentlySavedTaskProvider` gets picked up and
+      // replayed by a later, unrelated mount. A delayed clear never
+      // protected against that: by the time this post-frame callback
+      // runs, the already-mounted block has taken its own copy and
+      // started its reveal timer, so clearing now is safe for the case
+      // the value actually exists for.
+      //
+      // (The create-time entrance this used to also guard is gone
+      // entirely — see `capsuleCore`'s own comment.)
+      widget.onSavedTaskConsumed();
     });
   }
 
@@ -2085,20 +2147,23 @@ class _DayTimelineState extends State<_DayTimeline> {
     // timeline Stack already positions from this one value, so folding
     // the inset in here keeps them all exactly where they were while
     // letting the Stack itself span the full viewport width.
-    // **2026-09-21 — one token, not `66 + spacingScreenPadding`.** The
-    // non-spatial Zone view hardcoded its own matching value as `90`
-    // (`zoneContentLeftInset`), so the two views agreed only by
-    // coincidence and drifted apart the moment the page inset changed.
-    // Both now read [AmbleTheme.spacingHourGutter] — reported directly:
-    // "we need a coherent system that can manage this spacing without
-    // drift."
     //
-    // Still collapses to the bare page inset when hour labels are hidden,
-    // so tasks/connectors/the now-line reclaim the gutter rather than
-    // leaving a blank margin (confirmed via AskUserQuestion over keeping
-    // the width reserved but empty).
+    // **2026-09-23 — reads [AmbleTheme.timelineZoneLeft] (column 2's own
+    // left edge), not a frozen `spacingHourGutter`.** Rebuilt from scratch
+    // rather than patched again — see `TimelineColumns`' own doc comment
+    // for the full "four independent mechanisms that agreed only by
+    // coincidence" history this replaces, and
+    // `test/core/tokens/timeline_columns_test.dart` for the contract this
+    // now guarantees at every viewport width.
+    //
+    // Still collapses to the bare page inset when hour labels are hidden
+    // (List mode is a single-column layout with no time gutter at all —
+    // out of scope for the three-column contract), so tasks/connectors/
+    // the now-line reclaim the space rather than leaving a blank margin
+    // (confirmed via AskUserQuestion over keeping the width reserved but
+    // empty).
     final hourGutterWidth = widget.showHourLabels
-        ? theme.spacingHourGutter
+        ? theme.timelineZoneLeftFor(context)
         : theme.spacingScreenPadding;
 
     /// The matching inset on the RIGHT, for children that previously
@@ -2108,16 +2173,12 @@ class _DayTimelineState extends State<_DayTimeline> {
     /// below.
     final rightEdgeInset = theme.spacingScreenPadding;
 
-    /// The right inset for a task row's time/title/checkbox column
-    /// specifically — narrower than [rightEdgeInset] on direct request:
-    /// "in spatial view... parent container could be wider even though
-    /// it's reaching edge we have some room to the right," confirmed as
-    /// "the 24px margin itself is too generous here specifically" (not the
-    /// shared page margin every other screen uses — scoped to just this
-    /// column). `spacingMd` (16px) rather than `spacingScreenPadding`
-    /// (24px): still a real gap, but the checkbox now sits noticeably
-    /// closer to the true edge than the rest of the day's own margins.
-    final textColumnRightInset = theme.spacingMd;
+    /// The right inset for a task row's time/title/checkbox column — the
+    /// gap from column 3's right edge to the true screen edge, which is
+    /// the SAME [AmbleTheme.spacingTimelineGutter] every other Timeline
+    /// gap uses, and (not by coincidence any more) the same value as
+    /// [rightEdgeInset] itself.
+    final textColumnRightInset = theme.spacingScreenPadding;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -2240,7 +2301,7 @@ class _DayTimelineState extends State<_DayTimeline> {
                           rangeEnd: rangeEnd,
                           pixelsPerMinute: widget.pixelsPerMinute,
                           controller: _placeLineController,
-                          onPlaced: widget.onCreateAt,
+                          onPlaced: widget.onPlaceReleased,
                           onTapAt: widget.onEmptyTap,
                         ),
                       if (widget.showHourLabels)
@@ -2249,28 +2310,23 @@ class _DayTimelineState extends State<_DayTimeline> {
                           rangeEnd: rangeEnd,
                           pixelsPerMinute: widget.pixelsPerMinute,
                           hideLabelNear: _now,
-                          // **2026-09-21 — back to spacingScreenPadding
-                          // (24px), not spacingSm (8px).** Reported
-                          // directly against a screenshot: the hour
-                          // labels sat noticeably closer to the true
-                          // screen edge than "Day"/Inbox/Tracked and the
-                          // settings gear above them — "day in inbox
-                          // tracked and settings should have same side
-                          // padding as hours in timeline (that should be
-                          // global content padding)." Reverses the prior
-                          // "both 8px, matching the Zone Authoring Grid's
-                          // own axis" decision — confirmed directly this
-                          // time, scoped to just the Timeline (the Zone
-                          // grid's own axis lives in a fixed, tightly-
-                          // sized 60px gutter that can't take a wider
-                          // inset without real layout work, and wasn't
-                          // what was reported here).
+                          // Column 1's own left edge
+                          // (`AmbleTheme.timelineTimeLeft`, ==
+                          // spacingTimelineGutter) under the three-column
+                          // contract — see `TimelineColumns`' own doc
+                          // comment. Reads the Timeline's own token, not
+                          // `spacingScreenPadding`, even though the two
+                          // resolve to the same value today: this edge IS
+                          // one of the Timeline's own four equal gaps
+                          // (edge-to-time), so it should agree with the
+                          // other three by construction, not by
+                          // coincidence.
                           //
                           // `columnWidth` is deliberately NOT passed: it is
                           // what switches these labels to right-aligned
                           // (see TaskBoundaryMarkers), which an earlier
                           // request had asked for and a later one reversed.
-                          leftInset: theme.spacingScreenPadding,
+                          leftInset: theme.timelineTimeLeft,
                         ),
                       // Zone background blocks — purely decorative, rendered
                       // BEHIND every task capsule (this Stack paints in child-
@@ -2300,6 +2356,24 @@ class _DayTimelineState extends State<_DayTimeline> {
                               widget.zones,
                               selected,
                             );
+                            // Default OFF: every band spans to the true
+                            // page edge instead of tracking the day's own
+                            // deepest overlap-lane stack — requested
+                            // directly, kept reachable via
+                            // DevDynamicZoneWidth for comparison. See
+                            // that provider's own doc comment and
+                            // docs/DESIGN_SYSTEM.md's "Zone pane
+                            // indicator" section.
+                            final dynamicWidth = ref.watch(
+                              devDynamicZoneWidthProvider,
+                            );
+                            final bandWidth = dynamicWidth
+                                ? _zoneBackgroundWidth(ghostSlots, theme)
+                                : _zoneBackgroundFullWidth(
+                                    theme: theme,
+                                    viewportWidth: constraints.maxWidth,
+                                    zoneLeft: hourGutterWidth,
+                                  );
                             return Stack(
                               clipBehavior: Clip.none,
                               children: [
@@ -2322,19 +2396,27 @@ class _DayTimelineState extends State<_DayTimeline> {
                                     pixelsPerMinute: widget.pixelsPerMinute,
                                     left: hourGutterWidth,
                                     // Hugs the PILL COLUMN rather than
-                                    // spanning the whole row — the time and
-                                    // task-name columns sit outside the
-                                    // zone band, on the plain page. Sized
-                                    // to THIS zone's own occupied lanes so
-                                    // the space right of its pills matches
-                                    // the space left of them; see
-                                    // `_zoneBackgroundWidth` for why that
-                                    // beat the earlier uniform-width rule
-                                    // where the two clashed.
-                                    width: _zoneBackgroundWidth(
-                                      ghostSlots,
-                                      theme,
-                                    ),
+                                    // spanning the whole row when
+                                    // DevDynamicZoneWidth is on — the time
+                                    // and task-name columns sit outside
+                                    // the zone band, on the plain page.
+                                    // Off (the default), spans the full
+                                    // remaining row instead — see
+                                    // `bandWidth`'s own comment just above.
+                                    width: bandWidth,
+                                    // Full-width mode gets the SAME left
+                                    // padding before the first task lane
+                                    // as the non-spatial Zone view's own
+                                    // card (`spacingMd`, 16px) — requested
+                                    // directly. The old dynamic-width mode
+                                    // keeps its original, narrower
+                                    // zoneBackgroundOffset (4px) inset,
+                                    // unchanged. See
+                                    // `ZoneBackgroundBlock.leftInset`'s
+                                    // own doc comment.
+                                    leftInset: dynamicWidth
+                                        ? zoneBackgroundOffset
+                                        : theme.spacingMd,
                                     // Zones are purely decorative on the
                                     // Task Edit tab now — requested
                                     // directly: "turn off edit zones (tap
@@ -2357,27 +2439,37 @@ class _DayTimelineState extends State<_DayTimeline> {
                                     onDeleteTargetArmedChanged: null,
                                     onDeleteZone: null,
                                   ),
+                                // The zone's name, rotated — requested
+                                // directly ("can't see vertical zone name
+                                // on task view"), styled like the hour
+                                // labels on the opposite edge so the two
+                                // frame the day as the same kind of
+                                // ambient annotation. A sibling of the
+                                // band above, not a child, but now painted
+                                // from the SAME `bandWidth`/`left` so it
+                                // lands INSIDE the band it names rather
+                                // than beside it — see `ZoneNameLabel`'s
+                                // own `insideBandLeft`/`insideBandWidth`
+                                // doc comment and docs/DESIGN_SYSTEM.md's
+                                // "Zone pane indicator" section. Folded
+                                // into this same Consumer/Stack (rather
+                                // than staying a separate sibling loop)
+                                // specifically so `bandWidth` is in scope.
+                                for (final zone in ordered)
+                                  ZoneNameLabel(
+                                    theme: theme,
+                                    zone: zone,
+                                    day: widget.selectedDate,
+                                    rangeStart: rangeStart,
+                                    pixelsPerMinute: widget.pixelsPerMinute,
+                                    width: theme.spacingLg,
+                                    insideBandLeft: hourGutterWidth,
+                                    insideBandWidth: bandWidth,
+                                  ),
                               ],
                             );
                           },
                         ),
-                      // The zone's name, rotated down the RIGHT edge of the day
-                      // — requested directly ("can't see vertical zone name on
-                      // task view"), styled like the hour labels on the opposite
-                      // edge so the two frame the day as the same kind of
-                      // ambient annotation. A sibling of the band above, not a
-                      // child: the band hugs the pill column on the left, while
-                      // this belongs at the far right.
-                      if (widget.showHourLabels)
-                        for (final zone in widget.zones)
-                          ZoneNameLabel(
-                            theme: theme,
-                            zone: zone,
-                            day: widget.selectedDate,
-                            rangeStart: rangeStart,
-                            pixelsPerMinute: widget.pixelsPerMinute,
-                            width: theme.spacingLg,
-                          ),
                       // List mode's own zone bands — same widgets, but positioned
                       // from `_collapsedZoneBands`' member-task-derived geometry
                       // instead of real time-to-pixel math (which has nothing to
@@ -2650,7 +2742,7 @@ class _DayTimelineState extends State<_DayTimeline> {
                             // directly, so List mode's names line up the same way
                             // Task view's already do regardless of lane depth.
                             splitLayout: true,
-                            textColumnLeft: _textColumnLeft(theme, ghostSlots),
+                            textColumnLeft: _textColumnLeft(theme, constraints.maxWidth),
                             // How far the label sits BELOW its own pill's top —
                             // zero when nothing collides (perfectly icon-aligned),
                             // positive when the label above pushed it down. Passed
@@ -2677,15 +2769,10 @@ class _DayTimelineState extends State<_DayTimeline> {
                               slots,
                               blockTops,
                             ),
-                            // Only the block for the task the modal just CREATED
-                            // fades in. A duration change animates via the pill's own
-                            // AnimatedContainer instead (see TaskCapsuleBlock) — that
-                            // block is already on screen, so fading it would read as
-                            // it disappearing and coming back rather than growing.
-                            fadeInOnFirstBuild:
-                                widget.recentlySaved?.taskId == task.id &&
-                                widget.recentlySaved?.change ==
-                                    SavedTaskChange.created,
+                            // A duration change animates via the pill's own
+                            // AnimatedContainer (see TaskCapsuleBlock). There is no
+                            // create-time entrance any more — see `capsuleCore`'s own
+                            // comment for why it was removed outright.
                             growFromMinutes:
                                 widget.recentlySaved?.taskId == task.id &&
                                     widget.recentlySaved?.change ==
@@ -2774,7 +2861,7 @@ class _DayTimelineState extends State<_DayTimeline> {
                               pillWidth: _pillWidth(theme),
                               columnGap: _columnGap(theme),
                             ),
-                            textColumnLeft: _textColumnLeft(theme, ghostSlots),
+                            textColumnLeft: _textColumnLeft(theme, constraints.maxWidth),
                             textColumnRight: textColumnRightInset,
                             collapsedTop: widget.showHourLabels
                                 ? null
@@ -2826,7 +2913,7 @@ class _DayTimelineState extends State<_DayTimeline> {
                           // Same shared text column every real task's name
                           // sits in — requested directly ("the task name
                           // should also be aligned as other text").
-                          textColumnLeft: _textColumnLeft(theme, ghostSlots),
+                          textColumnLeft: _textColumnLeft(theme, constraints.maxWidth),
                           textColumnRight: textColumnRightInset,
                         ),
                       // The cluster's own flat title+time list — the member pills
@@ -2903,7 +2990,7 @@ class _DayTimelineState extends State<_DayTimeline> {
                             // than every unclustered task's name.
                             left:
                                 hourGutterWidth +
-                                _textColumnLeft(theme, ghostSlots),
+                                _textColumnLeft(theme, constraints.maxWidth),
                             // Matches the ordinary task rows' own checkbox-
                             // column edge, including its narrower inset — see
                             // `textColumnRightInset`'s own comment above.
@@ -2951,20 +3038,14 @@ class _DayTimelineState extends State<_DayTimeline> {
                           rangeStart: rangeStart,
                           rangeEnd: rangeEnd,
                           pixelsPerMinute: widget.pixelsPerMinute,
-                          // `spacingScreenPadding`, matching
+                          // `theme.timelineTimeLeft`, matching
                           // `TaskBoundaryMarkers`' own `leftInset` above —
                           // the two share a column, so "now" has to start
-                          // where every other hour label starts. This was
-                          // left at `spacingSm` (8px) when those labels
-                          // moved to `spacingScreenPadding` (24px, see
-                          // that call site's own 2026-09-21 comment),
-                          // which is exactly the same class of
-                          // misalignment this exact comment already
-                          // documents happening once before, just in the
-                          // opposite direction — reported directly again:
-                          // "current hour not aligned with day hours on
-                          // timeline."
-                          leftInset: theme.spacingScreenPadding,
+                          // where every other hour label starts. Reported
+                          // directly, twice now, in both directions when
+                          // these two call sites disagreed: "current hour
+                          // not aligned with day hours on timeline."
+                          leftInset: theme.timelineTimeLeft,
                           rightInset: rightEdgeInset,
                         ),
                       // LAST, deliberately — the placement line has to paint above
@@ -3573,6 +3654,40 @@ class _DayTimelineState extends State<_DayTimeline> {
     );
   }
 
+  /// The default (non-dynamic) zone band width — the FULL content extent,
+  /// from column 2's own left edge ([AmbleTheme.timelineZoneLeft]) all
+  /// the way to the screen's own right edge padding.
+  ///
+  /// **Full content width, spanning under column 3.** A zone is the
+  /// container its tasks live inside, so its band reads as the backdrop
+  /// behind the whole row — pill AND name — rather than a narrow stripe
+  /// beside them. Requested directly against a four-panel now/to-be
+  /// comparison covering both views ("note where now zone starts where
+  /// should start in both views — it's full content size"), which the
+  /// non-spatial view's own card already did.
+  ///
+  /// This reverses the 2026-09-23 narrowing to
+  /// [AmbleTheme.timelineZoneWidth] (column 2's own width, stopping one
+  /// gutter short of column 3). That change fixed a real complaint — the
+  /// band running under the content column — but by shrinking the band
+  /// rather than by aligning the two views, and the fix is the opposite
+  /// of what the comparison asks for. Column 2's own width still governs
+  /// where PILLS sit; only the band's own extent is full-width, so this
+  /// doesn't move any task.
+  ///
+  /// [DevDynamicZoneWidth] (`core/dev_config.dart`, default OFF) restores
+  /// the OLD lane-derived [_zoneBackgroundWidth] instead — see that
+  /// provider's own doc comment and docs/DESIGN_SYSTEM.md's "Zone pane
+  /// indicator" section.
+  double _zoneBackgroundFullWidth({
+    required AmbleTheme theme,
+    required double viewportWidth,
+    required double zoneLeft,
+  }) => math.max(
+    0,
+    viewportWidth - zoneLeft - theme.spacingScreenPadding,
+  );
+
   /// One task-name label's rendered height, used by [computeLabelTops] to
   /// decide when two labels would collide.
   ///
@@ -3628,17 +3743,24 @@ class _DayTimelineState extends State<_DayTimeline> {
   /// Keyed off [_settlingTaskId] rather than [_draggingTaskId] so the
   /// order survives until the drop animation completes — see that field's
   /// own comment for the jump this prevents.
-  /// Overrides [slots]' column assignment for every clustered task with a
-  /// fixed, one-lane-per-task layout: lane index equals chronological
-  /// position within the cluster (earliest = column 0 = leftmost), and
-  /// `columnCount` is always the cluster's own task count. Requested
-  /// directly ("leftmost pill to topmost task") — `layoutOverlappingTasks`'
-  /// own packed-column algorithm reuses a column once its previous
-  /// occupant has finished, which does NOT guarantee a stable per-task lane
-  /// (e.g. two tasks that don't directly overlap each other, both inside a
-  /// 3-task cluster, could otherwise share a column) — the cluster's flat
-  /// list needs that guarantee to keep its row order matching pill
-  /// position. Non-clustered tasks are returned unchanged.
+  /// Overrides [slots]' column assignment for every clustered block with
+  /// [clusterLanes]' own order-preserving packing: the leftmost lane that
+  /// is genuinely free, but never one left of the previous member's lane.
+  /// Non-clustered tasks are returned unchanged.
+  ///
+  /// **2026-09-22** — this used to be a fixed one-lane-per-member scheme
+  /// (lane index == chronological position, `columnCount` == member
+  /// count). Reported directly from a screenshot: a run of four where only
+  /// the first two genuinely overlap still claimed four lanes. The
+  /// non-decreasing rule in [clusterLanes] is what lets lanes be reclaimed
+  /// WITHOUT losing the "leftmost pill = topmost row" guarantee that
+  /// scheme existed for — see [clusterLanes]' own doc comment, and
+  /// docs/DECISIONS.md.
+  ///
+  /// Still deliberately overrides `layoutOverlappingTasks`' own packing
+  /// rather than deferring to it: that one packs freely and so can move a
+  /// later block left of an earlier one, which is exactly what the
+  /// cluster's flat row list cannot survive.
   /// The slot a task held in [ghostSlots] — used only for the drag ghost,
   /// which needs its ORIGINAL (pre-drag) lane, not the current one
   /// (`slots`), since the two schemes disagree the instant a drag starts
@@ -3670,9 +3792,17 @@ class _DayTimelineState extends State<_DayTimeline> {
     final laneById = <String, int>{};
     final countById = <String, int>{};
     for (final cluster in clusters) {
+      final lanes = clusterLanes(cluster);
+      // The packed lane COUNT, not the member count — a cluster whose
+      // later members reuse an earlier lane genuinely needs fewer lanes,
+      // and `columnCount` is what every width measured off lane depth
+      // reads (the zone band, the shared text column). Leaving it at the
+      // member count would keep reserving the empty lanes this packing
+      // exists to reclaim.
+      final laneCount = lanes.reduce(math.max) + 1;
       for (final (index, block) in cluster.blocks.indexed) {
-        laneById[block.id] = index;
-        countById[block.id] = cluster.blocks.length;
+        laneById[block.id] = lanes[index];
+        countById[block.id] = laneCount;
       }
     }
 
@@ -3735,6 +3865,7 @@ class _DraggableZoneBlock extends ConsumerStatefulWidget {
     required this.pixelsPerMinute,
     required this.left,
     required this.width,
+    this.leftInset = zoneBackgroundOffset,
     required this.editModeEnabled,
     this.onZoneResize,
     this.onZoneMove,
@@ -3751,6 +3882,9 @@ class _DraggableZoneBlock extends ConsumerStatefulWidget {
   final double pixelsPerMinute;
   final double left;
   final double width;
+
+  /// See [ZoneBackgroundBlock.leftInset] — passed straight through.
+  final double leftInset;
   final bool editModeEnabled;
 
   /// See [_DayTimeline.onZoneResize]/[_DayTimeline.onZoneMove] — passed
@@ -4025,6 +4159,7 @@ class _DraggableZoneBlockState extends ConsumerState<_DraggableZoneBlock> {
       pixelsPerMinute: widget.pixelsPerMinute,
       left: widget.left,
       width: widget.width,
+      leftInset: widget.leftInset,
       previewTop: previewTop,
       previewHeight: previewHeight,
       liveStartMinutes: liveStartMinutes,
@@ -4368,7 +4503,6 @@ class _DraggableTaskBlock extends ConsumerStatefulWidget {
     required this.onSettled,
     required this.pixelsPerMinute,
     required this.isDraggable,
-    this.fadeInOnFirstBuild = false,
     this.growFromMinutes,
     this.contentHidden = false,
     this.compactText = false,
@@ -4484,11 +4618,6 @@ class _DraggableTaskBlock extends ConsumerStatefulWidget {
   /// meaning and a drag has nothing meaningful to convert into.
   final bool isDraggable;
 
-  /// Fades this block in on its first build — set only for a task the
-  /// create/edit modal just saved, so the user sees it arrive rather than
-  /// finding it already there when the modal closes. Requested directly.
-  final bool fadeInOnFirstBuild;
-
   /// The duration this block should RENDER at until the create/edit modal
   /// has finished closing, after which it animates to the task's real
   /// (already-saved) duration. Null except for a task whose duration the
@@ -4528,15 +4657,18 @@ class _DraggableTaskBlock extends ConsumerStatefulWidget {
   /// [splitLayout] is true.
   final double textColumnLeft;
 
-  /// How far short of the day column's right edge the time/title row
-  /// stops — always `rightEdgeInset`, the same margin the hour labels use
-  /// on the left. **Changed 2026-09-12**: no longer widened when zones
-  /// exist. It used to reserve extra room for the rotated zone-name label
-  /// so a checkbox could never render under it; reported directly (with a
-  /// reference screenshot marking the intended edge) that the checkbox
-  /// should reach the TRUE screen edge instead, with the zone-name label
-  /// sharing that same outer margin. The label is `IgnorePointer`, so it
-  /// can't steal the checkbox's taps even where the two visually overlap.
+  /// How far the time/title row stops short of ITS OWN box's right edge —
+  /// that box is already positioned at `rightEdgeInset` from the true
+  /// screen edge (see `_DraggableTaskBlock`'s own `AnimatedPositioned`), so
+  /// this is a within-box offset, mirroring [textColumnLeft]'s own
+  /// within-box offset on the other side. Currently always `0`: no longer
+  /// widened when zones exist. It used to reserve extra room for the
+  /// rotated zone-name label so a checkbox could never render under it;
+  /// reported directly (with a reference screenshot marking the intended
+  /// edge) that the checkbox should reach the TRUE screen edge instead,
+  /// with the zone-name label sharing that same outer margin. The label is
+  /// `IgnorePointer`, so it can't steal the checkbox's taps even where the
+  /// two visually overlap.
   final double textColumnRight;
 
   /// How far this task's NAME sits below its own pill's top. Zero means
@@ -4565,6 +4697,38 @@ class _DraggableTaskBlock extends ConsumerStatefulWidget {
 class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
   double _dragOffset = 0;
   bool _isDragging = false;
+
+  /// Drag-to-delete-target's own group-delete path (multi-task mode,
+  /// dropped on the delete target while selected) — snapshot-then-restore
+  /// undo, same mechanism `removeTask`'s own undo uses, one toast for the
+  /// whole batch since this is a single group action from the user's own
+  /// perspective. Mirrors `ZoneGridScreen._removeSelectedTasks` exactly.
+  ///
+  /// **2026-09-22 — deletes via [TaskList.deleteTasksInBatch], not a loop
+  /// of single-item [TaskList.deleteTask] calls.** Reported directly:
+  /// selected tasks "disappear one by one" rather than together — each
+  /// single-item delete refreshed `taskListProvider` on its own.
+  Future<void> _removeSelectionWithUndo() async {
+    final selectedIds = ref.read(editSelectionProvider);
+    final notifier = ref.read(taskListProvider.notifier);
+    final snapshots = selectedIds
+        .map((id) => ref.read(taskByIdProvider(id)))
+        .whereType<Task>()
+        .map((task) => task.toJson())
+        .toList();
+    await notifier.deleteTasksInBatch(selectedIds);
+    ref.read(editSelectionProvider.notifier).clear();
+    if (!mounted) return;
+    AppUndoToast.show(
+      context: context,
+      message: 'Removed ${snapshots.length} task(s)',
+      onUndo: () async {
+        for (final snapshot in snapshots) {
+          await notifier.updateTask(Task.fromJson(snapshot));
+        }
+      },
+    );
+  }
 
   /// True for the whole duration of a drag that began on an UNSELECTED
   /// task while multi-task mode is on — that drag means "sweep tasks into
@@ -4680,23 +4844,33 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
   /// worth showing; the new layout should simply be there.
   bool _suppressPositionAnimation = false;
 
-  /// Drives the just-saved entrance stagger (see
-  /// [TaskCapsuleBlock.entranceProgress], which spreads this single value
-  /// across the block's five parts). Starts at 0 only when this block is
-  /// the one that was just created; every other block starts — and stays
-  /// — at 1, so nothing animates on an ordinary rebuild or day change.
-  late double _entranceProgress = widget.fadeInOnFirstBuild ? 0 : 1;
-
   /// The duration to render at while the modal is still closing — see
   /// [_DraggableTaskBlock.growFromMinutes]. Cleared once the modal has
   /// gone, which is what lets the pill animate into its real height.
   late int? _heldDurationMinutes = widget.growFromMinutes;
 
+  /// Backs [_scheduleReveal] — a real, cancellable `Timer` rather than a
+  /// bare `Future.delayed`, specifically so [dispose] can cancel it. A
+  /// bare `Future.delayed` has no cancel handle at all: `mounted` guards
+  /// only suppress the SYMPTOM (a `setState` after disposal), not the
+  /// underlying platform Timer, which `flutter_test` fails on outright if
+  /// still pending when a test's widget tree is torn down ("A Timer is
+  /// still pending even after the widget tree was disposed"). Same fix
+  /// shape `AppUndoToast`'s own auto-dismiss timer already applies (see
+  /// docs/ERROR_LOG.md).
+  Timer? _revealTimer;
+
   @override
   void initState() {
     super.initState();
-    if (!widget.fadeInOnFirstBuild && widget.growFromMinutes == null) return;
+    if (widget.growFromMinutes == null) return;
     _scheduleReveal();
+  }
+
+  @override
+  void dispose() {
+    _revealTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -4732,12 +4906,13 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
   /// ran behind the closing modal and was over before the timeline was
   /// visible.
   void _scheduleReveal() {
-    Future<void>.delayed(widget.theme.motionRouteSettle, () {
+    // Cancels a still-pending PRIOR reveal — reachable from
+    // `didUpdateWidget`'s own duration-change branch, which can call this
+    // again while an earlier call's timer hasn't fired yet.
+    _revealTimer?.cancel();
+    _revealTimer = Timer(widget.theme.motionRouteSettle, () {
       if (!mounted) return;
-      setState(() {
-        _entranceProgress = 1;
-        _heldDurationMinutes = null;
-      });
+      setState(() => _heldDurationMinutes = null);
     });
   }
 
@@ -5082,33 +5257,30 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
     // Slower than the lift/settle motions around it: this is a "here is
     // the thing you just made" beat, not a response to a gesture, so it
     // wants to be seen rather than to get out of the way.
-    final capsuleCore = TweenAnimationBuilder<double>(
-      // Only `end` matters on rebuild — TweenAnimationBuilder animates
-      // from wherever it currently is toward the new end value, so
-      // flipping _entranceProgress 0 -> 1 is what plays the sequence. The
-      // RAW (linear) progress is what's tweened here — the opacity
-      // stagger below applies its own `easeOut` shape on top of it, and
-      // the entrance scale below applies a completely different
-      // (overshooting) shape on top of the SAME raw value, so the two
-      // effects can use different curves without fighting over one
-      // shared, already-curved number.
-      tween: Tween(begin: 0, end: _entranceProgress),
-      duration: widget.theme.motionSlow,
-      curve: Curves.linear,
-      builder: (context, rawProgress, child) {
-        final entranceProgress = Curves.easeOut.transform(rawProgress);
-        // See entranceScaleFor's own doc comment — applied to the SAME
-        // raw (linear) entrance timeline the opacity stagger above curves
-        // separately (via its own `easeOut`), so the pop and the fade
-        // finish together without the two effects fighting over one
-        // shared, already-curved number. Only ever visible while
-        // [_entranceProgress] actually animates 0 -> 1 (a newly created
-        // block) — every other block starts and stays at
-        // `rawProgress == 1`, i.e. `entranceScale == 1.0` on every build,
-        // a no-op.
-        final entranceScale = entranceScaleFor(rawProgress);
+    final capsuleCore = Builder(
+      builder: (context) {
         return AnimatedScale(
-          scale: _isDragging ? _liftScale : entranceScale,
+          // Drag lift only. The just-created entrance (a 120% overshoot
+          // pop plus a five-part opacity stagger) was removed entirely —
+          // requested directly after it kept being seen on Task<->Zone
+          // view switches: "remove animation completely for switching
+          // views," then again once the delayed-clear fix still left it
+          // visible, "this animation is scale up kind of thing... remove
+          // animation entirely."
+          //
+          // A view switch remounts this block, and any mount-time
+          // entrance therefore replays on every switch rather than only
+          // on a genuine create. Two prior fixes tried to keep the
+          // animation and narrow WHEN it played (clearing
+          // `recentlySavedTaskProvider` sooner); both missed, because the
+          // remount captures its own state before any clear can run.
+          // Removing the entrance is what actually settles it.
+          //
+          // The pill's duration RESIZE grow (`_heldDurationMinutes`,
+          // `growFromMinutes`) is unrelated and deliberately kept — that
+          // one animates an already-visible block's height rather than
+          // introducing it.
+          scale: _isDragging ? _liftScale : 1.0,
           duration: widget.theme.motionFast,
           curve: widget.theme.curveStandard,
           // Drag handlers now live on TaskCapsuleBlock's own icon-pill
@@ -5167,7 +5339,6 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                           groupPreviewDurationMinutes ??
                           _heldDurationMinutes)
                       ?.toDouble(),
-            entranceProgress: entranceProgress,
             isLifted: _isDragging,
             // Zeroes the pill's own height animation for the length of
             // the gesture, so the edge being dragged tracks the finger
@@ -5366,12 +5537,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                           .read(editGroupGestureStateProvider.notifier)
                           .update(null);
                       setState(() => _dragOffset = 0);
-                      final selectedIds = ref.read(editSelectionProvider);
-                      final notifier = ref.read(taskListProvider.notifier);
-                      for (final id in selectedIds) {
-                        await notifier.deleteTask(id);
-                      }
-                      ref.read(editSelectionProvider.notifier).clear();
+                      await _removeSelectionWithUndo();
                       return;
                     }
 
@@ -5409,9 +5575,15 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                         deltaMinutes: delta,
                       );
                       if (moves.isEmpty) return;
-                      await ref
-                          .read(taskListProvider.notifier)
-                          .rescheduleTaskWithCascade(moves);
+                      await commitTaskChangeWithUndo(
+                        context,
+                        ref,
+                        taskIds: moves.map((m) => m.taskId),
+                        message: 'Moved ${moves.length} task(s)',
+                        commit: () => ref
+                            .read(taskListProvider.notifier)
+                            .rescheduleTaskWithCascade(moves),
+                      );
                       return;
                     }
 
@@ -5470,9 +5642,17 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
 
                       // Deliberately do NOT clear `_dragOffset` yet — see the
                       // comment below on the non-cascade path for why.
-                      await ref
-                          .read(taskListProvider.notifier)
-                          .rescheduleTaskWithCascade(moves);
+                      await commitTaskChangeWithUndo(
+                        context,
+                        ref,
+                        taskIds: moves.map((m) => m.taskId),
+                        message: moves.length > 1
+                            ? 'Moved ${moves.length} task(s)'
+                            : "Moved '${widget.task.title}'",
+                        commit: () => ref
+                            .read(taskListProvider.notifier)
+                            .rescheduleTaskWithCascade(moves),
+                      );
 
                       if (mounted) setState(() => _dragOffset = 0);
                       await _endSettle();
@@ -5487,7 +5667,13 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                     // original time. Holding the offset keeps the block
                     // exactly where the user dropped it until the rebuilt
                     // widget takes over at the new `baseTop`.
-                    await widget.onReschedule(newScheduledAt);
+                    await commitTaskChangeWithUndo(
+                      context,
+                      ref,
+                      taskIds: [widget.task.id],
+                      message: "Moved '${widget.task.title}'",
+                      commit: () => widget.onReschedule(newScheduledAt),
+                    );
 
                     // Snap the offset back to zero only once the task itself
                     // has moved, so the two changes cancel out and the block
@@ -5592,9 +5778,15 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                         );
                       }
                       if (changes.isEmpty) return;
-                      await ref
-                          .read(taskListProvider.notifier)
-                          .resizeTasksFromTopInBatch(changes);
+                      await commitTaskChangeWithUndo(
+                        context,
+                        ref,
+                        taskIds: changes.keys,
+                        message: 'Resized ${changes.length} task(s)',
+                        commit: () => ref
+                            .read(taskListProvider.notifier)
+                            .resizeTasksFromTopInBatch(changes),
+                      );
                       return;
                     }
 
@@ -5619,12 +5811,24 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                     // No cascade/overlap check — confirmed, matching the
                     // bottom edge's own rule (CONSTITUTION.md scopes the
                     // cascade to move/create, not resize) even though this
-                    // edge does move the start time.
-                    widget.task.scheduledAt = newScheduledAt;
-                    widget.task.durationMinutes = newDuration;
-                    await ref
-                        .read(taskListProvider.notifier)
-                        .updateTask(widget.task);
+                    // edge does move the start time. The mutation happens
+                    // INSIDE `commit` — see the bottom edge's own matching
+                    // comment on why (widget.task is a live, mutable Hive
+                    // object; mutating it before the snapshot would
+                    // capture the already-changed value).
+                    await commitTaskChangeWithUndo(
+                      context,
+                      ref,
+                      taskIds: [widget.task.id],
+                      message: "Resized '${widget.task.title}'",
+                      commit: () {
+                        widget.task.scheduledAt = newScheduledAt;
+                        widget.task.durationMinutes = newDuration;
+                        return ref
+                            .read(taskListProvider.notifier)
+                            .updateTask(widget.task);
+                      },
+                    );
                   }
                 : null,
             onResizeStart: _editActive
@@ -5685,9 +5889,15 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                             _minDurationMinutes,
                           ),
                       };
-                      await ref
-                          .read(taskListProvider.notifier)
-                          .resizeTasksInBatch(newDurations);
+                      await commitTaskChangeWithUndo(
+                        context,
+                        ref,
+                        taskIds: newDurations.keys,
+                        message: 'Resized ${newDurations.length} task(s)',
+                        commit: () => ref
+                            .read(taskListProvider.notifier)
+                            .resizeTasksInBatch(newDurations),
+                      );
                       return;
                     }
 
@@ -5708,10 +5918,26 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                     // field), and no cascade/overlap check applies to
                     // resize — that's scoped to move/create only, per the
                     // work order.
-                    widget.task.durationMinutes = newDuration;
-                    await ref
-                        .read(taskListProvider.notifier)
-                        .updateTask(widget.task);
+                    //
+                    // The mutation happens INSIDE `commit`, not before this
+                    // call — `commitTaskChangeWithUndo` snapshots from
+                    // `taskListProvider`'s own (still-unmutated) state
+                    // first, and `widget.task` is a live, mutable Hive
+                    // object shared with that same provider's list, so
+                    // mutating it before the snapshot would have captured
+                    // the ALREADY-CHANGED value.
+                    await commitTaskChangeWithUndo(
+                      context,
+                      ref,
+                      taskIds: [widget.task.id],
+                      message: "Resized '${widget.task.title}'",
+                      commit: () {
+                        widget.task.durationMinutes = newDuration;
+                        return ref
+                            .read(taskListProvider.notifier)
+                            .updateTask(widget.task);
+                      },
+                    );
                   }
                 : null,
           ),
@@ -6109,7 +6335,16 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
             // would have collided — see `computeLabelTops`.
             top: widget.labelOffset,
             left: widget.textColumnLeft,
-            right: widget.textColumnRight,
+            // `0`, not `widget.textColumnRight` — this box already sits
+            // inside the outer `AnimatedPositioned` above, which is itself
+            // positioned at `right: widget.rightInset` from the true screen
+            // edge. Using `widget.textColumnRight` (page-absolute, correct
+            // for every OTHER caller of that value — see
+            // `textColumnRightInset`'s own doc comment) here stacked a
+            // second inset on top of the first. Real bug, reported
+            // directly: too much space between the checkbox and the true
+            // right edge in spatial view.
+            right: 0,
             child: TaskCapsuleTextRow(
               task: widget.task,
               timeColumnWidth: taskTimeColumnWidth(widget.theme),

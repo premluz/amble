@@ -1,12 +1,17 @@
 package com.example.amble
 
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import android.content.Context
 import io.flutter.embedding.engine.FlutterEngine
 import android.content.Intent
 import android.os.Bundle
 
-class MainActivity : FlutterActivity() {
+// FlutterFragmentActivity, not FlutterActivity — required by
+// purchases_ui_flutter's native paywall/Customer Center views, which are
+// built on Android Fragments internally. Without this, presenting either
+// throws PlatformException(PAYWALLS_MISSING_WRONG_ACTIVITY). See
+// docs/DECISIONS.md's RevenueCat integration entry.
+class MainActivity : FlutterFragmentActivity() {
     private lateinit var assistant: AssistantActions
 
     override fun onCreate(savedInstanceState: Bundle?) {

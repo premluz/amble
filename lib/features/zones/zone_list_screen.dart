@@ -4,15 +4,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_text_field.dart';
+import '../../core/widgets/app_modal_route.dart';
 import '../../core/widgets/app_press_feedback.dart';
 import '../../core/widgets/app_sheet.dart';
 import '../../shared/models/zone_facet.dart';
 import '../../shared/providers/zone_facet_providers.dart';
 import '../../shared/providers/zone_providers.dart';
 
-Future<void> showZoneListScreen(BuildContext context) =>
-    Navigator.of(context)
-        .push<void>(MaterialPageRoute(builder: (_) => const ZoneListScreen()));
+Future<void> showZoneListScreen(BuildContext context) => Navigator.of(
+  context,
+).push<void>(instantRoute((_) => const ZoneListScreen()));
 Future<void> showZoneNameSheet(BuildContext context, {ZoneFacet? facet}) =>
     AppSheet.show<void>(
       context: context,

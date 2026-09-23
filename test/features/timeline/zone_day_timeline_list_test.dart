@@ -498,8 +498,8 @@ void main() {
   // sits (`left: hourGutterWidth` = 24 page + 66 gutter = 90).
   group('zone cards align with the spatial view\'s zone band (2026-09-20)', () {
     testWidgets(
-      'a zone card\'s left edge sits at zoneContentLeftInset (90) from the '
-      'true screen edge — the same x the spatial view\'s zone band uses',
+      'a zone card\'s left edge sits at zoneContentLeftInset, the same x '
+      'the spatial view\'s zone band uses',
       (tester) async {
         final zone = zoneAt('z1', 'Morning ritual', 7, 8);
         await pump(tester, zones: [zone], tasks: const []);
@@ -508,11 +508,11 @@ void main() {
 
         expect(
           cardLeft,
-          moreOrLessEquals(zoneContentLeftInset, epsilon: 0.5),
+          moreOrLessEquals(zoneContentLeftInset(AmbleTheme.light), epsilon: 0.5),
           reason:
               'the zone card must start where the spatial view\'s own '
-              'zone band does (its 24px page inset plus its 66px hour '
-              'gutter), not at the bare page inset',
+              'zone band does (AmbleTheme.timelineZoneLeft), not at the '
+              'bare page inset',
         );
       },
     );
@@ -553,8 +553,9 @@ void main() {
   });
 
   group('unzoned rows line up with zoned rows (2026-09-15)', () {
-    testWidgets('an unzoned task\'s own badge sits spacingMd further right '
-        'than a bare row would, matching a zoned task\'s own inset', (
+    testWidgets('an unzoned task\'s own badge sits spacingLg further right '
+        'than the zone container\'s own edge, matching a zoned task\'s '
+        'own inset', (
       tester,
     ) async {
       final zone = zoneAt('z1', 'Morning ritual', 7, 8);
@@ -567,10 +568,13 @@ void main() {
 
       await pump(tester, zones: [zone], tasks: [unzonedTask]);
 
-      // ZoneContainerBlock's own content padding is theme.spacingMd on the
-      // left (see its own `EdgeInsets.fromLTRB` — unchanged by this fix).
-      // An unzoned row must now sit that same spacingMd further right than
-      // the zone container's own left edge, not flush with it.
+      // ZoneContainerBlock's own card LEFT padding is `spacingLg` (24),
+      // so a ZONED task's content starts that far inside the container's
+      // own edge. An unzoned row has no container of its own and mirrors
+      // the same value explicitly (see ZoneDayTimeline's own Task()
+      // branch), so the two kinds still share ONE x-origin — the
+      // invariant this group really pins. Only the shared value moves
+      // when that card padding changes.
       //
       // Checked against the unzoned ROW's own outer Padding (keyed), not
       // TaskCapsuleBlock's own top-left directly — 2026-09-19 added a
@@ -578,7 +582,6 @@ void main() {
       // ZoneDayTimeline's own Task() branch doc comment), so
       // TaskCapsuleBlock itself no longer starts at the row's own left
       // edge the way it used to.
-      final theme = AmbleTheme.light;
       final zoneLeft = tester.getTopLeft(find.byType(ZoneContainerBlock)).dx;
       final unzonedRowLeft = tester
           .getTopLeft(
@@ -588,12 +591,12 @@ void main() {
 
       expect(
         unzonedRowLeft,
-        moreOrLessEquals(zoneLeft + theme.spacingMd, epsilon: 0.5),
+        moreOrLessEquals(zoneLeft + AmbleTheme.light.spacingLg, epsilon: 0.5),
         reason:
-            'an unzoned task row must sit spacingMd right of the zone '
+            'an unzoned task row must sit spacingLg inside the zone '
             'container\'s own left edge — matching where a zoned task\'s '
-            'own badge sits inside that container\'s spacingMd padding, '
-            'not flush with the container\'s outer edge',
+            'own badge sits, since that card applies the same left '
+            'padding to its own rows',
       );
     });
 
@@ -814,7 +817,6 @@ void main() {
 
       await pump(tester, zones: [zone], externalEvents: [event]);
 
-      final theme = AmbleTheme.light;
       final zoneLeft = tester.getTopLeft(find.byType(ZoneContainerBlock)).dx;
       // The row's own outer bounds (`_UnzonedEventRow`'s SizedBox), not the
       // "Dentist" text itself — that text sits further right again inside
@@ -832,9 +834,12 @@ void main() {
           )
           .dx;
 
+      // `spacingLg` inside the container's own left edge — the same
+      // mirrored card padding the unzoned-task case above pins, so both
+      // kinds of unzoned row share one x-origin with zoned content.
       expect(
         eventRowLeft,
-        moreOrLessEquals(zoneLeft + theme.spacingMd, epsilon: 0.5),
+        moreOrLessEquals(zoneLeft + AmbleTheme.light.spacingLg, epsilon: 0.5),
       );
     });
 

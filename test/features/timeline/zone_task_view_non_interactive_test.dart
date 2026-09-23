@@ -206,4 +206,58 @@ void main() {
       expect(find.textContaining('Morning ritual'), findsOneWidget);
     },
   );
+
+  // Pins the band's own EXTENT, which had flipped twice with nothing
+  // guarding it: it spanned the full content row, was narrowed on
+  // 2026-09-23 to column 2's own `timelineZoneWidth` (stopping one gutter
+  // short of the content column), and was then restored to full width
+  // when a four-panel now/to-be comparison asked for it directly across
+  // both views ("it's full content size").
+  //
+  // A zone is the container its tasks live INSIDE, so its band is the
+  // backdrop behind the whole row — pill AND name — which is what the
+  // non-spatial view's own card already does. Column 2's width still
+  // governs where PILLS sit, so widening the band moves no task.
+  testWidgets(
+    'the zone band spans the FULL content width — from column 2\'s own '
+    'left edge to the screen\'s right padding, not stopping at '
+    'timelineZoneWidth beside the content column',
+    (tester) async {
+      await pumpTaskViewWithZone(tester);
+
+      const viewportWidth = 430.0;
+      final theme = AmbleTheme.light;
+      final rect = tester.getRect(find.byType(ZoneBackgroundBlock));
+
+      // ZoneBackgroundBlock trims its own rendered width by
+      // `zoneBackgroundGap` and extends it left by `zoneBackgroundOffset`
+      // (both purely cosmetic — see that widget's own doc comments), so
+      // the band's right edge lands that combined nudge inside the
+      // screen's own padding. Checked as an edge position rather than a
+      // bare width so the cosmetic offsets stay visible in the math.
+      expect(
+        rect.right,
+        moreOrLessEquals(
+          viewportWidth -
+              theme.spacingScreenPadding -
+              zoneBackgroundGap -
+              zoneBackgroundOffset,
+          epsilon: 1.0,
+        ),
+        reason:
+            'the band must reach the screen edge padding, not stop one '
+            'gutter short of the content column',
+      );
+
+      // Guards the specific value this reverses: the narrow band would
+      // have ended a full content column short of here.
+      final narrowRight =
+          theme.timelineZoneLeft + theme.timelineZoneWidth(viewportWidth);
+      expect(
+        rect.right,
+        greaterThan(narrowRight + 1),
+        reason: 'the band must be wider than column 2 alone',
+      );
+    },
+  );
 }

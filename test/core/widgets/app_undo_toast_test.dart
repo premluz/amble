@@ -41,4 +41,56 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
     await tester.pumpAndSettle();
   });
+
+  // Requested directly: "let's build undo change mechanism" — real bug
+  // found and fixed while building it (2026-09-22): tapping Undo used to
+  // remove the toast's OverlayEntry but never cancelled the underlying
+  // platform Timer behind its own `Future.delayed` auto-dismiss, which
+  // stayed pending and fired anyway (a harmless no-op in production,
+  // guarded by its own `mounted` check, but `flutter_test`'s own teardown
+  // treats ANY still-pending Timer as an assertion failure). This test
+  // deliberately does NOT pump past `duration` afterward — if the Timer
+  // were still alive, this test would fail on teardown even though every
+  // assertion inside it passed.
+  testWidgets(
+    'tapping Undo cancels the auto-dismiss timer, not just the overlay',
+    (tester) async {
+      late BuildContext capturedContext;
+      var undone = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
+          home: Scaffold(
+            body: Builder(
+              builder: (context) {
+                capturedContext = context;
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      );
+
+      AppUndoToast.show(
+        context: capturedContext,
+        message: 'Removed test task',
+        onUndo: () => undone = true,
+        // Deliberately long — if the Timer weren't actually cancelled,
+        // this test would hang the full suite waiting for the invariant
+        // check rather than failing fast.
+        duration: const Duration(seconds: 30),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      await tester.tap(find.text('Undo'));
+      await tester.pump();
+
+      expect(undone, isTrue);
+      expect(find.text('Undo'), findsNothing);
+      // No further pump()s past `duration` here — the whole point of this
+      // test is that none are needed.
+    },
+  );
 }

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
+import '../../core/widgets/app_modal_route.dart';
 import '../../shared/models/onboarding_profile.dart';
 import '../../shared/providers/onboarding_profile_catalog.dart';
 import '../../shared/services/onboarding_materializer.dart';
@@ -25,9 +26,7 @@ Future<OnboardingProfile?> showOnboardingProfileBrowseScreen(
   BuildContext context,
 ) {
   return Navigator.of(context).push<OnboardingProfile>(
-    MaterialPageRoute(
-      builder: (context) => const OnboardingProfileBrowseScreen(),
-    ),
+    instantRoute((context) => const OnboardingProfileBrowseScreen()),
   );
 }
 

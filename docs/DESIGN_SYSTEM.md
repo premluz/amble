@@ -93,6 +93,49 @@ drag-to-paint. Do not fold it into the tokens above.
 
 ---
 
+## Two-font system — mono for values, DM Sans for prose
+
+The app uses exactly two fonts, and every `TextStyle` in `semantic_theme
+.dart` is built from one or the other via `TypePrimitives.fontFamily`
+(the mono family) or an explicit DM Sans override — there is no third
+family and no per-call-site font choice.
+
+**The rule**: a token whose name ends in `Mono` (`textBodyMono`,
+`textCaptionMono`, …) is for a genuinely NUMERIC/TEMPORAL value — a
+clock time, a duration, a countdown, a raw number read at a glance. Its
+plain twin (`textBody`, `textCaption`, …) is DM Sans, for prose — labels,
+names, captions, anything read as a sentence or a word rather than a
+value. The two are NOT interchangeable "same size, different mood"
+options; picking the wrong one is a real bug, not a style preference —
+see the incident below.
+
+**Known correct call sites** for the mono twin: `TaskBoundaryMarkers`
+(the spatial Task view's own hour-gutter labels), `ZoneRowTimeLabel` and
+`ZoneContainerBlock`'s own header time-range text (the non-spatial Zone
+view's equivalents — see "Zone row hour label" below),
+`TaskEdgeTimeLabel`, `CurrentTimeIndicator`, and any other place a clock
+time or duration renders as its own short, self-contained label.
+
+**Incident, 2026-09-22**: `ZoneRowTimeLabel` and `ZoneContainerBlock`'s
+own header time-range text both read `theme.textCaption` (DM Sans)
+instead of `theme.textCaptionMono` — reported directly, comparing the two
+Timeline views side by side: "between views hours on spatial zone are
+not mono font, but spatial ther are mono... there is a rule in design MD
+about it?" There WASN'T one written down anywhere (the rule only lived as
+scattered doc comments on the token fields themselves in `semantic_theme
+.dart`) — this section is that missing rule, added alongside the fix so
+the next divergence is caught by a person reading this file rather than
+rediscovered from a screenshot.
+
+**Never**: reach for `textCaption`/`textBody` at a call site rendering a
+clock time, a duration, or any other value a user reads as a number —
+even if the surrounding text nearby happens to already be on the plain
+twin. Check what the token's OWN doc comment in `semantic_theme.dart`
+names as its call sites before assuming either family is the safe
+default.
+
+---
+
 ## Selection border — `SelectedPillBorder`
 
 **File**: `lib/core/widgets/selected_pill_border.dart`
@@ -404,26 +447,77 @@ shows up.
 
 ---
 
-## Sheet drag handle — `AppSheetHandle`
+## Sheets — container, handle, header row
+
+Created 2026-09-22, requested directly: "let's unify all drawer sheets...
+sheets should have handles on top center, the style and position should
+be defined (reference is new task (quick add))... let's unify interaction
+and animation... there might already be a section for sheets that should
+define position of CTA top right and top left close button... spacing
+should be defined." Consolidates what was one narrower section
+(`AppSheetHandle` alone) into the full shape every slide-up sheet in the
+app should share: the container (`AppSheet`), the drag handle, and the
+header row's button positions.
+
+**The reference is the Timeline's quick-create sheet**
+(`quick_create_sheet_shell.dart`/`quick_create_overlay.dart`) — the first
+sheet built with this exact header row shape (handle behind, primary
+action right, close left), now the pattern every other sheet should
+match rather than re-deriving its own header layout.
+
+### The container — `AppSheet`
+
+**File**: `lib/core/widgets/app_sheet.dart`
+
+**What it is**: the ONE entry point for a slide-up modal — a rounded
+Material bottom sheet everywhere except iOS/macOS, where it uses
+Cupertino's native modal-popup styling. Screens must never reach for
+`showModalBottomSheet`/`showCupertinoModalPopup` directly (per
+CONSTITUTION.md design principle 4).
+
+**Exact shape**:
+- Corners: `theme.radiusModal`, top corners only.
+- Fill: `theme.colorSurfaceOverlay` — the top of the elevation ramp, so a
+  sheet reads as a layer ABOVE the page behind it rather than the same
+  flat surface (a real, reported bug: "sheets across the app should have
+  next surface level to bg").
+- Barrier: `theme.colorScrim`.
+- Body padding: `theme.spacingLg` on all sides (`padded: true`, the
+  default) — see "Spacing" below.
+- Three sizes (`AppSheetSize`): `small` (sizes to content — the default,
+  and what every sheet in this section uses), `half` (fixed 50% of
+  viewport, scrollable), `nearFull` (matches `StepScaffold`'s near-full
+  inset). Picking a size larger than `small` is for a picker/list with
+  real content, not for a form that should just size to itself.
+- Entrance/exit: `theme.curveDecelerate` in over `theme.motionNormal`,
+  `theme.curveStandard` out over the shorter `theme.motionFast` — shared
+  with `pushAppSheetRoute`, so a bottom sheet and a full-screen sheet
+  route feel like the same family of motion.
+- Keyboard: lifted automatically via a live `MediaQuery.viewInsets.bottom`
+  read (`liftedForKeyboard`) — a caller never adds its own keyboard
+  padding, or the inset double-counts.
+
+**API**:
+```dart
+AppSheet.show<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+  bool padded = true,           // false only for content managing its own edge-to-edge layout
+  AppSheetSize size = AppSheetSize.small,
+})
+```
+
+### The drag handle — `AppSheetHandle`
 
 **File**: `lib/core/widgets/app_sheet_handle.dart`
 
-**What it is**: the small horizontal grip bar shown at the top of a
-draggable sheet — the "this can be dragged/tapped" affordance. Purely
-visual (no gesture handling of its own): a real caller wraps its own
-`GestureDetector` around the whole header row and places this bar inside
-via `Align`/`Positioned`, since the drag/tap target needs to span the
-full row, not just the bar's own small hit box.
-
-Systematized 2026-09-20, requested directly against a screenshot: "move
-the handle higher up and make it lighter color, use token colors
-available e.g. button subtle color." The quick-create sheet's handle
-(`QuickCreateSheetHandle`, `quick_create_sheet_shell.dart`) used to draw
-its own bar inline, filled with `colorTextSecondary` (a text-contrast
-token, too heavy for a purely decorative grip) and centered in the whole
-header row — putting it at the same vertical mid-point as the row's own
-X/Schedule buttons, reading as one more control rather than a separate
-"sheet can be dragged" affordance above the row's real content.
+**What it is**: the small horizontal grip bar shown at the top-center of
+every sheet — the "this can be dragged/tapped, or swipe down to close"
+affordance. Purely visual (no gesture handling of its own): a real
+caller wraps its own `GestureDetector` around the WHOLE header row (not
+just the bar) and places this bar inside via `Align`/`Positioned`/
+`Center`, so the drag/tap target is the full row's width and height, not
+a precise hit on a 4px bar.
 
 **Exact shape**:
 - Size: `theme.spacingXl * 1.2` wide, `4` tall.
@@ -432,25 +526,109 @@ X/Schedule buttons, reading as one more control rather than a separate
   `colorTextPrimary` wash `AppButtonVariant.secondary` uses, not a
   text/icon-contrast token and not a bespoke alpha invented just for
   this bar.
-- Position within its caller's header row: top-aligned with a small
-  `theme.spacingXs` top inset, not centered in the row.
+- **Position: top-CENTER of the header row, `theme.spacingSm` top
+  inset.** (2026-09-22 — nudged down one rung from the original
+  `theme.spacingXs`, requested directly as the unification's own
+  reference value: "slightly lower than currently.") Never centered in
+  the whole (button-height) row — that puts it at the same vertical
+  mid-point as the row's own Close/CTA buttons, reading as one more
+  control rather than a separate "sheet can be dragged" affordance
+  sitting above the row's real content.
+- Interaction: dragging down past a distance-or-velocity threshold
+  closes the sheet — the SAME "handle to dismiss" gesture as tapping
+  Close, never a different outcome. A sheet with more than one height
+  state (only the quick-create overlay, so far) settles into its own
+  intermediate states first; a plain single-height sheet just closes.
 
 **API**:
 ```dart
 AppSheetHandle({ required AmbleTheme theme })
 ```
 
-**Current call sites** (as of 2026-09-20):
+**Current call sites**:
 - `lib/features/task_detail/quick_create_sheet_shell.dart`
-  (`QuickCreateSheetHandle`) — the quick-create mini sheet's own
-  drag/tap-to-expand header handle; the reference implementation this
-  was extracted from.
+  (`QuickCreateSheetHandle`) — the reference implementation, with its
+  own 3-state (small/minimised/full) drag controller.
+- `lib/features/inbox/quick_capture_sheet.dart` — a single-height sheet;
+  its own `GestureDetector` only needs "dragged past a threshold
+  closes," no fraction to settle into.
 
 **Never**: a bare `Container` re-declaring this bar's size/color/radius
 inline, and never `colorTextSecondary` (or any other text-contrast
 token) for a purely decorative grip — reach for `AppButton.subtleTint`
 instead, the app's one "subtle neutral tint on any surface" token,
 already shared with `AppButtonVariant.secondary`'s own fill.
+
+### The header row — button positions
+
+**Not yet its own shared widget** — this is the settled LAYOUT rule every
+sheet's own header `Row`/`Stack` should follow by hand, until a third
+near-identical implementation appears (per CONSTITUTION.md design
+principle 5), at which point it should be promoted the same way
+`AppSheetHandle` was.
+
+**The rule**:
+- **Close — top-LEFT.** Always `HeaderCircleButton` (`app_step_scaffold
+  .dart`), never a bare `IconButton`/IconData without the circular fill.
+  Closes the sheet and ONLY closes it — never also submits/saves
+  whatever the sheet is for. The only three ways a sheet closes: tapping
+  Close, dragging the handle down past its threshold, or (Material only)
+  tapping the scrim outside it.
+- **Primary action — top-RIGHT.** A small circular `HeaderCircleButton`
+  for a single-glyph action sitting IN the header row itself (e.g. Quick
+  Capture's check-mark Done), or a pill `AppButton` for a labeled action
+  (e.g. quick-create's "Schedule"). Which shape depends on whether the
+  action has a short label worth showing — a glyph-only button for
+  something already obvious from context (a check mark after typing a
+  title), a labeled pill when the verb itself is the point.
+- **A secondary/supporting control** (e.g. Quick Capture's mic button)
+  sits between Close and the primary action, same size as the primary
+  action's own `HeaderCircleButton` so the row's icons read as one
+  family — confirmed directly ("voice record should be same size as
+  done").
+- **The handle sits BEHIND the whole row** (`Positioned.fill`, painted
+  first), not squeezed into its own separate strip above the buttons —
+  its drag/tap target is the entire row's width and height; Close and
+  the primary action paint ON TOP of it and win their own taps, but any
+  part of the row they don't cover still drags/dismisses.
+- **A sheet's primary action must not also silently close it** unless
+  closing genuinely IS the action's whole outcome (e.g. a picker whose
+  only job is "pick one, done"). A capture/create flow whose primary
+  action is "add another one of these" (Quick Capture's Done, matching
+  its own keyboard-submit) stays open on success — see Quick Capture's
+  own doc comment for the reasoning and docs/DECISIONS.md for the
+  2026-09-22 entry that aligned its top-right button to this rule (it
+  used to close on every save; now it only closes via Close/swipe-down,
+  exactly like the keyboard's own submit already did).
+
+**Reference implementation** — `quick_create_overlay.dart`'s header
+`Stack`:
+```dart
+Stack(
+  children: [
+    Positioned.fill(child: /* the handle's GestureDetector, AppSheetHandle centered inside */),
+    Positioned(top: 0, bottom: 0, right: 0, child: Center(child: /* primary action */)),
+    Positioned(top: 0, bottom: 0, left: 0, child: Center(child: /* Close */)),
+  ],
+)
+```
+
+### Spacing
+
+Every value below is the same one the quick-create sheet already uses —
+nothing new invented for this unification, only named as the shared rule:
+
+| What | Token | Value |
+| --- | --- | --- |
+| Sheet body padding (all sides) | `theme.spacingLg` | 24 |
+| Handle's own top inset | `theme.spacingSm` | 8 |
+| Header row height | `theme.spacingXl * 1.8` | 72 |
+| Gap between Close/mic/primary-action buttons in the header row | `theme.spacingSm` | 8 |
+| Header row → body content below it | `theme.spacingSm` | 8 |
+| A `HeaderCircleButton`'s own size | `theme.spacingXl` | 40 |
+
+**Never**: a bare numeric literal for any of the above at a new call
+site — every one of these is already a named token on `AmbleTheme`.
 
 ---
 
@@ -499,21 +677,29 @@ but was a coordinate hack rather than shared structure).
 
 **Exact shape**:
 - Target edge distance: `zoneRowTimeLabelEdgeInset` = **16.0px** from the
-  true screen edge — matches `TaskBoundaryMarkers` EXACTLY
-  (`leftInset: theme.spacingSm` (8) + that widget's own further
-  `theme.spacingSm` (8) internal text padding = 16).
+  true screen edge — `theme.spacingScreenPadding` (16), the SAME token
+  `TaskBoundaryMarkers`' own `leftInset` reads directly at its
+  `timeline_screen.dart` call site. (Both used to be built from a
+  different formula — `spacingSm + spacingSm` — before
+  `spacingScreenPadding` existed as its own token; pinned by
+  `horizontal_spacing_system_test.dart` now so the two can't drift
+  independently again.)
 - Reserved width in the caller's own `Row`:
-  `zoneRowTimeLabelReservedWidth` = **66.0px** — mirrors the spatial Task
-  view's own hour-GUTTER width (`_hourGutterWidth`, private to
-  `timeline_screen.dart`, kept as a separate literal here rather than
-  exported since it's one shared number, not shared logic). The label
-  TEXT itself paints outside this box entirely; the box only holds space
-  for whatever comes after it (a category badge, or a title).
-- Text style: `theme.textCaption` + `theme.colorTextSecondary` — the
-  exact style `TaskBoundaryMarkers` uses, not `textTaskTitleZone` (the
-  row's own title scale) or `colorTextTertiary` (an earlier, since-
-  superseded convention matching the Zone Authoring Grid's own hour-axis
-  labels instead).
+  `zoneRowTimeLabelReservedWidth` = **0.0px** (as of 2026-09-20 — see
+  that constant's own doc comment for why zero is correct: the label
+  TEXT itself paints outside this box entirely via the negative
+  `Positioned.left` above, so nothing needs to reserve space for it).
+- Text style: `theme.textCaptionMono` + `theme.colorTextSecondary` — the
+  exact style `TaskBoundaryMarkers` uses. **Must be the MONO twin, not
+  `theme.textCaption`** (DM Sans) — real bug, reported directly
+  ("hours on spatial zone are not mono font, but spatial ther are
+  mono"): this label is a genuinely temporal/numeric value, exactly
+  `textCaptionMono`'s own documented scope (see the "Two-font system"
+  section below), and using the prose twin here is what broke the
+  match with `TaskBoundaryMarkers`. Not `textTaskTitleZone` (the row's
+  own title scale) or `colorTextTertiary` (an earlier, since-superseded
+  convention matching the Zone Authoring Grid's own hour-axis labels
+  instead) either.
 
 **API**:
 ```dart
@@ -525,19 +711,22 @@ ZoneRowTimeLabel({
 })
 ```
 
-**Current call sites** (as of 2026-09-20):
-- `_ZoneTaskRow` (`zone_container_block.dart`) — a zoned task's own
-  leading time column. `leftPaddingToEscape` = `spacingScreenPadding`
-  (24, `ZoneDayTimeline`'s list page inset) + `spacingMd` (16,
-  `ZoneContainerBlock`'s own card padding) = 40. Wrapped in the row's
-  existing `GestureDetector` (tap/drag-to-reschedule) — a `Positioned`
-  child still hit-tests correctly wherever it actually paints, so
-  escaping the label doesn't disturb its own gesture handling.
-- The unzoned task row (`ZoneDayTimeline`) — same 40px total, reached via
-  the row's own `Padding(left: spacingMd)` wrapper instead of a zone
-  card's padding. Kept at the identical total specifically so zoned and
-  unzoned times stay lined up with each other, not just with the spatial
-  view.
+**Current call sites** (as of 2026-09-22):
+- `_ZoneTaskRow` / `_ZoneExternalEventRow` (`zone_container_block.dart`)
+  — a zoned row's own leading time column. `leftPaddingToEscape` =
+  `zoneContentLeftInset` (90, where a zone card itself starts — matches
+  the spatial view's own hour-gutter width, see "Horizontal spacing"
+  above) + `spacingMd` (16, `ZoneContainerBlock`'s own card padding) =
+  106. Wrapped in the row's existing `GestureDetector` (tap/drag-to-
+  reschedule) — a `Positioned` child still hit-tests correctly wherever
+  it actually paints, so escaping the label doesn't disturb its own
+  gesture handling.
+- The unzoned task row (`ZoneDayTimeline`) — same 106px total, reached
+  via `zoneContentLeftInset + spacingMd` again (this row has no card of
+  its own, but is inset by the same total so its badge/title still lines
+  up under a zoned row's). Kept at the identical total specifically so
+  zoned and unzoned times stay lined up with each other, not just with
+  the spatial view.
 
 **Never**: a `Transform.translate` or negative `Container(margin:)` to
 fake this position — the margin version measurably breaks any ancestor
@@ -634,6 +823,197 @@ cases).
 relationship — that reads as several unrelated things pulsing, not one
 waveform. The shared-sine-with-per-bar-phase approach is what makes it
 read as one continuous wave.
+
+---
+
+## Zone pane indicator — corner radius, standing gap, and label placement
+
+**What it is**: the ONE rounding/spacing treatment for a zone's own
+rendered block, wherever a zone renders as a real pane (not a list row) —
+the spatial Timeline's `ZoneBackgroundBlock`, and the Weekly Zone
+Authoring Grid's `ZoneGridBlock`. Unified 2026-09-21, requested directly:
+"zone rounding should be consistent everywhere... use the rounding from
+non spatial zone view."
+
+**Corner radius**: `theme.radiusXl` (16) — taken from the non-spatial Zone
+view's own card (`ZoneContainerBlock`, already `radiusXl`, unchanged),
+named as the reference. `ZoneBackgroundBlock` previously used
+`theme.radiusMd` (8), a real, previously undocumented divergence from the
+non-spatial view.
+
+**Exception — Weekly Zone Authoring Grid uses `theme.radiusSm`**
+(2026-09-21, same day, superseding this section's own original
+unification for that ONE surface): requested directly, "the rounding of
+zone edit zone mode should be xs." `ZoneGridBlock` briefly matched
+`radiusXl` alongside `ZoneBackgroundBlock` per the unification above, then
+was confirmed as its own deliberately smaller rung — this dense authoring
+surface (see the horizontal-spacing section's own "edit zone view has its
+own more dense space" carve-out) reads better with the smallest radius on
+the scale than with the same large rounding a full-size zone pane
+elsewhere gets. `ZoneBackgroundBlock` (spatial Timeline) keeps
+`radiusXl`, unaffected.
+
+**Standing gap between adjacent zones**: `zoneBackgroundGap` (4.0,
+`lib/features/timeline/zone_background_block.dart`) — taken entirely off
+a block's BOTTOM edge (never its top, so a zone's top edge still lands
+exactly on its own start time), so two zones whose times are exactly
+back-to-back never visually touch. Was spatial-Timeline-only; the Weekly
+Zone Authoring Grid's own `_block` (`zone_grid_screen.dart`) had no
+equivalent trim at all until this pass — now applies the same constant
+the same way (subtracted from a block's own rendered `height`).
+
+**Zone name label placement**: renders INSIDE the zone's own pane, not as
+a sibling positioned outside/beside it. The Weekly Zone Authoring Grid
+already did this (`ZoneGridBlock`'s own `_RotatedTitle`, inside its
+`Stack`); the spatial Timeline's `ZoneNameLabel` did not — it was a
+separate widget `Positioned(right: 0, ...)` in the day column's outer
+`Stack`, landing at the day's right edge rather than inside the band it
+names. Now positioned inside `ZoneBackgroundBlock`'s own width, with
+`theme.spacingSm` padding from the band's right inner edge.
+
+**Dynamic zone width — dev toggle, default OFF** (2026-09-21): the
+spatial Timeline used to size each zone band dynamically off the day's
+own deepest overlap-lane stack (`_zoneBackgroundWidth`, reading
+`dayPillLanes`), so a day with more overlapping tasks widened every zone
+band. A new `DevDynamicZoneWidth` toggle (`core/dev_config.dart`,
+`kDebugMode`-gated Settings → Developer switch, mirroring
+`DevZoneCardFlat`'s own shape) restores that behavior when explicitly
+turned on; **off (the default)**, every zone band on the spatial Timeline
+spans from `hourGutterWidth` to `rightEdgeInset` — the same
+`left`/`right` (no explicit `width`) mechanism every other full-width
+Timeline element (a drag ghost, the frosted lift pane) already uses to
+reach the true page edge — so the band now fills 100% of the available
+row regardless of lane count, and the zone name label (now painted
+inside, per above) sits inside that same fixed-width band rather than
+tracking a shifting one. The Weekly Zone Authoring Grid is unaffected —
+its own blocks were never lane-width-driven.
+
+**Full-width mode's own left inset matches the non-spatial view**
+(2026-09-21, same day): requested directly, "use same padding left for
+first lane as in non spatial view." `ZoneBackgroundBlock` gained a new
+`leftInset` parameter (default `zoneBackgroundOffset`, 4px — the original
+"padding around the pill column" inset used everywhere else, including
+`DevDynamicZoneWidth`'s own ON state). The full-width spatial call site
+passes `theme.spacingMd` (16px) instead, matching `ZoneContainerBlock`'s
+own left padding before its first task row exactly. Widening `leftInset`
+only extends the band's own LEFT edge further out — `width` is adjusted
+by the same amount so the band's right edge, and every task pill's own
+position, are completely unaffected; this block never repositions a
+task, only its own decorative edge.
+
+**Never**: a bare `theme.radiusMd` on a new zone-pane `BoxDecoration`, a
+zone block with no `zoneBackgroundGap` trim on at least one shared edge,
+or a zone name label positioned as a `Stack` sibling outside the band it
+names. If a new zone-rendering surface is added, give it this exact
+radius/gap/label-placement treatment rather than picking a fresh value.
+
+---
+
+## Brief confirmation toast — `AppUndoToast`
+
+**File**: `lib/core/widgets/app_undo_toast.dart`
+
+**What it is**: the ONE brief, self-dismissing toast in the app,
+optionally with an "Undo" action — added for quick-capture's own
+confident-parse task creation, then widened (2026-09-22, requested
+directly: "let's build undo change mechanism") into the app's single
+mechanism for "this destructive/easy-to-regret action just happened, and
+here's how to take it back" across every delete/remove path. Not a
+platform branch (no separate Cupertino/Material look) — a plain rounded
+card with text + a text button reads identically as "the app's own"
+chrome on both platforms, the same reasoning `AppTextField`/
+`ListWheelScrollView` already apply to genuinely platform-neutral
+widgets.
+
+**Imperative, not a plain widget with props**: `AppUndoToast.show(...)`
+inserts its own `OverlayEntry` on the app's ROOT Overlay
+(`Overlay.of(context, rootOverlay: true)` — deliberately the outermost
+one, supplied by `MaterialApp`'s own Navigator, not the nearest enclosing
+one, so the toast outlives the specific screen that triggered it even if
+that screen pops immediately afterward) and manages its own lifetime
+entirely: it auto-dismisses after `duration` unless `onUndo` fires first
+(which also dismisses it immediately), and removes itself cleanly either
+way. Callers never track or manually remove the entry.
+
+**API**:
+```dart
+AppUndoToast.show({
+  required BuildContext context,
+  required String message,
+  VoidCallback? onUndo,               // null = plain informational
+                                       // notice, no action row at all
+  Duration duration = const Duration(seconds: 4),
+})
+```
+
+**`context` must be a genuine DESCENDANT of the root Overlay** — a
+`navigatorKey.currentContext` will NOT work here (see this file's own
+"Never" line below): that context is the `Navigator`'s own element,
+sitting structurally above the Overlay that same Navigator builds
+internally, so `Overlay.of` walking upward from it never finds one.
+Every real call site instead passes an ordinary widget's own
+`BuildContext` — the calling screen's, or (when that screen is about to
+pop) a `rootContext` captured before the pop happens, the exact same
+"capture the caller's context before this sheet's own route exists"
+contract `showQuickCaptureSheet`/`showTaskActionSheet`/
+`showTaskDetailSheet`/`showZoneFormScreen` already establish for their
+own undo toasts.
+
+**Undo restores via snapshot-then-keyed-re-save, not a separate undo
+stack**: every caller snapshots the affected row(s) via the model's own
+`toJson()` BEFORE the delete runs, and `onUndo` restores via `fromJson` +
+the ordinary `updateTask`/`updateZone` write — a plain keyed re-save
+(Hive keys by id), the same round-trip export/import already proves
+correct. A group action (multi-select Remove) snapshots the WHOLE
+selection and shows ONE toast for the batch, restoring everything on a
+single Undo tap — see `docs/DECISIONS.md`'s 2026-09-22 entry for the full
+mechanism, including how a whole recurring-series delete snapshots every
+row that operation could touch (delete OR mutate), not just the tapped
+instance.
+
+**Testing note**: the auto-dismiss timer is a real, cancellable `Timer`
+(not a bare `Future.delayed`, which exposes no cancel handle — a real bug
+this file's own timer-cancel fix corrected, see `docs/ERROR_LOG.md`). A
+test that lets the toast expire naturally needs to `pump()` past the
+full `duration` before the test ends, or `flutter_test`'s own teardown
+fails on "a Timer is still pending." A test that taps Undo instead needs
+no such drain — the timer is cancelled the moment Undo fires.
+
+**Current call sites** (as of 2026-09-22): `task_remove.dart`'s
+`removeTask` (the action sheet's Remove row, the detail screen's delete
+button, the Timeline's drag-to-delete-target — single-instance AND
+whole-series removal), `zone_grid_screen.dart` (the Edit Mode selection
+dock's group Remove for tasks, and the Zones tab's own bulk "Remove
+placements"), `zone_form_screen.dart` (its own delete button),
+`timeline_screen.dart` (the spatial Timeline's zone drag-to-delete, and
+the multi-task group drag-to-delete-target path), `inbox_screen.dart`
+(swipe-to-delete), and `quick_capture_sheet.dart`/
+`quick_capture_undo_main.dart` (the original confident-parse creation
+that introduced this widget). Registered in the Widgetbook gallery under
+"Feedback" → "AppUndoToast" ("With Undo action" / "Message only (no
+Undo)" use cases, triggered via a demo button since the widget itself
+has nothing to render until `.show()` is called).
+
+Also, as of 2026-09-22, every task/zone MOVE and RESIZE commit via the
+shared `lib/shared/services/move_resize_undo.dart` helpers
+(`commitTaskChangeWithUndo`/`commitZoneChangeWithUndo`) —
+`timeline_screen.dart`'s group and single-task move/resize (cascade and
+non-cascade alike) and its shared zone cascade commit
+(`_commitZoneCascade`), plus `zone_grid_screen.dart`'s own zone cascade
+commit (`_finishMove`). Every commit shows a toast, including a plain
+single-task move with no cascade — confirmed via AskUserQuestion, same
+"every write gets one" consistency delete already established.
+
+**Never**: a `navigatorKey.currentContext` (or any other Navigator-level,
+non-descendant context) as the `context` passed to `show` — it silently
+throws "No Overlay widget found" despite a real Overlay genuinely
+existing one level below. A bare `Future.delayed` for any future
+auto-dismiss-style timer that can also be cancelled early by a different
+code path — use a real `Timer` so `dispose()` can cancel it outright,
+not just guard the eventual fire with a `mounted` check. A second,
+hand-rolled "brief message, optionally with an action" widget anywhere
+else in the app — extend this one's API if the shape doesn't quite fit
+yet.
 
 ---
 

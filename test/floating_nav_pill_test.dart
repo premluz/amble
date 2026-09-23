@@ -6,11 +6,13 @@ import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/main.dart';
 import 'package:amble/shared/models/category.dart';
+import 'package:amble/shared/models/section.dart';
 import 'package:amble/shared/models/task.dart';
 import 'package:amble/shared/models/task_template.dart';
 import 'package:amble/shared/models/tracked_behavior.dart';
 import 'package:amble/shared/models/zone.dart';
 import 'package:amble/shared/providers/category_providers.dart';
+import 'package:amble/shared/providers/section_providers.dart';
 import 'package:amble/shared/providers/notification_providers.dart';
 import 'package:amble/shared/providers/preferences_providers.dart';
 import 'package:amble/shared/providers/task_providers.dart';
@@ -18,6 +20,7 @@ import 'package:amble/shared/providers/task_template_providers.dart';
 import 'package:amble/shared/providers/tracked_behavior_providers.dart';
 import 'package:amble/shared/providers/zone_providers.dart';
 import 'package:amble/shared/repositories/hive_category_repository.dart';
+import 'package:amble/shared/repositories/hive_section_repository.dart';
 import 'package:amble/shared/repositories/hive_preferences_repository.dart';
 import 'package:amble/shared/repositories/hive_task_repository.dart';
 import 'package:amble/shared/repositories/hive_task_template_repository.dart';
@@ -37,6 +40,7 @@ void main() {
   late Box<Task> taskBox;
   late Box<dynamic> prefsBox;
   late Box<Category> categoryBox;
+  late Box<Section> sectionBox;
   late Box<Zone> zoneBox;
   late Box<TrackedBehavior> trackedBehaviorBox;
   late Box<TaskTemplate> taskTemplateBox;
@@ -50,6 +54,7 @@ void main() {
     taskBox = await Hive.openBox<Task>('test_tasks_$stamp');
     prefsBox = await Hive.openBox<dynamic>('test_prefs_$stamp');
     categoryBox = await openSeededCategoryBox('test_categories_$stamp');
+    sectionBox = await Hive.openBox<Section>('test_sections_$stamp');
     zoneBox = await Hive.openBox<Zone>('test_zones_$stamp');
     trackedBehaviorBox = await Hive.openBox<TrackedBehavior>(
       'test_tracked_behaviors_$stamp',
@@ -81,6 +86,9 @@ void main() {
           ),
           categoryRepositoryProvider.overrideWithValue(
             HiveCategoryRepository(categoryBox),
+          ),
+          sectionRepositoryProvider.overrideWithValue(
+            HiveSectionRepository(sectionBox),
           ),
           zoneRepositoryProvider.overrideWithValue(HiveZoneRepository(zoneBox)),
           trackedBehaviorRepositoryProvider.overrideWithValue(

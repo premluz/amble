@@ -11,9 +11,11 @@ import '../models/task.dart';
 import '../models/task_status.dart';
 import '../repositories/hive_task_repository.dart';
 import '../repositories/task_repository.dart';
+import '../repositories/preferences_repository.dart';
 import '../services/cascade_reschedule.dart';
 import '../services/recurrence_generator.dart';
 import 'notification_providers.dart';
+import 'preferences_providers.dart';
 
 part 'task_providers.g.dart';
 
@@ -199,6 +201,50 @@ class TaskList extends _$TaskList {
     if (templates.isNotEmpty) _refresh();
   }
 
+  /// One-time migration, gated exactly like `CategoryList
+  /// .seedBuiltInsAndBackfillIfNeeded`: every pre-existing [Task] read
+  /// back with no stored `createdAt` (a row saved before that field
+  /// existed) gets one WRITTEN now, rather than left to fall back to
+  /// [Task]'s own `?? DateTime.now()` constructor default forever — that
+  /// default recomputes "now" on every single load, which would jump an
+  /// old note back to the top of the newest-first Inbox sort on every app
+  /// launch. Requested directly: "notes in inbox should have created
+  /// timestamp if not have already."
+  ///
+  /// There is no better proxy for an old row's TRUE creation time — a
+  /// scheduled task's own [Task.scheduledAt] is when it's DUE, not when
+  /// it was captured, so backfilling from it would misorder an old task
+  /// planned far in the future/past ahead of/behind newer captures. This
+  /// backfill instead freezes "now" as a one-time value per task, in
+  /// stable ID order (so the relative order among backfilled rows is at
+  /// least deterministic, even though it can't reflect their real,
+  /// unrecorded history) — a reasonable stand-in specifically because a
+  /// FUTURE session should never re-run this and shuffle them again.
+  Future<void> backfillCreatedAtIfNeeded() async {
+    final prefs = ref.read(preferencesRepositoryProvider);
+    final alreadyBackfilled =
+        prefs.getValue<bool>(PreferenceKeys.taskCreatedAtBackfilled) ?? false;
+    if (alreadyBackfilled) return;
+
+    final repository = ref.read(taskRepositoryProvider);
+    final tasks = repository.getTasks().toList()
+      ..sort((a, b) => a.id.compareTo(b.id));
+    final now = DateTime.now();
+    for (var i = 0; i < tasks.length; i++) {
+      // Spaced a millisecond apart (oldest id first) purely so no two
+      // backfilled rows tie exactly — ties are otherwise harmless (the
+      // Inbox sort doesn't need a strict order among them), but a stable
+      // spread costs nothing and avoids relying on sort stability for
+      // rows that otherwise share one identical instant.
+      tasks[i].createdAt = now.subtract(
+        Duration(milliseconds: tasks.length - i),
+      );
+      await repository.saveTask(tasks[i]);
+    }
+    await prefs.setValue(PreferenceKeys.taskCreatedAtBackfilled, true);
+    if (tasks.isNotEmpty) _refresh();
+  }
+
   /// Registers OS alarms for every task now inside the notification
   /// horizon. Called once at launch, after [materializeDueRecurrences], so
   /// freshly-materialized instances are included.
@@ -253,6 +299,23 @@ class TaskList extends _$TaskList {
   Future<void> updateTask(Task task) async {
     await ref.read(taskRepositoryProvider).saveTask(task);
     _syncNotificationInBackground(task);
+    _refresh();
+  }
+
+  /// Re-saves every [tasks] in one call, refreshing [state] ONCE at the
+  /// end rather than once per row — same "many writes, one refresh" fix
+  /// as [deleteTasksInBatch], applied to the RESTORE side of Undo: every
+  /// `onUndo` callback that snapshots several tasks (a group delete, a
+  /// whole-series delete, a move/resize commit) was looping
+  /// [updateTask] once per snapshot, so Undo made them reappear one at a
+  /// time just like delete used to remove them one at a time. Reported
+  /// directly: "when they reappear also not at once."
+  Future<void> restoreTasksInBatch(Iterable<Task> tasks) async {
+    final repository = ref.read(taskRepositoryProvider);
+    for (final task in tasks) {
+      await repository.saveTask(task);
+      _syncNotificationInBackground(task);
+    }
     _refresh();
   }
 
@@ -933,6 +996,57 @@ class TaskList extends _$TaskList {
     _refresh();
   }
 
+  /// Deletes every id in [ids] in one call, refreshing [state] ONCE at the
+  /// end rather than once per row — requested directly: multi-select
+  /// Remove was calling [deleteTask] in a loop, so each row's own
+  /// `_refresh()` rebuilt the UI separately and selected zones/tasks
+  /// visibly disappeared one at a time instead of together. Mirrors
+  /// [resizeTasksInBatch]/[rescheduleTaskWithCascade]'s own shape (loop
+  /// over the raw repository call, one `_refresh()` after the loop) —
+  /// same fix, same established pattern, applied to delete.
+  ///
+  /// Preserves [deleteTask]'s own per-row side effects (recurrence-
+  /// template promotion, notification cancellation) for every row —
+  /// this is NOT a naive `repository.deleteTask` loop, it's the same
+  /// logic [deleteTask] runs, just sharing one `_refresh()` at the end.
+  /// **Notification cancellation is deliberately NOT awaited here**, unlike
+  /// [deleteTask]'s own single-row path. `cancelForTask` is a real
+  /// platform-channel round trip; awaiting one per row made a multi-row
+  /// delete take visibly longer per extra row, which is what was still
+  /// being reported ("one disappears instant, then after long delay the
+  /// others") even after this method already shared one [_refresh]. The
+  /// Hive writes — the only thing [state] is rendered from — now all land
+  /// before that single refresh, and the alarms are cancelled in the
+  /// background afterward. Same "the write must not wait on the
+  /// notification layer" contract [_syncNotificationInBackground] and
+  /// `ZoneList._syncNotification` already apply on the write side; this
+  /// extends it to the delete side, where it was the one remaining
+  /// blocking platform call.
+  Future<void> deleteTasksInBatch(Iterable<String> ids) async {
+    final repository = ref.read(taskRepositoryProvider);
+    final deletedIds = <String>[];
+    for (final id in ids) {
+      final deleted = repository.getTaskById(id);
+      if (deleted != null && deleted.isRecurrenceTemplate) {
+        await _promoteSuccessorTemplate(deleted);
+      }
+      await repository.deleteTask(id);
+      deletedIds.add(id);
+    }
+    _refresh();
+    unawaited(_cancelNotificationsInBackground(deletedIds));
+  }
+
+  /// Cancels every id's alarm off the critical path — see
+  /// [deleteTasksInBatch]'s own note on why this isn't awaited. Each
+  /// cancel is individually guarded by [_cancelNotificationSafely], so one
+  /// failure never stops the rest.
+  Future<void> _cancelNotificationsInBackground(List<String> ids) async {
+    for (final id in ids) {
+      await _cancelNotificationSafely(id);
+    }
+  }
+
   /// Hands [outgoing]'s recurrence rule to the earliest other instance of
   /// its series, so deleting [outgoing] doesn't leave the series without a
   /// template. No-op when it's the series' last remaining row — nothing is
@@ -964,6 +1078,24 @@ class TaskList extends _$TaskList {
     final successor = candidates.first;
     successor.recurrenceRule = outgoing.recurrenceRule;
     await repository.saveTask(successor);
+  }
+
+  /// Every row belonging to [instance]'s own recurring series — the exact
+  /// candidate set [deleteTaskSeries] below queries, exposed so a caller
+  /// (`removeTask`'s own undo snapshot) can capture every row THAT method
+  /// might touch, including ones it only mutates rather than deletes
+  /// (the surviving template, if any — see [deleteTaskSeries]'s own doc
+  /// comment), before calling it. Read-only; never used by
+  /// [deleteTaskSeries] itself, which keeps its own inline query so the
+  /// two can't silently drift apart from having only one still reading
+  /// the repository directly.
+  List<Task> tasksInSeries(Task instance) {
+    final seriesId = instance.recurrenceId;
+    return ref
+        .read(taskRepositoryProvider)
+        .getTasks()
+        .where((task) => task.recurrenceId == seriesId)
+        .toList();
   }
 
   /// Removes [instance] and every OTHER instance of its series scheduled

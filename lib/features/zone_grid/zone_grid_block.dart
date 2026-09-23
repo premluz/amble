@@ -159,14 +159,23 @@ class ZoneGridBlock extends StatelessWidget {
             child: isSelected
                 ? SelectedPillBorder(
                     theme: theme,
-                    contentRadius: BorderRadius.circular(theme.radiusMd),
+                    // radiusSm — Weekly Zone Authoring Grid EXCEPTION,
+                    // requested directly (2026-09-21, superseding the
+                    // radiusXl unification below): this dense authoring
+                    // surface reads better with the smallest rung on the
+                    // scale, not the "zone pane" radiusXl every other
+                    // zone-rendering surface uses. See
+                    // docs/DESIGN_SYSTEM.md's "Zone pane indicator"
+                    // section for the exception and its own reasoning.
+                    contentRadius: BorderRadius.circular(theme.radiusSm),
                     fillColor: theme.colorSurfaceSecondary,
                     child: _RotatedTitle(theme: theme, title: zone.title),
                   )
                 : DecoratedBox(
                     decoration: BoxDecoration(
                       color: theme.colorSurfaceSecondary,
-                      borderRadius: BorderRadius.circular(theme.radiusMd),
+                      // radiusSm — see this block's own doc comment above.
+                      borderRadius: BorderRadius.circular(theme.radiusSm),
                     ),
                     child: _RotatedTitle(theme: theme, title: zone.title),
                   ),

@@ -16,10 +16,25 @@ import 'package:flutter_test/flutter_test.dart';
 /// standard `rightEdgeInset` (24px, the same margin every other screen
 /// uses), there was still "room to the right" specifically on this
 /// column — confirmed as "the 24px margin itself is too generous here
-/// specifically," not the shared page margin. The checkbox column now
-/// uses its own `textColumnRightInset` (`spacingMd`, 16px), while
-/// `rightEdgeInset` stays unchanged for pill positioning and the drag-lift
-/// frosted pane, which were never part of either report.
+/// specifically," not the shared page margin. The checkbox column was
+/// given its own `textColumnRightInset` (`spacingMd`, 16px at the time),
+/// while `rightEdgeInset` stayed unchanged for pill positioning and the
+/// drag-lift frosted pane, which were never part of either report.
+///
+/// **2026-09-23 — real bug, fixed.** `textColumnRightInset` is
+/// page-absolute at every call site (`ExternalEventCapsuleBlock`,
+/// `_DraggablePendingTaskPill`, the overlap-cluster row) EXCEPT
+/// `_DraggableTaskBlock`'s own text row, which nests inside a box already
+/// positioned at `rightEdgeInset`. That one call site was stacking
+/// `textColumnRightInset` on TOP of the outer `rightEdgeInset`, landing
+/// the checkbox at `rightEdgeInset + spacingMd` from the true edge instead
+/// of the intended single inset — reported directly, again, as too much
+/// space on the right in spatial view specifically. Fixed by reverting
+/// `textColumnRightInset` back to the page-absolute `spacingScreenPadding`
+/// (matching every OTHER call site's own coordinate space) and hardcoding
+/// `0` at `_DraggableTaskBlock`'s own nested text-row `Positioned.right`
+/// instead, since that box's outer `rightEdgeInset` already reaches the
+/// true edge.
 ///
 /// Tested by reading the source rather than rendering a full Timeline:
 /// the composition itself is what both fixes changed, and a full render
@@ -56,19 +71,21 @@ void main() {
   });
 
   test(
-    'the checkbox column uses its own narrower inset, not the page margin',
+    'textColumnRightInset is page-absolute again, matching rightEdgeInset',
     () {
       expect(
-        source.contains('final textColumnRightInset = theme.spacingMd;'),
+        source.contains(
+          'final textColumnRightInset = theme.spacingScreenPadding;',
+        ),
         isTrue,
         reason:
-            'textColumnRightInset should be defined as its own, narrower '
-            'value — reported directly as "too generous" at the shared '
-            'rightEdgeInset (spacingScreenPadding, 24px)',
+            'textColumnRightInset must be page-absolute — every call site '
+            'except _DraggableTaskBlock\'s own nested text row measures it '
+            'from the true screen edge, not from an already-inset box',
       );
 
-      // Every real call site (3x textColumnRight, 1x the overlap-cluster's
-      // own `right:`) should use the new narrower inset, not the old one.
+      // Every page-absolute call site (3x textColumnRight, 1x the
+      // overlap-cluster's own `right:`) should use this value.
       expect(
         'textColumnRight: textColumnRightInset,'.allMatches(source).length,
         3,
@@ -77,12 +94,25 @@ void main() {
       expect(
         source.contains('right: textColumnRightInset,'),
         isTrue,
-        reason: 'the overlap-cluster row should use the same narrower inset',
+        reason: 'the overlap-cluster row should use the same page-absolute '
+            'inset',
       );
+    },
+  );
+
+  test(
+    "_DraggableTaskBlock's own nested text row uses a hardcoded 0, not "
+    'textColumnRightInset',
+    () {
+      // That text row sits inside a box already positioned at
+      // `right: widget.rightInset` (== rightEdgeInset) — a SECOND inset
+      // here would stack on top of it. See this file's own class doc
+      // comment for the exact bug this guards against.
       expect(
-        source.contains('textColumnRight: rightEdgeInset,'),
-        isFalse,
-        reason: 'no call site should still use the wider page-margin value',
+        source.contains('right: 0,\n            child: TaskCapsuleTextRow('),
+        isTrue,
+        reason:
+            'the nested text row must use a bare 0, not widget.textColumnRight',
       );
     },
   );

@@ -34,7 +34,9 @@ class Task extends HiveObject implements ScheduledBlock {
     this.externalEventId,
     this.templateId,
     this.isImportant = false,
-  });
+    this.sectionId,
+    DateTime? createdAt,
+  }) : createdAt = createdAt ?? DateTime.now();
 
   /// Creates a new scheduled task with a client-generated UUID.
   ///
@@ -252,6 +254,45 @@ class Task extends HiveObject implements ScheduledBlock {
   @HiveField(19)
   bool isImportant;
 
+  /// Links this task to a [Section] it's filed into — an Inbox-only
+  /// grouping, requested directly ("Sections in inbox... Folders for
+  /// inbox items. Inbox item can live in one Section only"). Null for a
+  /// task that hasn't been filed (the default, same additive/inert
+  /// pattern as [zoneId]/[behaviorId]/[templateId]) — an unfiled task is
+  /// an ordinary task, not an error state. Resolved through
+  /// `sectionListProvider`/`SectionRepository`, never read directly off
+  /// this id — same "the id is just the link" contract as [categoryId].
+  ///
+  /// Deleting the [Section] this points at clears this field back to
+  /// null (`SectionList.deleteSection`) rather than leaving it dangling —
+  /// unlike [templateId] (informational only, a dangling reference is
+  /// expected there), a stale `sectionId` would otherwise make the task
+  /// vanish from every real tab in the Inbox's own section filter.
+  @HiveField(21)
+  String? sectionId;
+
+  /// When this task/note was first created — requested directly ("notes
+  /// in inbox should have created timestamp if not have already... and
+  /// recent should be on top"), replacing the prior Inbox sort's reliance
+  /// on Hive's own insertion order (documented on `inboxTasksProvider` as
+  /// a stand-in specifically because no real field existed yet).
+  ///
+  /// Defaults to `DateTime.now()` in every constructor path — the
+  /// non-nullable field with a computed default (not a plain required
+  /// param) is deliberate: [Task.fromJson] still needs to accept an
+  /// OLDER backup with no `createdAt` at all (see its own "old exports
+  /// still import" contract) and fall back to something, so this can
+  /// never be a bare `required DateTime`.
+  ///
+  /// Existing on-disk tasks created before this field existed are
+  /// backfilled once, on first read after this update
+  /// (`TaskList.build`'s own migration pass), rather than left null
+  /// forever or silently defaulting to "now" every time they're loaded
+  /// (which would make them keep jumping to the top of the newest-first
+  /// Inbox sort on every app launch).
+  @HiveField(22)
+  DateTime createdAt;
+
   /// True when this task is an instance of a [TrackedBehavior] rather than
   /// a standalone task.
   bool get isBehaviorInstance => behaviorId != null;
@@ -307,6 +348,8 @@ class Task extends HiveObject implements ScheduledBlock {
     'externalEventId': externalEventId,
     'templateId': templateId,
     'isImportant': isImportant,
+    'sectionId': sectionId,
+    'createdAt': createdAt.toIso8601String(),
   };
 
   /// Reconstructs a [Task] from [toJson]'s output, for import. Throws
@@ -399,6 +442,14 @@ class Task extends HiveObject implements ScheduledBlock {
       // before the important flag existed has no isImportant at all, and
       // must import as an ordinary (unmarked) task rather than failing.
       isImportant: json['isImportant'] as bool? ?? false,
+      // Same "old exports still import" contract — a backup exported
+      // before Section existed has no sectionId at all.
+      sectionId: json['sectionId'] as String?,
+      // Same "old exports still import" contract — a backup exported
+      // before this field existed has no createdAt at all; the
+      // constructor's own `?? DateTime.now()` default covers that case
+      // exactly like a freshly-created task with no explicit value.
+      createdAt: _parseNullableDateTime(json['createdAt']),
     );
   }
 
@@ -429,7 +480,9 @@ class Task extends HiveObject implements ScheduledBlock {
         zoneId == other.zoneId &&
         externalEventId == other.externalEventId &&
         templateId == other.templateId &&
-        isImportant == other.isImportant;
+        isImportant == other.isImportant &&
+        sectionId == other.sectionId &&
+        createdAt == other.createdAt;
   }
 }
 

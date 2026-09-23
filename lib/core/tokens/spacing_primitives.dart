@@ -31,12 +31,17 @@ abstract final class SpacingPrimitives {
   static const space9Point5 = 48.0;
   static const space10 = 56.0;
 
-  /// The Timeline's hour gutter (`AmbleTheme.spacingHourGutter`) — how far
-  /// a task pill or zone card sits from the true screen edge, leaving room
-  /// for the hour labels beside it. Well above the general-purpose rungs
-  /// because it measures a reserved COLUMN, not a gap between elements;
-  /// its value is set by the widest hour label ("12:00 PM") plus the side
-  /// inset on either side of it, and it was already the de-facto 90 in
-  /// both Timeline views before becoming a token.
-  static const space12 = 90.0;
+  /// The Timeline's TIME COLUMN (`AmbleTheme.spacingTimeColumnWidth`) —
+  /// column 1 of the three-column Timeline layout. Well above the
+  /// general-purpose rungs because it measures a reserved COLUMN, not a
+  /// gap between elements.
+  ///
+  /// **2026-09-23 — 90 → 96.** This was 90 and documented as "the widest
+  /// hour label plus the side inset on either side," but the widest label
+  /// ("12:00 PM" in `textCaptionMono`) measures 96.0 on its own, so the
+  /// column was 6px NARROWER than the text it had to contain, never mind
+  /// the insets. Column 1 now holds exactly that text; the gaps either
+  /// side of it are `AmbleTheme.spacingTimelineGutter`'s job, not this
+  /// token's, which is what stops the two from drifting.
+  static const space12 = 96.0;
 }

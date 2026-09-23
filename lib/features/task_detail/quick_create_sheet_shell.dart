@@ -301,10 +301,16 @@ class QuickCreateSheetHandle extends StatelessWidget {
       // "sheet can be dragged" affordance sitting above the row's real
       // content. `AppButton.subtleTint`-colored, not `colorTextSecondary`
       // — see [AppSheetHandle]'s own doc comment.
+      //
+      // `spacingSm` (2026-09-22, one rung down from the original
+      // `spacingXs`) — this sheet is the reference implementation for
+      // docs/DESIGN_SYSTEM.md's unified "Sheets" section, and the
+      // unification's own reference value is "slightly lower than
+      // currently."
       child: Align(
         alignment: Alignment.topCenter,
         child: Padding(
-          padding: EdgeInsets.only(top: theme.spacingXs),
+          padding: EdgeInsets.only(top: theme.spacingSm),
           child: AppSheetHandle(theme: theme),
         ),
       ),

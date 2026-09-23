@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
+import '../../core/widgets/app_modal_route.dart';
 import '../../shared/providers/onboarding_profile_catalog.dart';
 import '../../shared/providers/preferences_providers.dart';
 import '../../shared/services/onboarding_quiz.dart';
@@ -57,9 +58,8 @@ class _OnboardingQuizScreenState extends ConsumerState<OnboardingQuizScreen> {
     if (!mounted) return;
     final scored = scoreOnboardingProfiles(catalog, _answeredTags);
     await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (context) =>
-            OnboardingProfileResultScreen(topMatch: scored.first),
+      instantRoute(
+        (context) => OnboardingProfileResultScreen(topMatch: scored.first),
       ),
     );
   }

@@ -12,6 +12,7 @@ import 'core/app_intents/app_intent_channel.dart';
 import 'core/app_intents/intent_notification_service.dart';
 import 'core/dev_config.dart';
 import 'core/feature_flags.dart';
+import 'core/revenue_cat_config.dart';
 import 'core/tokens/color_primitives.dart';
 import 'core/tokens/semantic_theme.dart';
 import 'core/tokens/type_primitives.dart';
@@ -29,6 +30,7 @@ import 'shared/models/category.dart';
 import 'shared/models/synced_calendar_event.dart';
 import 'shared/models/task.dart';
 import 'shared/models/pill_shape.dart';
+import 'shared/models/section.dart';
 import 'shared/models/task_size.dart';
 import 'shared/models/task_template.dart';
 import 'shared/models/tracked_behavior.dart';
@@ -38,6 +40,7 @@ import 'shared/providers/calendar_providers.dart';
 import 'shared/providers/category_providers.dart';
 import 'shared/providers/notification_providers.dart';
 import 'shared/providers/notification_tap_provider.dart';
+import 'shared/providers/section_providers.dart';
 import 'shared/providers/task_providers.dart';
 import 'shared/providers/task_template_providers.dart';
 import 'shared/providers/preferences_providers.dart';
@@ -62,6 +65,8 @@ void main() async {
   // The user-extensible category entity — seeded with 5 built-in rows and
   // backfilled onto existing tasks below, once, at launch.
   await Hive.openBox<Category>(categoryBoxName);
+  // User-created Inbox folders — no seeding, every Section is user-made.
+  await Hive.openBox<Section>(sectionBoxName);
   // Reusable task blueprints, surfaced on the Inbox's "Templates" tab —
   // ungated (free functionality, same tier as Category), see
   // CONSTITUTION.md's "TaskTemplate" section.
@@ -136,6 +141,14 @@ void main() async {
   await container
       .read(categoryListProvider.notifier)
       .seedBuiltInsAndBackfillIfNeeded();
+
+  // Backfill `Task.createdAt` for every pre-existing row saved before
+  // that field existed. Launch-only, gated by
+  // PreferenceKeys.taskCreatedAtBackfilled, same "once per install"
+  // shape as the category backfill just above — see
+  // `TaskList.backfillCreatedAtIfNeeded`'s own doc comment and
+  // docs/DECISIONS.md.
+  await container.read(taskListProvider.notifier).backfillCreatedAtIfNeeded();
 
   // Top up each recurring series' rolling window. Launch-only by design
   // (see docs/DECISIONS.md) — the Timeline stays a pure reader, and the
@@ -580,10 +593,20 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
               ),
               child: AppTopNav(
                 destinations: _topNavLabels(trackedTabVisible),
-                selectedIndex:
-                    _selectedIndex < _topNavLabels(trackedTabVisible).length
-                    ? _selectedIndex
-                    : 0,
+                // **Real bug, fixed 2026-09-22**: this used to fall back
+                // to `0` whenever `_selectedIndex` was Settings' own
+                // index (out of range for `destinations`, which never
+                // includes it) — which made "Day" light up as active
+                // while Settings was actually open. `_TopNavLabel`'s own
+                // `i == selectedIndex` comparison never matches `i`
+                // against Settings' index anyway (`destinations` only
+                // ever runs 0..settingsIndex-1), so passing the real
+                // index through unclamped correctly leaves every label
+                // unselected — `settingsSelected` below is what now
+                // carries the "Settings is active" signal instead, onto
+                // the gear icon.
+                selectedIndex: _selectedIndex,
+                settingsSelected: _selectedIndex == screens.length - 1,
                 // Tapping the Day destination (index 0) again while it's
                 // already selected toggles spatial/Zone view — the
                 // nav-tap half of "1 nav item, but when tapped again it
@@ -598,8 +621,27 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
                   }
                   setState(() => _selectedIndex = index);
                 },
-                onSettingsTap: () =>
-                    setState(() => _selectedIndex = screens.length - 1),
+                onSettingsTap: () {
+                  final settingsIndex = screens.length - 1;
+                  final wasAlreadyOnSettings = _selectedIndex == settingsIndex;
+                  setState(() => _selectedIndex = settingsIndex);
+                  // Only on an actual transition INTO Settings, not on a
+                  // repeated tap while already there — `onSettingsTap` fires
+                  // on every tap regardless of current tab, unlike
+                  // `onDestinationSelected`'s own already-selected check
+                  // above.
+                  if (!wasAlreadyOnSettings &&
+                      FeatureFlags.subscriptionEnabled &&
+                      RevenueCatConfig.isAvailable) {
+                    unawaited(
+                      ref
+                          .read(purchasesRepositoryProvider)
+                          .presentPaywallIfNeeded(
+                            RevenueCatConfig.pantaProEntitlementId,
+                          ),
+                    );
+                  }
+                },
               ),
             ),
             Expanded(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
+import '../../core/widgets/app_modal_route.dart';
 import 'task_template_form.dart';
 import 'template_list_view.dart';
 
@@ -15,7 +16,7 @@ import 'template_list_view.dart';
 /// had and Templates didn't.
 Future<void> showTemplateListScreen(BuildContext context) {
   return Navigator.of(context).push<void>(
-    MaterialPageRoute(builder: (context) => const TemplateListScreen()),
+    instantRoute((context) => const TemplateListScreen()),
   );
 }
 

@@ -218,8 +218,21 @@ class VoiceCapture extends _$VoiceCapture {
     // SECOND time on the next boundary, duplicating the task. Anything
     // already committed is ignored until the user actually says
     // something new.
+    //
+    // **Bug fixed 2026-09-21, reported directly**: "added note... still
+    // listening but even if talking not creating new note." This used to
+    // gate on raw STRING LENGTH (`words.length <= _committedText.length`)
+    // before ever checking content — which drops every later utterance
+    // no longer than everything already committed, not just the
+    // platform's own stale re-delivery of already-committed words. A
+    // first segment as short as "Buy milk" made every subsequent
+    // utterance of 8 characters or fewer vanish silently; a longer first
+    // segment (a real sentence) made almost any short follow-up
+    // (a two-word task) disappear the same way. The only thing that
+    // actually distinguishes "stale re-delivery" from "new speech" is
+    // whether `words` still starts with `_committedText` — length alone
+    // was never sufficient and is dropped entirely below.
     if (_committedText.isNotEmpty) {
-      if (words.length <= _committedText.length) return;
       if (!words.startsWith(_committedText)) {
         // The platform restarted its transcript from scratch (a
         // reopened session), so what arrives is genuinely new speech.
@@ -291,6 +304,29 @@ class VoiceCapture extends _$VoiceCapture {
   @visibleForTesting
   void debugSetCommittedSegments(List<String> segments) {
     state = state.copyWith(committedSegments: segments);
+  }
+
+  /// Test-only seam: [_onResult]/[_commitSegment] both early-return unless
+  /// [VoiceCaptureState.status] is [VoiceCaptureStatus.listening], which
+  /// only [startListening] otherwise sets — and that call goes through a
+  /// real platform channel with no mock in a widget-test environment.
+  @visibleForTesting
+  void debugSetListening() {
+    state = state.copyWith(status: VoiceCaptureStatus.listening);
+  }
+
+  /// Test-only seam onto [_onResult] itself — needed to reproduce the
+  /// "a short second utterance is silently dropped" bug (see
+  /// docs/ERROR_LOG.md) without a real platform recognizer.
+  @visibleForTesting
+  void debugFeedResult(SpeechRecognitionResult result) => _onResult(result);
+
+  /// Test-only seam: fires the pending silence-gap commit immediately,
+  /// standing in for the real [Timer] this provider otherwise waits on.
+  @visibleForTesting
+  void debugCommitSegmentNow() {
+    _silenceTimer?.cancel();
+    _commitSegment();
   }
 
   /// Runs every committed segment through the SAME [parseQuickCapture] +
