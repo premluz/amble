@@ -1112,7 +1112,8 @@ class _ZoneTaskRow extends StatelessWidget {
                   ZoneRowTimeLabel(
                     theme: theme,
                     text: timeLabel,
-                    leftPaddingToEscape: zoneContentLeftInset(theme) + theme.spacingLg,
+                    leftPaddingToEscape:
+                        zoneContentLeftInset(theme, context) + theme.spacingLg,
                     reservedWidth: zoneRowTimeLabelReservedWidth,
                   ),
                 if (hasCategory) ...[
@@ -1367,7 +1368,8 @@ class _ZoneExternalEventRow extends StatelessWidget {
                 child: ZoneRowTimeLabel(
                   theme: theme,
                   text: timeLabel,
-                  leftPaddingToEscape: zoneContentLeftInset(theme) + theme.spacingLg,
+                  leftPaddingToEscape:
+                      zoneContentLeftInset(theme, context) + theme.spacingLg,
                   reservedWidth: zoneRowTimeLabelReservedWidth,
                 ),
               ),

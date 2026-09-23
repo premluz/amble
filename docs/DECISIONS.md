@@ -3333,3 +3333,32 @@ gaps equal `spacingTimelineGutter` at seven viewport widths from 320 to
 sizes." The content column's x no longer depends on the day's own
 overlap depth (`dayPillLanes`); overlapping pills now compress within
 column 2's own fixed width instead of pushing column 3 right.
+
+
+## Day layout: time and content columns, lane-derived title offset (2026-09-23)
+
+The latest two-column mockup supersedes the fixed third-column title
+position above. Both views retain the shared time edge, format-aware time
+width, and equal screen/inter-column gutters. Spatial titles now start
+one `spacingSm` after the day's actual pill span. All titles share that
+position, which expands with overlap depth; resting ghost slots preserve
+it during a drag. Zone backgrounds continue to span the content area.
+The current-time text starts at the same edge as ordinary hour labels;
+its background no longer adds left padding to the text position.
+
+
+**Inner-spacing refinement (2026-09-23):** the non-spatial card's
+`spacingLg` left padding is the reference for both spatial inner gaps:
+zone edge → first pill and last pill → title. This supersedes the
+`spacingSm` title gap above. Spatial pill origins include this padding,
+so extending the band left no longer consumes the time-to-zone gutter.
+Both zone views end at the same screen padding on the right.
+
+
+## Spatial view reveal and current-time line edge (2026-09-23)
+
+The current-time line extends to the screen's right edge; zone cards keep
+their page inset. Spatial day content lays out invisibly until its
+post-layout scroll restoration has run, then appears on the next frame.
+This is a readiness gate, without a timer or fade. Pointer input is
+blocked while hidden. Existing saved-task reveal behavior is unchanged.

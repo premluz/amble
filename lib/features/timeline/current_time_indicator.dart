@@ -150,9 +150,10 @@ class _CurrentTimeIndicatorState extends State<CurrentTimeIndicator> {
                     borderRadius: BorderRadius.circular(theme.radiusSm),
                   ),
                   child: Padding(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: theme.spacingXs,
-                      vertical: theme.spacingXs / 2,
+                    padding: EdgeInsets.only(
+                      right: theme.spacingXs,
+                      top: theme.spacingXs / 2,
+                      bottom: theme.spacingXs / 2,
                     ),
                     child: Text(
                       TimeOfDay.fromDateTime(_now).format(context),

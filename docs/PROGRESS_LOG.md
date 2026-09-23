@@ -5766,3 +5766,58 @@ than fixing it.
 repo (same 18 pre-existing unrelated issues). Full `flutter test`: 1477
 passing, same 7 pre-existing unrelated failures (confirmed present with
 this session's changes stashed, in the prior log entry).
+
+
+## 2026-09-23 — Day time alignment and compact spatial labels
+
+Corrected zoned native/imported time labels to use the same format-aware
+inset as their parent; corrected unzoned labels to include their inner
+padding. Current-time text now starts at the shared time edge. Spatial
+titles clear the actual resting pill lanes by `spacingSm`, growing only
+with overlap depth and remaining stable while a task is dragged.
+
+Files: `zone_container_block.dart`, `zone_day_timeline.dart`,
+`current_time_indicator.dart`, `timeline_screen.dart`;
+`day_time_alignment_test.dart` (new), `spatial_label_icon_alignment_test.dart`;
+this log, `DECISIONS.md`, and `ERROR_LOG.md`.
+
+Verification: six focused regression tests pass (both clock formats,
+zoned/unzoned native/imported rows, current-time edge, one/two lanes).
+Full `flutter test`: 1479 pass, seven previously recorded navigation
+failures; the same seven reproduce in an isolated serial run.
+`flutter analyze`: 18 previously recorded issues, including two errors
+in `widgetbook/test/widget_test.dart`; none in changed files.
+`git diff --check` passes. No screenshot baseline was added; geometry
+and font assertions verify the requested alignment deterministically.
+
+
+## 2026-09-23 — Spatial zone spacing matched to non-spatial cards
+
+Used the existing non-spatial `spacingLg` inner padding for spatial
+zone-edge-to-first-pill and last-pill-to-title gaps. Moved the pill origin
+inward so the painted zone edge preserves the shared time gutter, and
+compensated the background's horizontal trim so both views share the
+right screen inset. Zone-name positioning now uses the painted right edge.
+
+Touched `timeline_screen.dart`, `spatial_label_icon_alignment_test.dart`,
+`zone_task_view_non_interactive_test.dart`, and the three project logs.
+Six focused tests pass, including rendered zone edges and inner spacing
+for one and two lanes. Updated the old test expecting the removed extra
+8px right inset. Full suite: 1479 pass, the same seven known navigation
+failures. Analyzer: the same 18 existing issues, none in touched files.
+`git diff --check` passes. Verification uses rendered geometry assertions.
+
+
+## 2026-09-23 — Full-width current-time line and stable spatial reveal
+
+Removed the current-time line's right inset. Spatial content now stays
+invisible and non-interactive during the first layout/scroll-restoration
+pass, appearing on the next frame without a timed delay or animation.
+Changed `timeline_screen.dart`, `spatial_label_icon_alignment_test.dart`,
+and the three project logs. Tests assert the line's rendered right edge
+and inspect consecutive frames over two zone/spatial round trips.
+
+Verification: six focused tests pass; full suite 1480 pass, the same seven
+known navigation failures. Analyzer retains the same 18 existing issues,
+none in changed files. `git diff --check` passes. Timing was verified
+inside Flutter's widget-test frame scheduler, without external sleeps.

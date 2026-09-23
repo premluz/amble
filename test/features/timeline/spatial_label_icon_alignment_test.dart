@@ -6,6 +6,8 @@ import 'package:tabler_icons_plus/tabler_icons_plus.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/timeline/timeline_screen.dart';
+import 'package:amble/features/timeline/zone_background_block.dart';
+import 'package:amble/features/timeline/current_time_indicator.dart';
 import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/models/task.dart';
 import 'package:amble/shared/models/task_template.dart';
@@ -45,6 +47,7 @@ import '../../support/seeded_category_box.dart';
 /// label's own base `top: 0` offset in `timeline_screen.dart`, leaving
 /// the label aligned to where the icon USED to sit.
 void main() {
+  late ValueNotifier<TimelineDisplayMode> mode;
   late Box<Task> taskBox;
   late Box<Category> categoryBox;
   late Box<Zone> zoneBox;
@@ -53,6 +56,7 @@ void main() {
   late Box<TaskTemplate> templateBox;
 
   setUp(() async {
+    mode = ValueNotifier(TimelineDisplayMode.spatial);
     Hive.init('./.dart_tool/test_hive_spatial_label_icon_alignment');
     if (!Hive.isAdapterRegistered(0)) {
       Hive.registerAdapters();
@@ -69,6 +73,7 @@ void main() {
   });
 
   tearDown(() async {
+    mode.dispose();
     await taskBox.close();
     await categoryBox.close();
     await zoneBox.close();
@@ -77,8 +82,34 @@ void main() {
     await templateBox.close();
   });
 
+  void expectZoneEdges(WidgetTester tester) {
+    final theme = AmbleTheme.light;
+    final bandFinder = find.byType(ZoneBackgroundBlock);
+    final band = tester.getRect(bandFinder);
+    final context = tester.element(bandFinder);
+    final firstIcon = find.byIcon(TablerIcons.briefcase).evaluate().map(
+      (element) => tester.getRect(find.byWidget(element.widget)).center.dx,
+    ).reduce((a, b) => a < b ? a : b);
+    expect(
+      tester.getRect(find.byType(CurrentTimeIndicator)).right,
+      tester.view.physicalSize.width,
+    );
+    expect(band.left, theme.timelineZoneLeftFor(context));
+    expect(band.right, tester.view.physicalSize.width - theme.spacingScreenPadding);
+    expect(firstIcon - theme.sizeTaskBadge / 2 - band.left, theme.spacingLg);
+  }
+
   Future<void> pumpTimeline(WidgetTester tester, {required Task task}) async {
-    await tester.runAsync(() => taskBox.put(task.id, task));
+    await tester.runAsync(() async {
+      await taskBox.put(task.id, task);
+      final startMinutes = task.scheduledAt!.hour * 60;
+      await zoneBox.put('zone', Zone(
+        id: 'zone',
+        title: 'Test zone',
+        startMinutes: startMinutes,
+        endMinutes: startMinutes + 60,
+      ));
+    });
 
     tester.view.physicalSize = const Size(430, 932);
     tester.view.devicePixelRatio = 1.0;
@@ -107,13 +138,17 @@ void main() {
         ],
         child: MaterialApp(
           theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
-          home: const Scaffold(
-            body: TimelineScreen(mode: TimelineDisplayMode.spatial),
+          home: ValueListenableBuilder<TimelineDisplayMode>(
+            valueListenable: mode,
+            builder: (context, value, child) => Scaffold(
+              body: TimelineScreen(mode: value),
+            ),
           ),
         ),
       ),
     );
     await tester.pumpAndSettle();
+    expectZoneEdges(tester);
   }
 
   // Anchored near `now` so the task is guaranteed to be scrolled into view
@@ -140,6 +175,33 @@ void main() {
     return category;
   }
 
+  testWidgets('zone-to-spatial reveals only the restored layout', (tester) async {
+    late Category category;
+    await tester.runAsync(() async {
+      category = await seedIconCategory(categoryBox);
+    });
+    final task = Task.create(
+      title: 'Switch test',
+      scheduledAt: todayAt(DateTime.now().hour),
+      durationMinutes: 15,
+      categoryId: category.id,
+    );
+    await pumpTimeline(tester, task: task);
+    for (var roundTrip = 0; roundTrip < 2; roundTrip++) {
+      mode.value = TimelineDisplayMode.zone;
+      await tester.pumpAndSettle();
+      mode.value = TimelineDisplayMode.spatial;
+      await tester.pump();
+      final reveal = find.byKey(const ValueKey('positioned-day-content'));
+      expect(tester.widget<Opacity>(reveal).opacity, 0);
+      await tester.pump();
+      expect(tester.widget<Opacity>(reveal).opacity, 1);
+      final positioned = tester.getRect(find.byType(ZoneBackgroundBlock));
+      await tester.pumpAndSettle();
+      expect(tester.getRect(find.byType(ZoneBackgroundBlock)), positioned);
+    }
+  });
+
   testWidgets('on the smallest (badge-floored) task, the title sits vertically '
       'centered against the icon, not above it', (tester) async {
     late Category category;
@@ -158,6 +220,10 @@ void main() {
 
     final icon = tester.getRect(find.byIcon(TablerIcons.briefcase).first);
     final title = tester.getRect(find.text('Audiobook'));
+    expect(
+      title.left - icon.center.dx,
+      AmbleTheme.light.sizeTaskBadge / 2 + AmbleTheme.light.spacingLg,
+    );
 
     // The title's own vertical center must land within 2px of the
     // icon's center. Before this fix the gap on a badge-floored pill
@@ -187,10 +253,26 @@ void main() {
       durationMinutes: 5,
       categoryId: category.id,
     );
+    final overlapping = Task.create(
+      title: 'Concurrent task',
+      scheduledAt: task.scheduledAt!,
+      durationMinutes: 15,
+      categoryId: category.id,
+    );
+    await tester.runAsync(() => taskBox.put(overlapping.id, overlapping));
     await pumpTimeline(tester, task: task);
 
-    final icon = tester.getRect(find.byIcon(TablerIcons.briefcase).first);
+    final icons = find.byIcon(TablerIcons.briefcase);
+    final icon = tester.getRect(icons.first);
     final title = tester.getRect(find.text('Walk'));
+    final rightmostCenter = icons.evaluate().map(
+      (element) => tester.getRect(find.byWidget(element.widget)).center.dx,
+    ).reduce((a, b) => a > b ? a : b);
+    expect(
+      title.left - rightmostCenter,
+      AmbleTheme.light.sizeTaskBadge / 2 + AmbleTheme.light.spacingLg,
+    );
+    expect(tester.getRect(find.text('Concurrent task')).left, title.left);
 
     // The icon glyph itself is inset within its own badge square (see
     // `_PillGlyph`), so its own `top` sits a few px below the pill's

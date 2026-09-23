@@ -229,19 +229,11 @@ void main() {
       final theme = AmbleTheme.light;
       final rect = tester.getRect(find.byType(ZoneBackgroundBlock));
 
-      // ZoneBackgroundBlock trims its own rendered width by
-      // `zoneBackgroundGap` and extends it left by `zoneBackgroundOffset`
-      // (both purely cosmetic — see that widget's own doc comments), so
-      // the band's right edge lands that combined nudge inside the
-      // screen's own padding. Checked as an edge position rather than a
-      // bare width so the cosmetic offsets stay visible in the math.
+      // Both day views end their zone backgrounds at the shared page inset.
       expect(
         rect.right,
         moreOrLessEquals(
-          viewportWidth -
-              theme.spacingScreenPadding -
-              zoneBackgroundGap -
-              zoneBackgroundOffset,
+          viewportWidth - theme.spacingScreenPadding,
           epsilon: 1.0,
         ),
         reason:

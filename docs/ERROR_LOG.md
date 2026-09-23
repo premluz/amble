@@ -1762,3 +1762,36 @@ not "the same measurement" just because they produce a similar number on
 one test device at one point in time. When a user says a structure is
 "overcomplicated" or asks for a rebuild rather than another patch, that
 is often a correct diagnosis of exactly this pattern, not scope creep.
+
+
+## Day time labels escaped using a different inset than their parent (2026-09-23)
+
+Zoned task/event labels used the format-agnostic `zoneContentLeftInset`
+while the list used its context-aware variant. In 24-hour mode the labels
+were pulled too far left, outside the viewport. Unzoned task/event labels
+omitted their wrapper's `spacingLg`, moving them too far right. Both paths
+now account for the actual format and full padding chain. Regression
+coverage in `day_time_alignment_test.dart` checks four rows (native and
+imported, zoned and unzoned) in both clock formats, including text geometry
+and font family. The current-time label's own left padding is also covered.
+
+
+**Spatial band geometry follow-up (2026-09-23):** its `left` argument is
+the pill origin, not the painted zone edge. Extending the background left
+without moving that origin consumed the time gutter. Its width also
+subtracts `zoneBackgroundGap + zoneBackgroundOffset` horizontally,
+leaving an extra right inset unless the full-width caller compensates.
+The screen now accounts for both; rendered zone-edge and inner-gap
+assertions cover one and two lanes. A local test helper initially failed
+to compile because it was declared after its call; moved before the call.
+
+
+## Zone-to-spatial switch briefly painted the unrestored scroll position (2026-09-23)
+
+The spatial day mounted at its initial scroll offset and restored the
+remembered hour in a post-frame callback. A zero-duration view transition
+does not prevent that first frame from painting. Hide the spatial content
+while its viewport lays out, and reveal after the restoration jump.
+`spatial_label_icon_alignment_test.dart` checks the hidden first frame,
+visible next frame, and unchanged zone geometry after settling over two
+round trips, inside the widget-test frame scheduler.

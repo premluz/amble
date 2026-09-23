@@ -444,7 +444,8 @@ class ZoneDayTimeline extends StatelessWidget {
                                   theme: theme,
                                   text: timeLabel,
                                   leftPaddingToEscape:
-                                      zoneContentLeftInset(theme, context),
+                                      zoneContentLeftInset(theme, context) +
+                                      theme.spacingLg,
                                   reservedWidth: zoneRowTimeLabelReservedWidth,
                                 ),
                               ),
@@ -604,7 +605,8 @@ class _UnzonedEventRow extends StatelessWidget {
                 child: ZoneRowTimeLabel(
                   theme: theme,
                   text: timeLabel,
-                  leftPaddingToEscape: zoneContentLeftInset(theme, context),
+                  leftPaddingToEscape:
+                      zoneContentLeftInset(theme, context) + theme.spacingLg,
                   reservedWidth: zoneRowTimeLabelReservedWidth,
                 ),
               ),

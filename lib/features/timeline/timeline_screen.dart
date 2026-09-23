@@ -164,24 +164,15 @@ const double _minPillGap = 2;
 /// column clears the widest pill run on screen and an unstacked task's
 /// name still lines up with a stacked one's.
 ///
-/// **2026-09-23 — fixed, not lane-derived.** This used to grow with
-/// `dayPillLanes(slots)` — the day's own deepest overlap — so a task's
-/// title started further right on a busy day than a quiet one, and the
-/// spatial and non-spatial views could never agree on one x since only
-/// the spatial view had "lanes" to derive from. Rebuilt on
-/// [AmbleTheme.timelineZoneWidth]/[AmbleTheme.spacingTimelineGutter]
-/// instead: column 3 (this text column) now starts at a fixed offset from
-/// column 2's own left edge (`hourGutterWidth`), regardless of the day's
-/// content. An overlapping pill run that would have pushed this column
-/// further right instead compresses within column 2's own fixed width —
-/// see `test/core/tokens/timeline_columns_test.dart` for the contract
-/// this pins.
-///
-/// Relative to `hourGutterWidth` (column 2's own left edge), matching
-/// [_DraggableTaskBlock]'s own `widget.textColumnLeft` contract — NOT
-/// page-absolute, so every call site adds it to `hourGutterWidth`.
-double _textColumnLeft(AmbleTheme theme, double viewportWidth) =>
-    theme.timelineZoneWidth(viewportWidth) + theme.spacingTimelineGutter;
+/// Relative to the first pill. The trailing gap matches the non-spatial
+/// zone's inner padding; actual lane depth keeps quiet days compact.
+double _textColumnLeft(AmbleTheme theme, List<TaskLayoutSlot> slots) =>
+    zoneBackgroundPillWidth(
+      lanes: dayPillLanes(slots),
+      pillWidth: _pillWidth(theme),
+      columnGap: _columnGap(theme),
+    ) +
+    theme.spacingLg;
 
 bool _isSameDay(DateTime a, DateTime b) =>
     a.year == b.year && a.month == b.month && a.day == b.day;
@@ -1492,6 +1483,7 @@ class _DayTimeline extends StatefulWidget {
 
 class _DayTimelineState extends State<_DayTimeline> {
   final _scrollController = ScrollController();
+  bool _scrollPositionReady = true;
 
   /// Shared between the placement gesture's press surface (the Stack's
   /// FIRST child, so task pills win presses over it) and the line it
@@ -1694,6 +1686,7 @@ class _DayTimelineState extends State<_DayTimeline> {
   /// position should be REMEMBERED across view switches, not reset to
   /// "now" every time.
   void _scrollToCurrentHourCentered() {
+    _scrollPositionReady = !widget.showHourLabels;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       // Deliberately NOT skipped for an empty day any more: the range is
@@ -1731,6 +1724,7 @@ class _DayTimelineState extends State<_DayTimeline> {
       _scrollController.jumpTo(
         target.clamp(0.0, _scrollController.position.maxScrollExtent),
       );
+      setState(() => _scrollPositionReady = true);
     });
   }
 
@@ -2162,8 +2156,10 @@ class _DayTimelineState extends State<_DayTimeline> {
     // the now-line reclaim the space rather than leaving a blank margin
     // (confirmed via AskUserQuestion over keeping the width reserved but
     // empty).
+    // Pill origin includes inner padding; the band extends back to the
+    // shared zone edge without consuming the time-to-zone gutter.
     final hourGutterWidth = widget.showHourLabels
-        ? theme.timelineZoneLeftFor(context)
+        ? theme.timelineZoneLeftFor(context) + theme.spacingLg
         : theme.spacingScreenPadding;
 
     /// The matching inset on the RIGHT, for children that previously
@@ -2212,7 +2208,9 @@ class _DayTimelineState extends State<_DayTimeline> {
         // pointers passively rather than claiming the gesture arena — see
         // that widget's own doc comment.
         return TimelinePinchZoom(
-          child: Stack(
+          // Layout must establish the viewport before restoring its offset.
+          // Reveal only the positioned frame, never the initial midnight frame.
+          child: _positionedContent(Stack(
             children: [
               SingleChildScrollView(
                 controller: _scrollController,
@@ -2407,7 +2405,7 @@ class _DayTimelineState extends State<_DayTimeline> {
                                     // Full-width mode gets the SAME left
                                     // padding before the first task lane
                                     // as the non-spatial Zone view's own
-                                    // card (`spacingMd`, 16px) — requested
+                                    // card (`spacingLg`) — requested
                                     // directly. The old dynamic-width mode
                                     // keeps its original, narrower
                                     // zoneBackgroundOffset (4px) inset,
@@ -2416,7 +2414,7 @@ class _DayTimelineState extends State<_DayTimeline> {
                                     // own doc comment.
                                     leftInset: dynamicWidth
                                         ? zoneBackgroundOffset
-                                        : theme.spacingMd,
+                                        : theme.spacingLg,
                                     // Zones are purely decorative on the
                                     // Task Edit tab now — requested
                                     // directly: "turn off edit zones (tap
@@ -2464,7 +2462,10 @@ class _DayTimelineState extends State<_DayTimeline> {
                                     pixelsPerMinute: widget.pixelsPerMinute,
                                     width: theme.spacingLg,
                                     insideBandLeft: hourGutterWidth,
-                                    insideBandWidth: bandWidth,
+                                    insideBandWidth:
+                                        bandWidth -
+                                        zoneBackgroundGap -
+                                        zoneBackgroundOffset,
                                   ),
                               ],
                             );
@@ -2742,7 +2743,7 @@ class _DayTimelineState extends State<_DayTimeline> {
                             // directly, so List mode's names line up the same way
                             // Task view's already do regardless of lane depth.
                             splitLayout: true,
-                            textColumnLeft: _textColumnLeft(theme, constraints.maxWidth),
+                            textColumnLeft: _textColumnLeft(theme, ghostSlots),
                             // How far the label sits BELOW its own pill's top —
                             // zero when nothing collides (perfectly icon-aligned),
                             // positive when the label above pushed it down. Passed
@@ -2861,7 +2862,7 @@ class _DayTimelineState extends State<_DayTimeline> {
                               pillWidth: _pillWidth(theme),
                               columnGap: _columnGap(theme),
                             ),
-                            textColumnLeft: _textColumnLeft(theme, constraints.maxWidth),
+                            textColumnLeft: _textColumnLeft(theme, ghostSlots),
                             textColumnRight: textColumnRightInset,
                             collapsedTop: widget.showHourLabels
                                 ? null
@@ -2913,7 +2914,7 @@ class _DayTimelineState extends State<_DayTimeline> {
                           // Same shared text column every real task's name
                           // sits in — requested directly ("the task name
                           // should also be aligned as other text").
-                          textColumnLeft: _textColumnLeft(theme, constraints.maxWidth),
+                          textColumnLeft: _textColumnLeft(theme, ghostSlots),
                           textColumnRight: textColumnRightInset,
                         ),
                       // The cluster's own flat title+time list — the member pills
@@ -2990,7 +2991,7 @@ class _DayTimelineState extends State<_DayTimeline> {
                             // than every unclustered task's name.
                             left:
                                 hourGutterWidth +
-                                _textColumnLeft(theme, constraints.maxWidth),
+                                _textColumnLeft(theme, ghostSlots),
                             // Matches the ordinary task rows' own checkbox-
                             // column edge, including its narrower inset — see
                             // `textColumnRightInset`'s own comment above.
@@ -3046,7 +3047,6 @@ class _DayTimelineState extends State<_DayTimeline> {
                           // these two call sites disagreed: "current hour
                           // not aligned with day hours on timeline."
                           leftInset: theme.timelineTimeLeft,
-                          rightInset: rightEdgeInset,
                         ),
                       // LAST, deliberately — the placement line has to paint above
                       // every task (reported directly: it was rendering underneath
@@ -3153,11 +3153,20 @@ class _DayTimelineState extends State<_DayTimeline> {
                 ),
               ),
             ],
-          ),
+          )),
         );
       },
     );
   }
+
+  Widget _positionedContent(Widget child) => IgnorePointer(
+    ignoring: !_scrollPositionReady,
+    child: Opacity(
+      key: const ValueKey('positioned-day-content'),
+      opacity: _scrollPositionReady ? 1 : 0,
+      child: child,
+    ),
+  );
 
   double _minutesSinceStart(DateTime rangeStart, DateTime scheduledAt) =>
       scheduledAt.difference(rangeStart).inMinutes.toDouble();
@@ -3685,7 +3694,12 @@ class _DayTimelineState extends State<_DayTimeline> {
     required double zoneLeft,
   }) => math.max(
     0,
-    viewportWidth - zoneLeft - theme.spacingScreenPadding,
+    // ZoneBackgroundBlock trims these from its supplied horizontal span.
+    viewportWidth -
+        zoneLeft -
+        theme.spacingScreenPadding +
+        zoneBackgroundGap +
+        zoneBackgroundOffset,
   );
 
   /// One task-name label's rendered height, used by [computeLabelTops] to
