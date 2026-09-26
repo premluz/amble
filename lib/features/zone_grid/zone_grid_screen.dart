@@ -16,6 +16,7 @@ import '../../core/widgets/app_tab_switch.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
 import '../../core/widgets/app_undo_toast.dart';
 import '../../core/widgets/selected_pill_border.dart';
+import '../../core/widgets/resize_handle_dot.dart';
 import '../../shared/models/task.dart';
 import '../../shared/models/zone.dart';
 import '../../shared/providers/preferences_providers.dart';
@@ -214,6 +215,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   /// on all sides top bottom (resize zone time start end) left right
   /// resize sideways to include/reduce days."
   _MarqueeEdge? _resizeEdge;
+  double? _resizeX;
 
   /// The pending marquee's own rectangle as it stood when a whole-marquee
   /// MOVE drag began, plus that drag's accumulated pixel delta — see
@@ -357,60 +359,86 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
     return AppContextDock(configuration: configuration);
   }
 
-  Widget _zoneContextDock(
-    Set<String> selected,
-    List<Zone> zones,
-  ) => _claimOrBuildDock(
-    ZoneGridTab.zones,
-    AppContextDockConfiguration(
-      stateId: selected.isEmpty ? 'edit-zone' : 'edit-zone-selection',
-      groups: [
-        AppContextGroup(
-          id: 'context-navigation',
-          actions: [
-            AppContextAction(
-              id: 'edit-back',
-              icon: Icons.arrow_back_rounded,
-              tooltip: selected.isEmpty ? 'Close zones' : 'Clear selection',
-              onPressed: selected.isEmpty
-                  ? _close
-                  : () => ref.read(zoneEditSelectionProvider.notifier).clear(),
-            ),
-          ],
+  Widget _zoneContextDock(Set<String> selected, List<Zone> zones) =>
+      _claimOrBuildDock(
+        ZoneGridTab.zones,
+        AppContextDockConfiguration(
+          // Empty groups while naming a new zone — the dock (`AppBottomDock`
+          // in `main.dart`, which renders whatever configuration this screen
+          // CLAIMS via `AppShellChromeController`) is a persistent shell
+          // overlay painted AFTER (on top of) this screen's own routed
+          // content, regardless of any `Positioned` offset `NewZoneSheet`
+          // itself uses — no amount of repositioning that sheet could ever
+          // make it appear above the dock while the dock keeps painting
+          // last. Reported directly: "still bottom toolbar overlaps" (the
+          // toolbar drawn on top, covering the sheet's own Close/Add zone
+          // row). Hiding the dock's actions entirely while `_pending != null`
+          // removes the thing that was overlapping, rather than trying to
+          // out-position a persistent overlay that always wins the paint
+          // order. Its own Close/Edit actions have nothing meaningful to do
+          // while a naming sheet is open anyway.
+          stateId: _pending != null
+              ? 'edit-zone-naming'
+              : selected.isEmpty
+              ? 'edit-zone'
+              : 'edit-zone-selection',
+          groups: _pending != null
+              ? const []
+              : [
+                  AppContextGroup(
+                    id: 'context-navigation',
+                    actions: [
+                      AppContextAction(
+                        id: 'edit-back',
+                        icon: Icons.arrow_back_rounded,
+                        tooltip: selected.isEmpty
+                            ? 'Close zones'
+                            : 'Clear selection',
+                        onPressed: selected.isEmpty
+                            ? _close
+                            : () => ref
+                                  .read(zoneEditSelectionProvider.notifier)
+                                  .clear(),
+                      ),
+                    ],
+                  ),
+                  if (selected.isNotEmpty)
+                    AppContextGroup(
+                      id: 'edit-zone-selection-actions',
+                      actions: [
+                        AppContextAction(
+                          id: 'edit-zone-edit',
+                          icon: Icons.edit_outlined,
+                          tooltip: 'Edit placement',
+                          onPressed: () {
+                            if (selected.length == 1) {
+                              final zone = zones
+                                  .where((z) => selected.contains(z.id))
+                                  .firstOrNull;
+                              if (zone != null) {
+                                showZoneFormScreen(context, zone: zone);
+                              }
+                              return;
+                            }
+                            showMultiZoneEditSheet(
+                              context,
+                              zoneIds: selected.toList(),
+                            );
+                          },
+                        ),
+                        AppContextAction(
+                          id: 'edit-zone-remove',
+                          icon: Icons.delete_outline_rounded,
+                          tooltip: 'Remove placements',
+                          destructive: true,
+                          onPressed: () =>
+                              _removeSelectedZones(selected, zones),
+                        ),
+                      ],
+                    ),
+                ],
         ),
-        if (selected.isNotEmpty)
-          AppContextGroup(
-            id: 'edit-zone-selection-actions',
-            actions: [
-              AppContextAction(
-                id: 'edit-zone-edit',
-                icon: Icons.edit_outlined,
-                tooltip: 'Edit placement',
-                onPressed: () {
-                  if (selected.length == 1) {
-                    final zone = zones
-                        .where((z) => selected.contains(z.id))
-                        .firstOrNull;
-                    if (zone != null) {
-                      showZoneFormScreen(context, zone: zone);
-                    }
-                    return;
-                  }
-                  showMultiZoneEditSheet(context, zoneIds: selected.toList());
-                },
-              ),
-              AppContextAction(
-                id: 'edit-zone-remove',
-                icon: Icons.delete_outline_rounded,
-                tooltip: 'Remove placements',
-                destructive: true,
-                onPressed: () => _removeSelectedZones(selected, zones),
-              ),
-            ],
-          ),
-      ],
-    ),
-  );
+      );
 
   /// The selection dock's own Edit action — a single task opens the
   /// ordinary detail sheet unchanged ([showTaskDetailSheet], the app's one
@@ -653,6 +681,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
       _paint = null;
       _pending = null;
       _resizeEdge = null;
+      _resizeX = null;
       // Cleared here too, or a marquee dismissed mid-move would leave the
       // grid's own `physics` gate stuck on NeverScrollableScrollPhysics
       // with no gesture left to clear it.
@@ -683,7 +712,19 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
     final box = _grid;
     final paint = _paint;
     if (box == null || paint == null) return;
-    final (day, minute) = _cell(box.globalToLocal(global));
+    final local = box.globalToLocal(global);
+    final (_, minute) = _cell(local);
+    final x = local.dx.clamp(
+      _axisWidth +
+          (edge == _MarqueeEdge.right ? paint.firstDay : 0) * _columnWidth,
+      _axisWidth +
+          (edge == _MarqueeEdge.left ? paint.lastDay - 1 : 7) * _columnWidth,
+    );
+    final day =
+        (edge == _MarqueeEdge.right
+                ? ((x - _axisWidth) / _columnWidth).round()
+                : ((x - _axisWidth) / _columnWidth).round() + 1)
+            .clamp(1, 7);
     final next = switch (edge) {
       _MarqueeEdge.top => ZonePaintSelection(
         paint.firstDay,
@@ -711,12 +752,25 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
       ),
     };
     setState(() {
+      if (edge == _MarqueeEdge.left || edge == _MarqueeEdge.right) {
+        _resizeX = x;
+      }
       _paint = next;
       // The naming sheet reads its target from `_pending`, so it has to
       // track the live rectangle or it would save the pre-resize one.
       if (_pending != null) _pending = _target(next);
     });
   }
+
+  double _previewLeft(ZonePaintSelection preview) =>
+      _resizeEdge == _MarqueeEdge.left && _resizeX != null
+      ? _resizeX!
+      : _axisWidth + (preview.firstDay - 1) * _columnWidth;
+
+  double _previewRight(ZonePaintSelection preview) =>
+      _resizeEdge == _MarqueeEdge.right && _resizeX != null
+      ? _resizeX!
+      : _axisWidth + preview.lastDay * _columnWidth;
 
   /// The marquee's own fill+ring, with no gesture of its own — the caller
   /// decides whether to wrap it in an [IgnorePointer] (a live paint/fill
@@ -1056,11 +1110,19 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
-    _shellChromeController?.updateHeader(_tab.name, AppTabSwitch<ZoneGridTab>(
-      options: _zoneGridTabOptions, value: _tab, onChanged: _switchTab,
-    ));
+    _shellChromeController?.updateHeader(
+      _tab.name,
+      AppTabSwitch<ZoneGridTab>(
+        options: _zoneGridTabOptions,
+        value: _tab,
+        onChanged: _switchTab,
+      ),
+    );
     // The underlying Day calendar must never bleed through the Edit crossfade.
-    return ColoredBox(color: theme.colorSurfacePrimary, child: _buildContent(context));
+    return ColoredBox(
+      color: theme.colorSurfacePrimary,
+      child: _buildContent(context),
+    );
   }
 
   Widget _buildContent(BuildContext context) {
@@ -1097,14 +1159,15 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                     // directly: "in edit mode on top we should only have 2
                     // tabs task and zones" — Close (and, on the Zones tab,
                     // Edit) moved to a bottom dock instead (see below).
-                    if (_shellChromeController == null) Padding(
-                      padding: EdgeInsets.all(theme.spacingMd),
-                      child: AppTabSwitch<ZoneGridTab>(
-                        options: _zoneGridTabOptions,
-                        value: _tab,
-                        onChanged: _switchTab,
+                    if (_shellChromeController == null)
+                      Padding(
+                        padding: EdgeInsets.all(theme.spacingMd),
+                        child: AppTabSwitch<ZoneGridTab>(
+                          options: _zoneGridTabOptions,
+                          value: _tab,
+                          onChanged: _switchTab,
+                        ),
                       ),
-                    ),
                     // **2026-09-20 — the calendar is back.** Requested
                     // directly: "Tasks edit mode should also have
                     // calendar." `showHeader` flips true so `TimelineScreen`
@@ -1183,14 +1246,15 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                   // **2026-09-20 — bare tab switch, no icons.** See this
                   // class's own doc comment for the full change — Edit and
                   // Close moved to a bottom dock below.
-                  if (_shellChromeController == null) Padding(
-                    padding: EdgeInsets.all(theme.spacingMd),
-                    child: AppTabSwitch<ZoneGridTab>(
-                      options: _zoneGridTabOptions,
-                      value: _tab,
-                      onChanged: _switchTab,
+                  if (_shellChromeController == null)
+                    Padding(
+                      padding: EdgeInsets.all(theme.spacingMd),
+                      child: AppTabSwitch<ZoneGridTab>(
+                        options: _zoneGridTabOptions,
+                        value: _tab,
+                        onChanged: _switchTab,
+                      ),
                     ),
-                  ),
                   // **2026-09-24 — selection tooling MOVED to the bottom
                   // dock.** Requested directly: "spacing of tooling in zone
                   // edit mode we have tooling opened on top... align with
@@ -1434,7 +1498,22 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                                                 // the same "HH:MM" label reads
                                                 // identically regardless of
                                                 // which screen it's on.
-                                                style: theme.textCaption
+                                                //
+                                                // textCaptionMono, not
+                                                // textCaption — this is a
+                                                // genuinely numeric/temporal
+                                                // label (TypePrimitives
+                                                // .fontFamily's own mono
+                                                // carve-out), and
+                                                // TaskBoundaryMarkers' own
+                                                // hour label already reads
+                                                // textCaptionMono; this one
+                                                // had drifted onto the sans
+                                                // style, reported directly
+                                                // as a font mismatch between
+                                                // this screen and everywhere
+                                                // else.
+                                                style: theme.textCaptionMono
                                                     .copyWith(
                                                       color: theme
                                                           .colorTextSecondary,
@@ -1554,14 +1633,13 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                                           ),
                                       if (preview != null) ...[
                                         Positioned(
-                                          left:
-                                              _axisWidth +
-                                              (preview.firstDay - 1) * width,
+                                          key: const ValueKey(
+                                            'zone-marquee-body',
+                                          ),
+                                          left: _previewLeft(preview),
                                           width:
-                                              (preview.lastDay -
-                                                  preview.firstDay +
-                                                  1) *
-                                              width,
+                                              _previewRight(preview) -
+                                              _previewLeft(preview),
                                           top:
                                               preview.startMinutes *
                                               _pixelsPerMinute,
@@ -1768,12 +1846,8 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                                         // `IgnorePointer`ed, so nothing
                                         // competes for these gestures.
                                         ...() {
-                                          final left =
-                                              _axisWidth +
-                                              (preview.firstDay - 1) * width;
-                                          final right =
-                                              _axisWidth +
-                                              preview.lastDay * width;
+                                          final left = _previewLeft(preview);
+                                          final right = _previewRight(preview);
                                           final top =
                                               preview.startMinutes *
                                               _pixelsPerMinute;
@@ -1785,6 +1859,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                                             double y,
                                             _MarqueeEdge edge,
                                           ) => Positioned(
+                                            key: ValueKey(edge),
                                             // The hit box is clamped INSIDE
                                             // the grid, and only the painted
                                             // dot is centred on the edge.
@@ -1831,6 +1906,16 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                                                     ),
                                             child: _MarqueeResizeHandle(
                                               theme: theme,
+                                              alignment: switch (edge) {
+                                                _MarqueeEdge.top =>
+                                                  Alignment.topCenter,
+                                                _MarqueeEdge.bottom =>
+                                                  Alignment.bottomCenter,
+                                                _MarqueeEdge.left =>
+                                                  Alignment.centerLeft,
+                                                _MarqueeEdge.right =>
+                                                  Alignment.centerRight,
+                                              },
                                               vertical:
                                                   edge == _MarqueeEdge.top ||
                                                   edge == _MarqueeEdge.bottom,
@@ -1840,6 +1925,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                                               },
                                               onDragEnd: () => setState(() {
                                                 _resizeEdge = null;
+                                                _resizeX = null;
                                               }),
                                             ),
                                           );
@@ -2211,6 +2297,7 @@ class _MarqueeResizeHandle extends StatelessWidget {
     required this.onDrag,
     required this.onDragEnd,
     required this.vertical,
+    required this.alignment,
   });
 
   final AmbleTheme theme;
@@ -2221,10 +2308,10 @@ class _MarqueeResizeHandle extends StatelessWidget {
   /// edge, changing time) or the horizontal one (a left/right edge,
   /// changing the weekday span).
   final bool vertical;
+  final Alignment alignment;
 
   @override
   Widget build(BuildContext context) {
-    final dotSize = theme.spacingSm;
     // An AXIS-SPECIFIC recognizer, never `onPan*`. The grid scrolls
     // vertically and `ZoneGridBlock` already claims both axes for its own
     // move/extend drags, so a pan recognizer here loses the arena to the
@@ -2249,13 +2336,11 @@ class _MarqueeResizeHandle extends StatelessWidget {
         width: theme.spacingMinTapTarget,
         height: theme.spacingMinTapTarget,
         child: Center(
-          child: Container(
-            width: dotSize,
-            height: dotSize,
-            decoration: BoxDecoration(
-              color: theme.colorAccent,
-              shape: BoxShape.circle,
-            ),
+          child: Transform.translate(
+            offset:
+                Offset(-alignment.x, -alignment.y) *
+                ResizeHandleDot.edgeInset(theme),
+            child: ResizeHandleDot(theme: theme),
           ),
         ),
       ),

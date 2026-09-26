@@ -149,6 +149,30 @@ class PreventOverlappingTasksSetting extends _$PreventOverlappingTasksSetting {
   }
 }
 
+/// Whether the app's dual-font system is active — see
+/// `PreferenceKeys.dualFontEnabled`'s own doc comment. `keepAlive: true` for
+/// the same reason as the other settings here: read once per app start (via
+/// `main.dart`'s own "resolve once, before MaterialApp" pass), not
+/// screen-scoped state. Defaults to **true** so a fresh install keeps the
+/// existing dual-font look; turning it off is an explicit opt-out.
+@Riverpod(keepAlive: true)
+class DualFontSetting extends _$DualFontSetting {
+  @override
+  bool build() {
+    return ref
+            .read(preferencesRepositoryProvider)
+            .getValue<bool>(PreferenceKeys.dualFontEnabled) ??
+        true;
+  }
+
+  Future<void> set(bool value) async {
+    await ref
+        .read(preferencesRepositoryProvider)
+        .setValue(PreferenceKeys.dualFontEnabled, value);
+    state = value;
+  }
+}
+
 /// Whether the day view's left-side hour gutter (the grid of clock-hour
 /// ticks) is shown.
 ///

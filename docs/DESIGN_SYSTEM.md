@@ -396,6 +396,34 @@ whole list is visible at once.
 
 ---
 
+## Task manipulation targets — `TaskManipulationTargets`
+
+**Files**: `lib/features/timeline/task_manipulation_targets.dart`,
+`task_compact_controls.dart`, and `cancel_safe_vertical_drag.dart`.
+
+The task shows exactly two resize dots, centered on the capsule's top and
+bottom edges. There are no displaced Start/End controls, visible labels, or
+connector lines. Enlarging interaction geometry must not reposition the dots
+or the visual capsule.
+
+The primary task reserves a `spacingMinTapTarget`-wide interaction area.
+Resize regions use the existing fitted handle-height helper so they cannot
+overlap. On pills shorter than that token, the strip beside the pill stays
+move-only. This preserves all three operations, but does not promise a full
+48 × 48 resize target on a tiny capsule. Secondary selected tasks retain
+in-pill handles and group-resize behavior. Primary-task stacking remains.
+
+Handle taps are consumed. They cannot toggle the task, clear selection, create
+a task, or reach a neighboring task. Pointer cancellation restores the
+pre-gesture preview and selection; `CancelSafeVerticalDrag` coalesces Flutter
+recognizer cancellation and raw pointer cancellation into one callback.
+
+**Never**: use `Clip.none` as evidence that painted overflow is hittable, give
+overlapping Start/End detectors the same bounds, remove handles from secondary
+selected tasks, or treat cancellation as a successful drag end.
+
+---
+
 ## Badge/label chip — `AppBadgeChip`
 
 **File**: `lib/core/widgets/app_badge_chip.dart`

@@ -42,6 +42,27 @@ void main() {
       expect(container.read(editSelectionProvider), isEmpty);
     });
 
+    test('promote keeps membership and makes the task primary', () {
+      final notifier = container.read(editSelectionProvider.notifier);
+      notifier.toggle('a');
+      notifier.toggle('b');
+      notifier.toggle('c');
+
+      notifier.promote('a');
+
+      expect(container.read(editSelectionProvider).toList(), ['b', 'c', 'a']);
+    });
+
+    test('replace copies the original selection for cancel rollback', () {
+      final notifier = container.read(editSelectionProvider.notifier);
+      final original = <String>{'a', 'b'};
+
+      notifier.replace(original);
+      original.add('c');
+
+      expect(container.read(editSelectionProvider), {'a', 'b'});
+    });
+
     test('clear on an already-empty selection is a no-op, not a new '
         'identical empty set — listeners should not see a spurious update', () {
       final seen = <Set<String>>[];

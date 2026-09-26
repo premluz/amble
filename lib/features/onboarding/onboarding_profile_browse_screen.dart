@@ -25,8 +25,9 @@ import '../../shared/services/onboarding_materializer.dart';
 Future<OnboardingProfile?> showOnboardingProfileBrowseScreen(
   BuildContext context,
 ) {
-  return Navigator.of(context).push<OnboardingProfile>(
-    directionalPageRoute((context) => const OnboardingProfileBrowseScreen()),
+  return pushRootScreenRoute<OnboardingProfile>(
+    context,
+    (context) => const OnboardingProfileBrowseScreen(),
   );
 }
 

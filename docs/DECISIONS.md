@@ -3523,3 +3523,92 @@ struck — the magnetic-settle swipe ANIMATION itself (pull-in-from-off-screen,
 half-width commit threshold, fling override) is unchanged; only what a
 COMMITTED swipe does at the end moved from "reassign the selection" to
 "reassign which week is shown."
+
+**[2026-09-26] Timeline drop-conflict popover replaces the auto-cascade
+setting, drag-drop only.** `preventOverlappingTasksSettingProvider` used to
+silently decide push-vs-reject on every conflicting Timeline drag-drop. It's
+now bypassed entirely on that one path: every conflicting drop opens
+`AppContextMenu.showAt` with an explicit Overlap / Push all / Trim choice
+instead. Confirmed via AskUserQuestion — the setting itself is NOT removed
+and still gates the create wizard's reject-on-save
+(`task_detail_sheet.dart`), the quick-create overlay, and the pending-task
+-pill's own live-drag feasibility check (all of which lack a drag-drop
+context to open a popover from). Dismissing the popover without picking an
+option defaults to Overlap, matching the pre-existing default behavior.
+
+**[2026-09-26] Trim semantics: shrink-forward, chain fully, 5-minute floor,
+push-wholesale fallback.** Trim shortens each directly-conflicting task to
+start exactly where the thing in front of it now ends (its own END stays
+fixed) — deliberately one-directional/forward-only, unlike Push all's
+bidirectional nearer-edge rule, since Trim's whole premise is "make room by
+shortening what follows." Confirmed via AskUserQuestion: (1) chains through
+as many tasks as needed, mirroring Push all's own chaining, rather than
+stopping at the first conflict; (2) uses the SAME minimum-duration floor as
+manual resize (5 minutes, `timeline_screen.dart`'s `_minDurationMinutes`) —
+a task that can't be shrunk to at least that floor is pushed wholesale past
+the conflict instead, keeping its original duration, rather than trimmed
+into an unusably thin sliver. See `shared/services/trim_reschedule.dart`.
+
+**[2026-09-26] Dual-font toggle defaults to ON (today's split, unchanged).**
+New Developer Settings → Typography → "Dual font" switch. Defaults to `true`
+so a fresh install and every existing install keep the current DM Sans +
+JetBrains Mono split with zero behavior change; turning it off is an
+explicit opt-out that collapses every mono-bound token to DM Sans app-wide.
+Mirrors every other dual-font-era default already on record (see the
+2026-09-21 entries above) — reversing that split was never in scope, only
+making it optional.
+
+**[2026-09-26] Settings sub-pages push on the ROOT navigator, not the
+shell's content navigator.** Reported directly: individual settings pages
+should be full-page with no persistent top nav, and the top nav should
+animate away with the page transition rather than just vanish. Fixed by
+pushing every `showXSettingsScreen` route via the new
+`pushSettingsDetailRoute` (`settings_detail_scaffold.dart`), which targets
+`Navigator.of(context, rootNavigator: true)` instead of the shell's nested
+content navigator — see ERROR_LOG.md for why the content navigator could
+never make the top nav disappear in the first place. Deliberately scoped to
+Settings only: `zone_list_screen.dart`/`category_list_screen.dart`/
+`template_list_screen.dart`/`onboarding_profile_browse_screen.dart` push the
+same way and likely share the bug, but fixing them wasn't part of this
+report — noted in ERROR_LOG.md as a likely-shared issue, not silently
+changed.
+
+**[2026-09-26] The root-navigator-push fix extended to Zones/Templates/
+Tags/Starter profiles, generalized into `pushRootScreenRoute`.** Confirmed
+directly as a follow-up ("also for zones, templates, tags, starter profiles
+all items") to the settings-only decision above. Since the fix now applies
+outside `features/settings/`, the actual push logic moved to a new shared
+`core/widgets/app_modal_route.dart` function, `pushRootScreenRoute` —
+`pushSettingsDetailRoute` is now a thin settings-named wrapper around it, so
+Settings call sites didn't need to change. Named `pushRootScreenRoute`, not
+`pushFullScreenRoute`, specifically to avoid colliding with (and to stay
+clearly distinguished from) the pre-existing `pushFullScreenRoute` already
+in that file for `voice_capture_screen.dart`'s unrelated full-screen
+takeover transition — same file, similar-sounding purpose, genuinely
+different behavior (nearest navigator + fade/slide-up vs. root navigator +
+`directionalPageRoute`'s horizontal slide). See ERROR_LOG.md for the
+near-miss this caused in the first draft.
+
+**[2026-09-26] Compact manipulation controls belong only to the primary task;
+secondary selected tasks retain resize handles.** Small primary task capsules
+cannot contain usable Move, Start, and End regions, so the primary task exposes
+three separate `spacingMinTapTarget` cells linked to its real geometry. In a
+multi-selection, every other selected task keeps its existing in-pill handles:
+group resize may still begin from any selected member. Starting a move promotes
+that member to primary without changing the captured selection. The primary
+task paints above its siblings, and handle taps are consumed rather than
+falling through to selection or the Timeline background.
+
+**[2026-09-26] Manipulation cancellation is an explicit rollback path.**
+Move, top-resize, and bottom-resize each clear temporary preview/group state
+without committing and retain the current selection. `CancelSafeVerticalDrag`
+guards the callback so a raw pointer cancellation and Flutter recognizer
+cancellation cannot perform rollback twice.
+
+**[2026-09-26] Correction: keep task resize dots on the capsule edges.**
+User device feedback rejects the displaced Start/End controls and connector
+lines introduced earlier today. Keep exactly two dots on the capsule's
+centerline at the top and bottom; increase invisible interaction bounds only.
+Retain primary stacking, cancellation, and group resize. Tiny-task resize
+regions remain fitted to avoid overlap; the side strip provides move access.
+This supersedes the earlier displaced-compact-control presentation decision.

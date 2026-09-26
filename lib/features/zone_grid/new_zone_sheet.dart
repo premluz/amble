@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/app_badge_chip.dart';
 import '../../core/widgets/app_button.dart';
-import '../../core/widgets/app_press_feedback.dart';
+import '../../core/widgets/app_chip_strip.dart';
 import '../../core/widgets/app_sheet_handle.dart';
 import '../../core/widgets/app_sheet_header.dart';
 import '../../core/widgets/app_text_field.dart';
 import '../../core/widgets/app_segmented_time_field.dart';
+import '../../core/widgets/app_value_chip.dart' show AppValueChipSize;
+import '../../shared/models/zone_facet.dart';
 import '../../shared/providers/zone_providers.dart';
 import '../../shared/providers/zone_facet_providers.dart';
 
@@ -59,11 +62,12 @@ class _NewZoneSheetState extends ConsumerState<NewZoneSheet>
   late int _start = widget.target.startMinutes;
   late int _end = widget.target.endMinutes;
 
-  /// Drag-to-close accumulator for the header's own handle — same
+  /// Drag-to-close accumulator for the sheet's own top handle — same
   /// "distance OR velocity" threshold `quick_capture_sheet.dart`'s
-  /// identical handle already uses (2026-09-24, added here to match: this
-  /// sheet previously had no drag-to-close gesture at all, unlike every
-  /// other `AppSheetHeader` caller).
+  /// identical handle already uses. Originally shared a row with
+  /// [AppSheetHeader]'s close/trailing controls; that row is now at the
+  /// BOTTOM of the sheet instead (requested directly), so this handle
+  /// lives on its own at the top and carries the drag gesture itself.
   double _dragDistance = 0;
 
   /// The same one-shot entrance/exit controller `QuickCreateOverlay`'s
@@ -157,6 +161,21 @@ class _NewZoneSheetState extends ConsumerState<NewZoneSheet>
     return Positioned(
       left: 0,
       right: 0,
+      // `bottom: 0`, not an offset that tries to "clear" the shell's
+      // floating bottom dock — reported directly that an earlier version
+      // of this fix still overlapped ("still bottom toolbar overlaps").
+      // Root cause: `AppBottomDock` (`main.dart`) is a PERSISTENT shell
+      // overlay painted AFTER (on top of) this screen's own routed
+      // content, regardless of any offset applied here — no `Positioned`
+      // value on this sheet could ever out-position a widget that always
+      // paints later in a DIFFERENT, outer `Stack`. Fixed at the source
+      // instead: `_zoneContextDock` now renders empty groups (so
+      // `AppBottomDock` renders nothing) while `_pending != null` — see
+      // that method's own doc comment. With the dock no longer drawing
+      // anything while this sheet is open, this sheet is free to sit
+      // flush against the screen's own bottom edge again, matching every
+      // other in-tree/bottom sheet's own convention (`quick_capture_sheet
+      // .dart` et al.).
       bottom: 0,
       // `motionSheetSlide`/`curveDecelerate` (2026-09-24, was
       // `motionFast`/a bare `spacingMd` nudge) — the same entrance timing
@@ -207,54 +226,170 @@ class _NewZoneSheetState extends ConsumerState<NewZoneSheet>
           ),
           child: SafeArea(
             top: false,
-            child: SingleChildScrollView(
-              padding: EdgeInsets.all(theme.spacingMd),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Close left, primary action right — unified with the
-                  // Timeline quick-create task sheet's own header row
-                  // (`QuickCreateOverlay`), requested directly. No title
-                  // text here, matching that sheet, which also has none.
-                  //
-                  // `handle` added 2026-09-24 — this sheet previously had
-                  // no drag-to-close gesture at all, unlike every other
-                  // `AppSheetHeader` caller. Same gesture shape
-                  // `quick_capture_sheet.dart`'s identical handle uses
-                  // (distance-or-velocity threshold), calling `_close()`
-                  // instead of `Navigator.pop` — this sheet is an in-tree
-                  // widget, not a route.
-                  AppSheetHeader(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // The drag-to-close handle, alone at the very top of the
+                // sheet — moved OUT of AppSheetHeader's own row (see
+                // below) so the sheet's outer content padding can drop
+                // its top inset entirely: requested directly ("remove any
+                // padding-top margin from sheet, header should have it").
+                // This handle region now owns that inset itself
+                // (`spacingSm`), rather than the whole scroll body being
+                // pushed down by it.
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onVerticalDragUpdate: (details) =>
+                      _dragDistance += details.delta.dy,
+                  onVerticalDragEnd: (details) {
+                    final farEnough = _dragDistance > theme.spacingXl;
+                    final fastEnough =
+                        details.velocity.pixelsPerSecond.dy > 800;
+                    _dragDistance = 0;
+                    if (!_saving && (farEnough || fastEnough)) {
+                      _close();
+                    }
+                  },
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: theme.spacingSm),
+                    child: AppSheetHandle(theme: theme),
+                  ),
+                ),
+                // Flexible (loose fit), NOT Expanded — this Column stays
+                // `mainAxisSize.min` (matching every other Column in this
+                // sheet) so the whole sheet still SHRINKS to fit short
+                // content rather than always claiming the outer
+                // Container's full `maxHeight` cap. Expanded is a
+                // FlexFit.tight `Flexible` — it would have forced this
+                // Column to `mainAxisSize.max` to make sense, which broke
+                // exactly that shrink-to-content behavior (verified with a
+                // throwaway size probe: a short-content sheet rendered at
+                // the full 62%-of-screen cap instead of hugging its own
+                // content). Flexible's default loose fit still caps at
+                // the available space when content overflows it (the
+                // scroll view absorbs the rest, no exception), while
+                // shrinking freely below that cap when content is short.
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.symmetric(horizontal: theme.spacingMd),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Bare — the shared style for every entity's name.
+                        AppTextField(
+                          controller: _title,
+                          label: 'Add title',
+                          variant: AppTextFieldVariant.bare,
+                        ),
+                        if (names.isNotEmpty) ...[
+                          SizedBox(height: theme.spacingSm),
+                          // AppChipStrip, not Wrap — requested directly
+                          // ("the pills should be scrollable
+                          // horizontally... we should make that scrolling
+                          // same across usages... reuse that class from
+                          // add task"): one scrollable line, the same
+                          // shared strip mechanics `TemplateChipStrip`
+                          // uses for the quick-create sheet's own template
+                          // cards, rather than a second hand-rolled
+                          // horizontal scroller. `edgeInset: 0` — unlike
+                          // `TemplateChipStrip`'s own full-bleed caller,
+                          // this strip already sits inside the sheet's own
+                          // `spacingMd` side padding, so it needs no
+                          // additional edge inset of its own.
+                          //
+                          // AppBadgeChip itself, not a hand-rolled
+                          // Container — unified directly ("use app badge
+                          // chip but we don't need icon now so this one
+                          // without icon and filled"). `leading: null`
+                          // (now supported — see that param's own doc
+                          // comment) renders a text-only chip; `sm` for
+                          // this dense multi-tag row, confirmed via
+                          // AskUserQuestion over the widget's own `md`
+                          // default.
+                          AppChipStrip<ZoneFacet>(
+                            items: names,
+                            height: appButtonHeightFor(theme, AppButtonSize.sm),
+                            itemSpacing: theme.spacingXs,
+                            keyOf: (name) => ValueKey(name.id),
+                            itemBuilder: (context, name) => AppBadgeChip(
+                              theme: theme,
+                              label: name.name,
+                              size: AppValueChipSize.sm,
+                              selected: _facetId == name.id,
+                              onTap: () => setState(() {
+                                _title.text = name.name;
+                                _facetId = name.id;
+                              }),
+                            ),
+                          ),
+                        ],
+                        SizedBox(height: theme.spacingMd),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: AppSegmentedTimeField(
+                                label: 'Start',
+                                first: _start ~/ 60,
+                                second: _start % 60,
+                                firstMax: 23,
+                                onChanged: (h, m) =>
+                                    setState(() => _start = h * 60 + m),
+                              ),
+                            ),
+                            SizedBox(width: theme.spacingSm),
+                            Expanded(
+                              child: AppSegmentedTimeField(
+                                label: 'End',
+                                first: _end ~/ 60,
+                                second: _end % 60,
+                                firstMax: 24,
+                                onChanged: (h, m) =>
+                                    setState(() => _end = h * 60 + m),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (_error != null)
+                          Padding(
+                            padding: EdgeInsets.only(top: theme.spacingSm),
+                            child: Text(
+                              _error!,
+                              style: theme.textCaption.copyWith(
+                                color: theme.colorTextSecondary,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                // Close left, primary action right — at the BOTTOM of the
+                // sheet now, requested directly against a reference
+                // screenshot ("close and add at the bottom of the
+                // sheet"). Still [AppSheetHeader] — reused for the exact
+                // same close-button/trailing-button styling every other
+                // sheet's header row uses (`quick_capture_sheet.dart`,
+                // `new_section_sheet.dart`), just placed as this sheet's
+                // last row instead of its first. `handle: null` since the
+                // drag handle now lives on its own at the top of the
+                // sheet, not sharing this row.
+                //
+                // No bottom inset here — requested directly ("the sheet
+                // should not have same bottom padding as side, no margin
+                // bottom"): this row sits flush against the sheet's own
+                // bottom edge (inside `SafeArea`), rather than matching
+                // the `spacingMd` side padding on every edge.
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    theme.spacingMd,
+                    theme.spacingSm,
+                    theme.spacingMd,
+                    0,
+                  ),
+                  child: AppSheetHeader(
                     theme: theme,
                     onClose: _saving ? () {} : _close,
-                    handle: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onVerticalDragUpdate: (details) =>
-                          _dragDistance += details.delta.dy,
-                      onVerticalDragEnd: (details) {
-                        final farEnough = _dragDistance > theme.spacingXl;
-                        final fastEnough =
-                            details.velocity.pixelsPerSecond.dy > 800;
-                        _dragDistance = 0;
-                        if (!_saving && (farEnough || fastEnough)) {
-                          _close();
-                        }
-                      },
-                      // Top-aligned with a small inset, matching the
-                      // reference `AppSheetHandle` positioning exactly —
-                      // see `quick_capture_sheet.dart`'s own identical
-                      // handle for why (reads as a separate drag
-                      // affordance, not one more control on the buttons'
-                      // own centre line).
-                      child: Align(
-                        alignment: Alignment.topCenter,
-                        child: Padding(
-                          padding: EdgeInsets.only(top: theme.spacingSm),
-                          child: AppSheetHandle(theme: theme),
-                        ),
-                      ),
-                    ),
                     trailing: AppButton(
                       label: 'Add zone',
                       size: AppButtonSize.md,
@@ -263,81 +398,8 @@ class _NewZoneSheetState extends ConsumerState<NewZoneSheet>
                       onPressed: _save,
                     ),
                   ),
-                  SizedBox(height: theme.spacingMd),
-                  // Bare — the shared style for every entity's name.
-                  AppTextField(
-                    controller: _title,
-                    label: 'Add title',
-                    variant: AppTextFieldVariant.bare,
-                  ),
-                  if (names.isNotEmpty) ...[
-                    SizedBox(height: theme.spacingSm),
-                    Wrap(
-                      spacing: theme.spacingXs,
-                      runSpacing: theme.spacingXs,
-                      children: [
-                        for (final name in names)
-                          AppPressFeedback(
-                            onTap: () => setState(() {
-                              _title.text = name.name;
-                              _facetId = name.id;
-                            }),
-                            borderRadius: BorderRadius.circular(theme.radiusMd),
-                            child: Container(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: theme.spacingSm,
-                                vertical: theme.spacingXs,
-                              ),
-                              decoration: BoxDecoration(
-                                color: theme.colorSurfaceSecondary,
-                                borderRadius: BorderRadius.circular(
-                                  theme.radiusMd,
-                                ),
-                              ),
-                              child: Text(name.name, style: theme.textCaption),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ],
-                  SizedBox(height: theme.spacingMd),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: AppSegmentedTimeField(
-                          label: 'Start',
-                          first: _start ~/ 60,
-                          second: _start % 60,
-                          firstMax: 23,
-                          onChanged: (h, m) =>
-                              setState(() => _start = h * 60 + m),
-                        ),
-                      ),
-                      SizedBox(width: theme.spacingSm),
-                      Expanded(
-                        child: AppSegmentedTimeField(
-                          label: 'End',
-                          first: _end ~/ 60,
-                          second: _end % 60,
-                          firstMax: 24,
-                          onChanged: (h, m) =>
-                              setState(() => _end = h * 60 + m),
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (_error != null)
-                    Padding(
-                      padding: EdgeInsets.only(top: theme.spacingSm),
-                      child: Text(
-                        _error!,
-                        style: theme.textCaption.copyWith(
-                          color: theme.colorTextSecondary,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),

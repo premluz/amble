@@ -90,7 +90,7 @@ void main() {
       // one move top." The dot's own CENTRE now lands on the edge.
       expect(
         circleRect.center.dy,
-        closeTo(handleRect.top, 0.5),
+        closeTo(handleRect.top + theme.borderWidthHairline / 2, 0.5),
         reason:
             'the dot straddles the handle\'s own top boundary — half '
             'of it outside, half inside',
@@ -119,7 +119,7 @@ void main() {
 
       expect(
         circleRect.center.dy,
-        closeTo(handleRect.bottom, 0.5),
+        closeTo(handleRect.bottom - theme.borderWidthHairline / 2, 0.5),
         reason:
             'a bottom handle straddles its dot across the BOTTOM '
             'boundary — the mirror of the top handle',
@@ -180,7 +180,7 @@ void main() {
 
     expect(
       circleRect.center.dy,
-      closeTo(handleRect.top + circleRect.height / 2, 0.5),
+      closeTo(handleRect.top + circleRect.height / 2 + theme.borderWidthHairline / 2, 0.5),
       reason: 'centered exactly on the handle\'s own edge — zero shift',
     );
   });
@@ -230,7 +230,7 @@ void main() {
       // handleRect.top itself.
       expect(
         circleRect.center.dy,
-        closeTo(handleRect.top, 0.5),
+        closeTo(handleRect.top + theme.borderWidthHairline / 2, 0.5),
         reason:
             'a 0.5 factor moves the dot half its own diameter past '
             'where a 0.0 factor would sit — halfway to the full '

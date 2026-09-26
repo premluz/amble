@@ -30,6 +30,13 @@ class EditSelection extends _$EditSelection {
     state = next;
   }
 
+  void promote(String taskId) {
+    if (!state.contains(taskId) || state.last == taskId) return;
+    state = {...state.where((id) => id != taskId), taskId};
+  }
+
+  void replace(Set<String> taskIds) => state = Set<String>.of(taskIds);
+
   void clear() {
     if (state.isEmpty) return;
     state = const {};

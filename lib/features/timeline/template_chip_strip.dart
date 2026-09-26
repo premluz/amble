@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_badge_chip.dart';
+import '../../core/widgets/app_chip_strip.dart';
 import '../../shared/models/category.dart';
 import '../../shared/models/task_template.dart';
 import '../../shared/providers/category_providers.dart';
@@ -64,34 +65,29 @@ class TemplateChipStrip extends ConsumerWidget {
     // No templates saved yet is an ordinary state, not an error or an
     // empty-state worth explaining inside a 25%-height sheet — the strip
     // simply isn't there, and the rest of the sheet closes up around it.
+    // (AppChipStrip's own empty check would catch this too, but returning
+    // early here skips the `categories` lookup work for nothing.)
     if (templates.isEmpty) return const SizedBox.shrink();
 
-    return SizedBox(
+    return AppChipStrip<TaskTemplate>(
+      items: templates,
       // Deliberately shorter than the badge+padding sum would give:
       // reported directly as "templates cards smaller height." The chip's
       // own vertical padding is trimmed to match (see TemplateChip).
       height: theme.spacingXl + theme.spacingSm,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        // The strip is rendered full-bleed by its caller so it can scroll
-        // past both edges of the sheet; this inset keeps the first and
-        // last chip aligned with the padded fields above it.
-        padding: EdgeInsets.symmetric(horizontal: edgeInset ?? theme.spacingLg),
-        itemCount: templates.length,
-        separatorBuilder: (context, _) => SizedBox(width: theme.spacingSm),
-        itemBuilder: (context, index) {
-          final template = templates[index];
-          return TemplateChip(
-            key: ValueKey(template.id),
-            theme: theme,
-            template: template,
-            category: categories
-                .where((c) => c.id == template.categoryId)
-                .firstOrNull,
-            selected: template.id == selectedTemplateId,
-            onTap: () => onTemplateSelected(template),
-          );
-        },
+      // The strip is rendered full-bleed by its caller so it can scroll
+      // past both edges of the sheet; this inset keeps the first and
+      // last chip aligned with the padded fields above it.
+      edgeInset: edgeInset ?? theme.spacingLg,
+      keyOf: (template) => ValueKey(template.id),
+      itemBuilder: (context, template) => TemplateChip(
+        theme: theme,
+        template: template,
+        category: categories
+            .where((c) => c.id == template.categoryId)
+            .firstOrNull,
+        selected: template.id == selectedTemplateId,
+        onTap: () => onTemplateSelected(template),
       ),
     );
   }

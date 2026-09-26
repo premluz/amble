@@ -2061,3 +2061,138 @@ fixed-height shell header, with an opaque Edit body beneath it. The tab bar
 retains identity across Tasks/Zones changes. Dock removal visibility is
 separate from interactive presence so exit delays never leave stale commands
 enabled.
+
+## [2026-09-26] Trim conflict resolution: swallowed task silently skipped
+
+**Symptom:** `computeTrimMoves`'s forward-walk loop left a task completely
+untouched — still at its ORIGINAL, now-overlapping slot — when that task was
+entirely CONTAINED within the dragged task's new span (e.g. existing task
+10:00-10:10 fully inside a drop's new 9:50-10:30 range). A genuine, severe
+overlap was reported as "no conflict" and skipped rather than resolved.
+**Cause:** The loop's non-overlap early-exit compared a candidate's END
+against the walking `frontier` (`if (!end.isAfter(frontier)) continue;`),
+reasoning "ends before the frontier → no overlap." That's only true when the
+frontier is itself the relevant lower bound. For the FIRST candidate in the
+walk, the frontier is the dragged task's own new END — so a task that starts
+AND ends inside the dragged task's span (its end is before that frontier by
+construction) hit this branch and was wrongly treated as clear, even though
+it's the most-overlapped case possible.
+**Fix:** Compare the candidate's end against the drop's own START
+(`newStart`) instead of the walking frontier: `if (!end.isAfter(newStart))
+continue;`. A task ending before the claimed region even begins is a genuine
+non-overlap; a task ending before the CURRENT frontier (because an earlier
+resolved task push advanced it) is not automatically safe — the `trimmedMinutes
+= end.difference(frontier)` calculation already handles going negative by
+falling into the below-floor wholesale-push branch, so no separate case was
+needed once the exit condition itself was corrected.
+**Prevent next time:** Caught entirely by writing unit tests against the
+function's own documented behavioral guarantees BEFORE any UI wiring
+(`trim_reschedule_test.dart`'s "chains through a second task" case) — a
+frontier/walking-boundary algorithm's early-exit conditions need a test where
+the FIRST candidate is fully swallowed by the initial (unmoved) frontier
+value, not just a test where later candidates get re-checked against an
+already-advanced one; the two situations look identical in the code
+(`end.isAfter(frontier)`) but mean different things depending on which
+iteration you're in.
+
+## [2026-09-26] Settings sub-pages never actually left the shell chrome
+
+**Symptom:** Every Settings sub-page (Permissions, Appearance, Backup,
+Calendars, Developer, Slack, Subscription, About) already built its own
+full-page `SettingsDetailScaffold` with a back button and title, but the
+persistent shell top nav (`AppTopNav`) stayed visible above it the whole
+time — never disappearing on drill-down the way a genuinely full-screen page
+should. Reported directly: "the individual pages of settings should be full
+page (so no top nav)."
+**Cause:** Every `showXSettingsScreen` function pushed via plain
+`Navigator.of(context).push(directionalPageRoute(...))`. `Navigator.of
+(context)` resolves to the NEAREST ancestor `Navigator`, which for anything
+under `SettingsScreen` is `main.dart`'s own nested content navigator
+(`_contentNavigatorKey`) — a `Navigator` that lives structurally BELOW
+`AppTopNav` in the shell's widget tree (nav is a sibling `Padding` above the
+`Expanded` that holds this navigator), not around it. A route pushed on that
+navigator can only ever cover the `Expanded` region under the top nav; the
+top nav itself is never part of any route stack reachable from inside a
+settings screen, so no push targeting it could ever make it disappear.
+**Fix:** Push these routes on the ROOT navigator instead
+(`Navigator.of(context, rootNavigator: true)`), the same escape
+`pushAppSheetRoute` already uses for sheets, via the existing
+`rootModalBuilder` helper so the pushed page keeps the launching route's
+`Theme`/Riverpod `ProviderScope` (a raw root-navigator push loses both —
+that's specifically what `rootModalBuilder` exists to prevent). Since
+`AmbleHome` — the whole shell, top nav included — is itself the root
+navigator's page 1 (`MaterialApp`'s own `home:`), a root-navigator push
+covers the ENTIRE screen, top nav included, and its slide transition
+animates the whole outgoing shell away as one unit. Added
+`pushSettingsDetailRoute` in `settings_detail_scaffold.dart`; updated all 8
+`showXSettingsScreen` call sites.
+**Prevent next time:** A screen having its OWN back-button header is not
+evidence it's actually escaping a persistent parent chrome — check what
+`Navigator` a `Navigator.of(context).push` call actually resolves to (walk
+up the tree to the nearest `Navigator` ancestor) whenever a shell has more
+than one navigator in play, rather than assuming "this page already looks
+full-screen" means it behaves that way. `zone_list_screen.dart`/
+`category_list_screen.dart`/`template_list_screen.dart`/
+`onboarding_profile_browse_screen.dart` push the exact same way and likely
+have the identical bug — not fixed here since the report was scoped to
+Settings specifically, but worth checking before someone reports the same
+thing against Zones/Tags/Templates.
+
+## [2026-09-26] Same bug confirmed in Zones/Templates/Tags/Starter
+## profiles, plus a near-miss name collision fixing it
+
+**Symptom/cause:** Exactly the predicted follow-up from the entry above —
+`zone_list_screen.dart`, `template_list_screen.dart`,
+`category_list_screen.dart`, and `onboarding_profile_browse_screen.dart` all
+had the identical "pushed on the shell's nested content navigator, top nav
+never disappears" bug, confirmed once reported directly ("also for zones,
+templates, tags, starter profiles all items").
+**Fix:** Moved the root-navigator-push logic out of
+`pushSettingsDetailRoute` (settings-only, wrong location to reuse from
+`features/zones/`, `features/task_detail/`, etc.) into a new shared
+`pushRootScreenRoute` in `core/widgets/app_modal_route.dart`;
+`pushSettingsDetailRoute` now just delegates to it. Updated all 4 screens'
+push functions.
+**Near-miss caught by `flutter analyze` before shipping:** the first draft
+named the new shared function `pushFullScreenRoute` — not realizing
+`app_modal_route.dart` ALREADY had a function by that exact name, added
+earlier for `voice_capture_screen.dart`'s full-screen takeover transition
+(fade + slide-up, `opaque: true`, pushed on the NEAREST navigator, not the
+root — a completely different behavior for a completely different purpose).
+`flutter analyze` immediately flagged `duplicate_definition`, which is what
+caught it — had this been, say, a private function or one only exercised at
+runtime rather than a top-level public one the analyzer resolves
+statically, this could have silently shadowed or been shadowed instead of
+erroring. Renamed to `pushRootScreenRoute`, distinct from
+`pushFullScreenRoute`, and confirmed `voice_capture_screen.dart`'s own
+caller was untouched by diffing it explicitly.
+**Prevent next time:** Before adding a new top-level helper to a
+file/module that already has related-sounding helpers (this file's own
+`pushAppSheetRoute`/`directionalPageRoute`/`pushFullScreenRoute`), grep the
+target file for the exact name first — a name that reads as an obviously
+correct description of what the new function does is also likely to have
+already occurred to whoever wrote the last "push a full-screen thing"
+helper in the same file.
+
+## [2026-09-26] Vertical drag cancellation did not reach resize rollback
+
+**Symptom:** A compact resize began, the test sent a pointer-cancel event, and
+the start callback fired without the cancel callback. Temporary resize state
+could therefore survive an OS interruption.
+**Cause:** `GestureDetector.onVerticalDragCancel` alone did not observe the raw
+pointer-cancel sequence in this interaction. Treating recognizer cancellation
+as the only cancellation source left a gap below the gesture arena.
+**Fix:** `CancelSafeVerticalDrag` listens for both raw `PointerCancelEvent` and
+recognizer cancellation, tracks whether a drag actually started, and forwards
+cancel exactly once. Both legacy and compact resize controls share it.
+**Prevent next time:** Test interruption after the recognizer has accepted the
+drag, and assert start/cancel with no end or commit. Gesture-arena tests alone
+do not prove the platform pointer-cancel path is covered.
+
+## [2026-09-26] Compact resize chrome obscured task labels
+
+The prior 144 px threshold displaced controls even for an ordinary multi-hour
+task at a low zoom. Start/End dots and connector lines covered its title.
+Removed this alternate visible layout; edge dots now use the visual capsule's
+centerline regardless of hit width. Tests check dot centers, absence of labels,
+and move/start/end ownership at seven heights including 139 and 200 px.

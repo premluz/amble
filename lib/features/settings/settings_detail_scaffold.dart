@@ -2,6 +2,16 @@ import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
+import '../../core/widgets/app_modal_route.dart';
+
+/// Settings-specific name for [pushRootScreenRoute] — see that function's
+/// own doc comment for why a plain `Navigator.of(context).push` wasn't
+/// enough to make a settings sub-page's own [SettingsDetailScaffold] header
+/// actually escape the persistent shell top nav.
+Future<T?> pushSettingsDetailRoute<T>(
+  BuildContext context,
+  WidgetBuilder builder,
+) => pushRootScreenRoute<T>(context, builder);
 
 /// Shared "back button + title" chrome for every Settings sub-page —
 /// mirrors `ZoneListScreen`'s own header exactly, so Permissions/

@@ -6564,3 +6564,190 @@ decelerating curve. Interrupted navigation continues from sampled page
 positions, and reduced-motion settings disable route movement. Targeted
 analysis found no errors; it reported three existing curly-brace style infos
 in `zone_list_screen.dart`. Tests and device visual verification were not run.
+
+## [2026-09-26] Small-task manipulation interaction review
+
+Added `TASK_MANIPULATION_INTERACTION_BRIEF.md`: source findings across task
+capsules and the zone grid, plus proposed viewport-owned controls, compact
+hit-area layout, gesture ownership, cancellation, and multi-selection rules.
+This is an analysis-only proposal; no application code was changed. Existing
+test definitions and official platform guidance were reviewed. Automatic
+approval review rejected test execution as outside the analysis-only request;
+runtime behavior and device comfort remain unverified.
+Document-relative links and diff whitespace were checked successfully.
+
+## [2026-09-26] Timeline drop-conflict popover: Overlap / Push all / Trim
+
+Dropping a dragged task onto an overlapping slot in the spatial Timeline now
+opens the same anchored popover the Inbox's tab-tap menu uses
+(`AppContextMenu.showAt`), with three explicit resolutions instead of the
+previous silent auto-cascade: **Overlap** (today's default, unchanged),
+**Push all** (the existing `computeCascadeMoves` cascade, now an explicit
+choice), and **Trim** (new — shortens the conflicting task(s) to start where
+the drop ends, chaining through further conflicts, with a 5-minute floor
+below which a task is pushed wholesale instead of shrunk). The popover
+REPLACES `preventOverlappingTasksSettingProvider`'s automatic behavior for
+this one drag-drop path only; the setting remains wired elsewhere (create
+wizard, quick-create overlay, pending-task-pill feasibility check) —
+unchanged. Dismissing the popover without a choice defaults to Overlap.
+
+Added `shared/services/trim_reschedule.dart` (`computeTrimMoves`/`TaskTrim`/
+`minTrimmedDurationMinutes`) and `TaskList.rescheduleTaskWithTrim` in
+`task_providers.dart` (mirrors `rescheduleTaskWithCascade`'s shape — dragged
+task's own move plus every trim in one write pass, one `_refresh()`).
+9 unit tests in `trim_reschedule_test.dart` written against the documented
+behavior caught a real bug before any UI wiring: a task fully swallowed by
+the dragged task's new span was being skipped entirely (comparing against
+the walking frontier instead of the drop's own start) rather than resolved —
+fixed, see ERROR_LOG.md.
+
+`flutter analyze` clean on all touched/new files. `flutter test` run in
+full: 21 pre-existing failures (app_view_transition, what_matters_appearance,
+zone_grid, floating_nav_pill, edit_schedule_repeats,
+timeline_nav_consolidation) confirmed unrelated by re-running with this
+session's two changed files stashed out — identical failures with or without
+this change. No widget-level test yet covers the new popover's three
+resolution paths end-to-end; the pure-function layer (`computeTrimMoves`)
+and the provider mutator are unit-tested, the UI wiring itself is not.
+
+## [2026-09-26] Dual-font toggle, a font-unification fix, and settings
+## pages made genuinely full-screen
+
+Added a "Dual font" knob in Developer Settings → new "Typography" section.
+On (default, unchanged behavior): the existing split holds — DM Sans for
+general text, JetBrains Mono for numeric/temporal labels and zone names. Off:
+every mono-bound token (`textBodyMono`/`textCaptionMono`/`textZoneName`/
+`textTaskEdgeTime`/`textTaskTitleZone`) resolves to DM Sans, so the whole app
+reads as one font. `DualFontSetting`/`dualFontSettingProvider` (Hive-backed,
+`PreferenceKeys.dualFontEnabled`, defaults to true) plus `_resolveDualFont`
+in `main.dart`, applied the same "resolve once, before MaterialApp" way as
+the existing pill-size/font-size/pill-shape passes.
+
+Fixed a real font-unification bug reported directly: the Edit Mode Zones
+tab's hour-axis label (`zone_grid_screen.dart`, the "HH:00" ticks) was
+styled `theme.textCaption` (DM Sans) instead of `theme.textCaptionMono`,
+unlike the identical hour label on the Timeline (`TaskBoundaryMarkers`,
+already mono) — the two had drifted apart. Fixed to match.
+
+Reported directly: "the individual pages of settings should be full page (so
+no top nav), top nav gets animated along the contents of main settings
+page." Traced to every `showXSettingsScreen` function
+(Permissions/Appearance/Backup/Calendars/Developer/Slack/Subscription/About)
+pushing via plain `Navigator.of(context).push`, which resolves to the
+shell's own nested content Navigator (`main.dart`'s `_contentNavigatorKey`)
+— a navigator that sits BELOW the persistent `AppTopNav` in the widget tree,
+not around it, so the top nav never disappeared on a settings sub-page even
+though each already has its own `SettingsDetailScaffold` back-button header.
+Added `pushSettingsDetailRoute` (`settings_detail_scaffold.dart`), which
+pushes on the ROOT navigator instead — same escape `pushAppSheetRoute`
+already uses for sheets — via `rootModalBuilder` so the pushed page still
+inherits the launching route's theme and Riverpod `ProviderScope`. Since
+`AmbleHome` (the whole shell, top nav included) is the root navigator's own
+page 1, the new page's existing `directionalPageRoute` slide transition now
+carries the ENTIRE outgoing shell (top nav included) away as one animated
+unit rather than leaving it behind — the "animated along the contents" half
+of the report falls out of covering the top nav, with no separate
+chrome-controller wiring needed. All 8 `showXSettingsScreen` call sites
+updated; `zone_list_screen.dart`/`category_list_screen.dart`/
+`template_list_screen.dart`/`onboarding_profile_browse_screen.dart` share
+the identical underlying pattern (plain `Navigator.of(context).push` under
+the same shell) but were deliberately left untouched — out of the stated
+"settings" scope, flagged here rather than silently changed.
+
+`flutter analyze` clean on all touched files (18 pre-existing baseline
+issues, unchanged). New `dual_font_provider_test.dart` (3 tests) passes.
+Re-ran the settings/zone_grid suites and the full-shell nav tests with all
+of this session's files stashed out — identical pre-existing failure counts
+with or without the change, confirming no regressions. No widget test yet
+asserts the settings-page transition visually covers the top nav (only that
+navigation/provider plumbing behaves correctly) — that would need a golden
+or hit-test-based check against the live shell, not just the simplified
+`MaterialApp(home: Scaffold(body: SettingsScreen()))` harness the existing
+settings tests already use.
+
+## [2026-09-26] Same full-page/animated-top-nav fix extended to Zones,
+## Templates, Tags, and Starter profiles
+
+Follow-up to the settings-only fix above — requested directly ("also for
+zones, templates, tags, starter profiles all items"), confirming the
+identical bug in the 4 other screens flagged (but deliberately left alone)
+in that entry: `zone_list_screen.dart` (Zones), `template_list_screen.dart`
+(Templates), `category_list_screen.dart` (Tags), and
+`onboarding_profile_browse_screen.dart` (Starter profiles) all pushed via
+plain `Navigator.of(context).push`, landing on the shell's nested content
+navigator below the persistent top nav, exactly like the settings sub-pages
+did.
+
+The settings-specific `pushSettingsDetailRoute` helper couldn't be reused
+by name outside `features/settings/`, so the actual root-navigator-push
+logic moved to a new shared `pushRootScreenRoute` in
+`core/widgets/app_modal_route.dart` (`pushSettingsDetailRoute` now just
+delegates to it). Naming collision caught by `flutter analyze` before it
+shipped: `app_modal_route.dart` already had an UNRELATED
+`pushFullScreenRoute` (a fade+slide-up full-screen TAKEOVER transition for
+voice capture, still pushed on the nearest navigator, not the root) —
+first draft of this change accidentally reused that exact name for a
+function with different behavior. Renamed the new one to
+`pushRootScreenRoute` and left the pre-existing `pushFullScreenRoute` /
+`voice_capture_screen.dart` completely untouched.
+
+All 4 screens' `showXScreen` functions updated to call
+`pushRootScreenRoute` (`onboarding_profile_browse_screen.dart`'s stays
+typed — `pushRootScreenRoute<OnboardingProfile>` — since it pops with a
+chosen profile, used both from Settings and from Onboarding's own result
+screen; the latter has no shell yet at that point in the app's lifecycle,
+so pushing on the root navigator there is a no-op change, not a behavior
+change).
+
+`flutter analyze` clean on every touched file, same 18 pre-existing
+baseline issues. Ran the full suite: 39 failures total, but the diff
+against the previously-confirmed ~21-failure baseline is fully accounted
+for — 18 of the 39 are a NEW, unrelated cluster in `test/features/timeline/`
+(armed_edit_task, multi_task_group_resize/delete, task_capsule_swipe,
+task_capsule_resize_handle, resize_anchored_edge, pending_task_pill,
+drag_move_time_label), all touching `resize_handle.dart`/
+`task_capsule_block.dart`/`edit_selection_provider.dart` — files modified
+by a different, concurrent uncommitted session's work (the small-task-
+manipulation brief), not by this change. Confirmed by stashing exactly
+those files and re-running `task_capsule_resize_handle_test.dart`: 12/12
+pass with them out, proving the cluster is theirs, not this session's.
+The remaining 21 failures match the known baseline file set and count
+exactly (app_view_transition, what_matters_appearance, zone_grid x8,
+floating_nav_pill, timeline_nav_consolidation) with no reference to any
+file this change touched.
+
+## [2026-09-26] Small-task manipulation target implementation
+
+Implemented the first task-manipulation architecture slice for the spatial
+Timeline. The primary selected/armed task now has separate 48 px Move, Start,
+and End cells when its visual capsule is too small, without changing the
+capsule's schedule geometry. It paints above nearby tasks; moving another
+selected task promotes it without changing membership. Secondary selected
+tasks retain their in-pill handles, preserving group resize from any member.
+
+Added explicit move/top-resize/bottom-resize cancellation rollback and a
+shared cancellation-safe drag wrapper that handles recognizer and raw pointer
+cancellation once. Compact handle taps are consumed so near-misses cannot
+toggle/deselect tasks or create on the Timeline background.
+
+Verification: targeted `flutter analyze --no-pub` clean. The focused 88-test
+task-manipulation group passes, including 4/16/24/48/72 px compact targets,
+legacy handle geometry, armed edit, multi-selection/group resize, anchored
+edges, finger tracking, live time labels, and pointer cancellation.
+The full suite remains red with 22 unrelated existing failures, and the
+repository-wide analyzer reports the existing 18 issues; neither reports a
+failure in the task-manipulation files or focused tests.
+
+## [2026-09-26] Restore task edge dots after device feedback
+
+Removed displaced Start/End dots, labels, and connector lines. Both resize dots
+stay centered on the capsule's true edges; the primary interaction width is
+48 px rather than 144 px. Short-task handles fit without overlap and a side
+strip remains available for moving. Cancellation and group resize retained.
+New position/interaction tests pass at seven heights, with unchanged capsule
+geometry on selection. Full repository verification recorded below.
+
+Verification: 10 direct target/position tests pass; task handle, group-resize,
+and anchored-edge regressions pass. Full suite: 1574 passed, 21 failures in the
+existing view-transition/What Matters/zone-grid/navigation test set. Analyzer:
+18 existing issues, none in the changed files. `git diff --check` clean.

@@ -15,8 +15,9 @@ import 'template_list_view.dart';
 /// full-screen wrapper around it, the one piece Zones/Categories already
 /// had and Templates didn't.
 Future<void> showTemplateListScreen(BuildContext context) {
-  return Navigator.of(context).push<void>(
-    directionalPageRoute((context) => const TemplateListScreen()),
+  return pushRootScreenRoute<void>(
+    context,
+    (context) => const TemplateListScreen(),
   );
 }
 

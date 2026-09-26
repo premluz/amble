@@ -260,12 +260,17 @@ class AmbleApp extends ConsumerWidget {
     // above — see PillShapeSetting's own doc comment. Requested directly:
     // "this should affect globally, in edit tasks etc."
     final pillShape = ref.watch(pillShapeSettingProvider);
+    // Dev-settings knob: off collapses the dual-font split (mono tokens ->
+    // DM Sans) app-wide — see `DualFontSetting`'s own doc comment.
+    final dualFontEnabled = ref.watch(dualFontSettingProvider);
     var lightTheme = _resolvePillSize(AmbleTheme.light, taskSize);
     var darkTheme = _resolvePillSize(AmbleTheme.dark, taskSize);
     lightTheme = _resolveFontSize(lightTheme, taskFontSize);
     darkTheme = _resolveFontSize(darkTheme, taskFontSize);
     lightTheme = _resolvePillShape(lightTheme, pillShape);
     darkTheme = _resolvePillShape(darkTheme, pillShape);
+    lightTheme = _resolveDualFont(lightTheme, dualFontEnabled);
+    darkTheme = _resolveDualFont(darkTheme, dualFontEnabled);
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       // Status/navigation bar icons must contrast with our surface, and
@@ -404,6 +409,29 @@ AmbleTheme _resolvePillShape(AmbleTheme palette, PillShape shape) {
     ),
     PillShape.full => palette.copyWith(radiusPill: palette.radiusPillFull),
   };
+}
+
+/// Resolves every mono-bound text token on [palette]
+/// (`textBodyMono`/`textCaptionMono`/`textZoneName`/`textTaskEdgeTime`/
+/// `textTaskTitleZone` — see `TypePrimitives.fontFamily`'s own doc comment
+/// for the full list and why each is mono) to DM Sans when [enabled] is
+/// false, so the whole app reads as one font. When [enabled] is true this
+/// is a no-op — [palette] already carries the dual-font split baked in at
+/// construction. Every real call site keeps reading its own token
+/// (`theme.textZoneName`, etc.) with no idea this setting exists; this is
+/// the one place the collapse happens, mirroring [_resolvePillSize]/
+/// [_resolveFontSize]/[_resolvePillShape]'s own "resolve once, here, before
+/// MaterialApp" shape.
+AmbleTheme _resolveDualFont(AmbleTheme palette, bool enabled) {
+  if (enabled) return palette;
+  const sans = TypePrimitives.fontFamilySans;
+  return palette.copyWith(
+    textBodyMono: palette.textBodyMono.copyWith(fontFamily: sans),
+    textCaptionMono: palette.textCaptionMono.copyWith(fontFamily: sans),
+    textZoneName: palette.textZoneName.copyWith(fontFamily: sans),
+    textTaskEdgeTime: palette.textTaskEdgeTime.copyWith(fontFamily: sans),
+    textTaskTitleZone: palette.textTaskTitleZone.copyWith(fontFamily: sans),
+  );
 }
 
 /// Builds the Material [ThemeData] wrapper around one of our [AmbleTheme]

@@ -29,8 +29,9 @@ import 'category_visual.dart';
 /// reorder itself confirmed out of scope for now, so this is rename +
 /// recolor + list/add only, same v1 scope [ZoneListScreen] already has.
 Future<void> showCategoryListScreen(BuildContext context) {
-  return Navigator.of(context).push<void>(
-    directionalPageRoute((context) => const CategoryListScreen()),
+  return pushRootScreenRoute<void>(
+    context,
+    (context) => const CategoryListScreen(),
   );
 }
 

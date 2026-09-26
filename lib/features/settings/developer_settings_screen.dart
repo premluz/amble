@@ -6,7 +6,6 @@ import '../../core/feature_flags.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_alert_dialog.dart';
 import '../../core/widgets/app_button.dart';
-import '../../core/widgets/app_modal_route.dart';
 import '../../core/widgets/app_switch.dart';
 import '../../shared/models/pill_shape.dart';
 import '../../shared/models/tag_color_style.dart';
@@ -30,8 +29,9 @@ String _behaviorSummary(List<TrackedBehavior> behaviors) {
 }
 
 Future<void> showDeveloperSettingsScreen(BuildContext context) {
-  return Navigator.of(context).push<void>(
-    directionalPageRoute((context) => const DeveloperSettingsScreen()),
+  return pushSettingsDetailRoute<void>(
+    context,
+    (context) => const DeveloperSettingsScreen(),
   );
 }
 
@@ -257,6 +257,48 @@ class _DeveloperSettingsScreenState
                   onChanged: (value) => ref
                       .read(preventOverlappingTasksSettingProvider.notifier)
                       .set(value),
+                ),
+              ],
+            ),
+          ),
+
+          SizedBox(height: theme.spacingLg),
+          Text('Typography', style: theme.textTitle),
+          SizedBox(height: theme.spacingSm),
+          SettingsPanel(
+            theme: theme,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Dual font',
+                        style: theme.textBody.copyWith(
+                          color: theme.colorTextPrimary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      SizedBox(height: theme.spacingXs),
+                      Text(
+                        'When on, numeric/temporal labels (times, '
+                        'durations, zone names) render in a monospace '
+                        'font while everything else uses DM Sans. When '
+                        'off, the whole app uses DM Sans only.',
+                        style: theme.textBody.copyWith(
+                          color: theme.colorTextSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(width: theme.spacingMd),
+                AppSwitch(
+                  value: ref.watch(dualFontSettingProvider),
+                  onChanged: (value) =>
+                      ref.read(dualFontSettingProvider.notifier).set(value),
                 ),
               ],
             ),

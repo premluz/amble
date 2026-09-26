@@ -5,6 +5,7 @@ import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/selected_pill_border.dart';
 import '../../shared/models/zone.dart';
 import '../timeline/resize_handle.dart';
+import '../../core/widgets/resize_handle_dot.dart';
 import '../timeline/task_edge_time_label.dart';
 
 /// One zone occurrence's block on the Weekly Zone Authoring Grid — a
@@ -212,6 +213,33 @@ class ZoneGridBlock extends StatelessWidget {
                 onDragEnd: onResizeBottomEnd,
               ),
             ),
+          if (isSelected && onExtendEnd != null)
+            for (final side in [Alignment.centerLeft, Alignment.centerRight])
+              Align(
+                alignment: side,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onHorizontalDragStart: onExtendStart,
+                  onHorizontalDragUpdate: onExtendUpdate,
+                  onHorizontalDragEnd: onExtendEnd,
+                  child: SizedBox(
+                    width: theme.spacingMd,
+                    height: theme.spacingMinTapTarget,
+                    child: Align(
+                      alignment: side,
+                      child: Transform.translate(
+                        offset: Offset(
+                          side.x *
+                              (theme.spacingSm / 2 -
+                                  ResizeHandleDot.edgeInset(theme)),
+                          0,
+                        ),
+                        child: ResizeHandleDot(theme: theme),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
           // Last in this Stack so they paint ABOVE the rail and the
           // resize handles rather than under them — same ordering
           // `PendingTaskPill` uses for its own pair. Each straddles its

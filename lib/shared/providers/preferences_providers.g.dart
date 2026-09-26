@@ -408,6 +408,84 @@ abstract class _$PreventOverlappingTasksSetting extends $Notifier<bool> {
   }
 }
 
+/// Whether the app's dual-font system is active — see
+/// `PreferenceKeys.dualFontEnabled`'s own doc comment. `keepAlive: true` for
+/// the same reason as the other settings here: read once per app start (via
+/// `main.dart`'s own "resolve once, before MaterialApp" pass), not
+/// screen-scoped state. Defaults to **true** so a fresh install keeps the
+/// existing dual-font look; turning it off is an explicit opt-out.
+
+@ProviderFor(DualFontSetting)
+final dualFontSettingProvider = DualFontSettingProvider._();
+
+/// Whether the app's dual-font system is active — see
+/// `PreferenceKeys.dualFontEnabled`'s own doc comment. `keepAlive: true` for
+/// the same reason as the other settings here: read once per app start (via
+/// `main.dart`'s own "resolve once, before MaterialApp" pass), not
+/// screen-scoped state. Defaults to **true** so a fresh install keeps the
+/// existing dual-font look; turning it off is an explicit opt-out.
+final class DualFontSettingProvider
+    extends $NotifierProvider<DualFontSetting, bool> {
+  /// Whether the app's dual-font system is active — see
+  /// `PreferenceKeys.dualFontEnabled`'s own doc comment. `keepAlive: true` for
+  /// the same reason as the other settings here: read once per app start (via
+  /// `main.dart`'s own "resolve once, before MaterialApp" pass), not
+  /// screen-scoped state. Defaults to **true** so a fresh install keeps the
+  /// existing dual-font look; turning it off is an explicit opt-out.
+  DualFontSettingProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'dualFontSettingProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$dualFontSettingHash();
+
+  @$internal
+  @override
+  DualFontSetting create() => DualFontSetting();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(bool value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<bool>(value),
+    );
+  }
+}
+
+String _$dualFontSettingHash() => r'00701425ca89be49b35fde2db9d5c073db37b7ab';
+
+/// Whether the app's dual-font system is active — see
+/// `PreferenceKeys.dualFontEnabled`'s own doc comment. `keepAlive: true` for
+/// the same reason as the other settings here: read once per app start (via
+/// `main.dart`'s own "resolve once, before MaterialApp" pass), not
+/// screen-scoped state. Defaults to **true** so a fresh install keeps the
+/// existing dual-font look; turning it off is an explicit opt-out.
+
+abstract class _$DualFontSetting extends $Notifier<bool> {
+  bool build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<bool, bool>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<bool, bool>,
+              bool,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
+
 /// Whether the day view's left-side hour gutter (the grid of clock-hour
 /// ticks) is shown.
 ///

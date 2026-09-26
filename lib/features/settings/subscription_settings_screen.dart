@@ -7,14 +7,14 @@ import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
 import '../../core/revenue_cat_config.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
-import '../../core/widgets/app_modal_route.dart';
 import '../../shared/providers/purchases_providers.dart';
 import 'settings_detail_scaffold.dart';
 import 'settings_panel.dart';
 
 Future<void> showSubscriptionSettingsScreen(BuildContext context) {
-  return Navigator.of(context).push<void>(
-    directionalPageRoute((context) => const SubscriptionSettingsScreen()),
+  return pushSettingsDetailRoute<void>(
+    context,
+    (context) => const SubscriptionSettingsScreen(),
   );
 }
 

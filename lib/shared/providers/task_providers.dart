@@ -847,19 +847,30 @@ class TaskList extends _$TaskList {
     _refresh();
   }
 
-  /// Applies every trim from the "Trim" drop-resolution popover choice
-  /// (see `shared/services/trim_reschedule.dart`'s `computeTrimMoves`) —
-  /// each conflicting task shortened (or, below the minimum floor, pushed
-  /// wholesale keeping its own duration) to start where the thing in front
-  /// of it now ends. Writes both `scheduledAt` and `durationMinutes` per
-  /// task, like [resizeTasksFromTopInBatch]'s top-edge shape, but ALSO
-  /// carries [rescheduleTaskWithCascade]'s own move bookkeeping
-  /// (`originalScheduledAt` preserved on first reschedule,
-  /// `status = rescheduled`) since — unlike a top-edge resize — a trim IS
-  /// a reschedule of the affected task, not a resize of it. One [_refresh]
-  /// at the end, not one per task.
-  Future<void> rescheduleTaskWithTrim(List<TaskTrim> trims) async {
+  /// Applies the "Trim" drop-resolution popover choice: the dragged task's
+  /// own move to [newScheduledAt], plus every trim from
+  /// `shared/services/trim_reschedule.dart`'s `computeTrimMoves` (each
+  /// conflicting task shortened, or — below the minimum floor — pushed
+  /// wholesale keeping its own duration, to start where the thing in front
+  /// of it now ends). Mirrors [rescheduleTaskWithCascade]'s own shape,
+  /// where the dragged task's move is just one more entry applied in the
+  /// SAME loop as the tasks it affected, rather than a separate call — so
+  /// this is one write pass and one [_refresh] for the whole drop, not two
+  /// (which double-triggered a Timeline rebuild when this first called
+  /// [rescheduleTask] separately for the dragged task).
+  Future<void> rescheduleTaskWithTrim({
+    required Task draggedTask,
+    required DateTime newScheduledAt,
+    required List<TaskTrim> trims,
+  }) async {
     final repository = ref.read(taskRepositoryProvider);
+
+    draggedTask.originalScheduledAt ??= draggedTask.scheduledAt;
+    draggedTask.scheduledAt = newScheduledAt;
+    draggedTask.status = TaskStatus.rescheduled;
+    await repository.saveTask(draggedTask);
+    _syncNotificationInBackground(draggedTask);
+
     for (final trim in trims) {
       final task = repository.getTaskById(trim.taskId);
       if (task == null) continue;

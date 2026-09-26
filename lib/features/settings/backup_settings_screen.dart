@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
-import '../../core/widgets/app_modal_route.dart';
 import '../../shared/providers/backup_providers.dart';
 import '../../shared/providers/category_providers.dart';
 import '../../shared/providers/task_providers.dart';
@@ -18,12 +17,11 @@ Future<void> showBackupSettingsScreen(
   bool debugAutoTriggerExport = false,
   bool debugAutoTriggerImport = false,
 }) {
-  return Navigator.of(context).push<void>(
-    directionalPageRoute(
-      (context) => BackupSettingsScreen(
-        debugAutoTriggerExport: debugAutoTriggerExport,
-        debugAutoTriggerImport: debugAutoTriggerImport,
-      ),
+  return pushSettingsDetailRoute<void>(
+    context,
+    (context) => BackupSettingsScreen(
+      debugAutoTriggerExport: debugAutoTriggerExport,
+      debugAutoTriggerImport: debugAutoTriggerImport,
     ),
   );
 }

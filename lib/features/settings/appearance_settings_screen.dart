@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
-import '../../core/widgets/app_modal_route.dart';
 import '../../core/widgets/app_selectable_chip.dart';
 import '../../shared/models/task_size.dart';
 import '../../shared/providers/preferences_providers.dart';
@@ -11,8 +10,9 @@ import 'settings_panel.dart';
 import 'theme_mode_selector.dart';
 
 Future<void> showAppearanceSettingsScreen(BuildContext context) {
-  return Navigator.of(context).push<void>(
-    directionalPageRoute((context) => const AppearanceSettingsScreen()),
+  return pushSettingsDetailRoute<void>(
+    context,
+    (context) => const AppearanceSettingsScreen(),
   );
 }
 

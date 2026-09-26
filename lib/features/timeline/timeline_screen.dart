@@ -688,6 +688,9 @@ class TimelineScreen extends ConsumerWidget {
                                       // resurface it) — this call site simply
                                       // stops reading it.
                                       showHourLabels: true,
+                                      primaryTaskId:
+                                          ref.watch(armedEditTaskProvider) ??
+                                          ref.watch(editSelectionProvider).lastOrNull,
                                       showTimelineConnectors: ref.watch(
                                         showTimelineConnectorsSettingProvider,
                                       ),
@@ -1114,6 +1117,7 @@ class _DayTimeline extends StatefulWidget {
     this.externalEvents = const [],
     required this.selectedDate,
     required this.showHourLabels,
+    this.primaryTaskId,
     this.showTimelineConnectors = true,
     required this.onTaskTap,
     required this.onToggleComplete,
@@ -1181,6 +1185,7 @@ class _DayTimeline extends StatefulWidget {
   /// [theme]/[tasks], rather than making this `StatefulWidget` itself
   /// Riverpod-aware.
   final bool showHourLabels;
+  final String? primaryTaskId;
 
   /// The Settings toggle (`ShowTimelineConnectorsSetting`) for the gray
   /// thread connecting consecutive tasks — Task view only, further gated
@@ -2722,6 +2727,7 @@ class _DayTimelineState extends State<_DayTimeline> {
                               setState(() => _settlingTaskId = null);
                             },
                             editModeEnabled: widget.editModeEnabled,
+                            primaryTaskId: widget.primaryTaskId,
                             onDeleteTask: widget.onDeleteTask,
                             deleteTargetKey: widget.editModeEnabled
                                 ? _deleteTargetKey
@@ -3760,7 +3766,8 @@ class _DayTimelineState extends State<_DayTimeline> {
   }
 
   List<TaskLayoutSlot> _dragLastOrder(List<TaskLayoutSlot> slots) {
-    final draggingId = _settlingTaskId;
+    final draggingId =
+        _draggingTaskId ?? widget.primaryTaskId ?? _settlingTaskId;
     if (draggingId == null) return slots;
 
     final index = slots.indexWhere((slot) => slot.block.id == draggingId);
@@ -4451,6 +4458,7 @@ class _DraggableTaskBlock extends ConsumerStatefulWidget {
     this.bottomTrim = 0,
     this.maxPillHeight,
     this.editModeEnabled = false,
+    this.primaryTaskId,
     this.onDeleteTask,
     this.deleteTargetKey,
     this.onDeleteTargetVisibilityChanged,
@@ -4498,6 +4506,7 @@ class _DraggableTaskBlock extends ConsumerStatefulWidget {
   /// own doc comment for why this is a plain field, not a Riverpod watch,
   /// on every widget between here and `TimelineScreen`.
   final bool editModeEnabled;
+  final String? primaryTaskId;
 
   /// See [_DayTimeline.onDeleteTask].
   final Future<void> Function(Task task)? onDeleteTask;
@@ -4684,6 +4693,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
   /// from under a live drag. Gating on a latched field instead of on
   /// selection is what makes this safe.
   bool _sweepingSelection = false;
+  Set<String>? _selectionBeforeSweep;
 
   /// Every task id this sweep has already added, so re-crossing one is a
   /// genuine no-op rather than a toggle — the sweep is purely ADDITIVE
@@ -5034,6 +5044,48 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
   void _playHaptic(AmbleHaptic haptic) =>
       ref.read(hapticsProvider).play(haptic);
 
+  void _cancelMove() {
+    if (_sweepingSelection) {
+      final originalSelection = _selectionBeforeSweep;
+      if (originalSelection != null) {
+        ref.read(editSelectionProvider.notifier).replace(originalSelection);
+      }
+      widget.onSweepEnd?.call();
+    }
+    final wasDragging = _isDragging;
+    setState(() {
+      _sweepingSelection = false;
+      _selectionBeforeSweep = null;
+      _sweptTaskIds.clear();
+      _isDragging = false;
+      _dragOffset = 0;
+      _lastDragGlobalPosition = null;
+      _deleteTargetWasArmed = false;
+    });
+    ref.read(editGroupGestureStateProvider.notifier).update(null);
+    if (!wasDragging) return;
+    widget.onDraggingChanged(false);
+    widget.onDeleteTargetVisibilityChanged?.call(false);
+    widget.onDeleteTargetArmedChanged?.call(false);
+    widget.onSettled();
+  }
+
+  void _cancelTopResize() {
+    setState(() {
+      _isResizingTop = false;
+      _resizeTopOffset = 0;
+    });
+    ref.read(editGroupGestureStateProvider.notifier).update(null);
+  }
+
+  void _cancelBottomResize() {
+    setState(() {
+      _isResizing = false;
+      _resizeOffset = 0;
+    });
+    ref.read(editGroupGestureStateProvider.notifier).update(null);
+  }
+
   @override
   Widget build(BuildContext context) {
     // Edit Mode's multi-task group-move follow — see
@@ -5252,7 +5304,9 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
             // entered edit. Both routes now render the one shared
             // `SelectedPillBorder`.
             isSelected: (multiTaskEditMode && _isSelected) || _isArmed,
+            interactionPrimary: widget.primaryTaskId == widget.task.id,
             onTap: _effectiveOnTap,
+            onHandleActivate: widget.onTap,
             onLongPress: _effectiveOnLongPress,
             onToggleComplete: widget.onToggleComplete,
             // Swipe-right — requested directly ("slide right add note...
@@ -5324,6 +5378,9 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                         widget.onSweepSelect != null &&
                         !_isSelected) {
                       _sweepingSelection = true;
+                      _selectionBeforeSweep = Set<String>.of(
+                        ref.read(editSelectionProvider),
+                      );
                       _sweptTaskIds.clear();
                       _playHaptic(AmbleHaptic.selection);
                       // The ORIGIN task is selected by id, not by
@@ -5339,6 +5396,11 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                           .toggle(widget.task.id);
                       widget.onSweepSelect!(ref, details.globalPosition);
                       return;
+                    }
+                    if (multiTaskEditMode && _isSelected) {
+                      ref
+                          .read(editSelectionProvider.notifier)
+                          .promote(widget.task.id);
                     }
                     _playHaptic(AmbleHaptic.lift);
                     _lastSnapTickDelta = 0;
@@ -5416,6 +5478,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                     // lifted, never showed a delete target, never offset).
                     if (_sweepingSelection) {
                       _sweepingSelection = false;
+                      _selectionBeforeSweep = null;
                       _sweptTaskIds.clear();
                       // Tears down the live marquee — the selection it
                       // produced stays; only the rectangle goes.
@@ -5689,14 +5752,13 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                                       message: trims.isEmpty
                                           ? "Moved '${widget.task.title}'"
                                           : "Trimmed ${trims.length} task(s)",
-                                      commit: () async {
-                                        await widget.onReschedule(
-                                          newScheduledAt,
-                                        );
-                                        await ref
-                                            .read(taskListProvider.notifier)
-                                            .rescheduleTaskWithTrim(trims);
-                                      },
+                                      commit: () => ref
+                                          .read(taskListProvider.notifier)
+                                          .rescheduleTaskWithTrim(
+                                            draggedTask: widget.task,
+                                            newScheduledAt: newScheduledAt,
+                                            trims: trims,
+                                          ),
                                     )
                                     .then((_) {
                                       if (mounted) {
@@ -5716,6 +5778,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
 
                     await commitOverlap();
                   },
+            onDragCancel: widget.isDraggable ? _cancelMove : null,
             editModeEnabled: _editActive,
             // TOP-edge resize — moves the task's START, end stays anchored,
             // so it commits BOTH scheduledAt and durationMinutes. Mirrors
@@ -5732,6 +5795,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                     setState(() => _isResizingTop = true);
                   }
                 : null,
+            onResizeTopCancel: _editActive ? _cancelTopResize : null,
             onResizeTopUpdate: _editActive
                 ? (details) {
                     setState(() => _resizeTopOffset += details.delta.dy);
@@ -5872,6 +5936,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                     setState(() => _isResizing = true);
                   }
                 : null,
+            onResizeCancel: _editActive ? _cancelBottomResize : null,
             onResizeUpdate: _editActive
                 ? (details) {
                     setState(() => _resizeOffset += details.delta.dy);
@@ -6285,6 +6350,8 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
     required bool devTimeRangeVisible,
     required bool editAffordanceActive,
   }) {
+    final primaryControls =
+        widget.primaryTaskId == widget.task.id && _editActive;
     // Must also cover a label that collision-avoidance pushed BELOW the
     // pill's own bottom: the Stack is Clip.none so it would still paint,
     // but a child outside its parent's bounds is not hit-testable, and the
@@ -6356,6 +6423,9 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
             left: columnOffset,
             width: _isDragging
                 ? null
+                : primaryControls
+                ? math.max(widget.theme.spacingMinTapTarget,
+                    _pillWidth(widget.theme) + widget.theme.spacingSm * 2)
                 : _pillWidth(widget.theme) + widget.theme.spacingSm * 2,
             right: _isDragging ? widget.textColumnRight : null,
             // topLeft, always: the pill's top edge IS the task's start

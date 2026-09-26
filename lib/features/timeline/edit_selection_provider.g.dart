@@ -92,7 +92,7 @@ final class EditSelectionProvider
   }
 }
 
-String _$editSelectionHash() => r'312cc83a174914eef58ecb5849f8e1b3a1d9e6cf';
+String _$editSelectionHash() => r'b2e81f8be94c75e4f122d6c501a600fa8a7f5a6d';
 
 /// The set of task ids currently selected under Edit Mode's multi-task
 /// route (`DevMultiTaskEditMode`, `core/dev_config.dart`) — requested

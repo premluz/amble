@@ -11,9 +11,8 @@ import '../../shared/models/zone_facet.dart';
 import '../../shared/providers/zone_facet_providers.dart';
 import '../../shared/providers/zone_providers.dart';
 
-Future<void> showZoneListScreen(BuildContext context) => Navigator.of(
-  context,
-).push<void>(directionalPageRoute((_) => const ZoneListScreen()));
+Future<void> showZoneListScreen(BuildContext context) =>
+    pushRootScreenRoute<void>(context, (_) => const ZoneListScreen());
 Future<void> showZoneNameSheet(BuildContext context, {ZoneFacet? facet}) =>
     AppSheet.show<void>(
       context: context,

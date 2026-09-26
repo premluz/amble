@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
+import 'cancel_safe_vertical_drag.dart';
+import '../../core/widgets/resize_handle_dot.dart';
 
 /// The shared visual/gesture shape for every Edit Mode resize handle — a
 /// small, always-tappable-looking bar with a generous invisible touch
@@ -20,6 +22,8 @@ class ResizeHandle extends StatelessWidget {
     required this.onDragStart,
     required this.onDragUpdate,
     required this.onDragEnd,
+    this.onDragCancel,
+    this.onTap,
     this.height,
     this.barAlignment = Alignment.center,
     this.outwardShiftFactor = 0.5,
@@ -29,6 +33,8 @@ class ResizeHandle extends StatelessWidget {
   final GestureDragStartCallback? onDragStart;
   final GestureDragUpdateCallback? onDragUpdate;
   final GestureDragEndCallback? onDragEnd;
+  final VoidCallback? onDragCancel;
+  final VoidCallback? onTap;
 
   /// Overrides the handle's default `spacingMd` hit height.
   ///
@@ -74,56 +80,23 @@ class ResizeHandle extends StatelessWidget {
   Widget build(BuildContext context) {
     final dotSize = theme.spacingSm;
 
-    // Which way is "outward" for this handle: [barAlignment] is
-    // `topCenter` for a top handle, `bottomCenter` for a bottom one, so
-    // its own `y` (-1 or 1) already tells us which direction points away
-    // from the pill. Scaled by [outwardShiftFactor] — see that field's
-    // own doc comment for why `TaskCapsuleBlock` needs a partial shift.
     final outwardDirection = barAlignment.y.sign * outwardShiftFactor;
-
-    return GestureDetector(
-      onVerticalDragStart: onDragStart,
-      onVerticalDragUpdate: onDragUpdate,
-      onVerticalDragEnd: onDragEnd,
-      behavior: HitTestBehavior.opaque,
+    return CancelSafeVerticalDrag(
+      onTap: onTap,
+      onStart: onDragStart,
+      onUpdate: onDragUpdate,
+      onEnd: onDragEnd,
+      onCancel: onDragCancel,
       child: Container(
         height: height ?? theme.spacingMd,
         alignment: barAlignment,
-        // A small accent-colored circle, not a bar — requested directly:
-        // "the resize controls should be small blue circles in the center
-        // on both ends, at the moment is line, instead in the same
-        // position circle/oval centered." Was a grey `colorTextPrimary`
-        // bar (a straight line); now a `BoxShape.circle` dot in
-        // `colorAccent`, matching the selection border's own accent
-        // color so the two read as one consistent "this is editable"
-        // visual language.
-        //
-        // Nudged outward via [Transform.translate], scaled by
-        // [outwardShiftFactor] — corrected directly across several
-        // rounds: first "the resize controls should be small blue
-        // circles... centered," which read as centered ON the pill's
-        // edge; then "the dots should be slight outer, not inner like
-        // now or middle on the blue line"; a full-diameter push then made
-        // `TaskCapsuleBlock`'s dots vanish entirely under its always-on
-        // frosted-wrapper clip (see [outwardShiftFactor]'s own doc
-        // comment), and centering them back on the edge for that case
-        // read as "position more outward... instead of inward or
-        // middle." `outwardShiftFactor: 1.0` (the default) clears the
-        // whole dot; `0.5` leaves exactly half visible under a clip that
-        // sits flush with the edge, which reads as "poking outward"
-        // rather than "sitting on the line." The touch target (this
-        // widget's own hit-tested bounds) is untouched regardless — only
-        // the paint moves, not the gesture geometry.
         child: Transform.translate(
-          offset: Offset(0, outwardDirection * dotSize),
-          child: Container(
-            width: dotSize,
-            height: dotSize,
-            decoration: BoxDecoration(
-              color: theme.colorAccent,
-              shape: BoxShape.circle,
-            ),
+          offset: Offset(
+            0,
+            outwardDirection * dotSize -
+                barAlignment.y.sign * ResizeHandleDot.edgeInset(theme),
           ),
+          child: ResizeHandleDot(theme: theme),
         ),
       ),
     );

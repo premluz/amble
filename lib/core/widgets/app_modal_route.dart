@@ -182,3 +182,39 @@ Route<T> directionalPageRoute<T>(
     },
   );
 }
+
+/// Pushes [builder] via [directionalPageRoute] on the ROOT navigator,
+/// producing a genuinely full-screen page with no persistent shell chrome
+/// (the top nav) showing through underneath — rather than a plain
+/// `Navigator.of(context).push`, which resolves to the shell's own nested
+/// content [Navigator] (`main.dart`'s `_contentNavigatorKey`). That
+/// navigator sits BELOW the persistent `AppTopNav` in the widget tree, not
+/// around it, so a route pushed there only ever covers the content area
+/// under the top nav — the nav never goes away, no matter how full-screen
+/// the pushed page's own header makes it look.
+///
+/// NOT the same thing as [pushFullScreenRoute] above (that one is a
+/// fade+slide-up TAKEOVER transition, still pushed on the nearest
+/// navigator) — this one keeps [directionalPageRoute]'s ordinary
+/// slide-horizontal page motion and changes WHICH navigator receives the
+/// push, to escape a persistent parent chrome rather than to look like a
+/// takeover.
+///
+/// Used by every Settings sub-page (via `pushSettingsDetailRoute`, its own
+/// settings-specific wrapper) and by Zones/Templates/Tags/Starter profiles
+/// — all reported directly as needing the same "full page, no top nav,
+/// nav animates away with the content" treatment. Wraps [builder] in
+/// [rootModalBuilder] so the pushed page still inherits the launching
+/// route's theme and Riverpod `ProviderScope` (a raw root-navigator push
+/// loses both). Since `AmbleHome` — the whole shell, top nav included — is
+/// itself the root navigator's own page 1 (`MaterialApp`'s `home:`), the
+/// push covers the ENTIRE screen, and [directionalPageRoute]'s existing
+/// slide transition carries the whole outgoing shell (top nav included)
+/// away as one animated unit — "top nav gets animated along the contents"
+/// falls out of covering it, with no separate chrome-controller wiring
+/// needed.
+Future<T?> pushRootScreenRoute<T>(BuildContext context, WidgetBuilder builder) {
+  return Navigator.of(context, rootNavigator: true).push<T>(
+    directionalPageRoute(rootModalBuilder(context, builder)),
+  );
+}

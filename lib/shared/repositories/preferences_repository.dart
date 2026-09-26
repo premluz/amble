@@ -63,6 +63,13 @@ abstract final class PreferenceKeys {
   /// ON by default. See [DisableOverlapClusteringSetting].
   static const String disableOverlapClustering = 'disableOverlapClustering';
 
+  /// Whether the app's dual-font system (DM Sans for general text,
+  /// JetBrains Mono for numeric/temporal labels and zone names — see
+  /// `TypePrimitives`) is active. When off, every mono-bound token resolves
+  /// to DM Sans instead, so the whole app reads as one font. Absent (null)
+  /// defaults to true — dual-font is ON by default. See [DualFontSetting].
+  static const String dualFontEnabled = 'dualFontEnabled';
+
   /// Whether the 5 built-in [Category] rows have been seeded into the
   /// `categories` Hive box and every existing [Task]'s deprecated
   /// `category` enum value has been backfilled onto its new `categoryId`.

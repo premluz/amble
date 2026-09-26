@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
+import 'package:amble/core/widgets/app_bottom_dock.dart';
+import 'package:amble/core/widgets/app_shell_chrome.dart';
 import 'package:amble/shared/providers/preferences_providers.dart';
 import 'package:amble/shared/providers/zone_providers.dart';
 import 'package:amble/shared/providers/zone_facet_providers.dart';
@@ -175,6 +177,53 @@ void main() {
       expect(point(tester, 1, 0).dy, before);
     },
   );
+  for (final direction in [-1, 1]) {
+    testWidgets('selected zone side handle fills days direction $direction', (
+      tester,
+    ) async {
+      final source =
+          (await container
+                  .read(zoneListProvider.notifier)
+                  .paintWeeklyZones(
+                    title: 'Work',
+                    weekdays: {3},
+                    startMinutes: 240,
+                    endMinutes: 360,
+                  ))
+              .single;
+      await pump(tester);
+      await tester.tapAt(point(tester, 3, 300));
+      await tester.pump();
+      final block = find.byWidgetPredicate(
+        (w) => w is ZoneGridBlock && w.zone.id == source.id,
+      );
+      final rect = tester.getRect(block);
+      final from = Offset(
+        direction < 0 ? rect.left + 2 : rect.right - 2,
+        rect.center.dy,
+      );
+      final column = (point(tester, 4, 300) - point(tester, 3, 300)).dx;
+      final g = await tester.startGesture(from);
+      for (var i = 1; i <= 30; i++) {
+        await g.moveTo(from + Offset(direction * column * 2 * i / 30, 0));
+        await tester.pump();
+      }
+      await g.up();
+      await tester.pumpAndSettle();
+      expect(
+        repository.getAll().map((z) => z.weekday).toSet(),
+        direction < 0 ? {1, 2, 3} : {3, 4, 5},
+      );
+      expect(
+        repository.getAll().every(
+          (z) => z.startMinutes == 240 && z.endMinutes == 360,
+        ),
+        isTrue,
+      );
+      expect(container.read(zoneEditSelectionProvider), contains(source.id));
+    });
+  }
+
   testWidgets(
     'sideways fill survives rebuilds and copies hours, not other placements',
     (tester) async {
@@ -417,15 +466,16 @@ void main() {
     // Zones tab is always in edit mode now, requested directly ("Edit
     // zones screen should be in edit mode always no need to press edit to
     // edit"), so a button that toggles into it has nothing left to do.
-    testWidgets('the Zones tab dock has no Edit toggle — editing is always on', (
-      tester,
-    ) async {
-      await pump(tester);
+    testWidgets(
+      'the Zones tab dock has no Edit toggle — editing is always on',
+      (tester) async {
+        await pump(tester);
 
-      expect(find.byTooltip('Close zones'), findsOneWidget);
-      expect(find.byTooltip('Edit zones'), findsNothing);
-      expect(find.byTooltip('Finish editing'), findsNothing);
-    });
+        expect(find.byTooltip('Close zones'), findsOneWidget);
+        expect(find.byTooltip('Edit zones'), findsNothing);
+        expect(find.byTooltip('Finish editing'), findsNothing);
+      },
+    );
 
     testWidgets('tapping the bottom dock\'s Close pops the screen', (
       tester,
@@ -512,8 +562,7 @@ void main() {
       expect(
         dots.any(
           (c) =>
-              (c.dy - rect.top).abs() < 1 &&
-              (c.dx - rect.center.dx).abs() < 1,
+              (c.dy - rect.top).abs() < 1 && (c.dx - rect.center.dx).abs() < 1,
         ),
         isTrue,
         reason: 'top handle',
@@ -530,8 +579,7 @@ void main() {
       expect(
         dots.any(
           (c) =>
-              (c.dx - rect.left).abs() < 1 &&
-              (c.dy - rect.center.dy).abs() < 1,
+              (c.dx - rect.left).abs() < 1 && (c.dy - rect.center.dy).abs() < 1,
         ),
         isTrue,
         reason: 'left handle',
@@ -561,13 +609,41 @@ void main() {
       await tester.pump();
 
       final after = target(tester);
-      expect(after.startMinutes, before.startMinutes,
-          reason: 'the untouched edge must not move');
+      expect(
+        after.startMinutes,
+        before.startMinutes,
+        reason: 'the untouched edge must not move',
+      );
       expect(after.endMinutes, greaterThan(before.endMinutes));
     });
 
-    testWidgets('dragging the RIGHT handle widens the weekday span',
-        (tester) async {
+    testWidgets('side resize tracks pixels across days in one held gesture', (
+      tester,
+    ) async {
+      await paint(tester);
+      final before = marquee(tester);
+      final start = before.centerRight;
+      final g = await tester.startGesture(start);
+      await g.moveTo(start + const Offset(30, 0));
+      await tester.pump();
+      for (var i = 1; i <= 40; i++) {
+        final pointer = start + Offset(30 + i * 3, 0);
+        await g.moveTo(pointer);
+        await tester.pump();
+        final live = marquee(tester);
+        expect(live.left, before.left);
+        expect(live.top, before.top);
+        expect(live.height, before.height);
+        expect(live.right, closeTo(pointer.dx, 0.01));
+      }
+      await g.up();
+      await tester.pump();
+      expect(target(tester).weekdays.length, greaterThan(2));
+    });
+
+    testWidgets('dragging the RIGHT handle widens the weekday span', (
+      tester,
+    ) async {
       await paint(tester);
       final before = target(tester);
       expect(before.weekdays, {2});
@@ -581,8 +657,11 @@ void main() {
       await tester.pump();
 
       final after = target(tester);
-      expect(after.weekdays.length, greaterThan(1),
-          reason: 'dragging right must add days');
+      expect(
+        after.weekdays.length,
+        greaterThan(1),
+        reason: 'dragging right must add days',
+      );
       expect(after.startMinutes, before.startMinutes);
       expect(after.endMinutes, before.endMinutes);
     });
@@ -763,5 +842,141 @@ void main() {
         );
       },
     );
+  });
+
+  group('bottom dock does not overlap the naming sheet', () {
+    // The bare `pump` helper above mounts `ZoneGridScreen` with no shell
+    // around it at all, so it never exercised the actual bug: in the real
+    // app, `AppBottomDock` (`main.dart`) is a PERSISTENT shell overlay
+    // painted AFTER (on top of) the routed content — including whatever
+    // `ZoneGridScreen` renders, `NewZoneSheet` among it. Reported directly
+    // ("still bottom toolbar overlaps") after an earlier fix tried to
+    // reposition the sheet to clear the dock's own height — repositioning
+    // could never work, since the dock always paints last regardless of
+    // where the sheet sits. This harness reproduces that real paint order
+    // (`AppShellChromeScope` + a real `AppBottomDock`, both siblings in an
+    // outer `Stack` around `ZoneGridScreen`, exactly like `main.dart`'s
+    // own shell) so the fix — hiding the dock's own claimed actions while
+    // a naming sheet is open — has real coverage.
+    Future<void> pumpWithShell(WidgetTester tester) async {
+      tester.view.physicalSize = const Size(430, 932);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final chromeController = AppShellChromeController();
+      addTearDown(chromeController.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: ThemeData(extensions: [AmbleTheme.dark]),
+            home: Scaffold(
+              body: AppShellChromeScope(
+                controller: chromeController,
+                child: Stack(
+                  children: [
+                    const ZoneGridScreen(initialTab: ZoneGridTab.zones),
+                    SafeArea(
+                      top: false,
+                      child: Align(
+                        alignment: Alignment.bottomLeft,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: AppBottomDock(
+                            activeView: AppBottomDockView.timeline,
+                            onSelectView: (_) {},
+                            onEditTap: () {},
+                            whatMattersEnabled: false,
+                            onWhatMattersTap: () {},
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+    }
+
+    testWidgets(
+      'the dock renders no action buttons while the naming sheet is open',
+      (tester) async {
+        await pumpWithShell(tester);
+
+        final rect = tester.getRect(
+          find.byKey(const ValueKey('zone-paint-surface')),
+        );
+        const axisWidth = 60.0;
+        const pixelsPerMinute = 1.5;
+        Offset point(int day, int minute) => Offset(
+          rect.left + axisWidth + (day - .5) * (rect.width - axisWidth) / 7,
+          rect.top + minute * pixelsPerMinute,
+        );
+
+        // Before opening the sheet: the dock's own Close action is a real
+        // tap target.
+        expect(find.byType(AppDockIconButton), findsWidgets);
+
+        final gesture = await tester.startGesture(point(1, 180));
+        await tester.pump(const Duration(milliseconds: 550));
+        await gesture.moveTo(point(1, 360));
+        await tester.pump();
+        await gesture.up();
+        // pumpAndSettle, not a fixed-duration pump — the dock's own exit
+        // uses a real `Timer` (`AppContextDock`'s own `_pruneTimer`) to
+        // remove an exiting action from the tree once its fade finishes,
+        // which a `tester.pump(duration)` does not reliably advance the
+        // same way `pumpAndSettle` does. Every existing dock-transition
+        // test in this codebase (`zone_grid_selection_dock_test.dart`)
+        // already uses `pumpAndSettle` for exactly this reason.
+        await tester.pumpAndSettle();
+
+        expect(find.byType(NewZoneSheet), findsOneWidget);
+        expect(
+          find.byType(AppDockIconButton),
+          findsNothing,
+          reason:
+              'the dock must render nothing while a naming sheet is open, '
+              'since it is a persistent overlay that always paints on top '
+              'of the sheet regardless of the sheet\'s own position',
+        );
+      },
+    );
+
+    testWidgets('the dock reappears once the naming sheet is dismissed', (
+      tester,
+    ) async {
+      await pumpWithShell(tester);
+
+      final rect = tester.getRect(
+        find.byKey(const ValueKey('zone-paint-surface')),
+      );
+      const axisWidth = 60.0;
+      const pixelsPerMinute = 1.5;
+      Offset point(int day, int minute) => Offset(
+        rect.left + axisWidth + (day - .5) * (rect.width - axisWidth) / 7,
+        rect.top + minute * pixelsPerMinute,
+      );
+
+      final gesture = await tester.startGesture(point(1, 180));
+      await tester.pump(const Duration(milliseconds: 550));
+      await gesture.moveTo(point(1, 360));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(find.byType(NewZoneSheet), findsOneWidget);
+      expect(find.byType(AppDockIconButton), findsNothing);
+
+      // Close via the sheet's own bottom-row close button.
+      await tester.tap(find.byIcon(Icons.close_rounded));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(NewZoneSheet), findsNothing);
+      expect(find.byType(AppDockIconButton), findsWidgets);
+    });
   });
 }

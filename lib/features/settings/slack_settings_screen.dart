@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/background/background_tasks.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
-import '../../core/widgets/app_modal_route.dart';
 import '../../core/widgets/app_switch.dart';
 import '../../core/widgets/app_text_field.dart';
 import '../../shared/providers/preferences_providers.dart';
@@ -14,8 +13,9 @@ import 'settings_detail_scaffold.dart';
 import 'settings_panel.dart';
 
 Future<void> showSlackSettingsScreen(BuildContext context) {
-  return Navigator.of(context).push<void>(
-    directionalPageRoute((context) => const SlackSettingsScreen()),
+  return pushSettingsDetailRoute<void>(
+    context,
+    (context) => const SlackSettingsScreen(),
   );
 }
 

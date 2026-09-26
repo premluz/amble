@@ -1,6 +1,8 @@
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_badge_chip.dart';
 import 'package:amble/core/widgets/app_button.dart';
+import 'package:amble/core/widgets/app_chip_strip.dart';
+import 'package:amble/core/widgets/app_value_chip.dart';
 import 'package:amble/core/widgets/app_connected_buttons.dart';
 import 'package:amble/core/widgets/app_bottom_dock.dart';
 import 'package:amble/core/widgets/app_context_menu.dart';
@@ -156,11 +158,55 @@ class AmbleWidgetbookApp extends StatelessWidget {
               useCases: [
                 WidgetbookUseCase(
                   name: 'Non-selectable (just displayed)',
-                  builder: (context) => const _BadgeChipDemo(selectable: false),
+                  builder: (context) => _BadgeChipDemo(
+                    selectable: false,
+                    variant: context.valueChipVariantKnob(),
+                    size: context.valueChipSizeKnob(),
+                  ),
                 ),
                 WidgetbookUseCase(
                   name: 'Selectable',
-                  builder: (context) => const _BadgeChipDemo(selectable: true),
+                  builder: (context) => _BadgeChipDemo(
+                    selectable: true,
+                    variant: context.valueChipVariantKnob(),
+                    size: context.valueChipSizeKnob(),
+                  ),
+                ),
+              ],
+            ),
+            // The task-composer field chip ("Today" / "hh:mm" / duration)
+            // — a value-carrying pill, not a toggle like AppSelectableChip/
+            // AppBadgeChip above: its label IS the picked value, styled as
+            // a placeholder until one exists. Tap in the gallery to flip
+            // between empty and set, same interaction the real chip gets
+            // from its own picker sheet.
+            WidgetbookComponent(
+              name: 'AppValueChip',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Tap to toggle value',
+                  builder: (context) => _ValueChipDemo(
+                    variant: context.valueChipVariantKnob(),
+                    size: context.valueChipSizeKnob(),
+                    withIcon: context.knobs.boolean(
+                      label: 'With icon',
+                      initialValue: true,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            // The shared horizontal-scroll mechanics behind every chip
+            // strip in the app (`TemplateChipStrip`'s own quick-create
+            // reference, and the New Zone sheet's tag row) — requested
+            // directly: "we should make that scrolling same across
+            // usages, document in design system so we reuse that class."
+            WidgetbookComponent(
+              name: 'AppChipStrip',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Scrollable AppBadgeChip row',
+                  builder: (context) => const _ChipStripDemo(),
                 ),
               ],
             ),
@@ -383,12 +429,38 @@ extension _ButtonKnobs on BuildContext {
       );
 }
 
+/// [AppValueChip] has its OWN variant/size enums (`AppValueChipVariant`/
+/// `AppValueChipSize`), a deliberate subset of [AppButtonVariant]/
+/// [AppButtonSize] — see that widget's own doc comment — so it needs its
+/// own knob pair rather than reusing [_ButtonKnobs].
+extension _ValueChipKnobs on BuildContext {
+  AppValueChipVariant valueChipVariantKnob() =>
+      knobs.object.dropdown<AppValueChipVariant>(
+        label: 'Variant',
+        options: AppValueChipVariant.values,
+        labelBuilder: (v) => v.name,
+      );
+
+  AppValueChipSize valueChipSizeKnob() =>
+      knobs.object.dropdown<AppValueChipSize>(
+        label: 'Size',
+        options: AppValueChipSize.values,
+        labelBuilder: (v) => v.name,
+      );
+}
+
 /// Stateful so tapping the chip in the gallery visibly toggles selection,
 /// same reasoning as [_TabSwitchDemo] below.
 class _BadgeChipDemo extends StatefulWidget {
-  const _BadgeChipDemo({required this.selectable});
+  const _BadgeChipDemo({
+    required this.selectable,
+    required this.variant,
+    required this.size,
+  });
 
   final bool selectable;
+  final AppValueChipVariant variant;
+  final AppValueChipSize size;
 
   @override
   State<_BadgeChipDemo> createState() => _BadgeChipDemoState();
@@ -399,10 +471,23 @@ class _BadgeChipDemoState extends State<_BadgeChipDemo> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = AmbleTheme.light;
+    // Reads the ADDON's live theme rather than hardcoding AmbleTheme.light
+    // — a real bug caught directly ("in widget book is dark, not
+    // responding to addons dark/light mode"): the ThemeAddon already
+    // wraps every use case in a `Theme` carrying the right `AmbleTheme`
+    // extension, exactly like every real screen resolves it
+    // (`Theme.of(context).extension<AmbleTheme>()!`); this demo just
+    // wasn't reading it, so the chip stayed light-styled even under the
+    // Dark addon selection, unreadable against the dark preview
+    // background. `AppBadgeChip` itself was already fully theme-driven —
+    // this was a Widgetbook-demo-only bug, not a real app bug (confirmed
+    // directly: "in build app is fine").
+    final theme = Theme.of(context).extension<AmbleTheme>()!;
     return Center(
       child: AppBadgeChip(
         theme: theme,
+        variant: widget.variant,
+        size: widget.size,
         leading: Container(
           width: theme.spacingLg,
           height: theme.spacingLg,
@@ -422,6 +507,87 @@ class _BadgeChipDemoState extends State<_BadgeChipDemo> {
             ? () => setState(() => _selected = !_selected)
             : null,
       ),
+    );
+  }
+}
+
+/// Stateful so tapping the chip in the gallery visibly flips it between
+/// its placeholder and a set value — same reasoning as [_BadgeChipDemo]'s
+/// own selection toggle above.
+class _ValueChipDemo extends StatefulWidget {
+  const _ValueChipDemo({
+    required this.variant,
+    required this.size,
+    required this.withIcon,
+  });
+
+  final AppValueChipVariant variant;
+  final AppValueChipSize size;
+  final bool withIcon;
+
+  @override
+  State<_ValueChipDemo> createState() => _ValueChipDemoState();
+}
+
+class _ValueChipDemoState extends State<_ValueChipDemo> {
+  bool _hasValue = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: AppValueChip(
+        label: _hasValue ? '09:30' : 'hh:mm',
+        hasValue: _hasValue,
+        variant: widget.variant,
+        size: widget.size,
+        icon: widget.withIcon ? Icons.schedule_rounded : null,
+        onTap: () => setState(() => _hasValue = !_hasValue),
+      ),
+    );
+  }
+}
+
+/// A plain scrollable row of [AppBadgeChip]s, standing in for either real
+/// caller ([TemplateChipStrip]'s category+title cards, or the New Zone
+/// sheet's plain tag chips) without pulling in either one's own providers.
+class _ChipStripDemo extends StatefulWidget {
+  const _ChipStripDemo();
+
+  @override
+  State<_ChipStripDemo> createState() => _ChipStripDemoState();
+}
+
+class _ChipStripDemoState extends State<_ChipStripDemo> {
+  int? _selectedIndex;
+
+  static const _labels = [
+    'Morning',
+    'Commute',
+    'Work',
+    'Misc',
+    'Open',
+    'Deep focus',
+    'Wind-down',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context).extension<AmbleTheme>()!;
+    return AppChipStrip<String>(
+      items: _labels,
+      height: theme.sizeButtonMd,
+      edgeInset: theme.spacingMd,
+      itemBuilder: (context, label) {
+        final index = _labels.indexOf(label);
+        return AppBadgeChip(
+          theme: theme,
+          label: label,
+          selected: index == _selectedIndex,
+          onTap: () => setState(
+            () => _selectedIndex = index == _selectedIndex ? null : index,
+          ),
+        );
+      },
     );
   }
 }
