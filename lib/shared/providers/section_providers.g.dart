@@ -116,7 +116,7 @@ final class SectionListProvider
   }
 }
 
-String _$sectionListHash() => r'80a41a0c50acc2137c653dfaa435fe79dd5e1faf';
+String _$sectionListHash() => r'b87d5b5d418ae653b9049b3dfb070fb81127cdf6';
 
 /// CRUD state over [SectionRepository], mirroring [CategoryList]'s shape.
 ///

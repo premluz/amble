@@ -2957,12 +2957,10 @@ class _SchedulePreviewCard extends StatelessWidget {
               color: badgeColor,
               borderRadius: BorderRadius.circular(theme.radiusTaskPill),
             ),
+            // No glyph for "no category" — see CategoryBadge's own
+            // 2026-09-23 comment on the same change.
             child: category == null
-                ? Icon(
-                    builtInIconFor(BuiltInCategoryIds.general),
-                    size: badgeSize * 0.55,
-                    color: glyphColorOn(badgeColor),
-                  )
+                ? null
                 : CategoryGlyph(
                     category: category,
                     color: glyphColorOn(badgeColor),

@@ -13,9 +13,13 @@ import android.os.Bundle
 // docs/DECISIONS.md's RevenueCat integration entry.
 class MainActivity : FlutterFragmentActivity() {
     private lateinit var assistant: AssistantActions
+    private lateinit var keyboardAnimation: AndroidKeyboardAnimation
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        keyboardAnimation = AndroidKeyboardAnimation(
+            window.decorView, AmbleFlutterHost.engine(this).dartExecutor.binaryMessenger
+        )
         assistant = AssistantActions(this)
         if (savedInstanceState == null) assistant.handle(intent)
     }
@@ -27,6 +31,7 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     override fun onDestroy() {
+        keyboardAnimation.close()
         assistant.close()
         super.onDestroy()
     }

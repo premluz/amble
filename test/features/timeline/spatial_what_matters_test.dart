@@ -1,3 +1,4 @@
+import 'package:amble/core/widgets/what_matters_motion.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -31,7 +32,7 @@ import '../../support/seeded_category_box.dart';
 /// layout (`splitLayout: true`) — the pill (`TaskCapsuleBlock`, which
 /// already carries `whatMattersFaded`) and the title/time/checkbox row
 /// (`TaskCapsuleTextRow`) are two SEPARATE `Positioned` siblings in one
-/// `Stack`, not ancestor/descendant, so the pill's own `AnimatedOpacity`
+/// `Stack`, not ancestor/descendant, so the pill's own `Opacity`
 /// never touched the text row at all. `_buildSplit`'s own `isFaded` now
 /// also checks `whatMattersEnabledSettingProvider` + `!task.isImportant`,
 /// matching the pill.
@@ -115,8 +116,8 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 1000));
+    await tester.pump(const Duration(milliseconds: 1000));
     return container;
   }
 
@@ -151,7 +152,7 @@ void main() {
             .set(true),
       );
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 1000));
 
       final pill = tester.widget<TaskCapsuleBlock>(
         find.byWidgetPredicate(
@@ -174,11 +175,11 @@ void main() {
       // in an importance marker inline) — `find.text` only matches the
       // plain-string constructor, so `textContaining` is the reliable
       // finder here.
-      final ancestorOpacity = tester.widget<AnimatedOpacity>(
-        find
-            .ancestor(of: titleFinder, matching: find.byType(AnimatedOpacity))
-            .first,
-      );
+      final ancestorOpacity = tester.widget<Opacity>(find.descendant(
+        of: find.descendant(of: find.byType(TaskCapsuleTextRow),
+          matching: find.byType(WhatMattersMotion)),
+        matching: find.byType(Opacity),
+      ).first);
       expect(
         ancestorOpacity.opacity,
         0.0,
@@ -204,17 +205,42 @@ void main() {
             .set(true),
       );
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 1000));
 
-      final ancestorOpacity = tester.widget<AnimatedOpacity>(
-        find
-            .ancestor(
-              of: find.textContaining('Important task'),
-              matching: find.byType(AnimatedOpacity),
-            )
-            .first,
-      );
+      final ancestorOpacity = tester.widget<Opacity>(find.descendant(
+        of: find.descendant(of: find.byType(TaskCapsuleTextRow),
+          matching: find.byType(WhatMattersMotion)),
+        matching: find.byType(Opacity),
+      ).first);
       expect(ancestorOpacity.opacity, 1.0);
     },
   );
+  testWidgets('three lanes hold first, then close around the anchored task and return', (tester) async {
+    final anchor = makeTask('Anchor', isImportant: true);
+    final container = await pumpTimeline(tester, tasks: [
+      makeTask('Ordinary one', isImportant: false),
+      makeTask('Ordinary two', isImportant: false),
+      anchor,
+    ]);
+    final label = find.byWidgetPredicate((widget) =>
+      widget is TaskCapsuleTextRow && widget.task.id == anchor.id);
+    final original = tester.getTopLeft(label);
+    await tester.runAsync(() => container
+      .read(whatMattersEnabledSettingProvider.notifier).set(true));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(tester.getTopLeft(label), original);
+    for (var frame = 0; frame < 15; frame++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(tester.getTopLeft(label).dx, lessThan(original.dx));
+    await tester.runAsync(() => container
+      .read(whatMattersEnabledSettingProvider.notifier).set(false));
+    await tester.pump();
+    for (var frame = 0; frame < 12; frame++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(tester.getTopLeft(label), original);
+  });
+
 }

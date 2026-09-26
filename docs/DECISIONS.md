@@ -3362,3 +3362,164 @@ their page inset. Spatial day content lays out invisibly until its
 post-layout scroll restoration has run, then appears on the next frame.
 This is a readiness gate, without a timer or fade. Pointer input is
 blocked while hidden. Existing saved-task reveal behavior is unchanged.
+
+
+**Both Day views (2026-09-23):** the non-spatial zone view now also
+lays out invisibly for one frame before appearing, via `DayViewReveal`.
+The spatial view retains its scroll-restoration readiness gate. Neither
+direction fades or uses a timed delay; ordinary zone-list rebuilds do not
+restart the reveal. Hidden content cannot receive pointer input.
+
+**Category "Personal" rename keeps its id; the new "Personal" gets a new
+one (2026-09-23).** Requested directly: rename the pre-existing
+"Personal" (home icon) to "Home," and add a genuinely NEW "Personal"
+category with a user icon. Confirmed via reasoning about existing data:
+[BuiltInCategoryIds.personal] (`...0004`) is REUSED for "Home" — same
+id, same persisted rows, just a new name/label — because real tasks
+already reference this id via `categoryId`, and reassigning it to a new
+category would silently repoint every one of them. The new "Personal"
+gets its own fresh id, `BuiltInCategoryIds.personalNew` (`...0006`),
+named that way (rather than renumbering anything) so every existing id
+constant keeps meaning exactly what it always meant. Three more brand-
+new categories (Social, Reading, Learning) followed the same "new id,
+never reuse/renumber" rule. The legacy `TaskCategory` enum (frozen,
+Hive field-index-stable, only 5 values) needed no changes — it still
+maps to the same ids, which still resolve to real (if renamed)
+categories.
+
+**General/untagged is hidden from every tag-picker/list UI, not deleted
+(2026-09-23).** Requested directly: General should be an "invisible
+placeholder," never shown as a selectable option. Implemented as a new
+`visibleCategoryListProvider` that filters it out, used ONLY by the 3
+UI sites that render a pickable/manageable tag list. The underlying,
+unfiltered `categoryListProvider`/repository is untouched: General
+still exists as a real seeded row, since a task's `categoryId` can
+resolve to it and `CategoryList.deleteCategory`'s own reassignment
+target depends on it existing. Also confirmed: the "no category
+assigned" badge fallback should show no icon glyph at all (was a plain
+circle outline) — a flat grey pill is the entire "uncategorised"
+signal now, matching the emoji-less treatment General already had.
+
+
+## Sheet entrance follows measured Android IME motion (2026-09-24)
+
+`AppSheet.show` retains two explicit modes. Plain sheets slide immediately
+using `motionSheetSlide`; autofocus sheets mount/focus immediately and
+join the final `motionSheetSlide` window of the keyboard's actual native
+animation on Android 11+. `AndroidKeyboardAnimation` observes the decor
+view with CONTINUE_ON_SUBTREE, preserving FlutterView's own callback.
+It reports live inset, fraction and duration over a channel, with the
+same pre-Android-15 navigation-bar adjustment as Flutter's IME bridge.
+No package dependency was added. A full restart loads the native change.
+
+Only the content-sized surface translates; keyboard clearance is outside
+that surface. Removed the global keyboard-height cache. Already-open
+keyboards use the ordinary slide; interrupted opening cannot strand a
+hidden sheet. Older Android and non-Android platforms use the documented
+unmeasured grace-period path. A 1000ms request timeout handles suppressed
+or hardware keyboards; it is not used as the normal native animation
+clock. Full-screen route helpers remain separate from `AppSheet`.
+
+Implementation is split into `app_sheet.dart`, `app_sheet_route.dart`,
+`app_sheet_motion.dart`, and `app_sheet_keyboard.dart`; the existing
+`autofocusesKeyboard` opt-in remains wired to Quick Capture.
+
+## Reusable layout reveal for Edit entry (2026-09-24)
+
+`AppLayoutReveal` in core mounts content invisibly for its first layout, then
+reveals without remounting. Its default is the existing untimed Day-view gate;
+`DayViewReveal` now delegates to it. Ordinary rebuilds do not restart the gate.
+`layoutRevealRoute` opts a screen into a fade using `motionFast` and
+`curveDecelerate`, retaining the outgoing page underneath instead of exposing a
+blank frame. `showEditScreen` uses this route for the shared Tasks/Zones editor.
+Other routes remain unchanged. Input is blocked until the reveal completes;
+reduced motion skips the fade while preserving the layout gate. Pop is instant.
+
+## Edit route owns its mode state before its first frame (2026-09-24)
+
+`showEditScreen` now creates a nested ProviderScope overriding only
+`editModeEnabledProvider`. Tasks starts true; Zones starts false. The outgoing
+Day screen retains its own mode while visible beneath the fade. The editor no
+longer needs a false-to-true first-frame update to establish task layout.
+The existing tab synchronization remains for switching tabs and direct mounts.
+
+## What Matters releases attention before reflow (2026-09-25)
+
+Shared component motion replaces the previous fade-only spatial treatment and
+immediate empty-zone/event removal. Entrance is 900ms: hold 150ms, release tasks
+with accelerating downward translation plus fade and 2.5% scale reduction through
+650ms, collapse list space from 350–850ms, then finish without a spring. Returning
+uses a separate 600ms sequence: hold 100ms, rise/fade through 500ms and finish
+expanding by 600ms. Rapid toggles interpolate from the current pose.
+
+Timeline time coordinates stay fixed. Horizontal lanes and colliding labels
+repack after the release, using the important subset for layout measurements.
+Non-important tasks and imported events keep their render state; collapsed list
+rows request keep-alive so returning does not snap to freshly mounted geometry.
+Reduced motion applies final visual states immediately.
+
+`WhatMattersTokens` centralizes timings, phase boundaries, scale, and alpha.
+A broad downward wash uses the theme's existing `colorAccent` at 3.5% peak alpha;
+the active lens retains a 2% tint. No new palette, blur, particles, or spring.
+The scene only notifies layout consumers at mode/packing phase changes; wash
+frames do not trigger repeated timeline lane computation.
+
+## What Matters: Rios bottom-origin ripple refinement (2026-09-25)
+
+Replaced the vertical wash with one broad, soft radial ring expanding from
+bottom-center, reflecting the Rios water/flow direction. Entry/return are now
+800/550ms. The wave peaks at 14% accent alpha in light mode and 12% in dark;
+the persistent tint is 3%/4%, respectively. Reduced motion retains only the
+settled tint. The Day host owns the wash across its header and content, avoiding
+a tint boundary below the top navigation. Embedded timelines reuse that scene;
+other main destinations do not paint its overlay.
+
+Only the What Matters dock pane receives an active background tint (12%/16%
+accent over its existing surface). Its press uses the existing `lift` intention
+(light impact), stronger than the ordinary selection-click tap. Optional
+background/haptic parameters preserve all other controls' defaults.
+
+### Deferred brief — explicitly not authorized for implementation
+
+The user described a future reusable transition system for the bottom toolbar:
+page/view menus, edit-mode back-only state, and selection Edit/Remove state should
+transition automatically through the shared system. A separate future opt-in
+system should provide very subtle main-page/view/edit crossfades (Day, Inbox,
+Tracked, zone/spatial and edit/non-edit). Keep the bottom anchoring and Rios flow
+language in mind. This is context only; no new toolbar-state or page-navigation
+animations were implemented in the current refinement.
+
+## Reusable contextual dock and readiness-aware view transition (2026-09-26)
+
+The deferred toolbar/view brief is now implemented as two opt-in primitives.
+`AppContextDock` receives a `stateId`, stable action IDs, groups, callbacks,
+selection/enabled/destructive state, and per-action haptics. It retains matching
+actions, animates additions/removals and group spacing over the shared 200ms
+context-dock token, and keeps the floating create button outside the system.
+Day, task Edit, zone Edit, and Tracked now provide configurations through it.
+
+`AppViewTransition` owns a 140ms crossfade only when its stable `viewId` changes.
+It lays out the incoming view while the outgoing view remains visible, blocks
+pointer and accessibility input during the handoff, honors reduced motion after
+readiness, and caches stable views so page and scroll state survive switching.
+The main host uses it for Day/Inbox/Tracked/Settings, Day zone/spatial views,
+and the Edit Tasks/Zones views. Existing route-level Edit reveal remains the
+sole route transition on entry/exit; the in-place host does not stack another
+fade on that route.
+
+**Week-strip swipe reversed: pages the view, no longer changes the selected
+day (2026-09-26).** The 2026-09-21 AskUserQuestion-confirmed design had a
+completed swipe on the expanded week grid step `selectedDate` itself by 7
+days — explicitly built as the replacement for the old scrollable day-strip,
+deliberately conflating "look at a different week" with "select a different
+day" since there was no separate viewport concept at the time. Reported
+directly against a screenshot: "swipe through should not mean changing day,
+only to see dates of next week... tap on day is changing only." Reversed:
+`AppDateAccordion`'s `_WeekStripState` now tracks a purely-local
+`_viewedWeekOffset`; a swipe pages which week's dates the strip displays
+without ever touching `selectedDate`. Only an explicit tap (or the
+press-and-slide day scrub) still calls `onDateSelected`. Superseded, not
+struck — the magnetic-settle swipe ANIMATION itself (pull-in-from-off-screen,
+half-width commit threshold, fling override) is unchanged; only what a
+COMMITTED swipe does at the end moved from "reassign the selection" to
+"reassign which week is shown."

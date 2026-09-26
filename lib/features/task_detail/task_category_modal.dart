@@ -21,7 +21,8 @@ import 'category_visual.dart';
 /// selection state to mirror any more; [widget.categoryId] is only read
 /// once, to mark the currently-selected chip.
 ///
-/// Iterates live [categoryListProvider] data rather than the old fixed
+/// Iterates live [visibleCategoryListProvider] data (General excluded —
+/// see that provider's own doc comment) rather than the old fixed
 /// `TaskCategory` enum, and adds a right-aligned "+ Add new" link on the
 /// title row that opens [showAddCategoryModal] — the newly created category
 /// becomes this sheet's own selection, per the same "resolves to the
@@ -47,12 +48,15 @@ class TaskCategoryModal extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
-    final categories = ref.watch(categoryListProvider);
+    final categories = ref.watch(visibleCategoryListProvider);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // AppSheet's own outer padding no longer provides a top inset
+        // (2026-09-23 — "top padding should be in header").
+        SizedBox(height: theme.spacingLg),
         Row(
           children: [
             // Left-aligned, not centered — corrected directly: a centered

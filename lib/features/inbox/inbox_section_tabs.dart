@@ -1,4 +1,3 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -139,11 +138,10 @@ class InboxSectionTabs extends ConsumerWidget {
                         onTap: () => notifier.select(
                           InboxSectionFilterSection(section.id),
                         ),
-                        onOpenMenu: (position) => _showSectionTabMenu(
+                        menuActions: _sectionTabMenuActions(
                           context,
                           ref,
                           section,
-                          position,
                         ),
                       ),
                     ],
@@ -169,47 +167,45 @@ class InboxSectionTabs extends ConsumerWidget {
   }
 }
 
-/// Opens the "Rename / Remove" context menu for one user-created [Section]
-/// tab, triggered by long-pressing it — "All" and "Unfiled" are fixed,
-/// non-Section filters (see `InboxSectionFilter`'s own subtypes) and never
-/// get this menu, matching how they're already excluded from
-/// [InboxSectionTabTargets.hitTest]'s drag-drop targeting for the same
-/// reason: neither is a real, renameable/deletable [Section] row.
+/// The "Rename / Remove" actions for one user-created [Section] tab's
+/// context menu — "All" and "Unfiled" are fixed, non-Section filters (see
+/// `InboxSectionFilter`'s own subtypes) and never get this menu, matching
+/// how they're already excluded from [InboxSectionTabTargets.hitTest]'s
+/// drag-drop targeting for the same reason: neither is a real,
+/// renameable/deletable [Section] row.
 ///
-/// Presented via [AppContextMenu.showAt] — anchored at the long-press's own
-/// position, rather than [AppContextMenu.show]'s bottom sheet (requested
-/// directly: "a proper context menu that can open anywhere, not just
-/// bottom sheet"). Same "Rename" / "Remove" (destructive, `colorTaskAlert`)
-/// content shape `task_action_sheet.dart`'s own Task menu already
-/// establishes — only the presentation differs here, not the actions.
-Future<void> _showSectionTabMenu(
+/// Returns the action list rather than opening anything itself — both
+/// [AppLongPressContextMenu] (the seamless press-drag-release path) and
+/// [AppContextMenu.showAt] (the plain tap-on-an-already-selected-tab path)
+/// need the SAME actions but drive their own, differently-shaped opening
+/// mechanics (see `_SectionTabChip`'s own doc comment for why there are
+/// two entry points). Same "Rename" / "Remove" (destructive,
+/// `colorTaskAlert`) content shape `task_action_sheet.dart`'s own Task
+/// menu already establishes — only the presentation differs here, not the
+/// actions.
+///
+/// Neither caller needs a manual `Navigator.pop()` inside these — both
+/// [AppLongPressContextMenu]'s overlay and [AppContextMenu.showAt]'s route
+/// already close themselves before running the tapped/released action's
+/// own `onTap` (see each one's own doc comment).
+List<AppContextMenuAction> _sectionTabMenuActions(
   BuildContext context,
   WidgetRef ref,
   Section section,
-  Offset position,
 ) {
-  return AppContextMenu.showAt(
-    context,
-    position: position,
-    actions: [
-      AppContextMenuAction(
-        icon: Icons.edit_outlined,
-        label: 'Rename',
-        // No manual pop here, unlike a [show] (bottom sheet) caller —
-        // [showAt]'s own menu route already pops itself before running
-        // this callback (see [_ActionRowMenuEntryState]'s own doc
-        // comment), so popping again here would incorrectly pop the
-        // Inbox screen underneath instead.
-        onTap: () => showRenameSectionSheet(context, section),
-      ),
-      AppContextMenuAction(
-        icon: Icons.delete_outline_rounded,
-        label: 'Remove',
-        isDestructive: true,
-        onTap: () => _removeSectionWithUndo(context, ref, section),
-      ),
-    ],
-  );
+  return [
+    AppContextMenuAction(
+      icon: Icons.edit_outlined,
+      label: 'Rename',
+      onTap: () => showRenameSectionSheet(context, section),
+    ),
+    AppContextMenuAction(
+      icon: Icons.delete_outline_rounded,
+      label: 'Remove',
+      isDestructive: true,
+      onTap: () => _removeSectionWithUndo(context, ref, section),
+    ),
+  ];
 }
 
 /// Deletes [section] and shows an Undo toast — mirrors `removeTask`'s
@@ -247,17 +243,23 @@ void _removeSectionWithUndo(
 /// this one Inbox use, and that shared component otherwise has no notion
 /// of a live drag hovering it.
 ///
-/// **2026-09-23 — tapping an ALREADY-selected tab also opens the menu, and
-/// the long-press that opens it fires sooner than Flutter's stock 500ms.**
-/// Requested directly: "selected tab should also allow opening dropdown /
-/// dropdown should open more quickly too, long gap in long press." A tap
-/// on a selected tab was previously a pure no-op (`select` on the filter
-/// it's already showing) — now it opens [onOpenMenu] instead, so there are
-/// two ways in rather than long-press being the only one. The long-press
-/// itself uses a custom [LongPressGestureRecognizer] with
-/// [_menuLongPressDuration] via [RawGestureDetector], since plain
-/// [GestureDetector] has no parameter for the recognizer's own trigger
-/// delay — only [AppButton]-style tap timing.
+/// **2026-09-23 — two ways into the Rename/Remove menu, both faster than
+/// Flutter's stock 500ms long-press.** Requested directly: "selected tab
+/// should also allow opening dropdown / dropdown should open more quickly
+/// too, long gap in long press / long press > popover shows > move finger
+/// on edit > hover state > release = tap."
+///
+/// - A **long-press**, wrapped via [AppLongPressContextMenu] — owns the
+///   whole press → move → release gesture itself so a finger that stays
+///   down after the menu opens can drag onto a row (live highlight) and
+///   release to select it, the seamless interaction that entry's own doc
+///   comment covers in full.
+/// - A **plain tap on an ALREADY-selected tab** (previously a pure no-op —
+///   `select` on the filter it's already showing) — opens the same menu
+///   via [AppContextMenu.showAt] instead. This path has no "still-down
+///   finger to drag" to preserve (`AppSelectableChip.onTap` fires on
+///   release, not press), so it uses the route-based opener rather than
+///   [AppLongPressContextMenu]'s own overlay.
 class _SectionTabChip extends StatelessWidget {
   const _SectionTabChip({
     required this.theme,
@@ -266,7 +268,7 @@ class _SectionTabChip extends StatelessWidget {
     required this.selected,
     required this.isDropTarget,
     required this.onTap,
-    this.onOpenMenu,
+    this.menuActions,
   });
 
   final AmbleTheme theme;
@@ -276,77 +278,62 @@ class _SectionTabChip extends StatelessWidget {
   final bool isDropTarget;
   final VoidCallback onTap;
 
-  /// Opens [_showSectionTabMenu] at the given press position — from either
-  /// a long-press or a tap on an already-selected tab. Null for
+  /// The Rename/Remove actions this tab's menu offers — null for
   /// "All"/"Unfiled", which aren't real [Section] rows and have nothing to
-  /// rename/remove.
-  final ValueChanged<Offset>? onOpenMenu;
-
-  /// Shorter than [kLongPressTimeout] (500ms) — reported directly as too
-  /// slow a gap before the menu appeared. Still comfortably above a plain
-  /// tap's own recognition window, so it doesn't start competing with
-  /// ordinary taps or the drag-to-file gesture `_DraggableInboxRow` uses
-  /// elsewhere in the Inbox (a different gesture surface — Inbox ROWS, not
-  /// these Section TABS — so there's no actual collision here, just a
-  /// margin kept for feel).
-  static const _menuLongPressDuration = Duration(milliseconds: 280);
+  /// rename/remove (so neither the long-press nor the tap-when-selected
+  /// path does anything for them).
+  final List<AppContextMenuAction>? menuActions;
 
   @override
   Widget build(BuildContext context) {
     Offset? lastPointerPosition;
 
-    return RawGestureDetector(
-      gestures: {
-        if (onOpenMenu != null)
-          LongPressGestureRecognizer:
-              GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
-                () => LongPressGestureRecognizer(
-                  duration: _menuLongPressDuration,
-                ),
-                (instance) {
-                  instance.onLongPressStart = (details) =>
-                      onOpenMenu!(details.globalPosition);
-                },
-              ),
-      },
-      child: Listener(
-        onPointerDown: (event) => lastPointerPosition = event.position,
-        child: Stack(
-          key: chipKey,
-          clipBehavior: Clip.none,
-          children: [
-            AppSelectableChip(
-              label: label,
-              selected: selected,
-              onTap: () {
-                if (selected && onOpenMenu != null && lastPointerPosition != null) {
-                  onOpenMenu!(lastPointerPosition!);
-                } else {
-                  onTap();
-                }
-              },
-            ),
-            // A 2px border over the resting fill, not a fill-color change —
-            // the same `ZoneContainerBlock.isDropTarget` idiom used
-            // elsewhere for "you're about to drop here" feedback.
-            if (isDropTarget)
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: theme.colorTextPrimary,
-                        width: 2,
-                      ),
-                      borderRadius: BorderRadius.circular(theme.radiusMd),
+    final chip = Listener(
+      onPointerDown: (event) => lastPointerPosition = event.position,
+      child: Stack(
+        key: chipKey,
+        clipBehavior: Clip.none,
+        children: [
+          AppSelectableChip(
+            label: label,
+            selected: selected,
+            onTap: () {
+              final actions = menuActions;
+              if (selected && actions != null && lastPointerPosition != null) {
+                AppContextMenu.showAt(
+                  context,
+                  position: lastPointerPosition!,
+                  actions: actions,
+                );
+              } else {
+                onTap();
+              }
+            },
+          ),
+          // A 2px border over the resting fill, not a fill-color change —
+          // the same `ZoneContainerBlock.isDropTarget` idiom used
+          // elsewhere for "you're about to drop here" feedback.
+          if (isDropTarget)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: theme.colorTextPrimary,
+                      width: 2,
                     ),
+                    borderRadius: BorderRadius.circular(theme.radiusMd),
                   ),
                 ),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
+
+    return menuActions == null
+        ? chip
+        : AppLongPressContextMenu(actions: menuActions!, child: chip);
   }
 }
 

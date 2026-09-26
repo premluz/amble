@@ -23,7 +23,8 @@ import 'category_visual.dart';
 /// the SAME controllers the caller's own preview reads from. Confirming
 /// with "Done" just closes the sheet; there is nothing further to commit.
 ///
-/// Iterates live [categoryListProvider] data rather than the old fixed
+/// Iterates live [visibleCategoryListProvider] data (General excluded —
+/// see that provider's own doc comment) rather than the old fixed
 /// `TaskCategory` enum, and adds a right-aligned "+ Add new" link on the
 /// title row that opens [showAddCategoryModal] — the newly created category
 /// becomes this sheet's own selection immediately, via
@@ -85,7 +86,7 @@ class _TaskNameCategoryModalState extends ConsumerState<TaskNameCategoryModal> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
-    final categories = ref.watch(categoryListProvider);
+    final categories = ref.watch(visibleCategoryListProvider);
 
     // Scrollable rather than a bare Column: the on-screen keyboard (this
     // field autofocuses) can shrink the available height enough that
@@ -99,6 +100,9 @@ class _TaskNameCategoryModalState extends ConsumerState<TaskNameCategoryModal> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // AppSheet's own outer padding no longer provides a top inset
+          // (2026-09-23 — "top padding should be in header").
+          SizedBox(height: theme.spacingLg),
           Row(
             children: [
               // Left-aligned, not centered — corrected directly (same fix

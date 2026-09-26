@@ -1,10 +1,13 @@
 import 'package:amble/core/tokens/semantic_theme.dart';
+import 'package:amble/core/widgets/app_badge_chip.dart';
 import 'package:amble/core/widgets/app_button.dart';
 import 'package:amble/core/widgets/app_connected_buttons.dart';
 import 'package:amble/core/widgets/app_bottom_dock.dart';
 import 'package:amble/core/widgets/app_context_menu.dart';
 import 'package:amble/core/widgets/app_date_accordion.dart';
 import 'package:amble/core/widgets/app_option_switch_option.dart';
+import 'package:amble/core/widgets/app_sheet_handle.dart';
+import 'package:amble/core/widgets/app_sheet_header.dart';
 import 'package:amble/core/widgets/app_tab_switch.dart';
 import 'package:amble/core/widgets/app_undo_toast.dart';
 import 'package:amble/core/widgets/app_voice_waveform.dart';
@@ -141,11 +144,54 @@ class AmbleWidgetbookApp extends StatelessWidget {
                 ),
               ],
             ),
+            // Systematized from the quick-create mini sheet's own preset/
+            // template chips ("Running" / "Laundry" / "Read for class") —
+            // requested directly: "component should be agnostic to
+            // function... bg, text, icon or icon in colored circle, that
+            // can also be selectable so interactive." Already built
+            // (`app_badge_chip.dart`) before this Widgetbook entry; this
+            // just catalogs it alongside its sibling selection primitives.
+            WidgetbookComponent(
+              name: 'AppBadgeChip',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Non-selectable (just displayed)',
+                  builder: (context) => const _BadgeChipDemo(selectable: false),
+                ),
+                WidgetbookUseCase(
+                  name: 'Selectable',
+                  builder: (context) => const _BadgeChipDemo(selectable: true),
+                ),
+              ],
+            ),
           ],
         ),
         WidgetbookFolder(
           name: 'Navigation',
           children: [
+            // The "close (left) + primary action (right)" row shared by
+            // every untitled AppSheet-based sheet (`new_section_sheet
+            // .dart`, `new_zone_sheet.dart`, `quick_capture_sheet.dart`) —
+            // requested directly: "this can also be added to our widget
+            // book storybook as a sheet header, and this will be one of
+            // the variants of it."
+            WidgetbookComponent(
+              name: 'AppSheetHeader',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Close + primary button',
+                  builder: (context) => const _SheetHeaderDemo(),
+                ),
+                WidgetbookUseCase(
+                  name: 'Close + trailing group (e.g. mic + Done)',
+                  builder: (context) => const _SheetHeaderWithGroupDemo(),
+                ),
+                WidgetbookUseCase(
+                  name: 'With drag-to-close handle behind',
+                  builder: (context) => const _SheetHeaderWithHandleDemo(),
+                ),
+              ],
+            ),
             WidgetbookComponent(
               name: 'AppDateAccordion',
               useCases: [
@@ -280,6 +326,10 @@ class AmbleWidgetbookApp extends StatelessWidget {
                   name: 'Anchored popover (showAt)',
                   builder: (context) => const _ContextMenuAnchoredDemo(),
                 ),
+                WidgetbookUseCase(
+                  name: 'Long-press, drag-to-hover, release-to-select',
+                  builder: (context) => const _ContextMenuLongPressDemo(),
+                ),
               ],
             ),
           ],
@@ -331,6 +381,133 @@ extension _ButtonKnobs on BuildContext {
         initialOption: initial,
         labelBuilder: (v) => v.name,
       );
+}
+
+/// Stateful so tapping the chip in the gallery visibly toggles selection,
+/// same reasoning as [_TabSwitchDemo] below.
+class _BadgeChipDemo extends StatefulWidget {
+  const _BadgeChipDemo({required this.selectable});
+
+  final bool selectable;
+
+  @override
+  State<_BadgeChipDemo> createState() => _BadgeChipDemoState();
+}
+
+class _BadgeChipDemoState extends State<_BadgeChipDemo> {
+  bool _selected = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = AmbleTheme.light;
+    return Center(
+      child: AppBadgeChip(
+        theme: theme,
+        leading: Container(
+          width: theme.spacingLg,
+          height: theme.spacingLg,
+          decoration: BoxDecoration(
+            color: theme.colorAccent,
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            Icons.directions_run_rounded,
+            size: theme.spacingLg * 0.65,
+            color: theme.colorSurfacePrimary,
+          ),
+        ),
+        label: 'Running',
+        selected: widget.selectable ? _selected : null,
+        onTap: widget.selectable
+            ? () => setState(() => _selected = !_selected)
+            : null,
+      ),
+    );
+  }
+}
+
+/// [AppSheetHeader]'s own simplest shape — close left, one primary button
+/// right.
+class _SheetHeaderDemo extends StatelessWidget {
+  const _SheetHeaderDemo();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = AmbleTheme.light;
+    return AppSheetHeader(
+      theme: theme,
+      onClose: () {},
+      trailing: AppButton(
+        label: 'Create',
+        size: AppButtonSize.md,
+        shape: AppButtonShape.pill,
+        onPressed: () {},
+      ),
+    );
+  }
+}
+
+/// [AppSheetHeader.trailing] holding more than one control — mirrors
+/// `quick_capture_sheet.dart`'s own mic-then-Done group.
+class _SheetHeaderWithGroupDemo extends StatelessWidget {
+  const _SheetHeaderWithGroupDemo();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = AmbleTheme.light;
+    return AppSheetHeader(
+      theme: theme,
+      onClose: () {},
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AppButton(
+            icon: Icons.mic_none_rounded,
+            shape: AppButtonShape.circle,
+            variant: AppButtonVariant.secondary,
+            size: AppButtonSize.md,
+            onPressed: () {},
+          ),
+          SizedBox(width: theme.spacingSm),
+          AppButton(
+            icon: Icons.check_rounded,
+            shape: AppButtonShape.circle,
+            size: AppButtonSize.md,
+            onPressed: () {},
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The full shape `quick_capture_sheet.dart` uses — the drag handle
+/// layered BEHIND the controls, filling the row so it drags from anywhere
+/// they don't cover, top-aligned so it sits above their own centre line.
+class _SheetHeaderWithHandleDemo extends StatelessWidget {
+  const _SheetHeaderWithHandleDemo();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = AmbleTheme.light;
+    return AppSheetHeader(
+      theme: theme,
+      onClose: () {},
+      handle: Align(
+        alignment: Alignment.topCenter,
+        child: Padding(
+          padding: EdgeInsets.only(top: theme.spacingSm),
+          child: AppSheetHandle(theme: theme),
+        ),
+      ),
+      trailing: AppButton(
+        label: 'Schedule',
+        size: AppButtonSize.md,
+        shape: AppButtonShape.pill,
+        onPressed: () {},
+      ),
+    );
+  }
 }
 
 /// Wraps a stateful demo around AppTabSwitch — a use case needs to show a
@@ -650,6 +827,39 @@ class _ContextMenuAnchoredDemo extends StatelessWidget {
             // onPressed is a required param but otherwise unused here.
             onPressed: () {},
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Demos [AppLongPressContextMenu] — long-press the button, then (while
+/// still holding) drag onto a row to see the live hover highlight, and
+/// release to select it, the same seamless interaction
+/// `inbox_section_tabs.dart`'s own Section tabs use.
+class _ContextMenuLongPressDemo extends StatelessWidget {
+  const _ContextMenuLongPressDemo();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: AppLongPressContextMenu(
+        actions: [
+          AppContextMenuAction(
+            icon: Icons.edit_outlined,
+            label: 'Rename',
+            onTap: () {},
+          ),
+          AppContextMenuAction(
+            icon: Icons.delete_outline_rounded,
+            label: 'Remove',
+            isDestructive: true,
+            onTap: () {},
+          ),
+        ],
+        child: AppButton(
+          label: 'Long-press, then drag',
+          onPressed: () {},
         ),
       ),
     );

@@ -85,7 +85,10 @@ class CategoryListBody extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
-    final categories = ref.watch(categoryListProvider);
+    // General is filtered out — see visibleCategoryListProvider's own doc
+    // comment. This is the Settings "Tags" screen, and General is an
+    // invisible fallback, never a user-manageable row.
+    final categories = ref.watch(visibleCategoryListProvider);
 
     if (categories.isEmpty) return _EmptyState(theme: theme);
 

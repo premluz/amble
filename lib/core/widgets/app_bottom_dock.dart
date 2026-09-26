@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../tokens/semantic_theme.dart';
-import 'app_button.dart';
+import '../tokens/what_matters_tokens.dart';
+import '../haptics.dart';
+import 'app_context_dock.dart';
+import 'app_shell_chrome.dart';
+
+export 'app_dock_primitives.dart';
 
 /// Which of the dock's four entries is currently active — List/Timeline are
 /// mutually exclusive (they're the same `zoneViewEnabled` axis, just
@@ -54,6 +59,8 @@ class AppBottomDock extends StatelessWidget {
     required this.onEditTap,
     required this.whatMattersEnabled,
     required this.onWhatMattersTap,
+    this.visible = true,
+    this.configurationOverride,
   });
 
   final AppBottomDockView activeView;
@@ -61,158 +68,76 @@ class AppBottomDock extends StatelessWidget {
   final VoidCallback onEditTap;
   final bool whatMattersEnabled;
   final VoidCallback onWhatMattersTap;
+  final bool visible;
+  final AppContextDockConfiguration? configurationOverride;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
+    final inheritedOverride = AppShellChromeScope.maybeOf(context)?.configuration;
+    final mattersBackground = whatMattersEnabled
+        ? Color.alphaBlend(
+            theme.colorAccent.withValues(
+              alpha: Theme.of(context).brightness == Brightness.dark
+                  ? WhatMattersTokens.buttonAlphaDark
+                  : WhatMattersTokens.buttonAlphaLight,
+            ),
+            theme.colorSurfaceOverlay,
+          )
+        : null;
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        AppDockPane(
-          theme: theme,
-          children: [
-            AppDockIconButton(
-              theme: theme,
+    return AppContextDock(
+      theme: theme,
+      configuration: configurationOverride ?? inheritedOverride ?? AppContextDockConfiguration(
+        stateId: 'day',
+        groups: visible
+            ? [
+                AppContextGroup(
+                  id: 'context-navigation',
+                  actions: [
+                    AppContextAction(
+                      id: 'day-list',
               icon: Icons.view_agenda_outlined,
               tooltip: 'List',
               selected: activeView == AppBottomDockView.list,
-              onTap: () => onSelectView(AppBottomDockView.list),
+                      onPressed: () => onSelectView(AppBottomDockView.list),
             ),
-            AppDockIconButton(
-              theme: theme,
+                    AppContextAction(
+                      id: 'day-timeline',
               icon: Icons.view_timeline_outlined,
               tooltip: 'Timeline',
               selected: activeView == AppBottomDockView.timeline,
-              onTap: () => onSelectView(AppBottomDockView.timeline),
+                      onPressed: () => onSelectView(AppBottomDockView.timeline),
             ),
           ],
         ),
-        SizedBox(width: theme.spacingSm),
-        AppDockPane(
-          theme: theme,
-          children: [
-            AppDockIconButton(
-              theme: theme,
+                AppContextGroup(
+                  id: 'day-edit',
+                  actions: [
+                    AppContextAction(
+                      id: 'day-edit',
               icon: Icons.edit_outlined,
-              // "Edit Day", not bare "Edit" — `AppCalendarHeader`'s own
-              // pen icon already uses tooltip "Edit" for the identical
-              // action (both open the same `ZoneGridScreen` route); two
-              // simultaneously-mounted controls sharing one tooltip text
-              // is ambiguous for screen readers and for `find.byTooltip`
-              // in tests, so this one gets a distinct label even though
-              // it does the same thing.
               tooltip: 'Edit Day',
-              selected: false,
-              onTap: onEditTap,
+                      onPressed: onEditTap,
             ),
           ],
         ),
-        SizedBox(width: theme.spacingSm),
-        AppDockPane(
-          theme: theme,
-          children: [
-            AppDockIconButton(
-              theme: theme,
+                AppContextGroup(
+                  id: 'day-matters',
+                  backgroundColor: mattersBackground,
+                  actions: [
+                    AppContextAction(
+                      id: 'day-what-matters',
               icon: Icons.favorite_border_rounded,
               tooltip: 'What Matters',
               selected: whatMattersEnabled,
-              onTap: onWhatMattersTap,
+                      haptic: AmbleHaptic.lift,
+                      onPressed: onWhatMattersTap,
             ),
           ],
         ),
-      ],
-    );
-  }
-}
-
-/// One floating, fully-rounded pane — the same visual language the old
-/// bottom nav pill used before the top-nav restructure
-/// (`colorSurfaceOverlay` fill, `shadowPane` in light mode, a true
-/// stadium shape). [AppBottomDock] renders three of these side by side
-/// rather than one pane holding all four buttons — see that widget's own
-/// doc comment for why.
-///
-/// Promoted out of this file (2026-09-20, was private `_DockPane`) so
-/// other screens' own bottom docks can share the identical pane styling
-/// instead of each re-implementing it — the Tracked screen's own
-/// view-mode switcher (`AppTrackedViewDock`) was the second call site
-/// that prompted this, per docs/DECISIONS.md's "two duplicates accepted,
-/// three gets promoted" rule (promoted ahead of a third copy appearing,
-/// since the pattern was already about to be reused).
-class AppDockPane extends StatelessWidget {
-  const AppDockPane({super.key, required this.theme, required this.children});
-
-  final AmbleTheme theme;
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: theme.colorSurfaceOverlay,
-        borderRadius: BorderRadius.circular(999),
-        boxShadow: isDark ? null : theme.shadowPane,
-      ),
-      // **2026-09-23 — equal padding on both axes.** This used to be
-      // `horizontal: spacingSm` (8) against `vertical: spacingXs` (4),
-      // which made a pane holding a SINGLE button 60x48 — a visible
-      // ellipse rather than the round button it reads as. Reported
-      // directly, twice: "single buttons should be perfect circle e.g.
-      // edit and heart at the moment are ellipse." With both axes at
-      // `spacingXs` a one-button pane is 48x48 (the button's own 40 plus
-      // 4 either side), so the 999 radius renders a true circle; a
-      // multi-button pane is unaffected in shape, just 8px narrower.
-      child: Padding(
-        padding: EdgeInsets.all(theme.spacingXs),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          spacing: theme.spacingXs,
-          children: children,
-        ),
-      ),
-    );
-  }
-}
-
-/// One icon button inside an [AppDockPane] — ghost-variant circle, accent
-/// color when [selected]. Promoted alongside [AppDockPane] for the same
-/// reason — see that widget's own doc comment.
-class AppDockIconButton extends StatelessWidget {
-  const AppDockIconButton({
-    super.key,
-    required this.theme,
-    required this.icon,
-    required this.tooltip,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final AmbleTheme theme;
-  final IconData icon;
-  final String tooltip;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      // Horizontal only, and only BETWEEN buttons — a pane holding one
-      // button must come out square so its 999 radius renders a true
-      // circle rather than an ellipse (see [AppDockPane]'s own padding
-      // comment). `EdgeInsets.zero` here would weld a multi-button pane's
-      // icons together, so the separation is applied by the Row in
-      // [AppDockPane] instead, where it can skip the outer edges.
-      padding: EdgeInsets.zero,
-      child: AppButton(
-        icon: icon,
-        shape: AppButtonShape.circle,
-        variant: AppButtonVariant.ghost,
-        tooltip: tooltip,
-        onPressed: onTap,
-        iconColor: selected ? theme.colorAccent : theme.colorTextSecondary,
+              ]
+            : const [],
       ),
     );
   }

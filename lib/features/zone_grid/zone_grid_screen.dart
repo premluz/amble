@@ -1,14 +1,16 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
-import '../../core/widgets/app_bottom_dock.dart';
-import '../../core/widgets/app_button.dart';
+import '../../core/widgets/app_context_dock.dart';
+import '../../core/widgets/app_shell_chrome.dart';
 import '../../core/widgets/app_floating_create_button.dart';
-import '../../core/widgets/app_modal_route.dart';
+import '../../core/widgets/app_layout_reveal.dart';
+import '../../core/widgets/app_view_transition.dart';
 import '../../core/widgets/app_option_switch_option.dart';
 import '../../core/widgets/app_tab_switch.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
@@ -47,9 +49,31 @@ import 'zone_paint_selection.dart';
 Future<void> showEditScreen(
   BuildContext context, {
   ZoneGridTab initialTab = ZoneGridTab.tasks,
-}) => Navigator.of(context).push<void>(
-  instantRoute((_) => ZoneGridScreen(initialTab: initialTab)),
+  NavigatorState? navigator,
+}) => (navigator ?? Navigator.of(context)).push<void>(
+  layoutRevealRoute(
+    context,
+    (_) => ProviderScope(
+      overrides: [
+        editModeEnabledProvider.overrideWith(
+          () => _RouteEditMode(initialTab == ZoneGridTab.tasks),
+        ),
+      ],
+      child: ZoneGridScreen(initialTab: initialTab),
+    ),
+  ),
 );
+
+// The outgoing Day screen stays visible during the reveal; its mode must not
+// change with the editor's tabs. Initializing here also avoids a second layout.
+class _RouteEditMode extends EditModeEnabled {
+  _RouteEditMode(this.initialValue);
+
+  final bool initialValue;
+
+  @override
+  bool build() => initialValue;
+}
 
 /// Options for both `AppTabSwitch<ZoneGridTab>` call sites below — a
 /// module-level const rather than rebuilt per build(), since neither the
@@ -125,7 +149,21 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   Timer? _edgeScroll;
   Offset? _paintPointer;
   final _scroll = ScrollController();
-  bool _editing = false, _saving = false;
+  bool _saving = false;
+  AppShellChromeController? _shellChromeController;
+
+  /// The Zones tab is ALWAYS in edit mode — requested directly: "Edit
+  /// zones screen should be in edit mode always no need to press edit to
+  /// edit." Replaces a `_editing` flag the Edit/Done dock button used to
+  /// toggle.
+  ///
+  /// This flag is not purely cosmetic: it arbitrates gestures. With it
+  /// on, a plain drag on empty grid PAINTS a new zone selection and the
+  /// scroll view takes `NeverScrollableScrollPhysics`, so vertical
+  /// scrolling moves to the hour axis on the left (which already carried
+  /// that handler for edit mode) and to pinch-zoom. Confirmed via
+  /// AskUserQuestion over the alternative of long-press-to-paint.
+  static const bool _editing = true;
   late ZoneGridTab _tab = widget.initialTab;
   ZonePaintSelection? _paint;
   Offset? _paintOrigin;
@@ -135,7 +173,6 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   // unsafe" once called from `dispose`, exactly as its own error message
   // says to do instead ("save the provider state in a field").
   ProviderContainer? _container;
-  Offset? _downGlobal;
   bool _pointerCancelled = false;
   NewZoneTarget? _pending;
   Zone? _fillSource;
@@ -167,6 +204,28 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
 
   ZoneGroupGestureKind? _moveKind;
   double _moveDy = 0;
+
+  /// Which edge of the pending marquee is being dragged, if any — see
+  /// [_MarqueeEdge]. Null whenever no marquee resize is in flight.
+  ///
+  /// Requested directly: "when we have marque selection and release sheet
+  /// add zone shows but we should be able to resize zones in that view
+  /// also — so we need to add resize handles (dots) same as on task but
+  /// on all sides top bottom (resize zone time start end) left right
+  /// resize sideways to include/reduce days."
+  _MarqueeEdge? _resizeEdge;
+
+  /// The pending marquee's own rectangle as it stood when a whole-marquee
+  /// MOVE drag began, plus that drag's accumulated pixel delta — see
+  /// [_moveMarquee]. All null/zero whenever no such drag is in flight.
+  ///
+  /// The origin is held separately from `_paint` because the move is
+  /// applied as "origin plus total delta" rather than incrementally: a
+  /// rounded per-event shift would drop sub-cell movement on every frame,
+  /// so a slow drag would never accumulate enough to cross a boundary.
+  ZonePaintSelection? _marqueeMoveOrigin;
+  double _marqueeMoveDx = 0;
+  double _marqueeMoveDy = 0;
 
   // Shared with the spatial Task view — ONE setting, adjustable here via
   // pinch-to-zoom (TimelinePinchZoom, wrapping the scrollable grid below)
@@ -206,6 +265,15 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
     _syncEditMode();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final controller = AppShellChromeScope.maybeOf(context);
+    if (controller == _shellChromeController) return;
+    _shellChromeController?.release('edit');
+    _shellChromeController = controller;
+  }
+
   /// Closes this screen, turning Edit Mode off FIRST so the Day screen
   /// underneath never renders a frame with it still on.
   ///
@@ -231,6 +299,118 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
     }
     Navigator.of(context).pop();
   }
+
+  Widget _taskContextDock(Set<String> selectedIds) => _claimOrBuildDock(
+    ZoneGridTab.tasks,
+    AppContextDockConfiguration(
+      stateId: selectedIds.isEmpty ? 'edit-task' : 'edit-task-selection',
+      groups: [
+        AppContextGroup(
+          id: 'context-navigation',
+          actions: [
+            AppContextAction(
+              id: 'edit-back',
+              icon: Icons.arrow_back_rounded,
+              tooltip: selectedIds.isEmpty ? 'Close' : 'Clear selection',
+              onPressed: selectedIds.isEmpty
+                  ? _close
+                  : () => ref.read(editSelectionProvider.notifier).clear(),
+            ),
+          ],
+        ),
+        if (selectedIds.isNotEmpty)
+          AppContextGroup(
+            id: 'edit-task-selection-actions',
+            actions: [
+              AppContextAction(
+                id: 'edit-task-edit',
+                icon: Icons.edit_outlined,
+                tooltip: 'Edit selected',
+                onPressed: () => _editSelectedTasks(selectedIds),
+              ),
+              AppContextAction(
+                id: 'edit-task-remove',
+                icon: Icons.delete_outline_rounded,
+                tooltip: 'Remove selected',
+                destructive: true,
+                onPressed: () => _removeSelectedTasks(selectedIds),
+              ),
+            ],
+          ),
+      ],
+    ),
+  );
+
+  Widget _claimOrBuildDock(
+    ZoneGridTab sourceTab,
+    AppContextDockConfiguration configuration,
+  ) {
+    final controller = _shellChromeController;
+    if (controller != null) {
+      // Cached outgoing Tasks content must not overwrite the active Zones dock.
+      if (sourceTab != _tab) {
+        return const SizedBox.shrink();
+      }
+      controller.claim('edit', configuration);
+      return const SizedBox.shrink();
+    }
+    return AppContextDock(configuration: configuration);
+  }
+
+  Widget _zoneContextDock(
+    Set<String> selected,
+    List<Zone> zones,
+  ) => _claimOrBuildDock(
+    ZoneGridTab.zones,
+    AppContextDockConfiguration(
+      stateId: selected.isEmpty ? 'edit-zone' : 'edit-zone-selection',
+      groups: [
+        AppContextGroup(
+          id: 'context-navigation',
+          actions: [
+            AppContextAction(
+              id: 'edit-back',
+              icon: Icons.arrow_back_rounded,
+              tooltip: selected.isEmpty ? 'Close zones' : 'Clear selection',
+              onPressed: selected.isEmpty
+                  ? _close
+                  : () => ref.read(zoneEditSelectionProvider.notifier).clear(),
+            ),
+          ],
+        ),
+        if (selected.isNotEmpty)
+          AppContextGroup(
+            id: 'edit-zone-selection-actions',
+            actions: [
+              AppContextAction(
+                id: 'edit-zone-edit',
+                icon: Icons.edit_outlined,
+                tooltip: 'Edit placement',
+                onPressed: () {
+                  if (selected.length == 1) {
+                    final zone = zones
+                        .where((z) => selected.contains(z.id))
+                        .firstOrNull;
+                    if (zone != null) {
+                      showZoneFormScreen(context, zone: zone);
+                    }
+                    return;
+                  }
+                  showMultiZoneEditSheet(context, zoneIds: selected.toList());
+                },
+              ),
+              AppContextAction(
+                id: 'edit-zone-remove',
+                icon: Icons.delete_outline_rounded,
+                tooltip: 'Remove placements',
+                destructive: true,
+                onPressed: () => _removeSelectedZones(selected, zones),
+              ),
+            ],
+          ),
+      ],
+    ),
+  );
 
   /// The selection dock's own Edit action — a single task opens the
   /// ordinary detail sheet unchanged ([showTaskDetailSheet], the app's one
@@ -286,9 +466,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
     AppUndoToast.show(
       context: context,
       message: 'Removed ${snapshots.length} task(s)',
-      onUndo: () => notifier.restoreTasksInBatch(
-        snapshots.map(Task.fromJson),
-      ),
+      onUndo: () => notifier.restoreTasksInBatch(snapshots.map(Task.fromJson)),
     );
   }
 
@@ -320,9 +498,8 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
     AppUndoToast.show(
       context: context,
       message: 'Removed ${snapshots.length} zone(s)',
-      onUndo: () => zoneNotifier.restoreZonesInBatch(
-        snapshots.map(Zone.fromJson),
-      ),
+      onUndo: () =>
+          zoneNotifier.restoreZonesInBatch(snapshots.map(Zone.fromJson)),
     );
   });
 
@@ -347,7 +524,19 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
     // provider "while the widget tree was building," which a pop's
     // finalize-the-tree pass still counts as even from inside `dispose`.
     final container = _container;
-    if (container != null && container.read(editModeEnabledProvider)) {
+    // The READ is guarded for the same reason the microtask below is: a
+    // test-scoped container can already be disposed by the time this
+    // screen unmounts, and `ProviderContainer` exposes no public
+    // "is disposed" check, so catching its `StateError` is the only
+    // sanctioned guard available to ordinary app code.
+    bool editModeStillOn;
+    try {
+      editModeStillOn =
+          container != null && container.read(editModeEnabledProvider);
+    } on StateError {
+      editModeStillOn = false;
+    }
+    if (container != null && editModeStillOn) {
       scheduleMicrotask(() {
         // The app's own root container outlives every screen, so this
         // try/catch is a no-op in production — it exists for tests, where
@@ -365,6 +554,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
         }
       });
     }
+    _shellChromeController?.release('edit');
     super.dispose();
   }
 
@@ -462,6 +652,132 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
       _paintOrigin = null;
       _paint = null;
       _pending = null;
+      _resizeEdge = null;
+      // Cleared here too, or a marquee dismissed mid-move would leave the
+      // grid's own `physics` gate stuck on NeverScrollableScrollPhysics
+      // with no gesture left to clear it.
+      _marqueeMoveOrigin = null;
+      _marqueeMoveDx = 0;
+      _marqueeMoveDy = 0;
+    });
+  }
+
+  /// Drags one edge of the pending marquee. Vertical edges move the
+  /// zone's start/end TIME; horizontal ones widen/narrow the span of
+  /// WEEKDAYS it covers.
+  ///
+  /// **2026-09-23 — the dragged edge is CLAMPED against its opposite, not
+  /// normalised past it.** This used to hand both edges to
+  /// `ZonePaintSelection.between`, which takes a `min`/`max` of whatever
+  /// pair it is given — so dragging the right edge left past the left one
+  /// silently swapped which edge was which, and the marquee jumped sideways
+  /// instead of resizing. Reported directly: "when dragging handle it
+  /// actually moves across instead of resizing smoothly."
+  ///
+  /// Normalisation is right for the ORIGINAL paint drag (where both
+  /// corners are genuinely live and either can end up first), but wrong
+  /// for an edge drag, where the opposite edge is fixed and the dragged
+  /// one must simply stop against it. Each edge therefore clamps to keep
+  /// at least one day / one 5-minute step of the rectangle alive.
+  void _resizeMarquee(_MarqueeEdge edge, Offset global) {
+    final box = _grid;
+    final paint = _paint;
+    if (box == null || paint == null) return;
+    final (day, minute) = _cell(box.globalToLocal(global));
+    final next = switch (edge) {
+      _MarqueeEdge.top => ZonePaintSelection(
+        paint.firstDay,
+        paint.lastDay,
+        math.min(minute, paint.endMinutes - 5),
+        paint.endMinutes,
+      ),
+      _MarqueeEdge.bottom => ZonePaintSelection(
+        paint.firstDay,
+        paint.lastDay,
+        paint.startMinutes,
+        math.max(minute, paint.startMinutes + 5),
+      ),
+      _MarqueeEdge.left => ZonePaintSelection(
+        math.min(day, paint.lastDay),
+        paint.lastDay,
+        paint.startMinutes,
+        paint.endMinutes,
+      ),
+      _MarqueeEdge.right => ZonePaintSelection(
+        paint.firstDay,
+        math.max(day, paint.firstDay),
+        paint.startMinutes,
+        paint.endMinutes,
+      ),
+    };
+    setState(() {
+      _paint = next;
+      // The naming sheet reads its target from `_pending`, so it has to
+      // track the live rectangle or it would save the pre-resize one.
+      if (_pending != null) _pending = _target(next);
+    });
+  }
+
+  /// The marquee's own fill+ring, with no gesture of its own — the caller
+  /// decides whether to wrap it in an [IgnorePointer] (a live paint/fill
+  /// drag, where taking pointers would intercept the very gesture drawing
+  /// it) or a move detector (an unsaved, released marquee).
+  ///
+  /// SelectedPillBorder, not a hand-rolled `Border.all` — design-system
+  /// consolidation, requested directly ("this blue border needs to have
+  /// consistent style so it doesn't diverge... should be the style of
+  /// current select zone/task"). Was a single, square-cornered, 60%-alpha
+  /// ring with no dark separator — see docs/DESIGN_SYSTEM.md for the
+  /// canonical shape this now matches exactly.
+  Widget _marqueeBody(AmbleTheme theme) => SelectedPillBorder(
+    key: const ValueKey('zone-paint-selection'),
+    theme: theme,
+    contentRadius: BorderRadius.circular(theme.radiusMd),
+    fillColor: theme.colorAccent.withValues(alpha: .09),
+    child: const SizedBox.expand(),
+  );
+
+  /// Drags the WHOLE pending marquee, keeping its size and moving both
+  /// axes at once — requested directly: "when drawn and release should be
+  /// able to drag and move drawn zones that are not saved yet."
+  ///
+  /// Tracks the finger by DELTA rather than by absolute cell, so the
+  /// marquee keeps its grab offset instead of snapping its top-left corner
+  /// to wherever the finger happens to be. The accumulated pixel delta is
+  /// what's kept ([_marqueeMoveDx]/[_marqueeMoveDy]); the snapped
+  /// day/minute shift is derived from it each frame, so sub-cell movement
+  /// accumulates properly instead of being rounded away every event.
+  void _moveMarquee(Offset delta) {
+    final origin = _marqueeMoveOrigin;
+    if (origin == null) return;
+    _marqueeMoveDx += delta.dx;
+    _marqueeMoveDy += delta.dy;
+
+    final dayShift = (_marqueeMoveDx / _columnWidth).round();
+    final minuteShift = (_marqueeMoveDy / _pixelsPerMinute / 5).round() * 5;
+
+    // Clamp as a RIGID body: the span never changes, it just stops at the
+    // grid's edges. Shifting each edge independently would squash the
+    // marquee against a boundary instead of halting it.
+    final span = origin.lastDay - origin.firstDay;
+    final firstDay = (origin.firstDay + dayShift).clamp(1, 7 - span);
+    final duration = origin.endMinutes - origin.startMinutes;
+    final startMinutes = (origin.startMinutes + minuteShift).clamp(
+      0,
+      1440 - duration,
+    );
+    final next = ZonePaintSelection(
+      firstDay,
+      firstDay + span,
+      startMinutes,
+      startMinutes + duration,
+    );
+    setState(() {
+      _paint = next;
+      // The naming sheet reads its target from `_pending`, so it has to
+      // track the live rectangle or it would save the pre-move one — the
+      // same rule `_resizeMarquee` follows.
+      if (_pending != null) _pending = _target(next);
     });
   }
 
@@ -482,7 +798,6 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
     _sweepingZones = true;
     final local = box.globalToLocal(global);
     setState(() {
-      _editing = true;
       _sweepAnchor = local;
       _sweepCurrent = local;
     });
@@ -559,7 +874,22 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   }
 
   void _tapEmpty(TapUpDetails details) {
-    if (_saving || _pending != null) return;
+    if (_saving) return;
+    // **2026-09-23 — a single tap anywhere outside an unsaved marquee
+    // dismisses it**, rather than doing nothing. Requested directly:
+    // "single tap outside closed sheet and removes marquee then all items
+    // active." This is a TAP only — `onTapUp` never fires for a
+    // tap-and-move, so a drag that starts outside still scrolls the grid
+    // normally (the other half of the same request: "if not single tap
+    // but tap and move > then should just be scroll").
+    //
+    // Returns immediately afterwards: dismissing is the whole action, and
+    // the same tap must NOT also fall through to painting a new one-hour
+    // marquee below.
+    if (_pending != null) {
+      _cancelPaint();
+      return;
+    }
     if (ref.read(zoneEditSelectionProvider).isNotEmpty) {
       ref.read(zoneEditSelectionProvider.notifier).clear();
       return;
@@ -726,6 +1056,15 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
+    _shellChromeController?.updateHeader(_tab.name, AppTabSwitch<ZoneGridTab>(
+      options: _zoneGridTabOptions, value: _tab, onChanged: _switchTab,
+    ));
+    // The underlying Day calendar must never bleed through the Edit crossfade.
+    return ColoredBox(color: theme.colorSurfacePrimary, child: _buildContent(context));
+  }
+
+  Widget _buildContent(BuildContext context) {
+    final theme = Theme.of(context).extension<AmbleTheme>()!;
     _container = ProviderScope.containerOf(context);
     // `editModeEnabledProvider` is `autoDispose` (by design — see its own
     // doc comment) and resets to `false` the instant it has zero
@@ -744,128 +1083,81 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
     // class's own doc comment for why these two tabs swap wholesale
     // rather than sharing state.
     if (_tab == ZoneGridTab.tasks) {
-      return Scaffold(
-        backgroundColor: theme.colorSurfacePrimary,
-        body: SafeArea(
-          bottom: false,
-          child: Stack(
-            children: [
-              Column(
-                children: [
-                  // **2026-09-20 — bare tab switch, no icons.** Requested
-                  // directly: "in edit mode on top we should only have 2
-                  // tabs task and zones" — Close (and, on the Zones tab,
-                  // Edit) moved to a bottom dock instead (see below).
-                  Padding(
-                    padding: EdgeInsets.all(theme.spacingMd),
-                    child: AppTabSwitch<ZoneGridTab>(
-                      options: _zoneGridTabOptions,
-                      value: _tab,
-                      onChanged: _switchTab,
-                    ),
-                  ),
-                  // **2026-09-20 — the calendar is back.** Requested
-                  // directly: "Tasks edit mode should also have
-                  // calendar." `showHeader` flips true so `TimelineScreen`
-                  // renders its own `AppCalendarHeader` again (Today +
-                  // the date accordion, via that header's own
-                  // Edit-Mode-collapsed branch — `editModeEnabledProvider`
-                  // is already forced on for this tab by `_syncEditMode`).
-                  // `showCloseButton: false` on the embedded
-                  // `TimelineScreen`... see that widget's own field —
-                  // this screen's Close now lives in the bottom dock
-                  // instead, so the header's own X would be a duplicate.
-                  const Expanded(
-                    child: TimelineScreen(
-                      mode: TimelineDisplayMode.spatial,
-                      calendarHeaderShowsCloseButton: false,
-                    ),
-                  ),
-                ],
-              ),
-              // **2026-09-20 — hidden while a quick-create draft is
-              // live.** Reported directly: this dock painted on top of
-              // the tap-empty-space mini sheet, which is an in-tree
-              // overlay nested inside the embedded `TimelineScreen`
-              // above, not a pushed route — Stack paint order always
-              // puts a later sibling (this dock) above an entire earlier
-              // sibling's subtree, regardless of how deep the mini sheet
-              // sits inside it. Matches the Day screen's own identical
-              // gate on `AppBottomDock` (`pendingTaskDraftProvider`).
-              //
-              // **2026-09-21 — swaps to a selection context menu (back
-              // arrow / Edit / Remove) whenever `editSelectionProvider`
-              // is non-empty.** Requested directly: "on edit task mode
-              // when item(s) selected we need selection context menu."
-              // Back-arrow CLEARS the selection only (Edit Mode itself
-              // stays active, confirmed via AskUserQuestion) rather than
-              // closing this screen the way the plain Close icon used to
-              // — a genuinely different action, hence the icon change.
-              if (ref.watch(pendingTaskDraftProvider) == null)
-                Builder(
-                  builder: (context) {
-                    final selectedIds = ref.watch(editSelectionProvider);
-                    return Positioned(
-                      left: theme.spacingMd,
-                      bottom: theme.spacingMd,
-                      child: SafeArea(
-                        top: false,
-                        child: selectedIds.isEmpty
-                            ? AppDockPane(
-                                theme: theme,
-                                children: [
-                                  AppDockIconButton(
-                                    theme: theme,
-                                    // arrow_back, not close — requested
-                                    // directly: "close in edit mode
-                                    // should not be close (x) but arrow
-                                    // left." `_close` pops this whole
-                                    // screen (a real "go back"
-                                    // navigation, `Navigator.pop`), which
-                                    // is exactly what a back arrow means
-                                    // — not a dismiss/cancel X.
-                                    icon: Icons.arrow_back_rounded,
-                                    tooltip: 'Close',
-                                    selected: false,
-                                    onTap: _close,
-                                  ),
-                                ],
-                              )
-                            : AppDockPane(
-                                theme: theme,
-                                children: [
-                                  AppDockIconButton(
-                                    theme: theme,
-                                    icon: Icons.arrow_back_rounded,
-                                    tooltip: 'Clear selection',
-                                    selected: false,
-                                    onTap: () => ref
-                                        .read(editSelectionProvider.notifier)
-                                        .clear(),
-                                  ),
-                                  AppDockIconButton(
-                                    theme: theme,
-                                    icon: Icons.edit_outlined,
-                                    tooltip: 'Edit selected',
-                                    selected: false,
-                                    onTap: () =>
-                                        _editSelectedTasks(selectedIds),
-                                  ),
-                                  AppDockIconButton(
-                                    theme: theme,
-                                    icon: Icons.delete_outline_rounded,
-                                    tooltip: 'Remove selected',
-                                    selected: false,
-                                    onTap: () =>
-                                        _removeSelectedTasks(selectedIds),
-                                  ),
-                                ],
-                              ),
+      return AppViewTransition(
+        viewId: 'edit-tasks',
+        child: Scaffold(
+          backgroundColor: theme.colorSurfacePrimary,
+          body: SafeArea(
+            bottom: false,
+            child: Stack(
+              children: [
+                Column(
+                  children: [
+                    // **2026-09-20 — bare tab switch, no icons.** Requested
+                    // directly: "in edit mode on top we should only have 2
+                    // tabs task and zones" — Close (and, on the Zones tab,
+                    // Edit) moved to a bottom dock instead (see below).
+                    if (_shellChromeController == null) Padding(
+                      padding: EdgeInsets.all(theme.spacingMd),
+                      child: AppTabSwitch<ZoneGridTab>(
+                        options: _zoneGridTabOptions,
+                        value: _tab,
+                        onChanged: _switchTab,
                       ),
-                    );
-                  },
+                    ),
+                    // **2026-09-20 — the calendar is back.** Requested
+                    // directly: "Tasks edit mode should also have
+                    // calendar." `showHeader` flips true so `TimelineScreen`
+                    // renders its own `AppCalendarHeader` again (Today +
+                    // the date accordion, via that header's own
+                    // Edit-Mode-collapsed branch — `editModeEnabledProvider`
+                    // is already forced on for this tab by `_syncEditMode`).
+                    // `showCloseButton: false` on the embedded
+                    // `TimelineScreen`... see that widget's own field —
+                    // this screen's Close now lives in the bottom dock
+                    // instead, so the header's own X would be a duplicate.
+                    const Expanded(
+                      child: TimelineScreen(
+                        mode: TimelineDisplayMode.spatial,
+                        calendarHeaderShowsCloseButton: false,
+                      ),
+                    ),
+                  ],
                 ),
-            ],
+                // **2026-09-20 — hidden while a quick-create draft is
+                // live.** Reported directly: this dock painted on top of
+                // the tap-empty-space mini sheet, which is an in-tree
+                // overlay nested inside the embedded `TimelineScreen`
+                // above, not a pushed route — Stack paint order always
+                // puts a later sibling (this dock) above an entire earlier
+                // sibling's subtree, regardless of how deep the mini sheet
+                // sits inside it. Matches the Day screen's own identical
+                // gate on `AppBottomDock` (`pendingTaskDraftProvider`).
+                //
+                // **2026-09-21 — swaps to a selection context menu (back
+                // arrow / Edit / Remove) whenever `editSelectionProvider`
+                // is non-empty.** Requested directly: "on edit task mode
+                // when item(s) selected we need selection context menu."
+                // Back-arrow CLEARS the selection only (Edit Mode itself
+                // stays active, confirmed via AskUserQuestion) rather than
+                // closing this screen the way the plain Close icon used to
+                // — a genuinely different action, hence the icon change.
+                if (ref.watch(pendingTaskDraftProvider) == null)
+                  Builder(
+                    builder: (context) {
+                      final selectedIds = ref.watch(editSelectionProvider);
+                      return Positioned(
+                        left: theme.spacingMd,
+                        bottom: theme.spacingMd,
+                        child: SafeArea(
+                          top: false,
+                          child: _taskContextDock(selectedIds),
+                        ),
+                      );
+                    },
+                  ),
+              ],
+            ),
           ),
         ),
       );
@@ -879,632 +1171,787 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
     final preview = _fillSelection ?? _paint;
     final previewTitle = _fillSource?.title ?? 'New zone';
     const labels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-    return Scaffold(
-      backgroundColor: theme.colorSurfacePrimary,
-      body: Stack(
-        children: [
-          SafeArea(
-            child: Column(
-              children: [
-                // **2026-09-20 — bare tab switch, no icons.** See this
-                // class's own doc comment for the full change — Edit and
-                // Close moved to a bottom dock below.
-                Padding(
-                  padding: EdgeInsets.all(theme.spacingMd),
-                  child: AppTabSwitch<ZoneGridTab>(
-                    options: _zoneGridTabOptions,
-                    value: _tab,
-                    onChanged: _switchTab,
+    return AppViewTransition(
+      viewId: 'edit-zones',
+      child: Scaffold(
+        backgroundColor: theme.colorSurfacePrimary,
+        body: Stack(
+          children: [
+            SafeArea(
+              child: Column(
+                children: [
+                  // **2026-09-20 — bare tab switch, no icons.** See this
+                  // class's own doc comment for the full change — Edit and
+                  // Close moved to a bottom dock below.
+                  if (_shellChromeController == null) Padding(
+                    padding: EdgeInsets.all(theme.spacingMd),
+                    child: AppTabSwitch<ZoneGridTab>(
+                      options: _zoneGridTabOptions,
+                      value: _tab,
+                      onChanged: _switchTab,
+                    ),
                   ),
-                ),
-                if (selected.isNotEmpty)
+                  // **2026-09-24 — selection tooling MOVED to the bottom
+                  // dock.** Requested directly: "spacing of tooling in zone
+                  // edit mode we have tooling opened on top... align with
+                  // edit tasks and should be at bottom." This used to be a
+                  // top `Row` of loose `AppButton` circles; see the bottom
+                  // `AppDockPane` near this screen's own Close dock for the
+                  // replacement, which now branches on `selected.isEmpty`
+                  // the same way the Tasks tab's own dock already does.
+                  if (selected.isNotEmpty)
+                    Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: theme.spacingMd,
+                      ),
+                      child: Text(
+                        '${selected.length} selected',
+                        style: theme.textCaption,
+                      ),
+                    ),
                   Padding(
-                    padding: EdgeInsets.symmetric(horizontal: theme.spacingMd),
+                    padding: EdgeInsets.only(
+                      left: _axisWidth,
+                      top: theme.spacingSm,
+                      bottom: theme.spacingSm,
+                    ),
                     child: Row(
                       children: [
-                        Expanded(
-                          child: Text(
-                            '${selected.length} selected',
-                            style: theme.textCaption,
+                        for (final label in labels)
+                          Expanded(
+                            child: Text(
+                              label,
+                              textAlign: TextAlign.center,
+                              style: theme.textCaption,
+                            ),
                           ),
-                        ),
-                        // Edit placement — a single selected zone opens
-                        // the ordinary [showZoneFormScreen] form
-                        // unchanged; 2+ opens the bulk
-                        // [showMultiZoneEditSheet] instead (Name/Start/
-                        // End/Date only, "Mixed" for differing values) —
-                        // same branch-on-count shape as the Tasks tab's
-                        // own selection-menu Edit action, requested
-                        // directly: "similar for zones."
-                        AppButton(
-                          icon: Icons.tune_rounded,
-                          shape: AppButtonShape.circle,
-                          variant: AppButtonVariant.secondary,
-                          tooltip: 'Edit placement',
-                          onPressed: () {
-                            if (selected.length == 1) {
-                              final zone = zones
-                                  .where((z) => selected.contains(z.id))
-                                  .firstOrNull;
-                              if (zone != null) {
-                                showZoneFormScreen(context, zone: zone);
-                              }
-                              return;
-                            }
-                            showMultiZoneEditSheet(
-                              context,
-                              zoneIds: selected.toList(),
-                            );
-                          },
-                        ),
-                        AppButton(
-                          icon: Icons.delete_outline_rounded,
-                          shape: AppButtonShape.circle,
-                          variant: AppButtonVariant.secondary,
-                          tooltip: 'Remove placements',
-                          onPressed: () =>
-                              _removeSelectedZones(selected, zones),
-                        ),
-                        AppButton(
-                          icon: Icons.deselect_rounded,
-                          shape: AppButtonShape.circle,
-                          variant: AppButtonVariant.secondary,
-                          tooltip: 'Clear selection',
-                          onPressed: () => ref
-                              .read(zoneEditSelectionProvider.notifier)
-                              .clear(),
-                        ),
                       ],
                     ),
                   ),
-                Padding(
-                  padding: EdgeInsets.only(
-                    left: _axisWidth,
-                    top: theme.spacingSm,
-                    bottom: theme.spacingSm,
-                  ),
-                  child: Row(
-                    children: [
-                      for (final label in labels)
-                        Expanded(
-                          child: Text(
-                            label,
-                            textAlign: TextAlign.center,
-                            style: theme.textCaption,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  // TimelinePinchZoom wraps the whole viewport — pinch
-                  // works in both view mode (the opaque
-                  // 'zone-paint-surface' GestureDetector below owns
-                  // long-press) and edit mode (that same detector owns
-                  // pan instead) without needing to change based on
-                  // `_editing`, since TimelinePinchZoom observes pointers
-                  // passively rather than claiming the gesture arena —
-                  // see that widget's own doc comment.
-                  child: TimelinePinchZoom(
-                    child: Stack(
-                      key: _viewportKey,
-                      children: [
-                        SingleChildScrollView(
-                          controller: _scroll,
-                          // Every hour label is centred ON its own tick line,
-                          // so the 00:00 label at the very top extends half a
-                          // caption line ABOVE the content box and the one at
-                          // the day's end sits flush against the bottom —
-                          // both clipped. Reported directly: "need larger
-                          // padding top bottom as cant see 00 and 00 end
-                          // day."
-                          //
-                          // `spacingLg` matches the Timeline's own fix for
-                          // the identical report on its hour gutter (see
-                          // `timeline_screen.dart`'s scroll padding, where
-                          // spacingMd was explicitly found too small to clear
-                          // half a caption line).
-                          padding: EdgeInsets.symmetric(
-                            vertical: theme.spacingLg,
-                          ),
-                          physics:
-                              _editing ||
-                                  _paintOrigin != null ||
-                                  _fillSource != null ||
-                                  _moveKind != null
-                              ? const NeverScrollableScrollPhysics()
-                              : null,
-                          child: LayoutBuilder(
-                            builder: (context, constraints) {
-                              final width =
-                                  (constraints.maxWidth - _axisWidth) / 7;
-                              return SizedBox(
-                                key: _gridKey,
-                                height: _gridHeight,
-                                child: Stack(
-                                  clipBehavior: Clip.none,
-                                  children: [
-                                    Positioned.fill(
-                                      child: Listener(
-                                        onPointerDown: (e) {
-                                          _downGlobal = e.position;
-                                          _pointerCancelled = false;
-                                        },
-                                        onPointerCancel: (_) {
-                                          _pointerCancelled = true;
-                                          _cancelPaint();
-                                        },
-                                        child: GestureDetector(
-                                          key: const ValueKey(
-                                            'zone-paint-surface',
-                                          ),
-                                          behavior: HitTestBehavior.opaque,
-                                          onTapUp: _tapEmpty,
-                                          onLongPressStart: !_editing
-                                              ? (d) => _startPaint(
-                                                  d.globalPosition,
-                                                )
-                                              : null,
-                                          onLongPressMoveUpdate: !_editing
-                                              ? (d) => _updatePaint(
-                                                  d.globalPosition,
-                                                )
-                                              : null,
-                                          onLongPressEnd: !_editing
-                                              ? (_) => _endPaint()
-                                              : null,
-                                          onLongPressCancel: !_editing
-                                              ? _cancelPaint
-                                              : null,
-                                          onPanStart: _editing
-                                              ? (d) => _startPaint(
-                                                  _downGlobal ??
-                                                      d.globalPosition,
-                                                )
-                                              : null,
-                                          onPanUpdate: _editing
-                                              ? (d) => _updatePaint(
-                                                  d.globalPosition,
-                                                )
-                                              : null,
-                                          onPanEnd: _editing
-                                              ? (_) => _endPaint()
-                                              : null,
-                                          onPanCancel: _editing
-                                              ? _cancelPaint
-                                              : null,
-                                        ),
-                                      ),
-                                    ),
-                                    Positioned(
-                                      left: 0,
-                                      top: 0,
-                                      bottom: 0,
-                                      width: _axisWidth,
-                                      child: GestureDetector(
-                                        behavior: HitTestBehavior.opaque,
-                                        onVerticalDragUpdate: _editing
-                                            ? (d) {
-                                                if (_scroll.hasClients) {
-                                                  _scroll.jumpTo(
-                                                    (_scroll.offset -
-                                                            d.delta.dy)
-                                                        .clamp(
-                                                          0.0,
-                                                          _scroll
-                                                              .position
-                                                              .maxScrollExtent,
-                                                        ),
-                                                  );
-                                                }
-                                              }
-                                            : null,
-                                      ),
-                                    ),
-                                    // `<= 24`, not `< 24`. The day's closing
-                                    // label is a real 25th tick at the grid's
-                                    // bottom edge: with `< 24` the last one
-                                    // drawn was 23:00 and the final hour of
-                                    // the grid carried no label at all, which
-                                    // no amount of scroll padding could
-                                    // reveal — reported directly, "still cant
-                                    // fully scroll on zone edit to see 00 end
-                                    // of day."
-                                    for (var hour = 0; hour <= 24; hour++)
-                                      Positioned(
-                                        // 8px clear of the screen edge and
-                                        // 8px clear of the first lane —
-                                        // requested directly, replacing a
-                                        // zero left inset that left the
-                                        // labels almost touching the edge.
-                                        left: theme.spacingSm,
-                                        // Derived from the same scale the
-                                        // zones are laid out on, never a
-                                        // second hardcoded 44 — a literal
-                                        // here silently drifts from every
-                                        // block beside it the moment the
-                                        // scale changes.
-                                        top: hour * 60 * _pixelsPerMinute,
-                                        width: _axisWidth - theme.spacingSm * 2,
-                                        child: IgnorePointer(
-                                          // Requested directly: the blue
-                                          // accent time badge shown while
-                                          // creating/editing a task
-                                          // (`TaskEdgeTimeLabel`) pads its
-                                          // own text `theme.spacingSm` in
-                                          // from its box's left edge — this
-                                          // plain axis label had no internal
-                                          // padding of its own, so its text
-                                          // sat visibly left of the badge's
-                                          // text despite sharing the same
-                                          // `left: theme.spacingSm` box
-                                          // origin. Matches the identical
-                                          // fix on `TaskBoundaryMarkers`'
-                                          // own left-aligned gutter case.
-                                          child: Padding(
-                                            padding: EdgeInsets.only(
-                                              left: theme.spacingSm,
-                                            ),
-                                            child: Text(
-                                              '${hour.toString().padLeft(2, '0')}:00',
-                                              // LEFT-aligned, matching the
-                                              // Timeline's own hour labels
-                                              // (`TaskBoundaryMarkers` with
-                                              // `leftInset` set and NO
-                                              // `columnWidth`, which is what
-                                              // switches it to right-aligned).
-                                              //
-                                              // Right-alignment was why earlier
-                                              // width changes looked like they
-                                              // did nothing: the glyphs hugged
-                                              // the box's RIGHT edge, so
-                                              // shrinking the box moved them
-                                              // right while the left gap only
-                                              // appeared constant by
-                                              // coincidence. Measured with a
-                                              // throwaway geometry probe before
-                                              // changing it.
-                                              textAlign: TextAlign.left,
-                                              // Never wrap. `_axisWidth` is sized
-                                              // from a measured-by-arithmetic
-                                              // glyph width, which a device font
-                                              // fallback or a larger text scale
-                                              // could exceed — and the failure
-                                              // mode is silent two-line labels
-                                              // that squash the whole axis
-                                              // (reported directly once already).
-                                              // One line, clipped if it ever must
-                                              // be, rather than reflowing.
-                                              maxLines: 1,
-                                              softWrap: false,
-                                              overflow: TextOverflow.clip,
-                                              // colorTextSecondary, not
-                                              // colorTextTertiary — unified
-                                              // directly: "hours of day have
-                                              // different color on different
-                                              // screens... needs unified."
-                                              // Matches TaskBoundaryMarkers'
-                                              // own hour-tick color on the
-                                              // spatial Timeline exactly, so
-                                              // the same "HH:MM" label reads
-                                              // identically regardless of
-                                              // which screen it's on.
-                                              style: theme.textCaption.copyWith(
-                                                color: theme.colorTextSecondary,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    for (var day = 2; day <= 7; day++)
-                                      Positioned(
-                                        left: _axisWidth + (day - 1) * width,
-                                        top: 0,
-                                        bottom: 0,
-                                        child: IgnorePointer(
-                                          child: Container(
-                                            width: theme.borderWidthHairline,
-                                            color: theme.colorBorder.withValues(
-                                              alpha: .25,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    for (var day = 1; day <= 7; day++)
-                                      Positioned(
-                                        left: _axisWidth + (day - 1) * width,
-                                        width: width,
-                                        top: 0,
-                                        bottom: 0,
-                                        child: Stack(
-                                          clipBehavior: Clip.none,
-                                          children: [
-                                            // The selected zone paints LAST
-                                            // among this day's siblings —
-                                            // see `selectedZonesLast`'s own
-                                            // doc comment. Overlapping/
-                                            // adjacent zones are a
-                                            // designed-for, common case on
-                                            // this screen (see `_Phantom`'s
-                                            // own doc comment).
-                                            for (final zone
-                                                in selectedZonesLast(
-                                                  zones.where(
-                                                    (z) => z.weekday == day,
-                                                  ),
-                                                  selected,
-                                                ))
-                                              _block(
-                                                zone,
-                                                zones,
-                                                theme,
-                                                selected.contains(zone.id),
-                                                _axisWidth + (day - 1) * width,
-                                              ),
-                                          ],
-                                        ),
-                                      ),
-                                    // The live drag-to-multi-select sweep
-                                    // marquee — deliberately the SAME
-                                    // shape as the paint-selection
-                                    // preview below it (`SelectedPillBorder`
-                                    // over a translucent accent fill,
-                                    // `IgnorePointer`ed so it can never
-                                    // intercept the drag drawing it), so
-                                    // "you are selecting right now" reads
-                                    // identically whether you started on
-                                    // empty grid or on an existing zone.
-                                    if (_sweepAnchor case final anchor?)
-                                      if (_sweepCurrent case final current?)
-                                        Positioned(
-                                          left: math.min(anchor.dx, current.dx),
-                                          width: (current.dx - anchor.dx).abs(),
-                                          top: math.min(anchor.dy, current.dy),
-                                          height: (current.dy - anchor.dy)
-                                              .abs(),
-                                          child: IgnorePointer(
-                                            child: SelectedPillBorder(
-                                              key: const ValueKey(
-                                                'zone-sweep-selection',
-                                              ),
-                                              theme: theme,
-                                              contentRadius:
-                                                  BorderRadius.circular(
-                                                    theme.radiusMd,
-                                                  ),
-                                              fillColor: theme.colorAccent
-                                                  .withValues(alpha: .09),
-                                              child: const SizedBox.expand(),
-                                            ),
-                                          ),
-                                        ),
-                                    if (preview != null) ...[
-                                      Positioned(
-                                        left:
-                                            _axisWidth +
-                                            (preview.firstDay - 1) * width,
-                                        width:
-                                            (preview.lastDay -
-                                                preview.firstDay +
-                                                1) *
-                                            width,
-                                        top:
-                                            preview.startMinutes *
-                                            _pixelsPerMinute,
-                                        height:
-                                            (preview.endMinutes -
-                                                preview.startMinutes) *
-                                            _pixelsPerMinute,
-                                        child: IgnorePointer(
-                                          // SelectedPillBorder, not a
-                                          // hand-rolled Border.all — design-
-                                          // system consolidation, requested
-                                          // directly ("this blue border
-                                          // needs to have consistent style
-                                          // so it doesn't diverge... should
-                                          // be the style of current select
-                                          // zone/task"). Was a single,
-                                          // square-cornered, 60%-alpha ring
-                                          // with no dark separator — see
-                                          // docs/DESIGN_SYSTEM.md for the
-                                          // canonical shape this now
-                                          // matches exactly.
-                                          child: SelectedPillBorder(
+                  Expanded(
+                    // TimelinePinchZoom wraps the whole viewport — pinch
+                    // works in both view mode (the opaque
+                    // 'zone-paint-surface' GestureDetector below owns
+                    // long-press) and edit mode (that same detector owns
+                    // pan instead) without needing to change based on
+                    // `_editing`, since TimelinePinchZoom observes pointers
+                    // passively rather than claiming the gesture arena —
+                    // see that widget's own doc comment.
+                    child: TimelinePinchZoom(
+                      child: Stack(
+                        key: _viewportKey,
+                        children: [
+                          SingleChildScrollView(
+                            controller: _scroll,
+                            // Every hour label is centred ON its own tick line,
+                            // so the 00:00 label at the very top extends half a
+                            // caption line ABOVE the content box and the one at
+                            // the day's end sits flush against the bottom —
+                            // both clipped. Reported directly: "need larger
+                            // padding top bottom as cant see 00 and 00 end
+                            // day."
+                            //
+                            // `spacingLg` matches the Timeline's own fix for
+                            // the identical report on its hour gutter (see
+                            // `timeline_screen.dart`'s scroll padding, where
+                            // spacingMd was explicitly found too small to clear
+                            // half a caption line).
+                            padding: EdgeInsets.symmetric(
+                              vertical: theme.spacingLg,
+                            ),
+                            // Suppressed only while a gesture is actually in
+                            // flight — NOT unconditionally, even though this
+                            // tab is permanently in edit mode. `_editing`
+                            // used to appear in this list back when it was a
+                            // toggle; keeping it here once it became `true`
+                            // for good would have disabled grid scrolling
+                            // outright.
+                            physics:
+                                _paintOrigin != null ||
+                                    _fillSource != null ||
+                                    _moveKind != null ||
+                                    _resizeEdge != null ||
+                                    _marqueeMoveOrigin != null
+                                ? const NeverScrollableScrollPhysics()
+                                : null,
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                final width =
+                                    (constraints.maxWidth - _axisWidth) / 7;
+                                return SizedBox(
+                                  key: _gridKey,
+                                  height: _gridHeight,
+                                  child: Stack(
+                                    clipBehavior: Clip.none,
+                                    children: [
+                                      Positioned.fill(
+                                        child: Listener(
+                                          onPointerDown: (_) =>
+                                              _pointerCancelled = false,
+                                          onPointerCancel: (_) {
+                                            _pointerCancelled = true;
+                                            _cancelPaint();
+                                          },
+                                          child: GestureDetector(
                                             key: const ValueKey(
-                                              'zone-paint-selection',
+                                              'zone-paint-surface',
                                             ),
-                                            theme: theme,
-                                            contentRadius:
-                                                BorderRadius.circular(
-                                                  theme.radiusMd,
-                                                ),
-                                            fillColor: theme.colorAccent
-                                                .withValues(alpha: .09),
-                                            child: const SizedBox.expand(),
+                                            behavior: HitTestBehavior.opaque,
+                                            // Long-press owns painting, and
+                                            // pan is deliberately NOT wired:
+                                            // a plain vertical drag belongs
+                                            // to the scroll view, which is
+                                            // the "normal vertical swipe
+                                            // scrolls rather than painting"
+                                            // behaviour this screen has
+                                            // always had. Both branches used
+                                            // to be wired and switched on
+                                            // `_editing`; with edit mode
+                                            // permanent, wiring pan instead
+                                            // would mean the grid could never
+                                            // be scrolled by dragging it.
+                                            onTapUp: _tapEmpty,
+                                            onLongPressStart: (d) =>
+                                                _startPaint(d.globalPosition),
+                                            onLongPressMoveUpdate: (d) =>
+                                                _updatePaint(d.globalPosition),
+                                            onLongPressEnd: (_) => _endPaint(),
+                                            onLongPressCancel: _cancelPaint,
                                           ),
                                         ),
                                       ),
-                                      for (final day in preview.weekdays)
-                                        if (_fillSource?.weekday != day)
-                                          Positioned(
-                                            left:
-                                                _axisWidth +
-                                                (day - 1) * width +
-                                                theme.spacingXs,
-                                            width: width - 2 * theme.spacingXs,
-                                            top:
-                                                preview.startMinutes *
-                                                    _pixelsPerMinute +
-                                                theme.spacingXs / 2,
-                                            height: math.max(
-                                              2,
-                                              (preview.endMinutes -
-                                                          preview
-                                                              .startMinutes) *
-                                                      _pixelsPerMinute -
-                                                  theme.spacingXs,
+                                      Positioned(
+                                        left: 0,
+                                        top: 0,
+                                        bottom: 0,
+                                        width: _axisWidth,
+                                        child: GestureDetector(
+                                          behavior: HitTestBehavior.opaque,
+                                          onVerticalDragUpdate: _editing
+                                              ? (d) {
+                                                  if (_scroll.hasClients) {
+                                                    _scroll.jumpTo(
+                                                      (_scroll.offset -
+                                                              d.delta.dy)
+                                                          .clamp(
+                                                            0.0,
+                                                            _scroll
+                                                                .position
+                                                                .maxScrollExtent,
+                                                          ),
+                                                    );
+                                                  }
+                                                }
+                                              : null,
+                                        ),
+                                      ),
+                                      // `<= 24`, not `< 24`. The day's closing
+                                      // label is a real 25th tick at the grid's
+                                      // bottom edge: with `< 24` the last one
+                                      // drawn was 23:00 and the final hour of
+                                      // the grid carried no label at all, which
+                                      // no amount of scroll padding could
+                                      // reveal — reported directly, "still cant
+                                      // fully scroll on zone edit to see 00 end
+                                      // of day."
+                                      for (var hour = 0; hour <= 24; hour++)
+                                        Positioned(
+                                          // 8px clear of the screen edge and
+                                          // 8px clear of the first lane —
+                                          // requested directly, replacing a
+                                          // zero left inset that left the
+                                          // labels almost touching the edge.
+                                          left: theme.spacingSm,
+                                          // Derived from the same scale the
+                                          // zones are laid out on, never a
+                                          // second hardcoded 44 — a literal
+                                          // here silently drifts from every
+                                          // block beside it the moment the
+                                          // scale changes.
+                                          top: hour * 60 * _pixelsPerMinute,
+                                          width:
+                                              _axisWidth - theme.spacingSm * 2,
+                                          child: IgnorePointer(
+                                            // Requested directly: the blue
+                                            // accent time badge shown while
+                                            // creating/editing a task
+                                            // (`TaskEdgeTimeLabel`) pads its
+                                            // own text `theme.spacingSm` in
+                                            // from its box's left edge — this
+                                            // plain axis label had no internal
+                                            // padding of its own, so its text
+                                            // sat visibly left of the badge's
+                                            // text despite sharing the same
+                                            // `left: theme.spacingSm` box
+                                            // origin. Matches the identical
+                                            // fix on `TaskBoundaryMarkers`'
+                                            // own left-aligned gutter case.
+                                            child: Padding(
+                                              padding: EdgeInsets.only(
+                                                left: theme.spacingSm,
+                                              ),
+                                              child: Text(
+                                                '${hour.toString().padLeft(2, '0')}:00',
+                                                // LEFT-aligned, matching the
+                                                // Timeline's own hour labels
+                                                // (`TaskBoundaryMarkers` with
+                                                // `leftInset` set and NO
+                                                // `columnWidth`, which is what
+                                                // switches it to right-aligned).
+                                                //
+                                                // Right-alignment was why earlier
+                                                // width changes looked like they
+                                                // did nothing: the glyphs hugged
+                                                // the box's RIGHT edge, so
+                                                // shrinking the box moved them
+                                                // right while the left gap only
+                                                // appeared constant by
+                                                // coincidence. Measured with a
+                                                // throwaway geometry probe before
+                                                // changing it.
+                                                textAlign: TextAlign.left,
+                                                // Never wrap. `_axisWidth` is sized
+                                                // from a measured-by-arithmetic
+                                                // glyph width, which a device font
+                                                // fallback or a larger text scale
+                                                // could exceed — and the failure
+                                                // mode is silent two-line labels
+                                                // that squash the whole axis
+                                                // (reported directly once already).
+                                                // One line, clipped if it ever must
+                                                // be, rather than reflowing.
+                                                maxLines: 1,
+                                                softWrap: false,
+                                                overflow: TextOverflow.clip,
+                                                // colorTextSecondary, not
+                                                // colorTextTertiary — unified
+                                                // directly: "hours of day have
+                                                // different color on different
+                                                // screens... needs unified."
+                                                // Matches TaskBoundaryMarkers'
+                                                // own hour-tick color on the
+                                                // spatial Timeline exactly, so
+                                                // the same "HH:MM" label reads
+                                                // identically regardless of
+                                                // which screen it's on.
+                                                style: theme.textCaption
+                                                    .copyWith(
+                                                      color: theme
+                                                          .colorTextSecondary,
+                                                    ),
+                                              ),
                                             ),
+                                          ),
+                                        ),
+                                      for (var day = 2; day <= 7; day++)
+                                        Positioned(
+                                          left: _axisWidth + (day - 1) * width,
+                                          top: 0,
+                                          bottom: 0,
+                                          child: IgnorePointer(
+                                            child: Container(
+                                              width: theme.borderWidthHairline,
+                                              color: theme.colorBorder
+                                                  .withValues(alpha: .25),
+                                            ),
+                                          ),
+                                        ),
+                                      for (var day = 1; day <= 7; day++)
+                                        Positioned(
+                                          left: _axisWidth + (day - 1) * width,
+                                          width: width,
+                                          top: 0,
+                                          bottom: 0,
+                                          // **2026-09-23 — every existing
+                                          // zone is inert while an UNSAVED
+                                          // marquee is on screen.** Requested
+                                          // directly: "when marquee is drawn
+                                          // and released... tap and move is
+                                          // scroll (not drawing a new marquee
+                                          // or selecting tapped item) so when
+                                          // not saved marquee drawn other
+                                          // interactions are not active."
+                                          // Tapping an existing zone used to
+                                          // select it straight through the
+                                          // pending sheet; now the tap falls
+                                          // to the paint surface underneath,
+                                          // where `_tapEmpty` dismisses the
+                                          // marquee instead (see its own
+                                          // comment). Re-enabled the moment
+                                          // `_pending` clears.
+                                          child: IgnorePointer(
+                                            ignoring: _pending != null,
+                                            child: Stack(
+                                              clipBehavior: Clip.none,
+                                              children: [
+                                                // The selected zone paints LAST
+                                                // among this day's siblings —
+                                                // see `selectedZonesLast`'s own
+                                                // doc comment. Overlapping/
+                                                // adjacent zones are a
+                                                // designed-for, common case on
+                                                // this screen (see `_Phantom`'s
+                                                // own doc comment).
+                                                for (final zone
+                                                    in selectedZonesLast(
+                                                      zones.where(
+                                                        (z) => z.weekday == day,
+                                                      ),
+                                                      selected,
+                                                    ))
+                                                  _block(
+                                                    zone,
+                                                    zones,
+                                                    theme,
+                                                    selected.contains(zone.id),
+                                                    _axisWidth +
+                                                        (day - 1) * width,
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      // The live drag-to-multi-select sweep
+                                      // marquee — deliberately the SAME
+                                      // shape as the paint-selection
+                                      // preview below it (`SelectedPillBorder`
+                                      // over a translucent accent fill,
+                                      // `IgnorePointer`ed so it can never
+                                      // intercept the drag drawing it), so
+                                      // "you are selecting right now" reads
+                                      // identically whether you started on
+                                      // empty grid or on an existing zone.
+                                      if (_sweepAnchor case final anchor?)
+                                        if (_sweepCurrent case final current?)
+                                          Positioned(
+                                            left: math.min(
+                                              anchor.dx,
+                                              current.dx,
+                                            ),
+                                            width: (current.dx - anchor.dx)
+                                                .abs(),
+                                            top: math.min(
+                                              anchor.dy,
+                                              current.dy,
+                                            ),
+                                            height: (current.dy - anchor.dy)
+                                                .abs(),
                                             child: IgnorePointer(
-                                              child: _Phantom(
-                                                key: ValueKey(
-                                                  'zone-phantom-$day',
+                                              child: SelectedPillBorder(
+                                                key: const ValueKey(
+                                                  'zone-sweep-selection',
                                                 ),
                                                 theme: theme,
-                                                title: previewTitle,
+                                                contentRadius:
+                                                    BorderRadius.circular(
+                                                      theme.radiusMd,
+                                                    ),
+                                                fillColor: theme.colorAccent
+                                                    .withValues(alpha: .09),
+                                                child: const SizedBox.expand(),
                                               ),
                                             ),
                                           ),
-                                      // TaskEdgeTimeLabel, not a plain accent-
-                                      // colored Text — design-system
-                                      // consolidation, requested directly:
-                                      // every other "show the hour" moment in
-                                      // the app (task create/edit, zone
-                                      // resize) already uses this shared
-                                      // accent-BACKGROUND pill; this was the
-                                      // one remaining plain-text case with no
-                                      // background at all. Two separate
-                                      // labels (start/end), matching the
-                                      // pending-create pill's own two-label
-                                      // shape, rather than one combined
-                                      // "start – end" string, since
-                                      // TaskEdgeTimeLabel takes one TimeOfDay.
-                                      // See docs/DESIGN_SYSTEM.md.
-                                      Positioned(
-                                        left: _axisWidth,
-                                        top: math.max(
-                                          0,
-                                          preview.startMinutes *
-                                                  _pixelsPerMinute -
-                                              theme.spacingLg,
+                                      if (preview != null) ...[
+                                        Positioned(
+                                          left:
+                                              _axisWidth +
+                                              (preview.firstDay - 1) * width,
+                                          width:
+                                              (preview.lastDay -
+                                                  preview.firstDay +
+                                                  1) *
+                                              width,
+                                          top:
+                                              preview.startMinutes *
+                                              _pixelsPerMinute,
+                                          height:
+                                              (preview.endMinutes -
+                                                  preview.startMinutes) *
+                                              _pixelsPerMinute,
+                                          // **2026-09-23 — an UNSAVED marquee
+                                          // is draggable as a whole.**
+                                          // Requested directly: "when drawn
+                                          // and release should be able to
+                                          // drag and move drawn zones that
+                                          // are not saved yet." Only while
+                                          // `_pending != null` — the same
+                                          // rectangle also previews a live
+                                          // paint/fill drag, and taking
+                                          // pointers during those would
+                                          // intercept the very gesture
+                                          // drawing it (which is why this was
+                                          // an unconditional `IgnorePointer`
+                                          // before).
+                                          //
+                                          // `onPan*`, not an axis-specific
+                                          // pair: a move genuinely travels
+                                          // both axes at once, unlike the
+                                          // edge handles (each of which
+                                          // changes exactly one). The
+                                          // scrollable can't steal it because
+                                          // `physics` is already
+                                          // `NeverScrollableScrollPhysics`
+                                          // while a marquee move is in
+                                          // flight — see the `physics:` gate
+                                          // above, which now includes
+                                          // `_marqueeMoveOrigin`.
+                                          child: _pending == null
+                                              ? IgnorePointer(
+                                                  child: _marqueeBody(theme),
+                                                )
+                                              : RawGestureDetector(
+                                                  behavior:
+                                                      HitTestBehavior.opaque,
+                                                  gestures: {
+                                                    _EagerPanRecognizer:
+                                                        GestureRecognizerFactoryWithHandlers<
+                                                          _EagerPanRecognizer
+                                                        >(
+                                                          () =>
+                                                              _EagerPanRecognizer(
+                                                                debugOwner:
+                                                                    this,
+                                                              ),
+                                                          (instance) => instance
+                                                            ..onStart = (_) {
+                                                              setState(() {
+                                                                _marqueeMoveOrigin =
+                                                                    _paint;
+                                                                _marqueeMoveDx =
+                                                                    0;
+                                                                _marqueeMoveDy =
+                                                                    0;
+                                                              });
+                                                            }
+                                                            ..onUpdate = (d) {
+                                                              _moveMarquee(
+                                                                d.delta,
+                                                              );
+                                                            }
+                                                            ..onEnd = (_) {
+                                                              setState(() {
+                                                                _marqueeMoveOrigin =
+                                                                    null;
+                                                              });
+                                                            }
+                                                            ..onCancel = () {
+                                                              setState(() {
+                                                                _marqueeMoveOrigin =
+                                                                    null;
+                                                              });
+                                                            },
+                                                        ),
+                                                  },
+                                                  child: _marqueeBody(theme),
+                                                ),
                                         ),
-                                        child: IgnorePointer(
-                                          child: TaskEdgeTimeLabel(
-                                            theme: theme,
-                                            time: TimeOfDay(
-                                              hour: preview.startMinutes ~/ 60,
-                                              minute: preview.startMinutes % 60,
+                                        for (final day in preview.weekdays)
+                                          if (_fillSource?.weekday != day)
+                                            Positioned(
+                                              left:
+                                                  _axisWidth +
+                                                  (day - 1) * width +
+                                                  theme.spacingXs,
+                                              width:
+                                                  width - 2 * theme.spacingXs,
+                                              top:
+                                                  preview.startMinutes *
+                                                      _pixelsPerMinute +
+                                                  theme.spacingXs / 2,
+                                              height: math.max(
+                                                2,
+                                                (preview.endMinutes -
+                                                            preview
+                                                                .startMinutes) *
+                                                        _pixelsPerMinute -
+                                                    theme.spacingXs,
+                                              ),
+                                              child: IgnorePointer(
+                                                child: _Phantom(
+                                                  key: ValueKey(
+                                                    'zone-phantom-$day',
+                                                  ),
+                                                  theme: theme,
+                                                  title: previewTitle,
+                                                ),
+                                              ),
                                             ),
-                                            showLine: false,
+                                        // TaskEdgeTimeLabel, not a plain accent-
+                                        // colored Text — design-system
+                                        // consolidation, requested directly:
+                                        // every other "show the hour" moment in
+                                        // the app (task create/edit, zone
+                                        // resize) already uses this shared
+                                        // accent-BACKGROUND pill; this was the
+                                        // one remaining plain-text case with no
+                                        // background at all. Two separate
+                                        // labels (start/end), matching the
+                                        // pending-create pill's own two-label
+                                        // shape, rather than one combined
+                                        // "start – end" string, since
+                                        // TaskEdgeTimeLabel takes one TimeOfDay.
+                                        // See docs/DESIGN_SYSTEM.md.
+                                        // **In the HOUR COLUMN, centred ON each
+                                        // edge** — requested directly: "the hour
+                                        // start end (with bg accent) should be on
+                                        // the left column where hours are (same
+                                        // pattern / positioning / object) as with
+                                        // edit task."
+                                        //
+                                        // `left: 0` (the axis's own left edge,
+                                        // where the hour labels themselves sit)
+                                        // rather than `_axisWidth`, plus the
+                                        // `FractionalTranslation` half-shift that
+                                        // straddles the boundary — exactly the
+                                        // geometry `PendingTaskPill` uses for its
+                                        // own start/end labels, so the two read
+                                        // identically. Replaces a version sitting
+                                        // just RIGHT of the axis and nudged clear
+                                        // of the edges by spacingLg/spacingXs,
+                                        // which lined up with neither the hours
+                                        // nor the task view's own treatment.
+                                        Positioned(
+                                          left: 0,
+                                          top:
+                                              preview.startMinutes *
+                                              _pixelsPerMinute,
+                                          child: FractionalTranslation(
+                                            translation: const Offset(0, -0.5),
+                                            child: IgnorePointer(
+                                              child: TaskEdgeTimeLabel(
+                                                theme: theme,
+                                                time: TimeOfDay(
+                                                  hour:
+                                                      preview.startMinutes ~/
+                                                      60,
+                                                  minute:
+                                                      preview.startMinutes % 60,
+                                                ),
+                                                showLine: false,
+                                              ),
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                      Positioned(
-                                        left: _axisWidth,
-                                        top:
-                                            preview.endMinutes *
-                                                _pixelsPerMinute +
-                                            theme.spacingXs,
-                                        child: IgnorePointer(
-                                          child: TaskEdgeTimeLabel(
-                                            theme: theme,
-                                            time: TimeOfDay(
-                                              hour: preview.endMinutes ~/ 60,
-                                              minute: preview.endMinutes % 60,
+                                        Positioned(
+                                          left: 0,
+                                          top:
+                                              preview.endMinutes *
+                                              _pixelsPerMinute,
+                                          child: FractionalTranslation(
+                                            translation: const Offset(0, -0.5),
+                                            child: IgnorePointer(
+                                              child: TaskEdgeTimeLabel(
+                                                theme: theme,
+                                                time: TimeOfDay(
+                                                  hour:
+                                                      preview.endMinutes ~/ 60,
+                                                  minute:
+                                                      preview.endMinutes % 60,
+                                                ),
+                                                showLine: false,
+                                              ),
                                             ),
-                                            showLine: false,
                                           ),
                                         ),
-                                      ),
+                                        // Four resize dots, one per edge,
+                                        // each centred on its own edge's
+                                        // midpoint — "do is in the middle of
+                                        // the marque horz middle and vert
+                                        // middle". Top/bottom change the
+                                        // zone's start/end time; left/right
+                                        // widen or narrow the weekday span.
+                                        //
+                                        // Last in this Stack so they paint
+                                        // above the marquee fill and stay
+                                        // grabbable — every sibling above is
+                                        // `IgnorePointer`ed, so nothing
+                                        // competes for these gestures.
+                                        ...() {
+                                          final left =
+                                              _axisWidth +
+                                              (preview.firstDay - 1) * width;
+                                          final right =
+                                              _axisWidth +
+                                              preview.lastDay * width;
+                                          final top =
+                                              preview.startMinutes *
+                                              _pixelsPerMinute;
+                                          final bottom =
+                                              preview.endMinutes *
+                                              _pixelsPerMinute;
+                                          Widget at(
+                                            double x,
+                                            double y,
+                                            _MarqueeEdge edge,
+                                          ) => Positioned(
+                                            // The hit box is clamped INSIDE
+                                            // the grid, and only the painted
+                                            // dot is centred on the edge.
+                                            //
+                                            // Flutter does not hit-test a
+                                            // child outside its parent's
+                                            // bounds, `Clip.none` or not —
+                                            // `ResizeHandle`'s own doc
+                                            // comment documents this and
+                                            // solves it the same way. A box
+                                            // centred on the edge hangs half
+                                            // outside the grid's own
+                                            // `SizedBox`, and the whole
+                                            // handle then takes no pointers
+                                            // at all (confirmed here: the
+                                            // dots rendered correctly and
+                                            // `hitTestable` still matched
+                                            // zero widgets).
+                                            left:
+                                                (x -
+                                                        theme.spacingMinTapTarget /
+                                                            2)
+                                                    .clamp(
+                                                      0.0,
+                                                      math.max(
+                                                        0.0,
+                                                        constraints.maxWidth -
+                                                            theme
+                                                                .spacingMinTapTarget,
+                                                      ),
+                                                    ),
+                                            top:
+                                                (y -
+                                                        theme.spacingMinTapTarget /
+                                                            2)
+                                                    .clamp(
+                                                      0.0,
+                                                      math.max(
+                                                        0.0,
+                                                        _gridHeight -
+                                                            theme
+                                                                .spacingMinTapTarget,
+                                                      ),
+                                                    ),
+                                            child: _MarqueeResizeHandle(
+                                              theme: theme,
+                                              vertical:
+                                                  edge == _MarqueeEdge.top ||
+                                                  edge == _MarqueeEdge.bottom,
+                                              onDrag: (global) {
+                                                _resizeEdge = edge;
+                                                _resizeMarquee(edge, global);
+                                              },
+                                              onDragEnd: () => setState(() {
+                                                _resizeEdge = null;
+                                              }),
+                                            ),
+                                          );
+                                          return [
+                                            at(
+                                              (left + right) / 2,
+                                              top,
+                                              _MarqueeEdge.top,
+                                            ),
+                                            at(
+                                              (left + right) / 2,
+                                              bottom,
+                                              _MarqueeEdge.bottom,
+                                            ),
+                                            at(
+                                              left,
+                                              (top + bottom) / 2,
+                                              _MarqueeEdge.left,
+                                            ),
+                                            at(
+                                              right,
+                                              (top + bottom) / 2,
+                                              _MarqueeEdge.right,
+                                            ),
+                                          ];
+                                        }(),
+                                      ],
                                     ],
-                                  ],
-                                ),
-                              );
-                            },
+                                  ),
+                                );
+                              },
+                            ),
                           ),
-                        ),
-                        Positioned(
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          child: AppTopScrollFade(
-                            color: theme.colorSurfacePrimary,
+                          Positioned(
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            child: AppTopScrollFade(
+                              color: theme.colorSurfacePrimary,
+                            ),
                           ),
-                        ),
-                        Positioned(
-                          bottom: 0,
-                          left: 0,
-                          right: 0,
-                          child: AppTopScrollFade(
-                            color: theme.colorSurfacePrimary,
-                            fromBottom: true,
+                          Positioned(
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            child: AppTopScrollFade(
+                              color: theme.colorSurfacePrimary,
+                              fromBottom: true,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (_pending == null)
-            AppFloatingCreateButton(
-              onPressed: () {
-                final now = DateTime.now();
-                final start = (now.hour * 60).clamp(0, 1380);
-                final paint = ZonePaintSelection(
-                  now.weekday,
-                  now.weekday,
-                  start,
-                  start + 60,
-                );
-                setState(() {
-                  _paint = paint;
-                  _pending = _target(paint);
-                });
-                _scrollPendingIntoView(start);
-              },
-            ),
-          // **2026-09-20 — Close (leftmost) and Edit, in a floating
-          // bottom dock.** Requested directly: "in zones edit and close
-          // (close on the leftmost)" — matching the Tasks tab's own new
-          // dock (Close alone) and the Day screen's `AppBottomDock`
-          // visual language.
-          Positioned(
-            left: theme.spacingMd,
-            bottom: theme.spacingMd,
-            child: SafeArea(
-              top: false,
-              child: AppDockPane(
-                theme: theme,
-                children: [
-                  AppDockIconButton(
-                    theme: theme,
-                    // arrow_back, not close — same fix and same reasoning
-                    // as the Tasks tab's own dock above: `_close` pops
-                    // this whole screen, a real "go back," not a
-                    // dismiss/cancel X.
-                    icon: Icons.arrow_back_rounded,
-                    tooltip: 'Close zones',
-                    selected: false,
-                    onTap: _close,
-                  ),
-                  AppDockIconButton(
-                    theme: theme,
-                    icon: _editing ? Icons.check_rounded : Icons.edit_outlined,
-                    tooltip: _editing ? 'Finish editing' : 'Edit zones',
-                    selected: _editing,
-                    onTap: () {
-                      _cancelPaint();
-                      ref.read(zoneEditSelectionProvider.notifier).clear();
-                      setState(() => _editing = !_editing);
-                    },
                   ),
                 ],
               ),
             ),
-          ),
-          // **2026-09-20 — moved AFTER the bottom dock above.** Reported
-          // directly: the dock painted on top of this sheet while naming
-          // a new zone, since both are plain `Positioned` siblings in the
-          // same `Stack` and the dock used to come last. Stack children
-          // paint in order, so the sheet now comes last instead.
-          if (_pending case final target?)
-            NewZoneSheet(
-              key: ValueKey(target),
-              target: target,
-              onDismiss: _cancelPaint,
+            if (_pending == null)
+              AppFloatingCreateButton(
+                onPressed: () {
+                  final now = DateTime.now();
+                  final start = (now.hour * 60).clamp(0, 1380);
+                  final paint = ZonePaintSelection(
+                    now.weekday,
+                    now.weekday,
+                    start,
+                    start + 60,
+                  );
+                  setState(() {
+                    _paint = paint;
+                    _pending = _target(paint);
+                  });
+                  _scrollPendingIntoView(start);
+                },
+              ),
+            // **2026-09-20 — Close (leftmost) and Edit, in a floating
+            // bottom dock.** Requested directly: "in zones edit and close
+            // (close on the leftmost)" — matching the Tasks tab's own new
+            // dock (Close alone) and the Day screen's `AppBottomDock`
+            // visual language.
+            //
+            // **2026-09-24 — now branches on `selected.isEmpty`, same shape
+            // as the Tasks tab's own dock above.** Requested directly:
+            // "spacing of tooling in zone edit mode we have tooling opened
+            // on top... align with edit tasks and should be at bottom...
+            // separated from go back arrow." This dock used to be a fixed
+            // single pane (just the back arrow) regardless of selection
+            // state, while the Edit/Remove/Clear tooling lived in a
+            // separate top `Row` instead — moved here, and the back arrow
+            // split into its own pane rather than combined with Edit/Remove
+            // (see the Tasks tab's own matching fix and its doc comment).
+            Positioned(
+              left: theme.spacingMd,
+              bottom: theme.spacingMd,
+              child: SafeArea(
+                top: false,
+                child: _zoneContextDock(selected, zones),
+              ),
             ),
-        ],
+            // **2026-09-20 — moved AFTER the bottom dock above.** Reported
+            // directly: the dock painted on top of this sheet while naming
+            // a new zone, since both are plain `Positioned` siblings in the
+            // same `Stack` and the dock used to come last. Stack children
+            // paint in order, so the sheet now comes last instead.
+            if (_pending case final target?)
+              NewZoneSheet(
+                key: ValueKey(target),
+                target: target,
+                onDismiss: _cancelPaint,
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -1541,18 +1988,12 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
       // exactly back-to-back rendered with their blocks visually
       // touching. See docs/DESIGN_SYSTEM.md's "Zone pane indicator"
       // section.
-      height: math.max(
-        5,
-        (end - start) * _pixelsPerMinute - zoneBackgroundGap,
-      ),
+      height: math.max(5, (end - start) * _pixelsPerMinute - zoneBackgroundGap),
       isSelected: selected,
       dayColumnLeft: dayColumnLeft,
       liveStartMinutes: selected && _moveKind != null ? start : null,
       liveEndMinutes: selected && _moveKind != null ? end : null,
-      onTap: () {
-        setState(() => _editing = true);
-        ref.read(zoneEditSelectionProvider.notifier).toggle(zone.id);
-      },
+      onTap: () => ref.read(zoneEditSelectionProvider.notifier).toggle(zone.id),
       // A vertical drag means two different things depending on whether
       // this zone was ALREADY selected when the finger went down:
       // selected -> move it (and every other selected zone) in time, the
@@ -1702,3 +2143,122 @@ class _Phantom extends StatelessWidget {
 // without a second private copy. See that widget's own doc comment for
 // the full history and `_zoneGridTabOptions` above for this screen's
 // options list.
+
+/// Which edge of the pending-zone marquee a resize handle drags.
+///
+/// [top]/[bottom] change the zone's start/end TIME; [left]/[right] change
+/// how many WEEKDAYS it spans. See `_ZoneGridScreenState._resizeMarquee`.
+enum _MarqueeEdge { top, bottom, left, right }
+
+/// A [PanGestureRecognizer] that commits at half the normal touch slop, so
+/// dragging the unsaved marquee's BODY beats the grid's own enclosing
+/// vertical scrollable.
+///
+/// Same mechanism (and the same reasoning) as
+/// `_EagerHorizontalDragRecognizer` in `zone_grid_block.dart` — see that
+/// class for the full write-up. In short: both recognizers race the same
+/// pointer and whichever passes its slop first takes the gesture, so a
+/// plain `onPan*` here lost to the scroll view and the marquee never
+/// moved at all. The screen's own `physics` gate cannot help, because the
+/// flag it keys off (`_marqueeMoveOrigin`) is set by the very `onStart`
+/// that was losing.
+///
+/// Scoped to the marquee's own rectangle, deliberately: the rest of the
+/// grid keeps ordinary scrolling while a marquee is on screen, which is
+/// the requested "tap and move > then should just be scroll" behaviour.
+class _EagerPanRecognizer extends PanGestureRecognizer {
+  _EagerPanRecognizer({super.debugOwner});
+
+  /// Claims the pointer the instant it lands, rather than waiting to
+  /// out-race the scrollable past touch slop.
+  ///
+  /// Lowering the slop threshold (the approach
+  /// `_EagerHorizontalDragRecognizer` uses, and which works there) is NOT
+  /// enough here: that one only has to beat a VERTICAL recognizer on a
+  /// horizontal movement, so the two cross their thresholds at clearly
+  /// different times. This recognizer is a PAN competing with the scroll
+  /// view on the very same axis, so a vertical drag satisfies both at
+  /// essentially the same moment and the arena's own ordering decides —
+  /// which the scrollable won every time, leaving the marquee immovable.
+  ///
+  /// Declaring victory in `addAllowedPointer` is safe precisely because
+  /// this recognizer is scoped to the marquee's own rectangle: a touch
+  /// that lands there is unambiguously aimed at the marquee, never at the
+  /// grid behind it. Everywhere else on the grid keeps ordinary scrolling.
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    super.addAllowedPointer(event);
+    resolve(GestureDisposition.accepted);
+  }
+}
+
+/// One resize dot on the pending-zone marquee — the four-sided
+/// counterpart to `ResizeHandle` (`features/timeline/resize_handle.dart`),
+/// which only ever needed top/bottom and so wires vertical drags only.
+///
+/// Deliberately the SAME visual as that widget's own dot (a `spacingSm`
+/// `colorAccent` circle) so "this edge is draggable" reads identically on
+/// a zone marquee and on a task pill. The gesture differs: this one takes
+/// pan (both axes) rather than a vertical drag, since the same widget
+/// serves horizontal edges too.
+///
+/// Positioned by the caller at an edge's own midpoint — centred on the
+/// boundary via [FractionalTranslation], per the request that dots sit
+/// "in the middle of the marque horz middle and vert middle."
+class _MarqueeResizeHandle extends StatelessWidget {
+  const _MarqueeResizeHandle({
+    required this.theme,
+    required this.onDrag,
+    required this.onDragEnd,
+    required this.vertical,
+  });
+
+  final AmbleTheme theme;
+  final ValueChanged<Offset> onDrag;
+  final VoidCallback onDragEnd;
+
+  /// Whether this handle drags along the vertical axis (a top/bottom
+  /// edge, changing time) or the horizontal one (a left/right edge,
+  /// changing the weekday span).
+  final bool vertical;
+
+  @override
+  Widget build(BuildContext context) {
+    final dotSize = theme.spacingSm;
+    // An AXIS-SPECIFIC recognizer, never `onPan*`. The grid scrolls
+    // vertically and `ZoneGridBlock` already claims both axes for its own
+    // move/extend drags, so a pan recognizer here loses the arena to the
+    // scrollable and the handle silently takes no drags at all (observed
+    // directly: the dots rendered and hit-tested fine, but the callback
+    // never fired once). Declaring the ONE axis this edge actually needs
+    // is what `ZoneGridBlock` itself does, for exactly this reason.
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onVerticalDragStart: vertical ? (d) => onDrag(d.globalPosition) : null,
+      onVerticalDragUpdate: vertical ? (d) => onDrag(d.globalPosition) : null,
+      onVerticalDragEnd: vertical ? (_) => onDragEnd() : null,
+      onVerticalDragCancel: vertical ? onDragEnd : null,
+      onHorizontalDragStart: vertical ? null : (d) => onDrag(d.globalPosition),
+      onHorizontalDragUpdate: vertical ? null : (d) => onDrag(d.globalPosition),
+      onHorizontalDragEnd: vertical ? null : (_) => onDragEnd(),
+      onHorizontalDragCancel: vertical ? null : onDragEnd,
+      // A generous invisible touch area around a small visible dot —
+      // the same target-vs-visual split `ResizeHandle` documents, sized
+      // to `spacingMinTapTarget` so these stay grabbable on a dense grid.
+      child: SizedBox(
+        width: theme.spacingMinTapTarget,
+        height: theme.spacingMinTapTarget,
+        child: Center(
+          child: Container(
+            width: dotSize,
+            height: dotSize,
+            decoration: BoxDecoration(
+              color: theme.colorAccent,
+              shape: BoxShape.circle,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

@@ -72,6 +72,13 @@ class AppContextMenu extends StatelessWidget {
   /// local `PopupRoute` built for exactly this one shape, rather than
   /// fighting a stock Flutter overlay's own opaque chrome. Same [ActionRow]
   /// content as [show]; only the presentation container differs.
+  ///
+  /// **Only for a menu opened WITHOUT a still-down finger** (e.g. the
+  /// second open path added alongside [AppLongPressContextMenu]: tapping an
+  /// already-selected Inbox Section tab). A route can't receive move/end
+  /// events from a pointer a DIFFERENT widget's recognizer already owns —
+  /// see [AppLongPressContextMenu]'s own doc comment for the seamless
+  /// press-drag-release case this can't cover.
   static Future<void> showAt(
     BuildContext context, {
     required Offset position,
@@ -88,6 +95,9 @@ class AppContextMenu extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        // AppSheet's own outer padding no longer provides a top inset
+        // (2026-09-23 — "top padding should be in header").
+        SizedBox(height: theme.spacingLg),
         for (final action in actions)
           ActionRow(
             theme: theme,
@@ -172,33 +182,10 @@ class _AnchoredContextMenuContent extends StatelessWidget {
   final List<AppContextMenuAction> actions;
   final Animation<double> animation;
 
-  /// How far the panel's own top-left sits from [anchor] — enough that the
-  /// panel doesn't render directly under the pressing finger.
-  static const _anchorOffset = Offset(-8, 8);
-
-  static const _panelWidth = 200.0;
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
-    final screenSize = MediaQuery.sizeOf(context);
-    final safePadding = MediaQuery.paddingOf(context);
-
-    // Clamped so the panel never renders partly off-screen — a long
-    // Section-tab name near the right edge, or a press near the bottom nav,
-    // would otherwise push the panel past the viewport.
-    final rowHeight = kMinInteractiveDimension;
-    final panelHeight = actions.length * rowHeight + theme.spacingSm * 2;
-    var left = anchor.dx + _anchorOffset.dx;
-    var top = anchor.dy + _anchorOffset.dy;
-    left = left.clamp(
-      theme.spacingSm,
-      screenSize.width - _panelWidth - theme.spacingSm,
-    );
-    top = top.clamp(
-      safePadding.top + theme.spacingSm,
-      screenSize.height - safePadding.bottom - panelHeight - theme.spacingSm,
-    );
+    final geometry = _MenuGeometry.resolve(context, theme, anchor, actions);
 
     return GestureDetector(
       // Tapping anywhere outside the panel dismisses it — the panel's own
@@ -208,9 +195,9 @@ class _AnchoredContextMenuContent extends StatelessWidget {
       child: Stack(
         children: [
           Positioned(
-            left: left,
-            top: top,
-            width: _panelWidth,
+            left: geometry.left,
+            top: geometry.top,
+            width: _MenuGeometry.panelWidth,
             child: FadeTransition(
               opacity: animation,
               child: ScaleTransition(
@@ -225,7 +212,14 @@ class _AnchoredContextMenuContent extends StatelessWidget {
                   // ActionRow's own GestureDetector underneath this one.
                   onTap: () {},
                   behavior: HitTestBehavior.opaque,
-                  child: _GlassMenuPanel(theme: theme, actions: actions),
+                  child: _GlassMenuPanel(
+                    theme: theme,
+                    actions: actions,
+                    onActionTap: (action) {
+                      Navigator.of(context).pop();
+                      action.onTap();
+                    },
+                  ),
                 ),
               ),
             ),
@@ -236,19 +230,85 @@ class _AnchoredContextMenuContent extends StatelessWidget {
   }
 }
 
+/// Shared position/size math for the popover panel — used by both
+/// [_AnchoredContextMenuContent] (the tap-to-open route) and
+/// [AppLongPressContextMenu] (the press-drag-release overlay), so the two
+/// entry points place and size the panel identically.
+class _MenuGeometry {
+  const _MenuGeometry({required this.left, required this.top});
+
+  final double left;
+  final double top;
+
+  static const panelWidth = 200.0;
+
+  /// How far the panel's own top-left sits from the anchor — enough that
+  /// the panel doesn't render directly under the pressing finger.
+  static const _anchorOffset = Offset(-8, 8);
+
+  static double rowHeight(AmbleTheme theme) => kMinInteractiveDimension;
+
+  static double panelHeight(AmbleTheme theme, int actionCount) =>
+      actionCount * rowHeight(theme) + theme.spacingSm * 2;
+
+  /// Clamped so the panel never renders partly off-screen — a long
+  /// Section-tab name near the right edge, or a press near the bottom nav,
+  /// would otherwise push the panel past the viewport.
+  static _MenuGeometry resolve(
+    BuildContext context,
+    AmbleTheme theme,
+    Offset anchor,
+    List<AppContextMenuAction> actions,
+  ) {
+    final screenSize = MediaQuery.sizeOf(context);
+    final safePadding = MediaQuery.paddingOf(context);
+    final height = panelHeight(theme, actions.length);
+
+    var left = anchor.dx + _anchorOffset.dx;
+    var top = anchor.dy + _anchorOffset.dy;
+    left = left.clamp(
+      theme.spacingSm,
+      screenSize.width - panelWidth - theme.spacingSm,
+    );
+    top = top.clamp(
+      safePadding.top + theme.spacingSm,
+      screenSize.height - safePadding.bottom - height - theme.spacingSm,
+    );
+    return _MenuGeometry(left: left, top: top);
+  }
+}
+
 /// The popover's own surface — same glass recipe [GlassPillSurface] already
 /// establishes (`colorTextPrimary` tinted at low alpha, `BackdropFilter` at
 /// `blurOverlaySigma`, per its own doc comment on why NOT
-/// `colorSurfaceBlurOverlay` directly), sized to `radiusXl` rather than
-/// `radiusPill` — a menu panel is a rounded rectangle, not a pill, so it
-/// borrows the same "more rounded" corner every modal sheet uses
-/// (`theme.radiusModal`) instead of a fully-round shape that wouldn't suit
-/// a multi-row list.
+/// `colorSurfaceBlurOverlay` directly), rounded to `theme.radiusModal` — a
+/// menu panel is a rounded rectangle, not a pill, so it borrows the same
+/// "more rounded" corner every modal sheet uses instead of a fully-round
+/// shape that wouldn't suit a multi-row list.
+///
+/// **2026-09-23 — [highlightedIndex], for [AppLongPressContextMenu]'s own
+/// press-drag-hover-release interaction.** Null (no row highlighted) for
+/// [AppContextMenu.showAt]'s plain tap-to-open route, which has no live
+/// hover state to show — a highlight only means something while a finger
+/// is still down and moving over the panel.
 class _GlassMenuPanel extends StatelessWidget {
-  const _GlassMenuPanel({required this.theme, required this.actions});
+  const _GlassMenuPanel({
+    required this.theme,
+    required this.actions,
+    required this.onActionTap,
+    this.highlightedIndex,
+    this.rowKeys,
+  });
 
   final AmbleTheme theme;
   final List<AppContextMenuAction> actions;
+  final ValueChanged<AppContextMenuAction> onActionTap;
+  final int? highlightedIndex;
+
+  /// One [GlobalKey] per row, supplied by [AppLongPressContextMenu] so it
+  /// can hit-test a live drag against each row's real on-screen bounds —
+  /// null for [AppContextMenu.showAt], which has no drag to hit-test.
+  final List<GlobalKey>? rowKeys;
 
   @override
   Widget build(BuildContext context) {
@@ -278,32 +338,232 @@ class _GlassMenuPanel extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  for (final action in actions)
-                    Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: theme.spacingMd,
-                      ),
-                      child: ActionRow(
-                        theme: theme,
-                        icon: action.icon,
-                        label: action.label,
-                        color: action.isDestructive
-                            ? theme.colorTaskAlert
-                            : null,
-                        // Pops the menu route FIRST, then runs the action —
-                        // same pop-then-select order `showMenu`'s own
-                        // PopupMenuItem used, kept here even though this is
-                        // no longer built on PopupMenuItem.
-                        onTap: () {
-                          Navigator.of(context).pop();
-                          action.onTap();
-                        },
-                      ),
+                  for (var i = 0; i < actions.length; i++)
+                    _MenuRow(
+                      key: rowKeys?[i],
+                      theme: theme,
+                      action: actions[i],
+                      highlighted: highlightedIndex == i,
+                      onTap: () => onActionTap(actions[i]),
                     ),
                 ],
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One row's own hover-highlight wrapper around [ActionRow] — a plain
+/// `colorTextPrimary`-tinted wash, the same "subtle neutral tint" token
+/// [AppButton.subtleTint] already names, so a hovered row reads as "about
+/// to be pressed" the same way [AppPressFeedback]'s own ripple would, even
+/// though a live drag-hover has no ripple animation of its own to play.
+class _MenuRow extends StatelessWidget {
+  const _MenuRow({
+    super.key,
+    required this.theme,
+    required this.action,
+    required this.highlighted,
+    required this.onTap,
+  });
+
+  final AmbleTheme theme;
+  final AppContextMenuAction action;
+  final bool highlighted;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: highlighted
+            ? theme.colorTextPrimary.withValues(alpha: 0.1)
+            : null,
+        borderRadius: BorderRadius.circular(theme.radiusSm),
+      ),
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: theme.spacingMd),
+        child: ActionRow(
+          theme: theme,
+          icon: action.icon,
+          label: action.label,
+          color: action.isDestructive ? theme.colorTaskAlert : null,
+          onTap: onTap,
+        ),
+      ),
+    );
+  }
+}
+
+/// Wraps [child] with a long-press that opens the anchored glass popover
+/// ([AppContextMenu.showAt]'s same visuals) and keeps tracking the SAME
+/// press for a seamless "long-press, then drag onto an item while still
+/// down, release to select" interaction — the standard iOS/Slack
+/// context-menu gesture. Requested directly: "long press > popover shows >
+/// move finger on edit > hover state > release = tap."
+///
+/// **Why not [AppContextMenu.showAt]:** that entry point pushes a real
+/// `Navigator` route, whose own gesture arena can't receive move/end
+/// events from a pointer a DIFFERENT widget's `GestureDetector` already
+/// owns — once the route opens mid-gesture, the original finger's
+/// movement/release just falls through with nothing listening. This widget
+/// instead keeps the ENTIRE gesture (start → move → end) in one
+/// [GestureDetector], inserts the menu as a plain [OverlayEntry] rather
+/// than a route (so nothing new claims the pointer), and hit-tests the
+/// live drag position against each row's own [GlobalKey] bounds —
+/// mirroring `inbox_screen.dart`'s own `_DraggableInboxRow`
+/// (`onLongPressMoveUpdate` → `targets.hitTest` → `onLongPressEnd`
+/// resolves), the established pattern in this codebase for exactly this
+/// shape of gesture, just adapted to a menu rather than a drop target.
+class AppLongPressContextMenu extends StatefulWidget {
+  const AppLongPressContextMenu({
+    super.key,
+    required this.actions,
+    required this.child,
+  });
+
+  final List<AppContextMenuAction> actions;
+  final Widget child;
+
+  /// Shorter than [kLongPressTimeout] (500ms) — reported directly as too
+  /// slow a gap before the menu appeared.
+  static const triggerDuration = Duration(milliseconds: 280);
+
+  @override
+  State<AppLongPressContextMenu> createState() =>
+      _AppLongPressContextMenuState();
+}
+
+class _AppLongPressContextMenuState extends State<AppLongPressContextMenu> {
+  OverlayEntry? _entry;
+  final _rowKeys = <GlobalKey>[];
+
+  /// Which row (by index into [AppLongPressContextMenu.actions]) the drag
+  /// currently sits over, or null. A [ValueNotifier] rather than `setState`
+  /// on this widget itself — only the overlay's own content needs to
+  /// rebuild on hover change, not [widget.child] underneath it.
+  final _hovered = ValueNotifier<int?>(null);
+
+  @override
+  void dispose() {
+    _removeOverlay();
+    _hovered.dispose();
+    super.dispose();
+  }
+
+  void _onLongPressStart(LongPressStartDetails details) {
+    _rowKeys
+      ..clear()
+      ..addAll(List.generate(widget.actions.length, (_) => GlobalKey()));
+    _hovered.value = null;
+    _insertOverlay(details.globalPosition);
+  }
+
+  void _onLongPressMoveUpdate(LongPressMoveUpdateDetails details) {
+    _hovered.value = _hitTestRow(details.globalPosition);
+  }
+
+  void _onLongPressEnd(LongPressEndDetails details) {
+    final index = _hitTestRow(details.globalPosition);
+    _removeOverlay();
+    if (index != null) widget.actions[index].onTap();
+  }
+
+  void _onLongPressCancel() => _removeOverlay();
+
+  int? _hitTestRow(Offset globalPosition) {
+    for (var i = 0; i < _rowKeys.length; i++) {
+      final renderObject = _rowKeys[i].currentContext?.findRenderObject();
+      if (renderObject is! RenderBox || !renderObject.attached) continue;
+      final topLeft = renderObject.localToGlobal(Offset.zero);
+      if ((topLeft & renderObject.size).contains(globalPosition)) return i;
+    }
+    return null;
+  }
+
+  void _insertOverlay(Offset anchor) {
+    _entry = OverlayEntry(
+      builder: (context) => _LiveAnchoredMenu(
+        anchor: anchor,
+        actions: widget.actions,
+        rowKeys: _rowKeys,
+        hovered: _hovered,
+        // Tapping a row directly (finger lifted and re-tapped, rather
+        // than dragged-then-released in one motion) still works — the
+        // overlay isn't a route, so nothing auto-pops it on tap; this
+        // closes it explicitly first.
+        onActionTap: (action) {
+          _removeOverlay();
+          action.onTap();
+        },
+        onDismiss: _removeOverlay,
+      ),
+    );
+    Overlay.of(context).insert(_entry!);
+  }
+
+  void _removeOverlay() {
+    _entry?.remove();
+    _entry = null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onLongPressStart: _onLongPressStart,
+      onLongPressMoveUpdate: _onLongPressMoveUpdate,
+      onLongPressEnd: _onLongPressEnd,
+      onLongPressCancel: _onLongPressCancel,
+      child: widget.child,
+    );
+  }
+}
+
+/// The overlay content for [AppLongPressContextMenu] — the same
+/// [_GlassMenuPanel] visuals [AppContextMenu.showAt] uses, but driven by an
+/// externally-owned [hovered] notifier instead of the route's own
+/// animation, and with no entrance transition (an [OverlayEntry] has no
+/// animation controller of its own the way a [PopupRoute] does; the menu
+/// simply appears the instant the long-press fires, which reads as
+/// instantaneous rather than needing a fade-in of its own for this
+/// particular interaction).
+class _LiveAnchoredMenu extends StatelessWidget {
+  const _LiveAnchoredMenu({
+    required this.anchor,
+    required this.actions,
+    required this.rowKeys,
+    required this.hovered,
+    required this.onActionTap,
+    required this.onDismiss,
+  });
+
+  final Offset anchor;
+  final List<AppContextMenuAction> actions;
+  final List<GlobalKey> rowKeys;
+  final ValueNotifier<int?> hovered;
+  final ValueChanged<AppContextMenuAction> onActionTap;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context).extension<AmbleTheme>()!;
+    final geometry = _MenuGeometry.resolve(context, theme, anchor, actions);
+
+    return Positioned(
+      left: geometry.left,
+      top: geometry.top,
+      width: _MenuGeometry.panelWidth,
+      child: ValueListenableBuilder<int?>(
+        valueListenable: hovered,
+        builder: (context, highlightedIndex, _) => _GlassMenuPanel(
+          theme: theme,
+          actions: actions,
+          rowKeys: rowKeys,
+          highlightedIndex: highlightedIndex,
+          onActionTap: onActionTap,
         ),
       ),
     );

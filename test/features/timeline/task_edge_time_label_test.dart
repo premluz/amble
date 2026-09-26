@@ -48,6 +48,17 @@ void main() {
     expect(decoration.color, AmbleTheme.light.colorAccent);
   });
 
+  testWidgets('uses the shared compact task-time style', (tester) async {
+    await pump(tester, const TimeOfDay(hour: 14, minute: 0));
+
+    final text = tester.widget<Text>(find.text('2:00 PM'));
+    expect(text.style?.fontSize, AmbleTheme.light.textTaskEdgeTime.fontSize);
+    expect(
+      text.style?.fontFamily,
+      AmbleTheme.light.textTaskEdgeTime.fontFamily,
+    );
+  });
+
   testWidgets('the hairline also uses the accent color, matching the pill', (
     tester,
   ) async {

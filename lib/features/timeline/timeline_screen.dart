@@ -1,3 +1,5 @@
+import '../../core/widgets/what_matters_motion.dart';
+
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -9,10 +11,10 @@ import '../../core/feature_flags.dart';
 import '../../core/haptics.dart';
 import '../../core/haptics_provider.dart';
 import '../../core/tokens/semantic_theme.dart';
-import '../../core/widgets/app_bottom_dock.dart';
 import '../../core/widgets/app_floating_create_button.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
 import '../../core/widgets/app_undo_toast.dart';
+import '../../core/widgets/app_view_transition.dart';
 import '../../core/widgets/selected_pill_border.dart';
 import '../../shared/models/category.dart';
 import '../../shared/models/external_calendar_event.dart';
@@ -39,7 +41,6 @@ import '../../shared/services/move_resize_undo.dart';
 import '../tracked_behavior/behavior_outcome_prompt.dart';
 import '../task_detail/task_detail_sheet.dart';
 import '../task_detail/task_remove.dart';
-import '../zone_grid/zone_grid_screen.dart';
 import 'app_calendar_header.dart';
 import 'timeline_pinch_zoom.dart';
 import 'collapsed_stack_layout.dart';
@@ -234,10 +235,7 @@ void _commitZoneCascade(
   if (moves == null) return;
 
   final zoneIds = moves.map((m) => m.zoneId).toSet();
-  final taskIds = moves
-      .expand((m) => m.taskMoves)
-      .map((t) => t.taskId)
-      .toSet();
+  final taskIds = moves.expand((m) => m.taskMoves).map((t) => t.taskId).toSet();
   commitZoneChangeWithUndo(
     context,
     ref,
@@ -458,7 +456,9 @@ class TimelineScreen extends ConsumerWidget {
       if (next != null) ref.read(armedEditTaskProvider.notifier).clear();
     });
 
-    return Container(
+    return WhatMattersScene(
+      enabled: whatMattersEnabled,
+      child: Container(
       color: theme.colorSurfaceTimeline,
       child: SafeArea(
         // The floating "+" (AppFloatingCreateButton, in the outer Stack
@@ -513,89 +513,8 @@ class TimelineScreen extends ConsumerWidget {
                         ref.read(editModeEnabledProvider.notifier).toggle(),
                     child: Stack(
                       children: [
-                        AnimatedSwitcher(
-                          // Task<->Zone view switch — requested directly:
-                          // "remove animation completely for switching
-                          // views... no animation." Zero duration rather
-                          // than removing AnimatedSwitcher outright: the
-                          // transitionBuilder's own "which entry is
-                          // entering" key comparison and the Stack-based
-                          // layoutBuilder below both still apply cleanly
-                          // at zero duration (children simply swap on the
-                          // next frame, no visible transition), so this
-                          // stays the smaller, safer change over
-                          // restructuring to a plain conditional.
-                          duration: Duration.zero,
-                          switchInCurve: theme.curveStandard,
-                          switchOutCurve: theme.curveStandard,
-                          transitionBuilder: (child, animation) {
-                            // Every view switch must read right-to-left, both
-                            // directions — reported directly, twice: first that the
-                            // outgoing view slid right instead of left, then (after
-                            // an attempted fix using animation.status) that the
-                            // Task view stopped animating in at all, plus real
-                            // clipping ("left side cut off").
-                            //
-                            // Root cause of the SECOND attempt's failure:
-                            // AnimatedSwitcher calls transitionBuilder(child,
-                            // animation) ONCE, synchronously, at the moment an entry
-                            // is CREATED — before its controller.forward()/.reverse()
-                            // has actually been called (see _addEntryForNewChild in
-                            // the framework source: _newEntry builds the transition
-                            // BEFORE forward()/reverse() runs). So `animation.status`
-                            // read at that instant is always still `dismissed`, for
-                            // BOTH the incoming and outgoing entry — never `forward`.
-                            // That's why the Task view (whichever entry happened to
-                            // build second) silently took the wrong branch and never
-                            // animated in.
-                            //
-                            // The reliable signal instead: `child` is the ACTUAL
-                            // widget passed in for THIS entry, and its `key` is
-                            // known — compare it against which view is CURRENTLY
-                            // selected (the enclosing build's own `zoneViewEnabled`,
-                            // captured by this closure) rather than the animation's
-                            // own transient status. This entry is "entering" if and
-                            // only if its key matches the view that's actually
-                            // selected right now.
-                            final isEntering =
-                                child.key ==
-                                (zoneViewEnabled
-                                    ? const ValueKey('zone-view')
-                                    : const ValueKey('task-view'));
-                            final slide = Tween<Offset>(
-                              begin: isEntering
-                                  ? const Offset(0.15, 0)
-                                  : Offset.zero,
-                              end: isEntering
-                                  ? Offset.zero
-                                  : const Offset(-0.15, 0),
-                            ).animate(animation);
-                            return FadeTransition(
-                              opacity: animation,
-                              child: SlideTransition(
-                                position: slide,
-                                child: child,
-                              ),
-                            );
-                          },
-                          // clipBehavior: Clip.none — real bug, reported directly
-                          // ("list and zone screens are positioned off screen, left
-                          // side is cut off"): Stack's OWN default is
-                          // Clip.hardEdge, and the custom layoutBuilder below
-                          // (needed so both the outgoing and incoming full-width
-                          // views can slide past the Stack's own bounds mid-
-                          // transition) inherited that default silently. Also
-                          // switched alignment to center, matching
-                          // AnimatedSwitcher.defaultLayoutBuilder's own choice —
-                          // topLeft mis-aligned a translated child against a
-                          // Stack that isn't naturally sized to its own top-left
-                          // corner once children can slide outside its bounds.
-                          layoutBuilder: (currentChild, previousChildren) =>
-                              Stack(
-                                alignment: Alignment.center,
-                                clipBehavior: Clip.none,
-                                children: [...previousChildren, ?currentChild],
-                              ),
+                          AppViewTransition(
+                            viewId: zoneViewEnabled ? 'zone-view' : 'task-view',
                           child: zoneViewEnabled
                               // Same empty-day treatment as the Task view below: the
                               // timeline still renders and scrolls, with the message
@@ -632,8 +551,7 @@ class TimelineScreen extends ConsumerWidget {
                                       externalEvents:
                                           ref.watch(
                                                 devHideImportedTasksProvider,
-                                              ) ||
-                                              whatMattersEnabled
+                                            )
                                           ? const <ExternalCalendarEvent>[]
                                           : externalEvents,
                                       theme: theme,
@@ -700,7 +618,8 @@ class TimelineScreen extends ConsumerWidget {
                                       // sheet (Edit/Duplicate/Remove) — requested
                                       // directly. The sheet stays in the codebase,
                                       // unused for now, in case it's wanted again.
-                                      onTaskTap: (task) => showTaskDetailSheet(
+                                        onTaskTap: (task) =>
+                                            showTaskDetailSheet(
                                         context,
                                         task: task,
                                       ),
@@ -751,9 +670,7 @@ class TimelineScreen extends ConsumerWidget {
                                       // ZoneDayTimeline call site's own
                                       // identical `whatMattersEnabled`
                                       // check above.
-                                      externalEvents: whatMattersEnabled
-                                          ? const <ExternalCalendarEvent>[]
-                                          : externalEvents,
+                                        externalEvents: externalEvents,
                                       selectedDate: selectedDate,
                                       // **2026-09-12 — no longer read from the
                                       // setting.** List view (this being
@@ -784,7 +701,8 @@ class TimelineScreen extends ConsumerWidget {
                                       // (Edit/Duplicate/Remove) — requested directly.
                                       // The sheet stays in the codebase, unused for
                                       // now, in case it's wanted again.
-                                      onTaskTap: (task) => showTaskDetailSheet(
+                                        onTaskTap: (task) =>
+                                            showTaskDetailSheet(
                                         context,
                                         task: task,
                                       ),
@@ -800,7 +718,9 @@ class TimelineScreen extends ConsumerWidget {
                                             context,
                                             initialScheduledAt: startAt,
                                             initialTimeOfDay:
-                                                TimeOfDay.fromDateTime(startAt),
+                                                  TimeOfDay.fromDateTime(
+                                                    startAt,
+                                                  ),
                                           ),
                                       // Hold-and-drag placement release —
                                       // requested directly: "on release we
@@ -893,7 +813,8 @@ class TimelineScreen extends ConsumerWidget {
                                         if (wasArmed) return;
                                         ref
                                             .read(
-                                              pendingTaskDraftProvider.notifier,
+                                                pendingTaskDraftProvider
+                                                    .notifier,
                                             )
                                             .start(
                                               scheduledAt: tappedAt,
@@ -909,7 +830,8 @@ class TimelineScreen extends ConsumerWidget {
                                       ),
                                       onSavedTaskConsumed: () => ref
                                           .read(
-                                            recentlySavedTaskProvider.notifier,
+                                              recentlySavedTaskProvider
+                                                  .notifier,
                                           )
                                           .clear(),
                                       disableClustering: ref.watch(
@@ -1054,8 +976,8 @@ class TimelineScreen extends ConsumerWidget {
                                         AppUndoToast.show(
                                           context: context,
                                           message: "Removed '${zone.title}'",
-                                          onUndo: () => zoneNotifier
-                                              .updateZone(
+                                            onUndo: () =>
+                                                zoneNotifier.updateZone(
                                                 Zone.fromJson(snapshot),
                                               ),
                                         );
@@ -1103,7 +1025,8 @@ class TimelineScreen extends ConsumerWidget {
             // already suppressed for this case in `main.dart`'s own
             // `hideBottomNav`; this is the other half of that same
             // "only the mini sheet" rule.
-            if (!editModeEnabled && ref.watch(pendingTaskDraftProvider) == null)
+              if (!editModeEnabled &&
+                  ref.watch(pendingTaskDraftProvider) == null)
               AppFloatingCreateButton(
                 onPressed: () {
                   // Defaults to whatever time is vertically centered in
@@ -1125,41 +1048,9 @@ class TimelineScreen extends ConsumerWidget {
                   );
                 },
               ),
-            // The Day screen's own contextual control dock — "List ·
-            // Timeline · Edit · What Matters," requested directly as the
-            // bottom half of the nav redesign: "Bottom: choose how to work
-            // with your day." Positioned bottom-left, independently of
-            // AppFloatingCreateButton's bottom-right "+" (same "floating,
-            // not welded together" reasoning that widget's own doc
-            // comment already establishes). Hidden under the exact same
-            // conditions as the "+" — Edit Mode and a live quick-create
-            // draft both already take over this screen's bottom real
-            // estate.
-            if (showHeader &&
-                !editModeEnabled &&
-                ref.watch(pendingTaskDraftProvider) == null)
-              Positioned(
-                left: theme.spacingMd,
-                bottom: theme.spacingMd,
-                child: SafeArea(
-                  top: false,
-                  child: AppBottomDock(
-                    activeView: zoneViewEnabled
-                        ? AppBottomDockView.list
-                        : AppBottomDockView.timeline,
-                    onSelectView: (view) => ref
-                        .read(zoneViewEnabledSettingProvider.notifier)
-                        .set(view == AppBottomDockView.list),
-                    onEditTap: () => showEditScreen(context),
-                    whatMattersEnabled: whatMattersEnabled,
-                    onWhatMattersTap: () => ref
-                        .read(whatMattersEnabledSettingProvider.notifier)
-                        .set(!whatMattersEnabled),
-                  ),
-                ),
-              ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -1977,9 +1868,27 @@ class _DayTimelineState extends State<_DayTimeline> {
     final restingClusters = widget.disableClustering
         ? const <OverlapCluster>[]
         : detectOverlapClusters(blocks);
-    final slots = _dragLastOrder(
-      _withClusterLanes(layoutOverlappingTasks(blocks), clusters),
+    final focusLanes = WhatMattersPhase.compactLanesOf(context);
+    final focusedBlocks = blocks
+        .where((block) => block is Task && block.isImportant)
+        .toList();
+    final focusedSlots = _withClusterLanes(
+      layoutOverlappingTasks(focusedBlocks),
+      widget.disableClustering
+          ? const []
+          : detectOverlapClusters(focusedBlocks),
     );
+    final focusedById = {for (final slot in focusedSlots) slot.block.id: slot};
+    final slots = _dragLastOrder([
+      for (final slot in _withClusterLanes(
+        layoutOverlappingTasks(blocks),
+        clusters,
+      ))
+        if (focusLanes && focusedById.containsKey(slot.block.id))
+          focusedById[slot.block.id]!
+        else
+          slot,
+    ]);
     // The RESTING lane layout — computed from `restingClusters`, i.e.
     // WITHOUT the drag exclusion above, so it is stable for the whole
     // duration of a drag.
@@ -1993,10 +1902,9 @@ class _DayTimelineState extends State<_DayTimeline> {
     // count by one, so the band narrowed and every name jumped left for
     // the duration of the drag. The ghost occupies its lane visually, so
     // the layout has to reserve it too.
-    final ghostSlots = _withClusterLanes(
-      layoutOverlappingTasks(blocks),
-      restingClusters,
-    );
+    final ghostSlots = focusLanes && focusedSlots.isNotEmpty
+        ? focusedSlots
+        : _withClusterLanes(layoutOverlappingTasks(blocks), restingClusters);
     // The quick-add placeholder's own slot, pulled out of the shared
     // layout so its (separately-stateful, drag-tracking) widget can be
     // positioned with the lane the layout assigned it. It is rendered by
@@ -2064,7 +1972,7 @@ class _DayTimelineState extends State<_DayTimeline> {
     final labelTops = widget.showHourLabels
         ? computeLabelTops(
             anchors: [
-              for (final slot in slots)
+              for (final slot in (focusLanes ? focusedSlots : slots))
                 LabelAnchor(
                   id: slot.block.id,
                   // `blockTops` is TASK-ONLY in Task view (see its own doc
@@ -2210,7 +2118,8 @@ class _DayTimelineState extends State<_DayTimeline> {
         return TimelinePinchZoom(
           // Layout must establish the viewport before restoring its offset.
           // Reveal only the positioned frame, never the initial midnight frame.
-          child: _positionedContent(Stack(
+          child: _positionedContent(
+            Stack(
             children: [
               SingleChildScrollView(
                 controller: _scrollController,
@@ -2547,7 +2456,8 @@ class _DayTimelineState extends State<_DayTimeline> {
                       // block only for large gaps." Timeline mode only, same
                       // reasoning as the connectors above: collapsed mode has no
                       // time axis for a gap's size to mean anything against.
-                      if (widget.showHourLabels && widget.showFreeWindowPrompt)
+                        if (widget.showHourLabels &&
+                            widget.showFreeWindowPrompt)
                         for (final window in findFreeWindows(
                           tasks,
                           // Mirrors the pill-height floor TaskCapsuleBlock applies
@@ -2677,7 +2587,9 @@ class _DayTimelineState extends State<_DayTimeline> {
                                   // ghost wants none of it.
                                   contentHidden: true,
                                   glyphHidden: true,
-                                  bottomTrim: _zoneTaskBottomTrim(draggedTask),
+                                    bottomTrim: _zoneTaskBottomTrim(
+                                      draggedTask,
+                                    ),
                                   maxPillHeight: _maxPillHeight(
                                     draggedTask,
                                     ghostSlots,
@@ -2743,7 +2655,10 @@ class _DayTimelineState extends State<_DayTimeline> {
                             // directly, so List mode's names line up the same way
                             // Task view's already do regardless of lane depth.
                             splitLayout: true,
-                            textColumnLeft: _textColumnLeft(theme, ghostSlots),
+                              textColumnLeft: _textColumnLeft(
+                                theme,
+                                ghostSlots,
+                              ),
                             // How far the label sits BELOW its own pill's top —
                             // zero when nothing collides (perfectly icon-aligned),
                             // positive when the label above pushed it down. Passed
@@ -2778,7 +2693,9 @@ class _DayTimelineState extends State<_DayTimeline> {
                                 widget.recentlySaved?.taskId == task.id &&
                                     widget.recentlySaved?.change ==
                                         SavedTaskChange.durationChanged
-                                ? widget.recentlySaved?.previousDurationMinutes
+                                  ? widget
+                                        .recentlySaved
+                                        ?.previousDurationMinutes
                                 : null,
                             onTap: () => widget.onTaskTap(task),
                             onToggleComplete: () =>
@@ -2862,7 +2779,10 @@ class _DayTimelineState extends State<_DayTimeline> {
                               pillWidth: _pillWidth(theme),
                               columnGap: _columnGap(theme),
                             ),
-                            textColumnLeft: _textColumnLeft(theme, ghostSlots),
+                              textColumnLeft: _textColumnLeft(
+                                theme,
+                                ghostSlots,
+                              ),
                             textColumnRight: textColumnRightInset,
                             collapsedTop: widget.showHourLabels
                                 ? null
@@ -3153,7 +3073,8 @@ class _DayTimelineState extends State<_DayTimeline> {
                 ),
               ),
             ],
-          )),
+            ),
+          ),
         );
       },
     );
@@ -6401,11 +6322,10 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
               // just pill fades out, label stays with checkbox on task
               // view (spatial)." `ref.watch` here since this whole method
               // lives on a `ConsumerState`, same as the pill's own read.
-              isFaded:
-                  _isDragging ||
-                  (widget.contentHidden && !_isDragging) ||
-                  (ref.watch(whatMattersEnabledSettingProvider) &&
-                      !widget.task.isImportant),
+              isFaded: _isDragging || (widget.contentHidden && !_isDragging),
+              whatMattersFaded:
+                  ref.watch(whatMattersEnabledSettingProvider) &&
+                  !widget.task.isImportant,
             ),
           ),
           // Edge-time badges, ALWAYS pinned over the hour gutter on the

@@ -6,6 +6,15 @@ abstract final class RadiusPrimitives {
   static const radiusLg = 12.0;
   static const radiusXl = 16.0;
 
+  /// One rung past [radiusXl] on the same 4px-step scale — added
+  /// specifically for a zone's own Edit Mode selection state
+  /// (`ZoneBackgroundBlock`'s `editModeEnabled` branch), which is more
+  /// rounded than its resting `radiusXl` card corner. Not [radiusModal]:
+  /// that value is a documented one-off for the sheet surface, 2.5x this
+  /// scale's own top rung, and would read as too round for a rectangular
+  /// zone block.
+  static const radiusXxl = 20.0;
+
   /// The modal sheet's corner. Deliberately far outside the sm→xl
   /// progression rather than an extra rung on it: a sheet corner this
   /// large is a one-off shape for one surface, and putting it on the

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../tokens/semantic_theme.dart';
+import 'app_modal_scope.dart';
 
 /// How far up the sheet starts, as a fraction of its own height.
 ///
@@ -34,7 +35,8 @@ const double _sheetEntranceOffset = 0.5;
 /// makes closing feel like waiting.
 Future<T?> pushAppSheetRoute<T>(BuildContext context, WidgetBuilder builder) {
   final theme = Theme.of(context).extension<AmbleTheme>()!;
-  return Navigator.of(context).push<T>(
+  final modalBuilder = rootModalBuilder(context, builder);
+  return Navigator.of(context, rootNavigator: true).push<T>(
     PageRouteBuilder<T>(
       opaque: false,
       // Dims the screen behind the sheet. Was transparent, which left the
@@ -68,7 +70,7 @@ Future<T?> pushAppSheetRoute<T>(BuildContext context, WidgetBuilder builder) {
           ),
         );
       },
-      pageBuilder: (context, animation, secondaryAnimation) => builder(context),
+      pageBuilder: (context, animation, secondaryAnimation) => modalBuilder(context),
     ),
   );
 }

@@ -16,14 +16,22 @@ import 'core/revenue_cat_config.dart';
 import 'core/tokens/color_primitives.dart';
 import 'core/tokens/semantic_theme.dart';
 import 'core/tokens/type_primitives.dart';
+import 'core/widgets/app_bottom_dock.dart';
+import 'core/widgets/app_shell_chrome.dart';
+import 'core/widgets/app_shell_header.dart';
 import 'core/widgets/app_top_nav.dart';
+import 'core/widgets/app_view_transition.dart';
+import 'core/widgets/what_matters_motion.dart';
 import 'features/inbox/inbox_screen.dart';
 import 'features/onboarding/onboarding_quiz_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/splash/splash_carousel_screen.dart';
 import 'features/timeline/selected_date_provider.dart';
+import 'features/timeline/edit_mode_provider.dart';
+import 'features/timeline/pending_task_draft_provider.dart';
 import 'features/timeline/timeline_screen.dart';
 import 'features/tracked_behavior/tracked_behavior_list_screen.dart';
+import 'features/zone_grid/zone_grid_screen.dart';
 import 'hive_registrar.g.dart';
 import 'shared/models/app_theme_mode.dart';
 import 'shared/models/category.dart';
@@ -467,8 +475,44 @@ class AmbleHome extends ConsumerStatefulWidget {
   ConsumerState<AmbleHome> createState() => _AmbleHomeState();
 }
 
+class _ShellScene {
+  const _ShellScene({
+    required this.key,
+    required this.viewId,
+    required this.child,
+  });
+
+  final String key;
+  final String viewId;
+  final Widget child;
+}
+
 class _AmbleHomeState extends ConsumerState<AmbleHome> {
   int _selectedIndex = 0;
+  final _contentNavigatorKey = GlobalKey<NavigatorState>();
+  final _sceneNotifier = ValueNotifier<_ShellScene?>(null);
+  final _chromeController = AppShellChromeController();
+
+  @override
+  void dispose() {
+    _sceneNotifier.dispose();
+    _chromeController.dispose();
+    super.dispose();
+  }
+
+  void _publishScene(_ShellScene scene) {
+    final current = _sceneNotifier.value;
+    if (current?.key == scene.key) return;
+    if (current == null) {
+      _sceneNotifier.value = scene;
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _sceneNotifier.value?.key != scene.key) {
+        _sceneNotifier.value = scene;
+      }
+    });
+  }
 
   /// **2026-09-20 — top nav replaces the bottom `NavigationBar` as the
   /// primary section switcher.** Requested directly, as a deliberate
@@ -538,6 +582,21 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
         ? TimelineDisplayMode.zone
         : TimelineDisplayMode.spatial;
     final screens = _screens(trackedTabVisible, timelineMode);
+    final activeIndex = _selectedIndex < screens.length ? _selectedIndex : 0;
+    final activeViewId = activeIndex == 0
+        ? 'day'
+        : activeIndex == 1
+        ? 'inbox'
+        : trackedTabVisible && activeIndex == 2
+        ? 'tracked'
+        : 'settings';
+    _publishScene(
+      _ShellScene(
+        key: '$activeIndex:$activeViewId:${timelineMode.name}:$trackedTabVisible',
+        viewId: activeViewId,
+        child: screens[activeIndex],
+      ),
+    );
 
     // The dev toggle can shrink the tab list at runtime (unlike the
     // compile-time flag, which can't change after launch) — if the
@@ -579,7 +638,11 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
     // What Matters — is a separate, not-yet-built stage; when it lands it
     // will need its own hide-during-Edit-Mode-and-quick-create handling,
     // matching what this bar used to do.)
-    return Scaffold(
+    return WhatMattersScene(
+      enabled: ref.watch(whatMattersEnabledSettingProvider),
+      visible: _selectedIndex == 0,
+      child: Scaffold(
+      resizeToAvoidBottomInset: false,
       body: SafeArea(
         bottom: false,
         child: Column(
@@ -591,7 +654,7 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
                 theme.spacingScreenPadding,
                 theme.spacingSm,
               ),
-              child: AppTopNav(
+              child: AppShellHeader(controller: _chromeController, child: AppTopNav(
                 destinations: _topNavLabels(trackedTabVisible),
                 // **Real bug, fixed 2026-09-22**: this used to fall back
                 // to `0` whenever `_selectedIndex` was Settings' own
@@ -623,7 +686,8 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
                 },
                 onSettingsTap: () {
                   final settingsIndex = screens.length - 1;
-                  final wasAlreadyOnSettings = _selectedIndex == settingsIndex;
+                    final wasAlreadyOnSettings =
+                        _selectedIndex == settingsIndex;
                   setState(() => _selectedIndex = settingsIndex);
                   // Only on an actual transition INTO Settings, not on a
                   // repeated tap while already there — `onSettingsTap` fires
@@ -642,15 +706,71 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
                     );
                   }
                 },
-              ),
+              )),
             ),
             Expanded(
-              child: IndexedStack(
-                index: _selectedIndex < screens.length ? _selectedIndex : 0,
-                children: screens,
+              child: AppShellChromeScope(
+                controller: _chromeController,
+                child: Stack(
+                  children: [
+                    Navigator(
+                      key: _contentNavigatorKey,
+                      onGenerateRoute: (_) => PageRouteBuilder<void>(
+                        pageBuilder: (context, animation, secondaryAnimation) =>
+                            ValueListenableBuilder<_ShellScene?>(
+                              valueListenable: _sceneNotifier,
+                              builder: (context, scene, child) => scene == null
+                                  ? const SizedBox.shrink()
+                                  : AppViewTransition(
+                                      viewId: scene.viewId,
+                                      child: scene.child,
+                                    ),
+                            ),
+                        transitionDuration: Duration.zero,
+                        reverseTransitionDuration: Duration.zero,
+                      ),
+                    ),
+                    SafeArea(
+                      top: false,
+                      child: Align(
+                        alignment: Alignment.bottomLeft,
+                        child: Padding(
+                          padding: EdgeInsets.all(theme.spacingMd),
+                          child: AppBottomDock(
+                            activeView: zoneViewEnabled
+                                ? AppBottomDockView.list
+                                : AppBottomDockView.timeline,
+                            onSelectView: (view) => ref
+                                .read(zoneViewEnabledSettingProvider.notifier)
+                                .set(view == AppBottomDockView.list),
+                            onEditTap: () => showEditScreen(
+                              context,
+                              navigator: _contentNavigatorKey.currentState,
+                            ),
+                            whatMattersEnabled: ref.watch(
+                              whatMattersEnabledSettingProvider,
+                            ),
+                            onWhatMattersTap: () => ref
+                                .read(
+                                  whatMattersEnabledSettingProvider.notifier,
+                                )
+                                .set(
+                                  !ref.read(whatMattersEnabledSettingProvider),
+                                ),
+                            visible:
+                                activeIndex == 0 &&
+                                ref.watch(pendingTaskDraftProvider) == null &&
+                                !ref.watch(editModeEnabledProvider),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ],
+            ],
+          ),
         ),
       ),
     );

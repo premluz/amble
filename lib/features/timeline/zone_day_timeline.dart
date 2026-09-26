@@ -1,3 +1,4 @@
+import '../../core/widgets/what_matters_motion.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/dev_config.dart';
@@ -13,6 +14,7 @@ import '../../shared/services/zone_containment.dart';
 import 'external_event_block.dart' show showExternalCalendarEventInfo;
 import 'external_event_capsule_block.dart' show DashedPillRail;
 import 'task_capsule_block.dart';
+import 'day_view_reveal.dart';
 import 'zone_container_block.dart'
     show
         WhatMattersRow,
@@ -193,31 +195,12 @@ class ZoneDayTimeline extends StatelessWidget {
     // `resolveZoneContainment` itself, so the underlying containment
     // logic's real default is untouched.
     //
-    // **2026-09-20 — also applied whenever What Matters is on**,
-    // regardless of the dev toggle. Reported directly: "should also hide
-    // emptied zones." What Matters hides every non-important Task (via
-    // each row's own `WhatMattersRow`) and EVERY external event
-    // unconditionally (see `TimelineScreen`'s own `externalEvents`
-    // filtering) — so a zone whose only members are non-important tasks,
-    // or only external events, renders as an empty card once its rows
-    // collapse, even though `containments` still counts it as non-empty
-    // here (this filter runs on the RAW containment, before any
-    // per-row What Matters fade/collapse happens downstream). "Empty"
-    // for this purpose means "has no task that will actually stay
-    // visible" — external events never count, since What Matters always
-    // hides them.
-    final hideEmptyZones = devHideEmptyZones || whatMattersEnabled;
+    // What Matters keeps these containers mounted so rows can release before
+    // their zones collapse. Only the explicit developer filter removes rows.
+    final hideEmptyZones = devHideEmptyZones;
     final containments = hideEmptyZones
         ? result.containments.where((c) {
-            // `c.externalEvents` is already empty whenever
-            // `whatMattersEnabled` is true — `this.externalEvents` (fed
-            // into `resolveZoneContainment` above) was already filtered
-            // to `const []` by `TimelineScreen` before it ever reached
-            // this widget, so no separate check is needed here for that
-            // half.
-            final visibleTasks = whatMattersEnabled
-                ? c.tasks.where((t) => t.isImportant)
-                : c.tasks;
+            final visibleTasks = c.tasks;
             return visibleTasks.isNotEmpty || c.externalEvents.isNotEmpty;
           }).toList()
         : result.containments;
@@ -245,12 +228,7 @@ class ZoneDayTimeline extends StatelessWidget {
     );
     final rows = _mergedRows(result, day);
 
-    // **2026-09-22 — no one-shot fade-in on mount any more.** Requested
-    // directly: "remove animation completely for switching views."
-    // ZoneDayTimeline still mounts fresh every time the view-cycle button
-    // lands on Zone view; it now just appears immediately instead of
-    // easing in.
-    return Stack(
+    return DayViewReveal(child: Stack(
       children: [
         ListView.separated(
           // LEFT is [zoneContentLeftInset] — column 2's own start under
@@ -283,8 +261,13 @@ class ZoneDayTimeline extends StatelessWidget {
           // tight with nothing left to visually separate one zone from the
           // next; normal style keeps the original 4px, since its own card
           // edges already do that job.
-          separatorBuilder: (_, _) => SizedBox(
-            height: devZoneCardFlat ? theme.spacingMd : theme.spacingXs,
+          separatorBuilder: (_, index) => WhatMattersMotion(
+            hidden: whatMattersEnabled && _recedes(rows[index]),
+            collapse: true,
+            move: false,
+            child: SizedBox(
+              height: devZoneCardFlat ? theme.spacingMd : theme.spacingXs,
+            ),
           ),
           itemBuilder: (context, index) {
             final row = rows[index];
@@ -299,7 +282,12 @@ class ZoneDayTimeline extends StatelessWidget {
             // covers this per-item reveal, not just the whole-view
             // crossfade.
             return switch (row) {
-              ZoneContainment() => ZoneContainerBlock(
+              ZoneContainment() => WhatMattersMotion(
+                key: ValueKey(row.zone.id),
+                hidden: whatMattersEnabled && !row.tasks.any((task) => task.isImportant),
+                collapse: true,
+                move: false,
+                child: ZoneContainerBlock(
                 theme: theme,
                 zone: row.zone,
                 tasks: row.tasks,
@@ -326,7 +314,7 @@ class ZoneDayTimeline extends StatelessWidget {
                 onHeaderTap: onZoneHeaderTap == null
                     ? null
                     : () => onZoneHeaderTap!(row.zone),
-              ),
+              )),
               // **Mirrors [ZoneContainerBlock]'s own card LEFT padding**
               // (`spacingLg`), so an unzoned row's badge lines up with a
               // zoned one's. A zoned task sits inside that card and so
@@ -493,7 +481,11 @@ class ZoneDayTimeline extends StatelessWidget {
               // Same left-inset fix as the unzoned Task row above — an
               // unmatched external event is the other kind of row that
               // sits outside any zone container.
-              ExternalCalendarEvent() => Padding(
+              ExternalCalendarEvent() => WhatMattersMotion(
+                key: ValueKey(row.id),
+                hidden: whatMattersEnabled,
+                collapse: true,
+                child: Padding(
                 padding: EdgeInsets.only(left: theme.spacingLg),
                 child: _UnzonedEventRow(
                   theme: theme,
@@ -502,7 +494,7 @@ class ZoneDayTimeline extends StatelessWidget {
                   timeRangeVisible: devTimeRangeVisible,
                   startTimeOnlyVisible: devZoneTaskStartTimeVisible,
                 ),
-              ),
+              )),
               _ => const SizedBox.shrink(),
             };
           },
@@ -521,7 +513,7 @@ class ZoneDayTimeline extends StatelessWidget {
           child: AppTopScrollFade(color: theme.colorSurfaceTimeline),
         ),
       ],
-    );
+    ));
   }
 }
 
@@ -639,3 +631,11 @@ class _UnzonedEventRow extends StatelessWidget {
     );
   }
 }
+
+// Use task identity/importance rather than labels to classify occupied zones.
+bool _recedes(Object row) => switch (row) {
+  ZoneContainment() => !row.tasks.any((task) => task.isImportant),
+  Task() => !row.isImportant,
+  ExternalCalendarEvent() => true,
+  _ => false,
+};

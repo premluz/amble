@@ -1,3 +1,4 @@
+import '../../core/widgets/what_matters_motion.dart';
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
@@ -155,17 +156,8 @@ class TaskCapsuleBlock extends StatelessWidget {
   /// performs.
   final VoidCallback? onAddNote;
 
-  /// Whether the "What Matters" lens is on AND this task's own
-  /// `isImportant` is false — the Spatial (Task) view's half of that
-  /// lens: reported directly on what the transition should be here ("on
-  /// spatial they just fade out," unlike the Zone/List view's own
-  /// fade-and-reflow, since a spatial pill sits at a fixed time-axis
-  /// position other pills must NOT shift to fill). Stays in the tree,
-  /// faded and non-interactive, rather than being removed outright, so
-  /// the fade is an actual animation rather than an instant disappearance.
-  /// Plain `bool`, not a Riverpod watch — same reasoning as
-  /// [editModeEnabled]; the caller resolves `whatMattersEnabled` and this
-  /// task's `isImportant` once and passes the combined flag down.
+  /// Releases a non-important pill without changing its scheduled time.
+  /// The parent closes horizontal lanes after the release has finished.
   final bool whatMattersFaded;
 
   /// Whether this task is currently SELECTED (multi-task edit mode) —
@@ -1327,20 +1319,8 @@ class TaskCapsuleBlock extends StatelessWidget {
             ),
       child: wrapped,
     );
-    // What Matters, Spatial half: fade only, in place — no reflow, unlike
-    // the Zone/List view's own fade-and-collapse (see this field's own
-    // doc comment for why). `IgnorePointer` while faded so a mid-
-    // transition or fully-faded pill can't still be tapped/dragged/
-    // swiped.
-    return IgnorePointer(
-      ignoring: whatMattersFaded,
-      child: AnimatedOpacity(
-        opacity: whatMattersFaded ? 0.0 : 1.0,
-        duration: theme.motionNormal,
-        curve: theme.curveStandard,
-        child: swiped,
-      ),
-    );
+    // Keep the time slot intact while the rendered pill recedes from attention.
+    return WhatMattersMotion(hidden: whatMattersFaded, child: swiped);
   }
 
   /// The always-present frosted card wrapper — extracted from [build]
@@ -1513,6 +1493,7 @@ class TaskCapsuleTextRow extends StatelessWidget {
     this.timeRangeVisible = true,
     this.showCompletionCheckbox = true,
     this.isFaded = false,
+    this.whatMattersFaded = false,
     this.compactInlineLayout = false,
   });
 
@@ -1566,6 +1547,7 @@ class TaskCapsuleTextRow extends StatelessWidget {
   /// Fades this row out while its own pill is lifted, matching how the
   /// combined layout fades its text region mid-drag.
   final bool isFaded;
+  final bool whatMattersFaded;
 
   /// List mode's own layout, matching `OverlapClusterBlock`'s inline
   /// cluster row exactly — requested directly: "There is a space between
@@ -1644,7 +1626,9 @@ class TaskCapsuleTextRow extends StatelessWidget {
       style: titleStyle,
     );
 
-    return AnimatedOpacity(
+    return WhatMattersMotion(
+      hidden: whatMattersFaded,
+      child: AnimatedOpacity(
       opacity: isFaded ? 0.0 : 1.0,
       duration: theme.motionFast,
       curve: Curves.easeOut,
@@ -1767,7 +1751,7 @@ class TaskCapsuleTextRow extends StatelessWidget {
           ],
         ),
       ),
-    );
+    ));
   }
 }
 

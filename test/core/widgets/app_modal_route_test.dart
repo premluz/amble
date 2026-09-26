@@ -49,18 +49,8 @@ void main() {
     expect(find.text('Sheet'), findsNothing);
   });
 
-  // Reported directly: "the small sheet only opens to its height (fast as
-  // we discussed) but then slower moving keyboard pushes it further...
-  // can it actually get to the final position and keyboard follows up?"
-  // Measured before the fix at a 300px second movement on an 800px-tall
-  // screen. AppSheet now reserves the keyboard's REMEMBERED height, so
-  // the sheet lands once and the keyboard rises behind it. Unaffected by
-  // the zero-duration change above — this is about the KEYBOARD inset,
-  // not the route's own entrance.
-  testWidgets('a sheet opened after the keyboard has been seen once lands '
-      'at its final position and does not move when the keyboard arrives', (
-    tester,
-  ) async {
+  // A prior keyboard must not leave a later plain sheet floating in empty space.
+  testWidgets('plain sheets use only the current keyboard inset', (tester) async {
     tester.view.physicalSize = const Size(1080, 2400);
     tester.view.devicePixelRatio = 3.0;
     addTearDown(tester.view.reset);
@@ -74,17 +64,19 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    // First open teaches AppSheet the keyboard's height.
+    // Exercise a different keyboard state before reopening.
     await openSheet();
+    final originalTop = tester.getRect(find.text('Body')).top;
     tester.view.viewInsets = const FakeViewPadding(bottom: 900);
     await tester.pumpAndSettle();
     navigatorKey.currentState!.pop();
     tester.view.resetViewInsets();
     await tester.pumpAndSettle();
 
-    // Second open: the reservation applies before any inset exists.
+    // Reopening without a keyboard restores the original position.
     await openSheet();
     final beforeKeyboard = tester.getRect(find.text('Body')).top;
+    expect(beforeKeyboard, originalTop);
 
     tester.view.viewInsets = const FakeViewPadding(bottom: 900);
     await tester.pumpAndSettle();
@@ -92,10 +84,8 @@ void main() {
 
     expect(
       afterKeyboard,
-      beforeKeyboard,
-      reason:
-          'the sheet must already sit above the keyboard — any difference '
-          'here is the second shove the reservation exists to remove',
+      beforeKeyboard - tester.view.viewInsets.bottom / tester.view.devicePixelRatio,
+      reason: 'plain sheets track the current inset without a session-wide cache',
     );
 
     navigatorKey.currentState!.pop();

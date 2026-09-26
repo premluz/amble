@@ -679,4 +679,11 @@ void _zoneNameLabelTests() {
     expect(text.style?.color, AmbleTheme.light.colorTextTertiary);
     expect(text.style?.color, isNot(AmbleTheme.light.colorTextSecondary));
   });
+
+  testWidgets('uses the compact shared zone-name scale', (tester) async {
+    await pump(tester);
+    final text = tester.widget<Text>(find.text('Morning ritual'));
+    expect(text.style?.fontSize, AmbleTheme.light.textZoneName.fontSize);
+    expect(text.style?.fontFamily, AmbleTheme.light.textZoneName.fontFamily);
+  });
 }

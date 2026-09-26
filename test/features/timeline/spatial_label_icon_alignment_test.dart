@@ -4,6 +4,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive_ce.dart';
 import 'package:tabler_icons_plus/tabler_icons_plus.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
+import 'package:amble/core/widgets/app_layout_reveal.dart';
+import 'package:amble/features/zone_grid/zone_grid_screen.dart';
+import 'package:amble/features/zone_grid/zone_grid_tab.dart';
+import 'package:amble/features/timeline/edit_mode_provider.dart';
+import 'package:amble/core/widgets/app_tab_switch.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/timeline/timeline_screen.dart';
 import 'package:amble/features/timeline/zone_background_block.dart';
@@ -87,15 +92,22 @@ void main() {
     final bandFinder = find.byType(ZoneBackgroundBlock);
     final band = tester.getRect(bandFinder);
     final context = tester.element(bandFinder);
-    final firstIcon = find.byIcon(TablerIcons.briefcase).evaluate().map(
-      (element) => tester.getRect(find.byWidget(element.widget)).center.dx,
-    ).reduce((a, b) => a < b ? a : b);
+    final firstIcon = find
+        .byIcon(TablerIcons.briefcase)
+        .evaluate()
+        .map(
+          (element) => tester.getRect(find.byWidget(element.widget)).center.dx,
+        )
+        .reduce((a, b) => a < b ? a : b);
     expect(
       tester.getRect(find.byType(CurrentTimeIndicator)).right,
       tester.view.physicalSize.width,
     );
     expect(band.left, theme.timelineZoneLeftFor(context));
-    expect(band.right, tester.view.physicalSize.width - theme.spacingScreenPadding);
+    expect(
+      band.right,
+      tester.view.physicalSize.width - theme.spacingScreenPadding,
+    );
     expect(firstIcon - theme.sizeTaskBadge / 2 - band.left, theme.spacingLg);
   }
 
@@ -103,12 +115,15 @@ void main() {
     await tester.runAsync(() async {
       await taskBox.put(task.id, task);
       final startMinutes = task.scheduledAt!.hour * 60;
-      await zoneBox.put('zone', Zone(
-        id: 'zone',
-        title: 'Test zone',
-        startMinutes: startMinutes,
-        endMinutes: startMinutes + 60,
-      ));
+      await zoneBox.put(
+        'zone',
+        Zone(
+          id: 'zone',
+          title: 'Test zone',
+          startMinutes: startMinutes,
+          endMinutes: startMinutes + 60,
+        ),
+      );
     });
 
     tester.view.physicalSize = const Size(430, 932);
@@ -140,9 +155,8 @@ void main() {
           theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
           home: ValueListenableBuilder<TimelineDisplayMode>(
             valueListenable: mode,
-            builder: (context, value, child) => Scaffold(
-              body: TimelineScreen(mode: value),
-            ),
+            builder: (context, value, child) =>
+                Scaffold(body: TimelineScreen(mode: value)),
           ),
         ),
       ),
@@ -175,7 +189,7 @@ void main() {
     return category;
   }
 
-  testWidgets('zone-to-spatial reveals only the restored layout', (tester) async {
+  testWidgets('both day views reveal only after positioning', (tester) async {
     late Category category;
     await tester.runAsync(() async {
       category = await seedIconCategory(categoryBox);
@@ -189,11 +203,24 @@ void main() {
     await pumpTimeline(tester, task: task);
     for (var roundTrip = 0; roundTrip < 2; roundTrip++) {
       mode.value = TimelineDisplayMode.zone;
+      await tester.pump();
+      final zoneReveal = find.byKey(const ValueKey('positioned-zone-content'));
+      expect(
+        tester.widget<Opacity>(zoneReveal).opacity,
+        roundTrip == 0 ? 0 : 1,
+      );
+      await tester.pump();
+      expect(tester.widget<Opacity>(zoneReveal).opacity, 1);
+      final zonePosition = tester.getRect(zoneReveal);
       await tester.pumpAndSettle();
+      expect(tester.getRect(zoneReveal), zonePosition);
       mode.value = TimelineDisplayMode.spatial;
       await tester.pump();
       final reveal = find.byKey(const ValueKey('positioned-day-content'));
-      expect(tester.widget<Opacity>(reveal).opacity, 0);
+      // The spatial slot is retained by AppViewTransition, so returning to
+      // it preserves its restored scroll/layout state instead of replaying
+      // the mount reveal on every view switch.
+      expect(tester.widget<Opacity>(reveal).opacity, 1);
       await tester.pump();
       expect(tester.widget<Opacity>(reveal).opacity, 1);
       final positioned = tester.getRect(find.byType(ZoneBackgroundBlock));
@@ -201,6 +228,65 @@ void main() {
       expect(tester.getRect(find.byType(ZoneBackgroundBlock)), positioned);
     }
   });
+
+  testWidgets(
+    'Edit entry reveals the positioned task timeline without a jump',
+    (tester) async {
+      late Category category;
+      await tester.runAsync(() async {
+        category = await seedIconCategory(categoryBox);
+      });
+      final task = Task.create(
+        title: 'Edit entry',
+        scheduledAt: todayAt(DateTime.now().hour),
+        durationMinutes: 30,
+        categoryId: category.id,
+      );
+      await pumpTimeline(tester, task: task);
+      final dayContext = tester.element(find.byType(TimelineScreen));
+      final dayState = ProviderScope.containerOf(dayContext);
+      showEditScreen(dayContext);
+      await tester.pump();
+      await tester.pump();
+      final reveal = find
+          .descendant(
+            of: find.byType(AppLayoutReveal),
+            matching: find.byType(Opacity),
+          )
+          .first;
+      expect(tester.widget<Opacity>(reveal).opacity, 0);
+      final editorState = ProviderScope.containerOf(
+        tester.element(find.byType(ZoneGridScreen)),
+      );
+      expect(editorState.read(editModeEnabledProvider), isTrue);
+      expect(dayState.read(editModeEnabledProvider), isFalse);
+      final tabs = find.byType(AppTabSwitch<ZoneGridTab>);
+      final tabPosition = tester.getRect(tabs);
+      await tester.pump();
+      final zone = find
+          .descendant(
+            of: find.byType(ZoneGridScreen),
+            matching: find.byType(ZoneBackgroundBlock),
+          )
+          .first;
+      final positioned = tester.getRect(zone);
+      await tester.pump(AmbleTheme.light.motionFast * .5);
+      expect(
+        tester.widget<Opacity>(reveal).opacity,
+        allOf(greaterThan(0), lessThan(1)),
+      );
+      expect(tester.getRect(zone), positioned);
+      expect(tester.getRect(tabs), tabPosition);
+      expect(dayState.read(editModeEnabledProvider), isFalse);
+      await tester.pump(AmbleTheme.light.motionFast);
+      expect(tester.widget<Opacity>(reveal).opacity, 1);
+      expect(tester.getRect(zone), positioned);
+      expect(tester.getRect(tabs), tabPosition);
+      Navigator.of(tester.element(find.byType(ZoneGridScreen))).pop();
+      await tester.pumpAndSettle();
+      expect(find.byType(ZoneGridScreen), findsNothing);
+    },
+  );
 
   testWidgets('on the smallest (badge-floored) task, the title sits vertically '
       'centered against the icon, not above it', (tester) async {
@@ -265,9 +351,12 @@ void main() {
     final icons = find.byIcon(TablerIcons.briefcase);
     final icon = tester.getRect(icons.first);
     final title = tester.getRect(find.text('Walk'));
-    final rightmostCenter = icons.evaluate().map(
-      (element) => tester.getRect(find.byWidget(element.widget)).center.dx,
-    ).reduce((a, b) => a > b ? a : b);
+    final rightmostCenter = icons
+        .evaluate()
+        .map(
+          (element) => tester.getRect(find.byWidget(element.widget)).center.dx,
+        )
+        .reduce((a, b) => a > b ? a : b);
     expect(
       title.left - rightmostCenter,
       AmbleTheme.light.sizeTaskBadge / 2 + AmbleTheme.light.spacingLg,

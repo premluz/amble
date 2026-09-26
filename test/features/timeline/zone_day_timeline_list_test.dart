@@ -1046,7 +1046,7 @@ void main() {
           whatMattersEnabled: true,
         );
 
-        expect(find.byType(ZoneContainerBlock), findsNothing);
+        expect(find.byType(ZoneContainerBlock).hitTestable(), findsNothing);
       },
     );
 
@@ -1096,7 +1096,7 @@ void main() {
 
       await pump(tester, zones: [zone], whatMattersEnabled: true);
 
-      expect(find.byType(ZoneContainerBlock), findsNothing);
+        expect(find.byType(ZoneContainerBlock).hitTestable(), findsNothing);
     });
   });
 }

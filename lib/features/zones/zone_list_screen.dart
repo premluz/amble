@@ -148,52 +148,56 @@ class _ZoneNameFormState extends ConsumerState<_ZoneNameForm> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
-    return Padding(
-      padding: EdgeInsets.all(theme.spacingMd),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  widget.facet == null ? 'New zone name' : 'Edit zone name',
-                  style: theme.textTitle,
-                ),
+    // No wrapping Padding any more — this doubled AppSheet's own outer
+    // spacingLg inset on every side (2026-09-23, a pre-existing bug found
+    // while auditing every AppSheet caller for the "top padding should be
+    // in header" fix). AppSheet's own left/right/bottom cover this sheet
+    // exactly like every other caller; only the top gap needs supplying
+    // directly now that AppSheet no longer provides one.
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(height: theme.spacingLg),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                widget.facet == null ? 'New zone name' : 'Edit zone name',
+                style: theme.textTitle,
               ),
-              if (widget.facet != null)
-                AppButton(
-                  icon: Icons.delete_outline_rounded,
-                  shape: AppButtonShape.circle,
-                  variant: AppButtonVariant.secondary,
-                  tooltip: 'Remove name',
-                  onPressed: _saving
-                      ? null
-                      : () async {
-                          try {
-                            await ref
-                                .read(zoneListProvider.notifier)
-                                .deleteUnusedFacet(widget.facet!.id);
-                            if (context.mounted) Navigator.of(context).pop();
-                          } catch (error) {
-                            if (mounted)
-                              setState(
-                                () => _error = error is StateError
-                                    ? error.message
-                                    : 'Could not remove this name.',
-                              );
-                          }
-                        },
-                ),
-            ],
-          ),
-          SizedBox(height: theme.spacingMd),
-          AppTextField(controller: _name, label: 'Name'),
-          if (_error != null) Text(_error!, style: theme.textCaption),
-          SizedBox(height: theme.spacingMd),
-          AppButton(label: 'Save', onPressed: _save, isLoading: _saving),
-        ],
-      ),
+            ),
+            if (widget.facet != null)
+              AppButton(
+                icon: Icons.delete_outline_rounded,
+                shape: AppButtonShape.circle,
+                variant: AppButtonVariant.secondary,
+                tooltip: 'Remove name',
+                onPressed: _saving
+                    ? null
+                    : () async {
+                        try {
+                          await ref
+                              .read(zoneListProvider.notifier)
+                              .deleteUnusedFacet(widget.facet!.id);
+                          if (context.mounted) Navigator.of(context).pop();
+                        } catch (error) {
+                          if (mounted)
+                            setState(
+                              () => _error = error is StateError
+                                  ? error.message
+                                  : 'Could not remove this name.',
+                            );
+                        }
+                      },
+              ),
+          ],
+        ),
+        SizedBox(height: theme.spacingMd),
+        AppTextField(controller: _name, label: 'Name'),
+        if (_error != null) Text(_error!, style: theme.textCaption),
+        SizedBox(height: theme.spacingMd),
+        AppButton(label: 'Save', onPressed: _save, isLoading: _saving),
+      ],
     );
   }
 }

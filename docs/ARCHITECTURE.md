@@ -98,3 +98,29 @@ See `CONSTITUTION.md` for the non-negotiables (UUIDs, status enum, `completedAt`
 ## Weekly zone authoring (2026-09-14)
 
 `ZoneFacetRepository` owns the name-only registry (`zone_facets`, primitive maps with schema validation). `ZoneRepository` continues to own timed placements and retained legacy rows. `ZoneList.paintWeeklyZones` validates the complete weekday selection before writing any placement; `ZoneFacetList` owns name creation/rename. `weekly_zone_schedule.dart` supplies the canonical date projection and conflict predicate. The grid's `ZonePaintSelection` is transient schedule geometry, never a persisted Zone. Widget keys use stable placement IDs; no global object interning is needed for the new one-placement-per-weekday grid. Migration and backup preserve old IDs and unsupported recurrence rules.
+
+## Shared chrome and view-transition ownership (2026-09-26)
+
+The authenticated app shell owns persistent chrome above page content: the
+top navigation, the contextual dock, applicable primary action, and the Day
+calendar slot. Page/view bodies are the only default owners of
+`AppViewTransition`. The main shell keeps one `AppBottomDock` mounted and
+passes an empty configuration on pages without contextual actions; this
+preserves its element identity while action rectangles animate between
+semantic configurations.
+
+The Day calendar is outside the list/spatial body host. Its providers and
+accordion state remain alive while the body changes. The shell now owns a
+content Navigator beneath the persistent dock, so Edit enters below the
+shell and cannot fade the dock itself. The Day calendar remains route-local
+for now because the Edit Tasks presentation still supplies its own
+mode-specific header; lifting that accordion into the shell is the next
+shared-calendar seam. Route-local Edit provider overrides remain required:
+the outgoing Day route must never be switched to Edit mode while the
+incoming route prepares.
+
+`AppContextDock` and `AppViewTransition` are reusable core primitives. Feature
+screens provide declarative configurations and stable IDs; the core layer
+does not read feature repositories or decide action semantics. Detailed
+ownership, readiness, focus, overlay, interruption, and test constraints are
+recorded in `docs/SHARED_CHROME_MOTION_BRIEF.md`.

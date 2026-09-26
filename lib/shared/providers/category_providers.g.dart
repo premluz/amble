@@ -117,7 +117,7 @@ final class CategoryListProvider
   }
 }
 
-String _$categoryListHash() => r'76bb59fcc4ff4d3b3a220c5fbe2c003a81e17aa6';
+String _$categoryListHash() => r'66479d481edcaada8e9e5ab39eb585572aebfacc';
 
 /// CRUD state over [CategoryRepository], mirroring [TaskList]/
 /// [TrackedBehaviorList]'s shape.
@@ -146,3 +146,92 @@ abstract class _$CategoryList extends $Notifier<List<Category>> {
     return element.handleCreate(ref, build);
   }
 }
+
+/// [categoryListProvider], minus [BuiltInCategoryIds.general].
+///
+/// **2026-09-23** — requested directly: General is an invisible
+/// "untagged" placeholder — the fallback a task silently carries when no
+/// real category was chosen — and must never appear as a selectable
+/// option in a tag picker or the Settings tag list. It still exists as a
+/// real [Category] row (raw [categoryListProvider] is unfiltered): a
+/// task's `categoryId` can resolve to it, [CategoryList.deleteCategory]
+/// reassigns orphaned tasks to it, and [CategoryBadge]'s own null-category
+/// fallback renders its look directly — none of that changes. This
+/// provider exists ONLY for the three UI sites that render "a list of
+/// tags to pick/manage" (`task_category_modal.dart`,
+/// `task_name_category_modal.dart`, `category_list_screen.dart`), so
+/// General is invisible there without needing three separate `.where(...)`
+/// calls (and the risk of a future 4th site forgetting the filter).
+
+@ProviderFor(visibleCategoryList)
+final visibleCategoryListProvider = VisibleCategoryListProvider._();
+
+/// [categoryListProvider], minus [BuiltInCategoryIds.general].
+///
+/// **2026-09-23** — requested directly: General is an invisible
+/// "untagged" placeholder — the fallback a task silently carries when no
+/// real category was chosen — and must never appear as a selectable
+/// option in a tag picker or the Settings tag list. It still exists as a
+/// real [Category] row (raw [categoryListProvider] is unfiltered): a
+/// task's `categoryId` can resolve to it, [CategoryList.deleteCategory]
+/// reassigns orphaned tasks to it, and [CategoryBadge]'s own null-category
+/// fallback renders its look directly — none of that changes. This
+/// provider exists ONLY for the three UI sites that render "a list of
+/// tags to pick/manage" (`task_category_modal.dart`,
+/// `task_name_category_modal.dart`, `category_list_screen.dart`), so
+/// General is invisible there without needing three separate `.where(...)`
+/// calls (and the risk of a future 4th site forgetting the filter).
+
+final class VisibleCategoryListProvider
+    extends $FunctionalProvider<List<Category>, List<Category>, List<Category>>
+    with $Provider<List<Category>> {
+  /// [categoryListProvider], minus [BuiltInCategoryIds.general].
+  ///
+  /// **2026-09-23** — requested directly: General is an invisible
+  /// "untagged" placeholder — the fallback a task silently carries when no
+  /// real category was chosen — and must never appear as a selectable
+  /// option in a tag picker or the Settings tag list. It still exists as a
+  /// real [Category] row (raw [categoryListProvider] is unfiltered): a
+  /// task's `categoryId` can resolve to it, [CategoryList.deleteCategory]
+  /// reassigns orphaned tasks to it, and [CategoryBadge]'s own null-category
+  /// fallback renders its look directly — none of that changes. This
+  /// provider exists ONLY for the three UI sites that render "a list of
+  /// tags to pick/manage" (`task_category_modal.dart`,
+  /// `task_name_category_modal.dart`, `category_list_screen.dart`), so
+  /// General is invisible there without needing three separate `.where(...)`
+  /// calls (and the risk of a future 4th site forgetting the filter).
+  VisibleCategoryListProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'visibleCategoryListProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$visibleCategoryListHash();
+
+  @$internal
+  @override
+  $ProviderElement<List<Category>> $createElement($ProviderPointer pointer) =>
+      $ProviderElement(pointer);
+
+  @override
+  List<Category> create(Ref ref) {
+    return visibleCategoryList(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(List<Category> value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<List<Category>>(value),
+    );
+  }
+}
+
+String _$visibleCategoryListHash() =>
+    r'bb30f45229159943d6d01cba50b5b6158f6cbba1';

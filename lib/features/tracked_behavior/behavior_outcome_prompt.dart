@@ -73,6 +73,11 @@ class _BehaviorOutcomePromptState extends State<_BehaviorOutcomePrompt> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // AppSheet's own outer padding no longer provides a top inset
+        // (2026-09-23 — "top padding should be in header") — every sheet
+        // whose content doesn't start with an AppSheetHeader now supplies
+        // its own top gap directly, here.
+        SizedBox(height: theme.spacingLg),
         Text('How did it go?', style: theme.textTitle),
         SizedBox(height: theme.spacingXs),
         Text(

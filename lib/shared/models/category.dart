@@ -5,18 +5,41 @@ part 'category.g.dart';
 
 const _uuid = Uuid();
 
-/// Fixed client-generated UUIDs for the 5 seeded built-in categories —
+/// Fixed client-generated UUIDs for the 9 seeded built-in categories —
 /// deliberately NOT random, so seeding is idempotent if it ever runs twice
 /// (see `category_providers.dart`'s `CategoryList.seedBuiltInsIfNeeded`) and
 /// so the one-time [Task.category] -> [Task.categoryId] backfill migration
 /// can resolve a legacy `TaskCategory` enum value to a stable, known id
 /// without a lookup that could vary between runs.
+///
+/// **2026-09-23 — expanded from 5 to 9.** Requested directly: General
+/// becomes an invisible "untagged" placeholder (never shown in a tag
+/// list), Health/Work recolor, and four new categories are added.
+/// [personal] KEEPS its original id/UUID — it is a RENAME (home icon,
+/// "Home" label now) of the pre-existing category, not a new one, since
+/// existing tasks already reference this id via `Task.categoryId` and
+/// changing it would silently orphan them. The NEW "Personal" (user icon)
+/// is a genuinely new category at [personalNew]'s own fresh id. Only
+/// [general]/[health]/[work]/[admin] additionally keep their legacy
+/// [TaskCategory] enum mapping (`category_providers.dart`'s
+/// `_builtInIdFor`) — none of the 4 brand-new ids need one, since that
+/// enum is frozen and pre-dates their existence.
 abstract final class BuiltInCategoryIds {
   static const String general = '00000000-0000-4000-8000-000000000001';
   static const String health = '00000000-0000-4000-8000-000000000002';
   static const String work = '00000000-0000-4000-8000-000000000003';
+  /// The renamed "Home" category (was "Personal", home icon) — SAME id as
+  /// before the rename. See this class's own doc comment.
   static const String personal = '00000000-0000-4000-8000-000000000004';
   static const String admin = '00000000-0000-4000-8000-000000000005';
+  /// The NEW "Personal" category (user icon) — distinct from [personal]
+  /// above, which is now "Home." Named `personalNew` rather than
+  /// reusing/renumbering to keep every existing id constant's own name
+  /// stable for anything already referencing it by name.
+  static const String personalNew = '00000000-0000-4000-8000-000000000006';
+  static const String social = '00000000-0000-4000-8000-000000000007';
+  static const String reading = '00000000-0000-4000-8000-000000000008';
+  static const String learning = '00000000-0000-4000-8000-000000000009';
 }
 
 /// A user-visible task category — the persisted, user-extensible successor

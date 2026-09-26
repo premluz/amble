@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../tokens/semantic_theme.dart';
+import 'app_button.dart';
 import 'app_press_feedback.dart';
 
 /// The app's primary section switcher — "Day · Inbox · Tracked" as plain
@@ -54,42 +55,60 @@ class AppTopNav extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
 
-    return Row(
-      children: [
-        for (var i = 0; i < destinations.length; i++) ...[
-          if (i > 0) SizedBox(width: theme.spacingLg),
-          _TopNavLabel(
-            theme: theme,
-            label: destinations[i],
-            selected: i == selectedIndex,
-            onTap: () => onDestinationSelected(i),
-          ),
-        ],
-        const Spacer(),
-        AppPressFeedback(
-          onTap: onSettingsTap,
-          borderRadius: BorderRadius.circular(theme.radiusSm),
-          child: Padding(
-            padding: EdgeInsets.all(theme.spacingXs),
-            child: Icon(
-              Icons.settings_outlined,
-              // Same active/inactive contrast a selected destination
-              // label uses (colorTextPrimary vs. colorTextTertiary) —
-              // requested directly, "should highlight as Active (light)
-              // same as menu items in top nav." Kept as
-              // colorTextSecondary rather than colorTextTertiary for the
-              // INACTIVE state specifically, matching this icon's own
-              // pre-existing resting color (a label's own inactive tone
-              // was never applied to this icon before, and changing it
-              // was not asked for — only the missing ACTIVE state was).
-              color: settingsSelected
-                  ? theme.colorTextPrimary
-                  : theme.colorTextSecondary,
-              size: theme.spacingLg,
+    // **2026-09-26 — real bug, fixed: same height/hit area as
+    // `AppTabSwitch`.** Reported directly: switching between the main
+    // shell (this bar) and the merged Edit screen (`AppTabSwitch`'s
+    // Tasks/Zones tabs) visibly "jumped" — this bar had NO fixed height
+    // at all (bare `Text` in `theme.textTitle`, no padding), sizing to
+    // whatever that text's own line-height happened to be, while
+    // `AppTabSwitch` reserves a deliberate `appButtonHeightFor(theme,
+    // AppButtonSize.md)` (40px) track. Wrapping this whole row at that
+    // SAME height — and centering each label/icon inside it — matches the
+    // hit area and layout height exactly, without adopting any of
+    // `AppTabSwitch`'s visual language (no shared track, no highlight
+    // fill): this bar still reads as bare text per this class's own "not
+    // a standard tab bar" doc comment above, just now the same physical
+    // size as the row it visually swaps places with.
+    return SizedBox(
+      height: appButtonHeightFor(theme, AppButtonSize.md),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          for (var i = 0; i < destinations.length; i++) ...[
+            if (i > 0) SizedBox(width: theme.spacingLg),
+            _TopNavLabel(
+              theme: theme,
+              label: destinations[i],
+              selected: i == selectedIndex,
+              onTap: () => onDestinationSelected(i),
+            ),
+          ],
+          const Spacer(),
+          AppPressFeedback(
+            onTap: onSettingsTap,
+            borderRadius: BorderRadius.circular(theme.radiusSm),
+            child: Padding(
+              padding: EdgeInsets.all(theme.spacingXs),
+              child: Icon(
+                Icons.settings_outlined,
+                // Same active/inactive contrast a selected destination
+                // label uses (colorTextPrimary vs. colorTextTertiary) —
+                // requested directly, "should highlight as Active (light)
+                // same as menu items in top nav." Kept as
+                // colorTextSecondary rather than colorTextTertiary for the
+                // INACTIVE state specifically, matching this icon's own
+                // pre-existing resting color (a label's own inactive tone
+                // was never applied to this icon before, and changing it
+                // was not asked for — only the missing ACTIVE state was).
+                color: settingsSelected
+                    ? theme.colorTextPrimary
+                    : theme.colorTextSecondary,
+                size: theme.spacingLg,
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -112,11 +131,24 @@ class _TopNavLabel extends StatelessWidget {
     return AppPressFeedback(
       onTap: onTap,
       borderRadius: BorderRadius.circular(theme.radiusSm),
-      child: Text(
-        label,
-        style: theme.textTitle.copyWith(
-          color: selected ? theme.colorTextPrimary : theme.colorTextTertiary,
-          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+      // The full row height, not just the text's own intrinsic bounds —
+      // see `AppTopNav.build`'s own comment on why this bar's hit area
+      // now matches `AppTabSwitch`'s 40px track exactly. `Center` keeps
+      // the text vertically centered inside that taller box rather than
+      // pinned to its top, the same effect `_TabSwitchSegment`'s own
+      // `Stack(alignment: Alignment.center)` achieves there.
+      child: SizedBox(
+        height: appButtonHeightFor(theme, AppButtonSize.md),
+        child: Center(
+          child: Text(
+            label,
+            style: theme.textTitle.copyWith(
+              color: selected
+                  ? theme.colorTextPrimary
+                  : theme.colorTextTertiary,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
         ),
       ),
     );

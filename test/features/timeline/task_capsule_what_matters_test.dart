@@ -37,8 +37,8 @@ void main() {
       'opaque', (tester) async {
     await pump(tester, whatMattersFaded: false);
 
-    final opacityWidget = tester.widget<AnimatedOpacity>(
-      find.byType(AnimatedOpacity).first,
+    final opacityWidget = tester.widget<Opacity>(
+      find.byType(Opacity).first,
     );
     expect(opacityWidget.opacity, 1.0);
   });
@@ -47,8 +47,8 @@ void main() {
       'mounted, in place', (tester) async {
     await pump(tester, whatMattersFaded: true);
 
-    final opacityWidget = tester.widget<AnimatedOpacity>(
-      find.byType(AnimatedOpacity).first,
+    final opacityWidget = tester.widget<Opacity>(
+      find.byType(Opacity).first,
     );
     expect(opacityWidget.opacity, 0.0);
     expect(
@@ -66,14 +66,14 @@ void main() {
     await pump(tester, whatMattersFaded: true);
 
     // Scoped to the outer IgnorePointer specifically — an ancestor of the
-    // outer AnimatedOpacity — since the capsule's own internal machinery
+    // outer Opacity — since the capsule's own internal machinery
     // (drag/resize handles) also uses IgnorePointer elsewhere in the
     // tree, and a bare `find.byType(...).first` can match one of those
     // instead, in whatever order the tree happens to traverse.
     final ignorePointer = tester.widget<IgnorePointer>(
       find
           .ancestor(
-            of: find.byType(AnimatedOpacity).first,
+            of: find.byType(Opacity).first,
             matching: find.byType(IgnorePointer),
           )
           .first,

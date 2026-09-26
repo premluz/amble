@@ -76,8 +76,9 @@ class TaskEdgeTimeLabel extends StatelessWidget {
       ),
       child: Text(
         time.format(context),
-        // textCaptionMono — a time label, not a name.
-        style: theme.textCaptionMono.copyWith(
+        // textTaskEdgeTime — compact task time shared by spatial and Edit
+        // edge labels; the pill supplies the accent treatment.
+        style: theme.textTaskEdgeTime.copyWith(
           color: theme.colorSurfacePrimary,
           fontWeight: FontWeight.w700,
         ),

@@ -142,6 +142,10 @@ void main() {
       'ochre': ColorPrimitives.ochre500,
       'periwinkle': ColorPrimitives.periwinkle500,
       'berry': ColorPrimitives.berry500,
+      'amber': ColorPrimitives.amber500,
+      'teal': ColorPrimitives.teal500,
+      'sky': ColorPrimitives.sky500,
+      'rose': ColorPrimitives.rose500,
     };
     final darkIcons = {
       'neutral': ColorPrimitives.neutral500Dark,
@@ -149,6 +153,10 @@ void main() {
       'ochre': ColorPrimitives.ochre500Dark,
       'periwinkle': ColorPrimitives.periwinkle500Dark,
       'berry': ColorPrimitives.berry500Dark,
+      'amber': ColorPrimitives.amber500Dark,
+      'teal': ColorPrimitives.teal500Dark,
+      'sky': ColorPrimitives.sky500Dark,
+      'rose': ColorPrimitives.rose500Dark,
     };
 
     test('every light icon color clears AA on the light base', () {
@@ -197,12 +205,20 @@ void main() {
       'ochre': ColorPrimitives.ochreTint,
       'periwinkle': ColorPrimitives.periwinkleTint,
       'berry': ColorPrimitives.berryTint,
+      'amber': ColorPrimitives.amberTint,
+      'teal': ColorPrimitives.tealTint,
+      'sky': ColorPrimitives.skyTint,
+      'rose': ColorPrimitives.roseTint,
     };
     final icons = {
       'clay': ColorPrimitives.clay500,
       'ochre': ColorPrimitives.ochre500,
       'periwinkle': ColorPrimitives.periwinkle500,
       'berry': ColorPrimitives.berry500,
+      'amber': ColorPrimitives.amber500,
+      'teal': ColorPrimitives.teal500,
+      'sky': ColorPrimitives.sky500,
+      'rose': ColorPrimitives.rose500,
     };
 
     test('every tint sits at L=0.90, not near-white', () {

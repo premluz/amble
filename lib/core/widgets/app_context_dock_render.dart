@@ -1,0 +1,154 @@
+part of 'app_context_dock.dart';
+
+class _AppContextDockLayout extends StatelessWidget {
+  const _AppContextDockLayout({
+    required this.theme,
+    required this.configuration,
+    required this.entries,
+    required this.panes,
+    required this.duration,
+  });
+
+  final AmbleTheme theme;
+  final AppContextDockConfiguration configuration;
+  final Map<String, _DockEntry> entries;
+  final Map<String, _DockPaneEntry> panes;
+  final Duration duration;
+
+  double get _buttonSize => appButtonHeightFor(theme, AppButtonSize.md);
+
+  Map<String, List<_DockEntry>> _entriesByGroup() {
+    final result = <String, List<_DockEntry>>{};
+    for (final group in configuration.groups) {
+      result[group.id] = [
+        for (final action in group.actions) entries[action.id]!,
+      ];
+    }
+    return result;
+  }
+
+  double _groupWidth(int count) =>
+      theme.spacingXs * 2 +
+      _buttonSize * count +
+      theme.spacingXs * (count > 0 ? count - 1 : 0);
+
+  @override
+  Widget build(BuildContext context) {
+    final byGroup = _entriesByGroup();
+    final groups = configuration.groups;
+    final positions = <String, Rect>{};
+    final groupRects = <String, Rect>{};
+    var left = 0.0;
+    final height = _buttonSize + theme.spacingXs * 2;
+    for (var groupIndex = 0; groupIndex < groups.length; groupIndex++) {
+      final group = groups[groupIndex];
+      final groupEntries = byGroup[group.id] ?? const <_DockEntry>[];
+      if (groupEntries.isEmpty) continue;
+      final width = _groupWidth(groupEntries.length);
+      groupRects[group.id] = Rect.fromLTWH(left, 0, width, height);
+      panes[group.id]!.rect = groupRects[group.id];
+      for (var index = 0; index < groupEntries.length; index++) {
+        final entry = groupEntries[index];
+        positions[entry.action.id] = Rect.fromLTWH(
+          left + theme.spacingXs + index * (_buttonSize + theme.spacingXs),
+          theme.spacingXs,
+          _buttonSize,
+          _buttonSize,
+        );
+        entry.rect = positions[entry.action.id];
+      }
+      left += width;
+      if (groupIndex < groups.length - 1) left += theme.spacingSm;
+    }
+
+    // Departing controls fade where they were; they never join target layout.
+    for (final entry in entries.values.where((entry) => !entry.present)) {
+      if (entry.rect case final rect?) positions[entry.action.id] = rect;
+    }
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return SizedBox(
+      width: left,
+      height: height,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          for (final pane in panes.values)
+            if (pane.rect case final rect?)
+              AnimatedPositioned(
+                key: ValueKey('dock-pane-${pane.group.id}'),
+                duration: duration,
+                curve: theme.curveStandard,
+                left: rect.left,
+                top: rect.top,
+                width: rect.width,
+                height: rect.height,
+                child: IgnorePointer(
+                  child: AnimatedOpacity(
+                    opacity: !pane.entering && (pane.present || entries.values.any(
+                      (entry) => entry.groupId == pane.group.id && !entry.exiting)) ? 1 : 0,
+                    duration: duration,
+                    curve: theme.curveStandard,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color:
+                            pane.group.backgroundColor ??
+                            theme.colorSurfaceOverlay,
+                        borderRadius: BorderRadius.circular(
+                          theme.radiusPillFull,
+                        ),
+                        boxShadow: isDark ? null : theme.shadowPane,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          for (final entry in entries.values)
+            if (positions[entry.action.id] case final rect?)
+              AnimatedPositioned(
+                key: ValueKey('dock-action-${entry.action.id}'),
+                duration: duration,
+                curve: theme.curveStandard,
+                left: rect.left,
+                top: rect.top,
+                width: rect.width,
+                height: rect.height,
+                child: AnimatedOpacity(
+                  opacity: !entry.exiting && !entry.entering ? 1 : 0,
+                  duration: duration,
+                  curve: theme.curveStandard,
+                  child: ExcludeFocus(
+                    excluding: !entry.present || entry.entering,
+                    child: ExcludeSemantics(
+                      excluding: !entry.present || entry.entering,
+                      child: IgnorePointer(
+                        ignoring: !entry.present || entry.entering,
+                        child: Semantics(
+                          key: ValueKey(entry.action.id),
+                          button: true,
+                          enabled: entry.action.enabled,
+                          label:
+                              entry.action.accessibilityLabel ??
+                              entry.action.tooltip,
+                          child: AppDockIconButton(
+                            theme: theme,
+                            icon: entry.action.icon,
+                            tooltip: entry.action.tooltip,
+                            selected: entry.action.selected,
+                            isDestructive: entry.action.destructive,
+                            haptic: entry.action.haptic,
+                            onTap: entry.action.enabled && entry.present
+                                ? entry.action.onPressed
+                                : null,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+        ],
+      ),
+    );
+  }
+}

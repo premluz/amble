@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../tokens/semantic_theme.dart';
+import '../haptics.dart';
 import 'app_press_feedback.dart';
 
 enum AppButtonVariant { primary, secondary, ghost }
@@ -75,10 +76,13 @@ class AppButton extends StatelessWidget {
     this.tooltip,
     this.iconColor,
     this.borderColor,
+    this.haptic = AmbleHaptic.tap,
   }) : assert(
          label != null || icon != null || child != null,
          'must provide a label, an icon, or a child',
        );
+
+  final AmbleHaptic haptic;
 
   final String? label;
   final IconData? icon;
@@ -282,6 +286,7 @@ class AppButton extends StatelessWidget {
     final sizedButton = SizedBox(height: height, child: button);
 
     final result = AppPressFeedback(
+      haptic: haptic,
       onTap: isDisabled ? null : onPressed,
       borderRadius: BorderRadius.circular(cornerRadius),
       // The wash rides on the button's own foreground color: against a
@@ -439,6 +444,7 @@ class AppButton extends StatelessWidget {
           );
 
     final circle = AppPressFeedback(
+      haptic: haptic,
       onTap: isDisabled ? null : onPressed,
       shape: BoxShape.circle,
       // Primary's fill is dark/accent-colored, so the wash rides on the

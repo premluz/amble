@@ -43,7 +43,11 @@ void main() {
         final colored = [
           TaskCategoryToken.health,
           TaskCategoryToken.work,
+          TaskCategoryToken.home,
           TaskCategoryToken.personal,
+          TaskCategoryToken.social,
+          TaskCategoryToken.reading,
+          TaskCategoryToken.learning,
           TaskCategoryToken.admin,
         ].map((t) => _contrast(theme.categoryColors[t]!, surface)).toList();
 

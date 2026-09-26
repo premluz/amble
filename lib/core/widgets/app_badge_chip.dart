@@ -1,6 +1,9 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 
 import '../tokens/semantic_theme.dart';
+import 'app_button.dart' show AppButton;
 import 'app_press_feedback.dart';
 
 /// A pill-shaped chip combining a leading badge/icon with a label,
@@ -42,6 +45,20 @@ import 'app_press_feedback.dart';
 /// defaults) to render a plain, non-interactive badge+label chip with no
 /// ring and no gesture handling — the "just displayed" variant requested
 /// alongside the selectable one.
+///
+/// **2026-09-23 — fill matches [AppButton.secondary]'s own translucent
+/// glass tint (`AppButton.subtleTint` under a `BackdropFilter`), not the
+/// old flat `colorSurfaceSecondary`.** Reported directly against a
+/// reference (the quick-create mini sheet's own preset chips — "Running" /
+/// "Laundry" / "Read for class"): the dark, opaque fill didn't match the
+/// lighter secondary-button surface used elsewhere. "Ensure that this same
+/// token is used for the secondary button and the badge background" —
+/// same fix, same token, as [HeaderCircleButton]/[AppMicButton] got
+/// alongside this. **Vertical padding also now equals the horizontal
+/// (`theme.spacingSm` on every side)**, per the same report: "the top
+/// padding should be the same as the left and right" — previously
+/// `spacingXs / 2` vertical vs. `spacingSm` horizontal, a real asymmetry,
+/// not merely visually tight.
 class AppBadgeChip extends StatelessWidget {
   const AppBadgeChip({
     super.key,
@@ -88,12 +105,9 @@ class AppBadgeChip extends StatelessWidget {
       alignment: Alignment.center,
       children: [
         Padding(
-          // `spacingXs / 2`, not `spacingXs` — requested directly: the
-          // quick-create sheet's template chips read too tall top/bottom.
-          padding: EdgeInsets.symmetric(
-            horizontal: theme.spacingSm,
-            vertical: theme.spacingXs / 2,
-          ),
+          // Equal on every side — see this class's own doc comment on the
+          // vertical/horizontal asymmetry this fixes.
+          padding: EdgeInsets.all(theme.spacingSm),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -130,12 +144,28 @@ class AppBadgeChip extends StatelessWidget {
       ],
     );
 
-    final decorated = DecoratedBox(
+    final filled = DecoratedBox(
       decoration: BoxDecoration(
-        color: theme.colorSurfaceSecondary,
+        color: AppButton.subtleTint(theme),
         borderRadius: radius,
       ),
       child: content,
+    );
+
+    // ClipRRect + BackdropFilter — the same glass recipe AppButton's own
+    // secondary variant and HeaderCircleButton's default now share, rather
+    // than a flat translucent color painted with nothing blurred behind
+    // it (which reads as a dim, not glass — see GlassPillSurface's own
+    // doc comment on this exact distinction).
+    final decorated = ClipRRect(
+      borderRadius: radius,
+      child: BackdropFilter(
+        filter: ImageFilter.blur(
+          sigmaX: theme.blurOverlaySigma,
+          sigmaY: theme.blurOverlaySigma,
+        ),
+        child: filled,
+      ),
     );
 
     if (!isSelectable) return decorated;

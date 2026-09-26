@@ -14,6 +14,13 @@ import 'package:amble/shared/models/zone.dart';
 /// border (hard inner glow/shadow of 1-2px), that makes the effect of
 /// separation of blue 'active border' from the pill color in case pill
 /// color is also blue — this is both for zones and tasks."
+///
+/// **2026-09-23 — the separator's own color is `colorSurfacePrimary`, not
+/// `colorScrim`.** The "inner dark bg color" phrasing above described the
+/// ORIGINAL fixed-dark implementation; reported directly as a bug once
+/// live — a hardcoded dark ring on a light-mode pill read as a stray dark
+/// line, not a themed separator. See [SelectedPillBorder]'s own doc
+/// comment for the fix.
 void main() {
   final theme = AmbleTheme.light;
 
@@ -49,7 +56,7 @@ void main() {
                 .map((w) => w.decoration)
                 .whereType<BoxDecoration>())
           if (decoration.border case Border(:final top)) top.color,
-      }..retainAll([theme.colorAccent, theme.colorScrim]);
+      }..retainAll([theme.colorAccent, theme.colorSurfacePrimary]);
 
       expect(
         selectionColors,
@@ -116,7 +123,7 @@ void main() {
       },
     );
 
-    testWidgets('selected: the accent ring and the dark separator ring are '
+    testWidgets('selected: the accent ring and the separator ring are '
         'two DIFFERENT colors, not the same ring drawn twice', (tester) async {
       await pump(tester, isSelected: true);
 
@@ -131,9 +138,9 @@ void main() {
 
       expect(
         borderColors,
-        containsAll([theme.colorAccent, theme.colorScrim]),
+        containsAll([theme.colorAccent, theme.colorSurfacePrimary]),
         reason:
-            'the accent ring and the dark separator ring must be '
+            'the accent ring and the separator ring must be '
             'independently visible colors, so selection stays legible '
             'even against a category color that happens to already be '
             'the same blue as the accent',
@@ -213,13 +220,13 @@ void main() {
                 .map((w) => w.decoration)
                 .whereType<BoxDecoration>())
           if (decoration.border case Border(:final top)) top.color,
-      }..retainAll([theme.colorAccent, theme.colorScrim]);
+      }..retainAll([theme.colorAccent, theme.colorSurfacePrimary]);
 
       expect(selectionColors, isEmpty);
     });
 
     testWidgets('selected: same two-ring treatment as the task pill — '
-        'accent ring and dark separator ring both present', (tester) async {
+        'accent ring and separator ring both present', (tester) async {
       await pump(tester, isSelected: true);
 
       final borderColors = <Color>{
@@ -231,7 +238,10 @@ void main() {
           if (decoration.border case Border(:final top)) top.color,
       };
 
-      expect(borderColors, containsAll([theme.colorAccent, theme.colorScrim]));
+      expect(
+        borderColors,
+        containsAll([theme.colorAccent, theme.colorSurfacePrimary]),
+      );
     });
 
     // Real bug, reported directly: "apart from that solid 1px bg color

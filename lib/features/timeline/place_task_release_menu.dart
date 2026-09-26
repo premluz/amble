@@ -56,6 +56,9 @@ class _PlaceTaskReleaseMenuContent extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        // AppSheet's own outer padding no longer provides a top inset
+        // (2026-09-23 — "top padding should be in header").
+        SizedBox(height: theme.spacingLg),
         ActionRow(
           theme: theme,
           icon: Icons.swap_vert_rounded,

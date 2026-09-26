@@ -5821,3 +5821,734 @@ Verification: six focused tests pass; full suite 1480 pass, the same seven
 known navigation failures. Analyzer retains the same 18 existing issues,
 none in changed files. `git diff --check` passes. Timing was verified
 inside Flutter's widget-test frame scheduler, without external sleeps.
+
+## [2026-09-23, continued] Weekly Zone Authoring Grid: sideways extend required repeated tap-move-release
+
+Reported directly: dragging a SELECTED, saved zone sideways to extend it
+across days worked "one by one" — the user had to tap, move, release,
+tap, move, release repeatedly instead of one continuous drag, unlike
+vertical resize (top/bottom), which already worked as a single motion in
+one gesture. Confirmed as the marquee's own edge-resize handles (used
+when first DRAWING an unsaved zone) were unaffected — only the sideways
+EXTEND gesture on an already-selected, saved `ZoneGridBlock` was broken.
+
+**Root cause**: `ZoneGridBlock`'s own `GestureDetector` wired BOTH
+`onVerticalDrag*` (move, in time) and `onHorizontalDrag*` (extend, across
+days) on the SAME node. Flutter creates two independent recognizers for
+these, and they compete in the gesture arena on every new pointer down —
+the existing doc comment claimed "the arena picks whichever axis the
+finger actually commits to," which only holds for the first few pixels.
+Over a long horizontal drag spanning several day-columns, natural
+vertical finger drift was enough for the vertical recognizer to win a
+re-arbitration mid-gesture, silently cancelling the horizontal one and
+forcing the user to lift and restart. The marquee's own resize handles
+never hit this, because each one (`_MarqueeResizeHandle`,
+`zone_grid_screen.dart`) wires only ONE axis to begin with — there was
+never a competing recognizer on the same node.
+
+**Fix**: added `_AxisLockedMoveExtendDetector`
+(`lib/features/zone_grid/zone_grid_block.dart`), a small `StatefulWidget`
+wrapping the same two axis pairs. It latches which axis fired
+`*DragStart` first and refuses the OTHER axis's start/update/end
+callbacks until that same axis's own end/cancel fires — giving the same
+"one axis, held for the whole gesture" guarantee the marquee handles get
+for free, without splitting the move/extend gesture into separate
+widgets (ruled out previously — see `onExtendStart`'s own doc comment on
+why a side handle can't work at ~70px column widths).
+
+**Files**: `lib/features/zone_grid/zone_grid_block.dart`,
+`test/features/zone_grid/zone_grid_block_test.dart` (two new regression
+tests simulating a committed axis with mid-gesture drift on the other
+axis, proving the lock holds both ways).
+
+**Verification**: `flutter analyze` clean on both files (one pre-existing,
+unrelated `curly_braces_in_flow_control_structures` info elsewhere in
+`zone_grid/`). `flutter test test/features/zone_grid/`: 37 passing. Full
+`flutter test`: 1485 passing, same 7 pre-existing unrelated failures.
+
+**This did NOT fix the reported bug** — see the follow-up entry below.
+The axis lock is correct and kept, but it addressed a mechanism that was
+not the actual failure.
+
+## [2026-09-23, continued] The sideways extend was being taken by the scroll view, not lost mid-gesture
+
+The user re-reported the sideways extend as still broken after the axis
+lock above, then clarified the real symptom: the drag "grabs/scrolls
+instead." That reframes it entirely — the gesture was never reaching
+`onExtendStart`, so an axis lock (which only runs once a drag has
+started) could not possibly have helped.
+
+**Root cause**: `ZoneGridBlock` lives inside the grid's own vertical
+`SingleChildScrollView`. Both that scrollable's vertical recognizer and
+the block's horizontal one race the same pointer, and whichever passes
+its touch slop FIRST takes the gesture. A finger sweeping across ~70px
+day columns carries real vertical drift, so the scrollable often won.
+
+The screen's `physics: NeverScrollableScrollPhysics` guard looks like it
+covers this but cannot: it keys off `_fillSource != null`, which is set
+by `onExtendStart` — which requires the horizontal recognizer to have
+already won. The guard only suppresses scrolling for the rest of a fill
+that managed to start.
+
+**Fix**: `_EagerHorizontalDragRecognizer` overrides
+`hasSufficientGlobalDistanceToAccept` to commit at half the normal touch
+slop, wired via `RawGestureDetector`, so a decisively sideways sweep
+crosses its threshold before the scrollable crosses its. Vertical drags
+are untouched (their horizontal component never nears the reduced
+threshold), preserving "normal vertical swipe scrolls."
+
+**Why the earlier tests passed while the device failed**: they pumped the
+block in a bare `Stack` with no competing scrollable, and a full-screen
+reproduction extended all 7 days in one synthetic drag. Synthetic
+pointers don't reproduce arena competition unless the competitor is
+actually present. The new tests pump a REAL `SingleChildScrollView` and
+assert `controller.offset` stays 0.
+
+**Files**: `lib/features/zone_grid/zone_grid_block.dart`,
+`test/features/zone_grid/zone_grid_block_test.dart` (two new tests in a
+"sideways extend beats the enclosing scrollable" group).
+
+**Verification**: `flutter analyze` clean. `flutter test
+test/features/zone_grid/`: 39 passing, including the pre-existing "normal
+vertical swipe scrolls rather than painting" and drag-to-multi-select
+sweep tests. Full `flutter test`: 1487 passing, same 7 pre-existing
+unrelated failures.
+
+**Still open** (reported in the same message, not yet started): an
+unsaved, drawn-but-not-yet-saved marquee should be draggable as a whole
+(move, not just resize its edges); and the outside-tap-to-dismiss vs.
+tap-and-move-is-scroll distinction for an unsaved marquee's own sheet.
+
+
+## 2026-09-23 — Matching one-frame reveal for both Day views
+
+Added `day_view_reveal.dart` and wrapped `ZoneDayTimeline` so the
+non-spatial view also waits one layout frame before painting. No fade or
+timer; ordinary rebuilds remain visible. Extended
+`spatial_label_icon_alignment_test.dart` to check both switch directions.
+Updated `DECISIONS.md` with the shared reveal behavior.
+
+Verification: 39 targeted tests passed before the session pause;
+`git diff --check` passes for the changed implementation/test files.
+On continuation, analyzer and full-suite attempts could not start:
+existing `flutter run` PID 10133 holds the SDK startup lock. Cancelled
+only the two waiting verification commands; permission to stop the
+existing run session is pending. Later concurrent workspace edits have
+not been validated by this session's earlier targeted run.
+
+## [2026-09-23, continued] Category set expanded 5 → 9, two hues recolored, General made invisible
+
+Reported directly: "There should not be tag general — untagged is
+essentially invisible placeholder... no icon and just grey. Healthy
+should be Redish. Work bluish. Personal icon should be changed to
+'user'... Current personal would be Home. 2 users would be Social.
+Running icon would be [Health]. Book would be Reading. Student hat
+would be Learning." Confirmed via AskUserQuestion: final set is
+General(hidden)/Health/Work/Home/Personal(user icon, NEW)/Social/
+Reading/Learning/Admin — 9 total, Admin unchanged.
+
+**Color reassignment.** Health moves from hue 35.9° to 25° (true red).
+Work moves from hue 137.8° (green) to 263.2° (blue) — the exact hue the
+OLD "Personal" occupied. The renamed "Home" (same category, same id,
+was "Personal" with the home icon) takes over 137.8°, the hue Work just
+vacated. Four brand-new hues (90°/personal, 185°/social, 218°/reading,
+350°/learning) were hand-solved against the app's own `oklch()`
+pipeline and the SAME AA floors `palette_contrast_test.dart` already
+enforces (icon ≥4.5:1 against `colorSurfaceBase` per theme, tint
+>1.15:1 vs white, icon-on-tint ≥3:1) — verified by running that exact
+math before writing any token value, not eyeballed. Minimum hue
+separation from every other built-in is ≥33°, matching the existing
+12-swatch custom-category palette's own documented ~30° floor.
+
+**Id stability.** [BuiltInCategoryIds.personal] (id `...0004`) KEEPS
+its id through the Personal→Home rename — it's the same persisted
+category, and changing its id would silently orphan every existing
+task referencing it. The NEW "Personal" (user icon) gets a genuinely
+new id, [BuiltInCategoryIds.personalNew] (`...0006`), plus 3 more new
+ids for Social/Reading/Learning (`...0007`-`...0009`). The legacy
+`TaskCategory` enum (frozen, Hive field-index-stable) is untouched —
+it only ever had 5 values, all of which still resolve correctly since
+none of them pointed at the ids that moved.
+
+**General is now invisible.** A new `visibleCategoryListProvider`
+(`category_providers.dart`) filters `BuiltInCategoryIds.general` out of
+the list; the 3 places that render "a list of tags to pick/manage"
+(`task_category_modal.dart`, `task_name_category_modal.dart`,
+`category_list_screen.dart`) now read that instead of the raw
+`categoryListProvider`. The raw provider is untouched — General still
+exists as a real row (a task's `categoryId` can resolve to it,
+`deleteCategory`'s reassignment target still needs it to exist). Also:
+the "no category assigned" badge fallback (3 call sites —
+`CategoryBadge`, `task_detail_sheet.dart`, `zone_container_block.dart`)
+now renders NO icon at all (was a plain circle outline) — "no icon and
+just grey," per direct request.
+
+**Files**: `lib/shared/models/category.dart` (id constants),
+`lib/shared/providers/category_providers.dart` (+`.g.dart`, seed list +
+new filtered provider), `lib/core/tokens/color_primitives.dart` (hue
+reassignment + 4 new tint/500/500Dark triples), `lib/core/tokens/
+semantic_theme.dart` (`TaskCategoryToken` enum + 4 color maps),
+`lib/features/task_detail/category_visual.dart` (`builtInIconFor`/
+`builtInTokenFor` mappings, badge glyph removal),
+`lib/features/task_detail/task_detail_sheet.dart`, `lib/features/
+timeline/zone_container_block.dart` (badge glyph removal),
+`lib/features/task_detail/task_category_modal.dart`, `lib/features/
+task_detail/task_name_category_modal.dart`, `lib/features/task_detail/
+category_list_screen.dart` (switched to the filtered provider).
+Tests: `test/support/seeded_category_box.dart` (fixture expanded to 9),
+`test/shared/providers/category_migration_test.dart` (count 5→9),
+`test/core/tokens/palette_contrast_test.dart`/`default_category_
+legibility_test.dart` (4 new tokens added to existing coverage),
+`test/features/timeline/timeline_capsule_preview.png` (golden
+regenerated — pill colors legitimately changed).
+
+**Verification**: `flutter analyze` clean (same 18 pre-existing
+unrelated issues). Targeted category/timeline/zone_grid suites: all
+passing. Full `flutter test`: 1491 passing, 9 failing — 7 pre-existing
+unrelated (`floating_nav_pill_test.dart`, `timeline_nav_consolidation_
+test.dart`, `edit_mode_hides_main_nav_test.dart`) plus the 2 already-
+known-unresolved zone-grid marquee-dismiss failures from the prior
+session entry (untouched by this work). Confirmed the pre-existing set
+via `git stash` + rerun before attributing anything to this change.
+
+## 2026-09-24 — Keyboard-aware sheet motion
+
+Replaced guessed Android keyboard timing with native IME progress on Android
+11+: autofocus sheets join the final slide-duration window; plain sheets slide
+immediately. Only the sheet surface translates, and keyboard clearance follows
+current insets without a global height cache. Added explicit unsupported-platform
+and suppressed-keyboard fallbacks, interrupted-entrance recovery, and continuous
+early dismissal. The existing Quick Capture keyboard opt-in remains unchanged.
+
+Files: shared `app_sheet.dart`, new route/motion/keyboard helpers, Android
+`MainActivity.kt` and `AndroidKeyboardAnimation.kt`, motion tokens/theme comments,
+sheet/Quick Capture tests, and design-system/decision/error documentation.
+
+Verification: 33 focused tests pass; Android debug APK builds. Full suite: 1500
+passing, 9 failing in the previously recorded navigation/marquee groups.
+`flutter analyze`: 18 existing issues, including two Widgetbook errors; not a
+clean repository-wide gate. `git diff --check` passes. Device smoothness remains
+unverified: the native bridge requires a full rebuild/restart, not hot reload.
+
+## [2026-09-24] Curated category-icon list expanded for a supplied lifestyle/activity name list
+
+Reported directly, against a pasted list of ~24 names (Sport, Reading,
+Food, Pets, Home, Beauty, Mind, Body Exercise, Journaling, Shopping,
+Cleaning, Gaming, Music, Outdoors, Parenting, Side Project, Networking,
+Wellness, Rest, Planning, Garden, Chore): "let's pull icon for
+meditation from the system we use into the app so users can choose...
+if can't find appropriate icon check the system we use and pull."
+Confirmed via AskUserQuestion this is about the CUSTOM-category icon
+picker (`curatedCategoryIcons`), not new built-in categories — these
+are free-form activity names a user picks when creating their own tag,
+not a fixed taxonomy like Health/Work.
+
+Checked each name against `curatedCategoryIcons`' existing ~90 icons:
+most already had a match (Reading→book, Food→apple/salad/toolsKitchen,
+Pets→dog/cat/paw, Sport/Body Exercise→run/dumbbell/walk/bike/swimming,
+Mind→brain, Side Project→rocket, Planning→checklist/clipboardList,
+Chore→vacuumCleaner, etc.). Meditation specifically has NO dedicated
+glyph in the installed `tabler_icons_plus` package (checked directly) —
+`TablerIcons.yoga` (a seated, cross-legged figure, the standard
+meditation pictogram across icon sets generally) was already present
+under Health & fitness and needed no addition. Six genuinely new icons
+added for names with no existing match: `scissors` (Beauty), `notebook`
+(Journaling), `deviceGamepad2` (Gaming), `usersGroup` (Networking —
+deliberately distinct from the existing plain `users`, which reads as
+Parenting/family), `activityHeartbeat` (Wellness), `gardenCart`
+(Garden).
+
+**Files**: `lib/features/task_detail/category_visual.dart`
+(`curatedCategoryIcons` list only).
+
+**Verification**: `flutter analyze` clean (same 18 pre-existing
+unrelated issues). `add_category_modal_test.dart` (the only file
+referencing `curatedCategoryIcons`, via `.first`/`.codePoint` — unaffected
+by appending items): 7/7 passing. Full `flutter test`: 1500 passing, 9
+failing, all pre-existing/already-known (`floating_nav_pill_test.dart`,
+`timeline_nav_consolidation_test.dart`, the 2 not-yet-fixed zone-grid
+marquee-dismiss cases from the prior session entry).
+
+## [2026-09-24, continued] Real gap found: yesterday's category expansion never reaches an already-seeded install
+
+User asked directly, after the category work above shipped: "these are
+preloaded for new users? when should [I] see them? if build app next
+time?" — surfaced a real bug in how that work was delivered.
+`seedBuiltInsAndBackfillIfNeeded` is gated by
+`PreferenceKeys.categoriesSeeded` and only runs its full seed ONCE per
+install; an already-seeded device (any real user, including the dev
+device this was tested on) never re-runs it, so the 4 new categories,
+the Health/Work recolor, the Personal→Home rename, and General's
+disappearance from pickers would NEVER have appeared without an
+uninstall/reinstall. Confirmed via AskUserQuestion to write a proper
+migration rather than rely on manual reinstalls.
+
+**Fix**: `_migrateToExpandedCategorySet`, a third repair step alongside
+the existing `_clearLegacyGeneralEmoji`/`_backfillBuiltInIconCodePoints`
+pattern, run on every launch of an already-seeded install. Two
+idempotent repairs: renames `BuiltInCategoryIds.personal` from
+"Personal" to "Home" ONLY if it still carries the exact old name (skips
+a user who's already renamed it themselves — there's no built-in rename
+UI in v1, so in practice this only matches the pre-migration literal,
+but the check costs nothing and matches this file's own established
+caution against clobbering user changes), and inserts each of the 4 new
+built-in rows that isn't already present, keyed by id (a Hive `put`, so
+a second run is a no-op).
+
+One pre-existing test's own assertion was stale, not broken by a real
+regression: `'is gated by... does not re-run once set'` asserted the
+category list stays EMPTY when `categoriesSeeded` is pre-set with zero
+existing rows — that was already inaccurate before this change too (the
+two existing repairs already ran in that branch, just as no-ops on an
+empty list); this new migration's own "add missing built-ins
+unconditionally" behavior now visibly populates that list, which is the
+INTENDED behavior for a real upgrade — the test's realistic-shape
+coverage lives in the new group below instead, so the old test's
+assertion was corrected to match what the code is actually meant to do,
+not weakened to preserve a stale expectation.
+
+**Files**: `lib/shared/providers/category_providers.dart` (new
+`_migrateToExpandedCategorySet`, wired into the `alreadySeeded` branch),
+`test/shared/providers/category_migration_test.dart` (new "an install
+seeded before the 5→9 category expansion is upgraded" group: 5 tests
+covering the rename, the 4 new rows, a user's own rename surviving,
+idempotency, and a fresh install being unaffected; one pre-existing
+test's assertion corrected).
+
+**Verification**: `flutter analyze` clean (same 18 pre-existing
+unrelated issues). `category_migration_test.dart`: 14/14 passing. Full
+`flutter test`: 1505 passing, 9 failing, all pre-existing/already-known.
+
+## [2026-09-24, continued] A new task's pill still showed General's circle icon
+
+Reported directly against a screenshot: a brand-new task's pill still
+showed a round circle icon, when it should show no icon at all if
+never tagged. The prior "no icon for untagged" fix (same day, earlier
+entry) only covered `category == null` at 3 badge call sites — but a
+new task's `categoryId` is never actually null. Every task-creation
+path (`Task.create`'s callers in `quick_capture_sheet.dart`,
+`voice_capture_provider.dart`, `quick_capture_undo_main.dart`,
+`task_template_form.dart`) explicitly defaults `categoryId` to
+`BuiltInCategoryIds.general` — a REAL category row, not the absence of
+one — so it never reached the null-category branch at all. It went
+through the ordinary `CategoryGlyph` path instead, which resolved
+General's own seeded `iconCodePoint` (`TablerIcons.circle`) like any
+other real category.
+
+**Fix**: `CategoryGlyph.build` now checks
+`category.id == BuiltInCategoryIds.general` first and renders nothing,
+before ever calling `categoryIconFor`. Fixed at this ONE shared widget
+rather than at each of its many call sites, so every current and
+future renderer of "a category's glyph" agrees that General means "no
+icon" — the same guarantee the earlier null-category fix gave the
+narrower `category == null` case. `resolveCategoryVisual` (the pill's
+own grey fill color) is untouched — only the icon glyph is suppressed,
+so a General-tagged task still reads as "grey pill, no icon," matching
+what a genuinely uncategorized badge already showed.
+
+**Files**: `lib/features/task_detail/category_visual.dart`
+(`CategoryGlyph.build` only).
+
+**Verification**: `flutter analyze` clean (same pre-existing warning
+on this file, unrelated). Targeted suites (`task_detail/`, `timeline/`,
+category/legibility tests): all passing (one apparent failure,
+`tap_empty_space_quick_create_test.dart`, reproduced as pre-existing
+test-order flakiness — passes cleanly in isolation, confirmed by
+rerunning it alone). Full `flutter test`: 1505 passing, 9 failing, all
+pre-existing/already-known.
+
+## 2026-09-24 — Reusable positioned reveal for task Edit entry
+
+Added core `AppLayoutReveal` and its opt-in `layoutRevealRoute`: lay out invisibly,
+then fade the incoming editor over the existing screen using `motionFast` (150ms)
+and `curveDecelerate`. Updated `showEditScreen` in `zone_grid_screen.dart` to use
+it. `day_view_reveal.dart` delegates to the same component with zero duration,
+preserving existing Day-switch behavior. Reduced motion skips the fade; hidden
+or entering content cannot receive pointer input. Existing child state is retained.
+
+Tests: new `app_layout_reveal_test.dart` and extended
+`spatial_label_icon_alignment_test.dart`, including the real task Edit route,
+two restored scroll positions, disposal, reduced motion, input blocking and
+both Day-switch directions. All 10 focused tests pass. Full `flutter test`:
+1512 passing, 9 existing navigation/marquee failures. `flutter analyze`:
+18 existing findings, none in the changed code. `git diff --check` passes.
+Device-level visual smoothness remains unverified. Decisions and error log updated.
+
+## 2026-09-24 — Edit-entry chrome flicker
+
+Scoped `editModeEnabledProvider` to the route in `zone_grid_screen.dart`, with
+its initial value determined by the opening tab. The fading editor no longer
+switches the Day screen underneath into edit mode, exposing its extra round
+header control; the incoming task layout also starts in its final mode.
+Extended `spatial_label_icon_alignment_test.dart` to check independent mode
+values and stable Tasks/Zones tab bounds throughout entry. Decision/error logs
+record the shared-state cause.
+
+Verification: 10 focused tests pass; full suite 1512 passing, 9 existing
+navigation/marquee failures. Analyzer reports 18 existing findings, none in
+changed code. `git diff --check` passes. Phone visual confirmation remains open.
+
+## 2026-09-25 — What Matters attention release
+
+Implemented shared What Matters component tokens, item motion and scene wash.
+List tasks/events hold, fall/fade/shrink slightly, then release their space;
+empty zones and separators collapse. Spatial pills and labels release together,
+then important tasks' horizontal lanes and labels settle into the reduced layout
+without changing scheduled times. Return has a distinct 600ms hold/rise/expand
+sequence versus the 900ms entrance. Rapid reversal preserves the current pose;
+reduced motion skips visible interpolation. The theme accent supplies the 3.5%
+wash and 2% persistent tint. Lazy-list keep-alive preserves return motion.
+
+Files: `what_matters_tokens.dart`, `what_matters_item.dart`,
+`what_matters_motion.dart`; timeline/zone-day/zone-container/task-capsule/external-
+event-capsule integration; new motion tests plus existing What Matters/list/row
+regressions. Decision and error logs document phase and retention behavior.
+
+Verification: focused motion/list/spatial suites pass, including both themes,
+three-lane return, rapid reversal, reduced motion and lazy-list restoration.
+Full suite: 1519 passing, the same 9 existing navigation/marquee failures.
+Analyzer: 18 existing findings, none in changed code. Android debug APK builds;
+`git diff --check` passes. On-device feel/visual subtlety remains unverified.
+
+## 2026-09-25 — What Matters ripple/tint/button refinement
+
+Applied the authorized mode feedback: one soft radial ripple grows from the
+bottom, stronger than the persistent accent tint; entry/return shorten to
+800/550ms. Light/dark persistent alpha is 3%/4%; peak wave alpha is 8%/10%.
+The Day host now paints across navigation and content, removing the tint seam;
+nested timelines reuse that scene and other destinations do not paint it.
+Only the What Matters pane receives the active background tint and `lift`
+(light-impact) haptic. Other button defaults remain unchanged.
+
+Files: What Matters tokens/scene, `main.dart`, `app_bottom_dock.dart`,
+`app_button.dart`, motion/appearance tests, and decision/error/progress logs.
+Recorded the reusable toolbar-state and page/view-crossfade brief as explicitly
+deferred, not implemented.
+
+Verification: 13 focused tests pass, including pixel measurements in both themes,
+no duplicate wash, button-specific fill/haptic, and motion/three-lane behavior.
+Android debug APK builds; diff check passes. Analyzer retains 18 existing findings.
+Full suite: 1519 passing, 13 failing: the nine existing navigation/marquee failures
+plus four late-night clock-sensitive failures, reproduced in isolation with no
+competing Flutter processes. Notification tests explicitly assert hour != 23;
+drag tests compare minute-of-day values across midnight (60 versus 1380;
+expected >1434 versus actual 12). These unrelated tests were not modified.
+Phone-level appearance and haptic strength remain unverified.
+
+## 2026-09-26 — Contextual dock and view crossfade systems
+
+Added shared motion tokens and implemented `AppContextDock` with stable action
+identity, animated retained/added/removed actions, group spacing, disabled and
+destructive states, and existing button haptics. Migrated Day, task Edit, zone
+Edit, and Tracked docks; the floating create button remains independent.
+
+Added `AppViewTransition` with layout readiness, cached view state, reduced
+motion, rapid-change continuity, input/semantics blocking, and a 140ms shared
+crossfade. Integrated the main page host, Day zone/spatial mode host, and Edit
+Tasks/Zones host while retaining the existing route-level Edit reveal as the
+single route transition.
+
+Verification: focused `app_context_dock_test.dart` and
+`app_view_transition_test.dart` pass (6 tests); the Android debug APK builds;
+direct Dart analyzer reports no issues for the changed widgets, screens, and
+focused tests. The repository-wide analyzer still reports the same 18 existing
+baseline findings. `git diff --check` passes.
+
+## 2026-09-26 — What Matters ripple contrast refinement
+
+Raised the transient bottom-origin ripple to 14% accent alpha in light mode
+and 12% in dark mode. The persistent settled tint and What Matters button fill
+remain unchanged.
+
+## [2026-09-26] Weekly calendar strip: day-number wrap, swipe/selection decoupling, Today fade
+
+Three reports against one screenshot of the week-of-dates strip
+(`AppDateAccordion`, `core/widgets/app_date_accordion.dart`):
+
+**1. Some day numbers wrapped onto 2 lines ("20", "30") while most
+("21", "22") stayed on 1.** The reserved `SizedBox` width
+(`_dayNumberMinWidth`, measuring "88" at bold) was correct in intent, but
+the `Text` itself had no `softWrap`/`maxLines` set — any real digit pair
+whose glyph width exceeded the reserved box by even a fraction of a
+pixel wrapped instead of overflowing. Fixed: `softWrap: false`,
+`maxLines: 1`, `overflow: TextOverflow.visible` on that Text. A day
+number is always 1-2 digits; it must render as one line or spill
+slightly past centered padding, never wrap.
+
+**2. A completed swipe on the expanded week grid moved the app's actual
+selected day, not just the visible week.** Reported directly: "swipe
+through should not mean changing day, only to see dates of next week...
+tap on day is changing only." This was a deliberate, previously-
+AskUserQuestion-confirmed design (the two adjacent doc comments on the
+swipe/month-stepper explicitly described it as replacing the old
+scrollable day-strip by conflating "page the week" with "change the
+selection") — now reversed on direct request. Added `_viewedWeekOffset`
+(purely a display offset, `_WeekStripState`'s own field) so a swipe
+pages which week's dates the strip SHOWS without ever calling
+`onDateSelected`. Tapping a day (or the press-and-slide scrub) still
+calls `onDateSelected` exactly as before, now resolved against the
+VIEWED week rather than the originally-selected one. A `didUpdateWidget`
+check resets the offset to 0 whenever the parent's own `weekStart`
+changes for a reason OTHER than this offset (a tap, "Today," or any
+other external selection change) — since the parent derives `weekStart`
+purely from `selectedDate`, and swiping never touches that, this only
+ever fires on a genuine external reselection.
+
+**3. New "Today" fade indicator.** Requested directly: "if not today
+selected then we should [show a] small text thin 'Today' fading it on
+the right hand side of Date expander. It should fade in as soon as
+'today date is change' and fade out when it's back on." New
+`_TodayFadeLabel`, `AnimatedOpacity`-driven, gated on
+`selectedDate != today`, placed via a `Spacer` at the trailing edge of
+the date-label row. Tapping it calls `onDateSelected(today)` — reused
+the widget's own existing selection contract rather than adding a new
+callback, confirmed via AskUserQuestion it should be tappable. A second
+AskUserQuestion confirmed the label should be suppressed in Edit Mode
+too, matching the pre-existing "no Today control while editing" rule
+that already removed the old jump-to-today BUTTON from that branch —
+implemented as a new `showTodayLabel` parameter on `AppDateAccordion`
+(default true), passed `false` from `AppCalendarHeader`'s Edit-Mode
+branch only.
+
+**Files**: `lib/core/widgets/app_date_accordion.dart` (all three
+fixes), `lib/features/timeline/app_calendar_header.dart`
+(`showTodayLabel: false` at the Edit-Mode call site),
+`test/features/timeline/app_calendar_header_test.dart` (one pre-existing
+test reversed to match the new swipe/selection contract, per its own
+"reversed, deliberately" comment; 2 new swipe/selection tests; 5 new
+Today-fade tests).
+
+**Verification**: `flutter analyze` clean on all 3 touched files (no new
+issues; same 18 pre-existing repo-wide). `app_calendar_header_test.dart`:
+16/16 passing. A separate full-suite run showed 15 failures across
+unrelated files (task recurrence, zone-grid-edit-merge, nav-consolidation
+tests) — confirmed via a PATH-SCOPED `git stash` (only this session's own
+3 touched files, not a broad stash) that these persist identically with
+this session's changes fully removed, i.e. they come from other
+concurrent work already in this shared tree, not from anything in this
+entry. `flutter analyze`'s own clean run (unaffected by test-runtime
+state) corroborates: no new static issues anywhere.
+
+## [2026-09-26, continued] AppTopNav (Day/Inbox/Tracked) now matches AppTabSwitch's height/hit area
+
+Reported directly: "Main top nav day inbox tracked should have same hit
+(height) area and height as buttons in edit mode (tasks zones)... so no
+jump between views." Confirmed: `AppTopNav` (`core/widgets/
+app_top_nav.dart`) had NO fixed height at all — bare `Text` in
+`theme.textTitle` with zero padding, sizing to whatever that text's own
+line-height computed to (≈22px). `AppTabSwitch` (the Tasks/Zones tabs on
+the merged Edit screen) reserves a deliberate `appButtonHeightFor(theme,
+AppButtonSize.md)` track — 40px. Switching between the two screens
+visibly jumped by the ~18px difference.
+
+**Fix**: wrapped `AppTopNav`'s own `Row` in a
+`SizedBox(height: appButtonHeightFor(theme, AppButtonSize.md))`, and gave
+each `_TopNavLabel` the same fixed height (via its own `SizedBox` +
+`Center`) so its `AppPressFeedback` hit target spans the full bar height,
+not just the bare text's intrinsic bounds — mirroring how
+`AppTabSwitch`'s own `_TabSwitchSegment` centers its label inside its
+40px track via `Stack(alignment: Alignment.center)`. Deliberately did
+NOT adopt any of `AppTabSwitch`'s visual language (no shared track, no
+highlight fill) — `AppTopNav`'s own class doc comment explicitly says
+this bar must NOT look like a conventional tab bar ("Do not design this
+as two standard tab bars"); only the physical height/hit area needed to
+match, not the visual treatment. Left the trailing Settings gear icon's
+own tap target untouched — it wasn't part of the reported comparison
+(which named the destination labels specifically), and changing it
+would have been unrequested scope.
+
+**Files**: `lib/core/widgets/app_top_nav.dart`,
+`test/core/widgets/app_top_nav_test.dart` (2 new tests: the whole bar
+measures exactly `AppButtonSize.md`'s height, and each label's own tap
+target spans that full height rather than just its text).
+
+**Verification**: `flutter analyze` clean on both files. `flutter test`
+on `app_top_nav_test.dart` (6/6), `edit_mode_hides_main_nav_test.dart`
+(4/4, unaffected), and `app_tab_switch_test.dart` (10/10, confirming the
+40px comparison target itself is unchanged) — all passing.
+
+## Persistent chrome motion — architecture handoff (2026-09-26)
+
+Documentation only, per user request. Added
+[SHARED_CHROME_MOTION_BRIEF.md](SHARED_CHROME_MOTION_BRIEF.md) for the
+implementing agent: persistent shell ownership for dock/calendar, explicit
+action-rectangle interpolation, route-local Edit integration, readiness and
+interruption contracts, modal layering, file map, and automated acceptance
+checks. Inspected the existing dock, view host, calendar, and navigation;
+identified identity/ownership gaps without changing application code.
+Implementation remains open; What Matters and sheet motion remain separate.
+
+**Verification**: automated brief validation passed (16 local links, 157
+lines, section structure, whitespace, final newline); scoped `git diff
+--check` passed. Required `flutter analyze --no-pub` returned `18 issues
+found`, including missing `package:widgetbook/main.dart` and `MyApp` in
+`widgetbook/test/widget_test.dart`. `flutter test --no-pub --reporter
+expanded` returned `00:36 +1537 -12: Some tests failed.` The five failing
+test files were rerun with `--concurrency=1` after checking for stale Flutter
+tester processes: `00:11 +32 -12: Some tests failed.` These are current-tree
+failures; this task changed only the brief and this log, with no runtime fixes.
+Logs: `/tmp/rios-shared-chrome-analyze.log`,
+`/tmp/rios-shared-chrome-tests.log`, `/tmp/rios-shared-chrome-rerun.log`.
+
+## [2026-09-26, continued] Calendar accordion still shifted on Edit Mode toggle — a second, separate padding mismatch
+
+Reported directly after the AppTopNav height fix above: "still slightly
+pushes... it pushes lightly calendar accordion down" — a genuinely
+separate bug from the nav-bar height/hit-area one, inside
+`AppCalendarHeader` itself this time.
+
+**Cause**: `AppCalendarHeader`'s Edit-Mode branch used `spacingSm` (8px)
+as its top padding, while the normal (non-Edit-Mode) branch uses
+`spacingMd` (16px) — an 8px leftover mismatch predating this session,
+from before the normal branch's own 2026-09-21 "slightly less space
+between the main menu and the calendar" tuning, which only touched that
+one branch's value and never got mirrored into the Edit-Mode one.
+
+**Fix**: Edit Mode's top padding is now `spacingMd`, matching the normal
+branch exactly.
+
+**Files**: `lib/features/timeline/app_calendar_header.dart`,
+`test/features/timeline/app_calendar_header_test.dart` (new test:
+`AppDateAccordion`'s own y-position must be identical toggling Edit Mode
+on/off, pumped with `showCloseButton: false` — the REAL shape the merged
+Edit screen's own "Tasks" tab uses via `calendarHeaderShowsCloseButton:
+false`, so the close-button row's own legitimate extra height doesn't
+mask/conflate with this specific padding bug).
+
+**Verification**: `flutter analyze` clean on both files. `flutter test`:
+`app_calendar_header_test.dart` 17/17, plus
+`edit_mode_hides_main_nav_test.dart` and `app_top_nav_test.dart`
+(27 total) all passing.
+
+## [2026-09-26, continued] Non-spatial Zone view's own header text was one size larger than everywhere else
+
+Reported directly: "zone names in zone view should resolve to same
+size." The spatial Timeline's rotated zone name
+(`zone_background_block.dart`) and the Edit screen's zone grid
+(`zone_grid_block.dart`) both render on `theme.textZoneName` (11px). The
+non-spatial Zone view's own container header (`ZoneContainerBlock`'s
+`_Header`, e.g. "Misc 4h") instead rendered on `theme.textTaskTitleZone`
+(14px) — a real, visible size mismatch, not just a naming
+inconsistency.
+
+**Cause**: this header's text was swept up in an unrelated, file-wide
+change ("every `textTaskTitle` use in this whole file moved to
+`textTaskTitleZone` together") that correctly resized actual TASK
+titles inside a zone, but incidentally carried the zone CONTAINER's own
+header label along with them even though it was never a task title.
+
+**Fix**: the header (name + duration, one `Text`) now renders on
+`theme.textZoneName`, matching the other two views exactly. Confirmed
+via AskUserQuestion to move the whole string (name + duration) to the
+smaller size together, rather than splitting into two `Text` widgets to
+keep the duration at its old size.
+
+**Files**: `lib/features/timeline/zone_container_block.dart`,
+`test/features/timeline/zone_container_block_test.dart` (new test
+pinning the header's font size/family against `textZoneName`).
+
+**Verification**: `flutter analyze` clean on both files. `flutter test
+test/features/timeline/zone_container_block_test.dart`: 56/56 passing.
+A broader `zone_grid/` run showed unrelated failures (a
+`AppViewTransition` compile error) traced to other concurrent,
+in-progress work already in this shared tree — confirmed via a
+path-scoped `git stash` of only this session's own 2 touched files,
+which reproduced the same compile failure with this change fully
+removed, i.e. it predates and is independent of this fix.
+
+## [2026-09-26, continued] Calendar header top padding removed to maximise content area
+
+Requested directly: "remove any top padding/margin in header, so it
+maximises content area." Both `AppCalendarHeader` branches (normal and
+Edit Mode) had `theme.spacingMd` (16px) top padding above the date
+accordion — now `0` in both. Kept mirrored in both branches deliberately
+(not just the normal one) since the two were made to agree on this exact
+value earlier the same session, after a real bug where they'd drifted
+apart and visibly "pushed" the accordion when Edit Mode toggled; changing
+only one would reopen that. Left/right/bottom padding unchanged.
+
+**Files**: `lib/features/timeline/app_calendar_header.dart` (both
+branches' top padding).
+
+**Verification**: `flutter analyze` clean. `flutter test
+test/features/timeline/app_calendar_header_test.dart`: 17/17 passing,
+including the accordion-position-parity test added earlier the same
+day — confirms both branches still land at the identical y after this
+change.
+
+## [2026-09-26, continued] Shared chrome motion implementation
+
+Implemented the reusable contextual dock and content crossfade foundation
+from `docs/SHARED_CHROME_MOTION_BRIEF.md`. `AppContextDock` now keeps a flat,
+keyed action layer so retained actions survive group changes while pane and
+rectangle geometry animate; entering/removing actions are excluded from
+input, focus, and semantics at the correct time. `AppViewTransition` now
+retains live keyed slots, prepares incoming layout before its 140 ms fade,
+supports reduced motion, and retargets from the current blend. The main shell
+mounts one `AppBottomDock`; a route-scoped controller supplies Edit and
+selection configurations through the shell-owned content Navigator, leaving
+Edit providers route-local.
+
+**Files**: `lib/core/widgets/app_context_dock.dart`,
+`lib/core/widgets/app_context_dock_render.dart`,
+`lib/core/widgets/app_shell_chrome.dart`,
+`lib/core/widgets/app_view_transition.dart`,
+`lib/core/widgets/app_bottom_dock.dart`, `lib/main.dart`,
+`lib/features/timeline/timeline_screen.dart`,
+`lib/features/zone_grid/zone_grid_screen.dart`, focused widget tests, and
+the shared chrome/design-system architecture docs.
+
+**Verification**: focused analyzer clean. The shell-controller, dock,
+view-transition, calendar-header, and spatial-alignment tests pass together
+(29 tests). Repository-wide `flutter analyze` still reports 18 existing
+issues, including the widgetbook test's missing entry point; the full test
+run reports 17 failures across existing What Matters, zone-grid, floating-nav,
+settings, splash, tracked, and navigation suites. The Day accordion is still route-local on Edit Tasks;
+the documented next seam is lifting it into the shell without resetting its
+browsed week.
+
+## [2026-09-26] Context dock ghost-pane correction
+
+Outgoing actions and panes now fade at their previous layout positions instead
+of being appended after the incoming toolbar. Pane keys preserve background
+identity, and new backgrounds/icons share the same fade timing. Day and Edit
+share the leading navigation pane; Tasks/Zones retain one `edit-back` action.
+Cached inactive Edit content cannot publish its dock configuration.
+
+Five focused dock tests pass, including sampled geometry, Back identity and
+opacity, and synchronized pane/icon entrance. Full analysis reports 18 issues;
+the full test run reports `+1537 -17: Some tests failed` (logs:
+`/tmp/rios-dock-review-analyze.log`, `/tmp/rios-dock-review-tests.log`). Device
+motion feel has not been visually verified. No dependencies added.
+
+## [2026-09-26] Dock entrance stagger and zone selection controls
+
+New actions enter 35 ms apart, with pane entrance synchronized to its first
+icon; retained actions stay opaque and reduced motion skips the delays.
+Removed the stale shell configuration override that masked live selection
+updates. Zone selection Edit now uses the same pen icon as task selection.
+Eight focused dock/shell tests pass; targeted analysis is clean. Full-suite
+results are recorded in `/tmp/rios-stagger-full.log`; device motion feel is
+not visually verified.
+
+## [2026-09-26] Root modal sheet ownership
+
+AppSheet.show and pushAppSheetRoute now open above the entire shell, including
+header and toolbar. A shared modal-scope helper preserves route-local provider
+overrides and themes across the root push. The shell no longer resizes for the
+keyboard, so its toolbar stays anchored behind the modal. Six focused tests
+pass, covering both sheet APIs, modal interception, provider scope, keyboard
+geometry, and dismissal. Full analysis still reports 18 issues, including the
+Widgetbook test entry point. Targeted analysis is clean. Full-suite output
+still reports 17 failures: `/tmp/rios-root-sheet-full.log`.
+
+## [2026-09-26] Edit header ownership and staggered dock exits
+
+Moved Edit tabs into the shell header, replacing main navigation with a 140 ms
+crossfade in the same fixed-height, shared-padding slot. Tasks/Zones keeps one
+tab-control element; an opaque Edit base prevents the underlying Day calendar
+flashing through content fades. Removed dock actions now exit 35 ms apart,
+with immediate input/focus/semantics exclusion and cleanup after the final fade.
+Ten focused tests pass (header geometry/identity, entrance/exit timing, dock
+identity, shell updates). Full analyzer reports 18 issues; full-suite output
+is in `/tmp/rios-header-full-tests.log`. Device appearance is not verified.

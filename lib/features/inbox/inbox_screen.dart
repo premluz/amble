@@ -313,11 +313,10 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
                                       background: theme.colorTaskAlert,
                                       semanticLabel: 'Remove',
                                       destructive: true,
-                                      onActivate: () =>
-                                          _removeTaskWithUndo(
-                                            task,
-                                            taskNotifier,
-                                          ),
+                                      onActivate: () => _removeTaskWithUndo(
+                                        task,
+                                        taskNotifier,
+                                      ),
                                     ),
                                     child: _InboxListItem(
                                       task: task,
@@ -368,8 +367,19 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
             // plus the standard gap, rather than a pixel constant, so it
             // stays correctly spaced if the create button's own size ever
             // changes.
+            //
+            // `AppButtonSize.lg` (2026-09-24, was the unset default `md`)
+            // — requested directly: "mic button should be same size as +
+            // ... ensure it's consistent with Day." `AppFloatingCreateButton`
+            // (the "+") already uses `lg` (48px) specifically to match
+            // `AppBottomDock`'s own pane circles on the Timeline/Day
+            // screen (see that widget's own doc comment: "+ is smaller"
+            // was reported once already at the default `md`, 40px) — this
+            // mic button had never been given the same explicit size, so
+            // it sat one rung smaller right next to the "+" it's meant to
+            // match.
             Positioned(
-              right: theme.spacingMd + theme.sizeButtonMd + theme.spacingMd,
+              right: theme.spacingMd + theme.sizeButtonLg + theme.spacingMd,
               bottom: theme.spacingMd,
               child: SafeArea(
                 top: false,
@@ -377,6 +387,7 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
                   icon: Icons.mic_none_rounded,
                   shape: AppButtonShape.circle,
                   variant: AppButtonVariant.secondary,
+                  size: AppButtonSize.lg,
                   tooltip: 'Speak your tasks',
                   onPressed: () => showVoiceCaptureScreen(context),
                 ),

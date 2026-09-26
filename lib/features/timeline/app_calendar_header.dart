@@ -86,9 +86,17 @@ class AppCalendarHeader extends ConsumerWidget {
     // actions, not date navigation.
     if (editModeEnabled) {
       return Padding(
+        // **2026-09-26 — top padding ZERO, matching the normal
+        // (non-Edit-Mode) branch below.** Requested directly: "remove any
+        // top padding/margin in header, so it maximises content area."
+        // Both branches must still agree with EACH OTHER (a real bug
+        // fixed earlier the same day: an 8px mismatch here — `spacingSm`
+        // vs. the normal branch's `spacingMd` — visibly "pushed" the
+        // accordion when Edit Mode toggled), so this change is mirrored
+        // in both places rather than only here.
         padding: EdgeInsets.fromLTRB(
           theme.spacingScreenPadding,
-          theme.spacingSm,
+          0,
           theme.spacingScreenPadding,
           theme.spacingSm,
         ),
@@ -127,29 +135,29 @@ class AppCalendarHeader extends ConsumerWidget {
               expanded: accordionExpanded,
               onExpandedChanged: (_) =>
                   ref.read(dateAccordionExpandedProvider.notifier).toggle(),
+              // Same rule as the removed Today BUTTON above (see this
+              // branch's own comment on why it's gone from Edit Mode) —
+              // extended to the newer, passive fade label.
+              showTodayLabel: false,
             ),
           ],
         ),
       );
     }
 
-    // Laid out so the date label lands on exactly the y and x every
-    // other page's own title sits at — requested directly: "title of
-    // page jumps... the calendar month dropdown should be positioned
-    // same place as title of other pages."
-    //
-    // **2026-09-21 — `spacingMd`, was `spacingLg`.** Requested directly
-    // against a side-by-side mock: "slightly less space between the main
-    // menu and the calendar." This deliberately breaks the
-    // same-y-as-other-page-titles rule above, for this screen only —
-    // confirmed via AskUserQuestion over the alternative of moving
-    // Inbox/Tracked/Settings up by the same amount to keep all four
-    // aligned. Those pages are unchanged; the Day screen's date label now
-    // sits slightly higher than their titles.
+    // **2026-09-26 — top padding ZERO.** Requested directly: "remove any
+    // top padding/margin in header, so it maximises content area."
+    // Supersedes the 2026-09-21 "spacingMd, was spacingLg" tuning below,
+    // which had already broken the original "same y as every other
+    // page's title" rule for this screen specifically — this goes
+    // further, in the same direction, removing the gap entirely rather
+    // than just narrowing it. Inbox/Tracked/Settings are unchanged; the
+    // Day screen's date label now sits flush with the very top of its
+    // safe area, higher than every other page's own title.
     return Padding(
       padding: EdgeInsets.fromLTRB(
         theme.spacingScreenPadding,
-        theme.spacingMd,
+        0,
         theme.spacingScreenPadding,
         theme.spacingSm,
       ),

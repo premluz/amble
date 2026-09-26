@@ -15,13 +15,16 @@ import '../tokens/semantic_theme.dart';
 /// selection visible regardless of the pill's own color, both for zones
 /// and tasks.
 ///
-/// The separator uses [AmbleTheme.colorScrim] rather than a surface
-/// token — it's the one color in this theme that's fixed dark in BOTH
-/// light and dark mode (every surface token flips with theme), which is
-/// what "inner dark" actually needs: a ring that reads as a shadow/gap
-/// regardless of which theme or which pill color sits behind it, not a
-/// literal near-black that would look wrong composited over a light-theme
-/// pill on its own.
+/// **2026-09-23 — uses [AmbleTheme.colorSurfacePrimary], not
+/// [AmbleTheme.colorScrim].** The original version deliberately picked
+/// `colorScrim` for being fixed-dark in BOTH themes — reported directly
+/// as the actual bug: a hardcoded dark ring read as a stray dark line
+/// against a light-mode pill rather than a themed separator. Requested
+/// directly: "tokenised so it's light on light mode." `colorSurfacePrimary`
+/// is a genuine per-theme pair (the app's own background surface — cream
+/// in light mode, near-black in dark mode), so the separator now reads as
+/// "the page's own background peeking through" rather than a fixed
+/// shadow, and correctly goes light on a light background.
 ///
 /// A plain [BoxDecoration] can't express two concentric rings at different
 /// widths and colors in one layer — [Border] paints a single stroke — so
@@ -154,7 +157,10 @@ class SelectedPillBorder extends StatelessWidget {
           child: IgnorePointer(
             child: DecoratedBox(
               decoration: BoxDecoration(
-                border: Border.all(color: theme.colorScrim, width: separator),
+                border: Border.all(
+                  color: theme.colorSurfacePrimary,
+                  width: separator,
+                ),
                 borderRadius: scrimRadius,
               ),
             ),

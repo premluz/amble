@@ -66,19 +66,23 @@ void main() {
     await preferencesBox.deleteFromDisk();
   });
 
-  test('seeds all 5 built-in categories at their fixed UUIDs', () async {
+  test('seeds all 9 built-in categories at their fixed UUIDs', () async {
     await container
         .read(categoryListProvider.notifier)
         .seedBuiltInsAndBackfillIfNeeded();
 
     final categories = container.read(categoryListProvider);
-    expect(categories, hasLength(5));
+    expect(categories, hasLength(9));
     expect(categories.map((c) => c.id).toSet(), {
       BuiltInCategoryIds.general,
       BuiltInCategoryIds.health,
       BuiltInCategoryIds.work,
       BuiltInCategoryIds.personal,
       BuiltInCategoryIds.admin,
+      BuiltInCategoryIds.personalNew,
+      BuiltInCategoryIds.social,
+      BuiltInCategoryIds.reading,
+      BuiltInCategoryIds.learning,
     });
     for (final category in categories) {
       expect(category.isBuiltIn, isTrue);
@@ -200,7 +204,7 @@ void main() {
     await notifier.seedBuiltInsAndBackfillIfNeeded();
     await notifier.seedBuiltInsAndBackfillIfNeeded();
 
-    expect(container.read(categoryListProvider), hasLength(5));
+    expect(container.read(categoryListProvider), hasLength(9));
     expect(
       taskBox.get('pre-migration-task')!.categoryId,
       BuiltInCategoryIds.work,
@@ -228,9 +232,19 @@ void main() {
           .read(categoryListProvider.notifier)
           .seedBuiltInsAndBackfillIfNeeded();
 
-      // No built-ins seeded, and the task's categoryId is still null —
-      // the gate short-circuited before either step ran.
-      expect(container.read(categoryListProvider), isEmpty);
+      // The task's categoryId is still null — the FRESH-install seed
+      // path (which does the Task backfill) never ran, since the gate
+      // was already set. **2026-09-24** — this no longer means the
+      // category list stays empty: once `categoriesSeeded` is true, the
+      // gate routes to the REPAIR path instead
+      // (`_clearLegacyGeneralEmoji`/`_backfillBuiltInIconCodePoints`/
+      // `_migrateToExpandedCategorySet`), and that last repair inserts
+      // the 4 new built-in rows unconditionally when they're missing —
+      // which they are here, since this test seeds no categories at
+      // all. See the dedicated "an install seeded before the 5→9
+      // category expansion" group below for that repair's own coverage
+      // against a REALISTIC pre-migration state (5 existing rows).
+      expect(container.read(categoryListProvider), hasLength(4));
       expect(taskBox.get('should-not-be-touched')!.categoryId, isNull);
     },
   );
@@ -303,4 +317,147 @@ void main() {
       expect(health.emoji, isNotEmpty);
     });
   });
+
+  group(
+    'an install seeded before the 5→9 category expansion is upgraded '
+    '(2026-09-24)',
+    () {
+      Future<void> seedOldFiveOnly() async {
+        // The EXACT pre-migration shape: 5 rows, old "Personal" name.
+        for (final category in [
+          Category(
+            id: BuiltInCategoryIds.general,
+            name: 'General',
+            colorToken: 0,
+            emoji: '',
+            isBuiltIn: true,
+          ),
+          Category(
+            id: BuiltInCategoryIds.health,
+            name: 'Health',
+            colorToken: 1,
+            emoji: '⛑️',
+            isBuiltIn: true,
+          ),
+          Category(
+            id: BuiltInCategoryIds.work,
+            name: 'Work',
+            colorToken: 2,
+            emoji: '💼',
+            isBuiltIn: true,
+          ),
+          Category(
+            id: BuiltInCategoryIds.personal,
+            name: 'Personal',
+            colorToken: 3,
+            emoji: '🏠',
+            isBuiltIn: true,
+          ),
+          Category(
+            id: BuiltInCategoryIds.admin,
+            name: 'Admin',
+            colorToken: 4,
+            emoji: '📋',
+            isBuiltIn: true,
+          ),
+        ]) {
+          await categoryBox.put(category.id, category);
+        }
+        await container
+            .read(preferencesRepositoryProvider)
+            .setValue(PreferenceKeys.categoriesSeeded, true);
+      }
+
+      test(
+        'renames the old "Personal" (home icon) to "Home", same id',
+        () async {
+          await seedOldFiveOnly();
+
+          await container
+              .read(categoryListProvider.notifier)
+              .seedBuiltInsAndBackfillIfNeeded();
+
+          final home = categoryBox.get(BuiltInCategoryIds.personal)!;
+          expect(home.name, 'Home');
+          expect(
+            home.id,
+            BuiltInCategoryIds.personal,
+            reason: 'must be the SAME id — existing tasks reference it',
+          );
+        },
+      );
+
+      test(
+        'adds the 4 new built-in rows (Personal/Social/Reading/Learning)',
+        () async {
+          await seedOldFiveOnly();
+
+          await container
+              .read(categoryListProvider.notifier)
+              .seedBuiltInsAndBackfillIfNeeded();
+
+          final ids = container
+              .read(categoryListProvider)
+              .map((c) => c.id)
+              .toSet();
+          expect(ids, hasLength(9));
+          expect(ids, contains(BuiltInCategoryIds.personalNew));
+          expect(ids, contains(BuiltInCategoryIds.social));
+          expect(ids, contains(BuiltInCategoryIds.reading));
+          expect(ids, contains(BuiltInCategoryIds.learning));
+
+          final newPersonal = container
+              .read(categoryListProvider)
+              .firstWhere((c) => c.id == BuiltInCategoryIds.personalNew);
+          expect(newPersonal.name, 'Personal');
+        },
+      );
+
+      test(
+        'a user who already renamed "Personal" away keeps their own name — '
+        'the repair only touches the exact pre-migration literal',
+        () async {
+          await seedOldFiveOnly();
+          final renamed = categoryBox.get(BuiltInCategoryIds.personal)!
+            ..name = 'My Own Name';
+          await categoryBox.put(BuiltInCategoryIds.personal, renamed);
+
+          await container
+              .read(categoryListProvider.notifier)
+              .seedBuiltInsAndBackfillIfNeeded();
+
+          expect(
+            categoryBox.get(BuiltInCategoryIds.personal)!.name,
+            'My Own Name',
+          );
+        },
+      );
+
+      test('running the migration twice does not duplicate the new rows', () async {
+        await seedOldFiveOnly();
+
+        final notifier = container.read(categoryListProvider.notifier);
+        await notifier.seedBuiltInsAndBackfillIfNeeded();
+        await notifier.seedBuiltInsAndBackfillIfNeeded();
+
+        expect(container.read(categoryListProvider), hasLength(9));
+      });
+
+      test(
+        'a fresh install (never seeded) is unaffected — it gets the full '
+        '9-row seed directly, not through this repair path',
+        () async {
+          await container
+              .read(categoryListProvider.notifier)
+              .seedBuiltInsAndBackfillIfNeeded();
+
+          expect(container.read(categoryListProvider), hasLength(9));
+          final home = container
+              .read(categoryListProvider)
+              .firstWhere((c) => c.id == BuiltInCategoryIds.personal);
+          expect(home.name, 'Home');
+        },
+      );
+    },
+  );
 }

@@ -1,3 +1,4 @@
+import '../../core/widgets/what_matters_motion.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -190,7 +191,9 @@ class ExternalEventCapsuleBlock extends StatelessWidget {
       left: left,
       right: 0,
       height: height,
-      child: Stack(
+      child: WhatMattersMotion(
+        hidden: WhatMattersPhase.enabledOf(context),
+        child: Stack(
         clipBehavior: Clip.none,
         children: [
           Positioned(
@@ -314,7 +317,7 @@ class ExternalEventCapsuleBlock extends StatelessWidget {
             ),
           ),
         ],
-      ),
+      )),
     );
   }
 }

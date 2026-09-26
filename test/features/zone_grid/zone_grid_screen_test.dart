@@ -11,6 +11,7 @@ import 'package:amble/features/zone_grid/zone_grid_tab.dart';
 import 'package:amble/features/zone_grid/new_zone_sheet.dart';
 import 'package:amble/features/timeline/edit_selection_provider.dart';
 import 'package:amble/shared/services/zone_cascade_reschedule.dart';
+import 'package:amble/shared/models/zone.dart';
 
 import '../../support/memory_zone_repositories.dart';
 
@@ -130,13 +131,15 @@ void main() {
     expect(repository.getAll(), isEmpty);
     expect(find.byKey(const ValueKey('zone-paint-selection')), findsNothing);
   });
+  // Painting is entered by LONG PRESS, not an immediate drag. The Zones
+  // tab is always in edit mode now, so a plain drag has to stay available
+  // to the scroll view — see this screen's own `_editing` doc comment.
   testWidgets(
-    'edit mode supports immediate drag and pointer cancellation discards it',
+    'a long-press drag paints, and pointer cancellation discards it',
     (tester) async {
       await pump(tester);
-      await tester.tap(find.byTooltip('Edit zones'));
-      await tester.pump();
       final g = await tester.startGesture(point(tester, 5, 240));
+      await tester.pump(const Duration(milliseconds: 600));
       await g.moveTo(point(tester, 2, 420));
       await tester.pump();
       expect(
@@ -150,14 +153,13 @@ void main() {
     },
   );
   testWidgets(
-    'gradual diagonal painting wins over vertical scroll in edit mode',
+    'gradual diagonal painting wins over vertical scroll once long-pressed',
     (tester) async {
       await pump(tester);
-      await tester.tap(find.byTooltip('Edit zones'));
-      await tester.pump();
       final start = point(tester, 1, 180), end = point(tester, 5, 360);
       final before = point(tester, 1, 0).dy;
       final g = await tester.startGesture(start);
+      await tester.pump(const Duration(milliseconds: 600));
       for (var step = 1; step <= 30; step++) {
         await g.moveTo(Offset.lerp(start, end, step / 30)!);
         await tester.pump(const Duration(milliseconds: 16));
@@ -306,10 +308,6 @@ void main() {
               endMinutes: 300,
             );
         await pump(tester);
-        // Edit mode first — outside it the grid is vertically scrollable,
-        // so a drag legitimately belongs to the scroll view.
-        await tester.tap(find.byTooltip('Edit zones'));
-        await tester.pumpAndSettle();
         container.read(zoneEditSelectionProvider.notifier).clear();
         await tester.pump();
 
@@ -369,8 +367,6 @@ void main() {
               endMinutes: 300,
             );
         await pump(tester);
-        await tester.tap(find.byTooltip('Edit zones'));
-        await tester.pumpAndSettle();
         container.read(zoneEditSelectionProvider.notifier).clear();
         await tester.pump();
 
@@ -399,23 +395,14 @@ void main() {
   // floating bottom dock.
   group('top row / bottom dock restructure (2026-09-20)', () {
     testWidgets(
-      'the tab switch sits ABOVE both Edit and Close — confirming they '
-      'moved out of the top row into a bottom dock, not that they no '
-      'longer exist anywhere',
+      'the tab switch sits ABOVE Close — confirming it moved out of the '
+      'top row into a bottom dock, not that it no longer exists anywhere',
       (tester) async {
         await pump(tester);
 
         final tabSwitchTop = tester.getTopLeft(find.text('Tasks')).dy;
-        final editTop = tester.getTopLeft(find.byTooltip('Edit zones')).dy;
         final closeTop = tester.getTopLeft(find.byTooltip('Close zones')).dy;
 
-        expect(
-          editTop,
-          greaterThan(tabSwitchTop + 100),
-          reason:
-              'Edit must sit well below the tab switch (a bottom dock, '
-              'not the same top row it used to share)',
-        );
         expect(
           closeTop,
           greaterThan(tabSwitchTop + 100),
@@ -426,18 +413,19 @@ void main() {
       },
     );
 
-    testWidgets(
-      'the bottom dock on the Zones tab has both Close and Edit, Close '
-      'leftmost',
-      (tester) async {
-        await pump(tester);
+    // The Edit/Done toggle that used to sit beside Close is GONE — the
+    // Zones tab is always in edit mode now, requested directly ("Edit
+    // zones screen should be in edit mode always no need to press edit to
+    // edit"), so a button that toggles into it has nothing left to do.
+    testWidgets('the Zones tab dock has no Edit toggle — editing is always on', (
+      tester,
+    ) async {
+      await pump(tester);
 
-        final closeRect = tester.getRect(find.byTooltip('Close zones'));
-        final editRect = tester.getRect(find.byTooltip('Edit zones'));
-
-        expect(closeRect.left, lessThan(editRect.left));
-      },
-    );
+      expect(find.byTooltip('Close zones'), findsOneWidget);
+      expect(find.byTooltip('Edit zones'), findsNothing);
+      expect(find.byTooltip('Finish editing'), findsNothing);
+    });
 
     testWidgets('tapping the bottom dock\'s Close pops the screen', (
       tester,
@@ -473,5 +461,307 @@ void main() {
 
       expect(find.byType(ZoneGridScreen), findsNothing);
     });
+  });
+  // Requested directly: "when we have marque selection and release sheet
+  // add zone shows but we should be able to resize zones in that view
+  // also — so we need to add resize handles (dots) same as on task but on
+  // all sides top bottom (resize zone time start end) left right resize
+  // sideways to include/reduce days."
+  group('marquee resize handles', () {
+    // Paints Tue 04:00-05:00 and leaves the naming sheet open, which is
+    // the state the handles live in.
+    Future<void> paint(WidgetTester tester) async {
+      await pump(tester);
+      final g = await tester.startGesture(point(tester, 2, 240));
+      await tester.pump(const Duration(milliseconds: 600));
+      await g.moveTo(point(tester, 2, 300));
+      await tester.pump();
+      await g.up();
+      // `pumpAndSettle`, not a fixed pump — `_endPaint` scrolls the new
+      // marquee into view, and `SingleChildScrollView` wraps its contents
+      // in an `IgnorePointer` while that animation runs. Stopping early
+      // leaves the handles rendered but unreachable by any pointer.
+      await tester.pumpAndSettle();
+    }
+
+    NewZoneTarget target(WidgetTester tester) =>
+        tester.widget<NewZoneSheet>(find.byType(NewZoneSheet)).target;
+
+    // The handles are a private widget, so they're located by their
+    // rendered position relative to the marquee rather than by type.
+    Rect marquee(WidgetTester tester) =>
+        tester.getRect(find.byKey(const ValueKey('zone-paint-selection')));
+
+    testWidgets('a handle sits centred on each of the four edges', (
+      tester,
+    ) async {
+      await paint(tester);
+      expect(find.byType(NewZoneSheet), findsOneWidget);
+
+      final rect = marquee(tester);
+      final dots = find
+          .byWidgetPredicate(
+            (w) => w.runtimeType.toString() == '_MarqueeResizeHandle',
+          )
+          .evaluate()
+          .map((e) => tester.getRect(find.byWidget(e.widget)).center)
+          .toList();
+
+      expect(dots, hasLength(4));
+      // One per edge midpoint, within a pixel of the marquee's own edges.
+      expect(
+        dots.any(
+          (c) =>
+              (c.dy - rect.top).abs() < 1 &&
+              (c.dx - rect.center.dx).abs() < 1,
+        ),
+        isTrue,
+        reason: 'top handle',
+      );
+      expect(
+        dots.any(
+          (c) =>
+              (c.dy - rect.bottom).abs() < 1 &&
+              (c.dx - rect.center.dx).abs() < 1,
+        ),
+        isTrue,
+        reason: 'bottom handle',
+      );
+      expect(
+        dots.any(
+          (c) =>
+              (c.dx - rect.left).abs() < 1 &&
+              (c.dy - rect.center.dy).abs() < 1,
+        ),
+        isTrue,
+        reason: 'left handle',
+      );
+      expect(
+        dots.any(
+          (c) =>
+              (c.dx - rect.right).abs() < 1 &&
+              (c.dy - rect.center.dy).abs() < 1,
+        ),
+        isTrue,
+        reason: 'right handle',
+      );
+    });
+
+    testWidgets('dragging the BOTTOM handle changes the end time, not the '
+        'start', (tester) async {
+      await paint(tester);
+      final before = target(tester);
+
+      final rect = marquee(tester);
+      final bottom = Offset(rect.center.dx, rect.bottom);
+      final g = await tester.startGesture(bottom);
+      await g.moveTo(Offset(bottom.dx, bottom.dy + 90));
+      await tester.pump();
+      await g.up();
+      await tester.pump();
+
+      final after = target(tester);
+      expect(after.startMinutes, before.startMinutes,
+          reason: 'the untouched edge must not move');
+      expect(after.endMinutes, greaterThan(before.endMinutes));
+    });
+
+    testWidgets('dragging the RIGHT handle widens the weekday span',
+        (tester) async {
+      await paint(tester);
+      final before = target(tester);
+      expect(before.weekdays, {2});
+
+      final rect = marquee(tester);
+      final right = Offset(rect.right, rect.center.dy);
+      final g = await tester.startGesture(right);
+      await g.moveTo(Offset(right.dx + rect.width * 1.5, right.dy));
+      await tester.pump();
+      await g.up();
+      await tester.pump();
+
+      final after = target(tester);
+      expect(after.weekdays.length, greaterThan(1),
+          reason: 'dragging right must add days');
+      expect(after.startMinutes, before.startMinutes);
+      expect(after.endMinutes, before.endMinutes);
+    });
+
+    // Reported directly: "when dragging handle it actually moves across
+    // instead of resizing smoothly." `_resizeMarquee` used to hand BOTH
+    // edges to `ZonePaintSelection.between`, which takes a min/max of
+    // whatever pair it is given — so dragging one edge past its opposite
+    // silently swapped which edge was which and the whole rectangle
+    // jumped sideways. Each edge now clamps against its opposite instead.
+    testWidgets(
+      'dragging the RIGHT handle LEFT past the left edge clamps instead of '
+      'flipping the marquee across the grid',
+      (tester) async {
+        await paint(tester);
+        final before = target(tester);
+        expect(before.weekdays, {2});
+
+        final rect = marquee(tester);
+        final right = Offset(rect.right, rect.center.dy);
+        final g = await tester.startGesture(right);
+        // Well past the LEFT edge — the motion that used to invert the
+        // rectangle and shift it into earlier days.
+        await g.moveTo(Offset(rect.left - rect.width * 2, right.dy));
+        await tester.pump();
+        await g.up();
+        await tester.pump();
+
+        final after = target(tester);
+        expect(
+          after.weekdays,
+          {2},
+          reason:
+              'the marquee must stay pinned on its own day, collapsed to a '
+              'single column — not jump to earlier days',
+        );
+      },
+    );
+
+    testWidgets(
+      'dragging the BOTTOM handle UP past the top edge clamps instead of '
+      'flipping start/end',
+      (tester) async {
+        await paint(tester);
+        final before = target(tester);
+
+        final rect = marquee(tester);
+        final bottom = Offset(rect.center.dx, rect.bottom);
+        final g = await tester.startGesture(bottom);
+        await g.moveTo(Offset(bottom.dx, rect.top - rect.height * 2));
+        await tester.pump();
+        await g.up();
+        await tester.pump();
+
+        final after = target(tester);
+        expect(
+          after.startMinutes,
+          before.startMinutes,
+          reason: 'the untouched top edge must not move',
+        );
+        expect(
+          after.endMinutes,
+          greaterThan(after.startMinutes),
+          reason: 'end must stay after start, never invert past it',
+        );
+      },
+    );
+
+    // Requested directly: "when drawn and release should be able to drag
+    // and move drawn zones that are not saved yet."
+    testWidgets('dragging the marquee BODY moves the whole rectangle, '
+        'keeping its size', (tester) async {
+      await paint(tester);
+      final before = target(tester);
+
+      final rect = marquee(tester);
+      final g = await tester.startGesture(rect.center);
+      // Two columns right and an hour down, in one continuous drag.
+      await g.moveBy(Offset(rect.width * 2, 60 * 1.5));
+      await tester.pump();
+      await g.up();
+      await tester.pump();
+
+      final after = target(tester);
+      expect(
+        after.weekdays.length,
+        before.weekdays.length,
+        reason: 'a move must not change how many days are covered',
+      );
+      expect(
+        after.endMinutes - after.startMinutes,
+        before.endMinutes - before.startMinutes,
+        reason: 'a move must not change the duration',
+      );
+      expect(
+        after.weekdays.first,
+        greaterThan(before.weekdays.first),
+        reason: 'dragging right must move it to a later day',
+      );
+      expect(
+        after.startMinutes,
+        greaterThan(before.startMinutes),
+        reason: 'dragging down must move it later in the day',
+      );
+    });
+
+    // Requested directly: "when marquee is drawn and released then single
+    // tap anywhere outside removes it... so when not saved marquee drawn
+    // other interactions are not active."
+    testWidgets('a single tap outside dismisses the marquee and its sheet', (
+      tester,
+    ) async {
+      await paint(tester);
+      expect(find.byType(NewZoneSheet), findsOneWidget);
+
+      // Well to the RIGHT of the marquee but at the same height, so the
+      // tap is unambiguously on the paint surface: below the sheet's own
+      // top edge would hit the sheet, and the surface's own rect extends
+      // outside the viewport (it scrolls), so its corners aren't safe.
+      final surface = tester.getRect(
+        find.byKey(const ValueKey('zone-paint-surface')),
+      );
+      final rect = marquee(tester);
+      await tester.tapAt(
+        Offset(surface.left + surface.width * 0.8, rect.center.dy),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byType(NewZoneSheet),
+        findsNothing,
+        reason: 'the naming sheet must close',
+      );
+      expect(
+        find.byKey(const ValueKey('zone-paint-selection')),
+        findsNothing,
+        reason: 'the marquee itself must be removed',
+      );
+      expect(
+        repository.getAll(),
+        isEmpty,
+        reason: 'dismissing must not save anything',
+      );
+    });
+
+    testWidgets(
+      'while a marquee is pending, tapping an existing zone does NOT select '
+      'it — the tap dismisses the marquee instead',
+      (tester) async {
+        // A saved zone to tap on, on a different day from the marquee.
+        await repository.save(
+          Zone(
+            id: 'existing',
+            title: 'Existing',
+            startMinutes: 240,
+            endMinutes: 300,
+            weekday: 5,
+          ),
+        );
+        await paint(tester);
+        expect(find.byType(NewZoneSheet), findsOneWidget);
+
+        final block = find.byType(ZoneGridBlock);
+        expect(block, findsOneWidget, reason: 'the saved zone should render');
+        await tester.tap(block, warnIfMissed: false);
+        await tester.pumpAndSettle();
+
+        expect(
+          container.read(zoneEditSelectionProvider),
+          isEmpty,
+          reason:
+              'tapping a zone while a marquee is pending must not select it',
+        );
+        expect(
+          find.byType(NewZoneSheet),
+          findsNothing,
+          reason: 'that same tap should dismiss the marquee',
+        );
+      },
+    );
   });
 }

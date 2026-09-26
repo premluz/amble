@@ -214,6 +214,9 @@ class _MultiZoneEditFormState extends ConsumerState<_MultiZoneEditForm> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // AppSheet's own outer padding no longer provides a top inset
+        // (2026-09-23 — "top padding should be in header").
+        SizedBox(height: theme.spacingLg),
         Text('${widget.zoneIds.length} zones selected', style: theme.textTitle),
         SizedBox(height: theme.spacingMd),
         AppPane(

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
+import 'package:amble/core/widgets/app_button.dart';
+import 'package:amble/core/widgets/app_press_feedback.dart';
 import 'package:amble/core/widgets/app_top_nav.dart';
 
 /// Covers [AppTopNav]'s active-state contract — in particular the real
@@ -90,5 +92,43 @@ void main() {
     await pump(tester, selectedIndex: 1);
 
     expect(gearColor(tester), theme.colorTextSecondary);
+  });
+
+  // Reported directly: switching between the main shell (this bar) and
+  // the merged Edit screen's `AppTabSwitch` (Tasks/Zones) visibly
+  // "jumped" — this bar previously had no fixed height at all, sizing to
+  // bare text with no padding, while `AppTabSwitch` reserves a deliberate
+  // `appButtonHeightFor(theme, AppButtonSize.md)` track.
+  group('height/hit-area matches AppTabSwitch (2026-09-26)', () {
+    testWidgets(
+      'the whole bar is exactly AppButtonSize.md tall, same as '
+      "AppTabSwitch's own track",
+      (tester) async {
+        await pump(tester, selectedIndex: 0);
+
+        final barHeight = tester.getSize(find.byType(AppTopNav)).height;
+
+        expect(barHeight, appButtonHeightFor(theme, AppButtonSize.md));
+      },
+    );
+
+    testWidgets(
+      "each destination label's own tap target is the full bar height, "
+      'not just its bare text bounds',
+      (tester) async {
+        await pump(tester, selectedIndex: 0);
+
+        final labelHitArea = tester
+            .getSize(
+              find.ancestor(
+                of: find.text('Day'),
+                matching: find.byType(AppPressFeedback),
+              ),
+            )
+            .height;
+
+        expect(labelHitArea, appButtonHeightFor(theme, AppButtonSize.md));
+      },
+    );
   });
 }

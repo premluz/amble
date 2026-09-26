@@ -110,11 +110,11 @@ options; picking the wrong one is a real bug, not a style preference —
 see the incident below.
 
 **Known correct call sites** for the mono twin: `TaskBoundaryMarkers`
-(the spatial Task view's own hour-gutter labels), `ZoneRowTimeLabel` and
-`ZoneContainerBlock`'s own header time-range text (the non-spatial Zone
-view's equivalents — see "Zone row hour label" below),
-`TaskEdgeTimeLabel`, `CurrentTimeIndicator`, and any other place a clock
-time or duration renders as its own short, self-contained label.
+(the spatial Task view's own hour-gutter labels), `ZoneContainerBlock`'s
+own header time-range text, `CurrentTimeIndicator`, and any other place a
+clock time or duration renders as its own short, self-contained label.
+The compact task-start column uses the shared `textTaskEdgeTime` token
+through `ZoneRowTimeLabel` and `TaskEdgeTimeLabel`.
 
 **Incident, 2026-09-22**: `ZoneRowTimeLabel` and `ZoneContainerBlock`'s
 own header time-range text both read `theme.textCaption` (DM Sans)
@@ -133,6 +133,26 @@ even if the surrounding text nearby happens to already be on the plain
 twin. Check what the token's OWN doc comment in `semantic_theme.dart`
 names as its call sites before assuming either family is the safe
 default.
+
+---
+
+## Timeline annotation type scale
+
+The base type scale is fixed and shared across themes:
+
+| Primitive | Size | Current timeline use |
+| --- | ---: | --- |
+| `TypePrimitives.size0` | 11px | `textZoneName`, `textTaskEdgeTime`, and the small task-title rung |
+| `TypePrimitives.size1` | 12px | `textCaptionMono`, ordinary captions, and the default task-title rung |
+| `TypePrimitives.size2` | 14px | the largest task-title rung and zone-card header titles |
+| `TypePrimitives.size3` | 16px | regular body text and larger prose |
+
+Spatial/edit zone names use `AmbleTheme.textZoneName` at `size0`, one rung
+below the 12px hour axis, so vertical labels stay subordinate to task
+content. Task start/end times use `AmbleTheme.textTaskEdgeTime` at the same
+11px compact scale. `ZoneNameLabel`, `ZoneGridBlock`'s rotated title, and
+`TaskEdgeTimeLabel`/`ZoneRowTimeLabel` are the shared owners; call sites do
+not invent a local `fontSize`.
 
 ---
 
@@ -232,7 +252,7 @@ then forward to `theme.spacingSm` — the same x that grid's own "HH:00"
 ticks use.
 
 **Exact shape**:
-- Pill: `theme.colorAccent` fill, `theme.radiusMd` corners, text in `theme.colorSurfacePrimary`, `theme.textCaption` weight 700.
+- Pill: `theme.colorAccent` fill, `theme.radiusMd` corners, text in `theme.colorSurfacePrimary`, `theme.textTaskEdgeTime` weight 700.
 - Hairline (when `showLine: true`): `theme.borderWidthHairline` tall, `theme.colorAccent`.
 - Gap between pill and hairline: `theme.spacingSm`.
 
@@ -489,13 +509,21 @@ CONSTITUTION.md design principle 4).
   viewport, scrollable), `nearFull` (matches `StepScaffold`'s near-full
   inset). Picking a size larger than `small` is for a picker/list with
   real content, not for a form that should just size to itself.
-- Entrance/exit: `theme.curveDecelerate` in over `theme.motionNormal`,
-  `theme.curveStandard` out over the shorter `theme.motionFast` — shared
-  with `pushAppSheetRoute`, so a bottom sheet and a full-screen sheet
-  route feel like the same family of motion.
-- Keyboard: lifted automatically via a live `MediaQuery.viewInsets.bottom`
-  read (`liftedForKeyboard`) — a caller never adds its own keyboard
-  padding, or the inset double-counts.
+- Entrance/exit: `motionSheetSlide` (180ms), `curveDecelerate` in and
+  `curveStandard` out. Only the sheet surface translates, not the viewport.
+- Plain mode slides immediately. `autofocusesKeyboard: true` mounts the
+  focused field immediately but holds the surface until the IME's final
+  `motionSheetSlide` window. Android 11+ supplies actual IME fraction,
+  duration and inset through `AndroidKeyboardAnimation`; the surface and
+  keyboard finish together even when the IME opens slowly or starts late.
+- An already-open keyboard uses the normal slide. Older Android/iOS use
+  `motionKeyboardSettle` as a grace period; hardware/suppressed keyboards
+  have a bounded request timeout. These are explicit unmeasured paths,
+  not a promise of native synchronization on those platforms.
+- Keyboard clearance belongs to `AppSheetMotion`, outside the translated
+  surface. No global remembered height, no `AnimatedPadding`, and no
+  additional caller-owned keyboard padding.
+- Full-screen route helpers retain their separate navigation behavior.
 
 **API**:
 ```dart
@@ -504,6 +532,7 @@ AppSheet.show<T>({
   required WidgetBuilder builder,
   bool padded = true,           // false only for content managing its own edge-to-edge layout
   AppSheetSize size = AppSheetSize.small,
+  bool autofocusesKeyboard = false,
 })
 ```
 
@@ -689,17 +718,11 @@ but was a coordinate hack rather than shared structure).
   that constant's own doc comment for why zero is correct: the label
   TEXT itself paints outside this box entirely via the negative
   `Positioned.left` above, so nothing needs to reserve space for it).
-- Text style: `theme.textCaptionMono` + `theme.colorTextSecondary` — the
-  exact style `TaskBoundaryMarkers` uses. **Must be the MONO twin, not
-  `theme.textCaption`** (DM Sans) — real bug, reported directly
-  ("hours on spatial zone are not mono font, but spatial ther are
-  mono"): this label is a genuinely temporal/numeric value, exactly
-  `textCaptionMono`'s own documented scope (see the "Two-font system"
-  section below), and using the prose twin here is what broke the
-  match with `TaskBoundaryMarkers`. Not `textTaskTitleZone` (the row's
-  own title scale) or `colorTextTertiary` (an earlier, since-superseded
-  convention matching the Zone Authoring Grid's own hour-axis labels
-  instead) either.
+- Text style: `theme.textTaskEdgeTime` + `theme.colorTextSecondary` — the
+  compact shared task-time style used by `TaskEdgeTimeLabel` in spatial and
+  Edit mode. It stays monospace, but is 11px so a leading task time does not
+  compete with the 12px `TaskBoundaryMarkers` hour axis. Not
+  `textTaskTitleZone` (the row's own title scale) or `colorTextTertiary`.
 
 **API**:
 ```dart
@@ -871,6 +894,12 @@ separate widget `Positioned(right: 0, ...)` in the day column's outer
 names. Now positioned inside `ZoneBackgroundBlock`'s own width, with
 `theme.spacingSm` padding from the band's right inner edge.
 
+**Zone name typography**: both the spatial Timeline's `ZoneNameLabel` and
+the Weekly Zone Authoring Grid's rotated title use `theme.textZoneName`
+(`TypePrimitives.size0`, 11px, monospace). This is deliberately smaller than
+the 12px hour-axis `textCaptionMono` label and is the shared style for dense
+vertical zone annotations.
+
 **Dynamic zone width — dev toggle, default OFF** (2026-09-21): the
 spatial Timeline used to size each zone band dynamically off the day's
 own deepest overlap-lane stack (`_zoneBackgroundWidth`, reading
@@ -1027,3 +1056,62 @@ genuinely scoped to one feature, like `TaskEdgeTimeLabel`'s Timeline/Zone
 scope), then add a section to this file with the same shape as the two
 above: what it is, its exact token values, its API, every current call
 site, and an explicit "never" line naming the ad hoc pattern it replaces.
+
+---
+
+## Persistent contextual chrome and content motion (2026-09-26)
+
+`AppContextDock` is the shared state-driven bottom toolbar. Its
+`AppContextDockConfiguration.stateId` describes the current semantic state;
+`AppContextGroup.id` describes a pane; and `AppContextAction.id` is the
+semantic identity of one retained control. IDs are not list indexes, icon
+matches, or labels. A callback/selected/enabled update with the same shape
+must update in place without replaying entrance motion.
+
+The dock uses one flat keyed action layer and separately painted pane
+backgrounds. A retained action can therefore move between groups while its
+button element, haptic behavior, focus identity, and tooltip remain stable.
+Its rectangle, group bounds, and gaps animate with
+`MotionPrimitives.durationContextDockMs` (200ms) and `curveStandard`.
+Removed actions lose input, focus, and semantics immediately, then fade out;
+new actions are laid out at their final position before fading in. The
+floating create button is a separate primary-action slot and is not a dock
+action.
+
+`AppBottomDock` is mounted by the main shell and supplies an empty
+configuration outside Day. That keeps the dock element alive while pages
+change, so a page crossfade cannot dim or remount the toolbar. Edit now enters
+through the shell-owned content Navigator, so its route-scoped dock
+configuration remains above the route body. The Day calendar header is
+outside the Day list/spatial content transition; its expansion, selected date,
+and browsed-week state remain stateful. Edit Tasks still has a mode-specific
+calendar header, so the accordion itself has not yet been lifted into the
+shell calendar slot.
+
+`AppViewTransition` is the opt-in content-only crossfade. Each `viewId` gets
+one keyed live slot; cached slots are paused and excluded from input,
+semantics, and focus while inactive. A target is laid out before its fade
+starts, and reduced motion completes after the same readiness point. Rapid
+changes retain the current blend as weights over existing live slots instead
+of creating a widget subtree as a fake screenshot. The shared token is
+`MotionPrimitives.durationViewCrossfadeMs` (140ms), with no slide, scale, or
+bounce. Only one transition host may own a given handoff.
+
+Never wrap persistent toolbar/calendar chrome in `AppViewTransition`, use a
+second `AnimatedSwitcher` for the same view change, key a retained action
+only inside a different group parent, or use a fixed delay as proof that
+scroll restoration/layout readiness is complete. The implementation brief
+and migration/acceptance matrix live in
+`docs/SHARED_CHROME_MOTION_BRIEF.md`.
+
+Dock additions use `durationContextDockStaggerMs` (35 ms) between new
+actions, with the existing 200 ms fade for each. Retained controls do not
+re-enter. A new pane begins with its first action; reduced motion skips
+both the stagger and fades. Interrupted entrances cancel pending delays.
+
+Dock removals use the same 35 ms sequential delay and 200 ms fade; input,
+focus, and semantics disable immediately. A departing pane fades with its
+last departing action. The shell's `AppShellHeader` crossfades main navigation
+and Edit tabs in the same md-button-height slot, with shell-owned padding.
+Changing Edit tabs updates the retained tab control without another header
+crossfade. Edit bodies paint an opaque base under their content transitions.

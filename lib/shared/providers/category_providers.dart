@@ -177,6 +177,88 @@ class CategoryList extends _$CategoryList {
     if (changed) _refresh();
   }
 
+  /// Same narrow, repeatable-no-op shape as [_clearLegacyGeneralEmoji]/
+  /// [_backfillBuiltInIconCodePoints]: an install that was ALREADY seeded
+  /// before the 2026-09-23 category expansion (5 built-ins → 9) has none
+  /// of the 4 new rows and still carries the OLD "Personal" name/icon on
+  /// [BuiltInCategoryIds.personal] — the one-time seed loop below never
+  /// runs again for it, so those changes would otherwise never reach an
+  /// existing install. Reported directly, after shipping that change:
+  /// "when should [I] see them? if build app next time?" — the answer
+  /// was "never, without a migration," which this is.
+  ///
+  /// Two repairs, each independently idempotent:
+  /// 1. Renames [BuiltInCategoryIds.personal] from "Personal"/home-icon
+  ///    to "Home"/home-icon IF it still carries the old name — SAME id,
+  ///    so every task already referencing it keeps working; only the
+  ///    label changes. Skipped if a user has already renamed it away
+  ///    from "Personal" themselves (there is no built-in rename UI in
+  ///    v1, so in practice this only ever matches the pre-migration
+  ///    seed literal, but checking the name rather than unconditionally
+  ///    overwriting costs nothing and matches this file's own established
+  ///    "don't clobber a value a user could have changed" caution).
+  /// 2. Inserts each of the 4 new built-in rows (Personal/user icon,
+  ///    Social, Reading, Learning) that isn't already present, by id —
+  ///    `saveCategory` is a Hive `put` keyed by id, so a second run that
+  ///    finds them already there does nothing.
+  Future<void> _migrateToExpandedCategorySet() async {
+    final categoryRepository = ref.read(categoryRepositoryProvider);
+    final existing = categoryRepository.getCategories();
+    var changed = false;
+
+    final oldPersonal = existing
+        .where((c) => c.id == BuiltInCategoryIds.personal)
+        .firstOrNull;
+    if (oldPersonal != null && oldPersonal.name == 'Personal') {
+      oldPersonal.name = 'Home';
+      await categoryRepository.saveCategory(oldPersonal);
+      changed = true;
+    }
+
+    final existingIds = existing.map((c) => c.id).toSet();
+    final newBuiltIns = <Category>[
+      Category(
+        id: BuiltInCategoryIds.personalNew,
+        name: 'Personal',
+        colorToken: 5,
+        emoji: '🙂',
+        iconCodePoint: TablerIcons.user.codePoint,
+        isBuiltIn: true,
+      ),
+      Category(
+        id: BuiltInCategoryIds.social,
+        name: 'Social',
+        colorToken: 6,
+        emoji: '🎉',
+        iconCodePoint: TablerIcons.users.codePoint,
+        isBuiltIn: true,
+      ),
+      Category(
+        id: BuiltInCategoryIds.reading,
+        name: 'Reading',
+        colorToken: 7,
+        emoji: '📖',
+        iconCodePoint: TablerIcons.book.codePoint,
+        isBuiltIn: true,
+      ),
+      Category(
+        id: BuiltInCategoryIds.learning,
+        name: 'Learning',
+        colorToken: 8,
+        emoji: '🎓',
+        iconCodePoint: TablerIcons.school.codePoint,
+        isBuiltIn: true,
+      ),
+    ];
+    for (final category in newBuiltIns) {
+      if (existingIds.contains(category.id)) continue;
+      await categoryRepository.saveCategory(category);
+      changed = true;
+    }
+
+    if (changed) _refresh();
+  }
+
   Future<void> seedBuiltInsAndBackfillIfNeeded() async {
     final prefs = ref.read(preferencesRepositoryProvider);
     final alreadySeeded =
@@ -184,10 +266,24 @@ class CategoryList extends _$CategoryList {
     if (alreadySeeded) {
       await _clearLegacyGeneralEmoji();
       await _backfillBuiltInIconCodePoints();
+      await _migrateToExpandedCategorySet();
       return;
     }
 
     final categoryRepository = ref.read(categoryRepositoryProvider);
+    // **2026-09-23 — expanded from 5 to 9 built-ins**, requested directly:
+    // General becomes an invisible "untagged" placeholder (never shown in
+    // any tag list — see `categoryListProvider`'s own filtering),
+    // Health/Work recolor (red/blue respectively — see
+    // `ColorPrimitives`' own 2026-09-23 comment), the old "Personal" (home
+    // icon) is renamed to "Home" at its SAME id, and 4 new categories are
+    // added: a NEW "Personal" (user icon), "Social" (two-people icon),
+    // "Reading" (book icon), "Learning" (graduation-cap icon).
+    //
+    // `colorToken` is UNUSED for built-ins (they resolve color via
+    // `builtInTokenFor`'s id->TaskCategoryToken map instead — see
+    // `category_visual.dart`) — kept at a stable per-row value only
+    // because the field is non-nullable, not because it does anything.
     final builtIns = <Category>[
       Category(
         id: BuiltInCategoryIds.general,
@@ -220,8 +316,10 @@ class CategoryList extends _$CategoryList {
         isBuiltIn: true,
       ),
       Category(
+        // Same id as the pre-rename "Personal" — this is a RENAME, not a
+        // new category, so existing tasks' `categoryId` still resolves.
         id: BuiltInCategoryIds.personal,
-        name: 'Personal',
+        name: 'Home',
         colorToken: 3,
         emoji: '🏠',
         iconCodePoint: TablerIcons.home.codePoint,
@@ -233,6 +331,38 @@ class CategoryList extends _$CategoryList {
         colorToken: 4,
         emoji: '📋',
         iconCodePoint: TablerIcons.clipboardList.codePoint,
+        isBuiltIn: true,
+      ),
+      Category(
+        id: BuiltInCategoryIds.personalNew,
+        name: 'Personal',
+        colorToken: 5,
+        emoji: '🙂',
+        iconCodePoint: TablerIcons.user.codePoint,
+        isBuiltIn: true,
+      ),
+      Category(
+        id: BuiltInCategoryIds.social,
+        name: 'Social',
+        colorToken: 6,
+        emoji: '🎉',
+        iconCodePoint: TablerIcons.users.codePoint,
+        isBuiltIn: true,
+      ),
+      Category(
+        id: BuiltInCategoryIds.reading,
+        name: 'Reading',
+        colorToken: 7,
+        emoji: '📖',
+        iconCodePoint: TablerIcons.book.codePoint,
+        isBuiltIn: true,
+      ),
+      Category(
+        id: BuiltInCategoryIds.learning,
+        name: 'Learning',
+        colorToken: 8,
+        emoji: '🎓',
+        iconCodePoint: TablerIcons.school.codePoint,
         isBuiltIn: true,
       ),
     ];
@@ -291,6 +421,27 @@ class CategoryList extends _$CategoryList {
     state = ref.read(categoryRepositoryProvider).getCategories();
   }
 }
+
+/// [categoryListProvider], minus [BuiltInCategoryIds.general].
+///
+/// **2026-09-23** — requested directly: General is an invisible
+/// "untagged" placeholder — the fallback a task silently carries when no
+/// real category was chosen — and must never appear as a selectable
+/// option in a tag picker or the Settings tag list. It still exists as a
+/// real [Category] row (raw [categoryListProvider] is unfiltered): a
+/// task's `categoryId` can resolve to it, [CategoryList.deleteCategory]
+/// reassigns orphaned tasks to it, and [CategoryBadge]'s own null-category
+/// fallback renders its look directly — none of that changes. This
+/// provider exists ONLY for the three UI sites that render "a list of
+/// tags to pick/manage" (`task_category_modal.dart`,
+/// `task_name_category_modal.dart`, `category_list_screen.dart`), so
+/// General is invisible there without needing three separate `.where(...)`
+/// calls (and the risk of a future 4th site forgetting the filter).
+@riverpod
+List<Category> visibleCategoryList(Ref ref) => ref
+    .watch(categoryListProvider)
+    .where((category) => category.id != BuiltInCategoryIds.general)
+    .toList();
 
 /// Outcome of [CategoryList.importCategories] — mirrors [ImportResult]'s
 /// shape (`task_providers.dart`), minus the `conflicts` count that

@@ -147,14 +147,52 @@ abstract final class ColorPrimitives {
   // the specified color character is unchanged, only how dark it reads.
   // Re-measured at 4.58-4.60:1 against the new base. See
   // `test/core/tokens/palette_contrast_test.dart`.
-  static final clayTint = oklch(0.904, 0.034, 35.9); // #F5D8D0 health pill
-  static final clay500 = oklch(0.529, 0.101, 31.9); // #9D5345 health icon
-  static final ochreTint = oklch(0.918, 0.025, 137.8); // #DCE8D8 work pill
-  static final ochre500 = oklch(0.512, 0.059, 140.7); // #546F4F work icon
-  static final periwinkleTint = oklch(0.908, 0.022, 263.2); // #D9E1F0 personal
-  static final periwinkle500 = oklch(0.518, 0.067, 258.6); // #51698F personal
+  // **2026-09-23 — category set expanded from 5 to 9, and two hues
+  // reassigned.** Requested directly: "Healthy should be Redish[,] Work
+  // should be blueish," plus four brand-new built-ins (Home, Personal,
+  // Social, Reading, Learning — see `BuiltInCategoryIds`/
+  // `category_providers.dart`'s seed list). `clay`/`ochre`/`periwinkle`/
+  // `berry` keep their names (renaming them purely for accuracy wasn't
+  // worth the diff), but two now point at DIFFERENT hues than their name
+  // suggests:
+  //   - `clay` (health) moves from 35.9° (orange/peach) to 25° (true red).
+  //   - `ochre` (work) moves from 137.8° (green) to 263.2° (blue) — the
+  //     exact hue `periwinkle` used to occupy.
+  //   - `periwinkle` is REPOINTED to `home` (a new category) at 137.8°
+  //     (green) — the hue `ochre`/work just vacated — since the OLD
+  //     "Personal" role (home icon) is renamed to "Home" and a DIFFERENT
+  //     new "Personal" (user icon) takes its own fresh hue below.
+  //   - `berry` (admin) is unchanged.
+  // Four entirely new pairs (`amber`/personal, `teal`/social, `sky`/
+  // reading, `rose`/learning) fill hues chosen for ≥33° separation from
+  // every other built-in hue, verified against this file's own AA floors
+  // (icon ≥4.5:1 against `colorSurfaceBase` each theme, tint >1.15:1
+  // against white, icon-on-tint ≥3:1 — see
+  // `test/core/tokens/palette_contrast_test.dart`).
+  static final clayTint = oklch(0.904, 0.034, 25.0); // #F7D6CC health pill
+  static final clay500 = oklch(0.529, 0.101, 25.0); // #9E5142 health icon
+  static final ochreTint = oklch(0.908, 0.022, 263.2); // #D9E1F0 work pill
+  static final ochre500 = oklch(0.518, 0.067, 263.2); // #52698F work icon
+  static final periwinkleTint = oklch(0.918, 0.025, 137.8); // #DCE8D8 home pill
+  static final periwinkle500 = oklch(0.512, 0.059, 137.8); // #546F4F home icon
   static final berryTint = oklch(0.918, 0.020, 315.7); // #E9E0ED admin pill
   static final berry500 = oklch(0.524, 0.054, 325.2); // #7A5F7B admin icon
+  // Personal (NEW — user icon), hue 90° (yellow-green).
+  static final amberTint = oklch(0.905, 0.060, 90.0); // #EFDFB3 personal pill
+  static final amber500 = oklch(0.530, 0.095, 90.0); // #81691F personal icon
+  static final amber500Dark = oklch(0.590, 0.075, 90.0); // #8F7B47
+  // Social (NEW — two-people icon), hue 185° (teal).
+  static final tealTint = oklch(0.905, 0.060, 185.0); // #B3EDE5 social pill
+  static final teal500 = oklch(0.515, 0.095, 185.0); // #00796F social icon
+  static final teal500Dark = oklch(0.580, 0.075, 185.0); // #3F8980
+  // Reading (NEW — book icon), hue 218° (sky blue).
+  static final skyTint = oklch(0.905, 0.060, 218.0); // #B3EAFA reading pill
+  static final sky500 = oklch(0.520, 0.095, 218.0); // #00758D reading icon
+  static final sky500Dark = oklch(0.585, 0.075, 218.0); // #428799
+  // Learning (NEW — graduation cap icon), hue 350° (pink/magenta).
+  static final roseTint = oklch(0.905, 0.060, 350.0); // #FFD0E5 learning pill
+  static final rose500 = oklch(0.540, 0.095, 350.0); // #985676 learning icon
+  static final rose500Dark = oklch(0.600, 0.075, 350.0); // #A36E86
   // The neutral "no category chosen yet" pair — same family, zero-ish
   // chroma, as before.
   static final neutralTint = oklch(0.927, 0.004, 106.5); // #E7E7E4
@@ -164,9 +202,15 @@ abstract final class ColorPrimitives {
   // 2026-09-20 (previously explicitly out of scope; that scoping is
   // reversed here per direct request — full palette, both themes,
   // together).
-  static final clay500Dark = oklch(0.646, 0.079, 31.6); // #B97C70
-  static final ochre500Dark = oklch(0.635, 0.046, 140.8); // #7C9278
-  static final periwinkle500Dark = oklch(0.625, 0.053, 258.0); // #7489A8
+  //
+  // **2026-09-23 — hues swapped to match the light-mode reassignment
+  // above**: `clay` (health) → 25° red, `ochre` (work) → 263.2° blue,
+  // `periwinkle` (now home) → 137.8° green. Chroma/lightness held at
+  // their prior values; only hue moved, mirroring exactly how the light
+  // triples above were edited.
+  static final clay500Dark = oklch(0.646, 0.079, 25.0); // #C08272
+  static final ochre500Dark = oklch(0.625, 0.053, 258.0); // #7489A8
+  static final periwinkle500Dark = oklch(0.635, 0.046, 140.8); // #7C9278
   static final berry500Dark = oklch(0.609, 0.058, 327.3); // #967795
   static final neutral500Dark = oklch(0.653, 0.007, 137.8); // #8E918D
 

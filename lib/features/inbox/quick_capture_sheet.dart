@@ -6,6 +6,7 @@ import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_mic_button.dart';
 import '../../core/widgets/app_sheet.dart';
 import '../../core/widgets/app_sheet_handle.dart';
+import '../../core/widgets/app_sheet_header.dart';
 import '../../core/widgets/app_step_scaffold.dart' show HeaderCircleButton;
 import '../../core/widgets/app_undo_toast.dart';
 import '../../shared/models/category.dart';
@@ -66,6 +67,16 @@ import '../../shared/services/quick_capture_parser.dart';
 Future<void> showQuickCaptureSheet(BuildContext context, {Task? task}) {
   return AppSheet.show<void>(
     context: context,
+    // First sheet to opt into the keyboard-aware entrance mode
+    // (2026-09-23 — "roll out first to Inbox add note"): the title field
+    // below autofocuses (`autofocus: true`), bringing the keyboard up as
+    // the sheet opens, so the sheet's own slide-in now waits for
+    // `theme.motionKeyboardSettle` before playing — see [AppSheet]'s own
+    // doc comment for the two entrance modes. Previously this sheet used
+    // the plain mode despite autofocusing, so its slide-in and the
+    // keyboard's own rise ran as two uncoordinated motions rather than
+    // one sequenced entrance.
+    autofocusesKeyboard: true,
     // The CALLER's context (captured here, before the sheet route
     // exists) is what the undo toast anchors to — the sheet's own
     // context becomes invalid the instant `Navigator.pop()` removes its
@@ -354,19 +365,27 @@ class _QuickCaptureFormState extends ConsumerState<_QuickCaptureForm> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Drag-down-to-close handle — requested directly: "we should
-          // have sheet 'handle' that user can drag down to close." Own
-          // GestureDetector (not reusing `QuickCreateSheetHandle`, which
-          // drives that OTHER sheet's own small/minimised/full fraction
-          // system — this sheet has exactly one size, so it only needs
-          // "dragged past a threshold closes," not a height to animate).
-          // Sized to the row's own height, centered, matching
-          // `QuickCreateSheetHandle`'s own "top-aligned, small inset, full
-          // row is the hit target" shape (see its doc comment) so the
-          // handle is easy to grab without demanding a precise hit on the
-          // 4px bar itself.
-          Center(
-            child: GestureDetector(
+          // No title text — Close/mic/Done live in ONE header row (Close
+          // top-left, mic and Done top-right), with the drag-to-close
+          // handle layered behind them filling that same row.
+          //
+          // **2026-09-23 — [AppSheetHeader] owns the handle too, rather
+          // than the handle being a separate row stacked above it.**
+          // Reported directly: "header not same height / too big gap /
+          // drag 'to close' thingy not same positioned as on add quick
+          // task sheet." See that widget's own doc comment for all three
+          // differences against the Timeline quick-create reference and
+          // why one fixed-height overlay row fixes them together.
+          //
+          // The gesture itself stays here, not in the shared widget: this
+          // sheet has exactly one size, so it only needs "dragged past a
+          // threshold closes," while the reference's own
+          // `QuickCreateSheetHandle` drives that other sheet's
+          // small/minimised/full fraction system. The shared header takes
+          // whatever handle widget a caller hands it.
+          AppSheetHeader(
+            theme: theme,
+            handle: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onVerticalDragUpdate: (details) =>
                   _dragDistance += details.delta.dy,
@@ -382,55 +401,49 @@ class _QuickCaptureFormState extends ConsumerState<_QuickCaptureForm> {
                 _dragDistance = 0;
                 if (farEnough || fastEnough) Navigator.of(context).pop();
               },
-              child: Padding(
-                // Top inset matches the unified reference value
-                // (docs/DESIGN_SYSTEM.md's "Sheets" section,
-                // `spacingSm` — nudged down one rung from the original
-                // `spacingXs`, 2026-09-22). Bottom kept equal so the
-                // handle stays vertically centered within its own row.
-                padding: EdgeInsets.symmetric(vertical: theme.spacingSm),
-                child: AppSheetHandle(theme: theme),
+              // Top-aligned with a small inset, NOT centred in the row —
+              // matching the reference's own `QuickCreateSheetHandle`
+              // exactly (see its doc comment: "move the handle higher up",
+              // so it reads as a separate drag affordance rather than one
+              // more control on the buttons' own centre line).
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Padding(
+                  padding: EdgeInsets.only(top: theme.spacingSm),
+                  child: AppSheetHandle(theme: theme),
+                ),
               ),
             ),
-          ),
-          SizedBox(height: theme.spacingSm),
-          // No title text any more — requested directly, alongside moving
-          // Close/mic/Done into one header row (Close top-left, mic and
-          // Done top-right) rather than a titled header followed by a
-          // separate action row below the field.
-          Row(
-            children: [
-              HeaderCircleButton(
-                theme: theme,
-                icon: Icons.close_rounded,
-                onTap: () => Navigator.of(context).pop(),
-              ),
-              const Spacer(),
-              AppMicButton(
-                isListening: _isListening,
-                onPressed: _isSubmitting ? null : _toggleListening,
-                // Secondary, not primary — requested directly: Done is the
-                // one primary action in this header, mic is a supporting
-                // input method alongside it.
-                isPrimary: false,
-                // Matches the Done button's own HeaderCircleButton size
-                // exactly — requested directly: "voice record should be
-                // same size as done."
-                size: theme.spacingXl,
-              ),
-              SizedBox(width: theme.spacingSm),
-              HeaderCircleButton(
-                theme: theme,
-                icon: Icons.check_rounded,
-                // Re-entrancy is guarded inside `_doSubmit`'s own
-                // `_isSubmitting` check (same as every other submit path
-                // here), not by disabling this button — `HeaderCircleButton`
-                // takes a non-nullable `onTap`.
-                onTap: _submit,
-                backgroundColor: theme.colorAccent,
-                iconColor: theme.colorSurfacePrimary,
-              ),
-            ],
+            onClose: () => Navigator.of(context).pop(),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AppMicButton(
+                  isListening: _isListening,
+                  onPressed: _isSubmitting ? null : _toggleListening,
+                  // Secondary, not primary — requested directly: Done is
+                  // the one primary action in this header, mic is a
+                  // supporting input method alongside it.
+                  isPrimary: false,
+                  // Matches the Done button's own HeaderCircleButton size
+                  // exactly — requested directly: "voice record should be
+                  // same size as done."
+                  size: theme.spacingXl,
+                ),
+                SizedBox(width: theme.spacingSm),
+                HeaderCircleButton(
+                  theme: theme,
+                  icon: Icons.check_rounded,
+                  // Re-entrancy is guarded inside `_doSubmit`'s own
+                  // `_isSubmitting` check (same as every other submit path
+                  // here), not by disabling this button —
+                  // `HeaderCircleButton` takes a non-nullable `onTap`.
+                  onTap: _submit,
+                  backgroundColor: theme.colorAccent,
+                  iconColor: theme.colorSurfacePrimary,
+                ),
+              ],
+            ),
           ),
           SizedBox(height: theme.spacingMd),
           // Bare text, no field chrome — matching quick-create's own

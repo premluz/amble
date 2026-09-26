@@ -10,7 +10,21 @@ import 'type_primitives.dart';
 
 /// Semantic task category. Fixed taxonomy, not a free color picker —
 /// see docs/DECISIONS.md ("Task colors are semantic categories").
-enum TaskCategoryToken { general, health, work, personal, admin }
+// **2026-09-23 — expanded from 5 to 9.** `personal` is now a NEW
+// category (user icon) at its own hue; the OLD "personal" role (home
+// icon) is `home`. `social`/`reading`/`learning` are new. See
+// `ColorPrimitives`' own 2026-09-23 comment for the full hue reassignment.
+enum TaskCategoryToken {
+  general,
+  health,
+  work,
+  home,
+  personal,
+  social,
+  reading,
+  learning,
+  admin,
+}
 
 /// Tier 2 — semantic tokens, meaning-bound references to Tier 1.
 /// This is the layer widgets actually consume; never reference
@@ -68,6 +82,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     required this.radiusMd,
     required this.radiusLg,
     required this.radiusXl,
+    required this.radiusXxl,
     required this.radiusTaskPill,
     required this.radiusPillSmall,
     required this.radiusPillRounded,
@@ -85,6 +100,8 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     required this.textLabel,
     required this.textCaption,
     required this.textCaptionMono,
+    required this.textZoneName,
+    required this.textTaskEdgeTime,
     required this.textTaskTitleSm,
     required this.textTaskTitleMd,
     required this.textTaskTitleLg,
@@ -94,6 +111,8 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     required this.motionNormal,
     required this.motionSlow,
     required this.motionRouteSettle,
+    required this.motionSheetSlide,
+    required this.motionKeyboardSettle,
     required this.curveStandard,
     required this.curveDecelerate,
   });
@@ -405,6 +424,13 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   /// 16 — panes.
   final double radiusXl;
 
+  /// 20 — one rung past [radiusXl], for a zone's own Edit Mode selection
+  /// state (`ZoneBackgroundBlock`'s `editModeEnabled` branch), which reads
+  /// more rounded than its resting card corner. See
+  /// [RadiusPrimitives.radiusXxl]'s own doc comment for why this isn't
+  /// [radiusModal] instead.
+  final double radiusXxl;
+
   /// Fully rounded — the timeline task pill and any capsule-shaped
   /// control. Not a rung on the size scale; a shape.
   final double radiusTaskPill;
@@ -516,11 +542,20 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   /// The MONOSPACE twin of [textCaption] — same reasoning as
   /// [textBodyMono]. [textCaption] is shared between generic captions/
   /// chips (→ DM Sans) and genuinely numeric/temporal labels that must
-  /// stay monospace: the rotated zone-name labels (`zone_background_block
-  /// .dart`, `zone_grid_block.dart`), and time/duration text (`task_edge
-  /// _time_label.dart`, `current_time_indicator.dart`, `task_boundary
-  /// _markers.dart`, and similar numeric call sites).
+  /// stay monospace: hour-axis labels (`task_boundary_markers.dart`),
+  /// current-time text, and other 12px numeric annotations. Compact zone
+  /// names and task start/end pills use the dedicated `textZoneName` and
+  /// `textTaskEdgeTime` tokens below.
   final TextStyle textCaptionMono;
+
+  /// Compact monospace label used for rotated zone names in spatial/edit
+  /// surfaces. It is one rung below [textCaptionMono] so dense vertical
+  /// annotations do not compete with task content.
+  final TextStyle textZoneName;
+
+  /// Compact monospace time used by [TaskEdgeTimeLabel] across spatial task
+  /// and Edit/resize surfaces.
+  final TextStyle textTaskEdgeTime;
 
   /// The three fixed rungs of the task-size scale's own font size —
   /// paired with [sizeTaskBadgeSm]/[sizeTaskBadgeMd]/[sizeTaskBadgeLg]
@@ -584,6 +619,15 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   /// `PageRoute` transition, so the reveal starts on a clear screen
   /// rather than racing the last frames of the dismissal.
   final Duration motionRouteSettle;
+
+  /// [AppSheet]'s own slide-in/out duration. See
+  /// [MotionPrimitives.durationSheetSlideMs]'s own doc comment.
+  final Duration motionSheetSlide;
+
+  /// Keyboard-mode barrier duration and unmeasured-platform grace period.
+  /// Android sheet motion itself follows native IME progress.
+  /// See [MotionPrimitives.durationKeyboardSettleMs].
+  final Duration motionKeyboardSettle;
   final Curve curveStandard;
 
   /// Starts at full speed and eases to a stop — no slow ramp-in. For
@@ -659,14 +703,22 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       TaskCategoryToken.general: ColorPrimitives.neutralTint,
       TaskCategoryToken.health: ColorPrimitives.clayTint,
       TaskCategoryToken.work: ColorPrimitives.ochreTint,
-      TaskCategoryToken.personal: ColorPrimitives.periwinkleTint,
+      TaskCategoryToken.home: ColorPrimitives.periwinkleTint,
+      TaskCategoryToken.personal: ColorPrimitives.amberTint,
+      TaskCategoryToken.social: ColorPrimitives.tealTint,
+      TaskCategoryToken.reading: ColorPrimitives.skyTint,
+      TaskCategoryToken.learning: ColorPrimitives.roseTint,
       TaskCategoryToken.admin: ColorPrimitives.berryTint,
     },
     categoryIconColors: {
       TaskCategoryToken.general: ColorPrimitives.neutral500,
       TaskCategoryToken.health: ColorPrimitives.clay500,
       TaskCategoryToken.work: ColorPrimitives.ochre500,
-      TaskCategoryToken.personal: ColorPrimitives.periwinkle500,
+      TaskCategoryToken.home: ColorPrimitives.periwinkle500,
+      TaskCategoryToken.personal: ColorPrimitives.amber500,
+      TaskCategoryToken.social: ColorPrimitives.teal500,
+      TaskCategoryToken.reading: ColorPrimitives.sky500,
+      TaskCategoryToken.learning: ColorPrimitives.rose500,
       TaskCategoryToken.admin: ColorPrimitives.berry500,
     },
     // The LIGHT ramp, not the shared one this used to point at: the dark
@@ -703,6 +755,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     radiusMd: RadiusPrimitives.radiusMd,
     radiusLg: RadiusPrimitives.radiusLg,
     radiusXl: RadiusPrimitives.radiusXl,
+    radiusXxl: RadiusPrimitives.radiusXxl,
     radiusTaskPill: RadiusPrimitives.radiusFull,
     // Reuses the existing radiusMd(8)/radiusXl(16) primitives rather than
     // new literals — they already sit at exactly the Material 3
@@ -801,6 +854,20 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       height: TypePrimitives.lineHeightNormal,
       color: ColorPrimitives.slate500,
     ),
+    textZoneName: TextStyle(
+      fontFamily: TypePrimitives.fontFamily,
+      fontSize: TypePrimitives.size0,
+      fontWeight: TypePrimitives.weightRegular,
+      height: TypePrimitives.lineHeightNormal,
+      color: ColorPrimitives.slate500,
+    ),
+    textTaskEdgeTime: TextStyle(
+      fontFamily: TypePrimitives.fontFamily,
+      fontSize: TypePrimitives.size0,
+      fontWeight: TypePrimitives.weightRegular,
+      height: TypePrimitives.lineHeightNormal,
+      color: ColorPrimitives.slate900,
+    ),
     // Same fontSize/weight/height as textLabel — the zone header's prior
     // size, now the shared task-title base — but under its own semantic
     // name so a future change to textLabel's more generic meaning can't
@@ -867,6 +934,12 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     motionRouteSettle: const Duration(
       milliseconds: MotionPrimitives.durationRouteSettleMs,
     ),
+    motionSheetSlide: const Duration(
+      milliseconds: MotionPrimitives.durationSheetSlideMs,
+    ),
+    motionKeyboardSettle: const Duration(
+      milliseconds: MotionPrimitives.durationKeyboardSettleMs,
+    ),
     curveStandard: const Cubic(0.4, 0.0, 0.2, 1.0),
     // Mirrors MotionPrimitives.curveDecelerate's control points. Spelled
     // out rather than read from the record: Tier 1 stores them as a
@@ -926,7 +999,11 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       TaskCategoryToken.general: ColorPrimitives.neutral500Dark,
       TaskCategoryToken.health: ColorPrimitives.clay500Dark,
       TaskCategoryToken.work: ColorPrimitives.ochre500Dark,
-      TaskCategoryToken.personal: ColorPrimitives.periwinkle500Dark,
+      TaskCategoryToken.home: ColorPrimitives.periwinkle500Dark,
+      TaskCategoryToken.personal: ColorPrimitives.amber500Dark,
+      TaskCategoryToken.social: ColorPrimitives.teal500Dark,
+      TaskCategoryToken.reading: ColorPrimitives.sky500Dark,
+      TaskCategoryToken.learning: ColorPrimitives.rose500Dark,
       TaskCategoryToken.admin: ColorPrimitives.berry500Dark,
     },
     // Category icon glyph: real bug, found and fixed via the splash/
@@ -949,7 +1026,11 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       TaskCategoryToken.general: ColorPrimitives.white,
       TaskCategoryToken.health: ColorPrimitives.white,
       TaskCategoryToken.work: ColorPrimitives.white,
+      TaskCategoryToken.home: ColorPrimitives.white,
       TaskCategoryToken.personal: ColorPrimitives.white,
+      TaskCategoryToken.social: ColorPrimitives.white,
+      TaskCategoryToken.reading: ColorPrimitives.white,
+      TaskCategoryToken.learning: ColorPrimitives.white,
       TaskCategoryToken.admin: ColorPrimitives.white,
     },
     // Same 12-swatch list as the light palette — deliberately not a
@@ -984,6 +1065,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     radiusMd: RadiusPrimitives.radiusMd,
     radiusLg: RadiusPrimitives.radiusLg,
     radiusXl: RadiusPrimitives.radiusXl,
+    radiusXxl: RadiusPrimitives.radiusXxl,
     radiusTaskPill: RadiusPrimitives.radiusFull,
     radiusPillSmall: RadiusPrimitives.radiusMd,
     radiusPillRounded: RadiusPrimitives.radiusXl,
@@ -1075,6 +1157,20 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       height: TypePrimitives.lineHeightNormal,
       color: ColorPrimitives.sand400,
     ),
+    textZoneName: TextStyle(
+      fontFamily: TypePrimitives.fontFamily,
+      fontSize: TypePrimitives.size0,
+      fontWeight: TypePrimitives.weightRegular,
+      height: TypePrimitives.lineHeightNormal,
+      color: ColorPrimitives.sand400,
+    ),
+    textTaskEdgeTime: TextStyle(
+      fontFamily: TypePrimitives.fontFamily,
+      fontSize: TypePrimitives.size0,
+      fontWeight: TypePrimitives.weightRegular,
+      height: TypePrimitives.lineHeightNormal,
+      color: ColorPrimitives.sand200,
+    ),
     // Each rung shifted one step down the type scale — see the light
     // palette's identical comment above for the full reasoning.
     textTaskTitleSm: TextStyle(
@@ -1125,6 +1221,12 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     motionSlow: const Duration(milliseconds: MotionPrimitives.durationSlowMs),
     motionRouteSettle: const Duration(
       milliseconds: MotionPrimitives.durationRouteSettleMs,
+    ),
+    motionSheetSlide: const Duration(
+      milliseconds: MotionPrimitives.durationSheetSlideMs,
+    ),
+    motionKeyboardSettle: const Duration(
+      milliseconds: MotionPrimitives.durationKeyboardSettleMs,
     ),
     curveStandard: const Cubic(0.4, 0.0, 0.2, 1.0),
     // Mirrors MotionPrimitives.curveDecelerate's control points. Spelled
@@ -1187,6 +1289,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     double? radiusMd,
     double? radiusLg,
     double? radiusXl,
+    double? radiusXxl,
     double? radiusTaskPill,
     double? radiusPillSmall,
     double? radiusPillRounded,
@@ -1204,6 +1307,8 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     TextStyle? textLabel,
     TextStyle? textCaption,
     TextStyle? textCaptionMono,
+    TextStyle? textZoneName,
+    TextStyle? textTaskEdgeTime,
     TextStyle? textTaskTitleSm,
     TextStyle? textTaskTitleMd,
     TextStyle? textTaskTitleLg,
@@ -1213,6 +1318,8 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     Duration? motionNormal,
     Duration? motionSlow,
     Duration? motionRouteSettle,
+    Duration? motionSheetSlide,
+    Duration? motionKeyboardSettle,
     Curve? curveStandard,
     Curve? curveDecelerate,
   }) {
@@ -1272,6 +1379,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       radiusMd: radiusMd ?? this.radiusMd,
       radiusLg: radiusLg ?? this.radiusLg,
       radiusXl: radiusXl ?? this.radiusXl,
+      radiusXxl: radiusXxl ?? this.radiusXxl,
       radiusTaskPill: radiusTaskPill ?? this.radiusTaskPill,
       radiusPillSmall: radiusPillSmall ?? this.radiusPillSmall,
       radiusPillRounded: radiusPillRounded ?? this.radiusPillRounded,
@@ -1289,6 +1397,8 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       textLabel: textLabel ?? this.textLabel,
       textCaption: textCaption ?? this.textCaption,
       textCaptionMono: textCaptionMono ?? this.textCaptionMono,
+      textZoneName: textZoneName ?? this.textZoneName,
+      textTaskEdgeTime: textTaskEdgeTime ?? this.textTaskEdgeTime,
       textTaskTitleSm: textTaskTitleSm ?? this.textTaskTitleSm,
       textTaskTitleMd: textTaskTitleMd ?? this.textTaskTitleMd,
       textTaskTitleLg: textTaskTitleLg ?? this.textTaskTitleLg,
@@ -1298,6 +1408,8 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       motionNormal: motionNormal ?? this.motionNormal,
       motionSlow: motionSlow ?? this.motionSlow,
       motionRouteSettle: motionRouteSettle ?? this.motionRouteSettle,
+      motionSheetSlide: motionSheetSlide ?? this.motionSheetSlide,
+      motionKeyboardSettle: motionKeyboardSettle ?? this.motionKeyboardSettle,
       curveStandard: curveStandard ?? this.curveStandard,
       curveDecelerate: curveDecelerate ?? this.curveDecelerate,
     );
@@ -1443,6 +1555,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       radiusMd: _lerpDouble(radiusMd, other.radiusMd, t),
       radiusLg: _lerpDouble(radiusLg, other.radiusLg, t),
       radiusXl: _lerpDouble(radiusXl, other.radiusXl, t),
+      radiusXxl: _lerpDouble(radiusXxl, other.radiusXxl, t),
       radiusTaskPill: _lerpDouble(radiusTaskPill, other.radiusTaskPill, t),
       radiusPillSmall: _lerpDouble(radiusPillSmall, other.radiusPillSmall, t),
       radiusPillRounded: _lerpDouble(
@@ -1476,6 +1589,12 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
         other.textCaptionMono,
         t,
       )!,
+      textZoneName: TextStyle.lerp(textZoneName, other.textZoneName, t)!,
+      textTaskEdgeTime: TextStyle.lerp(
+        textTaskEdgeTime,
+        other.textTaskEdgeTime,
+        t,
+      )!,
       textTaskTitleSm: TextStyle.lerp(
         textTaskTitleSm,
         other.textTaskTitleSm,
@@ -1501,6 +1620,10 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       motionNormal: t < 0.5 ? motionNormal : other.motionNormal,
       motionSlow: t < 0.5 ? motionSlow : other.motionSlow,
       motionRouteSettle: t < 0.5 ? motionRouteSettle : other.motionRouteSettle,
+      motionSheetSlide: t < 0.5 ? motionSheetSlide : other.motionSheetSlide,
+      motionKeyboardSettle: t < 0.5
+          ? motionKeyboardSettle
+          : other.motionKeyboardSettle,
       curveStandard: t < 0.5 ? curveStandard : other.curveStandard,
       curveDecelerate: t < 0.5 ? curveDecelerate : other.curveDecelerate,
     );
@@ -1583,7 +1706,9 @@ extension TimelineColumns on AmbleTheme {
   /// Column 3's left edge — task titles/content start here, at a fixed x
   /// that does NOT move with the day's own overlap depth.
   double timelineContentLeft(double viewportWidth) =>
-      timelineZoneLeft + timelineZoneWidth(viewportWidth) + spacingTimelineGutter;
+      timelineZoneLeft +
+      timelineZoneWidth(viewportWidth) +
+      spacingTimelineGutter;
 
   /// Column 2's width — the zone/pill column. Takes a third of whatever
   /// remains after the time column and the four gaps, so columns 2 and 3
@@ -1591,9 +1716,7 @@ extension TimelineColumns on AmbleTheme {
   /// how deep the day's pills happen to stack.
   double timelineZoneWidth(double viewportWidth) {
     final remaining =
-        viewportWidth -
-        spacingTimeColumnWidth -
-        spacingTimelineGutter * 4;
+        viewportWidth - spacingTimeColumnWidth - spacingTimelineGutter * 4;
     return math.max(0, remaining / 2);
   }
 

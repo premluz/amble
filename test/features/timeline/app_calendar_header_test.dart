@@ -207,9 +207,86 @@ void main() {
     },
   );
 
+  // **2026-09-26 — reversed, deliberately.** This used to assert a
+  // completed swipe reassigns `selectedDateProvider` itself (`selectedDate
+  // ± 7 days`). Reported directly: "swipe through should not mean
+  // changing day, only to see dates of next week... tap on day is
+  // changing only." A swipe now only pages which week's dates this STRIP
+  // shows — the actual selected day (and everything reading it elsewhere
+  // in the app) is untouched until the user taps a day.
   testWidgets(
-    'a horizontal swipe on the EXPANDED week grid steps the visible week '
-    'by 7 days',
+    'a horizontal swipe on the EXPANDED week grid pages the visible week '
+    "WITHOUT changing the app's selected day",
+    (tester) async {
+      final anchor = DateTime(2026, 9, 10); // a Thursday
+      final container = await pumpHeader(tester, initialDate: anchor);
+
+      await tester.tap(find.byIcon(Icons.keyboard_arrow_down_rounded));
+      await tester.pumpAndSettle();
+
+      // This week's Monday (2026-09-07) is on screen before swiping.
+      expect(find.text('7'), findsOneWidget);
+
+      final weekRowSwipeArea = find.byWidgetPredicate(
+        (widget) =>
+            widget is GestureDetector && widget.onHorizontalDragEnd != null,
+      );
+      await tester.fling(weekRowSwipeArea, const Offset(-300, 0), 800);
+      // The swipe animates a "magnetic" settle before the week actually
+      // pages (2026-09-21: "pulling further/previous days... magnetic
+      // kind of lock") — the visible week only updates once that settle
+      // animation completes, not on the frame right after release.
+      await tester.pumpAndSettle();
+
+      expect(
+        container.read(selectedDateProvider),
+        _dateOnly(anchor),
+        reason:
+            'the selected day must NOT change from a swipe — only the '
+            'strip\'s own visible week does',
+      );
+      // Dragging LEFT reveals the NEXT week — its Monday is 2026-09-14.
+      expect(
+        find.text('14'),
+        findsOneWidget,
+        reason: 'the strip must now show the FOLLOWING week\'s dates',
+      );
+      expect(
+        find.text('7'),
+        findsNothing,
+        reason: 'the previous week\'s dates should no longer be showing',
+      );
+    },
+  );
+
+  testWidgets(
+    'tapping a day cell after swiping to another week selects a day IN '
+    'that viewed week, not the originally-selected week',
+    (tester) async {
+      final anchor = DateTime(2026, 9, 10); // a Thursday
+      final container = await pumpHeader(tester, initialDate: anchor);
+
+      await tester.tap(find.byIcon(Icons.keyboard_arrow_down_rounded));
+      await tester.pumpAndSettle();
+
+      final weekRowSwipeArea = find.byWidgetPredicate(
+        (widget) =>
+            widget is GestureDetector && widget.onHorizontalDragEnd != null,
+      );
+      await tester.fling(weekRowSwipeArea, const Offset(-300, 0), 800);
+      await tester.pumpAndSettle();
+
+      // Now viewing the week of 2026-09-14 (Mon) .. 2026-09-20 (Sun).
+      await tester.tap(find.text('16'));
+      await tester.pump();
+
+      expect(container.read(selectedDateProvider), DateTime(2026, 9, 16));
+    },
+  );
+
+  testWidgets(
+    'selecting a day (e.g. via a tap) snaps the strip back to that '
+    "day's own week, resetting any swipe-viewed offset",
     (tester) async {
       final anchor = DateTime(2026, 9, 10);
       final container = await pumpHeader(tester, initialDate: anchor);
@@ -221,22 +298,32 @@ void main() {
         (widget) =>
             widget is GestureDetector && widget.onHorizontalDragEnd != null,
       );
-      await tester.fling(weekRowSwipeArea, const Offset(300, 0), 800);
-      // The swipe now animates a "magnetic" settle before the week
-      // actually steps (2026-09-21, requested directly: "pulling
-      // further/previous days... magnetic kind of lock") — the date only
-      // updates once that settle animation completes, not on the frame
-      // right after release.
+      await tester.fling(weekRowSwipeArea, const Offset(-300, 0), 800);
       await tester.pumpAndSettle();
+      expect(find.text('14'), findsOneWidget, reason: 'now viewing next week');
 
-      final after = container.read(selectedDateProvider);
+      // An EXTERNAL selection change to a day in a genuinely DIFFERENT
+      // week (as if the Today button or another screen changed it) — not
+      // a tap inside this strip, and not a same-week reassignment (which
+      // wouldn't change `weekStart` at all, so there'd be nothing for
+      // `didUpdateWidget` to react to). 2026-09-03's own Monday is
+      // 2026-08-31 — a week earlier than both the originally-selected
+      // week (Monday 2026-09-07) and the swiped-to week (Monday
+      // 2026-09-14), so finding "31" can only mean the reset actually
+      // happened, not that the strip merely stayed put.
+      container
+          .read(selectedDateProvider.notifier)
+          .goTo(anchor.subtract(const Duration(days: 7)));
+      await tester.pump();
+
       expect(
-        after.difference(anchor).inDays.abs(),
-        7,
+        find.text('31'),
+        findsOneWidget,
         reason:
-            'a completed horizontal swipe must move the week by exactly '
-            'one full week either direction',
+            "the strip must snap to the NEWLY selected day's own week, not "
+            'stay on whichever week the user last swiped to',
       );
+      expect(find.text('14'), findsNothing);
     },
   );
 
@@ -435,6 +522,146 @@ void main() {
     await tester.pump();
 
     expect(find.byTooltip('Today'), findsNothing);
+  });
+
+  // Reported directly: "still slightly pushes... it pushes lightly
+  // calendar accordion down" when toggling Edit Mode. The Edit-Mode
+  // branch's own top padding was `spacingSm` (8px) while the normal
+  // branch's is `spacingMd` (16px) — a leftover mismatch from before the
+  // normal branch's own 2026-09-21 tuning, which only touched that one
+  // value. This pins the fix: the accordion's own y position must be
+  // IDENTICAL whether or not Edit Mode is on.
+  //
+  // `showCloseButton: false` — the REAL shape this was reported against.
+  // The merged Edit screen's own "Tasks" tab (`zone_grid_screen.dart`)
+  // passes `calendarHeaderShowsCloseButton: false` (its Close control
+  // lives in a bottom dock instead), so in the actual reported scenario
+  // Edit Mode does NOT also render the close-button row above the
+  // accordion — isolating this down to exactly the top-padding mismatch,
+  // not a second, legitimate difference (that row's own real height) on
+  // top of it.
+  testWidgets(
+    "the date accordion's own top position does not move when Edit Mode "
+    'toggles on or off, with no close button (the real Edit-screen shape)',
+    (tester) async {
+      late ProviderContainer container;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            zoneViewEnabledSettingProvider.overrideWith(
+              () => _FixedZoneViewEnabled(false),
+            ),
+          ],
+          child: Consumer(
+            builder: (context, ref, child) {
+              container = ProviderScope.containerOf(context);
+              return MaterialApp(
+                theme: ThemeData(
+                  useMaterial3: true,
+                  extensions: [AmbleTheme.light],
+                ),
+                home: const Scaffold(
+                  body: AppCalendarHeader(showCloseButton: false),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final before = tester.getTopLeft(find.byType(AppDateAccordion)).dy;
+
+      container.read(editModeEnabledProvider.notifier).toggle();
+      await tester.pump();
+      final duringEditMode = tester
+          .getTopLeft(find.byType(AppDateAccordion))
+          .dy;
+
+      container.read(editModeEnabledProvider.notifier).toggle();
+      await tester.pump();
+      final after = tester.getTopLeft(find.byType(AppDateAccordion)).dy;
+
+      expect(
+        duringEditMode,
+        before,
+        reason: 'entering Edit Mode must not shift the accordion',
+      );
+      expect(
+        after,
+        before,
+        reason: 'leaving Edit Mode must land back at the exact same y',
+      );
+    },
+  );
+
+  // Requested directly: "if not today selected then we should [show a]
+  // small text thin 'Today' fading it on the right hand side of Date
+  // expander. It should fade in as soon as 'today date is change' and
+  // fade out when it's back on."
+  group('the fading "Today" label (2026-09-26)', () {
+    AnimatedOpacity findTodayOpacity(WidgetTester tester) =>
+        tester.widget<AnimatedOpacity>(
+          find.ancestor(
+            of: find.text('Today'),
+            matching: find.byType(AnimatedOpacity),
+          ),
+        );
+
+    testWidgets('invisible while today is the selected day', (tester) async {
+      await pumpHeader(tester, initialDate: DateTime.now());
+
+      expect(findTodayOpacity(tester).opacity, 0);
+    });
+
+    testWidgets('fades IN the moment a non-today day is selected', (
+      tester,
+    ) async {
+      final aWeekAgo = DateTime.now().subtract(const Duration(days: 7));
+      final container = await pumpHeader(tester, initialDate: DateTime.now());
+      expect(findTodayOpacity(tester).opacity, 0);
+
+      container.read(selectedDateProvider.notifier).goTo(aWeekAgo);
+      await tester.pump();
+
+      expect(findTodayOpacity(tester).opacity, 1);
+    });
+
+    testWidgets('fades back OUT once the selected day returns to today', (
+      tester,
+    ) async {
+      final aWeekAgo = DateTime.now().subtract(const Duration(days: 7));
+      final container = await pumpHeader(tester, initialDate: aWeekAgo);
+      expect(findTodayOpacity(tester).opacity, 1);
+
+      container.read(selectedDateProvider.notifier).goToToday();
+      await tester.pump();
+
+      expect(findTodayOpacity(tester).opacity, 0);
+    });
+
+    testWidgets('tapping it jumps the selected day back to today', (
+      tester,
+    ) async {
+      final aWeekAgo = DateTime.now().subtract(const Duration(days: 7));
+      final container = await pumpHeader(tester, initialDate: aWeekAgo);
+
+      await tester.tap(find.text('Today'));
+      await tester.pump();
+
+      expect(container.read(selectedDateProvider), _dateOnly(DateTime.now()));
+    });
+
+    testWidgets('does not render at all in Edit Mode', (tester) async {
+      final aWeekAgo = DateTime.now().subtract(const Duration(days: 7));
+      final container = await pumpHeader(tester, initialDate: aWeekAgo);
+      container.read(editModeEnabledProvider.notifier).toggle();
+      await tester.pump();
+
+      // Not just invisible (opacity 0) — genuinely absent, matching the
+      // pre-existing "no Today button in Edit Mode" rule above.
+      expect(find.text('Today'), findsNothing);
+    });
   });
 }
 

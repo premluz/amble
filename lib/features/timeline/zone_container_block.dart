@@ -1,3 +1,5 @@
+import '../../core/widgets/what_matters_motion.dart';
+
 import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
@@ -216,12 +218,10 @@ class ZoneRowTimeLabel extends StatelessWidget {
               alignment: Alignment.centerLeft,
               child: Text(
                 text,
-                // `textCaptionMono` + `colorTextSecondary` — matches
-                // `TaskBoundaryMarkers`' own hour-gutter labels on the
-                // spatial Task view EXACTLY, mono face included. See this
-                // widget's own class doc comment for why the POSITION
-                // can't be shared structure the same way the STYLE now is.
-                style: theme.textCaptionMono.copyWith(
+                // `textTaskEdgeTime` keeps task start/time text at the same
+                // compact scale as spatial and Edit edge labels. The
+                // hour-axis labels themselves remain `textCaptionMono`.
+                style: theme.textTaskEdgeTime.copyWith(
                   color: theme.colorTextSecondary,
                 ),
                 maxLines: 1,
@@ -652,13 +652,18 @@ class ZoneContainerBlock extends StatelessWidget {
                       ),
                     )
                   else if (row is ExternalCalendarEvent)
-                    _ZoneExternalEventRow(
+                    WhatMattersMotion(
                       key: ValueKey(row.id),
-                      theme: theme,
-                      event: row,
-                      durationVisible: durationVisible,
-                      timeRangeVisible: timeRangeVisible,
-                      startTimeOnlyVisible: startTimeOnlyVisible,
+                      hidden: whatMattersEnabled,
+                      collapse: true,
+                      child: _ZoneExternalEventRow(
+                        key: ValueKey(row.id),
+                        theme: theme,
+                        event: row,
+                        durationVisible: durationVisible,
+                        timeRangeVisible: timeRangeVisible,
+                        startTimeOnlyVisible: startTimeOnlyVisible,
+                      ),
                     ),
                 ],
               ],
@@ -766,28 +771,26 @@ class _Header extends StatelessWidget {
             // No parentheses around the duration — requested directly:
             // "remove brackets from duration in zone names."
             '${zone.title} ${formatDurationLabel(durationMinutes)}',
-            // Not bold — confirmed directly: unlike a task title (which
-            // is bold to read as the primary, actionable item), the zone
-            // header is a label for the container itself, not a task, so
-            // it stays at textTaskTitleZone's own regular weight.
+            // colorTextTertiary — requested directly ("make zone names
+            // even subtler color"). The time-range text beside it shares
+            // the same tertiary color, preserving the earlier confirmed
+            // pairing ("matching the time-range text on the same row").
             //
-            // colorTextTertiary, not colorTextSecondary — requested
-            // directly ("make zone names even subtler color"). The
-            // time-range text beside it moves to the same tertiary color
-            // rather than staying on secondary, preserving the earlier
-            // confirmed pairing ("matching the time-range text on the same
-            // row" — the two were deliberately made to match once already;
-            // this keeps them matching at the new, subtler value).
-            //
-            // textTaskTitleZone, not textTaskTitle — requested directly
-            // ("Size of text in zone view (task name one scale up)"),
-            // reversing an earlier decision that Zone view's rows/header
-            // track the Task-size setting with no relative step. Every
-            // textTaskTitle use in this whole file moved to this token
-            // together — the task row's time/title AND the read-only
-            // external-event row's own time/title, since those two row
-            // kinds are built to visually line up in the merged list.
-            style: theme.textTaskTitleZone.copyWith(
+            // **2026-09-26 — textZoneName, not textTaskTitleZone.**
+            // Reported directly: "zone names in zone view should resolve
+            // to same size" as the spatial Timeline's own rotated zone
+            // name (`zone_background_block.dart`) and the Edit screen's
+            // zone grid (`zone_grid_block.dart`) — both already render on
+            // `textZoneName` (11px). This header had drifted to
+            // `textTaskTitleZone` (14px) as a side effect of an earlier,
+            // unrelated change: "every textTaskTitle use in this whole
+            // file moved to textTaskTitleZone together," which correctly
+            // resized actual TASK titles but swept this ZONE header along
+            // with them even though it was never a task title to begin
+            // with. `textZoneName` is already regular-weight/subtler than
+            // a task title by design, matching this header's own
+            // "container label, not a task" intent.
+            style: theme.textZoneName.copyWith(
               color: theme.colorTextTertiary,
             ),
             maxLines: 1,
@@ -799,7 +802,10 @@ class _Header extends StatelessWidget {
           Flexible(
             child: Text(
               '${start.format(context)} - ${end.format(context)}',
-              style: theme.textCaption.copyWith(
+              // A zone range is a temporal value; keep it on the 12px mono
+              // axis style. The compact 11px task-time token is reserved for
+              // the leading task column and live edge pills.
+              style: theme.textCaptionMono.copyWith(
                 color: theme.colorTextTertiary,
               ),
               maxLines: 1,
@@ -1188,12 +1194,11 @@ class _ZoneTaskRow extends StatelessWidget {
                           // directly, matching TaskCapsuleBlock's identical
                           // reasoning: a CUSTOM category's iconColor is the
                           // same swatch as this badge's own fill.
+                          // No glyph for "no category" — see
+                          // CategoryBadge's own 2026-09-23 comment on the
+                          // same change.
                           child: resolvedCategory == null
-                              ? Icon(
-                                  builtInIconFor(BuiltInCategoryIds.general),
-                                  size: badgeSize * 0.55,
-                                  color: glyphColorOn(badgeColor),
-                                )
+                              ? null
                               : CategoryGlyph(
                                   category: resolvedCategory,
                                   color: glyphColorOn(badgeColor),
@@ -1414,20 +1419,9 @@ class _ZoneExternalEventRow extends StatelessWidget {
   }
 }
 
-/// What Matters, Zone/List half — fades AND collapses [child] to zero
-/// height when [hidden], letting sibling rows in the enclosing list
-/// reflow up to fill the gap. Reported directly: "as the fade out they
-/// make room for others to shift up," unlike the Spatial view's own
-/// fade-only treatment (`TaskCapsuleBlock.whatMattersFaded`). Shared by
-/// both [_ZoneTaskRow] (this file) and `ZoneDayTimeline`'s own unzoned
-/// task rows — the identical animation either way, since both are just
-/// rows in a vertical list that should reflow the same way.
-///
-/// [child] stays mounted (never conditionally omitted from the tree) —
-/// `AnimatedSize` needs a stable child subtree to measure and animate
-/// between its old and new size; swapping it out for an already-
-/// collapsed placeholder would remove the very thing being sized,
-/// producing an instant jump instead of an observed collapse.
+/// Shares the attention release with spatial pills, then collapses list space.
+/// The child stays mounted and unclipped so hour labels outside its left edge
+/// survive both the transition and restoration.
 class WhatMattersRow extends StatelessWidget {
   const WhatMattersRow({
     super.key,
@@ -1441,34 +1435,6 @@ class WhatMattersRow extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
-    final content = IgnorePointer(
-      ignoring: hidden,
-      child: AnimatedOpacity(
-        opacity: hidden ? 0.0 : 1.0,
-        duration: theme.motionNormal,
-        curve: theme.curveStandard,
-        child: child,
-      ),
-    );
-
-    return AnimatedSize(
-      duration: theme.motionNormal,
-      curve: theme.curveStandard,
-      alignment: Alignment.topCenter,
-      child: SizedBox(
-        height: hidden ? 0 : null,
-        // Clipped ONLY while hidden — a `ClipRect` here unconditionally
-        // was a real regression: [ZoneRowTimeLabel] paints its hour text
-        // at a NEGATIVE `Positioned.left` (~90px outside this row's own
-        // bounds, escaping back to the screen edge so Zone view's times
-        // line up with the spatial view's hour gutter), and an ancestor
-        // clip eats exactly that overflow. Reported directly as "missing
-        // start hour in zone view." The clip is only actually needed
-        // while collapsing to zero height, to stop the row's own content
-        // spilling out of a box shorter than itself.
-        child: hidden ? ClipRect(child: content) : content,
-      ),
-    );
-  }
+  Widget build(BuildContext context) =>
+      WhatMattersMotion(hidden: hidden, collapse: true, child: child);
 }

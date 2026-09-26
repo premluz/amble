@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../core/tokens/semantic_theme.dart';
-import '../../core/widgets/app_bottom_dock.dart';
+import '../../core/widgets/app_context_dock.dart';
 import '../../shared/models/tracked_behavior_view_mode.dart';
 
 /// Icon/label/cycle-order for [TrackedBehaviorViewMode] — moved here
@@ -59,21 +58,24 @@ class AppTrackedViewDock extends StatelessWidget {
   final ValueChanged<TrackedBehaviorViewMode> onSelectMode;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context).extension<AmbleTheme>()!;
-
-    return AppDockPane(
-      theme: theme,
-      children: [
-        for (final mode in TrackedBehaviorViewMode.values)
-          AppDockIconButton(
-            theme: theme,
-            icon: mode.icon,
-            tooltip: mode.label,
-            selected: mode == activeMode,
-            onTap: () => onSelectMode(mode),
-          ),
+  Widget build(BuildContext context) => AppContextDock(
+    configuration: AppContextDockConfiguration(
+      stateId: 'tracked-view',
+      groups: [
+        AppContextGroup(
+          id: 'tracked-view-modes',
+          actions: [
+            for (final mode in TrackedBehaviorViewMode.values)
+              AppContextAction(
+                id: 'tracked-${mode.name}',
+                icon: mode.icon,
+                tooltip: mode.label,
+                selected: mode == activeMode,
+                onPressed: () => onSelectMode(mode),
+              ),
+          ],
+        ),
       ],
-    );
-  }
+    ),
+  );
 }

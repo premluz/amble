@@ -223,6 +223,33 @@ const List<IconData> curatedCategoryIcons = [
   TablerIcons.anchor,
   TablerIcons.road,
   TablerIcons.parking,
+  // **2026-09-24 — requested directly, against a supplied list of
+  // lifestyle/activity names** (Sport, Reading, Food, Pets, Home,
+  // Beauty, Mind, Body Exercise, Journaling, Shopping, Cleaning, Gaming,
+  // Music, Outdoors, Parenting, Side Project, Networking, Wellness,
+  // Rest, Planning, Garden, Chore): "let's pull icon for meditation from
+  // the system we use... if can't find appropriate icon check the
+  // system we use and pull." Most of that list already had a matching
+  // icon above (Reading→book, Food→apple/salad/toolsKitchen, Pets→dog/
+  // cat/paw, Home→home, Sport/Body Exercise→run/dumbbell/walk/bike/
+  // swimming, Music→music, Outdoors→tent/mountain/campfire/backpack,
+  // Parenting→babyCarriage, Rest→bed, Shopping→shoppingCart, Cleaning→
+  // vacuumCleaner/bath, Planning→checklist/clipboardList, Chore→
+  // vacuumCleaner, Side Project→rocket, Mind→brain). Meditation has no
+  // dedicated glyph in Tabler (checked directly against the installed
+  // `tabler_icons_plus` package) — [TablerIcons.yoga] (a seated,
+  // cross-legged figure) is the standard meditation pictogram across
+  // icon sets generally and was ALREADY in this list above, under
+  // Health & fitness. These six are the genuinely new additions, one
+  // per name that had no existing match:
+  TablerIcons.scissors, // Beauty
+  TablerIcons.notebook, // Journaling
+  TablerIcons.deviceGamepad2, // Gaming
+  TablerIcons.usersGroup, // Networking — distinct from the plain `users`
+  // glyph already above (Parenting/family), since a group-of-people
+  // silhouette reads more specifically as "network" than "family."
+  TablerIcons.activityHeartbeat, // Wellness
+  TablerIcons.gardenCart, // Garden
 ];
 
 /// The built-in categories' default Tabler glyph — requested directly:
@@ -237,7 +264,13 @@ const List<IconData> curatedCategoryIcons = [
 IconData builtInIconFor(String categoryId) => switch (categoryId) {
   BuiltInCategoryIds.health => TablerIcons.heart,
   BuiltInCategoryIds.work => TablerIcons.briefcase,
+  // Renamed "Home" — keeps the home icon it always had.
   BuiltInCategoryIds.personal => TablerIcons.home,
+  // The NEW "Personal" — a user icon, per direct request.
+  BuiltInCategoryIds.personalNew => TablerIcons.user,
+  BuiltInCategoryIds.social => TablerIcons.users,
+  BuiltInCategoryIds.reading => TablerIcons.book,
+  BuiltInCategoryIds.learning => TablerIcons.school,
   BuiltInCategoryIds.admin => TablerIcons.clipboardList,
   _ => TablerIcons.circle,
 };
@@ -300,6 +333,19 @@ class CategoryGlyph extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // **2026-09-24 — General renders NO glyph, not its circle icon.**
+    // General IS the "untagged" state (every new task defaults its
+    // `categoryId` to it explicitly — see `Task.create`'s own callers),
+    // so a task that has never had a real category chosen was still
+    // rendering `TablerIcons.circle` here, on the exact same "General
+    // is a real Category row" path this widget was built to handle
+    // generically. Reported directly against a screenshot: "should not
+    // have any icon if not tagged with tag with icon." Matches
+    // `CategoryBadge`'s own null-category fallback (no category at
+    // all) — the two paths now agree on what "untagged" looks like.
+    if (category.id == BuiltInCategoryIds.general) {
+      return const SizedBox.shrink();
+    }
     final icon = categoryIconFor(category);
     if (icon != null) return Icon(icon, size: size, color: color);
     if (category.emoji.isEmpty) return const SizedBox.shrink();
@@ -374,12 +420,14 @@ class CategoryBadge extends StatelessWidget {
             ? null
             : BorderRadius.circular(theme.radiusPill),
       ),
+      // **2026-09-23 — no glyph at all for "no category."** Requested
+      // directly: General/untagged should have "no icon and just grey."
+      // A plain grey circle now carries the "uncategorised" signal on its
+      // own, same reasoning as the emoji already being empty for this
+      // case (see `TaskCategoryTokenMapping.emoji`'s own comment) — the
+      // whole point is the absence of a glyph, not a neutral one.
       child: resolvedCategory == null
-          ? Icon(
-              builtInIconFor(BuiltInCategoryIds.general),
-              size: size * glyphSizeRatio,
-              color: glyphColorOn(badgeColor),
-            )
+          ? null
           : CategoryGlyph(
               category: resolvedCategory,
               color: glyphColorOn(badgeColor),
@@ -410,11 +458,21 @@ Color glyphColorOn(Color background) =>
 /// [TaskCategoryToken], so a built-in category still renders through the
 /// existing hand-tuned color maps rather than the new 12-swatch palette.
 /// Null for any non-built-in (user-created) category id.
+///
+/// **2026-09-23** — [BuiltInCategoryIds.personal] (the RENAMED "Home"
+/// category, same id as before the rename — see that constant's own doc
+/// comment) now maps to [TaskCategoryToken.home], not `.personal`. The
+/// token named `.personal` belongs to the NEW category at
+/// [BuiltInCategoryIds.personalNew].
 TaskCategoryToken? builtInTokenFor(String categoryId) => switch (categoryId) {
   BuiltInCategoryIds.general => TaskCategoryToken.general,
   BuiltInCategoryIds.health => TaskCategoryToken.health,
   BuiltInCategoryIds.work => TaskCategoryToken.work,
-  BuiltInCategoryIds.personal => TaskCategoryToken.personal,
+  BuiltInCategoryIds.personal => TaskCategoryToken.home,
+  BuiltInCategoryIds.personalNew => TaskCategoryToken.personal,
+  BuiltInCategoryIds.social => TaskCategoryToken.social,
+  BuiltInCategoryIds.reading => TaskCategoryToken.reading,
+  BuiltInCategoryIds.learning => TaskCategoryToken.learning,
   BuiltInCategoryIds.admin => TaskCategoryToken.admin,
   _ => null,
 };

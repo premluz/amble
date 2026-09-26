@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_sheet.dart';
-import '../../core/widgets/app_step_scaffold.dart' show HeaderCircleButton;
+import '../../core/widgets/app_sheet_header.dart';
 import '../../core/widgets/app_text_field.dart';
 import '../../shared/models/section.dart';
 import '../../shared/providers/section_providers.dart';
@@ -86,22 +86,20 @@ class _NewSectionSheetState extends ConsumerState<_NewSectionSheet> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            HeaderCircleButton(
-              theme: theme,
-              icon: Icons.close,
-              onTap: _saving ? () {} : () => Navigator.of(context).pop(),
-            ),
-            const Spacer(),
-            AppButton(
-              label: widget.existing == null ? 'Create' : 'Save',
-              size: AppButtonSize.md,
-              shape: AppButtonShape.pill,
-              isLoading: _saving,
-              onPressed: _save,
-            ),
-          ],
+        // No `handle` — this sheet has no drag-to-close gesture of its own,
+        // so the header renders just its controls at the same shared row
+        // height (see AppSheetHeader's own doc comment on why the height is
+        // reserved either way).
+        AppSheetHeader(
+          theme: theme,
+          onClose: _saving ? () {} : () => Navigator.of(context).pop(),
+          trailing: AppButton(
+            label: widget.existing == null ? 'Create' : 'Save',
+            size: AppButtonSize.md,
+            shape: AppButtonShape.pill,
+            isLoading: _saving,
+            onPressed: _save,
+          ),
         ),
         SizedBox(height: theme.spacingMd),
         AppTextField(

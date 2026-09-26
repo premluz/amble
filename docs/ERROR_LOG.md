@@ -1795,3 +1795,269 @@ while its viewport lays out, and reveal after the restoration jump.
 `spatial_label_icon_alignment_test.dart` checks the hidden first frame,
 visible next frame, and unchanged zone geometry after settling over two
 round trips, inside the widget-test frame scheduler.
+
+## Two axis-specific drag recognizers on one GestureDetector can steal a gesture mid-drag
+
+**Symptom** (2026-09-23): dragging a selected zone sideways on the Weekly
+Zone Authoring Grid to extend it across days worked "one by one" — the
+user had to tap, move, release, and repeat, instead of a single
+continuous drag. Vertical resize (top/bottom) on the same screen already
+worked as one continuous motion.
+
+**Cause**: `ZoneGridBlock`'s `GestureDetector` had BOTH
+`onVerticalDrag*` (move, in time) and `onHorizontalDrag*` (extend, across
+days) wired on the SAME widget instance. A `GestureDetector` with both
+axis pairs set creates two independent recognizers
+(`VerticalDragGestureRecognizer`, `HorizontalDragGestureRecognizer`) that
+compete for the same pointer in Flutter's gesture arena — and that
+arbitration is not a one-time decision at gesture start. A long drag
+where the finger drifts even slightly off its dominant axis can let the
+OTHER recognizer win a later re-arbitration, silently cancelling the
+in-progress gesture. This is easy to miss in code review because a
+comment on the exact line claimed "the arena picks whichever axis the
+finger actually commits to" — true only for the very first few pixels of
+movement, not for the rest of a long drag.
+
+**Why it didn't affect everything sharing this pattern**: the SAME
+screen's marquee edge-resize handles (`_MarqueeResizeHandle`,
+`zone_grid_screen.dart`) never hit this, because each handle wires only
+ONE axis (`vertical ? onVerticalDrag* : onHorizontalDrag*`, never both)
+— there is no second recognizer on that node to lose the arena to. The
+bug is specific to widgets that need both axes to mean genuinely
+different things (move vs. extend here) on ONE gesture surface.
+
+**Fix**: wrap the two axis pairs in a small `StatefulWidget`
+(`_AxisLockedMoveExtendDetector`) that latches whichever axis's
+`*DragStart` fires first, and refuses the OTHER axis's start/update/end
+callbacks until the committed axis's own end/cancel fires. This gives
+the same "one axis, held for the whole gesture" behavior the
+single-axis-only marquee handles get for free, without needing to split
+the gesture into two separate widgets (which isn't always viable — see
+`ZoneGridBlock.onExtendStart`'s own doc comment on why a dedicated
+side-handle doesn't fit at ~70px column widths).
+
+**Rule**: a `GestureDetector` (or `RawGestureDetector`) that wires BOTH
+`onVerticalDrag*` and `onHorizontalDrag*` for two DIFFERENT intents
+(rather than one `onPanUpdate` handling both axes as one motion) is not
+safe for a drag longer than a few pixels — the axis that "wins" can
+change mid-gesture as the finger's real path drifts. If two axes must
+map to different behaviors on one gesture surface, latch the committed
+axis in state and gate the other axis's callbacks on it for the
+remainder of that gesture, rather than trusting the arena to keep
+honoring its first decision. A widget that wires only one axis at a time
+(like a resize handle) does not need this — the bug requires both axes
+to be genuinely live on the same node.
+
+**Correction (same day): the axis lock above was NOT the actual fix.**
+It is correct and worth keeping, but it addressed a mechanism that was
+not the reported failure. The user re-reported the bug unchanged, then
+clarified the real symptom: the sideways drag "grabs/scrolls instead."
+The gesture was being lost to the grid's own enclosing vertical
+`SingleChildScrollView` BEFORE `onHorizontalDragStart` ever fired — and
+an axis lock that runs on `*DragStart` cannot help a gesture that never
+starts. See the next entry for the real cause.
+
+## A scroll view wins the drag your inner widget needed, and the guard meant to stop it arrives too late
+
+**Symptom** (2026-09-23): dragging a selected zone sideways on the Weekly
+Zone Authoring Grid scrolled the grid instead of extending the zone. The
+user had to retry with repeated tap-move-release attempts, landing one
+column at a time — reported first as "one by one... need to multiple tap
+and move," then clarified as "it grabs/scrolls instead."
+
+**Cause**: `ZoneGridBlock` sits inside the grid's vertical
+`SingleChildScrollView`. Both the block's `HorizontalDragGestureRecognizer`
+and the scrollable's own vertical recognizer race the SAME pointer, and
+whichever passes its touch slop first takes the gesture. A real finger
+sweeping across ~70px day columns carries genuine vertical drift, so at
+equal thresholds the scrollable frequently crossed its slop first and
+won.
+
+**The guard that looked like it covered this, and didn't**: the screen
+sets `physics: NeverScrollableScrollPhysics()` while
+`_fillSource != null`. That reads as "scrolling is disabled during a
+fill," but `_fillSource` is only set by `onExtendStart` — which requires
+the horizontal recognizer to have ALREADY won the arena. The guard
+suppresses scrolling for the remainder of a fill that managed to start;
+it is structurally incapable of helping the gesture win in the first
+place. This is a circular guard: it protects against the consequence of
+the thing it appears to prevent.
+
+**Fix**: a `_EagerHorizontalDragRecognizer` (a
+`HorizontalDragGestureRecognizer` subclass) overriding
+`hasSufficientGlobalDistanceToAccept` to commit at half the normal touch
+slop, wired through a `RawGestureDetector`. A decisively horizontal
+movement is then claimed while its vertical component is still short of
+the scrollable's own threshold. A genuinely vertical drag is unaffected —
+its horizontal component never approaches even the reduced threshold — so
+"normal vertical swipe scrolls" behaviour is preserved.
+
+Note that overriding `hasSufficientGlobalDistanceToAccept` is the right
+lever, NOT trying to `resolve(GestureDisposition.accepted)` eagerly:
+`DragGestureRecognizer` already resolves the arena the moment its own
+axis passes slop (see `handleEvent`'s `_DragState.possible` branch in
+Flutter's `monodrag.dart`). The race is decided by WHICH THRESHOLD IS
+CROSSED FIRST, not by who calls `resolve` sooner.
+
+**How to test it so the test can actually fail**: pump the widget inside
+a REAL `SingleChildScrollView` and assert on `controller.offset` as well
+as the callback counts. A bare widget in a `Stack` has no competitor, so
+it passes with the bug fully present — which is exactly why an earlier
+round of tests (and a widget-test reproduction of the whole screen that
+extended all 7 days in one drag) reported success while the device still
+failed.
+
+**Rule**: when an inner widget's drag "doesn't work" on a real device but
+passes in tests, check what ancestor is competing for the same pointer
+before touching the widget's own logic — and reproduce it with that
+ancestor present. Also distrust any guard whose enabling condition is set
+by the very callback it is meant to protect; that ordering means the
+guard can only ever act after the failure it was written to prevent.
+
+
+## Full-screen sheet translation and guessed IME timing caused competing motion (2026-09-24)
+
+The old route applied SlideTransition to a full-screen Align, making a
+small sheet travel a viewport instead of its own height. Its content also
+contained keyboard padding, and a static remembered height affected later
+plain sheets. An 80ms head start computed from an assumed 260ms keyboard
+span could not account for a delayed or slower IME.
+
+The replacement translates only the surface, keeps live keyboard clearance
+outside it, and derives Android entrance progress from native IME fraction
+and duration. Tests cover 80/240/700ms animations, delayed start, an
+already-visible keyboard, interruption, unmount cancellation, and removal
+of stale keyboard space. The old cache-reservation test was deliberately
+replaced by current-inset assertions. Native timing is documented at
+https://developer.android.com/reference/android/view/WindowInsetsAnimation.Callback.
+
+Test-development fixes: disposed/settled harness animation tickers before
+Flutter's end-of-test invariant check, and sampled fallback motion only
+after its ticker received a start frame. These tests do not infer timing
+from external sleeps or screenshots.
+
+## Editing a one-time gated seed's literals doesn't reach any install that already ran it
+
+**Symptom** (2026-09-24): shipped a category-system expansion (5 → 9
+built-ins, a rename, a recolor) by editing
+`seedBuiltInsAndBackfillIfNeeded`'s seed-list literals. Verified with
+`flutter analyze`/`flutter test`, reported done. User asked the
+obvious next question — "when should I see them? if build app next
+time?" — and the honest answer was "never, on this device," because
+that whole seed block is gated by `PreferenceKeys.categoriesSeeded` and
+runs its full body exactly ONCE per install. Any already-seeded
+install (which is every real user, and the dev device this was tested
+on) skips the seed literals entirely and only runs two narrow repair
+helpers — neither of which touches the new rows or the rename.
+
+**Why the tests didn't catch it**: `category_migration_test.dart`'s own
+"seeds all N built-ins" test starts from a genuinely fresh
+(never-seeded) container, which is exactly the one case that's
+unaffected by this bug — it exercises the code path the change actually
+lives in, not the path a real upgrade goes through.
+
+**Fix**: added a third repair function
+(`_migrateToExpandedCategorySet`) to the SAME already-seeded branch the
+existing `_clearLegacyGeneralEmoji`/`_backfillBuiltInIconCodePoints`
+repairs live in, so every launch of an existing install picks up the
+new rows/rename going forward — see this file's own pattern for the
+"narrow, idempotent, don't clobber a user's own change" shape to copy.
+
+**Rule**: before editing the LITERALS inside a function gated by a
+"only run once per install" flag (a seed, a one-time backfill, a
+launch-once migration), check whether the change needs its own repair
+step for installs that already passed the gate — editing the literals
+alone only ever reaches a genuinely fresh install. When writing the
+test for this kind of change, always include a case that starts from
+the flag ALREADY set with realistic pre-change data (not empty, not
+never-seeded) — a "fresh install" test alone provides zero coverage of
+the far more common "existing install after an update" path, which is
+exactly the path a real bug like this one hides in.
+
+## Instant Edit entry exposed mount-time positioning (2026-09-24)
+
+The Edit button pushes a separate `ZoneGridScreen` rather than toggling the
+existing timeline. Revealing that whole route immediately can expose its initial
+layout before the embedded task timeline restores position. The shared
+`AppLayoutReveal` gates the first layout, and the opt-in route fades the positioned
+screen over the outgoing page. Regression tests sample frames inside Flutter,
+including the real task Edit route and two different restored scroll positions.
+Navigator initially lays out the incoming route offstage; test probes must account
+for that frame rather than assuming the first pump exposes the page to finders.
+
+## Edit fade exposed the underlying Day screen's edit controls (2026-09-24)
+
+The previous reveal route intentionally retained Day underneath. However,
+`ZoneGridScreen` changed a shared `editModeEnabledProvider` after its first frame,
+so Day also rebuilt into edit mode beneath the translucent incoming screen.
+This exposed the extra circular header control and overlapped changing chrome
+with the Tasks/Zones tabs. A route-local override initialized to the requested
+tab prevents both the outgoing mode mutation and the incoming mode correction.
+The real-entry regression now asserts independent mode values during the fade
+and unchanged tab bounds from hidden layout to completion.
+
+## Attention transitions must retain disappearing layout state (2026-09-25)
+
+Immediate filtering of empty zones/imported events prevented a phased exit.
+Retaining children inside zero-height wrappers lets the release finish before
+space closes. Collapsing lazy-list children also need keep-alive: disposal at
+zero height would otherwise remount them fully visible on return. Separate
+release and collapse values preserve the pose when the user reverses mid-flight.
+
+Spatial labels have hidden inline duplicates as well as the visible split row.
+Opacity tests must target `TaskCapsuleTextRow`'s attention wrapper; selecting the
+first opacity ancestor of a matching title can accidentally assert against a
+permanently hidden duplicate. Real three-lane tests verify hold, tightening, and
+return instead of relying only on target-property assertions.
+
+## A mode tint scoped below navigation creates a hard header edge (2026-09-25)
+
+The first What Matters overlay lived inside TimelineScreen, so the main
+navigation above it stayed untinted. Applying the tint to the entire Day host
+removes that artificial boundary. Nested scenes reuse the outer phase and painter
+instead of applying the tint twice. Pixel tests cover one bottom-origin ripple,
+its upward expansion, and a uniform settled alpha in light and dark themes.
+
+## Motion-system verification initially hit the SDK-cache lock (2026-09-26)
+
+The first focused dock and view-transition verification attempt could not start
+because the Flutter SDK cache lock was not writable from the default sandbox.
+That was an execution restriction, not a source failure. After the approved
+escalated Flutter command was retried, the focused tests passed and the Android
+debug APK built successfully. The direct analyzer also reports no issues in the
+changed widgets, screens, and focused tests.
+
+## Context dock ghosts reflowed beside incoming controls (2026-09-26)
+
+Departing groups were appended to the incoming layout and their backgrounds
+stayed opaque, producing extra pills beside Edit's Back button. Keep departing
+rectangles separate from target layout, key pane backgrounds, and fade pane and
+icons together. Tasks/Zones must share the same Back identity; cached outgoing
+content must not reclaim the shell dock after its tab becomes inactive.
+
+## Stale explicit dock override masked live selection (2026-09-26)
+
+The main shell passed a snapshot of the chrome controller configuration as
+an explicit override. It took priority over the dock's live inherited value,
+so selection updates could keep showing Back alone. The shell now lets the
+dock subscribe directly to its scope. Regression coverage updates selection
+without rebuilding the parent and asserts both Edit and Remove appear.
+
+## Modal sheets opened underneath persistent shell chrome (2026-09-26)
+
+After introducing the content Navigator, nearest-navigator sheet pushes left
+the shell header and dock above the modal barrier. Both AppSheet.show and
+pushAppSheetRoute now push on the root Navigator and preserve the launching
+route's provider container and inherited themes. The shell Scaffold disables
+keyboard resizing; modal content remains responsible for its keyboard insets.
+Nested-navigator tests cover barrier interception, scoped state, dismissal,
+and the stationary toolbar with keyboard insets.
+
+## Duplicate Edit header and calendar bleed-through (2026-09-26)
+
+Main navigation remained above route-owned Edit tabs; whole-body crossfades
+also exposed the underlying Day calendar. Edit now publishes its tabs to one
+fixed-height shell header, with an opaque Edit body beneath it. The tab bar
+retains identity across Tasks/Zones changes. Dock removal visibility is
+separate from interactive presence so exit delays never leave stale commands
+enabled.

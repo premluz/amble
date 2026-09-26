@@ -92,16 +92,28 @@ class AppDateAccordion extends StatefulWidget {
     this.initiallyExpanded = false,
     this.expanded,
     this.onExpandedChanged,
+    this.showTodayLabel = true,
   });
 
   /// The day currently shown as selected in the week strip — NOT
-  /// necessarily today (see [AppDateAccordion] compared with a "jump to
-  /// today" control, which a caller wires separately; this widget only
-  /// renders and reports selection, it never assumes "today" is special
-  /// beyond the small accent dot under that cell).
+  /// necessarily today. Beyond the small accent dot under today's own
+  /// cell, this widget surfaces exactly ONE other "today is special"
+  /// signal: the fading "Today" text (see [showTodayLabel]) — everything
+  /// else about jumping to/selecting a day still flows through
+  /// [onDateSelected] alone, the same as any other date.
   final DateTime selectedDate;
 
   final ValueChanged<DateTime> onDateSelected;
+
+  /// Whether the fading "Today" text (top-right of the date row, visible
+  /// only while [selectedDate] isn't today — see [_TodayFadeLabel]) shows
+  /// at all. Defaults true. `AppCalendarHeader`'s own Edit-Mode branch
+  /// passes false — requested directly, consistently with the pre-existing
+  /// "no Today control while editing" rule this mirrors (see that file's
+  /// own doc comment on why the old jump-to-today BUTTON was removed from
+  /// Edit Mode; this is the same call extended to the newer passive
+  /// label).
+  final bool showTodayLabel;
 
   /// Whether the week strip starts open — defaults to false (collapsed),
   /// the "quiet by default" behaviour requested directly. Only read once,
@@ -146,11 +158,22 @@ class _AppDateAccordionState extends State<AppDateAccordion> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _DateLabelRow(
-          theme: theme,
-          monthOf: widget.selectedDate,
-          expanded: _expanded,
-          onTap: () => _setExpanded(!_expanded),
+        Row(
+          children: [
+            _DateLabelRow(
+              theme: theme,
+              monthOf: widget.selectedDate,
+              expanded: _expanded,
+              onTap: () => _setExpanded(!_expanded),
+            ),
+            const Spacer(),
+            if (widget.showTodayLabel)
+              _TodayFadeLabel(
+                theme: theme,
+                visible: !_isSameDay(widget.selectedDate, today),
+                onTap: () => widget.onDateSelected(today),
+              ),
+          ],
         ),
         // AnimatedSize, not a bare conditional — an accordion that pops
         // open/shut with no transition reads as a layout glitch, not a
@@ -252,6 +275,66 @@ class _DateLabelRow extends StatelessWidget {
   }
 }
 
+/// A small "Today" text at the trailing edge of the date row, fading in
+/// the instant the selected day stops being today and fading back out the
+/// moment it's today again — requested directly: "if not today selected
+/// then we should [show a] small text thin 'Today' fading it on the right
+/// hand side of Date expander. It should fade in as soon as 'today date is
+/// change' and fade out when it's back on."
+///
+/// Tapping it jumps back to today — the same "select today" action any
+/// other cell in this widget already reports through [onTap], not a new
+/// callback: [AppDateAccordion] never assumes "today" is special beyond
+/// this row (see its own class doc comment), so "jump to today" is simply
+/// "select today's date," reusing the exact same [ValueChanged<DateTime>]
+/// contract every other selection in this widget already goes through.
+class _TodayFadeLabel extends StatelessWidget {
+  const _TodayFadeLabel({
+    required this.theme,
+    required this.visible,
+    required this.onTap,
+  });
+
+  final AmbleTheme theme;
+  final bool visible;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      // Not tappable while invisible — otherwise an exact-fit hit target
+      // sitting on top of nothing would silently eat taps meant for
+      // whatever's behind this row (there's a `Spacer` here, so nothing
+      // else lives at this x today, but this is the same "hidden means
+      // hidden, not just transparent" guarantee every other faded-out
+      // control in this app already keeps).
+      ignoring: !visible,
+      child: AnimatedOpacity(
+        opacity: visible ? 1 : 0,
+        duration: theme.motionNormal,
+        curve: theme.curveStandard,
+        child: AppPressFeedback(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(theme.radiusSm),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: theme.spacingXs,
+              vertical: theme.spacingXs / 2,
+            ),
+            child: Text(
+              'Today',
+              style: theme.textCaption.copyWith(
+                color: theme.colorTextSecondary,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// The weekday-letter row + the Mon-Sun day grid, with swipe-to-change-
 /// week and press-and-slide day scrubbing — split out of the old
 /// `AppCalendarHeader` unchanged in substance, just re-hosted as this
@@ -285,6 +368,27 @@ class _WeekStripState extends State<_WeekStrip>
   /// each cell's live `RenderBox` bounds during a scrub (see
   /// [_onScrubMove]), never for identity/rebuild purposes.
   final _cellKeys = List.generate(7, (_) => GlobalKey());
+
+  /// How many weeks the strip is showing away from [widget.weekStart] —
+  /// purely a VIEWING offset, never the selected day. Requested directly:
+  /// "swipe through should not mean changing day, only to see dates of
+  /// next week... tap on day is changing only." A completed swipe used to
+  /// call `onDateSelected(selectedDate ± 7 days)` — genuinely reassigning
+  /// the app-wide selected day just to look at a different week's dates.
+  ///
+  /// Reset to 0 whenever [widget.weekStart] changes for a reason OTHER
+  /// than this offset itself (see [didUpdateWidget]) — i.e. whenever the
+  /// SELECTED day actually changed (a tap, "Today," or any other external
+  /// cause), the strip snaps back to showing the newly-selected day's own
+  /// week, exactly as before this change. Swiping never triggers that
+  /// reset itself, since it never touches `selectedDate` at all.
+  int _viewedWeekOffset = 0;
+
+  /// [widget.weekStart] shifted by [_viewedWeekOffset] — the week this
+  /// strip actually DISPLAYS. Every render/measurement below reads this,
+  /// never [widget.weekStart] directly.
+  DateTime get _viewedWeekStart =>
+      widget.weekStart.add(Duration(days: _viewedWeekOffset * 7));
 
   /// The day the drag is currently over, while a scrub is in progress —
   /// null the rest of the time. Only used to avoid re-selecting the same
@@ -328,6 +432,19 @@ class _WeekStripState extends State<_WeekStrip>
     vsync: this,
     duration: widget.theme.motionNormal,
   );
+
+  @override
+  void didUpdateWidget(_WeekStrip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The parent derives `weekStart` from `selectedDate` (see
+    // `_AppDateAccordionState.build`), so this only fires when the
+    // SELECTED day actually changed — a tap, "Today," or any other
+    // external cause, never a swipe (see [_viewedWeekOffset]'s own doc
+    // comment). Snap the view back to the newly-selected day's own week.
+    if (oldWidget.weekStart != widget.weekStart && _viewedWeekOffset != 0) {
+      setState(() => _viewedWeekOffset = 0);
+    }
+  }
 
   @override
   void dispose() {
@@ -381,7 +498,7 @@ class _WeekStripState extends State<_WeekStrip>
       }
       if (_scrubbedIndex == i) return;
       _scrubbedIndex = i;
-      widget.onDateSelected(widget.weekStart.add(Duration(days: i)));
+      widget.onDateSelected(_viewedWeekStart.add(Duration(days: i)));
       return;
     }
   }
@@ -407,6 +524,17 @@ class _WeekStripState extends State<_WeekStrip>
   /// replaces); otherwise it's purely distance: past half the strip's own
   /// width counts as "far enough," short of that snaps back. Requested
   /// directly as "magnetic... calm but decisive."
+  ///
+  /// **2026-09-26 — commits to [_viewedWeekOffset], not [onDateSelected].**
+  /// Reported directly: "swipe through should not mean changing day, only
+  /// to see dates of next week." A completed swipe used to reassign
+  /// `selectedDate` itself (`selectedDate ± 7 days`), which moved the
+  /// app-wide selected day — and everything reading it (the Timeline
+  /// below this header) — just because the user wanted to glance at next
+  /// week's dates. Swiping now only changes which week this STRIP shows;
+  /// tapping a day in it is still the only thing that calls
+  /// [onDateSelected] (see [_onScrubMove] and each `_WeekDayCell`'s own
+  /// `onTap`).
   void _onPageDragEnd(DragEndDetails details) {
     final velocity = details.primaryVelocity ?? 0;
     const flingVelocityThreshold = 400.0;
@@ -436,14 +564,11 @@ class _WeekStripState extends State<_WeekStrip>
     _settleController.forward().whenCompleteOrCancel(() {
       animation.removeListener(tick);
       if (committing) {
-        widget.onDateSelected(
-          widget.selectedDate.add(Duration(days: stepsForward ? 7 : -7)),
-        );
+        _viewedWeekOffset += stepsForward ? 1 : -1;
       }
-      // Reset AFTER reporting the step — the caller's own rebuild (new
-      // `weekStart`) lands on the same frame this snaps back to 0, so the
-      // strip never visibly shows the old week sitting at rest before the
-      // new one takes over.
+      // Reset AFTER stepping the offset — both land in the SAME setState
+      // below, so the strip never visibly shows the old week sitting at
+      // rest before the new one takes over.
       setState(() => _dragPixels = 0);
     });
   }
@@ -539,7 +664,7 @@ class _WeekStripState extends State<_WeekStrip>
                           offset: Offset(_dragPixels + _stripWidth, 0),
                           child: _WeekDayRow(
                             theme: theme,
-                            weekStart: widget.weekStart.add(
+                            weekStart: _viewedWeekStart.add(
                               const Duration(days: 7),
                             ),
                             today: widget.today,
@@ -553,7 +678,7 @@ class _WeekStripState extends State<_WeekStrip>
                           offset: Offset(_dragPixels - _stripWidth, 0),
                           child: _WeekDayRow(
                             theme: theme,
-                            weekStart: widget.weekStart.subtract(
+                            weekStart: _viewedWeekStart.subtract(
                               const Duration(days: 7),
                             ),
                             today: widget.today,
@@ -566,7 +691,7 @@ class _WeekStripState extends State<_WeekStrip>
                         offset: Offset(_dragPixels, 0),
                         child: _WeekDayRow(
                           theme: theme,
-                          weekStart: widget.weekStart,
+                          weekStart: _viewedWeekStart,
                           today: widget.today,
                           selectedDate: widget.selectedDate,
                           // Only the settled (current) week's cells are
@@ -999,6 +1124,21 @@ class _WeekDayCell extends StatelessWidget {
               child: Text(
                 '${date.day}',
                 textAlign: TextAlign.center,
+                // **2026-09-26 — real bug, fixed.** Some day numbers ("20",
+                // "30") wrapped onto a second line while most ("21", "22")
+                // stayed on one, reported directly against a screenshot.
+                // `_dayNumberMinWidth` reserves the box width by measuring
+                // "88" at BOLD weight, but this Text had no
+                // `softWrap`/`maxLines` — if any real day number's glyph
+                // width (bold "0"/"3"/"2" happen to run wider than bold
+                // "8" in this font) exceeded that reserved width by even a
+                // fraction of a pixel, Flutter wrapped it instead of
+                // letting it overflow. A day number is always exactly 1-2
+                // digits; it must render as one line or not at all, never
+                // wrap.
+                softWrap: false,
+                maxLines: 1,
+                overflow: TextOverflow.visible,
                 style: theme.textCaption.copyWith(
                   color: theme.colorTextPrimary,
                   fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,

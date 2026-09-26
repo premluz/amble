@@ -23,6 +23,7 @@ import '../../support/seeded_category_box.dart';
 // through WidgetTester.runAsync. See docs/ERROR_LOG.md.
 Future<void> _tapAndSettle(WidgetTester tester, Finder finder) async {
   await tester.runAsync(() async {
+    await tester.pumpAndSettle();
     await tester.tap(finder);
     await tester.pump();
     await Future<void>.delayed(Duration.zero);
@@ -438,8 +439,19 @@ void main() {
   // half-viewport height, always scrollable) was replaced back with the
   // original content-sized AppSheetSize.small once the Close button gave
   // the sheet its own way to feel roomy without a fixed height.
+  // **2026-09-23 — no longer asserts zero `SingleChildScrollView`
+  // widgets.** `AppSheet` now wraps every `AppSheetSize.small` sheet
+  // (this one included) in an unconstrained-until-the-viewport
+  // `SingleChildScrollView` as an overflow safety net — see that class's
+  // own doc comment; the old assertion was really checking "not a FIXED
+  // half-viewport height, sizes to content" (per this test's own history
+  // above), which the new scroll view still satisfies (it never engages
+  // — never actually scrolls — for ordinary short content, only for
+  // content genuinely taller than the viewport). Asserts that real
+  // intent directly instead: the sheet's own rendered height tracks its
+  // content, not a fixed fraction of the screen.
   testWidgets(
-    'the sheet sizes to its own content — no fixed-height scroll wrapper',
+    'the sheet sizes to its own content — not a fixed half-viewport height',
     (tester) async {
       final navigatorKey = await _pumpHost(
         tester,
@@ -449,7 +461,17 @@ void main() {
       showQuickCaptureSheet(navigatorKey.currentContext!);
       await tester.pumpAndSettle();
 
-      expect(find.byType(SingleChildScrollView), findsNothing);
+      final screenHeight =
+          tester.view.physicalSize.height / tester.view.devicePixelRatio;
+      final sheetHeight = tester.getSize(find.byType(SingleChildScrollView)).height;
+
+      expect(
+        sheetHeight,
+        lessThan(screenHeight * 0.5),
+        reason:
+            'a short form like this sheet should size well under half the '
+            'screen, not stretch to fill a fixed fraction of it',
+      );
 
       await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
     },
@@ -524,11 +546,19 @@ void main() {
   //
   // A previous version deferred focus until the sheet's slide-up had
   // finished, which is exactly what produced that two-step feel. The
-  // field autofocuses as it mounts instead, matching the task-detail
-  // sheet (the one that feels right), so the keyboard rises WITH the
-  // sheet rather than after it.
-  testWidgets('the text field takes focus as the sheet mounts, so the keyboard '
-      'rises with it rather than in a second step', (tester) async {
+  // field autofocuses as it mounts instead — this part is UNCHANGED by
+  // the later `autofocusesKeyboard` mechanism below: the focus REQUEST
+  // still fires immediately on mount, every frame. What changed
+  // (2026-09-23, twice the same day) is the sheet's own VISIBLE slide-in
+  // timing — first to a strict "wait the full keyboard-settle span, then
+  // play," then reversed again the same day to an OVERLAP (the slide now
+  // starts partway through that span, both finishing together) once the
+  // strict version was reported as still reading like two discrete steps
+  // rather than one gesture — see [AppSheet]'s own doc comment for the
+  // final shape.
+  testWidgets('the text field takes focus as the sheet mounts, so the '
+      'keyboard is already rising before the sheet\'s own slide-in even '
+      'starts', (tester) async {
     final navigatorKey = await _pumpHost(
       tester,
       box: box,
@@ -557,16 +587,10 @@ void main() {
     await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
   });
 
-  // **2026-09-22 — the sheet now opens/closes with NO animation at all.**
-  // Requested directly: "remove animation completely for switching
-  // views... change screens no animation." This test used to assert the
-  // app's own `motionNormal`/`motionFast` curve+duration beat Flutter's
-  // slower stock bottom-sheet default (see docs/DECISIONS.md's matching
-  // entry for that history) — now it asserts the stronger claim: zero
-  // duration both ways, not just faster than Flutter's default.
+  // Route duration controls the barrier/grace period. Native IME progress
+  // independently drives the sheet surface; closing retains the shared slide.
   testWidgets(
-    'the sheet opens and closes instantly — no transition duration either '
-    'way',
+    'the barrier uses the keyboard grace period and dismissal uses the slide duration',
     (tester) async {
       final navigatorKey = await _pumpHost(
         tester,
@@ -576,9 +600,68 @@ void main() {
       showQuickCaptureSheet(navigatorKey.currentContext!);
       await tester.pump();
 
+      final theme = AmbleTheme.light;
       final route = ModalRoute.of(tester.element(find.byType(TextField)))!;
-      expect(route.transitionDuration, Duration.zero);
-      expect(route.reverseTransitionDuration, Duration.zero);
+      expect(route.transitionDuration, theme.motionKeyboardSettle);
+      expect(route.reverseTransitionDuration, theme.motionSheetSlide);
+
+      await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
+    },
+  );
+
+  // The actual behavioral guarantee behind the timing above.
+  //
+  // Desktop widget tests have no native IME; verify the non-Android
+  // grace-period path here. Native progress is covered by app_sheet_motion_test.
+  testWidgets(
+    'without native IME events, the sheet slides after its grace period',
+    (tester) async {
+      final navigatorKey = await _pumpHost(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+      );
+      showQuickCaptureSheet(navigatorKey.currentContext!);
+      await tester.pump();
+
+      final theme = AmbleTheme.light;
+      final handleFinder = find.byType(AppSheetHandle);
+      final headStart = theme.motionKeyboardSettle;
+
+      // Still inside the head-start window: the sheet hasn't started
+      // moving yet.
+      await tester.pump(headStart * 0.5);
+      final headStartTop = tester.getTopLeft(handleFinder).dy;
+      final screenHeight =
+          tester.view.physicalSize.height / tester.view.devicePixelRatio;
+      expect(
+        headStartTop,
+        greaterThanOrEqualTo(screenHeight),
+        reason:
+            'still inside the head-start window — the sheet must not '
+            'have started sliding into view yet',
+      );
+
+      // Just past the head start, into the slide itself: now visibly
+      // on-screen and moving.
+      await tester.pump(headStart);
+      await tester.pump();
+      await tester.pump(theme.motionSheetSlide * 0.5);
+      final midSlideTop = tester.getTopLeft(handleFinder).dy;
+      expect(
+        midSlideTop,
+        lessThan(headStartTop),
+        reason: 'the head start has elapsed — the slide should now be moving',
+      );
+
+      // Fully settled.
+      await tester.pumpAndSettle();
+      final settledTop = tester.getTopLeft(handleFinder).dy;
+      expect(
+        settledTop,
+        lessThan(midSlideTop),
+        reason: 'the sheet keeps moving to its final on-screen position',
+      );
 
       await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
     },

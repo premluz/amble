@@ -98,6 +98,9 @@ class _MoveAllFormState extends ConsumerState<_MoveAllForm> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // AppSheet's own outer padding no longer provides a top inset
+        // (2026-09-23 — "top padding should be in header").
+        SizedBox(height: theme.spacingLg),
         Text(
           'Move all',
           style: theme.textTitle.copyWith(color: theme.colorTextPrimary),

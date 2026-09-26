@@ -342,12 +342,15 @@ class ZoneBackgroundBlock extends StatelessWidget {
               child: editModeEnabled
                   ? SelectedPillBorder(
                       theme: theme,
-                      // radiusXl, not radiusMd — matches the non-spatial
-                      // Zone view's own card exactly, the named reference
-                      // for the "zone pane" corner radius everywhere it
-                      // renders. See docs/DESIGN_SYSTEM.md's "Zone pane
-                      // indicator" section.
-                      contentRadius: BorderRadius.circular(theme.radiusXl),
+                      // radiusXxl (2026-09-23), not radiusXl — requested
+                      // directly: "zones in edit should have next step
+                      // larger rounding[,] next scale token." The resting
+                      // state below still uses radiusXl, matching the
+                      // non-spatial Zone view's own card (see that
+                      // decoration's own doc comment) — this is
+                      // specifically the Edit Mode selection ring rounding
+                      // MORE than the plain card it's drawn over.
+                      contentRadius: BorderRadius.circular(theme.radiusXxl),
                       fillColor: theme.colorSurfaceSecondary,
                       child: const SizedBox.expand(),
                     )
@@ -576,11 +579,9 @@ class ZoneNameLabel extends StatelessWidget {
           child: Center(
             child: Text(
               zone.title,
-              // textCaptionMono, not textCaption — a zone NAME, the one
-              // explicit carve-out in the dual-font policy (2026-09-21):
-              // zone names stay monospace even though the rest of this
-              // token's call sites moved to DM Sans.
-              style: theme.textCaptionMono.copyWith(
+              // textZoneName is the compact monospace zone-name style shared
+              // with the spatial/edit zone surfaces.
+              style: theme.textZoneName.copyWith(
                 color: theme.colorTextTertiary,
               ),
               maxLines: 1,

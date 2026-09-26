@@ -89,8 +89,8 @@ void main() {
   // pin is just the time line's own token, not a title/time-line size
   // relationship that no longer means anything.
   testWidgets(
-    'the time line renders at textCaptionMono\'s size and font, matching '
-    'the spatial Timeline\'s own hour labels',
+    'the time line renders at textTaskEdgeTime\'s size and font, matching '
+    'the compact spatial/Edit task-time treatment',
     (tester) async {
       await pump(tester);
 
@@ -99,12 +99,12 @@ void main() {
         find.textContaining('9:00', findRichText: false),
       );
 
-      expect(timeText.style?.fontSize, theme.textCaptionMono.fontSize);
+      expect(timeText.style?.fontSize, theme.textTaskEdgeTime.fontSize);
       // **2026-09-22** — this is the header's OWN start-end time-range
       // text, a second real instance of the same textCaption-instead-of-
       // textCaptionMono bug `ZoneRowTimeLabel` had (see
       // docs/DESIGN_SYSTEM.md's "Two-font system" section).
-      expect(timeText.style?.fontFamily, theme.textCaptionMono.fontFamily);
+      expect(timeText.style?.fontFamily, theme.textTaskEdgeTime.fontFamily);
     },
   );
 
@@ -1101,6 +1101,31 @@ void main() {
     },
   );
 
+  // Reported directly: "zone names in zone view should resolve to same
+  // size" as the spatial Timeline's own rotated zone name
+  // (`zone_background_block.dart`) and the Edit screen's zone grid
+  // (`zone_grid_block.dart`) — both of which already render on
+  // `textZoneName`. This header had drifted onto `textTaskTitleZone`
+  // (one rung larger) as a side effect of an unrelated, file-wide task-
+  // title resize; this pins the fix so it can't silently drift back.
+  testWidgets(
+    'the zone header title renders at textZoneName\'s size, matching the '
+    "spatial Timeline's and Edit screen's own zone names",
+    (tester) async {
+      await pump(tester);
+
+      final title = tester.widget<Text>(
+        find.textContaining('Morning ritual').first,
+      );
+
+      expect(title.style?.fontSize, AmbleTheme.light.textZoneName.fontSize);
+      expect(
+        title.style?.fontFamily,
+        AmbleTheme.light.textZoneName.fontFamily,
+      );
+    },
+  );
+
   // Requested directly: "wire for zoned" — swipe-to-reveal (mark done/
   // undone, add note), previously scoped out for tasks inside a zone
   // container (see docs/DECISIONS.md), now wired through
@@ -1299,20 +1324,21 @@ void main() {
 
     // **2026-09-22 — fontFamily now asserted, not just fontSize.** Real
     // bug, reported directly comparing the two Timeline views: this label
-    // read `textCaption` (DM Sans) instead of `textCaptionMono`, and the
+    // read `textCaption` (DM Sans) instead of the shared compact mono style,
+    // and the
     // OLD version of this test only checked `fontSize`/`color` — both
     // identical between the two tokens — so it kept passing straight
     // through the regression. See docs/DESIGN_SYSTEM.md's "Two-font
     // system" section.
-    testWidgets('styled as textCaptionMono + colorTextSecondary, matching '
-        'TaskBoundaryMarkers\' own hour labels exactly — including the '
+    testWidgets('styled as textTaskEdgeTime + colorTextSecondary, matching '
+        'the compact spatial/Edit task-time treatment — including the '
         'MONO font family, not just size/color', (tester) async {
       await pumpLabel(tester, leftPaddingToEscape: 40);
 
       final theme = AmbleTheme.light;
       final text = tester.widget<Text>(find.text('9:00 AM'));
-      expect(text.style?.fontSize, theme.textCaptionMono.fontSize);
-      expect(text.style?.fontFamily, theme.textCaptionMono.fontFamily);
+      expect(text.style?.fontSize, theme.textTaskEdgeTime.fontSize);
+      expect(text.style?.fontFamily, theme.textTaskEdgeTime.fontFamily);
       expect(
         text.style?.fontFamily,
         isNot(theme.textCaption.fontFamily),
@@ -1343,8 +1369,8 @@ void main() {
         );
         await pump(tester, tasksOverride: [unimportant]);
 
-        final opacityWidget = tester.widget<AnimatedOpacity>(
-          find.byType(AnimatedOpacity).first,
+        final opacityWidget = tester.widget<Opacity>(
+          find.byType(Opacity).first,
         );
         expect(opacityWidget.opacity, 1.0);
       },
@@ -1364,9 +1390,7 @@ void main() {
         tasksOverride: [unimportant],
       );
 
-      final opacityWidget = tester.widget<AnimatedOpacity>(
-        find.byType(AnimatedOpacity).first,
-      );
+      final opacityWidget = tester.widget<Opacity>(find.byType(Opacity).first);
       expect(opacityWidget.opacity, 0.0);
       expect(
         find.text('Not important'),
@@ -1394,8 +1418,8 @@ void main() {
           tasksOverride: [important],
         );
 
-        final opacityWidget = tester.widget<AnimatedOpacity>(
-          find.byType(AnimatedOpacity).first,
+        final opacityWidget = tester.widget<Opacity>(
+          find.byType(Opacity).first,
         );
         expect(opacityWidget.opacity, 1.0);
       },
