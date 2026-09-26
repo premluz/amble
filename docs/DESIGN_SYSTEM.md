@@ -1088,14 +1088,18 @@ and browsed-week state remain stateful. Edit Tasks still has a mode-specific
 calendar header, so the accordion itself has not yet been lifted into the
 shell calendar slot.
 
-`AppViewTransition` is the opt-in content-only crossfade. Each `viewId` gets
+`AppViewTransition` is the opt-in content transition. Each `viewId` gets
 one keyed live slot; cached slots are paused and excluded from input,
 semantics, and focus while inactive. A target is laid out before its fade
 starts, and reduced motion completes after the same readiness point. Rapid
 changes retain the current blend as weights over existing live slots instead
 of creating a widget subtree as a fake screenshot. The shared token is
-`MotionPrimitives.durationViewCrossfadeMs` (140ms), with no slide, scale, or
-bounce. Only one transition host may own a given handoff.
+`MotionPrimitives.durationViewCrossfadeMs` (140ms) for crossfades. Main
+navigation opts into a directional horizontal slide, using the selected
+destination order to choose left or right. Main slides and
+`directionalPageRoute` use the shared 150ms fast duration and decelerating
+curve; Back reverses route direction. Only one transition host may own a
+given handoff.
 
 Never wrap persistent toolbar/calendar chrome in `AppViewTransition`, use a
 second `AnimatedSwitcher` for the same view change, key a retained action

@@ -15,7 +15,7 @@ import 'settings_panel.dart';
 
 Future<void> showSlackSettingsScreen(BuildContext context) {
   return Navigator.of(context).push<void>(
-    instantRoute((context) => const SlackSettingsScreen()),
+    directionalPageRoute((context) => const SlackSettingsScreen()),
   );
 }
 

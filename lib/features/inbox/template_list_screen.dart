@@ -16,7 +16,7 @@ import 'template_list_view.dart';
 /// had and Templates didn't.
 Future<void> showTemplateListScreen(BuildContext context) {
   return Navigator.of(context).push<void>(
-    instantRoute((context) => const TemplateListScreen()),
+    directionalPageRoute((context) => const TemplateListScreen()),
   );
 }
 

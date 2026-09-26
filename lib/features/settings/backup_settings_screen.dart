@@ -19,7 +19,7 @@ Future<void> showBackupSettingsScreen(
   bool debugAutoTriggerImport = false,
 }) {
   return Navigator.of(context).push<void>(
-    instantRoute(
+    directionalPageRoute(
       (context) => BackupSettingsScreen(
         debugAutoTriggerExport: debugAutoTriggerExport,
         debugAutoTriggerImport: debugAutoTriggerImport,

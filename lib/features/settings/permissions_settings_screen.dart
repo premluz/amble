@@ -10,7 +10,7 @@ import 'settings_panel.dart';
 
 Future<void> showPermissionsSettingsScreen(BuildContext context) {
   return Navigator.of(context).push<void>(
-    instantRoute((context) => const PermissionsSettingsScreen()),
+    directionalPageRoute((context) => const PermissionsSettingsScreen()),
   );
 }
 

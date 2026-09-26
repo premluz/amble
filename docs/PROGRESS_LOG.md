@@ -6552,3 +6552,15 @@ with immediate input/focus/semantics exclusion and cleanup after the final fade.
 Ten focused tests pass (header geometry/identity, entrance/exit timing, dock
 identity, shell updates). Full analyzer reports 18 issues; full-suite output
 is in `/tmp/rios-header-full-tests.log`. Device appearance is not verified.
+
+## [2026-09-26] Directional page motion
+
+Main navigation now slides its live page horizontally: higher destinations
+enter from the right and lower destinations from the left, while the outgoing
+page travels in the same direction. Settings detail pages and the Settings
+management links use the reusable `directionalPageRoute`; Navigator pop
+reverses its direction. Motion uses the shared 150 ms fast duration and
+decelerating curve. Interrupted navigation continues from sampled page
+positions, and reduced-motion settings disable route movement. Targeted
+analysis found no errors; it reported three existing curly-brace style infos
+in `zone_list_screen.dart`. Tests and device visual verification were not run.

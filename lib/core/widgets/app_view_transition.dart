@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../tokens/motion_primitives.dart';
+import '../tokens/semantic_theme.dart';
+import 'app_view_transition_motion.dart';
+import 'app_view_transition_slot.dart';
 
-/// An opt-in, readiness-aware crossfade for a stable content host.
-///
-/// Every view owns one keyed slot for its lifetime. During an interruption,
-/// the currently visible blend is sampled as weights over those live slots;
-/// no second widget subtree is constructed as a fake snapshot.
+/// Opt-in, readiness-aware transitions retain keyed live slots and sample
+/// their current positions on interruption instead of building snapshots.
 class AppViewTransition extends StatefulWidget {
   const AppViewTransition({
     super.key,
@@ -14,41 +14,50 @@ class AppViewTransition extends StatefulWidget {
     required this.child,
     this.ready = true,
     this.duration,
+    this.slide = false,
+    this.forward = true,
   });
 
   final String viewId;
   final Widget child;
   final bool ready;
   final Duration? duration;
+  final bool slide;
+  final bool forward;
 
   @override
   State<AppViewTransition> createState() => _AppViewTransitionState();
 }
 
-class _ViewEntry {
-  _ViewEntry(this.child);
-
-  Widget child;
-}
-
 class _AppViewTransitionState extends State<AppViewTransition>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
-  final _views = <String, _ViewEntry>{};
+  final _views = <String, Widget>{};
   Map<String, double> _sourceWeights = const {};
+  Map<String, Offset> _sourceTranslations = const {};
   String? _activeViewId;
   bool _waitingForLayout = false;
   bool _layoutCallbackScheduled = false;
 
   Duration get _duration =>
       widget.duration ??
-      const Duration(milliseconds: MotionPrimitives.durationViewCrossfadeMs);
+      Duration(
+        milliseconds: widget.slide
+            ? MotionPrimitives.durationFastMs
+            : MotionPrimitives.durationViewCrossfadeMs,
+      );
+
+  double get _motionProgress =>
+      Theme.of(context)
+          .extension<AmbleTheme>()!
+          .curveDecelerate
+          .transform(_controller.value);
 
   @override
   void initState() {
     super.initState();
     _activeViewId = widget.viewId;
-    _views[widget.viewId] = _ViewEntry(widget.child);
+    _views[widget.viewId] = widget.child;
     _waitingForLayout = !widget.ready;
     _controller = AnimationController(
       vsync: this,
@@ -63,7 +72,7 @@ class _AppViewTransitionState extends State<AppViewTransition>
     super.didUpdateWidget(oldWidget);
     _controller.duration = _duration;
     if (oldWidget.viewId == widget.viewId) {
-      _views[widget.viewId]?.child = widget.child;
+      _views[widget.viewId] = widget.child;
       if (!oldWidget.ready && widget.ready && _waitingForLayout) {
         _scheduleLayoutReadiness();
       }
@@ -71,9 +80,17 @@ class _AppViewTransitionState extends State<AppViewTransition>
     }
 
     final current = _currentWeights();
+    _sourceTranslations = AppViewTransitionMotion.sample(
+      slide: oldWidget.slide,
+      forward: oldWidget.forward,
+      progress: _motionProgress,
+      sourceWeights: _sourceWeights,
+      sourceTranslations: _sourceTranslations,
+      activeViewId: _activeViewId,
+    );
     _sourceWeights = current;
     _activeViewId = widget.viewId;
-    _views[widget.viewId] = _ViewEntry(widget.child);
+    _views[widget.viewId] = widget.child;
     _waitingForLayout = !widget.ready;
     _controller.value = 0;
     if (!_waitingForLayout) _scheduleLayoutReadiness();
@@ -123,7 +140,10 @@ class _AppViewTransitionState extends State<AppViewTransition>
 
   void _finish() {
     if (!mounted || _controller.value < 1) return;
-    setState(() => _sourceWeights = const {});
+    setState(() {
+      _sourceWeights = const {};
+      _sourceTranslations = const {};
+    });
   }
 
   @override
@@ -139,15 +159,29 @@ class _AppViewTransitionState extends State<AppViewTransition>
       animation: _controller,
       builder: (context, _) {
         final weights = _currentWeights();
+        final motionProgress = _motionProgress;
         return Stack(
           fit: StackFit.passthrough,
           children: [
             for (final entry in _views.entries)
-              _ViewSlot(
+              AppViewTransitionSlot(
                 key: ValueKey('view-slot-${entry.key}'),
                 opacity: entry.key == _activeViewId && !_waitingForLayout
-                    ? (_sourceWeights.isEmpty ? 1 : weights[entry.key] ?? 0)
-                    : weights[entry.key] ?? 0,
+                    ? (widget.slide
+                          ? 1
+                          : (_sourceWeights.isEmpty
+                                ? 1
+                                : weights[entry.key] ?? 0))
+                    : (widget.slide ? 1 : weights[entry.key] ?? 0),
+                translation: widget.slide
+                    ? AppViewTransitionMotion.translation(
+                        id: entry.key,
+                        activeViewId: _activeViewId,
+                        forward: widget.forward,
+                        progress: motionProgress,
+                        sourceTranslations: _sourceTranslations,
+                      )
+                    : Offset.zero,
                 interactive:
                     entry.key == _activeViewId &&
                     !_waitingForLayout &&
@@ -156,44 +190,11 @@ class _AppViewTransitionState extends State<AppViewTransition>
                 participating:
                     entry.key == _activeViewId ||
                     weights.containsKey(entry.key),
-                child: entry.value.child,
+                child: entry.value,
               ),
           ],
         );
       },
     );
   }
-}
-
-class _ViewSlot extends StatelessWidget {
-  const _ViewSlot({
-    super.key,
-    required this.child,
-    required this.opacity,
-    required this.interactive,
-    required this.participating,
-  });
-
-  final Widget child;
-  final double opacity;
-  final bool interactive;
-  final bool participating;
-
-  @override
-  Widget build(BuildContext context) => Offstage(
-    offstage: !participating,
-    child: TickerMode(
-      enabled: participating,
-      child: IgnorePointer(
-        ignoring: !interactive,
-        child: ExcludeSemantics(
-          excluding: !interactive,
-          child: ExcludeFocus(
-            excluding: !interactive,
-            child: Opacity(opacity: opacity.clamp(0, 1), child: child),
-          ),
-        ),
-      ),
-    ),
-  );
 }

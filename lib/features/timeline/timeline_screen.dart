@@ -11,6 +11,7 @@ import '../../core/feature_flags.dart';
 import '../../core/haptics.dart';
 import '../../core/haptics_provider.dart';
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/app_context_menu.dart';
 import '../../core/widgets/app_floating_create_button.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
 import '../../core/widgets/app_undo_toast.dart';
@@ -38,6 +39,7 @@ import '../../shared/services/zone_cascade_reschedule.dart';
 import '../../shared/services/zone_containment.dart';
 import '../../shared/services/zone_selection_order.dart';
 import '../../shared/services/move_resize_undo.dart';
+import '../../shared/services/trim_reschedule.dart';
 import '../tracked_behavior/behavior_outcome_prompt.dart';
 import '../task_detail/task_detail_sheet.dart';
 import '../task_detail/task_remove.dart';
@@ -5535,20 +5537,60 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                       return;
                     }
 
-                    // With the preference on and the drop overlapping another task,
-                    // the drag path pushes the conflicting task(s) out of the way
-                    // (a cascade) instead of rejecting the drop — a deliberate,
-                    // confirmed reversal of the reject-and-snap-back behavior for
-                    // this one path only (the create wizard and edit-schedule modal
-                    // keep reject-with-inline-error, unchanged, since neither has a
-                    // drag context to compute a push from). See docs/DECISIONS.md.
-                    if (ref.read(preventOverlappingTasksSettingProvider) &&
-                        overlapsExistingTask(
-                          scheduledAt: newScheduledAt,
-                          durationMinutes: widget.task.durationMinutes!,
-                          existingTasks: ref.read(taskListProvider),
-                          excludeTaskId: widget.task.id,
-                        )) {
+                    // "Overlap" — leave the drop exactly where released,
+                    // side-by-side with whatever it conflicts with (today's
+                    // default, unchanged). Also the fallback for a clean,
+                    // conflict-free drop, and for a cascade/trim day-boundary
+                    // failure (abort the whole resolution and snap back, as
+                    // if the drop never happened — nothing partially
+                    // applies).
+                    Future<void> commitOverlap() async {
+                      // Deliberately do NOT clear `_dragOffset` yet. The
+                      // write is async (repository save + notification sync
+                      // + provider refresh), and clearing it here snapped
+                      // the block back to its old position for the frame or
+                      // two before the new data arrived — a visible blink of
+                      // the task at its original time. Holding the offset
+                      // keeps the block exactly where the user dropped it
+                      // until the rebuilt widget takes over at the new
+                      // `baseTop`.
+                      await commitTaskChangeWithUndo(
+                        context,
+                        ref,
+                        taskIds: [widget.task.id],
+                        message: "Moved '${widget.task.title}'",
+                        commit: () => widget.onReschedule(newScheduledAt),
+                      );
+                      // Snap the offset back to zero only once the task
+                      // itself has moved, so the two changes cancel out and
+                      // the block never visibly jumps.
+                      if (mounted) setState(() => _dragOffset = 0);
+                      await _endSettle();
+                    }
+
+                    Future<void> snapBack() async {
+                      setState(() => _dragOffset = 0);
+                      await _endSettle();
+                    }
+
+                    // A drop overlapping another task no longer silently
+                    // resolves itself — every conflicting drop opens the
+                    // same anchored popover the Inbox's tab-tap menu uses
+                    // (`AppContextMenu.showAt`), offering an explicit
+                    // Overlap / Push all / Trim choice instead. This
+                    // REPLACES `preventOverlappingTasksSettingProvider`'s
+                    // own automatic push-or-reject behavior for this one
+                    // drag-drop path only — confirmed via AskUserQuestion —
+                    // though the setting itself remains wired elsewhere
+                    // (e.g. the create wizard's reject-on-save), which has
+                    // no drag context to open a popover from. See
+                    // docs/DECISIONS.md.
+                    if (overlapsExistingTask(
+                      scheduledAt: newScheduledAt,
+                      durationMinutes: widget.task.durationMinutes!,
+                      existingTasks: ref.read(taskListProvider),
+                      excludeTaskId: widget.task.id,
+                    )) {
                       final sameDayTasks = ref
                           .read(taskListProvider)
                           .where(
@@ -5559,62 +5601,120 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                           )
                           .toList();
 
-                      final moves = computeCascadeMoves(
+                      // Computed eagerly, before the popover even opens, so
+                      // each action just applies an already-known result —
+                      // the popover itself never needs to be async.
+                      final cascadeMoves = computeCascadeMoves(
+                        draggedTask: widget.task,
+                        newStart: newScheduledAt,
+                        sameDayTasks: sameDayTasks,
+                      );
+                      final trims = computeTrimMoves(
                         draggedTask: widget.task,
                         newStart: newScheduledAt,
                         sameDayTasks: sameDayTasks,
                       );
 
-                      // Day-boundary guard failed (or some other reason the
-                      // cascade can't be satisfied) — abort the whole cascade and
-                      // snap back exactly as the previous reject behavior did,
-                      // as if the drop never happened. Nothing partially applies.
-                      if (moves == null) {
-                        setState(() => _dragOffset = 0);
-                        await _endSettle();
-                        return;
-                      }
+                      // Tracks whether an action actually ran, so a dismiss
+                      // (tap outside — `AppContextMenu.showAt`'s Future
+                      // completes the same way for both) can fall back to
+                      // the Overlap default confirmed via AskUserQuestion,
+                      // rather than doing nothing at all.
+                      var resolved = false;
 
-                      // Deliberately do NOT clear `_dragOffset` yet — see the
-                      // comment below on the non-cascade path for why.
-                      await commitTaskChangeWithUndo(
+                      final anchor = _lastDragGlobalPosition ?? Offset.zero;
+                      await AppContextMenu.showAt(
                         context,
-                        ref,
-                        taskIds: moves.map((m) => m.taskId),
-                        message: moves.length > 1
-                            ? 'Moved ${moves.length} task(s)'
-                            : "Moved '${widget.task.title}'",
-                        commit: () => ref
-                            .read(taskListProvider.notifier)
-                            .rescheduleTaskWithCascade(moves),
+                        position: anchor,
+                        actions: [
+                          AppContextMenuAction(
+                            icon: Icons.layers_outlined,
+                            label: 'Overlap',
+                            onTap: () {
+                              resolved = true;
+                              unawaited(commitOverlap());
+                            },
+                          ),
+                          AppContextMenuAction(
+                            icon: Icons.arrow_forward_rounded,
+                            label: 'Push all',
+                            onTap: () {
+                              resolved = true;
+                              if (cascadeMoves == null) {
+                                unawaited(snapBack());
+                                return;
+                              }
+                              unawaited(
+                                commitTaskChangeWithUndo(
+                                      context,
+                                      ref,
+                                      taskIds: cascadeMoves.map(
+                                        (m) => m.taskId,
+                                      ),
+                                      message: cascadeMoves.length > 1
+                                          ? 'Moved ${cascadeMoves.length} task(s)'
+                                          : "Moved '${widget.task.title}'",
+                                      commit: () => ref
+                                          .read(taskListProvider.notifier)
+                                          .rescheduleTaskWithCascade(
+                                            cascadeMoves,
+                                          ),
+                                    )
+                                    .then((_) {
+                                      if (mounted) {
+                                        setState(() => _dragOffset = 0);
+                                      }
+                                    })
+                                    .then((_) => _endSettle()),
+                              );
+                            },
+                          ),
+                          AppContextMenuAction(
+                            icon: Icons.content_cut_rounded,
+                            label: 'Trim',
+                            onTap: () {
+                              resolved = true;
+                              if (trims == null) {
+                                unawaited(snapBack());
+                                return;
+                              }
+                              unawaited(
+                                commitTaskChangeWithUndo(
+                                      context,
+                                      ref,
+                                      taskIds: [
+                                        widget.task.id,
+                                        ...trims.map((t) => t.taskId),
+                                      ],
+                                      message: trims.isEmpty
+                                          ? "Moved '${widget.task.title}'"
+                                          : "Trimmed ${trims.length} task(s)",
+                                      commit: () async {
+                                        await widget.onReschedule(
+                                          newScheduledAt,
+                                        );
+                                        await ref
+                                            .read(taskListProvider.notifier)
+                                            .rescheduleTaskWithTrim(trims);
+                                      },
+                                    )
+                                    .then((_) {
+                                      if (mounted) {
+                                        setState(() => _dragOffset = 0);
+                                      }
+                                    })
+                                    .then((_) => _endSettle()),
+                              );
+                            },
+                          ),
+                        ],
                       );
 
-                      if (mounted) setState(() => _dragOffset = 0);
-                      await _endSettle();
+                      if (!resolved) await commitOverlap();
                       return;
                     }
 
-                    // Deliberately do NOT clear `_dragOffset` yet. The write is
-                    // async (repository save + notification sync + provider
-                    // refresh), and clearing it here snapped the block back to
-                    // its old position for the frame or two before the new
-                    // data arrived — a visible blink of the task at its
-                    // original time. Holding the offset keeps the block
-                    // exactly where the user dropped it until the rebuilt
-                    // widget takes over at the new `baseTop`.
-                    await commitTaskChangeWithUndo(
-                      context,
-                      ref,
-                      taskIds: [widget.task.id],
-                      message: "Moved '${widget.task.title}'",
-                      commit: () => widget.onReschedule(newScheduledAt),
-                    );
-
-                    // Snap the offset back to zero only once the task itself
-                    // has moved, so the two changes cancel out and the block
-                    // never visibly jumps.
-                    if (mounted) setState(() => _dragOffset = 0);
-                    await _endSettle();
+                    await commitOverlap();
                   },
             editModeEnabled: _editActive,
             // TOP-edge resize — moves the task's START, end stays anchored,

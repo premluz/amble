@@ -26,7 +26,7 @@ Future<OnboardingProfile?> showOnboardingProfileBrowseScreen(
   BuildContext context,
 ) {
   return Navigator.of(context).push<OnboardingProfile>(
-    instantRoute((context) => const OnboardingProfileBrowseScreen()),
+    directionalPageRoute((context) => const OnboardingProfileBrowseScreen()),
   );
 }
 

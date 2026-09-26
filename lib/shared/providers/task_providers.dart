@@ -13,6 +13,7 @@ import '../repositories/hive_task_repository.dart';
 import '../repositories/task_repository.dart';
 import '../repositories/preferences_repository.dart';
 import '../services/cascade_reschedule.dart';
+import '../services/trim_reschedule.dart';
 import '../services/recurrence_generator.dart';
 import 'notification_providers.dart';
 import 'preferences_providers.dart';
@@ -839,6 +840,32 @@ class TaskList extends _$TaskList {
       if (task == null) continue;
       task.originalScheduledAt ??= task.scheduledAt;
       task.scheduledAt = move.newScheduledAt;
+      task.status = TaskStatus.rescheduled;
+      await repository.saveTask(task);
+      _syncNotificationInBackground(task);
+    }
+    _refresh();
+  }
+
+  /// Applies every trim from the "Trim" drop-resolution popover choice
+  /// (see `shared/services/trim_reschedule.dart`'s `computeTrimMoves`) —
+  /// each conflicting task shortened (or, below the minimum floor, pushed
+  /// wholesale keeping its own duration) to start where the thing in front
+  /// of it now ends. Writes both `scheduledAt` and `durationMinutes` per
+  /// task, like [resizeTasksFromTopInBatch]'s top-edge shape, but ALSO
+  /// carries [rescheduleTaskWithCascade]'s own move bookkeeping
+  /// (`originalScheduledAt` preserved on first reschedule,
+  /// `status = rescheduled`) since — unlike a top-edge resize — a trim IS
+  /// a reschedule of the affected task, not a resize of it. One [_refresh]
+  /// at the end, not one per task.
+  Future<void> rescheduleTaskWithTrim(List<TaskTrim> trims) async {
+    final repository = ref.read(taskRepositoryProvider);
+    for (final trim in trims) {
+      final task = repository.getTaskById(trim.taskId);
+      if (task == null) continue;
+      task.originalScheduledAt ??= task.scheduledAt;
+      task.scheduledAt = trim.newScheduledAt;
+      task.durationMinutes = trim.newDurationMinutes;
       task.status = TaskStatus.rescheduled;
       await repository.saveTask(task);
       _syncNotificationInBackground(task);

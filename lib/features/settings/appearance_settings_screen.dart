@@ -12,7 +12,7 @@ import 'theme_mode_selector.dart';
 
 Future<void> showAppearanceSettingsScreen(BuildContext context) {
   return Navigator.of(context).push<void>(
-    instantRoute((context) => const AppearanceSettingsScreen()),
+    directionalPageRoute((context) => const AppearanceSettingsScreen()),
   );
 }
 

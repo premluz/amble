@@ -8,7 +8,7 @@ import 'settings_panel.dart';
 
 Future<void> showAboutSettingsScreen(BuildContext context) {
   return Navigator.of(context).push<void>(
-    instantRoute((context) => const AboutSettingsScreen()),
+    directionalPageRoute((context) => const AboutSettingsScreen()),
   );
 }
 

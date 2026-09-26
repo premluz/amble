@@ -479,16 +479,19 @@ class _ShellScene {
   const _ShellScene({
     required this.key,
     required this.viewId,
+    required this.forward,
     required this.child,
   });
 
   final String key;
   final String viewId;
+  final bool forward;
   final Widget child;
 }
 
 class _AmbleHomeState extends ConsumerState<AmbleHome> {
   int _selectedIndex = 0;
+  bool _pageMotionForward = true;
   final _contentNavigatorKey = GlobalKey<NavigatorState>();
   final _sceneNotifier = ValueNotifier<_ShellScene?>(null);
   final _chromeController = AppShellChromeController();
@@ -594,6 +597,7 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
       _ShellScene(
         key: '$activeIndex:$activeViewId:${timelineMode.name}:$trackedTabVisible',
         viewId: activeViewId,
+        forward: _pageMotionForward,
         child: screens[activeIndex],
       ),
     );
@@ -608,7 +612,12 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
     // always a safe fallback.
     if (_selectedIndex >= screens.length) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() => _selectedIndex = 0);
+        if (mounted) {
+          setState(() {
+            _pageMotionForward = false;
+            _selectedIndex = 0;
+          });
+        }
       });
     }
 
@@ -625,7 +634,10 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
       // destination into spatial mode even if the user had it in Zone
       // view, same as switching tabs used to do outright.
       ref.read(zoneViewEnabledSettingProvider.notifier).set(false);
-      setState(() => _selectedIndex = 0);
+      setState(() {
+        _pageMotionForward = _selectedIndex == 0;
+        _selectedIndex = 0;
+      });
       ref.read(notificationTapProvider.notifier).consume();
     });
 
@@ -682,13 +694,19 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
                         .set(!zoneViewEnabled);
                     return;
                   }
-                  setState(() => _selectedIndex = index);
+                  setState(() {
+                    _pageMotionForward = index > _selectedIndex;
+                    _selectedIndex = index;
+                  });
                 },
                 onSettingsTap: () {
                   final settingsIndex = screens.length - 1;
                     final wasAlreadyOnSettings =
                         _selectedIndex == settingsIndex;
-                  setState(() => _selectedIndex = settingsIndex);
+                  setState(() {
+                    _pageMotionForward = settingsIndex > _selectedIndex;
+                    _selectedIndex = settingsIndex;
+                  });
                   // Only on an actual transition INTO Settings, not on a
                   // repeated tap while already there — `onSettingsTap` fires
                   // on every tap regardless of current tab, unlike
@@ -723,6 +741,8 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
                                   ? const SizedBox.shrink()
                                   : AppViewTransition(
                                       viewId: scene.viewId,
+                                      slide: true,
+                                      forward: scene.forward,
                                       child: scene.child,
                                     ),
                             ),

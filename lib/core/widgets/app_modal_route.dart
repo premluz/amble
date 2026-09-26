@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../tokens/motion_primitives.dart';
 import '../tokens/semantic_theme.dart';
 import 'app_modal_scope.dart';
 
@@ -144,5 +145,40 @@ Route<T> instantRoute<T>(WidgetBuilder builder) {
     pageBuilder: (context, animation, secondaryAnimation) => builder(context),
     transitionDuration: Duration.zero,
     reverseTransitionDuration: Duration.zero,
+  );
+}
+
+enum AppPageDirection { forward, backward }
+
+/// Full-page horizontal transition shared by nested page flows. Pushes move
+/// in the navigation direction; popping automatically reverses the motion.
+Route<T> directionalPageRoute<T>(
+  WidgetBuilder builder, {
+  AppPageDirection direction = AppPageDirection.forward,
+}) {
+  final sign = direction == AppPageDirection.forward ? 1.0 : -1.0;
+  return PageRouteBuilder<T>(
+    pageBuilder: (context, animation, secondaryAnimation) => builder(context),
+    transitionDuration: const Duration(
+      milliseconds: MotionPrimitives.durationFastMs,
+    ),
+    reverseTransitionDuration: const Duration(
+      milliseconds: MotionPrimitives.durationFastMs,
+    ),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      if (MediaQuery.disableAnimationsOf(context)) return child;
+      final theme = Theme.of(context).extension<AmbleTheme>()!;
+      final incoming = Tween<Offset>(
+        begin: Offset(sign, 0),
+        end: Offset.zero,
+      ).chain(CurveTween(curve: theme.curveDecelerate)).animate(animation);
+      final outgoing = Tween<Offset>(begin: Offset.zero, end: Offset(-sign, 0))
+          .chain(CurveTween(curve: theme.curveDecelerate))
+          .animate(secondaryAnimation);
+      return SlideTransition(
+        position: outgoing,
+        child: SlideTransition(position: incoming, child: child),
+      );
+    },
   );
 }

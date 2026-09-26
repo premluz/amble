@@ -31,7 +31,7 @@ String _behaviorSummary(List<TrackedBehavior> behaviors) {
 
 Future<void> showDeveloperSettingsScreen(BuildContext context) {
   return Navigator.of(context).push<void>(
-    instantRoute((context) => const DeveloperSettingsScreen()),
+    directionalPageRoute((context) => const DeveloperSettingsScreen()),
   );
 }
 

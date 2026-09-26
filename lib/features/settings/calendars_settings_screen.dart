@@ -13,7 +13,7 @@ import 'settings_panel.dart';
 
 Future<void> showCalendarsSettingsScreen(BuildContext context) {
   return Navigator.of(context).push<void>(
-    instantRoute((context) => const CalendarsSettingsScreen()),
+    directionalPageRoute((context) => const CalendarsSettingsScreen()),
   );
 }
 

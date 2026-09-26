@@ -30,7 +30,7 @@ import 'category_visual.dart';
 /// recolor + list/add only, same v1 scope [ZoneListScreen] already has.
 Future<void> showCategoryListScreen(BuildContext context) {
   return Navigator.of(context).push<void>(
-    instantRoute((context) => const CategoryListScreen()),
+    directionalPageRoute((context) => const CategoryListScreen()),
   );
 }
 

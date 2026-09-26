@@ -14,7 +14,7 @@ import 'settings_panel.dart';
 
 Future<void> showSubscriptionSettingsScreen(BuildContext context) {
   return Navigator.of(context).push<void>(
-    instantRoute((context) => const SubscriptionSettingsScreen()),
+    directionalPageRoute((context) => const SubscriptionSettingsScreen()),
   );
 }
 

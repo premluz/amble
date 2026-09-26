@@ -13,7 +13,7 @@ import '../../shared/providers/zone_providers.dart';
 
 Future<void> showZoneListScreen(BuildContext context) => Navigator.of(
   context,
-).push<void>(instantRoute((_) => const ZoneListScreen()));
+).push<void>(directionalPageRoute((_) => const ZoneListScreen()));
 Future<void> showZoneNameSheet(BuildContext context, {ZoneFacet? facet}) =>
     AppSheet.show<void>(
       context: context,
