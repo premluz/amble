@@ -141,7 +141,7 @@ class TemplateRow extends StatelessWidget {
     return AppSwipeActions(
       endAction: AppSwipeAction(
         icon: Icons.delete_outline_rounded,
-        background: theme.colorTaskAlert,
+        background: theme.colorDestructive,
         semanticLabel: 'Remove template',
         destructive: true,
         onActivate: onRemove,

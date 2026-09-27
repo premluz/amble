@@ -67,7 +67,7 @@ class TaskCategoryModal extends ConsumerWidget {
             // needs.
             Expanded(
               child: Text(
-                'Tag',
+                'Label',
                 style: theme.textTitle.copyWith(
                   color: theme.colorTextPrimary,
                   fontWeight: FontWeight.w700,

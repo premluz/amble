@@ -35,12 +35,12 @@ class _DesignSystemScaffold extends StatelessWidget {
             Wrap(
               spacing: theme.spacingSm,
               children: [
-                for (final entry in theme.categoryColors.entries)
+                for (final swatch in theme.categorySwatches)
                   Container(
                     width: theme.spacingXl,
                     height: theme.spacingXl,
                     decoration: BoxDecoration(
-                      color: entry.value,
+                      color: swatch,
                       borderRadius: BorderRadius.circular(theme.radiusXl),
                     ),
                   ),

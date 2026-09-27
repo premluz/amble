@@ -104,115 +104,24 @@ abstract final class ColorPrimitives {
   static final coral500 = oklch(0.694, 0.113, 35.6); // #D9826B
   static final coral700 = oklch(0.528, 0.097, 34.6); // #9B5544
 
-  // Category accent hues — one pale-tint pill fill + one saturated icon
-  // glyph per task category (two colors, not one). Re-derived a second time
-  // this session against a user-supplied reference palette ("8 Soft Pastel
-  // Colors" — Peach/Mint/Sky/Lavender chosen for health/work/personal/admin)
-  // whose swatches sit at L≈0.95-0.99, C≈0.02-0.08 — a true pale tint, not a
-  // mid-tone accent. At that lightness no single glyph color (light or dark)
-  // clears real contrast, so per direct decision the pill is now a two-part
-  // color: a pale tint fill (*Tint below) matched to the reference hexes
-  // through this file's own oklch() pipeline (not hand-copied — verified to
-  // reproduce the reference hex within 1-3/255 per channel), plus a
-  // saturated, same-hue icon glyph (*Icon below) that actually carries the
-  // legible/distinguishing signal, since the pale fill alone cannot.
-  //
-  // Hues were nudged from the reference's raw values (personal 234->218,
-  // admin 292->300) specifically to widen the personal/admin gap — the two
-  // pale-blue/violet reference swatches sit close enough in hue that a first
-  // pass scored *below* the pre-pastel palette's worst-pair OKLab distance
-  // under a red-green-CVD proxy (0.051 vs the old floor of 0.060). The nudge
-  // brings the icon-level worst pair to 0.076, clearing the old floor with
-  // margin — checked, not assumed. See docs/DECISIONS.md for the full
-  // before/after and the distinguishability math.
-  // **Tints strengthened 2026-09-12.** Reported directly: "color of
-  // container is pale on light mode[,] needs to be stronger" — the
-  // near-white tints (L≈0.95-0.98) passed contrast math against their own
-  // icon glyphs but read as washed-out/indistinguishable at a glance,
-  // specifically called out for the personal (blue) and work (teal)
-  // badges. Deepened to L=0.90 with chroma raised ~1.45x (capped to stay
-  // in gamut and short of neon), same hues throughout. Icon-on-badge
-  // contrast drops from ~4.5-4.9:1 to ~4.0-4.2:1 — still clear of the 3:1
-  // floor a decorative icon glyph needs, since deepening the badge
-  // necessarily narrows the gap to the icon sitting on it.
-  // **2026-09-20 — re-derived, quieter and closer to a muted-circle
-  // reference.** Confirmed directly: "color supports recognition but does
-  // not dominate the schedule." Token names/roles unchanged (health/work/
-  // personal/admin still map to clay/ochre/periwinkle/berry); only the
-  // OKLCH triples move.
-  //
-  // Icon lightness NUDGED DOWN from the as-specified values after the
-  // `surface0` base move (`colorSurfaceBase`, semantic_theme.dart) left
-  // all four just under 4.5:1 AA (4.39-4.47:1) — hue/chroma untouched, so
-  // the specified color character is unchanged, only how dark it reads.
-  // Re-measured at 4.58-4.60:1 against the new base. See
-  // `test/core/tokens/palette_contrast_test.dart`.
-  // **2026-09-23 — category set expanded from 5 to 9, and two hues
-  // reassigned.** Requested directly: "Healthy should be Redish[,] Work
-  // should be blueish," plus four brand-new built-ins (Home, Personal,
-  // Social, Reading, Learning — see `BuiltInCategoryIds`/
-  // `category_providers.dart`'s seed list). `clay`/`ochre`/`periwinkle`/
-  // `berry` keep their names (renaming them purely for accuracy wasn't
-  // worth the diff), but two now point at DIFFERENT hues than their name
-  // suggests:
-  //   - `clay` (health) moves from 35.9° (orange/peach) to 25° (true red).
-  //   - `ochre` (work) moves from 137.8° (green) to 263.2° (blue) — the
-  //     exact hue `periwinkle` used to occupy.
-  //   - `periwinkle` is REPOINTED to `home` (a new category) at 137.8°
-  //     (green) — the hue `ochre`/work just vacated — since the OLD
-  //     "Personal" role (home icon) is renamed to "Home" and a DIFFERENT
-  //     new "Personal" (user icon) takes its own fresh hue below.
-  //   - `berry` (admin) is unchanged.
-  // Four entirely new pairs (`amber`/personal, `teal`/social, `sky`/
-  // reading, `rose`/learning) fill hues chosen for ≥33° separation from
-  // every other built-in hue, verified against this file's own AA floors
-  // (icon ≥4.5:1 against `colorSurfaceBase` each theme, tint >1.15:1
-  // against white, icon-on-tint ≥3:1 — see
-  // `test/core/tokens/palette_contrast_test.dart`).
-  static final clayTint = oklch(0.904, 0.034, 25.0); // #F7D6CC health pill
-  static final clay500 = oklch(0.529, 0.101, 25.0); // #9E5142 health icon
-  static final ochreTint = oklch(0.908, 0.022, 263.2); // #D9E1F0 work pill
-  static final ochre500 = oklch(0.518, 0.067, 263.2); // #52698F work icon
-  static final periwinkleTint = oklch(0.918, 0.025, 137.8); // #DCE8D8 home pill
-  static final periwinkle500 = oklch(0.512, 0.059, 137.8); // #546F4F home icon
-  static final berryTint = oklch(0.918, 0.020, 315.7); // #E9E0ED admin pill
-  static final berry500 = oklch(0.524, 0.054, 325.2); // #7A5F7B admin icon
-  // Personal (NEW — user icon), hue 90° (yellow-green).
-  static final amberTint = oklch(0.905, 0.060, 90.0); // #EFDFB3 personal pill
-  static final amber500 = oklch(0.530, 0.095, 90.0); // #81691F personal icon
-  static final amber500Dark = oklch(0.590, 0.075, 90.0); // #8F7B47
-  // Social (NEW — two-people icon), hue 185° (teal).
-  static final tealTint = oklch(0.905, 0.060, 185.0); // #B3EDE5 social pill
-  static final teal500 = oklch(0.515, 0.095, 185.0); // #00796F social icon
-  static final teal500Dark = oklch(0.580, 0.075, 185.0); // #3F8980
-  // Reading (NEW — book icon), hue 218° (sky blue).
-  static final skyTint = oklch(0.905, 0.060, 218.0); // #B3EAFA reading pill
-  static final sky500 = oklch(0.520, 0.095, 218.0); // #00758D reading icon
-  static final sky500Dark = oklch(0.585, 0.075, 218.0); // #428799
-  // Learning (NEW — graduation cap icon), hue 350° (pink/magenta).
-  static final roseTint = oklch(0.905, 0.060, 350.0); // #FFD0E5 learning pill
-  static final rose500 = oklch(0.540, 0.095, 350.0); // #985676 learning icon
-  static final rose500Dark = oklch(0.600, 0.075, 350.0); // #A36E86
-  // The neutral "no category chosen yet" pair — same family, zero-ish
-  // chroma, as before.
-  static final neutralTint = oklch(0.927, 0.004, 106.5); // #E7E7E4
-  static final neutral500 = oklch(0.514, 0.007, 128.6); // #666864
+  // Crimson — destructive-action ramp. A true, more saturated red than
+  // Coral's warmer attention/alert hue (~35°) — same lightness/chroma
+  // shape as the Coral ramp (a light-mode-facing 500 rung, a
+  // higher-contrast dark-mode-facing 300 rung) but shifted to ~25° and
+  // pushed to higher chroma, so "delete" reads unmistakably stronger than
+  // an ordinary alert badge. Requested directly.
+  static final crimson300 = oklch(0.815, 0.087, 25.4); // #F5AC9C
+  static final crimson500 = oklch(0.628, 0.174, 25.9); // #D1493A
 
-  // Dark-mode category pills — re-derived alongside light mode as of
-  // 2026-09-20 (previously explicitly out of scope; that scoping is
-  // reversed here per direct request — full palette, both themes,
-  // together).
-  //
-  // **2026-09-23 — hues swapped to match the light-mode reassignment
-  // above**: `clay` (health) → 25° red, `ochre` (work) → 263.2° blue,
-  // `periwinkle` (now home) → 137.8° green. Chroma/lightness held at
-  // their prior values; only hue moved, mirroring exactly how the light
-  // triples above were edited.
-  static final clay500Dark = oklch(0.646, 0.079, 25.0); // #C08272
-  static final ochre500Dark = oklch(0.625, 0.053, 258.0); // #7489A8
-  static final periwinkle500Dark = oklch(0.635, 0.046, 140.8); // #7C9278
-  static final berry500Dark = oklch(0.609, 0.058, 327.3); // #967795
-  static final neutral500Dark = oklch(0.653, 0.007, 137.8); // #8E918D
+  // Built-in categories' own pale-tint+saturated-icon color pairs used to
+  // live here (`clayTint`/`clay500` etc., one pair per `TaskCategoryToken`)
+  // — removed entirely, requested directly against a screenshot showing a
+  // built-in category's light-mode pill visibly not matching its own
+  // swatch. That system was independently solved per theme with no
+  // cross-check against the 12-swatch palette below, and the two drifted
+  // apart. Every category — built-in or custom — now resolves through
+  // `categorySwatches` (below) via `Category.colorToken`; see
+  // `category_visual.dart`'s `resolveCategoryVisual`.
 
   // User-defined Category palette (Phase — new Category entity). Per the
   // confirmed decision (docs/DECISIONS.md): a single saturated swatch per

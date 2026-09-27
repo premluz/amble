@@ -219,12 +219,56 @@ The new-zone and existing-zone extension previews share `_marqueeBody` and
 - Hide the original source block visually during extension, preserving its
   gesture element. Only the shared marquee and its handles should be visible.
 
+## Floating surfaces — material and elevation
+
+`AppFloatingSurface` is the shared floating-surface component. Surface role
+(`surfaceColor`, normally `colorSurfaceOverlay`), material (`solid` or `glass`),
+and elevation (`menu` or `drag`) are independent. `FloatingSurfaceTokens` owns
+the material and shadow values; ordinary controls do not inherit glass borders.
+
+| Property | Light | Dark |
+| --- | --- | --- |
+| Glass fill | `creamOverlay` at 92% | `ink650` at 92% |
+| Quiet border | `slate900` at 6% | `sand200` at 10% |
+| Top highlight | white at 18% over quiet border | white at 16% over quiet border |
+| Border width | 1 logical px, inside the shape | Same |
+| Backdrop blur | sigma 12 | Same |
+| Menu shadow | `slate900` at 10% | `ink900` at 28% |
+| Drag shadow | `slate900` at 16% | `ink900` at 40% |
+
+Border color graduates from the brighter top to quieter sides/bottom, without
+a glow. Shadow is outside the clip; the border belongs to glass material, not
+elevation. Menu geometry: offset (0, 6), blurRadius 20, spreadRadius −4.
+Drag geometry: offset (0, 12), blurRadius 32, spreadRadius −6. Theme changes
+alter shadow opacity/color only, never geometry. Use the repository's palette
+primitives rather than reproducing approximate hex values from mockups.
+
+- Anchored context menus and floating popovers: elevated glass + menu shadow.
+- Lifted task: identical glass + drag shadow. Animated `strength` keeps the
+  render subtree mounted; zero strength removes paint, blur, and clipping so
+  resting resize handles remain visible and gestures retain ownership.
+- Grouped toolbars: glass container, transparent ordinary items, solid tonal
+  selected-item fill, no per-item border. Both dock renderers use `AppDockSurface`.
+- Independently floating toolbar buttons: solid elevated surface + menu shadow,
+  no glass border. Primary create (+) remains solid brand accent.
+- Solid sheets remain solid. A future glass sheet must opt into this component.
+- Task lanes, habit dots, zone backgrounds, draft rails, inputs, and ordinary
+  buttons receive no floating glass border. Their existing treatments remain.
+
+Primary/secondary content uses the existing semantic text tokens. What Matters
+retains its per-button active tint. Widgetbook: **Feedback → AppFloatingSurface
+→ Glass and solid elevation**; existing context-menu demos use the real material.
+Verification: `flutter test test/core/widgets/app_floating_surface_test.dart
+test/core/widgets/floating_surface_paint_test.dart` checks lift identity, dock
+materials, elevation geometry, identical menu/drag fills, and painted edges.
+
 ## Task pills — saved and draft materials
 
 Saved tasks use `TaskCapsuleBlock` and the current `radiusPill` setting.
 `PendingTaskPill` is an unsaved placement and uses `GlassPillSurface` in
-`GlassPillMaterial.glass`: theme `colorSurfaceBlurOverlay` over a clipped
-`blurOverlaySigma` backdrop blur. It carries no invented category glyph.
+`GlassPillMaterial.glass`: `GlassPillSurface.glassTint(theme)` over a clipped
+`blurOverlaySigma` backdrop blur. This borderless draft material is separate
+from floating menus and lifted cards. It carries no invented category glyph.
 The draft is wrapped in `SelectedPillBorder` with `fillColor: null`, preserving
 its glass material and the same accent/theme-surface selection rings as zones.
 Imported calendar pills use `GlassPillMaterial.flat` without blur; they are real
@@ -232,6 +276,29 @@ calendar entries, not ghosts. Zone ghosts remain flat translucent panes rather
 than adopting the task pill's glass material.
 
 ---
+
+## Task completion bubbles — `AppBubbleBurst`
+
+`AppBubbleBurst.show` is reusable decorative feedback for swipe completion in
+spatial task pills and zone/list task rows. Emit before updating the task, using
+the pill's top-center in the source context's local coordinates and its width.
+The root-overlay effect snapshots that position, survives removal of the source,
+ignores pointer input and accessibility focus, and removes itself on completion.
+Undo does not emit bubbles. Existing completion behavior and haptics are retained.
+
+`BubbleBurstSpec` holds the shared controls adapted from the seeded bubble
+emitter in `rios-motion 15/rios-motion.js`: `bubbleEmission`, `bubbleStagger`,
+and `bubbleLinger` are seconds; `bubbleRate` is births per second per lane;
+`bubbleTravel` and `bubbleSpread` are multiples of pill width;
+`bubbleRandomness` and `frontDots` (opacity) range from zero to one.
+Defaults emit six tiny accent-colored bubbles across three emission lanes,
+rising, shrinking, and fading over approximately 1.2 seconds. Bubble diameter
+is only a small fraction of the pill width. These are completion feedback,
+separate from the What Matters ripple. Reduced motion skips emission entirely.
+
+Widgetbook: **Feedback → AppBubbleBurst → Task completion** exposes all eight
+controls, a real swipe action, and replay. Focused verification:
+`flutter test test/core/widgets/app_bubble_burst_test.dart test/features/timeline/task_completion_bubbles_test.dart`.
 
 ## Hour/time indicator — `TaskEdgeTimeLabel`
 
@@ -587,6 +654,15 @@ Material bottom sheet everywhere except iOS/macOS, where it uses
 Cupertino's native modal-popup styling. Screens must never reach for
 `showModalBottomSheet`/`showCupertinoModalPopup` directly (per
 CONSTITUTION.md design principle 4).
+
+**Keyboard background:** `SheetKeyboardBackground` paints
+`colorSurfaceOverlay` across the keyboard inset behind the native keyboard.
+Both `StepScaffold` and `AppSheetMotion` use it so rounded keyboard corners
+reveal the sheet surface rather than the underlying page/scrim. This is paint
+only: content keeps its existing keyboard avoidance, without a second inset,
+extra animation, or a guessed keyboard corner radius. Compact sheets suppress
+the fill while their entrance is fully hidden. The fill disappears at zero inset.
+Regression: `flutter test test/core/widgets/sheet_keyboard_background_test.dart`.
 
 **Inline creation sheets and toolbox:** Edit task drafts and new-zone naming
 sheets remain in-tree so the timeline/marquee stays interactive. Edit publishes

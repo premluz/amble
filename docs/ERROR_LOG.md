@@ -2276,3 +2276,52 @@ now resolves the current selected IDs and live zone data at invocation, matching
 the Delete fix. Two shell regressions select 2/3 zones across separate frames,
 open multi-edit, save a shared name, and check selected and unselected rows.
 Both failed before the fix and pass after it.
+
+## 2026-09-27 — Gating a deep provider method broke ~100 unrelated tests
+
+Adding a trial/entitlement check inside `TaskList.createTask`/`captureTask`
+(gating new-task creation behind a 21-day trial) made both methods read
+`preferencesRepositoryProvider` for the first time. That provider calls
+`Hive.box<dynamic>('preferences')` directly — it throws if that box was
+never opened, which almost every existing widget/provider test never did,
+since task creation had no reason to touch preferences before. The result:
+~100 previously-green test files (across timeline, inbox, task_detail,
+zone_grid, and more — anything that ever calls `createTask`/`captureTask`)
+started failing with `ProviderException` wrapping `HiveError: Box not
+found`, none of it visible from `flutter analyze` and none of it a real
+bug in the tests themselves.
+
+A full-suite `flutter test` run's failure COUNT was actually misleading in
+both directions during this: an early full-suite run showed ~19 failures
+(the real pre-existing baseline, unrelated to this change) purely by
+chance of run ordering, then a later run showed ~95 — the same
+environment noise this file's CLAUDE.md-quoted guidance already warns
+about ("when many unrelated tests fail at once, suspect the environment
+before the code") made it briefly look like the regression was even
+larger than it was. Isolating single files individually (`flutter test
+test/core/haptics_test.dart` alone) was what actually confirmed which
+failures were real (task-creation-adjacent files) versus full-suite-only
+noise (everything else).
+
+Fix: rather than add a `preferencesRepositoryProvider` override to every
+affected test file, `daysSinceInstallProvider` (`trial_providers.dart`)
+catches `ProviderException` and checks whether its wrapped `.exception` is
+a `HiveError` — if so, degrades to "day zero, trial active" instead of
+propagating. Confirmed via AskUserQuestion. The lesson: adding a read to a
+widely-shared provider (even one that already exists and works fine
+elsewhere) inside a method with dozens of pre-existing callers is a much
+bigger blast radius than adding the same read to a single new screen —
+worth an explicit test-impact check (a scoped `flutter test` on the
+affected directories, not just `flutter analyze`) before considering a
+cross-cutting provider change done, not just a happy-path verification of
+the new feature itself.
+
+### 2026-09-27 — Rounded keyboard corners expose transparent sheet clearance
+
+A transparent Scaffold or keyboard-avoidance Padding leaves the keyboard inset
+unpainted. Rounded native keyboard corners can then reveal the underlying page,
+even when sheet content correctly stops above the keyboard. Paint the sheet
+surface behind that inset independently of content layout. Pixel regression:
+`flutter test test/core/widgets/sheet_keyboard_background_test.dart` checks both
+edges just below the keyboard top in light/dark themes and two inset sizes.
+Image readback runs in `tester.runAsync`, outside the widget test's fake clock.

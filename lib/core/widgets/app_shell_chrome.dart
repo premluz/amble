@@ -72,7 +72,7 @@ class AppShellChromeController extends ChangeNotifier {
         for (final group in configuration.groups) ...[
           group.id,
           for (final action in group.actions)
-            '${action.id}:${action.icon.codePoint}:${action.tooltip}:${action.selected}:${action.enabled}:${action.destructive}',
+            '${action.id}:${action.icon.codePoint}:${action.tooltip}:${action.selected}:${action.enabled}:${action.destructive}:${action.badgeCount}',
         ],
       ].join('|');
 

@@ -1,7 +1,6 @@
 import '../../core/widgets/what_matters_motion.dart';
 
 import 'dart:math' as math;
-import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show OverflowBoxFit;
@@ -10,6 +9,8 @@ import '../../core/dev_config.dart' show TimelineTaskTextLayout;
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/tokens/type_primitives.dart';
 import '../../core/widgets/app_swipe_actions.dart';
+import '../../core/widgets/app_bubble_burst.dart';
+import '../../core/widgets/app_floating_surface.dart';
 import '../../core/widgets/selected_pill_border.dart';
 import '../../shared/models/category.dart';
 import '../../shared/models/tag_color_style.dart';
@@ -1255,7 +1256,16 @@ class TaskCapsuleBlock extends StatelessWidget {
                   ? theme.colorTextSecondary
                   : theme.colorAccent,
               semanticLabel: isCompleted ? 'Mark undone' : 'Mark done',
-              onActivate: onToggleComplete!,
+              onActivate: () {
+                if (!isCompleted) {
+                  AppBubbleBurst.show(
+                    context: context,
+                    origin: Offset(badgeSize / 2, 0),
+                    sourceWidth: badgeSize,
+                  );
+                }
+                onToggleComplete!();
+              },
             ),
       child: wrapped,
     );
@@ -1318,51 +1328,14 @@ class TaskCapsuleBlock extends StatelessWidget {
         final wrapperRadius = BorderRadius.circular(
           theme.radiusSm + (theme.radiusXl - theme.radiusSm) * t,
         );
-        return Container(
-          decoration: BoxDecoration(
-            borderRadius: wrapperRadius,
-            boxShadow: t == 0
-                ? const []
-                : theme.shadowPane.map((shadow) => shadow.scale(t)).toList(),
-          ),
-          child: ClipRRect(
-            borderRadius: wrapperRadius,
-            // `Clip.none` while RESTING — this is what finally lets the
-            // resize dots paint outside the pill's own edge, after two
-            // reverted attempts that tried to move the dots OUT of this
-            // subtree instead (both broke this widget's layout; see
-            // `build`'s own history). Reported repeatedly, most recently
-            // "1 dots are positioned good but cut off."
-            //
-            // Safe precisely because this wrapper has NO visible shape of
-            // its own at rest — see this builder's own comment above:
-            // "no fill, no blur, no shadow at t=0, so its corner only
-            // ever matters for what it cuts." Every one of those is
-            // scaled by `t`, so at t==0 the clip is the ONLY thing this
-            // layer does, and all it does is cut. Once actually lifted
-            // (t>0) the frosted card IS visible, genuinely needs its
-            // corner, and clips again.
-            //
-            // This does NOT violate the always-present-tree rule the
-            // wrapper's own doc comment describes: that rule is about
-            // never ADDING or REMOVING render objects mid-gesture (which
-            // broke hit-test routing). `ClipRRect` stays in the tree at
-            // every `t`; only its clip BEHAVIOUR changes, exactly like
-            // the blur sigma and fill opacity beside it already do.
-            clipBehavior: t == 0 ? Clip.none : Clip.antiAlias,
-            child: BackdropFilter(
-              filter: ImageFilter.blur(
-                sigmaX: theme.blurOverlaySigma * t,
-                sigmaY: theme.blurOverlaySigma * t,
-              ),
-              child: Container(
-                padding: EdgeInsets.all(theme.spacingSm * t),
-                color: theme.colorSurfaceBlurOverlay.withValues(
-                  alpha: theme.colorSurfaceBlurOverlay.a * t,
-                ),
-                child: child,
-              ),
-            ),
+        return AppFloatingSurface(
+          theme: theme,
+          borderRadius: wrapperRadius,
+          elevation: FloatingElevation.drag,
+          strength: t,
+          child: Padding(
+            padding: EdgeInsets.all(theme.spacingSm * t),
+            child: child,
           ),
         );
       },
@@ -1834,10 +1807,10 @@ class _CapsuleCategoryVisual {
   final Color pillColor;
 
   /// The tag's own full-saturation color — already exactly this in both
-  /// branches below ([theme.categoryIconColors] for the legacy-enum path,
-  /// [CategoryVisual.iconColor] for a real [Category] row), so this
-  /// doubles as [CategoryVisual.trueColor]'s counterpart here without a
-  /// new field. Feeds [railColor]'s `TagColorStyle.iconOnly` mode.
+  /// branches below (the same `categorySwatches` lookup for the
+  /// legacy-enum path as for a real [Category] row), so this doubles as
+  /// [CategoryVisual.trueColor]'s counterpart here without a new field.
+  /// Feeds [railColor]'s `TagColorStyle.iconOnly` mode.
   final Color iconColor;
 
   /// The rail's actual fill, given [style] — [pillColor] unchanged for
@@ -1897,9 +1870,10 @@ class _CapsuleCategoryVisual {
           icon: null,
         );
       }
+      final legacySwatch = theme.categorySwatches[legacyCategory.colorToken];
       return _CapsuleCategoryVisual(
-        pillColor: theme.categoryColors[legacyCategory.token]!,
-        iconColor: theme.categoryIconColors[legacyCategory.token]!,
+        pillColor: legacySwatch,
+        iconColor: legacySwatch,
         emoji: legacyCategory.emoji,
         icon: null,
       );

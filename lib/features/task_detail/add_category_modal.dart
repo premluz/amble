@@ -226,7 +226,7 @@ class _AddCategoryScreenState extends ConsumerState<_AddCategoryScreen> {
 
     return StepScaffold(
       theme: theme,
-      modalTitle: _isEditing ? 'Edit tag' : 'New tag',
+      modalTitle: _isEditing ? 'Edit label' : 'New label',
       titleAlignment: TextAlign.left,
       headerColor: theme.colorAccent,
       headerContent: null,
@@ -264,7 +264,7 @@ class _AddCategoryScreenState extends ConsumerState<_AddCategoryScreen> {
               title: 'Name',
               child: AppTextField(
                 controller: _nameController,
-                label: 'Tag name',
+                label: 'Label name',
                 autofocus: !_isEditing,
                 onSubmitted: (_) => _confirmNameStage(),
               ),

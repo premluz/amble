@@ -151,10 +151,8 @@ class _PreviewController extends TextEditingController {
   Color _highlightColor(AmbleTheme t, QuickCaptureTokenKind kind) =>
       switch (kind) {
         QuickCaptureTokenKind.dateTime => t.colorAccent,
-        QuickCaptureTokenKind.duration =>
-          t.categoryIconColors[TaskCategoryToken.work]!,
+        QuickCaptureTokenKind.duration => t.categorySwatches[2], // Work
         QuickCaptureTokenKind.recurrence => t.colorTaskAlert,
-        QuickCaptureTokenKind.category =>
-          t.categoryIconColors[TaskCategoryToken.personal]!,
+        QuickCaptureTokenKind.category => t.categorySwatches[5], // Personal
       };
 }

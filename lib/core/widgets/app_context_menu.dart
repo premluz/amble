@@ -1,15 +1,14 @@
-import 'dart:ui' show ImageFilter;
-
 import 'package:flutter/material.dart';
 
 import '../tokens/semantic_theme.dart';
 import 'app_sheet.dart';
+import 'app_floating_surface.dart';
 
 /// One row's worth of intent for [AppContextMenu] — a label, an icon, and
 /// what to do when tapped, optionally marked [isDestructive] for the same
-/// `colorTaskAlert` treatment the app's existing delete/remove rows already
-/// use (`task_action_sheet.dart`'s "Remove", `task_remove.dart`'s own
-/// remove-scope rows).
+/// `colorDestructive` treatment the app's existing delete/remove rows
+/// already use (`task_action_sheet.dart`'s "Remove", `task_remove.dart`'s
+/// own remove-scope rows).
 class AppContextMenuAction {
   const AppContextMenuAction({
     required this.icon,
@@ -25,7 +24,7 @@ class AppContextMenuAction {
 }
 
 /// A bottom-sheet action menu — a short list of [AppContextMenuAction] rows,
-/// one optionally destructive (styled red via `colorTaskAlert`). Promoted
+/// one optionally destructive (styled red via `colorDestructive`). Promoted
 /// from `task_action_sheet.dart`'s own Task menu (Edit/Mark
 /// important/Duplicate/Remove) and `task_remove.dart`'s remove-scope sheet,
 /// which had each hand-built the same `AppSheet` + `Column` of rows —
@@ -103,7 +102,7 @@ class AppContextMenu extends StatelessWidget {
             theme: theme,
             icon: action.icon,
             label: action.label,
-            color: action.isDestructive ? theme.colorTaskAlert : null,
+            color: action.isDestructive ? theme.colorDestructive : null,
             onTap: action.onTap,
           ),
       ],
@@ -278,19 +277,7 @@ class _MenuGeometry {
   }
 }
 
-/// The popover's own surface — same glass recipe [GlassPillSurface] already
-/// establishes (`colorTextPrimary` tinted at low alpha, `BackdropFilter` at
-/// `blurOverlaySigma`, per its own doc comment on why NOT
-/// `colorSurfaceBlurOverlay` directly), rounded to `theme.radiusModal` — a
-/// menu panel is a rounded rectangle, not a pill, so it borrows the same
-/// "more rounded" corner every modal sheet uses instead of a fully-round
-/// shape that wouldn't suit a multi-row list.
-///
-/// **2026-09-23 — [highlightedIndex], for [AppLongPressContextMenu]'s own
-/// press-drag-hover-release interaction.** Null (no row highlighted) for
-/// [AppContextMenu.showAt]'s plain tap-to-open route, which has no live
-/// hover state to show — a highlight only means something while a finger
-/// is still down and moving over the panel.
+/// Shared elevated glass; highlighting preserves the press-drag menu behavior.
 class _GlassMenuPanel extends StatelessWidget {
   const _GlassMenuPanel({
     required this.theme,
@@ -313,42 +300,25 @@ class _GlassMenuPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final radius = BorderRadius.circular(theme.radiusModal);
-    return ClipRRect(
+    return AppFloatingSurface(
+      theme: theme,
       borderRadius: radius,
-      child: BackdropFilter(
-        filter: ImageFilter.blur(
-          sigmaX: theme.blurOverlaySigma,
-          sigmaY: theme.blurOverlaySigma,
-        ),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: theme.colorTextPrimary.withValues(alpha: 0.16),
-            borderRadius: radius,
-            // A hairline edge reads better on glass than a shadow would —
-            // matches how `AppSheet`'s own cards distinguish a translucent
-            // surface from the blur behind it.
-            border: Border.all(
-              color: theme.colorTextPrimary.withValues(alpha: 0.08),
-            ),
-          ),
-          child: Material(
-            type: MaterialType.transparency,
-            child: Padding(
-              padding: EdgeInsets.symmetric(vertical: theme.spacingXs),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (var i = 0; i < actions.length; i++)
-                    _MenuRow(
-                      key: rowKeys?[i],
-                      theme: theme,
-                      action: actions[i],
-                      highlighted: highlightedIndex == i,
-                      onTap: () => onActionTap(actions[i]),
-                    ),
-                ],
-              ),
-            ),
+      child: Material(
+        type: MaterialType.transparency,
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: theme.spacingXs),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var i = 0; i < actions.length; i++)
+                _MenuRow(
+                  key: rowKeys?[i],
+                  theme: theme,
+                  action: actions[i],
+                  highlighted: highlightedIndex == i,
+                  onTap: () => onActionTap(actions[i]),
+                ),
+            ],
           ),
         ),
       ),
@@ -390,7 +360,7 @@ class _MenuRow extends StatelessWidget {
           theme: theme,
           icon: action.icon,
           label: action.label,
-          color: action.isDestructive ? theme.colorTaskAlert : null,
+          color: action.isDestructive ? theme.colorDestructive : null,
           onTap: onTap,
         ),
       ),

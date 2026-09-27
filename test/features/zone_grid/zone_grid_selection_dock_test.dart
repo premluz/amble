@@ -277,7 +277,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('2 tasks selected'), findsOneWidget);
-      expect(find.text('Tag'), findsOneWidget);
+      expect(find.text('Label'), findsOneWidget);
       expect(find.text('Track'), findsOneWidget);
       expect(find.text('Duration'), findsOneWidget);
       expect(find.text('Notifications'), findsOneWidget);

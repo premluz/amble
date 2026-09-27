@@ -272,4 +272,58 @@ void main() {
       );
     },
   );
+
+  // Requested directly, for the Zones edit dock's own deselect button:
+  // an AppContextAction's badgeCount reaches the rendered
+  // AppDockIconButton end to end (config -> render), and null means no
+  // badge at all — the existing default for every other action.
+  group('badgeCount', () {
+    testWidgets('reaches the rendered AppDockIconButton unchanged', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        dockHost(
+          AppContextDockConfiguration(
+            stateId: 'badged',
+            groups: [
+              AppContextGroup(
+                id: 'primary',
+                actions: [
+                  AppContextAction(
+                    id: 'deselect',
+                    icon: Icons.deselect_rounded,
+                    tooltip: 'Clear selection',
+                    badgeCount: 3,
+                    onPressed: () {},
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final button = tester.widget<AppDockIconButton>(
+        find.byType(AppDockIconButton),
+      );
+      expect(button.badgeCount, 3);
+      expect(find.text('3'), findsOneWidget);
+    });
+
+    testWidgets('defaults to null — no badge for an ordinary action', (
+      tester,
+    ) async {
+      var saves = 0;
+      await tester.pumpWidget(
+        dockHost(dockConfiguration(onSave: () => saves++)),
+      );
+      await tester.pump();
+
+      final button = tester.widget<AppDockIconButton>(
+        find.byType(AppDockIconButton),
+      );
+      expect(button.badgeCount, isNull);
+    });
+  });
 }

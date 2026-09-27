@@ -55,18 +55,18 @@ class EditModeDeleteTarget extends StatelessWidget {
           margin: EdgeInsets.all(theme.spacingMd),
           decoration: BoxDecoration(
             color: isArmed
-                ? theme.colorTaskAlert
-                : theme.colorTaskAlert.withValues(alpha: 0.15),
+                ? theme.colorDestructive
+                : theme.colorDestructive.withValues(alpha: 0.15),
             borderRadius: BorderRadius.circular(theme.radiusXl),
             border: Border.all(
-              color: theme.colorTaskAlert,
+              color: theme.colorDestructive,
               width: isArmed ? 0 : 2,
             ),
           ),
           alignment: Alignment.center,
           child: Icon(
             Icons.delete_outline_rounded,
-            color: isArmed ? theme.colorSurfacePrimary : theme.colorTaskAlert,
+            color: isArmed ? theme.colorSurfacePrimary : theme.colorDestructive,
             size: theme.spacingXl,
           ),
         ),

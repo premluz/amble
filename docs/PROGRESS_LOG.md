@@ -6877,3 +6877,217 @@ New test file `test/features/settings/backup_settings_screen_test.dart`
 purchases-unavailable message rather than exporting — this test binary
 has no RevenueCat API keys, so the actual paywall path isn't reachable in
 CI). `flutter analyze` clean against the established 18-issue baseline.
+
+## [2026-09-27] 21-day trial gates new-task creation via every route
+
+Requested directly, distinct from Export/Import's own purchase-only gate:
+new tasks get a 21-day free trial from first install, then require
+`panta_pro`. One shared `installDate` clock (`trial_providers.dart`,
+written once by `main.dart` before `runApp`); `canCreateTaskProvider` ORs
+the trial with the existing `isPantaProProvider`.
+
+An audit found only two methods ever persist a brand-new `Task` —
+`TaskList.createTask`/`captureTask` — so the gate lives inside both of
+them rather than at each of the 6 UI/native entry points (quick capture,
+task detail sheet, quick-create overlay, voice capture, and both iOS/
+Android App Intents via one shared Dart handler). Found and closed one
+real gap along the way: the App Intent `addNote` case used to bypass both
+gated methods via a direct `Task.captured` + `updateTask` upsert — now
+routed through `captureTask` like everything else. Widget call sites
+share one new helper, `core/widgets/app_trial_gate.dart`'s
+`presentPaywallForTrialExpired`, to present the paywall and retry once;
+the native intent handler translates the same thrown
+`TrialExpiredException` into its existing `AppIntentFailure` shape, since
+it has no widget tree for a paywall.
+
+Hit a real, broad regression mid-implementation: gating `createTask`/
+`captureTask` made ~100 pre-existing test files that create tasks
+transitively depend on a `preferences` Hive box none of them had ever
+opened, since task creation never touched preferences before. Fixed by
+having the trial-day computation degrade to "trial active" when that
+provider errors, rather than touching all ~100 files — see
+docs/ERROR_LOG.md for the full diagnostic story (including how a noisy
+full-suite run briefly made the regression look larger than it was).
+
+New/changed tests: `test/shared/providers/trial_providers_test.dart` (6,
+new), a "trial gate" group in `test/shared/providers/task_providers_test.dart`
+(3, new), a "trial gate" group in `test/core/app_intents/app_intent_service_test.dart`
+(3, new, via an extended `IntentTestStore` supporting an optional
+install-date/panta_pro override). Full `flutter test` run: 18 failures,
+matching the established pre-existing baseline exactly (confirmed by name
+against earlier sessions' own baseline lists). `flutter analyze` clean.
+
+## [2026-09-27] What Matters tint strengthened; colorDestructive added app-wide
+
+Requested directly, initially framed as "Edit Mode" but clarified to mean
+the "What Matters" lens: strengthened its background tint from a
+barely-visible ~3-4% to ~9-11% via a new `AmbleTheme.colorSurfaceWhatMatters`
+token (accent alpha-blended over the Timeline surface, light and dark),
+and bumped `WhatMattersTokens.tintAlphaLight`/`tintAlphaDark` to match so
+the existing animated wash painter (`WhatMattersScene`/`_WashPainter`)
+paints the same strength at rest.
+
+Also added `AmbleTheme.colorDestructive` (a new, more saturated
+crimson-red primitive ramp, distinct from the coral `colorTaskAlert`
+attention color) and repointed every genuinely destructive/delete-styled
+call site app-wide to it: the Edit-screen context dock's Delete button,
+`AppContextMenu`/`AppAlertDialog`'s destructive styling, the task
+detail/template remove flows, the drag-to-delete target, and every
+swipe-to-remove background (Templates/Zones/Tags/Inbox). Left every
+genuine status/error message and the real task-alert uses (mic
+recording, current-time line, recurrence badge) on `colorTaskAlert`,
+confirmed by inspection rather than swept along blindly.
+
+`flutter analyze` clean against baseline. Full `flutter test` at the
+established baseline; `what_matters_appearance_test.dart`'s 2 failures
+were confirmed via `git stash` to be pre-existing on the already-committed
+code, not introduced by this session.
+
+## [2026-09-27] Dev trial-reset trigger + Settings trial-status panel
+
+Requested directly: a dev-only way to restart the 21-day trial clock (to
+re-test the paywall against a RevenueCat sandbox account), plus a new,
+non-link first section on Settings showing days-remaining and a "Get
+Rios now" paywall button.
+
+Added `InstallDate.reset()` (`trial_providers.dart`) — rewrites
+`installDate` to now and invalidates `daysSinceInstallProvider` so the
+change actually cascades to `isInTrialPeriodProvider`/`canCreateTaskProvider`.
+Wired as a `kDebugMode`-gated "Reset trial" button in Developer Settings,
+alongside the existing splash/onboarding reset buttons — same shape,
+same gate. Scoped to the trial clock only, confirmed via AskUserQuestion:
+`panta_pro` is real sandbox state, not something a local button fakes.
+
+New `TrialStatusPanel` (`features/settings/trial_status_panel.dart`) is
+the Settings screen's genuine first section — plain info, not a link
+row. Shows "N day(s) left"/"Your free trial has ended" plus a "Get Rios
+now" button (confirmed as the real product-facing name via
+AskUserQuestion) that calls the existing `presentPaywallForTrialExpired`
+helper; disappears entirely once `panta_pro` is active.
+
+New tests: `InstallDate.reset` in `trial_providers_test.dart` (1), and a
+new `trial_status_panel_test.dart` (5) — hit and fixed two already-known
+test gotchas along the way (bare Hive write inside `testWidgets` without
+`runAsync`; `pumpAndSettle` not waiting out `AppUndoToast`'s real
+dismiss timer). `flutter analyze` clean; full `flutter test` at the
+established 18-failure baseline.
+
+### 2026-09-27 — Task-completion micro bubbles
+
+Added shared bubble spec, deterministic particle sampler, and root-overlay
+component; integrated swipe completion in TaskCapsuleBlock and ZoneContainerBlock.
+Added Widgetbook Feedback/AppBubbleBurst with eight controls and replay, plus
+seven tests covering particle scaling, source removal, input passthrough,
+reduced motion, cleanup, and completion/undo in both views.
+
+Verification: seven focused tests pass; Widgetbook macOS debug build succeeds.
+Full suite: 1662 passed, 18 failed (existing suite failures remain). Analyzer:
+18 issues, including stale widgetbook/test/widget_test.dart imports and MyApp;
+no diagnostics in the new bubble files. Widgetbook web build unavailable because
+this project has no web target; no platform scaffolding was added. Device visual
+review remains outstanding.
+
+## [2026-09-27] What Matters light-mode tint: 11% → 20%
+
+Requested directly, a follow-up on the same session's earlier tint work:
+"on light mode make it stronger." Bumped `WhatMattersTokens.tintAlphaLight`
+and `AmbleTheme.colorSurfaceWhatMatters`'s light-mode blend from 11% to
+20% (confirmed via AskUserQuestion), kept in sync as the two always must
+be. Dark mode (9%) untouched. `flutter analyze` clean; What Matters test
+suites show no new failures beyond the 2 already-confirmed pre-existing
+ones.
+
+### 2026-09-27 — Rounded keyboard sheet background
+
+Added SheetKeyboardBackground to StepScaffold and AppSheetMotion: the sheet
+surface now paints behind native keyboard corners while content retains its
+existing keyboard clearance. Documented the shared rule in DESIGN_SYSTEM and
+the transparent-clearance gotcha in ERROR_LOG.
+Verification: 19 focused sheet tests pass, including pixel checks in both themes
+at 180/300 logical-pixel insets. Full suite: 1666 passed, 18 failed; analyzer:
+18 existing issues, none in changed sheet files. Native iPhone visual review
+remains outstanding. Logs: /tmp/rios-keyboard-full-tests.log and
+/tmp/rios-keyboard-analyze.log.
+
+## [2026-09-27] Bottom dock's Timeline/List buttons reordered
+
+Requested directly: "in toolbox timeline Day swap (first view default is
+timeline spatial) second is zone view." `AppBottomDock`'s exclusive-select
+pair (`app_bottom_dock.dart`) had "List" (Zone view) before "Timeline"
+(spatial Task view) left-to-right — swapped so Timeline appears first,
+List second, matching the button order to the view that's already the
+real default (`ZoneViewEnabledSetting` already defaults to `false` =
+spatial Task view; only the dock's own button order was backwards).
+Button IDs, tooltips, and selection logic unchanged — a pure reorder.
+Every test referencing these buttons targets them by tooltip text, not
+position, so nothing needed updating. `flutter analyze` clean; full
+`flutter test` at the established baseline (the 2 pre-existing
+`what_matters_appearance_test.dart` and 2 pre-existing
+`zone_grid_screen_test.dart` marquee failures both independently
+reconfirmed via `git stash` to predate this change).
+
+## [2026-09-27] No-icon-for-untagged fix + built-in category colors unified
+
+Requested directly, against a screenshot: "New task should not have icon
+if label not set," and "Light mode seems to have wrong color pills than
+label colors... dark mode matches, but not light mode."
+
+Fixed a gap left by an earlier session's "General shows no icon" fix —
+that fix only covered `CategoryGlyph`; `task_capsule_block.dart`'s own
+direct `categoryIconFor` call still showed a fallback circle on the
+Timeline capsule. Moved the check into `categoryIconFor` itself so every
+caller agrees.
+
+Unified built-in categories (Health/Work/Home/Admin/etc.) onto the same
+`categorySwatches`/`colorToken` system custom Labels already used —
+confirmed via AskUserQuestion ("We have tokens for colors which we
+should rely on"). They used to route through a separate hand-tuned
+`categoryColors`/`categoryIconColors` map, independently solved per theme
+with no cross-check against the swatch palette, which is why light and
+dark visibly drifted apart. Removed both maps and their 27 backing
+primitives entirely once every consumer (built-in categories, the legacy
+pre-migration `Task.category` enum's own render path, and 3 unrelated
+decorative color picks) was repointed to `categorySwatches` indices.
+Confirmed accepted: built-in category colors visibly change in both
+themes, including dark-mode icons becoming per-category-hued for the
+first time (they were previously all white).
+
+New test `category_visual_test.dart` (5 tests). Fixed/retired 3 test
+files that referenced the removed primitives directly, regenerated one
+stale golden (`timeline_capsule_preview_test.dart`, whose screenshot
+legitimately changed color). `flutter analyze`: 16 issues (down from 18 —
+two lint infos disappeared with the deleted helpers they belonged to).
+Full `flutter test`: at the established pre-existing failure baseline,
+nothing newly introduced.
+
+## [2026-09-27] New AppBadge component + Zones deselect button with count badge
+
+Requested directly: drop the "N selected" text label above the Zones
+tab's week labels, add a dedicated deselect button to the bottom dock
+carrying the count as a small circular badge (icon-only at exactly 1
+selected, badge appears past that) — and build the badge as a real,
+reusable component, confirmed via AskUserQuestion as two variants
+(filled/outline) and three sizes (xs/sm/md), colored like `AppButton`'s
+own accent-fill state.
+
+New `AppBadge` (`core/widgets/app_badge.dart`) plus three new theme size
+tokens (`sizeBadgeXs/Sm/Md`). `AppContextAction`/`AppDockIconButton`
+gained an optional `badgeCount` that overlays the badge on the icon's
+top-right corner with zero effect on any existing caller. Zones' own
+dock: "N selected" text removed, new `edit-zone-deselect` action added
+alongside Edit/Remove; the back button's old dual-purpose "Close/Clear
+selection" behavior reverted to always mean Close, confirmed via
+AskUserQuestion — deselection now has exactly one dedicated button (plus
+the pre-existing tap-empty-space gesture).
+
+Found and fixed a real, previously-latent bug along the way:
+`AppShellChromeController`'s own change-detection fingerprint never
+included `badgeCount`, so a selection-count-only change (1→2, 2→3)
+silently failed to update the rendered dock. Caught by this feature's own
+test before shipping, with a dedicated regression test added
+(`app_shell_chrome_test.dart`) and confirmed to fail without the fix.
+
+`flutter analyze` clean against baseline. New/updated tests:
+`app_badge_test.dart` (5), `app_context_dock_test.dart` (+2),
+`app_shell_chrome_test.dart` (+1), `zone_grid_screen_test.dart` (+5). Full
+`flutter test` at the established pre-existing failure baseline.

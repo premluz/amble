@@ -44,6 +44,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     required this.blurOverlaySigma,
     required this.colorFreeWindow,
     required this.colorZoneBackground,
+    required this.colorSurfaceWhatMatters,
     required this.colorTextPrimary,
     required this.colorTextSecondary,
     required this.colorTextTertiary,
@@ -52,8 +53,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     required this.colorTaskCompleted,
     required this.colorTaskSkipped,
     required this.colorTaskAlert,
-    required this.categoryColors,
-    required this.categoryIconColors,
+    required this.colorDestructive,
     required this.categorySwatches,
     required this.spacingXs,
     required this.spacingSm,
@@ -78,6 +78,9 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     required this.sizeButtonMd,
     required this.sizeButtonLg,
     required this.sizeButtonXl,
+    required this.sizeBadgeXs,
+    required this.sizeBadgeSm,
+    required this.sizeBadgeMd,
     required this.radiusSm,
     required this.radiusMd,
     required this.radiusLg,
@@ -198,6 +201,18 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   /// treatment; it carries no container/layout meaning.
   final Color colorZoneBackground;
 
+  /// The Timeline's own background surface ([colorSurfaceTimeline]) tinted
+  /// with [colorAccent] — the "What Matters" lens's at-rest background, at
+  /// the same ~11%/9% (light/dark) blend ratio `WhatMattersScene`'s own
+  /// `CustomPainter` now animates its flat wash to (see
+  /// `WhatMattersTokens.tintAlphaLight`/`tintAlphaDark`) — bumped from a
+  /// barely-visible 3-4% specifically because "big alpha" was requested
+  /// directly, so the lens reads as clearly distinct from the ordinary
+  /// Timeline. Precomputed here via `Color.alphaBlend` as a real, reusable
+  /// flat surface color, for any surface that wants this resting tint
+  /// without going through that animated painter.
+  final Color colorSurfaceWhatMatters;
+
   // Text
   final Color colorTextPrimary;
   final Color colorTextSecondary;
@@ -215,6 +230,19 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   /// (4.66:1 light / 7.61:1 dark) without fading to illegible.
   final Color colorTextTertiary;
 
+  /// The same resting tone as [colorTextTertiary], for a non-text
+  /// element (an icon, a glyph) at that same subtlety — requested
+  /// directly: the Settings gear icon needed to match the main nav's own
+  /// inactive-label tone exactly, but naming it "Text" would misdescribe
+  /// what it's actually coloring. Deliberately its OWN token sharing
+  /// [colorTextTertiary]'s primitive, not a reuse of that field under a
+  /// second name — this design system has no general icon-color scale
+  /// (every icon elsewhere still borrows directly from the `colorText*`
+  /// family), so this is scoped to call sites that specifically need
+  /// this exact tertiary tone on something that isn't text, not a
+  /// broader icon-token migration.
+  final Color colorForegroundTertiary;
+
   // Structure
   final Color colorBorder;
   final Color colorAccent;
@@ -224,26 +252,31 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   final Color colorTaskSkipped;
   final Color colorTaskAlert;
 
-  /// Fixed task-category taxonomy → pill fill color. See [TaskCategoryToken].
-  final Map<TaskCategoryToken, Color> categoryColors;
+  /// A stronger, more saturated red than [colorTaskAlert] — that token is
+  /// a warning/attention color (a coral wash for an at-risk task badge),
+  /// while this one means "this action permanently removes something":
+  /// delete buttons, destructive confirmation dialogs. Deliberately a
+  /// separate token rather than reusing/intensifying [colorTaskAlert]
+  /// itself, which would also change its own, different meaning
+  /// everywhere else it's already used. Requested directly.
+  final Color colorDestructive;
 
-  /// Fixed task-category taxonomy → icon glyph color, drawn on top of
-  /// [categoryColors]'s fill. A separate map rather than a single color
-  /// per category because the two now serve different jobs: the fill is a
-  /// pale tint (Phase 13a-pastel-v2) that alone can't carry real contrast
-  /// at any glyph color, so the icon is a deliberately more saturated,
-  /// same-hue color chosen to read clearly against its own pale fill — see
-  /// docs/DECISIONS.md for the contrast numbers per category.
-  final Map<TaskCategoryToken, Color> categoryIconColors;
-
-  /// The 12-swatch palette a user picks from when creating a new
-  /// [Category] (the persisted, user-extensible entity — distinct from the
-  /// fixed [TaskCategoryToken] taxonomy above). Single saturated swatch per
-  /// color, not a tint+icon pair, per the confirmed decision in
-  /// docs/DECISIONS.md — [Category.colorToken] is a plain index into this
+  /// The 12-swatch palette every [Category] resolves its pill/icon color
+  /// from — built-in and custom alike, one swatch per color, no separate
+  /// tint+icon pair. [Category.colorToken] is a plain index into this
   /// list. Same list in both [light] and [dark] — its lightness/chroma
   /// were chosen to already be dark-mode-safe, so there's no separate dark
   /// ramp to maintain.
+  ///
+  /// **Unified from two systems** — built-in categories used to route
+  /// through a separate, hand-tuned `categoryColors`/`categoryIconColors`
+  /// map pair (keyed by [TaskCategoryToken]), independently solved per
+  /// theme with no cross-check against this palette's own light/dark
+  /// solving. The two drifted apart (a built-in category's light-mode
+  /// pill could visibly mismatch its own swatch), reported directly
+  /// against a screenshot — see `category_visual.dart`'s
+  /// `resolveCategoryVisual` for the single resolution path this replaced
+  /// both maps with.
   final List<Color> categorySwatches;
 
   // Spacing
@@ -406,6 +439,18 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   final double sizeButtonMd;
   final double sizeButtonLg;
   final double sizeButtonXl;
+
+  /// [AppBadge]'s own diameter scale — a small circular count/dot
+  /// indicator, positioned as an overlay on another control (e.g. top-
+  /// right of a dock icon button), not a standalone tap target — hence
+  /// its own much smaller scale than [sizeButtonXs]/[sizeButtonSm] above,
+  /// which are still real (if compact) buttons. 3 rungs, matching
+  /// `AppValueChipSize`'s own xs/sm/md shape rather than the 5-rung
+  /// button scale — a badge is a smaller-scope component. Requested
+  /// directly, for the Zones edit dock's own selection-count badge.
+  final double sizeBadgeXs;
+  final double sizeBadgeSm;
+  final double sizeBadgeMd;
 
   // Radii`
   // Corner radii, named by SIZE rather than by component. A component
@@ -685,6 +730,20 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     // isn't assigned yet at this point in the constructor call.
     colorFreeWindow: ColorPrimitives.surface3.withValues(alpha: 0.5),
     colorZoneBackground: ColorPrimitives.zoneBackground,
+    // Same primitive pairing as colorSurfaceTimeline/colorAccent below
+    // (cream2/brand500) — referenced directly rather than through
+    // `this.colorSurfaceTimeline`/`this.colorAccent`, which aren't
+    // assigned yet at this point in the constructor call. Originally
+    // ~11% ("big alpha," requested directly, so the lens reads as clearly
+    // distinct from the ordinary Timeline rather than the wash painter's
+    // own much fainter 3-4% at-rest tint), bumped again to 20% —
+    // requested directly a second time ("on light mode make it
+    // stronger"). Kept in sync with WhatMattersTokens.tintAlphaLight,
+    // which the animated wash painter uses for the same visual result.
+    colorSurfaceWhatMatters: Color.alphaBlend(
+      ColorPrimitives.brand500.withValues(alpha: 0.20),
+      ColorPrimitives.cream2,
+    ),
     colorTextPrimary: ColorPrimitives.slate900,
     colorTextSecondary: ColorPrimitives.slate500,
     colorTextTertiary: ColorPrimitives.slate400,
@@ -699,28 +758,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     colorTaskCompleted: ColorPrimitives.sage500,
     colorTaskSkipped: ColorPrimitives.slate300,
     colorTaskAlert: ColorPrimitives.coral500,
-    categoryColors: {
-      TaskCategoryToken.general: ColorPrimitives.neutralTint,
-      TaskCategoryToken.health: ColorPrimitives.clayTint,
-      TaskCategoryToken.work: ColorPrimitives.ochreTint,
-      TaskCategoryToken.home: ColorPrimitives.periwinkleTint,
-      TaskCategoryToken.personal: ColorPrimitives.amberTint,
-      TaskCategoryToken.social: ColorPrimitives.tealTint,
-      TaskCategoryToken.reading: ColorPrimitives.skyTint,
-      TaskCategoryToken.learning: ColorPrimitives.roseTint,
-      TaskCategoryToken.admin: ColorPrimitives.berryTint,
-    },
-    categoryIconColors: {
-      TaskCategoryToken.general: ColorPrimitives.neutral500,
-      TaskCategoryToken.health: ColorPrimitives.clay500,
-      TaskCategoryToken.work: ColorPrimitives.ochre500,
-      TaskCategoryToken.home: ColorPrimitives.periwinkle500,
-      TaskCategoryToken.personal: ColorPrimitives.amber500,
-      TaskCategoryToken.social: ColorPrimitives.teal500,
-      TaskCategoryToken.reading: ColorPrimitives.sky500,
-      TaskCategoryToken.learning: ColorPrimitives.rose500,
-      TaskCategoryToken.admin: ColorPrimitives.berry500,
-    },
+    colorDestructive: ColorPrimitives.crimson500,
     // The LIGHT ramp, not the shared one this used to point at: the dark
     // ramp measures 3.08-3.66:1 against `surface0`, failing AA at every
     // hue. Same 12 hues in the same order, so a stored
@@ -751,6 +789,9 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     sizeButtonMd: SpacingPrimitives.space9,
     sizeButtonLg: SpacingPrimitives.space9Point5,
     sizeButtonXl: SpacingPrimitives.space10,
+    sizeBadgeXs: SpacingPrimitives.space5,
+    sizeBadgeSm: SpacingPrimitives.space6,
+    sizeBadgeMd: SpacingPrimitives.space7,
     radiusSm: RadiusPrimitives.radiusSm,
     radiusMd: RadiusPrimitives.radiusMd,
     radiusLg: RadiusPrimitives.radiusLg,
@@ -981,6 +1022,17 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     // reasoning as the light palette above.
     colorFreeWindow: ColorPrimitives.ink600.withValues(alpha: 0.5),
     colorZoneBackground: ColorPrimitives.zoneBackgroundDark,
+    // Same pairing as light — colorSurfaceTimeline/colorAccent's own dark
+    // values (ink800/brand300), referenced directly for the same
+    // not-yet-assigned reason. Unchanged at 9% when light was bumped to
+    // 20% ("on light mode make it stronger," requested directly, dark
+    // not called out) — a light accent tint already reads stronger
+    // against a dark base at a lower alpha than it needs against a light
+    // one, matching WhatMattersTokens' own light/dark asymmetry.
+    colorSurfaceWhatMatters: Color.alphaBlend(
+      ColorPrimitives.brand300.withValues(alpha: 0.09),
+      ColorPrimitives.ink800,
+    ),
     colorTextPrimary: ColorPrimitives.sand200,
     colorTextSecondary: ColorPrimitives.sand400,
     colorTextTertiary: ColorPrimitives.sand350,
@@ -990,49 +1042,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     colorTaskCompleted: ColorPrimitives.sage300,
     colorTaskSkipped: ColorPrimitives.slate500,
     colorTaskAlert: ColorPrimitives.coral300,
-    // Category pill fill: unchanged pre-pastel mid-tone values (see
-    // ColorPrimitives' *Dark entries) — dark mode is explicitly out of
-    // scope for the pastel-palette session that touched light mode, so
-    // this stays byte-for-byte identical to Phase 13a, measured at
-    // 4.9-5.2:1 against `ink900`.
-    categoryColors: {
-      TaskCategoryToken.general: ColorPrimitives.neutral500Dark,
-      TaskCategoryToken.health: ColorPrimitives.clay500Dark,
-      TaskCategoryToken.work: ColorPrimitives.ochre500Dark,
-      TaskCategoryToken.home: ColorPrimitives.periwinkle500Dark,
-      TaskCategoryToken.personal: ColorPrimitives.amber500Dark,
-      TaskCategoryToken.social: ColorPrimitives.teal500Dark,
-      TaskCategoryToken.reading: ColorPrimitives.sky500Dark,
-      TaskCategoryToken.learning: ColorPrimitives.rose500Dark,
-      TaskCategoryToken.admin: ColorPrimitives.berry500Dark,
-    },
-    // Category icon glyph: real bug, found and fixed via the splash/
-    // carousel session, not left as pre-existing. When categoryIconColors
-    // was introduced (pastel-palette session) this map was set to mirror
-    // categoryColors under the reasoning "dark mode never had a separate
-    // icon treatment" — true of the OLD code path (TaskCapsuleBlock read
-    // colorSurfacePrimary, which happened to be white in light mode), but
-    // that session's TaskCapsuleBlock rewrite made iconColor read
-    // categoryIconColors unconditionally in BOTH palettes, so mirroring
-    // categoryColors here means the icon is drawn in the exact color of
-    // its own background — invisible. Fixed to pure white, the actual
-    // pre-pastel-session value (colorSurfacePrimary was white in light
-    // mode, not "surface primary" in any meaningful sense for this use —
-    // dark mode's colorSurfacePrimary is near-black ink900, the wrong
-    // direction entirely). Verified 3.56-3.83:1 white-on-category-color,
-    // clearing the 3:1 WCAG graphics floor — matches Phase 13a's own
-    // originally-measured 3.6-3.8:1 figure. See docs/DECISIONS.md.
-    categoryIconColors: {
-      TaskCategoryToken.general: ColorPrimitives.white,
-      TaskCategoryToken.health: ColorPrimitives.white,
-      TaskCategoryToken.work: ColorPrimitives.white,
-      TaskCategoryToken.home: ColorPrimitives.white,
-      TaskCategoryToken.personal: ColorPrimitives.white,
-      TaskCategoryToken.social: ColorPrimitives.white,
-      TaskCategoryToken.reading: ColorPrimitives.white,
-      TaskCategoryToken.learning: ColorPrimitives.white,
-      TaskCategoryToken.admin: ColorPrimitives.white,
-    },
+    colorDestructive: ColorPrimitives.crimson300,
     // Same 12-swatch list as the light palette — deliberately not a
     // separate dark-mode set, see the field's own doc comment above.
     categorySwatches: ColorPrimitives.categoryPalette12,
@@ -1061,6 +1071,9 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     sizeButtonMd: SpacingPrimitives.space9,
     sizeButtonLg: SpacingPrimitives.space9Point5,
     sizeButtonXl: SpacingPrimitives.space10,
+    sizeBadgeXs: SpacingPrimitives.space5,
+    sizeBadgeSm: SpacingPrimitives.space6,
+    sizeBadgeMd: SpacingPrimitives.space7,
     radiusSm: RadiusPrimitives.radiusSm,
     radiusMd: RadiusPrimitives.radiusMd,
     radiusLg: RadiusPrimitives.radiusLg,
@@ -1251,6 +1264,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     double? blurOverlaySigma,
     Color? colorFreeWindow,
     Color? colorZoneBackground,
+    Color? colorSurfaceWhatMatters,
     Color? colorTextPrimary,
     Color? colorTextSecondary,
     Color? colorTextTertiary,
@@ -1259,8 +1273,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     Color? colorTaskCompleted,
     Color? colorTaskSkipped,
     Color? colorTaskAlert,
-    Map<TaskCategoryToken, Color>? categoryColors,
-    Map<TaskCategoryToken, Color>? categoryIconColors,
+    Color? colorDestructive,
     List<Color>? categorySwatches,
     double? spacingXs,
     double? spacingSm,
@@ -1285,6 +1298,9 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     double? sizeButtonMd,
     double? sizeButtonLg,
     double? sizeButtonXl,
+    double? sizeBadgeXs,
+    double? sizeBadgeSm,
+    double? sizeBadgeMd,
     double? radiusSm,
     double? radiusMd,
     double? radiusLg,
@@ -1339,6 +1355,8 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       blurOverlaySigma: blurOverlaySigma ?? this.blurOverlaySigma,
       colorFreeWindow: colorFreeWindow ?? this.colorFreeWindow,
       colorZoneBackground: colorZoneBackground ?? this.colorZoneBackground,
+      colorSurfaceWhatMatters:
+          colorSurfaceWhatMatters ?? this.colorSurfaceWhatMatters,
       colorTextPrimary: colorTextPrimary ?? this.colorTextPrimary,
       colorTextSecondary: colorTextSecondary ?? this.colorTextSecondary,
       colorTextTertiary: colorTextTertiary ?? this.colorTextTertiary,
@@ -1347,8 +1365,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       colorTaskCompleted: colorTaskCompleted ?? this.colorTaskCompleted,
       colorTaskSkipped: colorTaskSkipped ?? this.colorTaskSkipped,
       colorTaskAlert: colorTaskAlert ?? this.colorTaskAlert,
-      categoryColors: categoryColors ?? this.categoryColors,
-      categoryIconColors: categoryIconColors ?? this.categoryIconColors,
+      colorDestructive: colorDestructive ?? this.colorDestructive,
       categorySwatches: categorySwatches ?? this.categorySwatches,
       spacingXs: spacingXs ?? this.spacingXs,
       spacingSm: spacingSm ?? this.spacingSm,
@@ -1375,6 +1392,9 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       sizeButtonMd: sizeButtonMd ?? this.sizeButtonMd,
       sizeButtonLg: sizeButtonLg ?? this.sizeButtonLg,
       sizeButtonXl: sizeButtonXl ?? this.sizeButtonXl,
+      sizeBadgeXs: sizeBadgeXs ?? this.sizeBadgeXs,
+      sizeBadgeSm: sizeBadgeSm ?? this.sizeBadgeSm,
+      sizeBadgeMd: sizeBadgeMd ?? this.sizeBadgeMd,
       radiusSm: radiusSm ?? this.radiusSm,
       radiusMd: radiusMd ?? this.radiusMd,
       radiusLg: radiusLg ?? this.radiusLg,
@@ -1471,6 +1491,11 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
         other.colorZoneBackground,
         t,
       )!,
+      colorSurfaceWhatMatters: Color.lerp(
+        colorSurfaceWhatMatters,
+        other.colorSurfaceWhatMatters,
+        t,
+      )!,
       colorTextPrimary: Color.lerp(
         colorTextPrimary,
         other.colorTextPrimary,
@@ -1499,10 +1524,11 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
         t,
       )!,
       colorTaskAlert: Color.lerp(colorTaskAlert, other.colorTaskAlert, t)!,
-      categoryColors: t < 0.5 ? categoryColors : other.categoryColors,
-      categoryIconColors: t < 0.5
-          ? categoryIconColors
-          : other.categoryIconColors,
+      colorDestructive: Color.lerp(
+        colorDestructive,
+        other.colorDestructive,
+        t,
+      )!,
       categorySwatches: t < 0.5 ? categorySwatches : other.categorySwatches,
       spacingXs: _lerpDouble(spacingXs, other.spacingXs, t),
       spacingSm: _lerpDouble(spacingSm, other.spacingSm, t),
@@ -1551,6 +1577,9 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       sizeButtonMd: _lerpDouble(sizeButtonMd, other.sizeButtonMd, t),
       sizeButtonLg: _lerpDouble(sizeButtonLg, other.sizeButtonLg, t),
       sizeButtonXl: _lerpDouble(sizeButtonXl, other.sizeButtonXl, t),
+      sizeBadgeXs: _lerpDouble(sizeBadgeXs, other.sizeBadgeXs, t),
+      sizeBadgeSm: _lerpDouble(sizeBadgeSm, other.sizeBadgeSm, t),
+      sizeBadgeMd: _lerpDouble(sizeBadgeMd, other.sizeBadgeMd, t),
       radiusSm: _lerpDouble(radiusSm, other.radiusSm, t),
       radiusMd: _lerpDouble(radiusMd, other.radiusMd, t),
       radiusLg: _lerpDouble(radiusLg, other.radiusLg, t),

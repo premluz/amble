@@ -1,18 +1,27 @@
 import 'package:flutter/material.dart';
 
-import '../../core/tokens/semantic_theme.dart';
 import '../../shared/models/task_category.dart';
 
 /// Bridges the persisted [TaskCategory] enum (shared/models/) to the
-/// design-system [TaskCategoryToken] enum (core/tokens/) so a [Task] can be
-/// rendered without either layer depending on the other.
+/// design-system's 12-swatch `categorySwatches` palette, so a pre-migration
+/// [Task] (one with no live `Category`/`categoryId` yet, only the old
+/// enum) can be rendered without either layer depending on the other.
 extension TaskCategoryTokenMapping on TaskCategory {
-  TaskCategoryToken get token => switch (this) {
-    TaskCategory.general => TaskCategoryToken.general,
-    TaskCategory.health => TaskCategoryToken.health,
-    TaskCategory.work => TaskCategoryToken.work,
-    TaskCategory.personal => TaskCategoryToken.personal,
-    TaskCategory.admin => TaskCategoryToken.admin,
+  /// Index into `AmbleTheme.categorySwatches` — the SAME palette every
+  /// live [Category] row's own [Category.colorToken] indexes into (see
+  /// `category_visual.dart`'s `resolveCategoryVisual`), so a legacy task
+  /// renders with the identical color system as a migrated one rather
+  /// than a separate hand-tuned map. Values match each legacy category's
+  /// real-world counterpart's own seeded `colorToken` in
+  /// `category_providers.dart` — `.personal` here is the pre-rename
+  /// "Personal," now called "Home" ([BuiltInCategoryIds.personal],
+  /// `colorToken: 3`), not the newer `personalNew` ("Personal," `colorToken: 5`).
+  int get colorToken => switch (this) {
+    TaskCategory.general => 0,
+    TaskCategory.health => 1,
+    TaskCategory.work => 2,
+    TaskCategory.personal => 3,
+    TaskCategory.admin => 4,
   };
 
   IconData get icon => switch (this) {

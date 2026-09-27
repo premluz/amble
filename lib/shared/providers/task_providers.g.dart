@@ -81,7 +81,7 @@ final class TaskListProvider extends $NotifierProvider<TaskList, List<Task>> {
   }
 }
 
-String _$taskListHash() => r'80562808d659797be19ab5be625f4e9b21806eab';
+String _$taskListHash() => r'6af3d7f25974bdb8294376d537155f8d8579cc11';
 
 abstract class _$TaskList extends $Notifier<List<Task>> {
   List<Task> build();

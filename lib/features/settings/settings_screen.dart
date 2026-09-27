@@ -16,6 +16,7 @@ import 'permissions_settings_screen.dart';
 import 'settings_detail_scaffold.dart';
 import 'settings_panel.dart';
 import 'slack_settings_screen.dart';
+import 'trial_status_panel.dart';
 // import 'subscription_settings_screen.dart'; // see the commented-out
 // Subscription row below
 
@@ -49,6 +50,13 @@ class SettingsScreen extends StatelessWidget {
               // the first panel starts directly under the top nav's own
               // spacingScreenPadding inset (unchanged, from this
               // SingleChildScrollView's own padding above).
+              //
+              // TrialStatusPanel is the genuine first section — plain
+              // info (days-left + a paywall trigger), not a link row,
+              // requested directly as the very first thing on this
+              // screen. It renders nothing once panta_pro is active, so
+              // it adds no visible gap for a paying user.
+              const TrialStatusPanel(),
               SettingsPanel(
                 theme: theme,
                 child: Column(
@@ -86,12 +94,13 @@ class SettingsScreen extends StatelessWidget {
                     ),
                     SizedBox(height: theme.spacingMd),
                     SettingsLinkRow(
-                      // "Tags" in the UI, "Category" in code — requested
-                      // directly: "categories become tags." Copy-only
-                      // rename this session; the underlying Category
-                      // model/identifiers are unchanged (see
+                      // "Labels" in the UI, "Category" in code —
+                      // originally renamed to "Tags" ("categories become
+                      // tags"), now renamed again to "Labels," requested
+                      // directly. Copy-only both times; the underlying
+                      // Category model/identifiers are unchanged (see
                       // category_list_screen.dart's own doc comment).
-                      label: 'Tags',
+                      label: 'Labels',
                       onTap: () => showCategoryListScreen(context),
                     ),
                     SizedBox(height: theme.spacingMd),

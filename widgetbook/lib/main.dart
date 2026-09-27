@@ -1,3 +1,5 @@
+import 'bubble_burst_demo.dart';
+import 'floating_surface_demo.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_badge_chip.dart';
 import 'package:amble/core/widgets/app_button.dart';
@@ -358,6 +360,24 @@ class AmbleWidgetbookApp extends StatelessWidget {
         WidgetbookFolder(
           name: 'Feedback',
           children: [
+            WidgetbookComponent(
+              name: 'AppFloatingSurface',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Glass and solid elevation',
+                  builder: floatingSurfaceDemo,
+                ),
+              ],
+            ),
+            WidgetbookComponent(
+              name: 'AppBubbleBurst',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Task completion',
+                  builder: bubbleBurstDemo,
+                ),
+              ],
+            ),
             WidgetbookComponent(
               name: 'AppUndoToast',
               useCases: [

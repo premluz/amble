@@ -1083,7 +1083,7 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
         .where((c) => c.id == _categoryId)
         .firstOrNull;
     final headerColor = category == null
-        ? theme.categoryColors[TaskCategoryToken.general]!
+        ? theme.categorySwatches[generalCategoryColorToken]
         : resolveCategoryVisual(theme: theme, category: category).pillColor;
 
     // The Android system back gesture (edge swipe) reaches this route's
@@ -1732,7 +1732,7 @@ class _CategoryFieldRow extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
-            'Tag',
+            'Label',
             style: theme.textBody.copyWith(color: theme.colorTextPrimary),
           ),
           if (hasCategory)
@@ -2455,7 +2455,7 @@ class _DetailsStepScaffold extends ConsumerWidget {
     final categories = ref.watch(categoryListProvider);
     final category = categories.where((c) => c.id == categoryId).firstOrNull;
     final categoryColor = category == null
-        ? theme.categoryColors[TaskCategoryToken.general]!
+        ? theme.categorySwatches[generalCategoryColorToken]
         : resolveCategoryVisual(theme: theme, category: category).pillColor;
 
     // Continue stays disabled until the name has at least one real
@@ -2533,7 +2533,7 @@ class _DetailsStepScaffold extends ConsumerWidget {
               ),
               SizedBox(height: theme.spacingLg),
               AppPane(
-                title: 'Tag',
+                title: 'Label',
                 child: Wrap(
                   spacing: theme.spacingSm,
                   runSpacing: theme.spacingSm,
@@ -2742,7 +2742,7 @@ class _ScheduleStepScaffold extends ConsumerWidget {
       // OTHER step still uses the coloured-banner path), but this step no
       // longer renders one — see headerContent below.
       headerColor: category == null
-          ? theme.categoryColors[TaskCategoryToken.general]!
+          ? theme.categorySwatches[generalCategoryColorToken]
           : resolveCategoryVisual(theme: theme, category: category!).pillColor,
       onClose: onClose,
       // No back arrow: this is the only screen in the flow now, so there
@@ -2988,8 +2988,8 @@ class _SchedulePreviewCard extends StatelessWidget {
     final category = this.category;
     final visual = category == null
         ? CategoryVisual(
-            pillColor: theme.categoryColors[TaskCategoryToken.general]!,
-            iconColor: theme.categoryIconColors[TaskCategoryToken.general]!,
+            pillColor: theme.categorySwatches[generalCategoryColorToken],
+            iconColor: theme.categorySwatches[generalCategoryColorToken],
           )
         : resolveCategoryVisual(theme: theme, category: category);
     final badgeColor = visual.pillColor;

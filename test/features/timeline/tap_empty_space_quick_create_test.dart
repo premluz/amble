@@ -626,7 +626,7 @@ void main() {
 
     // Confirming the name stage (whether via the handle reaching full,
     // or Done) advances straight to stage 2 — Category is stage-2-only.
-    expect(find.text('Tag'), findsOneWidget);
+    expect(find.text('Label'), findsOneWidget);
     // The placeholder pill is unaffected by the promotion — it's a
     // Timeline-side widget, entirely separate from the pushed route.
     expect(find.byType(PendingTaskPill), findsOneWidget);
@@ -665,7 +665,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
 
       expect(find.byType(QuickCreateSheetHandle), findsNothing);
-      expect(find.text('Tag'), findsOneWidget);
+      expect(find.text('Label'), findsOneWidget);
     },
   );
 

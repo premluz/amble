@@ -180,7 +180,7 @@ class _BrandMarkPainter extends CustomPainter {
 class _SlideContent {
   const _SlideContent({
     required this.icon,
-    required this.category,
+    required this.categoryColorToken,
     required this.headline,
     required this.body,
     this.imageAsset,
@@ -189,12 +189,15 @@ class _SlideContent {
 
   final IconData icon;
 
-  /// Which category's pastel tint/icon-color pair this slide borrows —
-  /// purely for visual variety across slides, no connection to the
-  /// user's actual task categories. Still used as [icon]'s own tint when
-  /// neither [imageAsset] nor [videoAsset] is set, and as the fallback if
-  /// [videoAsset] fails to initialize.
-  final TaskCategoryToken category;
+  /// Which category's swatch this slide borrows — purely for visual
+  /// variety across slides, no connection to the user's actual task
+  /// categories. Still used as [icon]'s own tint when neither
+  /// [imageAsset] nor [videoAsset] is set, and as the fallback if
+  /// [videoAsset] fails to initialize. An index into
+  /// `AmbleTheme.categorySwatches` (the same palette every real category
+  /// now resolves through — see `category_visual.dart`'s own doc
+  /// comment), not the old `TaskCategoryToken`-keyed maps.
+  final int categoryColorToken;
   final String headline;
   final String body;
 
@@ -217,7 +220,7 @@ class _SlideContent {
 const _slides = [
   _SlideContent(
     icon: Icons.calendar_view_day_rounded,
-    category: TaskCategoryToken.personal,
+    categoryColorToken: 5, // Personal
     headline: 'See your day, not just your list',
     body:
         'A calm, visual timeline for your day — tasks laid out in time, '
@@ -225,7 +228,7 @@ const _slides = [
   ),
   _SlideContent(
     icon: Icons.inbox_rounded,
-    category: TaskCategoryToken.work,
+    categoryColorToken: 2, // Work
     headline: 'Capture first, plan later',
     body:
         'Jot a thought down in seconds. Decide when it fits in — now, '
@@ -233,7 +236,7 @@ const _slides = [
   ),
   _SlideContent(
     icon: Icons.update_rounded,
-    category: TaskCategoryToken.health,
+    categoryColorToken: 1, // Health
     headline: 'Plans change. That\'s the plan.',
     body:
         'Missed a task? Reschedule it in one drag. Nothing is marked as a '
@@ -241,7 +244,7 @@ const _slides = [
   ),
   _SlideContent(
     icon: Icons.lock_outline_rounded,
-    category: TaskCategoryToken.admin,
+    categoryColorToken: 4, // Admin
     headline: 'Your data stays yours',
     body:
         'Amble works entirely on your device — no account, no cloud sync '
@@ -406,8 +409,9 @@ class _SlideViewState extends State<_SlideView> {
   Widget build(BuildContext context) {
     final theme = widget.theme;
     final slide = widget.slide;
-    final tint = theme.categoryColors[slide.category]!;
-    final iconColor = theme.categoryIconColors[slide.category]!;
+    final swatch = theme.categorySwatches[slide.categoryColorToken];
+    final tint = swatch;
+    final iconColor = swatch;
 
     final showVideo =
         slide.videoAsset != null && _videoReady && !_videoFailed;

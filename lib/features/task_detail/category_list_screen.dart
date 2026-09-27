@@ -12,20 +12,21 @@ import '../../shared/providers/category_providers.dart';
 import 'add_category_modal.dart';
 import 'category_visual.dart';
 
-/// Opens the Tags list — every saved [Category] (built-in and
-/// user-defined alike), tap to edit, "+" to add. "Tags" in the UI,
-/// "Category" in code throughout this file and everywhere else — requested
-/// directly: "categories become tags." A copy-only rename this session:
-/// the model class, its file name, `categoryId`, and every provider/
+/// Opens the Labels list — every saved [Category] (built-in and
+/// user-defined alike), tap to edit, "+" to add. "Labels" in the UI,
+/// "Category" in code throughout this file and everywhere else —
+/// originally renamed to "Tags" ("categories become tags"), now renamed
+/// again to "Labels," requested directly. Copy-only both times: the
+/// model class, its file name, `categoryId`, and every provider/
 /// repository identifier are unchanged, so this doc comment (and every
 /// other one in this file) keeps saying "Category"/"category" for the
-/// underlying concept and switches to "Tag" only in the literal strings a
-/// user actually reads.
+/// underlying concept and switches to "Label" only in the literal
+/// strings a user actually reads.
 ///
 /// Mirrors `zone_list_screen.dart`'s `ZoneListScreen`/`ZoneListBody` split
-/// exactly: this pushed-page shell for Settings → Tags, [CategoryListBody]
+/// exactly: this pushed-page shell for Settings → Labels, [CategoryListBody]
 /// (no back button/heading of its own) for embedding inside the Manage
-/// screen's own Tags sub-tab.
+/// screen's own Labels sub-tab.
 ///
 /// Per CONSTITUTION.md's "v2: rename, recolor, and reorder" section —
 /// reorder itself confirmed out of scope for now, so this is rename +
@@ -63,7 +64,7 @@ class CategoryListScreen extends StatelessWidget {
                     variant: AppButtonVariant.ghost,
                   ),
                   SizedBox(width: theme.spacingMd),
-                  Expanded(child: Text('Tags', style: theme.textTitle)),
+                  Expanded(child: Text('Labels', style: theme.textTitle)),
                   AppButton(
                     icon: Icons.add_rounded,
                     onPressed: () => showAddCategoryModal(context),
@@ -89,7 +90,7 @@ class CategoryListBody extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     // General is filtered out — see visibleCategoryListProvider's own doc
-    // comment. This is the Settings "Tags" screen, and General is an
+    // comment. This is the Settings "Labels" screen, and General is an
     // invisible fallback, never a user-manageable row.
     final categories = ref.watch(visibleCategoryListProvider);
 
@@ -111,16 +112,16 @@ class CategoryListBody extends ConsumerWidget {
     );
   }
 
-  /// Always succeeds for a user-created tag — `deleteCategory` reassigns
+  /// Always succeeds for a user-created label — `deleteCategory` reassigns
   /// affected tasks to General and deletes, no confirmation needed
   /// (matches Templates/Zones' own "no confirmation dialog" swipe
-  /// contract). Built-in tags never reach here — see [_CategoryRow]'s own
-  /// `endAction: null` guard, confirmed via AskUserQuestion rather than
-  /// allowing a swipe that would silently no-op against
+  /// contract). Built-in labels never reach here — see [_CategoryRow]'s
+  /// own `endAction: null` guard, confirmed via AskUserQuestion rather
+  /// than allowing a swipe that would silently no-op against
   /// `deleteCategory`'s own built-in check.
   void _removeCategory(BuildContext context, WidgetRef ref, Category category) {
     ref.read(categoryListProvider.notifier).deleteCategory(category.id);
-    AppUndoToast.show(context: context, message: 'Removed tag');
+    AppUndoToast.show(context: context, message: 'Removed label');
   }
 }
 
@@ -135,7 +136,7 @@ class _EmptyState extends StatelessWidget {
       child: Padding(
         padding: EdgeInsets.all(theme.spacingLg),
         child: Text(
-          'No categories yet. Tap + to add one.',
+          'No labels yet. Tap + to add one.',
           textAlign: TextAlign.center,
           style: theme.textBody.copyWith(color: theme.colorTextSecondary),
         ),
@@ -162,7 +163,7 @@ class _CategoryRow extends StatelessWidget {
     final swatch = theme.categorySwatches[category.colorToken];
 
     return AppSwipeActions(
-      // Built-in tags (the 5 seeded rows) can't be deleted at all —
+      // Built-in labels (the 5 seeded rows) can't be deleted at all —
       // `CategoryList.deleteCategory` silently no-ops for them. Rather
       // than let the swipe reveal a Remove action that would do nothing,
       // the gesture is disabled outright for these rows — confirmed via
@@ -171,8 +172,8 @@ class _CategoryRow extends StatelessWidget {
           ? null
           : AppSwipeAction(
               icon: Icons.delete_outline_rounded,
-              background: theme.colorTaskAlert,
-              semanticLabel: 'Remove tag',
+              background: theme.colorDestructive,
+              semanticLabel: 'Remove label',
               destructive: true,
               onActivate: onRemove,
             ),

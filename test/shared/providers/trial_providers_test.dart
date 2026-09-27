@@ -112,4 +112,24 @@ void main() {
       expect(preferencesBox.get(PreferenceKeys.installDate), firstWrite);
     },
   );
+
+  // Requested directly: "incorporate dev trigger for restart trial so we
+  // can test paywall in apple sandbox account" — this is the mechanism
+  // behind that trigger (see developer_settings_screen.dart's own "Reset
+  // trial" button), unlike recordIfNeeded above, WRITES OVER an existing
+  // timestamp.
+  test(
+    'InstallDate.reset rewrites installDate to now, restarting the trial '
+    'even when one was already recorded',
+    () async {
+      await setInstallDate(DateTime.now().subtract(const Duration(days: 30)));
+      expect(container.read(isInTrialPeriodProvider), isFalse);
+
+      await container.read(installDateProvider.notifier).reset();
+
+      expect(container.read(daysSinceInstallProvider), 0);
+      expect(container.read(isInTrialPeriodProvider), isTrue);
+      expect(container.read(canCreateTaskProvider), isTrue);
+    },
+  );
 }

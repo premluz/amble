@@ -99,19 +99,25 @@ class AppBottomDock extends StatelessWidget {
                 AppContextGroup(
                   id: 'context-navigation',
                   actions: [
-                    AppContextAction(
-                      id: 'day-list',
-              icon: Icons.view_agenda_outlined,
-              tooltip: 'List',
-              selected: activeView == AppBottomDockView.list,
-                      onPressed: () => onSelectView(AppBottomDockView.list),
-            ),
+                    // Timeline (spatial Task view) first, List (Zone view)
+                    // second — requested directly: "first view default is
+                    // timeline spatial... second is zone view." Button
+                    // order only; the underlying default (spatial Task
+                    // view on a fresh install, via ZoneViewEnabledSetting's
+                    // own `false` default) was already correct.
                     AppContextAction(
                       id: 'day-timeline',
               icon: Icons.view_timeline_outlined,
               tooltip: 'Timeline',
               selected: activeView == AppBottomDockView.timeline,
                       onPressed: () => onSelectView(AppBottomDockView.timeline),
+            ),
+                    AppContextAction(
+                      id: 'day-list',
+              icon: Icons.view_agenda_outlined,
+              tooltip: 'List',
+              selected: activeView == AppBottomDockView.list,
+                      onPressed: () => onSelectView(AppBottomDockView.list),
             ),
           ],
         ),

@@ -615,23 +615,23 @@ class _QuickCaptureTextEditingController extends TextEditingController {
   /// order — flagged mapping, since none was originally named for this
   /// purpose: [AmbleTheme.colorAccent] (date/time — the brand color,
   /// matching how accent already marks the primary/selected state
-  /// elsewhere), the WORK category's icon color (duration — an existing
-  /// saturated, distinguishable glyph color), [AmbleTheme.colorTaskAlert]
+  /// elsewhere), the Work category's own swatch (duration — an existing
+  /// saturated, distinguishable color), [AmbleTheme.colorTaskAlert]
   /// (recurrence — an existing "notable, distinct from ordinary text"
-  /// semantic color), and the PERSONAL category's icon color (a detected
-  /// category word — deliberately a DIFFERENT category's color than
-  /// duration's, so the two never read as the same highlight by
+  /// semantic color), and the (new) Personal category's own swatch (a
+  /// detected category word — deliberately a DIFFERENT category's color
+  /// than duration's, so the two never read as the same highlight by
   /// coincidence). All four read clearly against the field's own fill in
   /// both light and dark palettes, and none collides with a category's
   /// own timeline color, since none of the four is being shown on a
-  /// category pill here.
+  /// category pill here. Swatch indices, not the old `categoryIconColors`
+  /// map — see `category_visual.dart`'s own doc comment for why every
+  /// category color now resolves through `categorySwatches`.
   Color _highlightColor(AmbleTheme t, QuickCaptureTokenKind kind) =>
       switch (kind) {
         QuickCaptureTokenKind.dateTime => t.colorAccent,
-        QuickCaptureTokenKind.duration =>
-          t.categoryIconColors[TaskCategoryToken.work]!,
+        QuickCaptureTokenKind.duration => t.categorySwatches[2], // Work
         QuickCaptureTokenKind.recurrence => t.colorTaskAlert,
-        QuickCaptureTokenKind.category =>
-          t.categoryIconColors[TaskCategoryToken.personal]!,
+        QuickCaptureTokenKind.category => t.categorySwatches[5], // Personal
       };
 }

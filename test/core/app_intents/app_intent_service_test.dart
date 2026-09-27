@@ -153,4 +153,75 @@ void main() {
     }) as List;
     expect(all, hasLength(2));
   });
+
+  // Requested directly: "lock behind 21 day trial ability to add new
+  // tasks via any route" — the native App Intents are one of those
+  // routes. Neither has a widget tree to present a paywall from, so the
+  // OS just surfaces why nothing was added — see AppIntentFailure and
+  // TaskList.createTask/captureTask's own doc comments.
+  group('trial gate', () {
+    late IntentTestStore expiredStore;
+    late AppIntentService expiredService;
+
+    setUp(() async {
+      expiredStore = IntentTestStore();
+      await expiredStore.open(
+        installDate: DateTime.now().subtract(const Duration(days: 30)),
+      );
+      expiredService = AppIntentService(
+        expiredStore.container,
+        now: () => now,
+      );
+    });
+    tearDown(() => expiredStore.close());
+
+    test(
+      'addTask surfaces AppIntentFailure once the trial has ended, and '
+      'creates nothing',
+      () async {
+        await expectLater(
+          expiredService.handle('addTask', {
+            'text': 'Study tomorrow at 9am for 45 mins',
+          }),
+          throwsA(isA<AppIntentFailure>()),
+        );
+        expect(expiredStore.container.read(taskListProvider), isEmpty);
+      },
+    );
+
+    test(
+      'addNote surfaces AppIntentFailure once the trial has ended, and '
+      'creates nothing',
+      () async {
+        await expectLater(
+          expiredService.handle('addNote', {'text': 'A note'}),
+          throwsA(isA<AppIntentFailure>()),
+        );
+        expect(expiredStore.container.read(taskListProvider), isEmpty);
+      },
+    );
+
+    test(
+      'addTask succeeds once panta_pro is active despite the trial being '
+      'over',
+      () async {
+        await expiredStore.close();
+        expiredStore = IntentTestStore();
+        await expiredStore.open(
+          installDate: DateTime.now().subtract(const Duration(days: 30)),
+          isPantaPro: true,
+        );
+        expiredService = AppIntentService(
+          expiredStore.container,
+          now: () => now,
+        );
+
+        final message = await expiredService.handle('addTask', {
+          'text': 'Walk every morning',
+        });
+        expect(message, contains('as a note'));
+        expect(expiredStore.container.read(taskListProvider), hasLength(1));
+      },
+    );
+  });
 }

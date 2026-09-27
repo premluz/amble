@@ -54,6 +54,23 @@ class InstallDate extends _$InstallDate {
       DateTime.now().toIso8601String(),
     );
   }
+
+  /// Debug-only: rewrites [PreferenceKeys.installDate] to right now,
+  /// restarting the 21-day trial from day zero — added so a RevenueCat
+  /// sandbox tester can re-run the whole trial-expiry → paywall flow
+  /// without reinstalling the app or clearing app data. Never exposed
+  /// outside a `kDebugMode` gate — see the Settings screen's "Developer"
+  /// section. Mirrors `HasSeenSplash.reset()`'s own debug-reset shape,
+  /// but this notifier's own `state` is `void` (nothing downstream reads
+  /// it directly) — `daysSinceInstallProvider` reads the preference value
+  /// itself, so an explicit `ref.invalidate` is what actually makes the
+  /// change visible, not a `state =` assignment.
+  Future<void> reset() async {
+    await ref
+        .read(preferencesRepositoryProvider)
+        .setValue(PreferenceKeys.installDate, DateTime.now().toIso8601String());
+    ref.invalidate(daysSinceInstallProvider);
+  }
 }
 
 /// Days elapsed since [PreferenceKeys.installDate] was recorded, or 0 if

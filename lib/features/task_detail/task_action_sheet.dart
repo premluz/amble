@@ -114,9 +114,8 @@ class _TaskActionSheetContent extends ConsumerWidget {
         AppContextMenuAction(
           icon: Icons.delete_outline_rounded,
           label: 'Remove',
-          // Reuses the existing destructive token (colorTaskAlert), the
-          // same one AppAlertDialog uses for its destructive actions —
-          // no new color token needed for this.
+          // Reuses the existing destructive token (colorDestructive), the
+          // same one AppAlertDialog uses for its destructive actions.
           isDestructive: true,
           onTap: () => _remove(context, ref),
         ),

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_swipe_actions.dart';
+import '../../core/widgets/app_bubble_burst.dart';
 import '../../shared/models/category.dart';
 import '../../shared/models/external_calendar_event.dart';
 import '../../shared/models/task.dart';
@@ -1015,7 +1016,16 @@ class _ZoneTaskRow extends StatelessWidget {
                   ? theme.colorTextSecondary
                   : theme.colorAccent,
               semanticLabel: isCompleted ? 'Mark undone' : 'Mark done',
-              onActivate: onToggleComplete!,
+              onActivate: () {
+                if (!isCompleted) {
+                  AppBubbleBurst.show(
+                    context: context,
+                    origin: Offset(badgeSize / 2, (zoneContainerRowHeight - badgeSize) / 2),
+                    sourceWidth: badgeSize,
+                  );
+                }
+                onToggleComplete!();
+              },
             ),
       child: SizedBox(
         height: zoneContainerRowHeight,

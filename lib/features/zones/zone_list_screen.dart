@@ -89,7 +89,7 @@ class ZoneListBody extends ConsumerWidget {
           key: ValueKey(name.id),
           endAction: AppSwipeAction(
             icon: Icons.delete_outline_rounded,
-            background: theme.colorTaskAlert,
+            background: theme.colorDestructive,
             semanticLabel: 'Remove zone name',
             destructive: true,
             onActivate: () => _removeFacet(context, ref, name),

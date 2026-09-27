@@ -118,10 +118,10 @@ class TemplateCategoryPane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppPane(
-      // "Tag" in the UI, "Category" in code — see category_list_screen
-      // .dart's own doc comment for the full "categories become tags"
-      // copy-only rename.
-      title: 'Tag',
+      // "Label" in the UI, "Category" in code — see category_list_screen
+      // .dart's own doc comment for the full "categories become tags,
+      // then tags become labels" copy-only rename.
+      title: 'Label',
       child: Wrap(
         spacing: theme.spacingSm,
         runSpacing: theme.spacingSm,

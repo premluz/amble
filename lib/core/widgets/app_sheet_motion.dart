@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../tokens/motion_primitives.dart';
 import '../tokens/semantic_theme.dart';
 import 'app_sheet_keyboard.dart';
+import 'sheet_keyboard_background.dart';
 
 class AppSheetMotion extends StatefulWidget {
   const AppSheetMotion({
@@ -118,7 +119,10 @@ class _AppSheetMotionState extends State<AppSheetMotion>
     _timeout?.cancel();
     _nativeOpening = true;
     final duration = frame.duration.inMicroseconds;
-    final slide = math.min(duration, widget.theme.motionSheetSlide.inMicroseconds);
+    final slide = math.min(
+      duration,
+      widget.theme.motionSheetSlide.inMicroseconds,
+    );
     final remaining = duration * (1 - frame.fraction);
     final progress = slide == 0 ? 1.0 : (1 - remaining / slide).clamp(0.0, 1.0);
     setState(() => _nativeInset = frame.inset);
@@ -151,19 +155,28 @@ class _AppSheetMotionState extends State<AppSheetMotion>
   Widget build(BuildContext context) {
     final liveInset = MediaQuery.viewInsetsOf(context).bottom;
     final inset = _nativeOpening ? (_nativeInset ?? liveInset) : liveInset;
-    return Padding(
-      padding: EdgeInsets.only(bottom: inset),
-      child: Align(
-        alignment: Alignment.bottomCenter,
-        child: AnimatedBuilder(
-          animation: Listenable.merge([widget.routeAnimation, _entrance]),
-          child: widget.child,
-          builder: (context, child) => _slide(child!, inset),
-        ),
+    return AnimatedBuilder(
+      animation: Listenable.merge([widget.routeAnimation, _entrance]),
+      builder: (context, child) => SheetKeyboardBackground(
+        inset: _visibleProgress() == 0 ? 0 : inset,
+        color: widget.theme.colorSurfaceOverlay,
+        child: child!,
       ),
+      child: _content(inset),
     );
   }
 
+  Widget _content(double inset) => Padding(
+    padding: EdgeInsets.only(bottom: inset),
+    child: Align(
+      alignment: Alignment.bottomCenter,
+      child: AnimatedBuilder(
+        animation: Listenable.merge([widget.routeAnimation, _entrance]),
+        child: widget.child,
+        builder: (context, child) => _slide(child!, inset),
+      ),
+    ),
+  );
   double _visibleProgress() {
     final closing = _closingProgress;
     if (closing != null) {

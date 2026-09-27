@@ -1117,6 +1117,114 @@ void main() {
     });
   }
 
+  // Requested directly: the top-of-screen "N selected" text label was
+  // dropped entirely in favor of a dedicated deselect button in the
+  // bottom dock, carrying the count as a small corner badge — icon alone
+  // at exactly 1 selected, badge only once there's more than one.
+  group('deselect button replaces the old "N selected" label', () {
+    testWidgets(
+      'with nothing selected, no deselect button and no "selected" text '
+      'anywhere on screen',
+      (tester) async {
+        await pumpWithShell(tester);
+
+        expect(find.byTooltip('Clear selection'), findsNothing);
+        expect(find.textContaining('selected'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'exactly 1 selected shows the deselect button with no badge',
+      (tester) async {
+        final zones = await container
+            .read(zoneListProvider.notifier)
+            .paintWeeklyZones(
+              title: 'Focus',
+              weekdays: {1},
+              startMinutes: 240,
+              endMinutes: 300,
+            );
+        await pumpWithShell(tester);
+
+        container.read(zoneEditSelectionProvider.notifier).add(zones.single.id);
+        await tester.pumpAndSettle();
+
+        expect(find.byTooltip('Clear selection'), findsOneWidget);
+        expect(find.textContaining('selected'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'more than 1 selected shows the deselect button WITH a count badge',
+      (tester) async {
+        final zones = await container
+            .read(zoneListProvider.notifier)
+            .paintWeeklyZones(
+              title: 'Focus',
+              weekdays: {1, 2, 3},
+              startMinutes: 240,
+              endMinutes: 300,
+            );
+        await pumpWithShell(tester);
+
+        for (final zone in zones) {
+          container.read(zoneEditSelectionProvider.notifier).add(zone.id);
+          await tester.pumpAndSettle();
+        }
+
+        expect(find.byTooltip('Clear selection'), findsOneWidget);
+        expect(find.text('${zones.length}'), findsOneWidget);
+      },
+    );
+
+    testWidgets('tapping the deselect button clears the selection only — '
+        'it does not close the screen', (tester) async {
+      final zones = await container
+          .read(zoneListProvider.notifier)
+          .paintWeeklyZones(
+            title: 'Focus',
+            weekdays: {1, 2},
+            startMinutes: 240,
+            endMinutes: 300,
+          );
+      await pumpWithShell(tester);
+
+      for (final zone in zones) {
+        container.read(zoneEditSelectionProvider.notifier).add(zone.id);
+        await tester.pumpAndSettle();
+      }
+
+      await tester.tap(find.byTooltip('Clear selection'));
+      await tester.pumpAndSettle();
+
+      expect(container.read(zoneEditSelectionProvider), isEmpty);
+      expect(find.byType(ZoneGridScreen), findsOneWidget);
+      expect(find.byTooltip('Close zones'), findsOneWidget);
+    });
+
+    testWidgets(
+      'the back button always says "Close zones" and only closes, even '
+      'with a selection active',
+      (tester) async {
+        final zones = await container
+            .read(zoneListProvider.notifier)
+            .paintWeeklyZones(
+              title: 'Focus',
+              weekdays: {1},
+              startMinutes: 240,
+              endMinutes: 300,
+            );
+        await pumpWithShell(tester);
+
+        container.read(zoneEditSelectionProvider.notifier).add(zones.single.id);
+        await tester.pumpAndSettle();
+
+        expect(find.byTooltip('Close zones'), findsOneWidget);
+        expect(find.byTooltip('Clear selection'), findsOneWidget);
+      },
+    );
+  });
+
   group('bulk delete removes every selected zone', () {
     // Reported directly as a regression: "when multiselecting zones and
     // delete, it deletes 1 or 2 sometimes but not all at once selected."

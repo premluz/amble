@@ -310,7 +310,7 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
                                     ),
                                     endAction: AppSwipeAction(
                                       icon: Icons.delete_outline_rounded,
-                                      background: theme.colorTaskAlert,
+                                      background: theme.colorDestructive,
                                       semanticLabel: 'Remove',
                                       destructive: true,
                                       onActivate: () => _removeTaskWithUndo(
@@ -579,7 +579,7 @@ class _InboxListItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final categoryColor = theme.categoryColors[task.category.token]!;
+    final categoryColor = theme.categorySwatches[task.category.colorToken];
     // `theme.sizeTaskBadge`/`theme.textTaskTitle`, NOT `spacingXl`/
     // `textBody` (corrected 2026-09-12, reported directly: "manage items
     // should have same size as zone view") — this row bypassed the

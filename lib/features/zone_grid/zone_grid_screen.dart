@@ -378,17 +378,19 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                   AppContextGroup(
                     id: 'context-navigation',
                     actions: [
+                      // Always "Close zones," never repurposed for
+                      // clearing selection — confirmed directly: "Back
+                      // actually is the only one that is active and
+                      // exits edit mode[,] while deselect deselects
+                      // only." Deselection now has its own dedicated
+                      // button (below) and its own existing "tap empty
+                      // timeline space" gesture; this one has a single,
+                      // unambiguous meaning regardless of selection state.
                       AppContextAction(
                         id: 'edit-back',
                         icon: Icons.arrow_back_rounded,
-                        tooltip: selected.isEmpty
-                            ? 'Close zones'
-                            : 'Clear selection',
-                        onPressed: selected.isEmpty
-                            ? _close
-                            : () => ref
-                                  .read(zoneEditSelectionProvider.notifier)
-                                  .clear(),
+                        tooltip: 'Close zones',
+                        onPressed: _close,
                       ),
                     ],
                   ),
@@ -396,6 +398,24 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                     AppContextGroup(
                       id: 'edit-zone-selection-actions',
                       actions: [
+                        // Requested directly, replacing the top-of-screen
+                        // "N selected" text label entirely: a dedicated
+                        // deselect button carrying the count as a small
+                        // corner badge — icon alone at exactly 1 selected,
+                        // badge only appears once there's more than one
+                        // ("if 1 selected icon only if more than one icon
+                        // and small circular badge with number").
+                        AppContextAction(
+                          id: 'edit-zone-deselect',
+                          icon: Icons.deselect_rounded,
+                          tooltip: 'Clear selection',
+                          badgeCount: selected.length > 1
+                              ? selected.length
+                              : null,
+                          onPressed: () => ref
+                              .read(zoneEditSelectionProvider.notifier)
+                              .clear(),
+                        ),
                         AppContextAction(
                           id: 'edit-zone-edit',
                           icon: Icons.edit_outlined,
@@ -1286,16 +1306,13 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                   // `AppDockPane` near this screen's own Close dock for the
                   // replacement, which now branches on `selected.isEmpty`
                   // the same way the Tasks tab's own dock already does.
-                  if (selected.isNotEmpty)
-                    Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: theme.spacingMd,
-                      ),
-                      child: Text(
-                        '${selected.length} selected',
-                        style: theme.textCaption,
-                      ),
-                    ),
+                  //
+                  // **2026-09-27 — the "N selected" text label dropped
+                  // entirely**, requested directly: it moved to the
+                  // bottom dock's own deselect button, as a small count
+                  // badge — see `_zoneContextDock`'s own `edit-zone-deselect`
+                  // action below, rather than duplicating the count in
+                  // two places on screen.
                   Padding(
                     padding: EdgeInsets.only(
                       left: _axisWidth,

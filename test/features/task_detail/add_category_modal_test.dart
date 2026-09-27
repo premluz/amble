@@ -16,13 +16,13 @@ import 'package:amble/shared/providers/task_providers.dart';
 import 'package:amble/shared/repositories/hive_category_repository.dart';
 import 'package:amble/shared/repositories/hive_task_repository.dart';
 
-/// The real, typeable `TextField` inside the "Tag name" `AppTextField` —
+/// The real, typeable `TextField` inside the "Label name" `AppTextField` —
 /// same reasoning as `create_flow_initial_modal_test.dart`'s `_nameField`:
 /// `AppFieldShell` renders the floating label and the TextField as
 /// siblings, so descending through the labeled `AppTextField` ancestor is
 /// what actually finds it.
 Finder _nameField() => find.descendant(
-  of: find.widgetWithText(AppTextField, 'Tag name'),
+  of: find.widgetWithText(AppTextField, 'Label name'),
   matching: find.byType(TextField),
 );
 
@@ -116,7 +116,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Color'), findsNothing);
-    expect(find.text('New tag'), findsNothing);
+    expect(find.text('New label'), findsNothing);
   });
 
   testWidgets(
@@ -280,7 +280,7 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(box.get(category.id), isNull);
-        expect(find.text('Edit tag'), findsNothing);
+        expect(find.text('Edit label'), findsNothing);
         expect(taskBox.get(task.id)!.categoryId, BuiltInCategoryIds.general);
       },
     );

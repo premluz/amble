@@ -129,123 +129,14 @@ void main() {
     });
   });
 
-  /// The gap that let the reported bug survive an earlier "all swatches
-  /// pass" session: only the 12-swatch CUSTOM category palette was
-  /// checked. The five BUILT-IN categories render through their own
-  /// hand-tuned `*500` / `*500Dark` maps and bypass that ramp entirely, so
-  /// three of them (ochre 4.27:1, periwinkle 4.11:1, neutral 4.50:1) sat
-  /// at or under the floor on light while the suite stayed green.
-  group('built-in category icon colors', () {
-    final lightIcons = {
-      'neutral': ColorPrimitives.neutral500,
-      'clay': ColorPrimitives.clay500,
-      'ochre': ColorPrimitives.ochre500,
-      'periwinkle': ColorPrimitives.periwinkle500,
-      'berry': ColorPrimitives.berry500,
-      'amber': ColorPrimitives.amber500,
-      'teal': ColorPrimitives.teal500,
-      'sky': ColorPrimitives.sky500,
-      'rose': ColorPrimitives.rose500,
-    };
-    final darkIcons = {
-      'neutral': ColorPrimitives.neutral500Dark,
-      'clay': ColorPrimitives.clay500Dark,
-      'ochre': ColorPrimitives.ochre500Dark,
-      'periwinkle': ColorPrimitives.periwinkle500Dark,
-      'berry': ColorPrimitives.berry500Dark,
-      'amber': ColorPrimitives.amber500Dark,
-      'teal': ColorPrimitives.teal500Dark,
-      'sky': ColorPrimitives.sky500Dark,
-      'rose': ColorPrimitives.rose500Dark,
-    };
-
-    test('every light icon color clears AA on the light base', () {
-      final failures = <String>[];
-      lightIcons.forEach((name, color) {
-        final ratio = contrastRatio(color, lightBase);
-        if (ratio < aa) failures.add('$name ${ratio.toStringAsFixed(2)}:1');
-      });
-      expect(failures, isEmpty, reason: 'below $aa:1 on light: $failures');
-    });
-
-    test('every dark icon color clears AA on the dark base', () {
-      final failures = <String>[];
-      darkIcons.forEach((name, color) {
-        final ratio = contrastRatio(color, darkBase);
-        if (ratio < aa) failures.add('$name ${ratio.toStringAsFixed(2)}:1');
-      });
-      expect(failures, isEmpty, reason: 'below $aa:1 on dark: $failures');
-    });
-
-    test('the light and dark icon sets are genuinely different values', () {
-      for (final name in lightIcons.keys) {
-        expect(
-          lightIcons[name],
-          isNot(equals(darkIcons[name])),
-          reason: '$name shares one value across both themes',
-        );
-      }
-    });
-  });
-
-  /// Reported directly, after the tints already cleared contrast math:
-  /// "color of container is pale on light mode[,] needs to be stronger" —
-  /// specifically called out for the personal (blue) and work (teal)
-  /// badges. The tints (`*Tint`, the badge FILL a category icon sits on)
-  /// were near-white (L≈0.95-0.98) and read as washed-out even though
-  /// icon-on-tint contrast passed AA. Deepened to L=0.90 with chroma
-  /// raised, verified here on two axes: that they actually got stronger,
-  /// and that the icon glyph sitting on them still clears a real
-  /// contrast floor (3:1 — the WCAG floor for a decorative graphic/icon,
-  /// not the 4.5:1 text floor, since deepening the badge necessarily
-  /// narrows its gap to the icon).
-  group('category badge tint strength', () {
-    final tints = {
-      'clay': ColorPrimitives.clayTint,
-      'ochre': ColorPrimitives.ochreTint,
-      'periwinkle': ColorPrimitives.periwinkleTint,
-      'berry': ColorPrimitives.berryTint,
-      'amber': ColorPrimitives.amberTint,
-      'teal': ColorPrimitives.tealTint,
-      'sky': ColorPrimitives.skyTint,
-      'rose': ColorPrimitives.roseTint,
-    };
-    final icons = {
-      'clay': ColorPrimitives.clay500,
-      'ochre': ColorPrimitives.ochre500,
-      'periwinkle': ColorPrimitives.periwinkle500,
-      'berry': ColorPrimitives.berry500,
-      'amber': ColorPrimitives.amber500,
-      'teal': ColorPrimitives.teal500,
-      'sky': ColorPrimitives.sky500,
-      'rose': ColorPrimitives.rose500,
-    };
-
-    test('every tint sits at L=0.90, not near-white', () {
-      // HSLuminance is a rough proxy; check via contrast against pure
-      // white instead — a near-white tint (L>0.95) would measure very
-      // close to 1:1 against white, a genuinely deepened one measurably
-      // more.
-      const white = Color(0xFFFFFFFF);
-      for (final entry in tints.entries) {
-        final ratio = contrastRatio(entry.value, white);
-        expect(
-          ratio,
-          greaterThan(1.15),
-          reason:
-              '${entry.key} tint measures ${ratio.toStringAsFixed(3)}:1 '
-              'against white — too close to white to read as "stronger"',
-        );
-      }
-    });
-
-    test('the icon glyph still clears the 3:1 icon floor on its own tint', () {
-      final failures = <String>[];
-      for (final name in tints.keys) {
-        final ratio = contrastRatio(icons[name]!, tints[name]!);
-        if (ratio < 3.0) failures.add('$name ${ratio.toStringAsFixed(2)}:1');
-      }
-      expect(failures, isEmpty, reason: 'below 3:1 icon floor: $failures');
-    });
-  });
+  // The old "built-in category icon colors" and "category badge tint
+  // strength" groups that used to live here tested `categoryColors`/
+  // `categoryIconColors`'s own hand-tuned `*Tint`/`*500`/`*500Dark`
+  // primitives — removed along with those primitives themselves when
+  // built-in categories were unified onto `categorySwatches` (the same
+  // 12-swatch palette this file's own `category palette` group above
+  // already covers), requested directly against a screenshot showing a
+  // built-in category's light-mode pill visibly not matching its own
+  // swatch. See `category_visual.dart`'s `resolveCategoryVisual` and
+  // `color_primitives.dart`'s own removal note.
 }

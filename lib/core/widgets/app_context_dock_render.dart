@@ -66,7 +66,6 @@ class _AppContextDockLayout extends StatelessWidget {
       if (entry.rect case final rect?) positions[entry.action.id] = rect;
     }
 
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     return SizedBox(
       width: left,
       height: height,
@@ -97,16 +96,11 @@ class _AppContextDockLayout extends StatelessWidget {
                         : 0,
                     duration: duration,
                     curve: theme.curveStandard,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color:
-                            pane.group.backgroundColor ??
-                            theme.colorSurfaceOverlay,
-                        borderRadius: BorderRadius.circular(
-                          theme.radiusPillFull,
-                        ),
-                        boxShadow: isDark ? null : theme.shadowPane,
-                      ),
+                    child: AppDockSurface(
+                      theme: theme,
+                      grouped: pane.group.actions.length > 1,
+                      backgroundColor: pane.group.backgroundColor,
+                      child: const SizedBox.expand(),
                     ),
                   ),
                 ),
@@ -170,6 +164,7 @@ class _AppContextDockLayout extends StatelessWidget {
                             selected: entry.action.selected,
                             isDestructive: entry.action.destructive,
                             haptic: entry.action.haptic,
+                            badgeCount: entry.action.badgeCount,
                             onTap: entry.action.enabled && entry.present
                                 ? entry.action.onPressed
                                 : null,

@@ -6,6 +6,7 @@ import '../tokens/semantic_theme.dart';
 import 'app_button.dart';
 import 'app_press_feedback.dart';
 import 'app_top_scroll_fade.dart';
+import 'sheet_keyboard_background.dart';
 
 /// The near-full-screen slide-up chrome shared by every task-detail-family
 /// modal (create wizard, edit-details, edit-schedule) — colored header
@@ -98,6 +99,14 @@ class StepScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return SheetKeyboardBackground(
+      inset: MediaQuery.viewInsetsOf(context).bottom,
+      color: theme.colorSurfaceOverlay,
+      child: _scaffold(context),
+    );
+  }
+
+  Widget _scaffold(BuildContext context) {
     return Scaffold(
       // Transparent, NOT the level-0 ground: the sheet is inset from the
       // screen edges so its corners are actually visible, which only
@@ -377,7 +386,13 @@ class StepScaffold extends StatelessWidget {
                                           width: theme.spacingXl * 1.5,
                                           height: theme.spacingXl * 1.5,
                                           decoration: BoxDecoration(
-                                            color: theme.colorTaskAlert,
+                                            // The secondary action is
+                                            // always a delete (see
+                                            // task_detail_sheet.dart's own
+                                            // "Delete" onSecondaryAction) —
+                                            // colorDestructive, not
+                                            // colorTaskAlert.
+                                            color: theme.colorDestructive,
                                             shape: BoxShape.circle,
                                           ),
                                           child: Icon(

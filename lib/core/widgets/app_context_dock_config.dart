@@ -14,6 +14,7 @@ class AppContextAction {
     this.destructive = false,
     this.accessibilityLabel,
     this.haptic = AmbleHaptic.tap,
+    this.badgeCount,
   });
 
   final String id;
@@ -25,6 +26,11 @@ class AppContextAction {
   final bool destructive;
   final String? accessibilityLabel;
   final AmbleHaptic haptic;
+
+  /// When set, an [AppBadge] overlays this action's icon (top-right
+  /// corner) — see [AppDockIconButton.badgeCount]'s own doc comment.
+  /// Null (the default) renders every existing dock action unaffected.
+  final int? badgeCount;
 }
 
 @immutable

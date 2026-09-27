@@ -13,6 +13,7 @@ import '../../shared/models/tracked_behavior.dart';
 import '../../shared/providers/preferences_providers.dart';
 import '../../shared/providers/task_providers.dart';
 import '../../shared/providers/tracked_behavior_providers.dart';
+import '../../shared/providers/trial_providers.dart';
 import '../../shared/providers/zone_providers.dart';
 import 'settings_detail_scaffold.dart';
 import 'settings_panel.dart';
@@ -215,6 +216,19 @@ class _DeveloperSettingsScreenState
                   variant: AppButtonVariant.secondary,
                   onPressed: () =>
                       ref.read(hasCompletedOnboardingProvider.notifier).reset(),
+                ),
+                SizedBox(height: theme.spacingSm),
+                // Requested directly: a way to re-test the trial-expiry ->
+                // paywall flow against a RevenueCat sandbox account
+                // without reinstalling. Rewrites installDate to right now
+                // — see InstallDate.reset()'s own doc comment. Does NOT
+                // touch panta_pro itself: that's real RevenueCat sandbox
+                // state, not something this button can fake or clear.
+                AppButton(
+                  label: 'Reset trial (restarts 21-day clock)',
+                  variant: AppButtonVariant.secondary,
+                  onPressed: () =>
+                      ref.read(installDateProvider.notifier).reset(),
                 ),
               ],
             ),
@@ -482,13 +496,14 @@ class _DeveloperSettingsScreenState
             ),
           ),
 
-          // "Tag color style" — one global setting for whether a tag's
+          // "Label color style" — one global setting for whether a label's
           // color fills the whole pill or just the small badge behind its
           // icon. Requested directly: "add config in admin that lets [you]
           // manage what gets the tag color as per tag (the pill or just
-          // the icon...)." Persisted (not a `dev_config.dart` runtime
-          // toggle) — same "real user-facing visual preference" reasoning
-          // as "Pill shape" above.
+          // the icon...)." (Copy renamed from "Tag" to "Label" alongside
+          // the rest of the app's own Tag->Label rename.) Persisted (not
+          // a `dev_config.dart` runtime toggle) — same "real user-facing
+          // visual preference" reasoning as "Pill shape" above.
           SizedBox(height: theme.spacingSm),
           SettingsPanel(
             theme: theme,
@@ -496,7 +511,7 @@ class _DeveloperSettingsScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Tag color style',
+                  'Label color style',
                   style: theme.textBody.copyWith(
                     color: theme.colorTextPrimary,
                     fontWeight: FontWeight.w700,
@@ -504,7 +519,7 @@ class _DeveloperSettingsScreenState
                 ),
                 SizedBox(height: theme.spacingXs),
                 Text(
-                  'Whether a tag\'s color fills the whole task pill, or '
+                  'Whether a label\'s color fills the whole task pill, or '
                   'just the small badge behind its icon — with the rest '
                   'of the pill a much paler tint of that same color. '
                   'Applies everywhere: Task view, List view, and Zone '

@@ -5,34 +5,43 @@ import '../../core/tokens/semantic_theme.dart';
 import '../../shared/models/category.dart';
 import '../../shared/models/tag_color_style.dart';
 
+/// [BuiltInCategoryIds.general]'s own [Category.colorToken] — a stable
+/// seed-time value (see `category_providers.dart`'s built-in seed block),
+/// named here rather than left as a bare `0` literal at every "no
+/// category chosen yet" fallback call site (`CategoryBadge`,
+/// `task_detail_sheet.dart`'s several unresolved-category placeholders).
+const int generalCategoryColorToken = 0;
+
 /// The resolved pill fill / icon glyph color for one [Category] — shared
 /// between the category-picker chips and (via `TaskCapsuleBlock`'s own
 /// legacy-aware wrapper) the timeline pill.
 ///
-/// A built-in seeded category (matched by its fixed [BuiltInCategoryIds])
-/// renders through the existing hand-tuned `categoryColors`/
-/// `categoryIconColors` Tier 2 maps — those 5 colors were deliberately
-/// spaced/measured for distinguishability and contrast (see
-/// docs/DECISIONS.md's Phase 3 / 13a-pastel entries), and there's no
-/// reason to drop that tuning just because the category is now a
-/// persisted row instead of an enum value. A genuinely custom (non-built-
-/// in) category reads its color from the new 12-swatch `categorySwatches`
-/// palette by [Category.colorToken] instead, using the same swatch for
-/// both fill and icon-ring color — the new palette is a single saturated
-/// swatch per color, not a tint+icon pair (see docs/DECISIONS.md).
+/// **Unified onto the 12-swatch `categorySwatches` palette for EVERY
+/// category, built-in or custom** — requested directly, against a
+/// screenshot showing a built-in category's light-mode pill visibly not
+/// matching its own swatch. Built-ins used to route through a separate,
+/// hand-tuned `categoryColors`/`categoryIconColors` Tier 2 map pair
+/// (`TaskCategoryToken`-keyed), independently solved per theme and never
+/// cross-checked against the swatch palette's own light/dark solving —
+/// the two systems could and did drift apart. Every built-in
+/// [Category] row already carries a stable [Category.colorToken] (set at
+/// seed time, previously unused for built-ins — see
+/// `category_providers.dart`'s own seed block), so there is exactly one
+/// color-resolution path now: [Category.colorToken] indexes
+/// [AmbleTheme.categorySwatches] for every row, same swatch for both fill
+/// and icon-ring color (matching how a custom category already worked).
 class CategoryVisual {
   const CategoryVisual({required this.pillColor, required this.iconColor});
 
   final Color pillColor;
   final Color iconColor;
 
-  /// The tag's own full-saturation color, independent of [pillColor]'s
-  /// built-in-vs-custom split — a BUILT-IN category's [pillColor] is
-  /// already a pale tint (`categoryColors`), so its true color is
-  /// [iconColor] (`categoryIconColors`, the saturated counterpart); a
-  /// CUSTOM category has only one swatch, which [pillColor] already is.
-  /// Feeds [railColorFor]'s `TagColorStyle.iconOnly` mode — see that
-  /// function's own doc comment.
+  /// The tag's own full-saturation color. `pillColor`/`iconColor` are now
+  /// always the same single swatch (see this class's own doc comment), so
+  /// this simply returns it — kept as its own getter for
+  /// [railColorFor]'s `TagColorStyle.iconOnly` mode, which was written
+  /// against "the true color, however `CategoryVisual` happens to
+  /// represent it" rather than assuming which field held it.
   Color get trueColor => iconColor;
 }
 
@@ -40,14 +49,6 @@ CategoryVisual resolveCategoryVisual({
   required AmbleTheme theme,
   required Category category,
 }) {
-  final builtInToken = builtInTokenFor(category.id);
-  if (builtInToken != null) {
-    return CategoryVisual(
-      pillColor: theme.categoryColors[builtInToken]!,
-      iconColor: theme.categoryIconColors[builtInToken]!,
-    );
-  }
-
   final swatch = theme.categorySwatches[category.colorToken];
   return CategoryVisual(pillColor: swatch, iconColor: swatch);
 }
@@ -103,7 +104,14 @@ const List<IconData> curatedCategoryIcons = [
   TablerIcons.briefcase,
   TablerIcons.home,
   TablerIcons.clipboardList,
-  TablerIcons.star,
+  // TablerIcons.star deliberately excluded — reserved for the "Important"
+  // task marker (Icons.star_rounded, task_action_sheet.dart/
+  // task_capsule_block.dart), requested directly: a Label offering the
+  // same glyph would read as if it meant "important" rather than
+  // whatever the Label itself represents. Still a real Tabler icon and
+  // still rendered correctly for any Label that already picked it before
+  // this change — only removed from the picker's own offered choices,
+  // not a data migration.
   TablerIcons.bulb,
   TablerIcons.book,
   TablerIcons.run,
@@ -168,7 +176,10 @@ const List<IconData> curatedCategoryIcons = [
   TablerIcons.printer,
   TablerIcons.calculator,
   TablerIcons.presentation,
-  TablerIcons.folder,
+  // TablerIcons.folder deliberately excluded — reserved for Sections
+  // ("Inbox folders," see shared/models/section.dart), so a Label can't
+  // visually pass itself off as a folder. Same "picker choice only, not
+  // a data migration" reasoning as TablerIcons.star above.
   // Home & chores.
   TablerIcons.armchair,
   TablerIcons.sofa,
@@ -254,13 +265,11 @@ const List<IconData> curatedCategoryIcons = [
 
 /// The built-in categories' default Tabler glyph — requested directly:
 /// "let's get tabler icons installed and use it instead of emojis for
-/// categories." Replaces `TaskCategoryTokenMapping.emoji`'s literal glyph
-/// per built-in id; General stays a plain outline circle, same reasoning
-/// as that mapping's own `''`/`Icons.circle_outlined` default: "the whole
-/// point is the absence of one," now expressed as the most neutral glyph
-/// in the set rather than an absent one, since a live [Category] row (see
-/// [categoryIconFor]) always resolves to SOME icon rather than optionally
-/// none.
+/// categories." [categoryIconFor] never actually calls this for General
+/// any more (that id resolves to null before reaching here) — the `_`
+/// fallback below is for a genuinely unrecognized id, not General; see
+/// [categoryIconFor]'s own doc comment for the full "no icon for
+/// untagged" reasoning.
 IconData builtInIconFor(String categoryId) => switch (categoryId) {
   BuiltInCategoryIds.health => TablerIcons.heart,
   BuiltInCategoryIds.work => TablerIcons.briefcase,
@@ -280,7 +289,22 @@ IconData builtInIconFor(String categoryId) => switch (categoryId) {
 /// else (a genuinely custom category created before this field existed,
 /// still only carrying a legacy [Category.emoji]) null — the caller falls
 /// back to that legacy emoji text itself, see [CategoryGlyph].
+///
+/// **General always resolves to null, never a fallback glyph.** General
+/// IS the "untagged" state (every new task defaults its `categoryId` to
+/// it explicitly — see `Task.create`'s own callers), so a task that has
+/// never had a real category chosen must render no icon at all — not
+/// [builtInIconFor]'s own generic `TablerIcons.circle` default, which is
+/// meant for a genuinely unrecognized id, not this specific "no category
+/// chosen" placeholder. Checked here, in the one shared resolver, rather
+/// than at each call site: this used to be special-cased only inside
+/// [CategoryGlyph]'s own `build()`, which left `task_capsule_block.dart`'s
+/// `_CapsuleCategoryVisual` — a caller that reads this function directly,
+/// not through `CategoryGlyph` — still showing a circle for an untagged
+/// task's Timeline capsule. Reported directly against a screenshot: "New
+/// task should not have icon if label not set."
 IconData? categoryIconFor(Category category) {
+  if (category.id == BuiltInCategoryIds.general) return null;
   final codePoint = category.iconCodePoint;
   if (codePoint != null) {
     // Not const — codePoint is a runtime value read from persisted data,
@@ -333,22 +357,14 @@ class CategoryGlyph extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // **2026-09-24 — General renders NO glyph, not its circle icon.**
-    // General IS the "untagged" state (every new task defaults its
-    // `categoryId` to it explicitly — see `Task.create`'s own callers),
-    // so a task that has never had a real category chosen was still
-    // rendering `TablerIcons.circle` here, on the exact same "General
-    // is a real Category row" path this widget was built to handle
-    // generically. Reported directly against a screenshot: "should not
-    // have any icon if not tagged with tag with icon." Matches
-    // `CategoryBadge`'s own null-category fallback (no category at
-    // all) — the two paths now agree on what "untagged" looks like.
-    if (category.id == BuiltInCategoryIds.general) {
-      return const SizedBox.shrink();
-    }
+    // General (the "untagged" state) resolves to null here — see
+    // [categoryIconFor]'s own doc comment for why that check lives there
+    // now, shared by every caller, rather than duplicated in this widget.
     final icon = categoryIconFor(category);
     if (icon != null) return Icon(icon, size: size, color: color);
-    if (category.emoji.isEmpty) return const SizedBox.shrink();
+    if (category.id == BuiltInCategoryIds.general || category.emoji.isEmpty) {
+      return const SizedBox.shrink();
+    }
     return Text(category.emoji, style: TextStyle(fontSize: size));
   }
 }
@@ -403,7 +419,7 @@ class CategoryBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final resolvedCategory = category;
     final badgeColor = resolvedCategory == null
-        ? theme.categoryColors[TaskCategoryToken.general]!
+        ? theme.categorySwatches[generalCategoryColorToken]
         : resolveCategoryVisual(
             theme: theme,
             category: resolvedCategory,

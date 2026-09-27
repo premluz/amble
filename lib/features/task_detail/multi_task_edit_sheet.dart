@@ -184,7 +184,7 @@ class _MultiTaskEditFormState extends ConsumerState<_MultiTaskEditForm> {
             children: [
               Expanded(
                 child: Text(
-                  'Tag',
+                  'Label',
                   style: theme.textBody.copyWith(
                     color: theme.colorTextPrimary,
                   ),

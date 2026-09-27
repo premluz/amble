@@ -112,7 +112,7 @@ void main() {
       expect(find.text('New template'), findsOneWidget);
       expect(find.text('Done'), findsOneWidget);
       expect(find.text('Create template'), findsNothing);
-      expect(find.text('Tag'), findsNothing);
+      expect(find.text('Label'), findsNothing);
       expect(find.text('Default duration'), findsNothing);
 
       await tester.enterText(_nameField(), 'Take a walk');
@@ -120,7 +120,7 @@ void main() {
       await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Tag'), findsOneWidget);
+      expect(find.text('Label'), findsOneWidget);
       expect(find.text('Default duration'), findsOneWidget);
       expect(find.text('Create template'), findsOneWidget);
     },
@@ -143,7 +143,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('New template'), findsNothing);
-      expect(find.text('Tag'), findsNothing);
+      expect(find.text('Label'), findsNothing);
     },
   );
 
@@ -169,7 +169,7 @@ void main() {
 
     expect(find.text('Edit template'), findsOneWidget);
     expect(find.text('Save template'), findsOneWidget);
-    expect(find.text('Tag'), findsOneWidget);
+    expect(find.text('Label'), findsOneWidget);
     expect(find.text('Default duration'), findsOneWidget);
   });
 

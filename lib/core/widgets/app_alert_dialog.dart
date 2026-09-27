@@ -86,7 +86,7 @@ class AppAlertDialog {
                 secondaryAction.label,
                 style: TextStyle(
                   color: secondaryAction.isDestructive
-                      ? theme.colorTaskAlert
+                      ? theme.colorDestructive
                       : null,
                 ),
               ),
@@ -97,7 +97,7 @@ class AppAlertDialog {
                 primaryAction.label,
                 style: TextStyle(
                   color: primaryAction.isDestructive
-                      ? theme.colorTaskAlert
+                      ? theme.colorDestructive
                       : null,
                 ),
               ),
@@ -180,7 +180,7 @@ class AppAlertDialog {
                             .pop(AppAlertDialogChoice.destructive),
                     child: Text(
                       destructiveAction.label,
-                      style: TextStyle(color: theme.colorTaskAlert),
+                      style: TextStyle(color: theme.colorDestructive),
                     ),
                   ),
                   TextButton(

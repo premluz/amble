@@ -52,7 +52,7 @@ final class InstallDateProvider extends $NotifierProvider<InstallDate, void> {
   }
 }
 
-String _$installDateHash() => r'11d29e6068468b6106104d16fab8b33349b7e18d';
+String _$installDateHash() => r'c9d041597ba18e42a9973c4f124b8acdc5d8a9ff';
 
 /// Writes [PreferenceKeys.installDate] once, on this install's first
 /// launch. Called from `main.dart` before `runApp`, same "launch-only,
@@ -83,6 +83,17 @@ abstract class _$InstallDate extends $Notifier<void> {
 /// is actually running). Treating "not recorded yet" as "day zero" rather
 /// than "trial over" errs toward not locking out a fresh install on a
 /// technicality.
+///
+/// Also returns 0 if [preferencesRepositoryProvider] itself throws
+/// [HiveError] (its box was never opened) — every widget test that
+/// exercises `TaskList.createTask`/`captureTask` without deliberately
+/// testing the trial gate now transitively depends on this provider (it
+/// didn't before), and the overwhelming majority of them have no reason
+/// to know or care about a `preferences` box. Confirmed via
+/// AskUserQuestion: degrade to "trial active" rather than requiring every
+/// one of those ~100 pre-existing test files to add an override for a
+/// feature they aren't testing — same "unconfigured means don't block"
+/// posture `RevenueCatConfig.isAvailable` already takes for purchases.
 
 @ProviderFor(daysSinceInstall)
 final daysSinceInstallProvider = DaysSinceInstallProvider._();
@@ -93,6 +104,17 @@ final daysSinceInstallProvider = DaysSinceInstallProvider._();
 /// is actually running). Treating "not recorded yet" as "day zero" rather
 /// than "trial over" errs toward not locking out a fresh install on a
 /// technicality.
+///
+/// Also returns 0 if [preferencesRepositoryProvider] itself throws
+/// [HiveError] (its box was never opened) — every widget test that
+/// exercises `TaskList.createTask`/`captureTask` without deliberately
+/// testing the trial gate now transitively depends on this provider (it
+/// didn't before), and the overwhelming majority of them have no reason
+/// to know or care about a `preferences` box. Confirmed via
+/// AskUserQuestion: degrade to "trial active" rather than requiring every
+/// one of those ~100 pre-existing test files to add an override for a
+/// feature they aren't testing — same "unconfigured means don't block"
+/// posture `RevenueCatConfig.isAvailable` already takes for purchases.
 
 final class DaysSinceInstallProvider extends $FunctionalProvider<int, int, int>
     with $Provider<int> {
@@ -102,6 +124,17 @@ final class DaysSinceInstallProvider extends $FunctionalProvider<int, int, int>
   /// is actually running). Treating "not recorded yet" as "day zero" rather
   /// than "trial over" errs toward not locking out a fresh install on a
   /// technicality.
+  ///
+  /// Also returns 0 if [preferencesRepositoryProvider] itself throws
+  /// [HiveError] (its box was never opened) — every widget test that
+  /// exercises `TaskList.createTask`/`captureTask` without deliberately
+  /// testing the trial gate now transitively depends on this provider (it
+  /// didn't before), and the overwhelming majority of them have no reason
+  /// to know or care about a `preferences` box. Confirmed via
+  /// AskUserQuestion: degrade to "trial active" rather than requiring every
+  /// one of those ~100 pre-existing test files to add an override for a
+  /// feature they aren't testing — same "unconfigured means don't block"
+  /// posture `RevenueCatConfig.isAvailable` already takes for purchases.
   DaysSinceInstallProvider._()
     : super(
         from: null,
@@ -135,7 +168,7 @@ final class DaysSinceInstallProvider extends $FunctionalProvider<int, int, int>
   }
 }
 
-String _$daysSinceInstallHash() => r'3d78050f20191429c6c51e9a07114071f8212ae9';
+String _$daysSinceInstallHash() => r'78c885efffb7c6f77b92f7d1fda18fdd511474d9';
 
 /// Whether the 21-day free trial is still active for THIS install —
 /// independent of `panta_pro`; see [canCreateTaskProvider] for the
@@ -243,7 +276,7 @@ final class DaysRemainingInTrialProvider
 }
 
 String _$daysRemainingInTrialHash() =>
-    r'4097d315b73e8de8d0b9050a1bc60e855740e316';
+    r'92bb3cd96cb244056e9f6a57bcc3faecd515cfef';
 
 /// Whether new tasks can be created right now: in trial OR `panta_pro` is
 /// active. This — not [isInTrialPeriod] alone — is what
