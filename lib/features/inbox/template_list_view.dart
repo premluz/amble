@@ -3,24 +3,34 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_press_feedback.dart';
+import '../../core/widgets/app_swipe_actions.dart';
+import '../../core/widgets/app_undo_toast.dart';
 import '../../shared/models/category.dart';
-import '../../shared/models/task.dart';
 import '../../shared/models/task_template.dart';
 import '../../shared/providers/category_providers.dart';
 import '../../shared/providers/task_template_providers.dart';
 import '../task_detail/category_visual.dart';
-import '../task_detail/task_detail_sheet.dart';
-import 'task_template_action_sheet.dart';
+import 'task_template_form.dart';
 
-/// The Inbox's "Templates" tab — every saved [TaskTemplate] as a flat list.
+/// The Settings "Templates" list — every saved [TaskTemplate] as a flat
+/// list.
 ///
-/// Each row offers Use / Edit / Delete. "Use" spawns a real [Task] from the
-/// template's fields and opens the EXISTING task detail screen pre-filled,
-/// exactly the way the Inbox's own "give it a schedule" flow already works
-/// — no second scheduling UI is built here. Nothing is persisted until the
-/// user confirms in that screen (see [showTaskDetailSheet]'s
-/// `duplicateFrom` contract, which this reuses for the same reason:
-/// dismissing the sheet must leave no task behind).
+/// **2026-09-27 — tap opens Edit; no three-dot menu; swipe left to
+/// remove.** Requested directly, unifying this list with Zones/Tags'
+/// own "tap opens the thing you'd manage, swipe to remove" shape (and
+/// with the Inbox's own task/note rows, which already use
+/// [AppSwipeActions] for exactly this): "templates should not have a
+/// three dots and sheet opening each... [they] can be slided left to be
+/// removed... templates tap goes to edit template not to create task
+/// from that template." Superseded — a tap here used to spawn a task
+/// from the template (`useTemplate`, via `showTaskDetailSheet`'s
+/// `duplicateFrom`) and a separate three-dot menu
+/// (`task_template_action_sheet.dart`) held Edit/Delete behind it;
+/// "use a template to seed a new task" still exists, just relocated
+/// entirely to `TemplateChipStrip`/`TemplateChip`
+/// (`template_chip_strip.dart`), the quick-create sheet's own separate
+/// template browser — this list's own job is now purely managing the
+/// templates themselves, matching Zones/Tags.
 class TemplateListView extends ConsumerWidget {
   const TemplateListView({super.key});
 
@@ -57,38 +67,25 @@ class TemplateListView extends ConsumerWidget {
           category: categories
               .where((c) => c.id == template.categoryId)
               .firstOrNull,
-          onUse: () => useTemplate(context, template),
-          onMore: () => showTaskTemplateActionSheet(context, template),
+          onTap: () => showTaskTemplateForm(context, template: template),
+          onRemove: () => _removeTemplate(context, ref, template),
         );
       },
     );
   }
-}
 
-/// Spawns a task from [template] and opens the task detail screen
-/// pre-filled with its fields, so the user can set a time and duration
-/// before it lands on the Timeline.
-///
-/// The seed [Task] built here is deliberately NOT persisted — it exists
-/// only to carry the template's values into the detail form, which creates
-/// the real row on Save (recording `templateId` as its provenance). This
-/// is the same non-persisting seed contract "Duplicate" already relies on,
-/// so dismissing the sheet leaves nothing behind.
-Future<void> useTemplate(BuildContext context, TaskTemplate template) {
-  final seed = Task(
-    id: template.id,
-    title: template.title,
-    notes: template.notes,
-    durationMinutes: template.durationMinutes,
-    categoryId: template.categoryId,
-    behaviorId: template.behaviorId,
-    isImportant: template.isImportant,
-  );
-  return showTaskDetailSheet(
-    context,
-    duplicateFrom: seed,
-    templateId: template.id,
-  );
+  /// Deletes immediately, no confirmation dialog — matching Zones/Tags'
+  /// own swipe-to-remove and the identical "no confirmation" contract
+  /// the old three-dot menu's own Delete already had
+  /// (`task_template_action_sheet.dart`'s `_delete`).
+  void _removeTemplate(
+    BuildContext context,
+    WidgetRef ref,
+    TaskTemplate template,
+  ) {
+    ref.read(taskTemplateListProvider.notifier).deleteTemplate(template.id);
+    AppUndoToast.show(context: context, message: 'Removed template');
+  }
 }
 
 class _EmptyState extends StatelessWidget {
@@ -112,16 +109,18 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-/// One template row — the category badge, the title and duration, and the
-/// three actions. Public so a widget test can target it directly.
+/// One template row — the category badge, the title and duration. Public
+/// so a widget test can target it directly. Tapping opens the template's
+/// own edit form; swiping left reveals Remove, matching the shared
+/// [AppSwipeActions] pattern the Inbox's own task/note rows already use.
 class TemplateRow extends StatelessWidget {
   const TemplateRow({
     super.key,
     required this.theme,
     required this.template,
     required this.category,
-    required this.onUse,
-    this.onMore,
+    required this.onTap,
+    required this.onRemove,
   });
 
   final AmbleTheme theme;
@@ -132,81 +131,66 @@ class TemplateRow extends StatelessWidget {
   /// failing to render a row the user can still delete.
   final Category? category;
 
-  final VoidCallback onUse;
-
-  /// Null omits the trailing "more" (Edit/Delete) affordance entirely —
-  /// used by the Add Task sheet's own template browser, requested
-  /// directly ("Templates just as they are rendered in the Template tab
-  /// in Inbox, without these three dots"): that context only ever picks a
-  /// template to seed a new task from, never manages the template list
-  /// itself, so editing/deleting one belongs solely to the Inbox's own
-  /// Templates tab.
-  final VoidCallback? onMore;
+  final VoidCallback onTap;
+  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
     final badgeSize = theme.spacingXl;
 
-    return AppPressFeedback(
-      onTap: onUse,
-      borderRadius: BorderRadius.circular(theme.radiusXl),
-      child: Container(
-        padding: EdgeInsets.all(theme.spacingMd),
-        decoration: BoxDecoration(
-          color: theme.colorSurfaceSecondary,
-          borderRadius: BorderRadius.circular(theme.radiusXl),
-          // No border. Matches AppPane's own reasoning: the card and page
-          // background are too close in lightness for a flat edge to read
-          // softly, so a shadow carries it instead of a border. Reported
-          // directly as a hard edge on task/template cards.
-          boxShadow: theme.shadowPane,
-        ),
-        child: Row(
-          children: [
-            CategoryBadge(theme: theme, category: category, size: badgeSize),
-            SizedBox(width: theme.spacingSm),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    template.title,
-                    style: theme.textBody.copyWith(fontWeight: FontWeight.w700),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (template.durationMinutes != null) ...[
-                    SizedBox(height: theme.spacingXs),
+    return AppSwipeActions(
+      endAction: AppSwipeAction(
+        icon: Icons.delete_outline_rounded,
+        background: theme.colorTaskAlert,
+        semanticLabel: 'Remove template',
+        destructive: true,
+        onActivate: onRemove,
+      ),
+      child: AppPressFeedback(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(theme.radiusXl),
+        child: Container(
+          padding: EdgeInsets.all(theme.spacingMd),
+          decoration: BoxDecoration(
+            color: theme.colorSurfaceSecondary,
+            borderRadius: BorderRadius.circular(theme.radiusXl),
+            // No border. Matches AppPane's own reasoning: the card and
+            // page background are too close in lightness for a flat edge
+            // to read softly, so a shadow carries it instead of a
+            // border. Reported directly as a hard edge on task/template
+            // cards.
+            boxShadow: theme.shadowPane,
+          ),
+          child: Row(
+            children: [
+              CategoryBadge(theme: theme, category: category, size: badgeSize),
+              SizedBox(width: theme.spacingSm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      '${template.durationMinutes} min',
+                      template.title,
                       style: theme.textBody.copyWith(
-                        color: theme.colorTextSecondary,
+                        fontWeight: FontWeight.w700,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
+                    if (template.durationMinutes != null) ...[
+                      SizedBox(height: theme.spacingXs),
+                      Text(
+                        '${template.durationMinutes} min',
+                        style: theme.textBody.copyWith(
+                          color: theme.colorTextSecondary,
+                        ),
+                      ),
+                    ],
                   ],
-                ],
-              ),
-            ),
-            // Edit and Delete live behind this, in an AppSheet of
-            // ActionRows — the exact pattern an ordinary task already
-            // uses (`task_action_sheet.dart`), rather than a second,
-            // row-local convention invented for this list. The row's own
-            // tap stays the primary action (Use), same as tapping a task
-            // opens its detail. Omitted entirely when [onMore] is null —
-            // see that field's own doc comment.
-            if (onMore != null)
-              GestureDetector(
-                onTap: onMore,
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: EdgeInsets.all(theme.spacingSm),
-                  child: Icon(
-                    Icons.more_horiz_rounded,
-                    color: theme.colorTextSecondary,
-                  ),
                 ),
               ),
-          ],
+            ],
+          ),
         ),
       ),
     );

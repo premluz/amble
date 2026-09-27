@@ -17,6 +17,7 @@ import '../services/trim_reschedule.dart';
 import '../services/recurrence_generator.dart';
 import 'notification_providers.dart';
 import 'preferences_providers.dart';
+import 'trial_providers.dart';
 
 part 'task_providers.g.dart';
 
@@ -113,6 +114,15 @@ class TaskList extends _$TaskList {
   /// without a second lookup — the Timeline uses this to know which block
   /// to animate in (see `recently_saved_task_provider.dart`). Callers with
   /// no such need simply ignore the value.
+  ///
+  /// Throws [TrialExpiredException] once the 21-day trial has ended and
+  /// `panta_pro` is not active — requested directly ("lock behind 21 day
+  /// trial ability to add new tasks via any route"). Checked HERE, not at
+  /// each of the 4+ UI call sites (quick capture, task detail sheet,
+  /// quick-create overlay, both native App Intent platforms) — this and
+  /// [captureTask] are the only two methods that ever persist a brand-new
+  /// Task, so gating them is the one place a future 5th creation route
+  /// can't slip past. See `trial_providers.dart`.
   Future<Task> createTask({
     required String title,
     String? notes,
@@ -129,6 +139,9 @@ class TaskList extends _$TaskList {
     // for cascade or validation. See Task.templateId's own doc comment.
     String? templateId,
   }) async {
+    if (!ref.read(canCreateTaskProvider)) {
+      throw const TrialExpiredException();
+    }
     final task = Task.create(
       title: title,
       notes: notes,
@@ -277,7 +290,14 @@ class TaskList extends _$TaskList {
   /// (capture is frictionless, prioritization is deferred) — no other
   /// fields are required. No notification to sync — an unscheduled task has
   /// no start time to alert on.
+  ///
+  /// Throws [TrialExpiredException] — see [createTask]'s own doc comment;
+  /// this is the other of the two methods that ever persist a brand-new
+  /// Task, so it carries the identical gate.
   Future<void> captureTask(String title) async {
+    if (!ref.read(canCreateTaskProvider)) {
+      throw const TrialExpiredException();
+    }
     final task = Task.captured(title: title);
     await ref.read(taskRepositoryProvider).saveTask(task);
     _refresh();

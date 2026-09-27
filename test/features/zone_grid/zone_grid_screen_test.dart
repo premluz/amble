@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_bottom_dock.dart';
+import 'package:amble/core/widgets/app_button.dart';
 import 'package:amble/core/widgets/app_shell_chrome.dart';
 import 'package:amble/shared/providers/preferences_providers.dart';
 import 'package:amble/shared/providers/zone_providers.dart';
@@ -12,10 +13,16 @@ import 'package:amble/features/zone_grid/zone_grid_block.dart';
 import 'package:amble/features/zone_grid/zone_grid_tab.dart';
 import 'package:amble/features/zone_grid/new_zone_sheet.dart';
 import 'package:amble/features/timeline/edit_selection_provider.dart';
+import 'package:amble/features/timeline/pending_task_draft_provider.dart';
 import 'package:amble/shared/services/zone_cascade_reschedule.dart';
 import 'package:amble/shared/models/zone.dart';
+import 'package:amble/shared/models/task.dart';
+import 'package:amble/shared/providers/task_providers.dart';
+import 'package:amble/shared/repositories/task_repository.dart';
 
 import '../../support/memory_zone_repositories.dart';
+import '../../support/fake_notification_service.dart';
+import 'package:amble/shared/providers/notification_providers.dart';
 
 void main() {
   late MemoryZoneRepository repository;
@@ -26,6 +33,8 @@ void main() {
     facets = MemoryZoneFacetRepository();
     container = ProviderContainer(
       overrides: [
+        taskRepositoryProvider.overrideWithValue(_MemoryTasks()),
+        notificationServiceProvider.overrideWithValue(FakeNotificationService()),
         zoneRepositoryProvider.overrideWithValue(repository),
         zoneFacetRepositoryProvider.overrideWithValue(facets),
         preferencesRepositoryProvider.overrideWithValue(
@@ -52,6 +61,59 @@ void main() {
       ),
     );
     await tester.pump();
+  }
+
+  // The real shell embeds `ZoneGridScreen` inside `AppShellChromeScope` with
+  // a real `AppBottomDock` as a SIBLING in an outer `Stack` (`main.dart`'s
+  // own structure) — the bare `pump` helper above mounts neither, so
+  // `_claimOrBuildDock`'s `controller == null` branch renders the dock
+  // LOCALLY inside `zone_grid_screen.dart`'s own `Stack` instead, at a
+  // position that (in a test harness) can end up obstructed by other
+  // content in that same local stack. Any test that needs to actually TAP
+  // a dock action (Close/Edit/Remove) needs this real shell wiring instead
+  // of the bare `pump`, or the tap can silently miss.
+  Future<void> pumpWithShell(WidgetTester tester) async {
+    tester.view.physicalSize = const Size(430, 932);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final chromeController = AppShellChromeController();
+    addTearDown(chromeController.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: ThemeData(extensions: [AmbleTheme.dark]),
+          home: Scaffold(
+            body: AppShellChromeScope(
+              controller: chromeController,
+              child: Stack(
+                children: [
+                  const ZoneGridScreen(initialTab: ZoneGridTab.zones),
+                  SafeArea(
+                    top: false,
+                    child: Align(
+                      alignment: Alignment.bottomLeft,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: AppBottomDock(
+                          activeView: AppBottomDockView.timeline,
+                          onSelectView: (_) {},
+                          onEditTap: () {},
+                          whatMattersEnabled: false,
+                          onWhatMattersTap: () {},
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
   }
 
   Offset point(WidgetTester tester, int day, int minute) {
@@ -203,11 +265,21 @@ void main() {
         rect.center.dy,
       );
       final column = (point(tester, 4, 300) - point(tester, 3, 300)).dx;
+      final widths = <double>[];
       final g = await tester.startGesture(from);
       for (var i = 1; i <= 30; i++) {
         await g.moveTo(from + Offset(direction * column * 2 * i / 30, 0));
         await tester.pump();
+        final marker = find.byKey(const ValueKey('zone-marquee-body'));
+        if (marker.evaluate().isNotEmpty) widths.add(tester.getSize(marker).width);
       }
+      expect(widths.toSet().length, greaterThan(10),
+        reason: 'the marker follows pixels, not whole-day jumps');
+      expect(find.byKey(const ValueKey('zone-marquee-body')), findsOneWidget);
+      expect(find.byKey(const ValueKey('zone-paint-selection')), findsOneWidget);
+      expect(find.byKey(const ValueKey('zone-phantom-3')), findsOneWidget);
+      expect(tester.getSize(find.byKey(const ValueKey('zone-marquee-body'))).width,
+        greaterThan(column * 2));
       await g.up();
       await tester.pumpAndSettle();
       expect(
@@ -224,43 +296,114 @@ void main() {
     });
   }
 
-  testWidgets(
-    'sideways fill survives rebuilds and copies hours, not other placements',
-    (tester) async {
-      final source =
-          (await container
-                  .read(zoneListProvider.notifier)
-                  .paintWeeklyZones(
-                    title: 'Commute',
-                    weekdays: {1},
-                    startMinutes: 240,
-                    endMinutes: 300,
-                  ))
-              .single;
-      await pump(tester);
-      await tester.tapAt(point(tester, 1, 270));
-      await tester.pump();
-      expect(container.read(zoneEditSelectionProvider), contains(source.id));
-      final g = await tester.startGesture(point(tester, 1, 270));
-      await g.moveTo(point(tester, 2, 270));
-      await tester.pump();
-      await g.moveTo(point(tester, 4, 270));
-      await tester.pump();
-      expect(find.byKey(const ValueKey('zone-phantom-4')), findsOneWidget);
-      await g.up();
-      await tester.pump(const Duration(milliseconds: 200));
-      await tester.pump(const Duration(milliseconds: 300));
-      expect(repository.getAll(), hasLength(4));
-      expect(
-        repository.getAll().every(
-          (z) => z.startMinutes == 240 && z.endMinutes == 300,
-        ),
-        isTrue,
+  for (final sourceDay in [1, 7]) {
+    testWidgets(
+      'sideways body drag from $sourceDay moves without copying',
+      (tester) async {
+        final source =
+            (await container
+                    .read(zoneListProvider.notifier)
+                    .paintWeeklyZones(
+                      title: 'Commute',
+                      weekdays: {sourceDay},
+                      startMinutes: 240,
+                      endMinutes: 300,
+                    ))
+                .single;
+        await pump(tester);
+        await tester.tapAt(point(tester, sourceDay, 270));
+        await tester.pump();
+        expect(container.read(zoneEditSelectionProvider), contains(source.id));
+        final g = await tester.startGesture(point(tester, sourceDay, 270));
+        await g.moveTo(point(tester, sourceDay == 1 ? 2 : 6, 270));
+        await tester.pump();
+        await g.moveTo(point(tester, 4, 270));
+        await tester.pump();
+        expect(find.byKey(const ValueKey('zone-phantom-4')), findsNothing);
+        expect(
+          tester.widget<ZoneGridBlock>(find.byType(ZoneGridBlock)).horizontalOffset,
+          isNot(0),
+        );
+        await g.up();
+        await tester.pump(const Duration(milliseconds: 200));
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(repository.getAll(), hasLength(1));
+        expect(repository.getAll().single.weekday, 4);
+        expect(repository.getAll().single.id, source.id);
+        expect(
+          repository.getAll().every(
+            (z) => z.startMinutes == 240 && z.endMinutes == 300,
+          ),
+          isTrue,
+        );
+        expect(find.byType(ZoneGridBlock), findsOneWidget);
+        await tester.tap(find.text('Undo'));
+        await tester.pumpAndSettle();
+        expect(repository.getAll().single.weekday, sourceDay);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  for (final horizontal in [false, true]) {
+    testWidgets('selected zone group moves vertically and diagonal=$horizontal', (tester) async {
+      final zones = await container.read(zoneListProvider.notifier).paintWeeklyZones(
+        title: 'Work', weekdays: {2, 4}, startMinutes: 240, endMinutes: 360,
       );
-      expect(find.byType(ZoneGridBlock), findsNWidgets(4));
-      expect(tester.takeException(), isNull);
-    },
-  );
+      await pump(tester);
+      for (final zone in zones) {
+        container.read(zoneEditSelectionProvider.notifier).toggle(zone.id);
+        await tester.pump();
+      }
+      final from = point(tester, 2, 300);
+      final to = point(tester, horizontal ? 3 : 2, 360);
+      final gesture = await tester.startGesture(from);
+      for (var step = 1; step <= 20; step++) {
+        await gesture.moveTo(Offset.lerp(from, to, step / 20)!);
+        await tester.pump();
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+      final moved = repository.getAll();
+      expect(moved, hasLength(2));
+      expect(moved.map((z) => z.id).toSet(), zones.map((z) => z.id).toSet());
+      expect(moved.map((z) => z.weekday).toSet(), horizontal ? {3, 5} : {2, 4});
+      expect(moved.every((z) => z.startMinutes == 300 && z.endMinutes == 420), isTrue);
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(repository.getAll().every((z) => z.startMinutes == 240), isTrue);
+    });
+  }
+
+
+  for (final top in [true, false]) {
+    testWidgets('selected zone handle resizes the group top=$top', (tester) async {
+      final zones = await container.read(zoneListProvider.notifier).paintWeeklyZones(
+        title: 'Work', weekdays: {2, 4}, startMinutes: 240, endMinutes: 360,
+      );
+      await pump(tester);
+      for (final zone in zones) {
+        container.read(zoneEditSelectionProvider.notifier).toggle(zone.id);
+      }
+      await tester.pump();
+      final block = find.byWidgetPredicate((w) => w is ZoneGridBlock && w.zone.id == zones.first.id);
+      final rect = tester.getRect(block);
+      final from = Offset(rect.center.dx, top ? rect.top + 2 : rect.bottom - 2);
+      final gesture = await tester.startGesture(from);
+      await gesture.moveBy(const Offset(0, 24));
+      await tester.pump();
+      await gesture.moveBy(const Offset(0, 45));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+      final stored = repository.getAll();
+      expect(stored.map((z) => z.weekday).toSet(), {2, 4});
+      expect(stored.map((z) => top ? z.startMinutes : z.endMinutes).toSet(), hasLength(1));
+      expect(stored.every((z) => top ? z.startMinutes > 240 && z.endMinutes == 360
+        : z.startMinutes == 240 && z.endMinutes > 360), isTrue);
+    });
+  }
+
   // Overlap NEVER refuses — confirmed directly, "never prevent action".
   // Replaces a test that asserted the opposite (a refusal message and a
   // single surviving zone), written when overlap hard-blocked.
@@ -845,62 +988,31 @@ void main() {
   });
 
   group('bottom dock does not overlap the naming sheet', () {
-    // The bare `pump` helper above mounts `ZoneGridScreen` with no shell
-    // around it at all, so it never exercised the actual bug: in the real
+    testWidgets('task draft suppresses claimed Edit chrome immediately', (tester) async {
+      await pumpWithShell(tester);
+      expect(find.byType(AppDockIconButton), findsWidgets);
+      container.read(pendingTaskDraftProvider.notifier).start(
+        scheduledAt: DateTime(2026, 9, 27, 10),
+        durationMinutes: quickAddDefaultMinutes,
+      );
+      await tester.pump();
+      expect(find.byType(AppDockIconButton), findsNothing);
+      container.read(pendingTaskDraftProvider.notifier).clear();
+      await tester.pumpAndSettle();
+      expect(find.byType(AppDockIconButton), findsWidgets);
+    });
+
+    // Uses the top-level `pumpWithShell` helper — see its own doc comment
+    // for why the bare `pump` helper can't exercise this: in the real
     // app, `AppBottomDock` (`main.dart`) is a PERSISTENT shell overlay
     // painted AFTER (on top of) the routed content — including whatever
     // `ZoneGridScreen` renders, `NewZoneSheet` among it. Reported directly
     // ("still bottom toolbar overlaps") after an earlier fix tried to
     // reposition the sheet to clear the dock's own height — repositioning
     // could never work, since the dock always paints last regardless of
-    // where the sheet sits. This harness reproduces that real paint order
-    // (`AppShellChromeScope` + a real `AppBottomDock`, both siblings in an
-    // outer `Stack` around `ZoneGridScreen`, exactly like `main.dart`'s
-    // own shell) so the fix — hiding the dock's own claimed actions while
-    // a naming sheet is open — has real coverage.
-    Future<void> pumpWithShell(WidgetTester tester) async {
-      tester.view.physicalSize = const Size(430, 932);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
-      final chromeController = AppShellChromeController();
-      addTearDown(chromeController.dispose);
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: container,
-          child: MaterialApp(
-            theme: ThemeData(extensions: [AmbleTheme.dark]),
-            home: Scaffold(
-              body: AppShellChromeScope(
-                controller: chromeController,
-                child: Stack(
-                  children: [
-                    const ZoneGridScreen(initialTab: ZoneGridTab.zones),
-                    SafeArea(
-                      top: false,
-                      child: Align(
-                        alignment: Alignment.bottomLeft,
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: AppBottomDock(
-                            activeView: AppBottomDockView.timeline,
-                            onSelectView: (_) {},
-                            onEditTap: () {},
-                            whatMattersEnabled: false,
-                            onWhatMattersTap: () {},
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
-    }
+    // where the sheet sits. `pumpWithShell` reproduces that real paint
+    // order so the fix — hiding the dock's own claimed actions while a
+    // naming sheet is open — has real coverage.
 
     testWidgets(
       'the dock renders no action buttons while the naming sheet is open',
@@ -926,13 +1038,9 @@ void main() {
         await gesture.moveTo(point(1, 360));
         await tester.pump();
         await gesture.up();
-        // pumpAndSettle, not a fixed-duration pump — the dock's own exit
-        // uses a real `Timer` (`AppContextDock`'s own `_pruneTimer`) to
-        // remove an exiting action from the tree once its fade finishes,
-        // which a `tester.pump(duration)` does not reliably advance the
-        // same way `pumpAndSettle` does. Every existing dock-transition
-        // test in this codebase (`zone_grid_selection_dock_test.dart`)
-        // already uses `pumpAndSettle` for exactly this reason.
+        await tester.pump();
+        expect(find.byType(AppDockIconButton), findsNothing,
+          reason: 'sheet entrance must not wait for the dock exit animation');
         await tester.pumpAndSettle();
 
         expect(find.byType(NewZoneSheet), findsOneWidget);
@@ -979,4 +1087,165 @@ void main() {
       expect(find.byType(AppDockIconButton), findsWidgets);
     });
   });
+
+  for (final count in [2, 3]) {
+    testWidgets('multi edit uses the current $count-zone shell selection', (tester) async {
+      final zones = await container.read(zoneListProvider.notifier).paintWeeklyZones(
+        title: 'Original', weekdays: {1, 2, 3, 4},
+        startMinutes: 240, endMinutes: 360,
+      );
+      await pumpWithShell(tester);
+      for (final zone in zones.take(count)) {
+        container.read(zoneEditSelectionProvider.notifier).add(zone.id);
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(find.byTooltip('Edit placement'));
+      await tester.pumpAndSettle();
+      expect(find.text('$count zones selected'), findsOneWidget);
+      await tester.enterText(find.byKey(const Key('multiZoneEditNameField')), 'Updated');
+      final save = find.widgetWithText(AppButton, 'Save');
+      await tester.ensureVisible(save);
+      await tester.pumpAndSettle();
+      await tester.tap(save);
+      await tester.pumpAndSettle();
+      for (final zone in zones.take(count)) {
+        expect(repository.getById(zone.id)!.title, 'Updated');
+      }
+      for (final zone in zones.skip(count)) {
+        expect(repository.getById(zone.id)!.title, 'Original');
+      }
+    });
+  }
+
+  group('bulk delete removes every selected zone', () {
+    // Reported directly as a regression: "when multiselecting zones and
+    // delete, it deletes 1 or 2 sometimes but not all at once selected."
+    // No existing test covered the multi-select Remove action at all —
+    // this reproduces the real UI path (select N zones via the grid's own
+    // ZoneEditSelection provider, tap the dock's Remove action) rather
+    // than calling `deleteZonesInBatch` directly, so it also catches a
+    // bug in the UI-level wiring (a stale `selected`/`zones` closure
+    // capture, a race with the dock's own claim/animation, etc.), not
+    // just the repository-level batch method in isolation.
+    testWidgets(
+      'selecting 4 zones and tapping Remove deletes all 4, not a subset',
+      (tester) async {
+        await pumpWithShell(tester);
+
+        final zones = await container
+            .read(zoneListProvider.notifier)
+            .paintWeeklyZones(
+              title: 'Work',
+              weekdays: {1, 2, 3, 4},
+              startMinutes: 240,
+              endMinutes: 360,
+            );
+        expect(zones, hasLength(4));
+        await tester.pump();
+
+        for (final zone in zones) {
+          container.read(zoneEditSelectionProvider.notifier).toggle(zone.id);
+          await tester.pumpAndSettle();
+        }
+        expect(container.read(zoneEditSelectionProvider), hasLength(4));
+        // pumpAndSettle BEFORE the tap, not just after — the dock's own
+        // Remove button enters via a staggered `Timer`-driven animation
+        // (`AppContextDock`'s own `_scheduleEntrance`/`_revealEntry`) and
+        // stays wrapped in `IgnorePointer(ignoring: ...entering)` the
+        // whole time it's still entering. A tap fired before that timer
+        // resolves is silently swallowed — confirmed directly: a single
+        // `tester.pump()` here (instead of `pumpAndSettle`) reproduced the
+        // reported bug exactly, deleting 0 zones instead of all 4.
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byTooltip('Remove placements'));
+        await tester.pumpAndSettle();
+
+        // NOT `repository.getAll(), isEmpty` — a weekly placement (every
+        // zone `paintWeeklyZones` creates has a `weekday`, so
+        // `isWeeklyPlacement` is true) is ARCHIVED by
+        // `deleteZonesInBatch`, not actually removed from storage (see
+        // that method's own doc comment: "preserves deleteZone's own
+        // per-row branching — a weekly placement is archived, not really
+        // deleted"). The real, user-visible signal is
+        // `zone_grid_screen.dart`'s own render filter
+        // (`.where((z) => z.isWeeklyPlacement && !z.archived)`), which is
+        // what the grid actually shows — every selected zone must be
+        // ARCHIVED, and none should still render as a live block.
+        final stored = repository.getAll();
+        expect(stored, hasLength(4), reason: 'archived rows still exist');
+        expect(
+          stored.every((z) => z.archived),
+          isTrue,
+          reason:
+              'every one of the 4 selected zones should be archived, not '
+              'just 1 or 2 of them',
+        );
+        expect(find.byType(ZoneGridBlock), findsNothing);
+        expect(container.read(zoneEditSelectionProvider), isEmpty);
+      },
+    );
+
+    testWidgets('selecting 8 zones and tapping Remove deletes all 8', (
+      tester,
+    ) async {
+      await pumpWithShell(tester);
+
+      final zones = await container
+          .read(zoneListProvider.notifier)
+          .paintWeeklyZones(
+            title: 'Deep work',
+            weekdays: {1, 2, 3, 4, 5, 6, 7},
+            startMinutes: 60,
+            endMinutes: 120,
+          );
+      final second = await container
+          .read(zoneListProvider.notifier)
+          .paintWeeklyZones(
+            title: 'Wind-down',
+            weekdays: {1},
+            startMinutes: 1200,
+            endMinutes: 1260,
+          );
+      final all = [...zones, ...second];
+      expect(all, hasLength(8));
+      await tester.pump();
+
+      for (final zone in all) {
+        container.read(zoneEditSelectionProvider.notifier).toggle(zone.id);
+          await tester.pumpAndSettle();
+      }
+      expect(container.read(zoneEditSelectionProvider), hasLength(8));
+      // See the 4-zone test's own comment: pumpAndSettle BEFORE the tap so
+      // the dock's Remove button has finished its own entrance animation
+      // (`IgnorePointer` blocks the tap while `entering` is still true).
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Remove placements'));
+      await tester.pumpAndSettle();
+
+      // See the 4-zone test's own comment on why this checks `archived`
+      // rather than repository emptiness.
+      final stored = repository.getAll();
+      expect(stored, hasLength(8));
+      expect(stored.every((z) => z.archived), isTrue);
+      expect(find.byType(ZoneGridBlock), findsNothing);
+    });
+  });
+}
+
+class _MemoryTasks implements TaskRepository {
+  final _tasks = <String, Task>{};
+  @override
+  List<Task> getTasks() => _tasks.values.toList();
+  @override
+  Task? getTaskById(String id) => _tasks[id];
+  @override
+  Future<void> saveTask(Task task) async {
+    _tasks[task.id] = task;
+  }
+  @override
+  Future<void> deleteTask(String id) async {
+    _tasks.remove(id);
+  }
 }

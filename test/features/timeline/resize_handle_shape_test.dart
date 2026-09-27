@@ -180,7 +180,10 @@ void main() {
 
     expect(
       circleRect.center.dy,
-      closeTo(handleRect.top + circleRect.height / 2 + theme.borderWidthHairline / 2, 0.5),
+      closeTo(
+        handleRect.top + circleRect.height / 2 + theme.borderWidthHairline / 2,
+        0.5,
+      ),
       reason: 'centered exactly on the handle\'s own edge — zero shift',
     );
   });

@@ -14,8 +14,10 @@ class ZoneMove {
     required this.newStartMinutes,
     required this.newEndMinutes,
     required this.taskMoves,
+    this.newWeekday,
   });
 
+  final int? newWeekday;
   final String zoneId;
   final int newStartMinutes;
   final int newEndMinutes;

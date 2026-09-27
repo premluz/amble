@@ -54,6 +54,7 @@ import 'shared/providers/task_template_providers.dart';
 import 'shared/providers/preferences_providers.dart';
 import 'shared/providers/purchases_providers.dart';
 import 'shared/providers/tracked_behavior_providers.dart';
+import 'shared/providers/trial_providers.dart';
 import 'shared/providers/zone_providers.dart';
 
 void main() async {
@@ -134,6 +135,14 @@ void main() async {
     onNotificationTap: (taskId) =>
         container.read(notificationTapProvider.notifier).set(taskId),
   );
+
+  // Records this install's first-launch timestamp, once — powers the
+  // 21-day free trial that gates new-task creation without `panta_pro`
+  // (requested directly: "lock behind 21 day trial ability to add new
+  // tasks via any route"). Must run before anything below could possibly
+  // create a task, so the trial clock is never absent when
+  // `canCreateTaskProvider` is first read. See `trial_providers.dart`.
+  await container.read(installDateProvider.notifier).recordIfNeeded();
 
   // One-time migration: an existing user's single `TaskSize` choice seeds
   // the newly-independent `TaskFontSize` setting, by name, exactly once —

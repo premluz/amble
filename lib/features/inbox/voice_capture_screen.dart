@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_modal_route.dart';
+import '../../core/widgets/app_trial_gate.dart';
 import '../../core/widgets/app_voice_waveform.dart';
+import '../../shared/providers/trial_providers.dart';
 import 'voice_capture_provider.dart';
 import 'voice_capture_screen_parts.dart';
 
@@ -165,9 +167,30 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
                             // created, it's disabled, not available").
                             onPressed: state.canSubmit && !isSubmitting
                                 ? () async {
-                                    await ref
-                                        .read(voiceCaptureProvider.notifier)
-                                        .submit();
+                                    final notifier = ref.read(
+                                      voiceCaptureProvider.notifier,
+                                    );
+                                    // Same "trial expired -> present the
+                                    // paywall -> retry once" shape as
+                                    // quick_capture_sheet.dart's own
+                                    // _retryAfterPaywallIfExpired —
+                                    // submit()'s own per-segment
+                                    // createTask/captureTask calls throw
+                                    // TrialExpiredException identically.
+                                    try {
+                                      await notifier.submit();
+                                    } on TrialExpiredException {
+                                      if (!context.mounted) return;
+                                      final unlocked =
+                                          await presentPaywallForTrialExpired(
+                                            context,
+                                            ref,
+                                          );
+                                      if (!unlocked || !context.mounted) {
+                                        return;
+                                      }
+                                      await notifier.submit();
+                                    }
                                     if (context.mounted) {
                                       Navigator.of(context).pop();
                                     }

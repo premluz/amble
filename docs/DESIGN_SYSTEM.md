@@ -195,6 +195,44 @@ to extend this widget, not to hand-roll a look-alike.
 
 ---
 
+## Zones — saved blocks and ghost placeholders
+
+Saved weekly zones use `ZoneGridBlock`: `colorSurfaceSecondary`, `radiusSm`,
+and the compact `textZoneName` label. Body drags move the current selection
+in both time and weekday; top/bottom handles resize time; side handles extend
+the active zone's hours to additional weekdays. Empty grid space remains scrollable.
+Batch actions read the current selected IDs at invocation, not the set captured
+when the toolbar first appeared.
+
+The new-zone and existing-zone extension previews share `_marqueeBody` and
+`_Phantom` in `zone_grid_screen.dart`:
+
+- One `SelectedPillBorder` encloses the span: accent ring, theme-surface
+  separation, `radiusMd`, and accent fill at 9% alpha.
+- During side extension the moving boundary follows pointer pixels; weekday
+  ghost membership and the saved placements snap to columns.
+- Each covered weekday has a non-interactive ghost: `colorSurfaceSecondary`
+  at 55% alpha, `radiusMd`, a centered rotated `textCaption` title in
+  `colorTextSecondary`, and ellipsis overflow. No independent accent outline.
+- Ghosts are inset by `spacingXs` horizontally and half `spacingXs` vertically.
+  They preview placement only; persistence occurs on release or confirmation.
+- Hide the original source block visually during extension, preserving its
+  gesture element. Only the shared marquee and its handles should be visible.
+
+## Task pills — saved and draft materials
+
+Saved tasks use `TaskCapsuleBlock` and the current `radiusPill` setting.
+`PendingTaskPill` is an unsaved placement and uses `GlassPillSurface` in
+`GlassPillMaterial.glass`: theme `colorSurfaceBlurOverlay` over a clipped
+`blurOverlaySigma` backdrop blur. It carries no invented category glyph.
+The draft is wrapped in `SelectedPillBorder` with `fillColor: null`, preserving
+its glass material and the same accent/theme-surface selection rings as zones.
+Imported calendar pills use `GlassPillMaterial.flat` without blur; they are real
+calendar entries, not ghosts. Zone ghosts remain flat translucent panes rather
+than adopting the task pill's glass material.
+
+---
+
 ## Hour/time indicator — `TaskEdgeTimeLabel`
 
 **File**: `lib/features/timeline/task_edge_time_label.dart`
@@ -401,8 +439,8 @@ whole list is visible at once.
 **Files**: `lib/features/timeline/task_manipulation_targets.dart`,
 `task_compact_controls.dart`, and `cancel_safe_vertical_drag.dart`.
 
-The task shows exactly two resize dots, centered on the capsule's top and
-bottom edges. There are no displaced Start/End controls, visible labels, or
+The task shows exactly two resize dots, centered on the selection stroke at
+the capsule's top and bottom. There are no displaced Start/End controls, visible labels, or
 connector lines. Enlarging interaction geometry must not reposition the dots
 or the visual capsule.
 
@@ -421,6 +459,33 @@ recognizer cancellation and raw pointer cancellation into one callback.
 **Never**: use `Clip.none` as evidence that painted overflow is hittable, give
 overlapping Start/End detectors the same bounds, remove handles from secondary
 selected tasks, or treat cancellation as a successful drag end.
+
+---
+
+## Resize handle visual — `ResizeHandleDot`
+
+`lib/core/widgets/resize_handle_dot.dart` owns the visual used by task and
+zone time handles, saved-zone side handles, and the new-zone marquee.
+Diameter is `spacingSm`; fill is `colorAccent`. A border painted inside the
+dot uses `colorSurfacePrimary` at `borderWidthHairline / 2`, separating it
+from the accent selection outline in both light and dark themes.
+
+Place its center inward by `ResizeHandleDot.edgeInset(theme)` (half the
+selection stroke width) from the geometric edge, on the stroke's centerline.
+Top moves down, bottom up, left rightward, and right leftward. Position the
+visual independently of the larger invisible gesture target.
+
+Selected weekly zones expose left/right handles that copy their hours and
+zone identity to the crossed weekdays through the existing day-fill operation.
+Time handles change start/end. Dragging the body moves the existing placement
+in time or to another weekday, preserving its ID; only side handles copy to
+additional days. During day-fill, replace the source's visible selection with
+ONE expanding marquee and per-day ghosts, using the same marker as an unsaved
+zone. Keep the source gesture mounted but invisible until release; preview
+handles must not intercept that drag. New-zone marquee side resizing keeps the opposite edge fixed and
+tracks horizontal pixels continuously, snapping the final outline to days
+on release. Key each handle by its edge so adding day previews cannot replace
+the recognizer during an active gesture.
 
 ---
 
@@ -523,6 +588,15 @@ Cupertino's native modal-popup styling. Screens must never reach for
 `showModalBottomSheet`/`showCupertinoModalPopup` directly (per
 CONSTITUTION.md design principle 4).
 
+**Inline creation sheets and toolbox:** Edit task drafts and new-zone naming
+sheets remain in-tree so the timeline/marquee stays interactive. Edit publishes
+`AppShellChromeController.setDockObscured(true)` for the whole draft lifetime,
+including keyboard movement and sheet dismissal animation. `AppBottomDock`
+suppresses its rendering and hit targets immediately: empty action groups alone
+are insufficient because exiting buttons keep painting above nested sheets.
+Clear suppression when the draft closes or the owning Edit route releases chrome.
+This is toolbar suppression, not promotion to a modal root overlay.
+
 **Exact shape**:
 - Corners: `theme.radiusModal`, top corners only.
 - Fill: `theme.colorSurfaceOverlay` — the top of the elevation ramp, so a
@@ -596,25 +670,120 @@ a precise hit on a 4px bar.
   Close, never a different outcome. A sheet with more than one height
   state (only the quick-create overlay, so far) settles into its own
   intermediate states first; a plain single-height sheet just closes.
+  See "The drag gesture" below for how that gesture is wired and
+  whether it's visually responsive during the drag.
 
 **API**:
 ```dart
 AppSheetHandle({ required AmbleTheme theme })
 ```
 
-**Current call sites**:
-- `lib/features/task_detail/quick_create_sheet_shell.dart`
-  (`QuickCreateSheetHandle`) — the reference implementation, with its
-  own 3-state (small/minimised/full) drag controller.
-- `lib/features/inbox/quick_capture_sheet.dart` — a single-height sheet;
-  its own `GestureDetector` only needs "dragged past a threshold
-  closes," no fraction to settle into.
-
 **Never**: a bare `Container` re-declaring this bar's size/color/radius
 inline, and never `colorTextSecondary` (or any other text-contrast
 token) for a purely decorative grip — reach for `AppButton.subtleTint`
 instead, the app's one "subtle neutral tint on any surface" token,
 already shared with `AppButtonVariant.secondary`'s own fill.
+
+### The drag gesture — `AppDragToCloseHandle`, responsive by default
+
+**File**: `lib/core/widgets/app_drag_to_close_handle.dart`
+
+**Added 2026-09-26**, reported directly: "the handle pattern in sheets
+should be responsive when grabbed to drag, similar to quick create task
+on timeline... but sometimes when release earlier it stays with
+revealed button and not clickable" — actually two related reports about
+the SAME underlying gap: `new_zone_sheet.dart`'s handle didn't visually
+move at all while dragging (a bare `_dragDistance` accumulator with no
+live feedback, only a threshold check on release), unlike the Timeline
+quick-create task sheet's own handle, which visually follows the finger
+in real time via `QuickCreateSheetHeightController`.
+
+**Two sheets had independently hand-rolled the identical
+non-responsive gesture** before this: `quick_capture_sheet.dart` and
+`new_zone_sheet.dart`. Both now use this shared widget instead — this
+is the "third near-identical implementation" trigger the header-row
+section above says promotes a hand-rolled pattern into a real shared
+one (per CONSTITUTION.md design principle 5).
+
+**What it is**: wraps `AppSheetHandle`'s visual bar with the actual
+drag gesture — updates a small `AppDragToCloseController` as the finger
+moves, and on release decides close-vs-snap-back using the same
+distance-or-velocity threshold every handle already used.
+
+**Two modes, chosen per call site**:
+- **`responsive: true` (the default).** The sheet visually translates
+  with the finger DURING the drag — `controller.offset` updates on
+  every `onVerticalDragUpdate`, and the caller's own `build` reads it
+  (via `ListenableBuilder`) to apply `Transform.translate`. Releasing
+  short of the threshold animates the offset back to zero
+  (`theme.motionFast`/`curveStandard`, the same easing every other
+  sheet transition in this section uses); releasing past it calls
+  `onClose` and leaves the sheet at rest for whatever exit animation
+  the caller's own close path plays. This is the norm now — a sheet
+  that doesn't visibly respond to being grabbed reads as unresponsive
+  or broken, which is exactly what both reports above were describing.
+- **`responsive: false`.** The controller's `offset` never leaves
+  zero — the drag is still tracked and the same threshold still
+  decides close-vs-nothing on release, but nothing visually moves
+  until then. This is the EXACT previous behavior every existing
+  caller had before this widget existed; kept as an explicit opt-out
+  rather than removed, for a sheet where live translation would fight
+  its own layout (nothing currently needs this — it exists so a future
+  caller isn't forced into responsiveness if it genuinely can't
+  support it, not because two behaviors are equally recommended).
+
+**Threshold** (unchanged from what every caller already had): drag
+distance past `theme.spacingXl` (default; overridable per call site via
+`closeDistance`), OR release velocity past `800` px/s
+(`closeVelocity`) — whichever comes first.
+
+**API**:
+```dart
+final controller = AppDragToCloseController();   // create once, dispose in State.dispose
+
+AppDragToCloseHandle({
+  required AmbleTheme theme,
+  required AppDragToCloseController controller,
+  required VoidCallback onClose,
+  bool responsive = true,
+  double? closeDistance,     // defaults to theme.spacingXl
+  double closeVelocity = 800.0,
+})
+```
+
+The caller's own `build` composes the live offset in, typically as the
+OUTERMOST transform around the sheet's whole content (or, for a sheet
+that already has its own entrance/exit `Transform` — see `new_zone_sheet
+.dart` — as a SECOND, separate one nested inside it, so the two never
+fight over the same offset value):
+```dart
+ListenableBuilder(
+  listenable: controller,
+  builder: (context, child) => Transform.translate(
+    offset: Offset(0, controller.offset),
+    child: child,
+  ),
+  child: /* the sheet's own content */,
+)
+```
+
+**Current call sites**:
+- `lib/features/task_detail/quick_create_sheet_shell.dart`
+  (`QuickCreateSheetHandle`) — NOT built on this widget. It drives its
+  own richer 3-state (small/minimised/full) fraction system
+  (`QuickCreateSheetHeightController`), a genuinely different, larger
+  feature than "drag down enough and it closes." This remains the
+  reference for what a fully responsive handle should FEEL like; this
+  section's own widget generalizes that feel to the simpler one-size
+  case every other handle-bearing sheet actually has.
+- `lib/features/inbox/quick_capture_sheet.dart` — `responsive: true`
+  (the default). Previously a bare accumulator with no live feedback.
+- `lib/features/zone_grid/new_zone_sheet.dart` — `responsive: true`
+  (the default). The sheet this was reported against directly.
+
+**Never**: a THIRD hand-rolled `GestureDetector` reimplementing this
+same accumulate-then-threshold gesture at a new call site — every sheet
+with a drag-to-close handle uses this widget now.
 
 ### The header row — button positions
 
@@ -1105,6 +1274,10 @@ Removed actions lose input, focus, and semantics immediately, then fade out;
 new actions are laid out at their final position before fading in. The
 floating create button is a separate primary-action slot and is not a dock
 action.
+
+Inline creation sheets temporarily suppress the shell toolbox through
+`AppShellChromeController.dockObscured`; see **Inline creation sheets and toolbox**
+under Sheets. A feature-local Stack cannot outpaint a later shell sibling.
 
 `AppBottomDock` is mounted by the main shell and supplies an empty
 configuration outside Day. That keeps the dock element alive while pages

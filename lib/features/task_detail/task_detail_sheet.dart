@@ -16,6 +16,7 @@ import '../../core/widgets/app_segmented_time_field.dart';
 import '../../core/widgets/app_selectable_chip.dart';
 import '../../core/widgets/app_staggered_entrance.dart';
 import '../../core/widgets/app_step_scaffold.dart';
+import '../../core/widgets/app_trial_gate.dart';
 import '../../core/widgets/app_switch.dart';
 import '../../core/widgets/app_text_field.dart';
 import '../../core/widgets/app_wheel_time_picker.dart';
@@ -29,6 +30,7 @@ import '../../shared/models/task_template.dart';
 import '../../shared/providers/preferences_providers.dart';
 import '../../shared/providers/task_providers.dart';
 import '../../shared/providers/tracked_behavior_providers.dart';
+import '../../shared/providers/trial_providers.dart';
 import '../../shared/services/overlap_checker.dart';
 import '../timeline/template_chip_strip.dart';
 import 'category_visual.dart';
@@ -619,6 +621,52 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
       _resolvedScheduledAt != null &&
       _durationMinutes != null;
 
+  /// Wraps [TaskList.createTask] for this form's own create branch:
+  /// presents the paywall and retries once if the trial has expired, same
+  /// shape as `quick_capture_sheet.dart`'s own
+  /// `_retryAfterPaywallIfExpired`. Null means creation didn't happen —
+  /// [_save]'s caller returns immediately rather than treating a locked
+  /// attempt as a successful save (no pop, no `_hasSaved`/`savedNotifier`
+  /// side effects).
+  Future<Task?> _createTaskRetryingAfterPaywall(
+    TaskList notifier, {
+    required String title,
+    String? description,
+    required DateTime scheduledAt,
+    required int durationMinutes,
+    required String categoryId,
+    RecurrenceRule? recurrenceRule,
+    String? behaviorId,
+    bool notificationsEnabled = true,
+    bool isImportant = false,
+    String? templateId,
+  }) async {
+    Future<Task> attempt() => notifier.createTask(
+      title: title,
+      description: description,
+      scheduledAt: scheduledAt,
+      durationMinutes: durationMinutes,
+      categoryId: categoryId,
+      recurrenceRule: recurrenceRule,
+      behaviorId: behaviorId,
+      notificationsEnabled: notificationsEnabled,
+      isImportant: isImportant,
+      templateId: templateId,
+    );
+    try {
+      return await attempt();
+    } on TrialExpiredException {
+      if (!mounted) return null;
+      final unlocked = await presentPaywallForTrialExpired(context, ref);
+      if (!unlocked || !mounted) return null;
+      try {
+        return await attempt();
+      } on TrialExpiredException {
+        return null;
+      }
+    }
+  }
+
   Future<void> _save() async {
     // The actual re-entrancy guard, not just the button's visual state —
     // a second call while one is already in flight (a tap that lands
@@ -679,7 +727,8 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
       final savedNotifier = ref.read(recentlySavedTaskProvider.notifier);
 
       if (existing == null) {
-        final created = await notifier.createTask(
+        final created = await _createTaskRetryingAfterPaywall(
+          notifier,
           title: title,
           description: description.isEmpty ? null : description,
           scheduledAt: scheduledAt,
@@ -691,6 +740,7 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
           isImportant: _isImportant,
           templateId: _templateId,
         );
+        if (created == null) return;
         savedNotifier.record(created.id, SavedTaskChange.created);
       } else {
         // Editing an existing task, OR moving an Inbox item onto the

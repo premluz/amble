@@ -8,8 +8,13 @@ import 'package:amble/shared/models/task.dart';
 import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/models/task_status.dart';
 import 'package:amble/shared/providers/notification_providers.dart';
+import 'package:amble/shared/providers/preferences_providers.dart';
+import 'package:amble/shared/providers/purchases_providers.dart';
 import 'package:amble/shared/providers/task_providers.dart';
+import 'package:amble/shared/providers/trial_providers.dart';
+import 'package:amble/shared/repositories/hive_preferences_repository.dart';
 import 'package:amble/shared/repositories/hive_task_repository.dart';
+import 'package:amble/shared/repositories/preferences_repository.dart';
 
 import '../../support/fake_notification_service.dart';
 import '../../support/slow_cancel_notification_service.dart';
@@ -93,6 +98,98 @@ void main() {
       expect(repository.getTaskById(created.id)!.title, 'Updated title');
     },
   );
+
+  // Requested directly: "lock behind 21 day trial ability to add new
+  // tasks via any route." createTask/captureTask are the only two
+  // methods that ever persist a brand-new Task, so the gate lives here —
+  // see their own doc comments and trial_providers.dart. A dedicated
+  // container (not the shared one from setUp) makes the expired-trial
+  // state explicit rather than depending on installDateProvider's own
+  // "not recorded = day zero" default.
+  group('trial gate', () {
+    late Box<dynamic> preferencesBox;
+    late ProviderContainer expiredContainer;
+
+    setUp(() async {
+      preferencesBox = await Hive.openBox<dynamic>(
+        'test_preferences_${DateTime.now().microsecondsSinceEpoch}',
+      );
+      await preferencesBox.put(
+        PreferenceKeys.installDate,
+        DateTime.now().subtract(const Duration(days: 30)).toIso8601String(),
+      );
+      expiredContainer = ProviderContainer(
+        overrides: [
+          taskRepositoryProvider.overrideWithValue(HiveTaskRepository(box)),
+          notificationServiceProvider.overrideWithValue(
+            FakeNotificationService(),
+          ),
+          preferencesRepositoryProvider.overrideWithValue(
+            HivePreferencesRepository(preferencesBox),
+          ),
+          isPantaProProvider.overrideWithValue(false),
+        ],
+      );
+    });
+
+    tearDown(() async {
+      expiredContainer.dispose();
+      await preferencesBox.deleteFromDisk();
+    });
+
+    test(
+      'createTask throws TrialExpiredException once the trial has ended '
+      'and panta_pro is not active',
+      () async {
+        expect(
+          () => expiredContainer.read(taskListProvider.notifier).createTask(
+            title: 'Should not save',
+            scheduledAt: DateTime(2026, 8, 20, 9),
+            durationMinutes: 30,
+            categoryId: BuiltInCategoryIds.work,
+          ),
+          throwsA(isA<TrialExpiredException>()),
+        );
+        expect(expiredContainer.read(taskListProvider), isEmpty);
+      },
+    );
+
+    test(
+      'captureTask throws TrialExpiredException once the trial has ended '
+      'and panta_pro is not active',
+      () async {
+        expect(
+          () => expiredContainer
+              .read(taskListProvider.notifier)
+              .captureTask('Should not save'),
+          throwsA(isA<TrialExpiredException>()),
+        );
+        expect(expiredContainer.read(taskListProvider), isEmpty);
+      },
+    );
+
+    test('createTask succeeds once panta_pro is active despite the trial being over', () async {
+      expiredContainer.updateOverrides([
+        taskRepositoryProvider.overrideWithValue(HiveTaskRepository(box)),
+        notificationServiceProvider.overrideWithValue(
+          FakeNotificationService(),
+        ),
+        preferencesRepositoryProvider.overrideWithValue(
+          HivePreferencesRepository(preferencesBox),
+        ),
+        isPantaProProvider.overrideWithValue(true),
+      ]);
+
+      await expiredContainer.read(taskListProvider.notifier).createTask(
+        title: 'Pro unlocked',
+        scheduledAt: DateTime(2026, 8, 20, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      );
+
+      expect(expiredContainer.read(taskListProvider), hasLength(1));
+    });
+  });
 
   test('deleteTask removes it from persistence and taskListProvider', () async {
     final notifier = container.read(taskListProvider.notifier);

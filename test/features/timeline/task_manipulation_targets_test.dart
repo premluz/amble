@@ -115,8 +115,16 @@ void main() {
               )
               .first,
         );
-        expect(tester.getCenter(dots.first), visual.topCenter + Offset(0, AmbleTheme.light.borderWidthHairline / 2));
-        expect(tester.getCenter(dots.last), visual.bottomCenter - Offset(0, AmbleTheme.light.borderWidthHairline / 2));
+        expect(
+          tester.getCenter(dots.first),
+          visual.topCenter +
+              Offset(0, AmbleTheme.light.borderWidthHairline / 2),
+        );
+        expect(
+          tester.getCenter(dots.last),
+          visual.bottomCenter -
+              Offset(0, AmbleTheme.light.borderWidthHairline / 2),
+        );
       }
 
       await _dragCell(tester, rect.topLeft + Offset(36, height / 2));

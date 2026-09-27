@@ -744,6 +744,7 @@ class ZoneList extends _$ZoneList {
           ? z
           : Zone.fromJson({
               ...z.toJson(),
+              if (move.newWeekday != null) 'weekday': move.newWeekday,
               'startMinutes': move.newStartMinutes,
               'endMinutes': move.newEndMinutes,
             });
@@ -773,6 +774,7 @@ class ZoneList extends _$ZoneList {
     for (final move in moves) {
       final zone = repository.getById(move.zoneId);
       if (zone != null) {
+        if (move.newWeekday != null) zone.weekday = move.newWeekday;
         zone.startMinutes = move.newStartMinutes;
         zone.endMinutes = move.newEndMinutes;
         await repository.save(zone);

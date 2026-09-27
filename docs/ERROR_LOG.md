@@ -2196,3 +2196,83 @@ task at a low zoom. Start/End dots and connector lines covered its title.
 Removed this alternate visible layout; edge dots now use the visual capsule's
 centerline regardless of hit width. Tests check dot centers, absence of labels,
 and move/start/end ownership at seven heights including 139 and 200 px.
+
+## [2026-09-27] Marquee side resizing lost continuity at day boundaries
+
+The outline used snapped weekdays for every frame, and unkeyed handle
+positions followed a changing number of day-preview children. Adding a day
+could replace a recognizer mid-drag. Stable edge keys preserve its identity;
+a separate horizontal pixel preview follows the finger while the stored
+weekday selection remains discrete. Regression tests hold one pointer across
+several days, assert intermediate pixel positions, and verify the opposite
+edge remains fixed. Day rounding also avoids floating-point ceil promoting
+an exact column boundary to the next day.
+
+## 2026-09-27 — Shell dock outpainted Edit creation sheets
+
+A feature-local sheet cannot outpaint the shell's later dock sibling. Removing
+local task controls left the claimed shell configuration visible, while empty
+zone groups still painted exiting actions. Publish suppression at draft-open
+time (task provider listener / zone target setter), and clear on close/release.
+Regression coverage asserts the first frame, not just the settled animation.
+Horizontal body movement also needs `DragStartBehavior.down` to include the
+initial pointer displacement when snapping the destination weekday.
+
+## 2026-09-27 — Vertical zone movement and stale multi-delete selection
+
+Axis-specific body recognizers allowed the scroll view to win vertical drags.
+`ZoneBodyGesture` now owns both deltas with a reduced-slop pan. Screen-level
+regressions cover vertical/diagonal group movement and top/bottom group resize.
+The persistent dock also kept a Delete callback captured when only the first
+zone was selected. The command now snapshots live selected IDs before the batch
+write. Regression selections are pumped separately, matching actual taps rather
+than selecting every ID before the first toolbar render.
+
+## 2026-09-27 — A swipe-to-remove widget test hung 10 minutes with no real bug
+
+A new `AppSwipeActions` swipe test (Templates' Settings list) drove the drag
+correctly — instrumentation confirmed `_handleDragEnd` fired well past the
+activate threshold and called `onActivate` — yet the row stayed in the tree
+after `pumpAndSettle()`, and the test then hung for the framework's full
+default 10-minute timeout on top of that. Two false leads cost most of the
+investigation before the real cause surfaced: (1) suspecting the gesture
+technique itself (no `kTouchSlop` compensation, unlike `app_swipe_actions_test.dart`'s
+own `swipeAndHold` helper) — ruled out once instrumentation showed the drag
+comfortably clearing the threshold; (2) suspecting `AppPressFeedback`/`ListView`
+gesture-arena conflict — ruled out by reproducing `TemplateRow` standalone in
+a `ListView.separated` outside the real screen, where the swipe worked fine.
+
+The actual cause: the swiped action's `onRemove` calls a provider method
+(`TaskTemplateList.deleteTemplate`, `ZoneList.deleteUnusedFacet`,
+`CategoryList.deleteCategory`) that `await`s a REAL Hive box write before
+updating provider state. `pumpAndSettle()` alone only drains fake
+frames/microtasks in `flutter_test`'s synchronous zone — it cannot wait out
+a real-I/O `Future`, so the box write (and the state refresh after it) never
+completed and the row's removal was invisible to the test no matter how long
+`pumpAndSettle` was given. This is the exact same root-cause family as the
+already-documented "bare `await Hive.openBox()` inside `testWidgets` hangs"
+entry above, just triggered by a *release* handler instead of setup: any
+test that drives a UI action whose callback awaits real repository I/O needs
+that action wrapped in `tester.runAsync`, not just the initial seeding.
+
+Fix, proven across all three Settings lists (Templates/Zones/Tags): wrap
+`gesture.up()` itself in `tester.runAsync(() async { await gesture.up(); await
+Future<void>.delayed(Duration.zero); })`, then `pumpAndSettle()` as normal.
+Zones' own test avoided the whole problem by using the existing in-memory
+`MemoryZoneFacetRepository`/`MemoryZoneRepository` test doubles instead of a
+real Hive box — no real I/O crosses the zone boundary at all, so plain
+`pumpAndSettle()` sufficed there with no `runAsync` needed. Prefer that
+pattern when a memory-backed repository double already exists for the
+provider under test; reach for the `runAsync`-around-the-action fix only
+when the test genuinely needs a real Hive box (e.g. asserting against boxed
+`HiveObject` state directly).
+
+## 2026-09-27 — Zone multi-edit used the first selected zone
+
+The shell dock preserves its action configuration when its visual signature
+stays unchanged. The zone Edit callback captured the first selection and kept
+opening the single-zone form after more zones were selected. `_editSelectedZones`
+now resolves the current selected IDs and live zone data at invocation, matching
+the Delete fix. Two shell regressions select 2/3 zones across separate frames,
+open multi-edit, save a shared name, and check selected and unselected rows.
+Both failed before the fix and pass after it.

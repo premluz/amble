@@ -3612,3 +3612,69 @@ centerline at the top and bottom; increase invisible interaction bounds only.
 Retain primary stacking, cancellation, and group resize. Tiny-task resize
 regions remain fitted to avoid overlap; the side strip provides move access.
 This supersedes the earlier displaced-compact-control presentation decision.
+
+**[2026-09-27] Resize dots share an inward stroke-center placement and themed
+separator.** `ResizeHandleDot` supplies the accent fill and surface-colored
+inner border across tasks, zones, and creation marquees. Centers sit half a
+selection stroke inward. Selected saved zones now expose side handles using
+the existing day-copy operation; body extension remains supported. Marquee
+side outlines follow pixels during the gesture and settle to days on release.
+
+## 2026-09-27 — Edit creation sheets and weekly zone gesture ownership
+
+Inline task/zone creation sheets suppress the shell dock immediately through
+`AppShellChromeController.dockObscured`, rather than relying on the empty-group
+exit fade. Keep timeline editing accessible behind the in-tree sheet. Saved-zone
+body drags move the existing ID to a weekday; only side handles copy placements.
+Day-fill shows per-day phantoms without an enclosing second marquee.
+
+## 2026-09-27 — Zone body pan and single extension preview
+
+A zone body owns one two-axis pan; resize handles remain separate hit targets.
+The pan accepts deliberate movement before the enclosing vertical scroll view,
+while taps retain selection behavior. Side extension uses the unsaved-zone
+marquee and per-day ghosts, visually replacing the source block without
+unmounting its active gesture. Delete resolves selection at action time.
+
+## 2026-09-27 — Settings lists: swipe-to-remove failure handling
+
+**Zones' swipe-to-remove attempts the delete even when the name is still in
+use, rather than blocking pre-emptively.** `ZoneList.deleteUnusedFacet` throws
+`StateError` when a saved zone still references the facet. Confirmed via
+AskUserQuestion: the swipe still fires the delete call; on that thrown error,
+show the message as a plain `AppUndoToast` (no undo action — there's nothing
+to undo) and leave the row in place, rather than silently swallowing the
+error or disabling the swipe gesture ahead of time based on a separate
+in-use check.
+
+**Tags' swipe-to-remove is disabled outright (`endAction: null`) for
+built-in categories, rather than allowed to silently no-op.**
+`CategoryList.deleteCategory` already returns immediately with no effect for
+a built-in row. Confirmed via AskUserQuestion: rather than let the swipe
+reveal a Remove action that visibly does nothing on release, the gesture
+itself is never installed for these rows — matching how `AppSwipeActions`
+already supports "both actions null" for a fully swipe-disabled row
+elsewhere (Timeline task rows in Edit Mode).
+
+## 2026-09-27 — Export/Import gated behind panta_pro, no free trial window
+
+Requested directly: "no export/import only available when panta purchased,
+not available during trial." An initial proposal (a 21-day install-date
+trial via `SharedPreferences`, ORed with the entitlement) was explicitly
+rejected mid-implementation before any of that trial-clock code was
+committed — Export/Import get NO trial grace period at all, unlike
+whatever future feature the trial mechanism might still end up gating.
+
+Implemented as a straight `isPantaProProvider` check in
+`backup_settings_screen.dart`, reusing the entitlement wiring that already
+existed (`PurchasesRepository`, `panta_pro`, `isPantaProProvider` —
+docs/DECISIONS.md's "RevenueCat" entry from 2026-09-21) rather than
+inventing a second one, per CLAUDE.md's "search before you create" rule.
+Both buttons relabel to "… (Unlock)" and a "Requires Panta Pro." caption
+appears when locked; tapping either while locked calls
+`PurchasesRepository.presentPaywallIfNeeded` (same call
+`SubscriptionSettingsScreen` already makes) instead of running the
+export/import action, and only proceeds if the result is `purchased` or
+`restored`. No `RevenueCatUI`/`Purchases` call from the widget directly —
+matches `PurchasesRepository`'s own "UI and state never call the SDK
+directly" rule.

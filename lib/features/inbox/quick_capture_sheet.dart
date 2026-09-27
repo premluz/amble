@@ -3,16 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/app_drag_to_close_handle.dart';
 import '../../core/widgets/app_mic_button.dart';
 import '../../core/widgets/app_sheet.dart';
-import '../../core/widgets/app_sheet_handle.dart';
 import '../../core/widgets/app_sheet_header.dart';
 import '../../core/widgets/app_step_scaffold.dart' show HeaderCircleButton;
+import '../../core/widgets/app_trial_gate.dart';
 import '../../core/widgets/app_undo_toast.dart';
 import '../../shared/models/category.dart';
 import '../../shared/models/task.dart';
 import '../../shared/providers/category_providers.dart';
 import '../../shared/providers/task_providers.dart';
+import '../../shared/providers/trial_providers.dart';
 import '../../shared/services/quick_capture_parser.dart';
 
 /// Opens the quick-capture sheet — free-text entry for adding an item to
@@ -39,9 +41,11 @@ import '../../shared/services/quick_capture_parser.dart';
 /// not the large pill [AppButton] Task creation uses) top-right. New-vs-
 /// edit is no longer distinguished by a title at all; only the hint text
 /// still differs (see the field's own `hintText`). A drag handle
-/// ([AppSheetHandle]) sits above this row — dragging it down far/fast
-/// enough closes the sheet, the same "handle to dismiss" affordance
-/// `QuickCreateSheetHandle` gives the quick-create overlay.
+/// ([AppDragToCloseHandle]) sits above this row — dragging it down
+/// far/fast enough closes the sheet, now with the same live, responsive
+/// drag feedback `QuickCreateSheetHandle` gives the quick-create overlay
+/// (2026-09-26 — previously this sheet stayed visually still until
+/// release; see that widget's own doc comment).
 ///
 /// **Keyboard submit keeps the sheet open** (2026-09-21) — pressing the
 /// keyboard's own "done" key creates the task and clears the field for
@@ -121,10 +125,14 @@ class _QuickCaptureFormState extends ConsumerState<_QuickCaptureForm> {
   /// guard alone is what prevents the double-submit.
   bool _isSubmitting = false;
 
-  /// Cumulative vertical drag distance on the sheet's own handle — reset
-  /// to 0 on every drag end regardless of outcome. See the handle's own
-  /// `onVerticalDragEnd` for the close threshold.
-  double _dragDistance = 0;
+  /// Drives the header's own handle live drag feedback — see
+  /// docs/DESIGN_SYSTEM.md's "Sheets > Drag handle" section.
+  /// [AppDragToCloseHandle] defaults to `responsive: true`, so this sheet
+  /// now visually follows the finger during the drag, matching the
+  /// Timeline quick-create task sheet's own reference handle — this sheet
+  /// previously stayed visually still until release (a bare accumulator
+  /// with no live feedback at all), unlike that reference.
+  final _dragController = AppDragToCloseController();
 
   /// One [stt.SpeechToText] instance per sheet, not a shared/cached
   /// singleton — `initialize()` is cheap to call again and this way the
@@ -169,6 +177,7 @@ class _QuickCaptureFormState extends ConsumerState<_QuickCaptureForm> {
     if (_isListening) _speech.stop();
     _titleController.dispose();
     _focusNode.dispose();
+    _dragController.dispose();
     super.dispose();
   }
 
@@ -276,25 +285,29 @@ class _QuickCaptureFormState extends ConsumerState<_QuickCaptureForm> {
         // ambiguous text (e.g. a bare "every morning" or "for 30 mins" with
         // no date/time anchor) — see parseQuickCapture's own doc comment for
         // the precise confidence rule.
-        await notifier.captureTask(rawInput);
-        if (!mounted) return;
+        final captured = await _retryAfterPaywallIfExpired(() async {
+          await notifier.captureTask(rawInput);
+          return true;
+        });
+        if (captured == null || !mounted) return;
         _resetForNextCapture();
         return;
       }
 
       // Confident parse: create immediately, no confirmation dialog.
-      final created = await notifier.createTask(
-        title: result.title.isEmpty ? rawInput : result.title,
-        scheduledAt: result.scheduledAt!,
-        durationMinutes:
-            result.durationMinutes ?? quickCaptureDefaultDurationMinutes,
-        // A detected category word (e.g. "work", "health") wins; falls back
-        // to the existing uncategorised default otherwise.
-        categoryId: result.category?.id ?? BuiltInCategoryIds.general,
-        recurrenceRule: result.recurrenceRule,
+      final created = await _retryAfterPaywallIfExpired(
+        () => notifier.createTask(
+          title: result.title.isEmpty ? rawInput : result.title,
+          scheduledAt: result.scheduledAt!,
+          durationMinutes:
+              result.durationMinutes ?? quickCaptureDefaultDurationMinutes,
+          // A detected category word (e.g. "work", "health") wins; falls
+          // back to the existing uncategorised default otherwise.
+          categoryId: result.category?.id ?? BuiltInCategoryIds.general,
+          recurrenceRule: result.recurrenceRule,
+        ),
       );
-
-      if (!mounted) return;
+      if (created == null || !mounted) return;
 
       // Undo toast anchors to `widget.rootContext` (the CALLER's context,
       // captured before this sheet's own route existed) rather than this
@@ -334,6 +347,27 @@ class _QuickCaptureFormState extends ConsumerState<_QuickCaptureForm> {
     }
   }
 
+  /// Runs [action] (a `TaskList.createTask`/`captureTask` call); if it
+  /// throws [TrialExpiredException], presents the paywall and retries
+  /// [action] exactly once on a successful purchase/restore. Returns the
+  /// action's own result, or null if the trial is expired and either the
+  /// paywall wasn't unlocked or purchases are unavailable in this build —
+  /// callers treat null as "nothing was created, leave the sheet as is."
+  Future<T?> _retryAfterPaywallIfExpired<T>(Future<T> Function() action) async {
+    try {
+      return await action();
+    } on TrialExpiredException {
+      if (!mounted) return null;
+      final unlocked = await presentPaywallForTrialExpired(context, ref);
+      if (!unlocked || !mounted) return null;
+      try {
+        return await action();
+      } on TrialExpiredException {
+        return null;
+      }
+    }
+  }
+
   /// Clears the title field and keeps focus/keyboard up, ready for the
   /// next capture. Runs after every successful create/capture (both the
   /// keyboard's own submit and the header's Done button — see [_submit]'s
@@ -348,162 +382,154 @@ class _QuickCaptureFormState extends ConsumerState<_QuickCaptureForm> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
 
-    return Padding(
-      // Breathing room below the header row, so the sheet doesn't end
-      // flush against the keyboard's top edge or the screen bottom.
-      // Requested directly: "add padding bottom to that add/edit note
-      // sheet."
-      //
-      // The KEYBOARD's own inset is deliberately NOT added here any more:
-      // AppSheet now applies it for every sheet, via an AnimatedPadding
-      // that smooths the keyboard's rise (see `liftedForKeyboard`).
-      // Reading `viewInsets` here as well would double-count it — and
-      // reading it raw, per frame, is exactly what made the sheet jitter
-      // against its own slide-up transition.
-      padding: EdgeInsets.only(bottom: theme.spacingLg),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // No title text — Close/mic/Done live in ONE header row (Close
-          // top-left, mic and Done top-right), with the drag-to-close
-          // handle layered behind them filling that same row.
-          //
-          // **2026-09-23 — [AppSheetHeader] owns the handle too, rather
-          // than the handle being a separate row stacked above it.**
-          // Reported directly: "header not same height / too big gap /
-          // drag 'to close' thingy not same positioned as on add quick
-          // task sheet." See that widget's own doc comment for all three
-          // differences against the Timeline quick-create reference and
-          // why one fixed-height overlay row fixes them together.
-          //
-          // The gesture itself stays here, not in the shared widget: this
-          // sheet has exactly one size, so it only needs "dragged past a
-          // threshold closes," while the reference's own
-          // `QuickCreateSheetHandle` drives that other sheet's
-          // small/minimised/full fraction system. The shared header takes
-          // whatever handle widget a caller hands it.
-          AppSheetHeader(
-            theme: theme,
-            handle: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onVerticalDragUpdate: (details) =>
-                  _dragDistance += details.delta.dy,
-              onVerticalDragEnd: (details) {
-                // Whichever comes first: dragged far enough, or flicked
-                // fast enough — mirrors `QuickCreateSheetHeightController
-                // .settle`'s own "distance OR velocity" threshold shape,
-                // scaled down for this sheet's much shorter travel (it has
-                // no fraction to settle into, just closed/open).
-                final farEnough = _dragDistance > theme.spacingXl;
-                final fastEnough =
-                    details.velocity.pixelsPerSecond.dy > 800;
-                _dragDistance = 0;
-                if (farEnough || fastEnough) Navigator.of(context).pop();
-              },
-              // Top-aligned with a small inset, NOT centred in the row —
-              // matching the reference's own `QuickCreateSheetHandle`
-              // exactly (see its doc comment: "move the handle higher up",
-              // so it reads as a separate drag affordance rather than one
-              // more control on the buttons' own centre line).
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: Padding(
-                  padding: EdgeInsets.only(top: theme.spacingSm),
-                  child: AppSheetHandle(theme: theme),
+    // ListenableBuilder + Transform.translate — the same live-drag
+    // mechanism `new_zone_sheet.dart` uses, applied here to the sheet's
+    // WHOLE body (this sheet has no separate entrance/exit transform of
+    // its own to compose with; `AppSheetRoute`/`AppSheetMotion` own that
+    // at the route level instead).
+    return ListenableBuilder(
+      listenable: _dragController,
+      builder: (context, child) => Transform.translate(
+        offset: Offset(0, _dragController.offset),
+        child: child,
+      ),
+      child: Padding(
+        // Breathing room below the header row, so the sheet doesn't end
+        // flush against the keyboard's top edge or the screen bottom.
+        // Requested directly: "add padding bottom to that add/edit note
+        // sheet."
+        //
+        // The KEYBOARD's own inset is deliberately NOT added here any more:
+        // AppSheet now applies it for every sheet, via an AnimatedPadding
+        // that smooths the keyboard's rise (see `liftedForKeyboard`).
+        // Reading `viewInsets` here as well would double-count it — and
+        // reading it raw, per frame, is exactly what made the sheet jitter
+        // against its own slide-up transition.
+        padding: EdgeInsets.only(bottom: theme.spacingLg),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // No title text — Close/mic/Done live in ONE header row (Close
+            // top-left, mic and Done top-right), with the drag-to-close
+            // handle layered behind them filling that same row.
+            //
+            // **2026-09-23 — [AppSheetHeader] owns the handle too, rather
+            // than the handle being a separate row stacked above it.**
+            // Reported directly: "header not same height / too big gap /
+            // drag 'to close' thingy not same positioned as on add quick
+            // task sheet." See that widget's own doc comment for all three
+            // differences against the Timeline quick-create reference and
+            // why one fixed-height overlay row fixes them together.
+            //
+            // The gesture itself stays here, not in the shared widget: this
+            // sheet has exactly one size, so it only needs "dragged past a
+            // threshold closes," while the reference's own
+            // `QuickCreateSheetHandle` drives that other sheet's
+            // small/minimised/full fraction system. The shared header takes
+            // whatever handle widget a caller hands it.
+            AppSheetHeader(
+              theme: theme,
+              // AppDragToCloseHandle, not a hand-rolled GestureDetector —
+              // see `_dragController`'s own doc comment. Its internal
+              // positioning (top-aligned, `spacingSm` inset) matches what
+              // this row had inline before exactly.
+              handle: AppDragToCloseHandle(
+                theme: theme,
+                controller: _dragController,
+                onClose: () => Navigator.of(context).pop(),
+              ),
+              onClose: () => Navigator.of(context).pop(),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AppMicButton(
+                    isListening: _isListening,
+                    onPressed: _isSubmitting ? null : _toggleListening,
+                    // Secondary, not primary — requested directly: Done is
+                    // the one primary action in this header, mic is a
+                    // supporting input method alongside it.
+                    isPrimary: false,
+                    // Matches the Done button's own HeaderCircleButton size
+                    // exactly — requested directly: "voice record should be
+                    // same size as done."
+                    size: theme.spacingXl,
+                  ),
+                  SizedBox(width: theme.spacingSm),
+                  HeaderCircleButton(
+                    theme: theme,
+                    icon: Icons.check_rounded,
+                    // Re-entrancy is guarded inside `_doSubmit`'s own
+                    // `_isSubmitting` check (same as every other submit path
+                    // here), not by disabling this button —
+                    // `HeaderCircleButton` takes a non-nullable `onTap`.
+                    onTap: _submit,
+                    backgroundColor: theme.colorAccent,
+                    iconColor: theme.colorSurfacePrimary,
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: theme.spacingMd),
+            // Bare text, no field chrome — matching quick-create's own
+            // "Add title" input style exactly (AppTextField's
+            // AppTextFieldVariant.bare), requested directly. Kept as a raw
+            // TextField (not AppTextField itself) because the live token
+            // highlighting below needs `_QuickCaptureTextEditingController`,
+            // which AppTextField has no hook for — but every visual property
+            // (style, hint color, zero chrome) mirrors that variant's own
+            // build() exactly.
+            TextField(
+              controller: _titleController,
+              focusNode: _focusNode,
+              // Fires as the sheet mounts, so the keyboard rises with the
+              // sheet's own entrance rather than after it — see initState's
+              // note on why deferring this read as two separate steps.
+              autofocus: true,
+              style: theme.textTitle.copyWith(color: theme.colorTextPrimary),
+              cursorColor: theme.colorTextPrimary,
+              textInputAction: TextInputAction.done,
+              // Submitting (the keyboard's own "done" key) creates the task
+              // but leaves the sheet open — requested directly, so several
+              // notes/tasks can be added in a row without reopening this
+              // sheet each time. The header's own Done button now calls the
+              // exact same `_submit` (2026-09-22 — see its own doc comment),
+              // so only Close or dragging the handle down actually closes
+              // this sheet. Editing an existing note is unaffected:
+              // `_submit`'s own `_isEditing` branch pops regardless of which
+              // control called it, since renaming a single task has nothing
+              // left to "add another" of.
+              onSubmitted: (_) => _submit(),
+              // A no-op `onEditingComplete` is REQUIRED here, not optional
+              // polish — reported directly: "when tapping add on keyboard
+              // the sheet and keyboard collapses and expands but it should
+              // remain open." `EditableText._finalizeEditing` unconditionally
+              // unfocuses on `TextInputAction.done` UNLESS `onEditingComplete`
+              // is provided (see its own doc comment) — that unfocus, THEN
+              // our `_resetForNextCapture` re-requesting focus a moment
+              // later, is exactly what read as the keyboard flashing closed
+              // and reopening. Overriding this to a no-op keeps focus
+              // continuously held throughout the whole submit, so the
+              // keyboard never drops in the first place; `onSubmitted` above
+              // still fires afterward regardless (Flutter calls it
+              // unconditionally once `onEditingComplete` returns).
+              onEditingComplete: () {},
+              decoration: InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                contentPadding: EdgeInsets.zero,
+                hintText: _isEditing
+                    ? 'What needs doing?'
+                    : 'Try "Call client tomorrow at 10:30"',
+                hintStyle: theme.textTitle.copyWith(
+                  color: theme.colorTextSecondary,
                 ),
               ),
             ),
-            onClose: () => Navigator.of(context).pop(),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppMicButton(
-                  isListening: _isListening,
-                  onPressed: _isSubmitting ? null : _toggleListening,
-                  // Secondary, not primary — requested directly: Done is
-                  // the one primary action in this header, mic is a
-                  // supporting input method alongside it.
-                  isPrimary: false,
-                  // Matches the Done button's own HeaderCircleButton size
-                  // exactly — requested directly: "voice record should be
-                  // same size as done."
-                  size: theme.spacingXl,
-                ),
-                SizedBox(width: theme.spacingSm),
-                HeaderCircleButton(
-                  theme: theme,
-                  icon: Icons.check_rounded,
-                  // Re-entrancy is guarded inside `_doSubmit`'s own
-                  // `_isSubmitting` check (same as every other submit path
-                  // here), not by disabling this button —
-                  // `HeaderCircleButton` takes a non-nullable `onTap`.
-                  onTap: _submit,
-                  backgroundColor: theme.colorAccent,
-                  iconColor: theme.colorSurfacePrimary,
-                ),
-              ],
-            ),
-          ),
-          SizedBox(height: theme.spacingMd),
-          // Bare text, no field chrome — matching quick-create's own
-          // "Add title" input style exactly (AppTextField's
-          // AppTextFieldVariant.bare), requested directly. Kept as a raw
-          // TextField (not AppTextField itself) because the live token
-          // highlighting below needs `_QuickCaptureTextEditingController`,
-          // which AppTextField has no hook for — but every visual property
-          // (style, hint color, zero chrome) mirrors that variant's own
-          // build() exactly.
-          TextField(
-            controller: _titleController,
-            focusNode: _focusNode,
-            // Fires as the sheet mounts, so the keyboard rises with the
-            // sheet's own entrance rather than after it — see initState's
-            // note on why deferring this read as two separate steps.
-            autofocus: true,
-            style: theme.textTitle.copyWith(color: theme.colorTextPrimary),
-            cursorColor: theme.colorTextPrimary,
-            textInputAction: TextInputAction.done,
-            // Submitting (the keyboard's own "done" key) creates the task
-            // but leaves the sheet open — requested directly, so several
-            // notes/tasks can be added in a row without reopening this
-            // sheet each time. The header's own Done button now calls the
-            // exact same `_submit` (2026-09-22 — see its own doc comment),
-            // so only Close or dragging the handle down actually closes
-            // this sheet. Editing an existing note is unaffected:
-            // `_submit`'s own `_isEditing` branch pops regardless of which
-            // control called it, since renaming a single task has nothing
-            // left to "add another" of.
-            onSubmitted: (_) => _submit(),
-            // A no-op `onEditingComplete` is REQUIRED here, not optional
-            // polish — reported directly: "when tapping add on keyboard
-            // the sheet and keyboard collapses and expands but it should
-            // remain open." `EditableText._finalizeEditing` unconditionally
-            // unfocuses on `TextInputAction.done` UNLESS `onEditingComplete`
-            // is provided (see its own doc comment) — that unfocus, THEN
-            // our `_resetForNextCapture` re-requesting focus a moment
-            // later, is exactly what read as the keyboard flashing closed
-            // and reopening. Overriding this to a no-op keeps focus
-            // continuously held throughout the whole submit, so the
-            // keyboard never drops in the first place; `onSubmitted` above
-            // still fires afterward regardless (Flutter calls it
-            // unconditionally once `onEditingComplete` returns).
-            onEditingComplete: () {},
-            decoration: InputDecoration(
-              isDense: true,
-              border: InputBorder.none,
-              enabledBorder: InputBorder.none,
-              focusedBorder: InputBorder.none,
-              contentPadding: EdgeInsets.zero,
-              hintText: _isEditing
-                  ? 'What needs doing?'
-                  : 'Try "Call client tomorrow at 10:30"',
-              hintStyle: theme.textTitle.copyWith(
-                color: theme.colorTextSecondary,
-              ),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

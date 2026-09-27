@@ -208,4 +208,11 @@ abstract final class PreferenceKeys {
   /// backfill write happens once, not on every launch. See
   /// `TaskList.backfillCreatedAtIfNeeded` (`main.dart`).
   static const String taskCreatedAtBackfilled = 'taskCreatedAtBackfilled';
+
+  /// The ISO 8601 timestamp of this install's first launch — written once
+  /// by `main.dart`, never updated afterward. Absent (null) only before
+  /// that first-launch write has ever run. Powers the 21-day free-trial
+  /// window that gates new-task creation without `panta_pro` — see
+  /// `TrialStatus` in `trial_providers.dart`.
+  static const String installDate = 'installDate';
 }

@@ -1,0 +1,45 @@
+const assert=require('node:assert/strict');require('./rios-motion.js');
+const {frame,svgAt,defaults}=globalThis.RiosMotionTools;
+assert.equal(svgAt(0,{theme:'dark'}).includes('fill="#191919"'),true);
+assert.equal(svgAt(0,{theme:'light'}).includes('fill="#F3F1EF"'),true);
+assert.equal(svgAt(0,{theme:'light'}).includes('fill="#242321"'),true);
+assert.equal(svgAt(0,{theme:'light',ink:'#C01020'}).includes('fill="#C01020"'),true);
+assert.deepEqual([defaults.duration,defaults.amplitude,defaults.spacing,defaults.stroke,defaults.individuality,defaults.tailCount,defaults.tailSpacing,defaults.tailSize,defaults.tailTaper,defaults.tailStagger,defaults.exitStagger,defaults.hold,defaults.formationStagger,defaults.scaleStagger,defaults.letterStagger,defaults.letterFade,defaults.frontDots,defaults.tailFollowDelay,defaults.entranceFrequency,defaults.exitFrequency,defaults.exitDepth,defaults.dropRate,defaults.morphLead,defaults.formationDuration,defaults.dispersionDuration,defaults.bubbleLinger,defaults.bubbleEmission,defaults.bubbleRate,defaults.bubbleStagger,defaults.bubbleRandomness,defaults.logoGap,defaults.fontWeight,defaults.fontFamily,defaults.letterSpacing,defaults.assembledLogoScale],[11.2,24,40,14,.6,4,35,9,.9,.13,.16,1,.12,.06,.05,.8,.65,.3,2.5,3.5,7,6,.8,.85,3.5,3,.7,6,.6,1,26,600,'arial',0,1]);
+for(const options of [{ending:'hold'},{ending:'out'},{formationStagger:.3,scaleStagger:.3,letterFade:1.2,exitStagger:.3,morphLead:1.6}]){
+ for(let time=0;time<=defaults.duration;time+=.05){const f=frame(time,options);assert.equal(f.paths.length,3);for(const path of f.paths)for(const point of path.points)assert(point.every(Number.isFinite));for(const d of f.dots){assert(d.opacity>=0&&d.opacity<=1);assert(d.radius>0);}}
+ assert.equal(frame(defaults.duration,options).wordOpacity,options.ending==='hold'?1:0);
+ if(options.ending!=='hold')assert(frame(defaults.duration,options).paths.every(p=>p.points.every(q=>q[0]>960)));
+}
+const timing=frame(0).timing,at=score=>frame(score/timing.scoreEnd*defaults.duration);
+assert(at(timing.letterStart+.2).letters[0].opacity>at(timing.letterStart+.2).letters[3].opacity);
+assert(at(timing.lettersOutStart+.2).letters[0].opacity<at(timing.lettersOutStart+.2).letters[3].opacity);
+const wakeStart=timing.waveExitStart;
+const a=at(wakeStart+.02).paths[0].points,b=at(wakeStart+.2).paths[0].points;
+assert(Math.abs(a[0][0]-b[0][0])<.001);
+assert(b[160][0]>a[160][0]);
+assert(b[160][1]>a[160][1]);
+assert.equal(frame(1,{dots:0}).dots.length,0);assert.equal(svgAt(3),svgAt(3));assert(svgAt(5,{wordmark:'A&B'}).includes('&amp;'));
+const bubbles=at(timing.formationEnd+.2).dots;assert(bubbles.length>0);assert.deepEqual(bubbles,at(timing.formationEnd+.2).dots);
+assert(timing.lettersOutStart===timing.waveExitStart+defaults.textExitOffset);
+const lockupOptions={logoGap:34,fontWeight:700,letterSpacing:1.5,assembledLogoScale:1.25};
+const lockupTiming=frame(0,lockupOptions).timing;
+const fromScore=score=>frame(score/lockupTiming.scoreEnd*defaults.duration,lockupOptions);
+const scaling=fromScore(lockupTiming.scaleStart+(lockupTiming.formationEnd-lockupTiming.scaleStart)*.4);
+const formed=fromScore(lockupTiming.formationEnd);
+const assembled=fromScore(lockupTiming.assemblyEnd+.4);
+assert.equal(assembled.letters[0].x,443);
+assert.equal(assembled.letters[1].x-assembled.letters[0].x,54.5);
+assert.equal(assembled.fontWeight,700);
+assert(scaling.logoSize>1&&scaling.logoSize<1.25);
+assert.equal(formed.logoSize,1.25);
+assert.equal(assembled.logoSize,1.25);
+const lockupSvg=svgAt((lockupTiming.assemblyEnd+.4)/lockupTiming.scoreEnd*defaults.duration,lockupOptions);
+assert(lockupSvg.includes('font-weight="700"'));
+assert(lockupSvg.includes('letter-spacing="1.5"'));
+assert(lockupSvg.includes('scale(1.2500)'));
+const georgia=frame(4,{fontFamily:'georgia'}),mono=frame(4,{fontFamily:'mono'});
+assert.equal(georgia.fontFamily,'georgia');
+assert(georgia.fontStack.includes('Georgia'));
+assert(Math.abs(mono.letters[1].x-mono.letters[0].x-45.6)<1e-9);
+assert(svgAt(4,{fontFamily:'georgia'}).includes('font-family="Georgia, &quot;Times New Roman&quot;, serif"'));
+console.log('PASS: defaults, geometry, staggered text exit, synchronized timing, particles, formation size, and system-font controls.');

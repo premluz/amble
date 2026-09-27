@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:purchases_ui_flutter/purchases_ui_flutter.dart' show PaywallResult;
 
+import '../../core/revenue_cat_config.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../shared/providers/backup_providers.dart';
 import '../../shared/providers/category_providers.dart';
+import '../../shared/providers/purchases_providers.dart';
 import '../../shared/providers/task_providers.dart';
 import '../../shared/providers/zone_providers.dart';
 import '../../shared/providers/zone_facet_providers.dart';
@@ -67,7 +70,42 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
     }
   }
 
+  /// Export/import require an active `panta_pro` entitlement — no free
+  /// trial window, requested directly ("no export/import only available
+  /// when panta purchased, not available during trial"). Presents the
+  /// same RevenueCat paywall `SubscriptionSettingsScreen` uses, through
+  /// [PurchasesRepository] rather than `RevenueCatUI` directly (see that
+  /// repository's own "UI and state never call Purchases/RevenueCatUI
+  /// directly" rule). Returns whether the caller should proceed —
+  /// unlocked already, or just unlocked by a purchase/restore made from
+  /// this paywall.
+  Future<bool> _ensureUnlocked() async {
+    if (ref.read(isPantaProProvider)) return true;
+    if (!RevenueCatConfig.isAvailable) {
+      setState(() {
+        _statusMessage = 'Purchases are not available in this build.';
+        _statusIsError = true;
+      });
+      return false;
+    }
+    setState(() {
+      _busy = true;
+      _statusMessage = null;
+    });
+    try {
+      final result = await ref
+          .read(purchasesRepositoryProvider)
+          .presentPaywallIfNeeded(RevenueCatConfig.pantaProEntitlementId);
+      await ref.read(pantaCustomerInfoProvider.notifier).refresh();
+      return result == PaywallResult.purchased ||
+          result == PaywallResult.restored;
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _export() async {
+    if (!await _ensureUnlocked()) return;
     setState(() {
       _busy = true;
       _statusMessage = null;
@@ -108,6 +146,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
   }
 
   Future<void> _import() async {
+    if (!await _ensureUnlocked()) return;
     setState(() {
       _busy = true;
       _statusMessage = null;
@@ -170,6 +209,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     final taskCount = ref.watch(taskListProvider).length;
+    final isPro = ref.watch(isPantaProProvider);
 
     return SettingsDetailScaffold(
       title: 'Backup',
@@ -184,9 +224,22 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
               'in without overwriting anything already here.',
               style: theme.textBody.copyWith(color: theme.colorTextSecondary),
             ),
+            // Requires panta_pro — no free trial window for this feature,
+            // requested directly. `_ensureUnlocked` presents the paywall
+            // when tapped locked; the label says so up front rather than
+            // reading as a broken free button.
+            if (!isPro) ...[
+              SizedBox(height: theme.spacingXs),
+              Text(
+                'Requires Panta Pro.',
+                style: theme.textCaption.copyWith(
+                  color: theme.colorTextSecondary,
+                ),
+              ),
+            ],
             SizedBox(height: theme.spacingMd),
             AppButton(
-              label: 'Export backup',
+              label: isPro ? 'Export backup' : 'Export backup (Unlock)',
               // Secondary, not primary — settings actions are equal-weight
               // utilities, no single dominant CTA. App-wide button
               // unification pass, requested directly.
@@ -195,7 +248,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
             ),
             SizedBox(height: theme.spacingSm),
             AppButton(
-              label: 'Import backup',
+              label: isPro ? 'Import backup' : 'Import backup (Unlock)',
               variant: AppButtonVariant.secondary,
               onPressed: _busy ? null : _import,
             ),

@@ -8,10 +8,13 @@ import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_step_scaffold.dart' show HeaderCircleButton;
 import '../../core/widgets/app_switch.dart';
 import '../../core/widgets/app_text_field.dart';
+import '../../core/widgets/app_trial_gate.dart';
 import '../../shared/models/category.dart';
+import '../../shared/models/task.dart';
 import '../../shared/models/task_template.dart';
 import '../../shared/providers/preferences_providers.dart';
 import '../../shared/providers/task_providers.dart';
+import '../../shared/providers/trial_providers.dart';
 import '../../shared/services/overlap_checker.dart';
 import 'recently_saved_task_provider.dart';
 import '../task_detail/quick_create_sheet_shell.dart';
@@ -253,17 +256,28 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
     });
 
     try {
-      final created = await ref
-          .read(taskListProvider.notifier)
-          .createTask(
-            title: title,
-            scheduledAt: scheduledAt,
-            durationMinutes: durationMinutes,
-            categoryId:
-                _appliedTemplate?.categoryId ?? BuiltInCategoryIds.general,
-            isImportant: _isImportant,
-            templateId: _appliedTemplate?.id,
-          );
+      final notifier = ref.read(taskListProvider.notifier);
+      Future<Task> attempt() => notifier.createTask(
+        title: title,
+        scheduledAt: scheduledAt,
+        durationMinutes: durationMinutes,
+        categoryId: _appliedTemplate?.categoryId ?? BuiltInCategoryIds.general,
+        isImportant: _isImportant,
+        templateId: _appliedTemplate?.id,
+      );
+      Task created;
+      try {
+        created = await attempt();
+      } on TrialExpiredException {
+        if (!mounted) return;
+        final unlocked = await presentPaywallForTrialExpired(context, ref);
+        if (!unlocked || !mounted) return;
+        try {
+          created = await attempt();
+        } on TrialExpiredException {
+          return;
+        }
+      }
       _hasSaved = true;
       // Lets the Timeline animate the new pill in rather than having it
       // appear fully-formed — the same handoff the full sheet's own save

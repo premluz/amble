@@ -10,6 +10,15 @@ class AppShellChromeController extends ChangeNotifier {
   AppContextDockConfiguration? _configuration;
   String? _signature;
   bool _notificationScheduled = false;
+  bool _dockObscured = false;
+  bool get dockObscured => _dockObscured;
+
+  void setDockObscured(bool value) {
+    if (_dockObscured == value) return;
+    _dockObscured = value;
+    _notifyAfterBuild();
+  }
+
   Widget? header;
   String? _headerState;
 
@@ -33,6 +42,7 @@ class AppShellChromeController extends ChangeNotifier {
 
   void release(String ownerId) {
     if (_ownerId != ownerId) return;
+    _dockObscured = false;
     _ownerId = null;
     _signature = null;
     _configuration = null;

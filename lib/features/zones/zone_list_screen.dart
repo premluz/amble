@@ -7,6 +7,8 @@ import '../../core/widgets/app_text_field.dart';
 import '../../core/widgets/app_modal_route.dart';
 import '../../core/widgets/app_press_feedback.dart';
 import '../../core/widgets/app_sheet.dart';
+import '../../core/widgets/app_swipe_actions.dart';
+import '../../core/widgets/app_undo_toast.dart';
 import '../../shared/models/zone_facet.dart';
 import '../../shared/providers/zone_facet_providers.dart';
 import '../../shared/providers/zone_providers.dart';
@@ -83,20 +85,58 @@ class ZoneListBody extends ConsumerWidget {
       separatorBuilder: (_, _) => SizedBox(height: theme.spacingSm),
       itemBuilder: (context, index) {
         final name = names[index];
-        return AppPressFeedback(
-          onTap: () => showZoneNameSheet(context, facet: name),
-          borderRadius: BorderRadius.circular(theme.radiusXl),
-          child: Container(
-            padding: EdgeInsets.all(theme.spacingMd),
-            decoration: BoxDecoration(
-              color: theme.colorSurfaceSecondary,
-              borderRadius: BorderRadius.circular(theme.radiusXl),
+        return AppSwipeActions(
+          key: ValueKey(name.id),
+          endAction: AppSwipeAction(
+            icon: Icons.delete_outline_rounded,
+            background: theme.colorTaskAlert,
+            semanticLabel: 'Remove zone name',
+            destructive: true,
+            onActivate: () => _removeFacet(context, ref, name),
+          ),
+          child: AppPressFeedback(
+            onTap: () => showZoneNameSheet(context, facet: name),
+            borderRadius: BorderRadius.circular(theme.radiusXl),
+            child: Container(
+              padding: EdgeInsets.all(theme.spacingMd),
+              decoration: BoxDecoration(
+                color: theme.colorSurfaceSecondary,
+                borderRadius: BorderRadius.circular(theme.radiusXl),
+              ),
+              child: Text(name.name, style: theme.textBody),
             ),
-            child: Text(name.name, style: theme.textBody),
           ),
         );
       },
     );
+  }
+
+  /// Swiping to remove a name that's still in use by a saved zone can't
+  /// silently no-op or block pre-emptively — confirmed via
+  /// AskUserQuestion: attempt the remove, and on the same `StateError`
+  /// the edit sheet's own delete button already surfaces
+  /// (`_ZoneNameFormState`'s `_save`... see its delete `onPressed`),
+  /// show an informational toast (no `onUndo` — there's nothing to undo)
+  /// and leave the row in place, rather than losing the error silently.
+  void _removeFacet(BuildContext context, WidgetRef ref, ZoneFacet facet) {
+    ref
+        .read(zoneListProvider.notifier)
+        .deleteUnusedFacet(facet.id)
+        .then((_) {
+          if (context.mounted) {
+            AppUndoToast.show(context: context, message: 'Removed zone name');
+          }
+        })
+        .catchError((Object error) {
+          if (context.mounted) {
+            AppUndoToast.show(
+              context: context,
+              message: error is StateError
+                  ? error.message
+                  : 'Could not remove this name.',
+            );
+          }
+        });
   }
 }
 

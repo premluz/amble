@@ -8,6 +8,7 @@ import 'package:amble/core/widgets/app_bottom_dock.dart';
 import 'package:amble/core/widgets/app_context_menu.dart';
 import 'package:amble/core/widgets/app_date_accordion.dart';
 import 'package:amble/core/widgets/app_option_switch_option.dart';
+import 'package:amble/core/widgets/app_drag_to_close_handle.dart';
 import 'package:amble/core/widgets/app_sheet_handle.dart';
 import 'package:amble/core/widgets/app_sheet_header.dart';
 import 'package:amble/core/widgets/app_tab_switch.dart';
@@ -238,6 +239,31 @@ class AmbleWidgetbookApp extends StatelessWidget {
                 ),
               ],
             ),
+            // The actual DRAG mechanics behind a sheet's handle — separate
+            // from the static `AppSheetHeader` "with drag-to-close handle
+            // behind" use case above, which only shows where the bar
+            // sits, not how it responds to a real drag. Requested
+            // directly: "the handle pattern in sheets should be
+            // responsive when grabbed to drag... let's keep second option
+            // as toggle of this pattern, default is drag responsive." Try
+            // dragging the bar down in the preview: responsive (the
+            // default) visibly follows the finger; the "Non-responsive"
+            // knob restores the previous behavior every sheet had before
+            // this widget (tracked, but silent until release).
+            WidgetbookComponent(
+              name: 'AppDragToCloseHandle',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Drag the bar down',
+                  builder: (context) => _DragToCloseHandleDemo(
+                    responsive: context.knobs.boolean(
+                      label: 'Responsive',
+                      initialValue: true,
+                    ),
+                  ),
+                ),
+              ],
+            ),
             WidgetbookComponent(
               name: 'AppDateAccordion',
               useCases: [
@@ -337,13 +363,11 @@ class AmbleWidgetbookApp extends StatelessWidget {
               useCases: [
                 WidgetbookUseCase(
                   name: 'With Undo action',
-                  builder: (context) =>
-                      const _UndoToastDemo(withUndo: true),
+                  builder: (context) => const _UndoToastDemo(withUndo: true),
                 ),
                 WidgetbookUseCase(
                   name: 'Message only (no Undo)',
-                  builder: (context) =>
-                      const _UndoToastDemo(withUndo: false),
+                  builder: (context) => const _UndoToastDemo(withUndo: false),
                 ),
               ],
             ),
@@ -358,15 +382,13 @@ class AmbleWidgetbookApp extends StatelessWidget {
               useCases: [
                 WidgetbookUseCase(
                   name: 'Plain actions',
-                  builder: (context) => const _ContextMenuDemo(
-                    withDestructive: false,
-                  ),
+                  builder: (context) =>
+                      const _ContextMenuDemo(withDestructive: false),
                 ),
                 WidgetbookUseCase(
                   name: 'With a destructive action',
-                  builder: (context) => const _ContextMenuDemo(
-                    withDestructive: true,
-                  ),
+                  builder: (context) =>
+                      const _ContextMenuDemo(withDestructive: true),
                 ),
                 WidgetbookUseCase(
                   name: 'Anchored popover (showAt)',
@@ -671,6 +693,81 @@ class _SheetHeaderWithHandleDemo extends StatelessWidget {
         size: AppButtonSize.md,
         shape: AppButtonShape.pill,
         onPressed: () {},
+      ),
+    );
+  }
+}
+
+/// A small mock "sheet" (just a colored box tall enough to see move) with
+/// a real [AppDragToCloseHandle] above it, wired the same way a real
+/// sheet composes the live offset in — [ListenableBuilder] +
+/// `Transform.translate`. Dragging the bar down in the gallery preview
+/// visibly moves the box when [responsive] is true; the box stays put
+/// until release when it's false. Closing (drag far/fast enough) just
+/// resets the demo rather than tearing down anything, since there is no
+/// real sheet route here to pop.
+class _DragToCloseHandleDemo extends StatefulWidget {
+  const _DragToCloseHandleDemo({required this.responsive});
+
+  final bool responsive;
+
+  @override
+  State<_DragToCloseHandleDemo> createState() => _DragToCloseHandleDemoState();
+}
+
+class _DragToCloseHandleDemoState extends State<_DragToCloseHandleDemo> {
+  final _controller = AppDragToCloseController();
+  bool _closed = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = AmbleTheme.light;
+    return Center(
+      child: ListenableBuilder(
+        listenable: _controller,
+        builder: (context, child) => Transform.translate(
+          offset: Offset(0, _controller.offset),
+          child: child,
+        ),
+        child: Container(
+          width: 260,
+          padding: EdgeInsets.all(theme.spacingMd),
+          decoration: BoxDecoration(
+            color: theme.colorSurfaceOverlay,
+            borderRadius: BorderRadius.circular(theme.radiusModal),
+            boxShadow: theme.shadowPane,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppDragToCloseHandle(
+                theme: theme,
+                controller: _controller,
+                responsive: widget.responsive,
+                onClose: () => setState(() => _closed = true),
+              ),
+              SizedBox(height: theme.spacingMd),
+              Text(
+                _closed ? 'Closed — drag reset below' : 'Drag the bar down',
+                style: theme.textBody,
+              ),
+              if (_closed) ...[
+                SizedBox(height: theme.spacingSm),
+                AppButton(
+                  label: 'Reset',
+                  size: AppButtonSize.sm,
+                  onPressed: () => setState(() => _closed = false),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1023,10 +1120,7 @@ class _ContextMenuLongPressDemo extends StatelessWidget {
             onTap: () {},
           ),
         ],
-        child: AppButton(
-          label: 'Long-press, then drag',
-          onPressed: () {},
-        ),
+        child: AppButton(label: 'Long-press, then drag', onPressed: () {}),
       ),
     );
   }

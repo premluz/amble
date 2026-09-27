@@ -205,6 +205,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
 
   ZoneGroupGestureKind? _moveKind;
   double _moveDy = 0;
+  double _moveDx = 0;
 
   /// Which edge of the pending marquee is being dragged, if any — see
   /// [_MarqueeEdge]. Null whenever no marquee resize is in flight.
@@ -363,20 +364,9 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
       _claimOrBuildDock(
         ZoneGridTab.zones,
         AppContextDockConfiguration(
-          // Empty groups while naming a new zone — the dock (`AppBottomDock`
-          // in `main.dart`, which renders whatever configuration this screen
-          // CLAIMS via `AppShellChromeController`) is a persistent shell
-          // overlay painted AFTER (on top of) this screen's own routed
-          // content, regardless of any `Positioned` offset `NewZoneSheet`
-          // itself uses — no amount of repositioning that sheet could ever
-          // make it appear above the dock while the dock keeps painting
-          // last. Reported directly: "still bottom toolbar overlaps" (the
-          // toolbar drawn on top, covering the sheet's own Close/Add zone
-          // row). Hiding the dock's actions entirely while `_pending != null`
-          // removes the thing that was overlapping, rather than trying to
-          // out-position a persistent overlay that always wins the paint
-          // order. Its own Close/Edit actions have nothing meaningful to do
-          // while a naming sheet is open anyway.
+          // Standalone screens also remove their local dock while naming.
+          // Shell-hosted Edit additionally suppresses chrome without an exit
+          // fade, so outgoing actions cannot paint above the inline sheet.
           stateId: _pending != null
               ? 'edit-zone-naming'
               : selected.isEmpty
@@ -410,35 +400,35 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                           id: 'edit-zone-edit',
                           icon: Icons.edit_outlined,
                           tooltip: 'Edit placement',
-                          onPressed: () {
-                            if (selected.length == 1) {
-                              final zone = zones
-                                  .where((z) => selected.contains(z.id))
-                                  .firstOrNull;
-                              if (zone != null) {
-                                showZoneFormScreen(context, zone: zone);
-                              }
-                              return;
-                            }
-                            showMultiZoneEditSheet(
-                              context,
-                              zoneIds: selected.toList(),
-                            );
-                          },
+                          onPressed: _editSelectedZones,
                         ),
                         AppContextAction(
                           id: 'edit-zone-remove',
                           icon: Icons.delete_outline_rounded,
                           tooltip: 'Remove placements',
                           destructive: true,
-                          onPressed: () =>
-                              _removeSelectedZones(selected, zones),
+                          onPressed: _removeSelectedZones,
                         ),
                       ],
                     ),
                 ],
         ),
       );
+
+  void _editSelectedZones() {
+    // Dock actions outlive selection rebuilds; resolve IDs when invoked.
+    final selected = Set<String>.of(ref.read(zoneEditSelectionProvider));
+    if (selected.isEmpty) return;
+    if (selected.length == 1) {
+      final zone = ref
+          .read(zoneListProvider)
+          .where((zone) => selected.contains(zone.id))
+          .firstOrNull;
+      if (zone != null) showZoneFormScreen(context, zone: zone);
+      return;
+    }
+    showMultiZoneEditSheet(context, zoneIds: selected.toList());
+  }
 
   /// The selection dock's own Edit action — a single task opens the
   /// ordinary detail sheet unchanged ([showTaskDetailSheet], the app's one
@@ -510,10 +500,10 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   /// and same reasoning as [_removeSelectedTasks]'s own note above:
   /// selected zones were disappearing one at a time. Undo restores via
   /// [ZoneList.restoreZonesInBatch] for the same reason.
-  Future<void> _removeSelectedZones(
-    Set<String> selectedIds,
-    List<Zone> zones,
-  ) => _write(() async {
+  Future<void> _removeSelectedZones() => _write(() async {
+    // The shell retains action identity while selection changes.
+    final selectedIds = Set<String>.of(ref.read(zoneEditSelectionProvider));
+    final zones = ref.read(zoneListProvider);
     final zoneNotifier = ref.read(zoneListProvider.notifier);
     final snapshots = selectedIds
         .map((id) => zones.where((z) => z.id == id).firstOrNull)
@@ -657,7 +647,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
     if (paint == null) return;
     setState(() {
       _paintOrigin = null;
-      _pending = _target(paint);
+      _setPending(_target(paint));
     });
     _scrollPendingIntoView(paint.startMinutes);
   }
@@ -679,7 +669,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
     setState(() {
       _paintOrigin = null;
       _paint = null;
-      _pending = null;
+      _setPending(null);
       _resizeEdge = null;
       _resizeX = null;
       // Cleared here too, or a marquee dismissed mid-move would leave the
@@ -758,17 +748,27 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
       _paint = next;
       // The naming sheet reads its target from `_pending`, so it has to
       // track the live rectangle or it would save the pre-resize one.
-      if (_pending != null) _pending = _target(next);
+      if (_pending != null) _setPending(_target(next));
     });
   }
 
   double _previewLeft(ZonePaintSelection preview) =>
-      _resizeEdge == _MarqueeEdge.left && _resizeX != null
+      _fillSource != null
+      ? math.min(
+          _axisWidth + (_fillSource!.weekday! - 1) * _columnWidth,
+          _axisWidth + (_fillSource!.weekday! - .5) * _columnWidth + _fillDx,
+        ).clamp(_axisWidth, _axisWidth + 7 * _columnWidth)
+      : _resizeEdge == _MarqueeEdge.left && _resizeX != null
       ? _resizeX!
       : _axisWidth + (preview.firstDay - 1) * _columnWidth;
 
   double _previewRight(ZonePaintSelection preview) =>
-      _resizeEdge == _MarqueeEdge.right && _resizeX != null
+      _fillSource != null
+      ? math.max(
+          _axisWidth + _fillSource!.weekday! * _columnWidth,
+          _axisWidth + (_fillSource!.weekday! - .5) * _columnWidth + _fillDx,
+        ).clamp(_axisWidth, _axisWidth + 7 * _columnWidth)
+      : _resizeEdge == _MarqueeEdge.right && _resizeX != null
       ? _resizeX!
       : _axisWidth + preview.lastDay * _columnWidth;
 
@@ -831,7 +831,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
       // The naming sheet reads its target from `_pending`, so it has to
       // track the live rectangle or it would save the pre-move one — the
       // same rule `_resizeMarquee` follows.
-      if (_pending != null) _pending = _target(next);
+      if (_pending != null) _setPending(_target(next));
     });
   }
 
@@ -961,9 +961,16 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
     );
     setState(() {
       _paint = paint;
-      _pending = _target(paint);
+      _setPending(_target(paint));
     });
     _scrollPendingIntoView(start);
+  }
+
+  void _setPending(NewZoneTarget? target) {
+    _pending = target;
+    _shellChromeController?.setDockObscured(
+      target != null || ref.read(pendingTaskDraftProvider) != null,
+    );
   }
 
   void _startFill(Zone zone) {
@@ -1047,14 +1054,17 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   Future<void> _finishMove(List<Zone> zones) async {
     final kind = _moveKind;
     final delta = (_moveDy / _pixelsPerMinute / 5).round() * 5;
+    final dayDelta = (_moveDx / _columnWidth).round();
     setState(() {
       _moveKind = null;
       _moveDy = 0;
+      _moveDx = 0;
     });
-    if (kind == null || delta == 0) return;
+    if (kind == null || (delta == 0 && dayDelta == 0)) return;
     final selection = ref.read(zoneEditSelectionProvider);
     final moves = <ZoneMove>[];
     for (final z in zones.where((z) => selection.contains(z.id))) {
+      final weekday = (z.weekday! + dayDelta).clamp(1, 7);
       final start =
           z.startMinutes +
           (kind == ZoneGroupGestureKind.resizeBottom ? 0 : delta);
@@ -1072,17 +1082,24 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
           placedOriginalStartMinutes: z.startMinutes,
           placedStartMinutes: start,
           placedEndMinutes: end,
-          // Only this zone's OWN weekday column can collide with it —
-          // weekly placements on other days are independent windows.
+          // Resolve collisions in the destination weekday, not the source.
           otherZones: zones
               .where(
                 (o) =>
                     o.id != z.id &&
-                    o.weekday == z.weekday &&
+                    o.weekday == weekday &&
                     !selection.contains(o.id),
               )
               .toList(),
           tasksByZoneId: const {},
+        ).map(
+          (move) => ZoneMove(
+            zoneId: move.zoneId,
+            newStartMinutes: move.newStartMinutes,
+            newEndMinutes: move.newEndMinutes,
+            taskMoves: move.taskMoves,
+            newWeekday: move.zoneId == z.id ? weekday : null,
+          ),
         ),
       );
     }
@@ -1128,6 +1145,12 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   Widget _buildContent(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     _container = ProviderScope.containerOf(context);
+    ref.listen(pendingTaskDraftProvider, (_, draft) {
+      _shellChromeController?.setDockObscured(_pending != null || draft != null);
+    });
+    _shellChromeController?.setDockObscured(
+      _pending != null || ref.watch(pendingTaskDraftProvider) != null,
+    );
     // `editModeEnabledProvider` is `autoDispose` (by design — see its own
     // doc comment) and resets to `false` the instant it has zero
     // watchers. While the Zones tab is showing, the embedded
@@ -1725,36 +1748,35 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                                                 ),
                                         ),
                                         for (final day in preview.weekdays)
-                                          if (_fillSource?.weekday != day)
-                                            Positioned(
-                                              left:
-                                                  _axisWidth +
-                                                  (day - 1) * width +
+                                          Positioned(
+                                            left:
+                                                _axisWidth +
+                                                (day - 1) * width +
+                                                theme.spacingXs,
+                                            width:
+                                                width - 2 * theme.spacingXs,
+                                            top:
+                                                preview.startMinutes *
+                                                    _pixelsPerMinute +
+                                                theme.spacingXs / 2,
+                                            height: math.max(
+                                              2,
+                                              (preview.endMinutes -
+                                                          preview
+                                                              .startMinutes) *
+                                                      _pixelsPerMinute -
                                                   theme.spacingXs,
-                                              width:
-                                                  width - 2 * theme.spacingXs,
-                                              top:
-                                                  preview.startMinutes *
-                                                      _pixelsPerMinute +
-                                                  theme.spacingXs / 2,
-                                              height: math.max(
-                                                2,
-                                                (preview.endMinutes -
-                                                            preview
-                                                                .startMinutes) *
-                                                        _pixelsPerMinute -
-                                                    theme.spacingXs,
-                                              ),
-                                              child: IgnorePointer(
-                                                child: _Phantom(
-                                                  key: ValueKey(
-                                                    'zone-phantom-$day',
-                                                  ),
-                                                  theme: theme,
-                                                  title: previewTitle,
+                                            ),
+                                            child: IgnorePointer(
+                                              child: _Phantom(
+                                                key: ValueKey(
+                                                  'zone-phantom-$day',
                                                 ),
+                                                theme: theme,
+                                                title: previewTitle,
                                               ),
                                             ),
+                                          ),
                                         // TaskEdgeTimeLabel, not a plain accent-
                                         // colored Text — design-system
                                         // consolidation, requested directly:
@@ -1904,29 +1926,32 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                                                                 .spacingMinTapTarget,
                                                       ),
                                                     ),
-                                            child: _MarqueeResizeHandle(
-                                              theme: theme,
-                                              alignment: switch (edge) {
-                                                _MarqueeEdge.top =>
-                                                  Alignment.topCenter,
-                                                _MarqueeEdge.bottom =>
-                                                  Alignment.bottomCenter,
-                                                _MarqueeEdge.left =>
-                                                  Alignment.centerLeft,
-                                                _MarqueeEdge.right =>
-                                                  Alignment.centerRight,
-                                              },
-                                              vertical:
-                                                  edge == _MarqueeEdge.top ||
-                                                  edge == _MarqueeEdge.bottom,
-                                              onDrag: (global) {
-                                                _resizeEdge = edge;
-                                                _resizeMarquee(edge, global);
-                                              },
-                                              onDragEnd: () => setState(() {
-                                                _resizeEdge = null;
-                                                _resizeX = null;
-                                              }),
+                                            child: IgnorePointer(
+                                              ignoring: _fillSource != null,
+                                              child: _MarqueeResizeHandle(
+                                                theme: theme,
+                                                alignment: switch (edge) {
+                                                  _MarqueeEdge.top =>
+                                                    Alignment.topCenter,
+                                                  _MarqueeEdge.bottom =>
+                                                    Alignment.bottomCenter,
+                                                  _MarqueeEdge.left =>
+                                                    Alignment.centerLeft,
+                                                  _MarqueeEdge.right =>
+                                                    Alignment.centerRight,
+                                                },
+                                                vertical:
+                                                    edge == _MarqueeEdge.top ||
+                                                    edge == _MarqueeEdge.bottom,
+                                                onDrag: (global) {
+                                                  _resizeEdge = edge;
+                                                  _resizeMarquee(edge, global);
+                                                },
+                                                onDragEnd: () => setState(() {
+                                                  _resizeEdge = null;
+                                                  _resizeX = null;
+                                                }),
+                                              ),
                                             ),
                                           );
                                           return [
@@ -1996,7 +2021,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                   );
                   setState(() {
                     _paint = paint;
-                    _pending = _target(paint);
+                    _setPending(_target(paint));
                   });
                   _scrollPendingIntoView(start);
                 },
@@ -2059,12 +2084,18 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
     void begin(ZoneGroupGestureKind kind) => setState(() {
       _moveKind = kind;
       _moveDy = 0;
+      _moveDx = 0;
     });
-    void update(DragUpdateDetails d) => setState(() => _moveDy += d.delta.dy);
+    void update(DragUpdateDetails d) => setState(() {
+      _moveDy += d.delta.dy;
+      if (_moveKind == ZoneGroupGestureKind.move) _moveDx += d.delta.dx;
+    });
     return ZoneGridBlock(
       key: ValueKey(zone.id),
       theme: theme,
       zone: zone,
+      horizontalOffset: selected ? _moveDx : 0,
+      extending: _fillSource?.id == zone.id,
       top: start * _pixelsPerMinute,
       // zoneBackgroundGap trimmed off the BOTTOM only — mirrors
       // ZoneBackgroundBlock's own rule on the spatial Timeline exactly
@@ -2139,21 +2170,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
           : null,
       onResizeBottomUpdate: selected ? update : null,
       onResizeBottomEnd: selected ? (_) => _finishMove(zones) : null,
-      // The HORIZONTAL axis mirrors the vertical split above, and the
-      // unselected half matters more here than it looks: a sweep across
-      // DAYS is a horizontal drag, and [ZoneGridBlock] routes the two axes
-      // to different callback pairs (see its own `onHorizontalDragStart`
-      // comment — the arena picks whichever axis the finger commits to).
-      // Wiring only the vertical pair meant a day-to-day sweep selected
-      // its origin zone and then silently stopped, since every later
-      // pointer event went to the horizontal recognizer instead — caught
-      // by this feature's own test.
-      // Same `_sweepingZones`-first ordering as the vertical axis above,
-      // and it matters MORE here: a sweep across DAYS is a horizontal
-      // drag, so it lives entirely on this callback pair. Wiring only the
-      // vertical pair would let a day-to-day sweep select its origin and
-      // then silently stop, since every later pointer event goes to the
-      // horizontal recognizer instead.
+      // Only side handles extend across days; body gestures use onMove.
       onExtendStart: _sweepingZones
           ? (d) => _updateZoneSweep(d.globalPosition, zones)
           : selected

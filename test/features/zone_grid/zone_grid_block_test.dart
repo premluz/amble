@@ -95,20 +95,9 @@ void main() {
     },
   );
 
-  // Real bug, reported directly: dragging a selected zone SIDEWAYS to
-  // extend it across days required repeated tap-move-release cycles
-  // instead of one continuous drag, and clarified on a second report as
-  // the drag "grabs/scrolls instead" — i.e. the gesture was being lost to
-  // the grid's own enclosing vertical scrollable BEFORE the extend ever
-  // started, not cancelled partway through.
-  //
-  // Two separate mechanisms are involved and both are pinned below:
-  //   1. `_EagerHorizontalDragRecognizer` lowers this block's horizontal
-  //      slop so a decisively sideways sweep commits before the scroll
-  //      view's own vertical recognizer does — see the group below.
-  //   2. The axis lock keeps whichever axis committed for the WHOLE
-  //      gesture, so drift after the fact can't hand it over — this group.
-  group('move/extend axis lock (2026-09-23)', () {
+  // Body ownership persists when a drag changes direction; handles alone
+  // invoke extension. One pan recognizer keeps both movement axes available.
+  group('zone body gesture ownership', () {
     Future<void> pumpBlock(
       WidgetTester tester, {
       required VoidCallback onMoveStart,
@@ -151,8 +140,8 @@ void main() {
     }
 
     testWidgets(
-      'a horizontal-committed drag keeps extending even once the finger '
-      'drifts vertically mid-gesture, instead of handing off to move',
+      'a horizontal body drag keeps moving during vertical drift '
+      'without invoking side-handle extension',
       (tester) async {
         var moveStarts = 0;
         var moveUpdates = 0;
@@ -172,12 +161,12 @@ void main() {
         );
 
         final gesture = await tester.startGesture(const Offset(140, 200));
-        // Commits horizontal: the first move is far larger on the x axis
-        // than the y axis, which is what wins the arena for extend.
+        // Commits horizontal: the first movement is far larger on the x axis
+        // than the y axis, which is what wins the arena for move.
         await gesture.moveBy(const Offset(30, 2));
         await tester.pump();
-        expect(extendStarts, 1, reason: 'extend should have started');
-        expect(moveStarts, 0, reason: 'move must not also start');
+        expect(moveStarts, 1, reason: 'move should have started');
+        expect(extendStarts, 0, reason: 'extend must not also start');
 
         // The finger now drifts mostly VERTICALLY for several frames — the
         // exact drift that used to let the vertical recognizer steal the
@@ -191,23 +180,23 @@ void main() {
         await tester.pump();
 
         expect(
-          moveStarts,
+          extendStarts,
           0,
-          reason: 'move must never start once extend has committed',
+          reason: 'extend must never start once move has committed',
         );
         expect(
-          moveUpdates,
+          extendUpdates,
           0,
-          reason: 'move must never update once extend has committed',
+          reason: 'extend must never update once move has committed',
         );
         expect(
-          moveEnds,
+          extendEnds,
           0,
-          reason: 'move must never end a gesture it never started',
+          reason: 'extend must never end a gesture it never started',
         );
-        expect(extendStarts, 1);
-        expect(extendUpdates, greaterThan(0));
-        expect(extendEnds, 1);
+        expect(moveStarts, 1);
+        expect(moveUpdates, greaterThan(0));
+        expect(moveEnds, 1);
       },
     );
 
@@ -268,24 +257,8 @@ void main() {
     );
   });
 
-  // The ACTUAL reported symptom, and the one the axis lock above could not
-  // fix on its own: "extending sideways... grabs/scrolls instead." The
-  // block lives inside the grid's own vertical `SingleChildScrollView`,
-  // and both recognizers race the same pointer — whichever axis passes its
-  // touch slop first takes the gesture. A real finger sweeping across day
-  // columns carries genuine vertical drift, so at equal thresholds the
-  // SCROLLABLE frequently won and the extend never started at all.
-  //
-  // The screen's own `physics: NeverScrollableScrollPhysics` guard cannot
-  // prevent this: it keys off `_fillSource != null`, which is only set by
-  // `onExtendStart` — which requires this recognizer to have already won.
-  // The guard suppresses scrolling for the rest of a fill that managed to
-  // start; it cannot help the gesture win in the first place.
-  //
-  // These pump a REAL scrollable around the block, which is what makes the
-  // competition reproducible at all — a bare block in a Stack has no
-  // competitor and passes even with the bug present.
-  group('sideways extend beats the enclosing scrollable (2026-09-23)', () {
+  // Exercise the real scroll competitor rather than a bare Stack.
+  group('zone body drag beats the enclosing scrollable', () {
     Future<ScrollController> pumpInScrollable(
       WidgetTester tester, {
       required ValueChanged<DragUpdateDetails> onMoveUpdate,
@@ -333,7 +306,7 @@ void main() {
     }
 
     testWidgets(
-      'a sideways sweep WITH vertical drift extends and does not scroll',
+      'a sideways body drag with vertical drift moves and does not scroll',
       (tester) async {
         var extendUpdates = 0;
         var moveUpdates = 0;
@@ -355,20 +328,20 @@ void main() {
         await tester.pump();
 
         expect(
-          extendUpdates,
+          moveUpdates,
           greaterThan(0),
-          reason: 'the sideways drag must reach the extend callback',
+          reason: 'the sideways drag must reach the move callback',
         );
         expect(
-          moveUpdates,
+          extendUpdates,
           0,
-          reason: 'a sideways drag must not also move the zone in time',
+          reason: 'a sideways drag must not invoke side-handle extension',
         );
         expect(
           controller.offset,
           0,
           reason:
-              'the grid must NOT scroll during a sideways extend — '
+              'the grid must NOT scroll during a sideways body move — '
               'scrolling here is the reported bug',
         );
       },
@@ -376,7 +349,7 @@ void main() {
 
     testWidgets(
       'a decisively vertical drag still moves the zone — the eager '
-      'horizontal recognizer must not steal ordinary vertical drags',
+      'body recognizer supports either direction',
       (tester) async {
         var extendUpdates = 0;
         var moveUpdates = 0;

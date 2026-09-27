@@ -6751,3 +6751,129 @@ Verification: 10 direct target/position tests pass; task handle, group-resize,
 and anchored-edge regressions pass. Full suite: 1574 passed, 21 failures in the
 existing view-transition/What Matters/zone-grid/navigation test set. Analyzer:
 18 existing issues, none in the changed files. `git diff --check` clean.
+
+## [2026-09-27] Unified handles and continuous zone day resizing
+
+Added shared `ResizeHandleDot`: accent fill, theme-surface inner separation
+ring, and inward selection-stroke-center positioning. Applied to task/zone
+time handles, selected-zone side handles, and the new-zone marquee. Saved
+zone side handles copy the source hours to adjacent weekdays. Stable marquee
+edge keys retain gesture ownership; its outline follows horizontal pixels
+and snaps to weekdays on release. Both selected-zone extension directions,
+existing body extension, continuous marquee dragging, and edge clamping pass
+targeted regression tests.
+
+Verification: the five focused day-extension/continuous-resize cases pass;
+the full suite reports 1612 passing tests and 16 failures in the previously
+recorded view-transition, What Matters, zone-grid dismissal/navigation, and
+dock tests. Full analysis retains 18 existing issues, none in the changed
+implementation. `git diff --check` passes.
+
+## 2026-09-27 — Edit sheet/toolbox layering and zone body versus handles
+
+Edit task drafts and zone naming suppress the persistent shell toolbar for
+the draft lifetime. Documented the in-tree-sheet suppression contract under
+Sheets and toolbox in DESIGN_SYSTEM.md. Existing-zone body drags now move the
+placement across weekdays through the existing cascade/undo path; side handles
+retain day-fill. Removed the duplicate enclosing marquee during day-fill.
+
+Verification: 10 focused screen cases and all 6 block gesture/label tests pass,
+including both movement directions with Undo, both side handles, and task-draft
+first-frame suppression. Full suite: 1621 pass / 17 fail, so the repository gate
+is not clean. Failures include the previously recorded view/dock/marquee tests
+and a quick-create placeholder-label locator failure. Full analysis: 18 issues,
+none in this change's implementation. Logs: `/tmp/amble-edit-handles-tests-final.log`
+and `/tmp/amble-edit-handles-analyze.log`. Device interaction remains unverified.
+
+## 2026-09-27 — Zone marker, group manipulation, and multi-delete follow-up
+
+Side extension now shares the new-zone accent marquee: continuously moving
+boundary, per-day ghost placeholders, and no duplicate source outline. The
+invisible source keeps gesture ownership. Extracted ZoneBodyGesture for free
+two-axis movement. Sequential multi-selection now deletes the current full set,
+not an earlier toolbar-captured set. Added dedicated Zones/ghosts and Task pills
+material sections to DESIGN_SYSTEM.md.
+
+Focused tests: 16 passing (6 block/label tests plus both side extensions,
+left/right movement with Undo, vertical/diagonal group moves, top/bottom group
+resize, and sequential 4/8-zone deletion). Full suite: 1630 passing / 17 failing. Analysis reports 31
+issues, none in the changed zone implementation; concurrent swipe-debug edits
+contribute additional findings. Repository-wide gates remain red. Logs:
+`/tmp/amble-zone-group-tests.log`, `/tmp/amble-zone-group-analyze.log`.
+No device visual/gesture verification performed.
+
+## [2026-09-27] Settings lists unified: Templates/Zones/Tags swipe-to-remove, Templates tap-to-edit
+
+Requested directly: Templates' three-dot menu (open a sheet just to reach
+Edit/Delete) didn't match Zones/Tags' own "tap opens the thing directly"
+shape, and none of the three Settings lists (Templates, Zones, Tags) had
+swipe-to-remove despite the Inbox's task/note rows already having it via
+`AppSwipeActions`.
+
+**Templates** (`template_list_view.dart`): tap now opens the template's own
+edit form directly (`showTaskTemplateForm`) instead of spawning a task from
+it — that "seed a task from a template" behavior moved entirely to the
+quick-create sheet's own `TemplateChipStrip`, which already had it as a
+separate path. Removed the three-dot menu and deleted the now-dead
+`task_template_action_sheet.dart` outright (no remaining callers). Added
+swipe-left-to-remove via `AppSwipeActions`, calling the existing
+`TaskTemplateList.deleteTemplate`.
+
+**Zones** (`zone_list_screen.dart`): tap-to-edit and no chevron/menu were
+already correct — only swipe-to-remove was added, calling
+`ZoneList.deleteUnusedFacet`. That call throws `StateError` when the name
+is still used by a saved zone; per a confirmed judgment call (see
+DECISIONS.md), the swipe still attempts the remove and shows the error as
+a plain `AppUndoToast` (no undo action) rather than blocking the swipe
+pre-emptively or silently no-opping.
+
+**Tags** (`category_list_screen.dart`): removed the trailing chevron icon
+from every row (tap already opened the edit modal directly, so it was
+pure decoration). Added swipe-to-remove calling
+`CategoryList.deleteCategory`, but disabled entirely (`endAction: null`)
+for built-in tags — `deleteCategory` already silently no-ops for those,
+and a swipe that visibly reveals a Remove action which then does nothing
+would be a worse experience than no swipe at all (confirmed via
+AskUserQuestion; see DECISIONS.md).
+
+Spent most of this session's time on ONE swipe-to-remove test hang — see
+the new ERROR_LOG.md entry for the root cause (real Hive I/O never
+resolving without `runAsync`) and the false leads investigated first. All
+three screens' own test files are green (Templates 8, Zones 2, Tags 3),
+`flutter analyze` clean against the established 18-issue baseline. Full
+`flutter test` run still shows the same ~17-19 pre-existing failures this
+session did not introduce (timeline nav consolidation, zone group moves,
+`app_view_transition_test.dart`, and 2 pre-existing `app_swipe_actions_test.dart`
+failures already present in this session's starting git status before any
+of today's edits) — confirmed by checking `git diff --stat` on each
+failing file against what this session actually touched.
+
+## 2026-09-27 — Zone multi-edit current-selection fix
+
+Replaced the selection-capturing zone Edit closure with `_editSelectedZones`,
+which reads current selection when invoked. Tests confirm multi-edit opens for
+2/3 incrementally selected zones and saves all selected rows without changing
+unselected rows. Changes are limited to zone_grid_screen.dart, its screen test,
+and these logs. Five focused single/multi-edit tests pass; the two new cases
+failed before the fix. Full gate remains red: 1634 passing / 18 failing tests,
+and 18 analyzer findings, none in the changed implementation. Logs are
+`/tmp/amble-zone-multiedit-tests.log` and `/tmp/amble-zone-multiedit-analyze.log`.
+
+## [2026-09-27] Export/Import gated behind panta_pro
+
+Requested directly, with an initial trial-based proposal explicitly
+rejected before any of it was built: Export and Import in
+`backup_settings_screen.dart` now require an active `panta_pro`
+entitlement outright, no free trial window. Reused the existing
+`PurchasesRepository`/`isPantaProProvider` wiring rather than building a
+parallel mechanism. Both buttons show "(Unlock)" and a "Requires Panta
+Pro." caption when locked; tapping either while locked presents the
+RevenueCat paywall through the repository (same call
+`SubscriptionSettingsScreen` uses) and only proceeds on a successful
+purchase/restore.
+
+New test file `test/features/settings/backup_settings_screen_test.dart`
+(3 tests: locked copy, unlocked copy, tapping locked shows the
+purchases-unavailable message rather than exporting — this test binary
+has no RevenueCat API keys, so the actual paywall path isn't reachable in
+CI). `flutter analyze` clean against the established 18-issue baseline.

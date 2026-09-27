@@ -1,4 +1,8 @@
+import 'package:amble/shared/providers/preferences_providers.dart';
+import 'package:amble/shared/providers/purchases_providers.dart';
 import 'package:amble/shared/providers/zone_facet_providers.dart';
+import 'package:amble/shared/repositories/hive_preferences_repository.dart';
+import 'package:amble/shared/repositories/preferences_repository.dart';
 
 import '../../support/memory_zone_repositories.dart';
 
@@ -25,15 +29,30 @@ class IntentTestStore {
   late Box<Task> tasks;
   late Box<Zone> zones;
   late Box<Category> categories;
+  late Box<dynamic> preferences;
   late ProviderContainer container;
 
-  Future<void> open() async {
+  /// [installDate]/[isPantaPro] default to null/false — meaning no
+  /// `installDate` is ever written to [preferences], and
+  /// `daysSinceInstallProvider` reads it as "day zero" (trial active).
+  /// Every existing caller of this store gets that same untouched
+  /// behavior; only a test deliberately exercising the trial gate
+  /// (`app_intent_service_test.dart`'s own trial-gate group) passes a
+  /// real [installDate].
+  Future<void> open({DateTime? installDate, bool isPantaPro = false}) async {
     directory = await Directory.systemTemp.createTemp('amble_intent_test_');
     Hive.init(directory.path);
     if (!Hive.isAdapterRegistered(0)) Hive.registerAdapters();
     tasks = await Hive.openBox<Task>('tasks');
     zones = await Hive.openBox<Zone>('zones');
     categories = await Hive.openBox<Category>('categories');
+    preferences = await Hive.openBox<dynamic>('preferences');
+    if (installDate != null) {
+      await preferences.put(
+        PreferenceKeys.installDate,
+        installDate.toIso8601String(),
+      );
+    }
     container = ProviderContainer(
       overrides: [
         zoneFacetRepositoryProvider.overrideWithValue(
@@ -47,6 +66,10 @@ class IntentTestStore {
         notificationServiceProvider.overrideWithValue(
           FakeNotificationService(),
         ),
+        preferencesRepositoryProvider.overrideWithValue(
+          HivePreferencesRepository(preferences),
+        ),
+        isPantaProProvider.overrideWithValue(isPantaPro),
       ],
     );
   }
@@ -56,6 +79,7 @@ class IntentTestStore {
     await tasks.close();
     await zones.close();
     await categories.close();
+    await preferences.close();
     await directory.delete(recursive: true);
   }
 }

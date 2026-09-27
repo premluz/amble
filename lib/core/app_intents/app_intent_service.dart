@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../shared/models/category.dart';
+import '../../shared/models/recurrence_rule.dart';
 import '../../shared/models/task.dart';
 import '../../shared/models/zone.dart';
 import '../../shared/services/weekly_zone_schedule.dart';
@@ -8,6 +9,7 @@ import '../../shared/providers/category_providers.dart';
 import '../../shared/providers/notification_providers.dart';
 import '../../shared/providers/task_providers.dart';
 import '../../shared/providers/zone_providers.dart';
+import '../../shared/providers/trial_providers.dart';
 import '../../shared/services/quick_capture_parser.dart';
 import '../../shared/services/zone_overlap_checker.dart';
 import 'intent_task_queries.dart';
@@ -40,7 +42,7 @@ class AppIntentService {
         );
         final notifier = container.read(taskListProvider.notifier);
         if (!parsed.isConfident) {
-          await notifier.captureTask(input);
+          await _captureTaskOrFail(notifier, input);
           return 'Saved "$input" as a note. No definite time was found.';
         }
         final duration =
@@ -50,7 +52,8 @@ class AppIntentService {
             'Please give a duration greater than zero.',
           );
         }
-        final task = await notifier.createTask(
+        final task = await _createTaskOrFail(
+          notifier,
           title: parsed.title.isEmpty ? input : parsed.title,
           scheduledAt: parsed.scheduledAt!,
           durationMinutes: duration,
@@ -59,11 +62,18 @@ class AppIntentService {
         );
         return 'Added "${task.title}" at ${intentTimeLabel(task.scheduledAt!)}.';
       case 'addNote':
-        final note = Task.captured(title: _text(args, 'text'));
-        // updateTask is the existing save/upsert + refresh path. Keep the
-        // notifier alive if a foreground save is also in flight.
-        await container.read(taskListProvider.notifier).updateTask(note);
-        return 'Added note "${note.title}".';
+        final noteTitle = _text(args, 'text');
+        // Routed through captureTask (not a direct Task.captured +
+        // updateTask upsert, as this used to do) so it carries the same
+        // trial/panta_pro gate every other new-task path does — see
+        // TaskList.captureTask's own doc comment. updateTask stays a bare
+        // upsert with no gate, since it's also the genuine-edit path for
+        // existing tasks.
+        await _captureTaskOrFail(
+          container.read(taskListProvider.notifier),
+          noteTitle,
+        );
+        return 'Added note "$noteTitle".';
       case 'addZone':
         return _addZone(args);
       case 'daySummary':
@@ -156,5 +166,39 @@ class AppIntentService {
       throw const AppIntentFailure('Please give a non-empty title or text.');
     }
     return value.trim();
+  }
+
+  /// Translates [TrialExpiredException] into [AppIntentFailure] — the
+  /// shape this service's own caller (`app_intent_channel.dart`) already
+  /// knows how to surface as a native-side message. Neither `addTask` nor
+  /// `addNote` has a widget tree to present a paywall from, so the OS
+  /// simply tells the user why nothing was added.
+  Future<Task> _createTaskOrFail(
+    TaskList notifier, {
+    required String title,
+    required DateTime scheduledAt,
+    required int durationMinutes,
+    required String categoryId,
+    RecurrenceRule? recurrenceRule,
+  }) async {
+    try {
+      return await notifier.createTask(
+        title: title,
+        scheduledAt: scheduledAt,
+        durationMinutes: durationMinutes,
+        categoryId: categoryId,
+        recurrenceRule: recurrenceRule,
+      );
+    } on TrialExpiredException {
+      throw const AppIntentFailure(TrialExpiredException.message);
+    }
+  }
+
+  Future<void> _captureTaskOrFail(TaskList notifier, String title) async {
+    try {
+      await notifier.captureTask(title);
+    } on TrialExpiredException {
+      throw const AppIntentFailure(TrialExpiredException.message);
+    }
   }
 }

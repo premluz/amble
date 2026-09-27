@@ -5,6 +5,8 @@ import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_modal_route.dart';
 import '../../core/widgets/app_press_feedback.dart';
+import '../../core/widgets/app_swipe_actions.dart';
+import '../../core/widgets/app_undo_toast.dart';
 import '../../shared/models/category.dart';
 import '../../shared/providers/category_providers.dart';
 import 'add_category_modal.dart';
@@ -97,12 +99,28 @@ class CategoryListBody extends ConsumerWidget {
       padding: EdgeInsets.symmetric(horizontal: theme.spacingScreenPadding),
       itemCount: categories.length,
       separatorBuilder: (_, _) => SizedBox(height: theme.spacingSm),
-      itemBuilder: (context, index) => _CategoryRow(
-        theme: theme,
-        category: categories[index],
-        onTap: () => showAddCategoryModal(context, category: categories[index]),
-      ),
+      itemBuilder: (context, index) {
+        final category = categories[index];
+        return _CategoryRow(
+          theme: theme,
+          category: category,
+          onTap: () => showAddCategoryModal(context, category: category),
+          onRemove: () => _removeCategory(context, ref, category),
+        );
+      },
     );
+  }
+
+  /// Always succeeds for a user-created tag — `deleteCategory` reassigns
+  /// affected tasks to General and deletes, no confirmation needed
+  /// (matches Templates/Zones' own "no confirmation dialog" swipe
+  /// contract). Built-in tags never reach here — see [_CategoryRow]'s own
+  /// `endAction: null` guard, confirmed via AskUserQuestion rather than
+  /// allowing a swipe that would silently no-op against
+  /// `deleteCategory`'s own built-in check.
+  void _removeCategory(BuildContext context, WidgetRef ref, Category category) {
+    ref.read(categoryListProvider.notifier).deleteCategory(category.id);
+    AppUndoToast.show(context: context, message: 'Removed tag');
   }
 }
 
@@ -131,61 +149,81 @@ class _CategoryRow extends StatelessWidget {
     required this.theme,
     required this.category,
     required this.onTap,
+    required this.onRemove,
   });
 
   final AmbleTheme theme;
   final Category category;
   final VoidCallback onTap;
+  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
     final swatch = theme.categorySwatches[category.colorToken];
 
-    return AppPressFeedback(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(theme.radiusXl),
-      child: Container(
-        width: double.infinity,
-        padding: EdgeInsets.all(theme.spacingMd),
-        decoration: BoxDecoration(
-          color: theme.colorSurfaceSecondary,
-          borderRadius: BorderRadius.circular(theme.radiusXl),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: theme.spacingXl,
-              height: theme.spacingXl,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(color: swatch, shape: BoxShape.circle),
-              // Not CategoryBadge — this row deliberately reads the raw
-              // 12-swatch color by colorToken regardless of built-in
-              // status (this IS the Tags management list; showing each
-              // row's own assigned swatch, not a built-in override, is
-              // the point here), which CategoryBadge's own fill logic
-              // (resolveCategoryVisual, built-in-aware) doesn't produce.
-              // Ratio bumped to CategoryBadge's own 0.55 default for
-              // consistency, without adopting its differing fill color.
-              child: CategoryGlyph(
-                category: category,
-                color: glyphColorOn(swatch),
-                size: theme.spacingXl * 0.55,
-              ),
+    return AppSwipeActions(
+      // Built-in tags (the 5 seeded rows) can't be deleted at all —
+      // `CategoryList.deleteCategory` silently no-ops for them. Rather
+      // than let the swipe reveal a Remove action that would do nothing,
+      // the gesture is disabled outright for these rows — confirmed via
+      // AskUserQuestion.
+      endAction: category.isBuiltIn
+          ? null
+          : AppSwipeAction(
+              icon: Icons.delete_outline_rounded,
+              background: theme.colorTaskAlert,
+              semanticLabel: 'Remove tag',
+              destructive: true,
+              onActivate: onRemove,
             ),
-            SizedBox(width: theme.spacingSm),
-            Expanded(
-              child: Text(
-                category.name,
-                style: theme.textBody.copyWith(
-                  color: theme.colorTextPrimary,
-                  fontWeight: FontWeight.w700,
+      child: AppPressFeedback(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(theme.radiusXl),
+        child: Container(
+          width: double.infinity,
+          padding: EdgeInsets.all(theme.spacingMd),
+          decoration: BoxDecoration(
+            color: theme.colorSurfaceSecondary,
+            borderRadius: BorderRadius.circular(theme.radiusXl),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: theme.spacingXl,
+                height: theme.spacingXl,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: swatch,
+                  shape: BoxShape.circle,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+                // Not CategoryBadge — this row deliberately reads the raw
+                // 12-swatch color by colorToken regardless of built-in
+                // status (this IS the Tags management list; showing each
+                // row's own assigned swatch, not a built-in override, is
+                // the point here), which CategoryBadge's own fill logic
+                // (resolveCategoryVisual, built-in-aware) doesn't produce.
+                // Ratio bumped to CategoryBadge's own 0.55 default for
+                // consistency, without adopting its differing fill color.
+                child: CategoryGlyph(
+                  category: category,
+                  color: glyphColorOn(swatch),
+                  size: theme.spacingXl * 0.55,
+                ),
               ),
-            ),
-            Icon(Icons.chevron_right_rounded, color: theme.colorTextSecondary),
-          ],
+              SizedBox(width: theme.spacingSm),
+              Expanded(
+                child: Text(
+                  category.name,
+                  style: theme.textBody.copyWith(
+                    color: theme.colorTextPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -85,8 +85,16 @@ class _AppContextDockLayout extends StatelessWidget {
                 height: rect.height,
                 child: IgnorePointer(
                   child: AnimatedOpacity(
-                    opacity: !pane.entering && (pane.present || entries.values.any(
-                      (entry) => entry.groupId == pane.group.id && !entry.exiting)) ? 1 : 0,
+                    opacity:
+                        !pane.entering &&
+                            (pane.present ||
+                                entries.values.any(
+                                  (entry) =>
+                                      entry.groupId == pane.group.id &&
+                                      !entry.exiting,
+                                ))
+                        ? 1
+                        : 0,
                     duration: duration,
                     curve: theme.curveStandard,
                     child: DecoratedBox(
@@ -117,12 +125,37 @@ class _AppContextDockLayout extends StatelessWidget {
                   opacity: !entry.exiting && !entry.entering ? 1 : 0,
                   duration: duration,
                   curve: theme.curveStandard,
+                  // `entering` is deliberately EXCLUDED from every gate
+                  // below (unlike the opacity fade above, which keeps it)
+                  // — regression, reported directly: "when multiselecting
+                  // zones and delete, it deletes 1 or 2 sometimes but not
+                  // all at once selected." Root cause: `entering` starts
+                  // `true` for any action newly added to an ALREADY-VISIBLE
+                  // dock (e.g. Edit/Remove appearing next to an existing
+                  // Close the moment a selection becomes non-empty — see
+                  // `AppContextDock._replaceConfiguration`'s own
+                  // `..entering = !initial`), and stays `true` for the
+                  // ~200-270ms staggered entrance. A user who selects
+                  // several items and taps Remove quickly (an entirely
+                  // ordinary interaction, not an edge case) can tap before
+                  // that timer clears `entering`, and the tap was
+                  // previously swallowed here with no feedback at all —
+                  // confirmed directly with a widget-test probe: the
+                  // button doesn't even exist in the tree for the first
+                  // frame after selecting, then exists-but-ignores-taps
+                  // for another ~200ms. `entering` genuinely only means
+                  // "still fading in cosmetically" once a dock already has
+                  // visible content (it is NEVER `true` on the dock's own
+                  // first-ever mount — see `_replaceConfiguration`'s
+                  // `initial` parameter), so gating real interaction on it
+                  // was never actually protecting a genuine "not ready
+                  // yet" state, only adding a needless dead window.
                   child: ExcludeFocus(
-                    excluding: !entry.present || entry.entering,
+                    excluding: !entry.present,
                     child: ExcludeSemantics(
-                      excluding: !entry.present || entry.entering,
+                      excluding: !entry.present,
                       child: IgnorePointer(
-                        ignoring: !entry.present || entry.entering,
+                        ignoring: !entry.present,
                         child: Semantics(
                           key: ValueKey(entry.action.id),
                           button: true,

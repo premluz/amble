@@ -74,7 +74,11 @@ class AppBottomDock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
-    final inheritedOverride = AppShellChromeScope.maybeOf(context)?.configuration;
+    final chrome = AppShellChromeScope.maybeOf(context);
+    // Inline creation sheets live below the shell in paint order. Suppress
+    // chrome immediately; an animated empty configuration still paints exits.
+    if (chrome?.dockObscured == true) return const SizedBox.shrink();
+    final inheritedOverride = chrome?.configuration;
     final mattersBackground = whatMattersEnabled
         ? Color.alphaBlend(
             theme.colorAccent.withValues(

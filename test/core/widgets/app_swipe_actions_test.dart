@@ -137,6 +137,56 @@ void main() {
       expect(rowOffset(tester), moreOrLessEquals(-_extent, epsilon: 0.5));
     });
 
+    // Regression, reported directly: "sometimes when release earlier it
+    // stays with revealed button and not clickable, should be clickable."
+    // The widget's OWN doc comment promises this: "the row stays parked
+    // open, showing the button as a real tap target." But `_ActionSurface`
+    // (the coloured icon panel) never actually wired a tap handler to
+    // `action.onActivate` — it only marks itself `Semantics(button: true)`
+    // for accessibility, with no real `GestureDetector`/`InkWell` behind
+    // it. The ONLY way `onActivate` ever fired was stage two (pull past
+    // the threshold and release) — tapping the parked-open icon did
+    // nothing at all.
+    testWidgets(
+      'tapping the revealed action icon while parked open activates it',
+      (tester) async {
+        await pumpRow(tester);
+
+        await tester.drag(find.text('Buy milk'), const Offset(-_toParked, 0));
+        await tester.pumpAndSettle();
+        expect(fired, isEmpty, reason: 'parking alone must not activate');
+
+        await tester.tap(find.byIcon(Icons.delete_outline_rounded));
+        await tester.pump();
+
+        expect(
+          fired,
+          ['remove'],
+          reason:
+              'a parked-open action icon is a real tap target per this '
+              'widget\'s own doc comment — tapping it must activate, not '
+              'sit inert',
+        );
+      },
+    );
+
+    testWidgets(
+      'tapping the revealed START action icon while parked open activates '
+      'it too',
+      (tester) async {
+        await pumpRow(tester);
+
+        await tester.drag(find.text('Buy milk'), const Offset(_toParked, 0));
+        await tester.pumpAndSettle();
+        expect(fired, isEmpty);
+
+        await tester.tap(find.byIcon(Icons.calendar_today_rounded));
+        await tester.pump();
+
+        expect(fired, ['schedule']);
+      },
+    );
+
     testWidgets('a barely-there swipe snaps shut instead of parking', (
       tester,
     ) async {

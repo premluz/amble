@@ -345,8 +345,20 @@ void main() {
       // of dot move inside, top one move bottom, bottom one move top."
       // The point of this test is that the dot is not CLIPPED: its outer
       // half paints past the pill, which the frosted wrapper used to cut.
-      expect(dots.first.center.dy, moreOrLessEquals(pill.top + AmbleTheme.light.borderWidthHairline / 2, epsilon: 0.5));
-      expect(dots.last.center.dy, moreOrLessEquals(pill.bottom - AmbleTheme.light.borderWidthHairline / 2, epsilon: 0.5));
+      expect(
+        dots.first.center.dy,
+        moreOrLessEquals(
+          pill.top + AmbleTheme.light.borderWidthHairline / 2,
+          epsilon: 0.5,
+        ),
+      );
+      expect(
+        dots.last.center.dy,
+        moreOrLessEquals(
+          pill.bottom - AmbleTheme.light.borderWidthHairline / 2,
+          epsilon: 0.5,
+        ),
+      );
       // The outer half genuinely extends beyond the pill's own bounds.
       expect(dots.first.top, lessThan(pill.top));
       expect(dots.last.bottom, greaterThan(pill.bottom));

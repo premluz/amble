@@ -136,11 +136,15 @@ class _TaskTemplateFormState extends ConsumerState<_TaskTemplateForm> {
 
   /// Removes the template being edited — requested directly: "Edit
   /// template also remove icon b[u]tton add." Mirrors
-  /// `task_template_action_sheet.dart`'s own `_delete` and
-  /// `task_detail_sheet.dart`'s `_delete`: deletes immediately with no
+  /// `task_detail_sheet.dart`'s own `_delete`: deletes immediately with no
   /// confirmation dialog (a template has no recurring-scope question to
   /// ask, and nothing references it once it has spawned a task), edit
-  /// path only (there is nothing to delete from the create flow).
+  /// path only (there is nothing to delete from the create flow). Also
+  /// reachable now via `TemplateRow`'s own swipe-to-remove
+  /// (`template_list_view.dart`) — this button and that swipe both call
+  /// the same `TaskTemplateList.deleteTemplate`, just from two different
+  /// surfaces (2026-09-27, the swipe was added alongside removing the old
+  /// three-dot menu that used to hold this same action).
   Future<void> _delete() async {
     final template = widget.template;
     if (template == null) return;

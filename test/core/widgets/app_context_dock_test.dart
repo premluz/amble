@@ -196,4 +196,80 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.byTooltip('Retained'), findsOneWidget);
   });
+
+  // Regression, reported directly: "when multiselecting zones and delete,
+  // it deletes 1 or 2 sometimes but not all at once selected." Root cause:
+  // an action newly added to an ALREADY-VISIBLE dock (e.g. a Remove button
+  // appearing next to an existing Save the moment a selection becomes
+  // non-empty) starts `entering: true` and stayed wrapped in
+  // `IgnorePointer` for the whole ~200-270ms staggered fade-in — so a tap
+  // landing in that window (an entirely ordinary "select then immediately
+  // tap Remove" gesture, not an edge case) was silently swallowed with no
+  // feedback. Fixed by excluding `entering` from the interactivity gates
+  // (focus/semantics/pointer) while keeping it for the opacity fade —
+  // see `_AppContextDockLayout`'s own doc comment on that call site.
+  testWidgets('a newly-added action in an ALREADY-VISIBLE dock is tappable '
+      'immediately — not blocked for the whole entrance fade', (tester) async {
+    var removes = 0;
+    final initial = dockConfiguration(onSave: () {});
+    await tester.pumpWidget(dockHost(initial));
+    await tester.pumpAndSettle();
+
+    // Selection becomes non-empty: Remove appears alongside the
+    // already-visible Save. Deliberately only ONE bare `pump()` after
+    // this — no settle — mirroring a user who selects several items
+    // and taps Remove right away, well before the ~200-270ms entrance
+    // animation would otherwise finish.
+    await tester.pumpWidget(
+      dockHost(dockConfiguration(onSave: () {}, onRemove: () => removes++)),
+    );
+    await tester.pump();
+
+    expect(
+      find.byTooltip('Remove'),
+      findsOneWidget,
+      reason: 'the new action must exist in the tree immediately',
+    );
+    await tester.tap(find.byTooltip('Remove'));
+    expect(
+      removes,
+      1,
+      reason:
+          'a tap on a newly-entering action must register immediately, '
+          'not be swallowed by IgnorePointer until its fade finishes',
+    );
+  });
+
+  testWidgets(
+    'an EXITING action (removed from the configuration) is NOT tappable '
+    'during its own fade-out — only newly-entering actions skip the gate',
+    (tester) async {
+      var saves = 0;
+      var removes = 0;
+      await tester.pumpWidget(
+        dockHost(
+          dockConfiguration(onSave: () => saves++, onRemove: () => removes++),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Selection clears: Remove is about to exit.
+      await tester.pumpWidget(
+        dockHost(dockConfiguration(onSave: () => saves++)),
+      );
+      await tester.pump();
+
+      // Still present in the tree mid-fade-out (present: false, but not
+      // yet pruned), but must not be tappable.
+      final removeFinder = find.byTooltip('Remove');
+      if (removeFinder.evaluate().isNotEmpty) {
+        await tester.tap(removeFinder, warnIfMissed: false);
+      }
+      expect(
+        removes,
+        0,
+        reason: 'an exiting (no longer present) action must stay inert',
+      );
+    },
+  );
 }
