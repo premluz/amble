@@ -7400,3 +7400,103 @@ mode covers the persistent top navigation. It retains its existing entrance
 motion and inherited theme/provider scope. The empty-state hint now suggests
 “Plan holidays” and says, “You can add multiple tasks at once.”
 No tests were run in this pass.
+
+## 2026-09-28 — Branded native launch screens
+
+Replaced the native launch-screen branch glyph with the light/dark Rios logo
+artwork from `assets/branding`. iOS now selects appearance-specific 1x/2x/3x
+images and a matching light/dark background color asset; Android uses
+light/dark launch drawables and background colors that match the Flutter splash
+surface. PNG dimensions and iOS asset-catalog compilation were checked after
+resizing. Android 12+ now receives the same explicit light/dark background
+through its system splash theme; its launcher-icon behavior is unchanged. Full
+app builds were not run because the shared Flutter SDK cache is not writable in
+this environment.
+
+## 2026-09-28 — Refresh stale iOS launch artwork
+
+Removed the installed iOS app, cleared generated Flutter/Xcode build outputs,
+then rebuilt and reinstalled the release app. The new `Assets.car` contains the
+light and dark Rios `LaunchImage` renditions, and a device screenshot confirms
+the app reaches the Day screen with the new wave-mark home icon. The brief
+native launch frame could not be captured because this iPhone does not support
+`devicectl` screen recording. `flutter analyze` still reports 16 existing
+issues, including the missing `widgetbook/main.dart`; the full test rerun after
+stopping orphaned test workers still has 20 failures in unrelated UI tests.
+
+## 2026-09-28 — Allow RevenueCat Test Store key in debug runs
+
+An explicit iOS `--dart-define` already overrides the embedded App Store key;
+the debug prefix assertion was what rejected `test_` before the SDK ran. Test
+Store keys are now accepted in debug and treated as purchases-unavailable in
+release. RevenueCat setup failures retain their error and stack trace in logs
+while allowing startup to continue. The supplied debug command built and
+launched on the physical iPhone; startup reached `runApp` and fired its first
+frame callback. A no-define comparison also reached its first frame. Targeted
+`flutter analyze` on both changed Dart files and the focused backup settings
+test pass.
+
+## [2026-09-28] App icon regenerated a second time; found and fixed a sixth, previously-missed icon location
+
+User dropped a new `assets/branding/icon-App-1024x1024@1x.png` and asked
+to re-run the icon generation script. Re-ran the existing session script
+against the new source — regenerated all 44 files across the 5 locations
+already covered (iOS/Android/macOS × the main app and `widgetbook/`).
+
+Then, documenting every location for future reference, found a 6th spot
+the script had never covered: `Amble/Amble/Assets.xcassets/AppIcon.
+appiconset/appicon.png` — a separate, plain SwiftUI Xcode project
+(`Amble/Amble.xcodeproj`) tracked in git alongside the real Flutter app
+but unrelated to its build, almost certainly a leftover from before this
+became a Flutter project. Confirmed via AskUserQuestion to update it too
+for consistency. Its icon set uses the newer single-file "universal"
+format (one 1024×1024 PNG, no per-size set), so only that one file needed
+replacing. Added a `generate_stray_swiftui_project` step to the session
+script so a future re-run covers all 6 locations automatically, and wrote
+a `docs/DECISIONS.md` entry documenting why there are six locations at
+all (no single source-of-truth icon asset in Flutter; two native
+platforms × two sub-projects (main app + `widgetbook/`) × one leftover
+native scaffold project) so this doesn't need rediscovering next time.
+
+Verified generated sizes/alpha against each location's own manifest, same
+spot-check method as the first regeneration pass. No Dart code references
+any of these files (confirmed via grep), so there was nothing else to
+wire up on the code side.
+
+## 2026-09-28 — Keep native launch screen white in every system mode
+
+Disabled the appearance-specific launch background and logo selection. iOS
+uses one pure-white background and its dark-on-white logo in every mode;
+Android uses the same white background and logo for default and night launch
+resources, with a light launch window theme. The Flutter app's own theme
+selection is unchanged. Verified with `flutter build ios --simulator
+--no-codesign` and `flutter build apk --debug`.
+
+## 2026-09-28 — Set installed app name to Rios
+
+Changed the iOS home-screen display name and bundle name, plus Android's
+launcher label, to `Rios`. Bundle identifiers and the `panta_pro` entitlement
+remain unchanged. Both iOS simulator and Android debug builds pass; the
+packaged iOS plist and Android resources contain the `Rios` display name.
+
+## 2026-09-28 — Task edit dock uses the live multi-selection
+
+The persistent shell dock keys its updates by action shape. Task edit and
+remove callbacks had captured IDs from the first selection build, so adding
+more tasks without changing the dock shape left them acting on an old subset.
+Both actions now resolve the current selection when tapped, matching the
+already-fixed zone removal path. Shell-hosted regressions cover selecting a
+second task after either action appears. All 9 focused widget tests pass, and
+targeted analysis reports no issues.
+
+## 2026-09-28 — Zone editing: single-zone day-copy handles and lane snapping
+
+Side handles that copy zones across weekdays are available only for a single
+selected zone; multi-selection retains group move and time resizing. Body
+movement previews and commits snap horizontally to whole weekday lanes, and
+the original slot remains as a non-interactive ghost at the task-drag opacity.
+The task and zone preview opacity share `DragPreviewTokens.ghostOpacity`.
+Focused tests for handle visibility, lane snapping, ghost opacity, and the zone
+block gesture tests pass; targeted analysis is clean. The full
+`zone_grid_screen_test.dart` run still has two failures in marquee-sheet
+dismissal tests, outside these new interaction assertions.

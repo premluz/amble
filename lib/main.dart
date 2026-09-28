@@ -58,37 +58,98 @@ import 'shared/providers/tracked_behavior_providers.dart';
 import 'shared/providers/trial_providers.dart';
 import 'shared/providers/zone_providers.dart';
 
+// TEMPORARY diagnostic instrumentation — added to track down a reported
+// "white launch screen, then full black screen, app unresponsive" on both
+// Simulator and a physical device. main() runs a long chain of awaited
+// Hive/RevenueCat/notification setup steps before `runApp`; an uncaught
+// exception anywhere in that chain kills the app before the Flutter engine
+// paints a first frame, which is indistinguishable on-device from a hang.
+// This wraps every step with a timestamped START/DONE/ERROR log (stack
+// trace preserved, then rethrown — never swallowed) so the real failure
+// point can be read from `flutter logs`/Console.app, rather than guessed
+// at again. Remove once the real cause is found and fixed.
+Future<T> _step<T>(String label, Future<T> Function() body) async {
+  final start = DateTime.now();
+  debugPrint('[startup] START $label @ $start');
+  try {
+    final result = await body();
+    debugPrint(
+      '[startup] DONE  $label (+${DateTime.now().difference(start).inMilliseconds}ms)',
+    );
+    return result;
+  } catch (error, stackTrace) {
+    debugPrint('[startup] ERROR $label: $error');
+    debugPrint('$stackTrace');
+    rethrow;
+  }
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Hive.initFlutter();
-  Hive.registerAdapters();
-  await Hive.openBox<Task>(taskBoxName);
+  // TEMPORARY diagnostic — see `_step`'s own doc comment above. Flutter's
+  // own framework errors (a failed build/layout) normally show as an
+  // on-screen red error box in debug, but that box is itself a `Text`
+  // needing a real frame to paint — if the very FIRST frame's build
+  // throws, there may be nothing on screen to show it at all. Logging
+  // here guarantees the error reaches the console regardless.
+  final previousOnError = FlutterError.onError;
+  FlutterError.onError = (details) {
+    debugPrint(
+      '[startup] FlutterError.onError: ${details.exceptionAsString()}',
+    );
+    debugPrint('${details.stack}');
+    previousOnError?.call(details);
+  };
+  await _step('Hive.initFlutter', () => Hive.initFlutter());
+  await _step('Hive.registerAdapters', () async => Hive.registerAdapters());
+  await _step('Hive.openBox<Task>', () => Hive.openBox<Task>(taskBoxName));
   // Opened but unused until the TrackedBehavior UI exists (gated behind
   // FeatureFlags.trackedBehaviorEnabled) — the box must be open for
   // trackedBehaviorRepositoryProvider to resolve if anything ever reads it.
-  await Hive.openBox<TrackedBehavior>(trackedBehaviorBoxName);
+  await _step(
+    'Hive.openBox<TrackedBehavior>',
+    () => Hive.openBox<TrackedBehavior>(trackedBehaviorBoxName),
+  );
   // Opened but unused until a Zone UI exists (gated behind
   // FeatureFlags.zoneEnabled) — same "additive, inert data layer" pattern
   // as trackedBehaviorBoxName above.
-  await Hive.openBox<Zone>(zoneBoxName);
-  await HiveZoneFacetRepository.initialize();
+  await _step('Hive.openBox<Zone>', () => Hive.openBox<Zone>(zoneBoxName));
+  await _step(
+    'HiveZoneFacetRepository.initialize',
+    () => HiveZoneFacetRepository.initialize(),
+  );
   // The user-extensible category entity — seeded with 5 built-in rows and
   // backfilled onto existing tasks below, once, at launch.
-  await Hive.openBox<Category>(categoryBoxName);
+  await _step(
+    'Hive.openBox<Category>',
+    () => Hive.openBox<Category>(categoryBoxName),
+  );
   // User-created Inbox folders — no seeding, every Section is user-made.
-  await Hive.openBox<Section>(sectionBoxName);
+  await _step(
+    'Hive.openBox<Section>',
+    () => Hive.openBox<Section>(sectionBoxName),
+  );
   // Reusable task blueprints, surfaced on the Inbox's "Templates" tab —
   // ungated (free functionality, same tier as Category), see
   // CONSTITUTION.md's "TaskTemplate" section.
-  await Hive.openBox<TaskTemplate>(taskTemplateBoxName);
+  await _step(
+    'Hive.openBox<TaskTemplate>',
+    () => Hive.openBox<TaskTemplate>(taskTemplateBoxName),
+  );
   // Small key-value store for app preferences (theme mode today, more
   // later). Untyped box: it holds heterogeneous primitive/adapter values by
   // design — see PreferencesRepository.
-  await Hive.openBox<dynamic>(preferencesBoxName);
+  await _step(
+    'Hive.openBox<dynamic>(preferences)',
+    () => Hive.openBox<dynamic>(preferencesBoxName),
+  );
   // Tracks device-calendar event ids created by Feature 2's manual sync-out
   // — see CONSTITUTION.md's "Calendar" section and SyncedCalendarEvent's
   // own doc comment for why this can't just live in `preferences`.
-  await Hive.openBox<SyncedCalendarEvent>(syncedCalendarEventBoxName);
+  await _step(
+    'Hive.openBox<SyncedCalendarEvent>',
+    () => Hive.openBox<SyncedCalendarEvent>(syncedCalendarEventBoxName),
+  );
 
   final container = ProviderContainer(
     overrides: [
@@ -113,12 +174,16 @@ void main() async {
   // of the app, so an unconfigured build runs normally without them and
   // `isPantaProProvider` simply stays false. The Subscription screen
   // shows its own "unavailable" state rather than a broken paywall.
-  final purchasesConfigured = await container
-      .read(purchasesRepositoryProvider)
-      .configure();
+  final purchasesConfigured = await _step(
+    'purchasesRepository.configure',
+    () => container.read(purchasesRepositoryProvider).configure(),
+  );
   if (purchasesConfigured) {
     container.read(pantaCustomerInfoProvider); // starts the listener
-    await container.read(pantaCustomerInfoProvider.notifier).refresh();
+    await _step(
+      'pantaCustomerInfo.refresh',
+      () => container.read(pantaCustomerInfoProvider.notifier).refresh(),
+    );
   } else {
     debugPrint(
       'RevenueCat not configured — purchases disabled for this build. '
@@ -128,13 +193,19 @@ void main() async {
   }
 
   final notificationService = container.read(notificationServiceProvider);
-  await notificationService.initialize(
-    onNotificationTap: (taskId) =>
-        container.read(notificationTapProvider.notifier).set(taskId),
+  await _step(
+    'notificationService.initialize',
+    () => notificationService.initialize(
+      onNotificationTap: (taskId) =>
+          container.read(notificationTapProvider.notifier).set(taskId),
+    ),
   );
-  await notificationService.handleColdStartLaunch(
-    onNotificationTap: (taskId) =>
-        container.read(notificationTapProvider.notifier).set(taskId),
+  await _step(
+    'notificationService.handleColdStartLaunch',
+    () => notificationService.handleColdStartLaunch(
+      onNotificationTap: (taskId) =>
+          container.read(notificationTapProvider.notifier).set(taskId),
+    ),
   );
 
   // Records this install's first-launch timestamp, once — powers the
@@ -143,22 +214,32 @@ void main() async {
   // tasks via any route"). Must run before anything below could possibly
   // create a task, so the trial clock is never absent when
   // `canCreateTaskProvider` is first read. See `trial_providers.dart`.
-  await container.read(installDateProvider.notifier).recordIfNeeded();
+  await _step(
+    'installDate.recordIfNeeded',
+    () => container.read(installDateProvider.notifier).recordIfNeeded(),
+  );
 
   // One-time migration: an existing user's single `TaskSize` choice seeds
   // the newly-independent `TaskFontSize` setting, by name, exactly once —
   // see `TaskFontSizeSetting.migrateIfNeeded`'s own doc comment for why
   // this happens here (an explicit, awaited launch step) rather than as a
   // side effect of that provider's own `build()`.
-  await container.read(taskFontSizeSettingProvider.notifier).migrateIfNeeded();
+  await _step(
+    'taskFontSizeSetting.migrateIfNeeded',
+    () =>
+        container.read(taskFontSizeSettingProvider.notifier).migrateIfNeeded(),
+  );
 
   // Seed the 5 built-in categories and backfill every pre-existing task's
   // deprecated `category` enum onto the new `categoryId`. Launch-only,
   // gated by PreferenceKeys.categoriesSeeded so it only actually runs
   // once per install — see docs/DECISIONS.md.
-  await container
-      .read(categoryListProvider.notifier)
-      .seedBuiltInsAndBackfillIfNeeded();
+  await _step(
+    'categoryList.seedBuiltInsAndBackfillIfNeeded',
+    () => container
+        .read(categoryListProvider.notifier)
+        .seedBuiltInsAndBackfillIfNeeded(),
+  );
 
   // Backfill `Task.createdAt` for every pre-existing row saved before
   // that field existed. Launch-only, gated by
@@ -166,13 +247,19 @@ void main() async {
   // shape as the category backfill just above — see
   // `TaskList.backfillCreatedAtIfNeeded`'s own doc comment and
   // docs/DECISIONS.md.
-  await container.read(taskListProvider.notifier).backfillCreatedAtIfNeeded();
+  await _step(
+    'taskList.backfillCreatedAtIfNeeded',
+    () => container.read(taskListProvider.notifier).backfillCreatedAtIfNeeded(),
+  );
 
   // Top up each recurring series' rolling window. Launch-only by design
   // (see docs/DECISIONS.md) — the Timeline stays a pure reader, and the
   // 8-week window means a session would have to stay open for weeks before
   // running dry. Idempotent, so this never duplicates existing instances.
-  await container.read(taskListProvider.notifier).materializeDueRecurrences();
+  await _step(
+    'taskList.materializeDueRecurrences',
+    () => container.read(taskListProvider.notifier).materializeDueRecurrences(),
+  );
   // Collapses duplicate same-titled Zone series into one, and detaches
   // any orphaned series (rows carrying a recurrenceId whose template no
   // longer exists). Runs BEFORE the top-up below, so materialization
@@ -182,12 +269,18 @@ void main() async {
   // Needed because two now-fixed bugs could mint parallel series for one
   // zone (see docs/ERROR_LOG.md); this repairs installs that already
   // accumulated them, which a code fix alone cannot do.
-  await container.read(zoneListProvider.notifier).migrateToWeeklySchedule();
+  await _step(
+    'zoneList.migrateToWeeklySchedule',
+    () => container.read(zoneListProvider.notifier).migrateToWeeklySchedule(),
+  );
   // Same rolling-window top-up, for Zone's own materialized recurring
   // instances (see docs/DECISIONS.md — Zone materialization session).
   // Mirrors the Task call above exactly, including trigger point (app
   // open, before notification refresh) and idempotency.
-  await container.read(zoneListProvider.notifier).materializeDueRecurrences();
+  await _step(
+    'zoneList.materializeDueRecurrences',
+    () => container.read(zoneListProvider.notifier).materializeDueRecurrences(),
+  );
 
   // Roll the notification window forward. Materialization above writes rows
   // 8 weeks out but deliberately schedules no alarms; this registers them
@@ -199,14 +292,16 @@ void main() async {
   // Alerts are a side effect of data that is already persisted, so they can
   // finish registering after the first frame.
   // Task refresh owns cancelAll; zone registration must follow it.
-  unawaited(() async {
-    await container
-        .read(taskListProvider.notifier)
-        .refreshScheduledNotifications();
-    await container
-        .read(zoneListProvider.notifier)
-        .refreshScheduledNotifications();
-  }());
+  unawaited(
+    _step('notifications.refresh (background)', () async {
+      await container
+          .read(taskListProvider.notifier)
+          .refreshScheduledNotifications();
+      await container
+          .read(zoneListProvider.notifier)
+          .refreshScheduledNotifications();
+    }),
+  );
 
   // Morning-summary background task: re-registered (or cancelled) on every
   // launch against the CURRENT setting value, same reasoning as the
@@ -220,22 +315,32 @@ void main() async {
   // above: this is a batch of native platform calls with no bearing on the
   // first frame.
   unawaited(
-    Workmanager()
-        .initialize(backgroundTaskDispatcher)
-        .then(
-          (_) => registerMorningSummaryTask(
-            enabled: container.read(slackSummaryEnabledSettingProvider),
+    _step(
+      'Workmanager.initialize (background)',
+      () => Workmanager()
+          .initialize(backgroundTaskDispatcher)
+          .then(
+            (_) => registerMorningSummaryTask(
+              enabled: container.read(slackSummaryEnabledSettingProvider),
+            ),
           ),
-        ),
+    ),
   );
 
   // Native Siri calls wait for this handshake, not for a visible UI frame.
   // The iOS host and its eventual scene share this engine and these boxes.
-  unawaited(registerAppIntentChannel(container));
+  unawaited(
+    _step(
+      'registerAppIntentChannel (background)',
+      () => registerAppIntentChannel(container),
+    ),
+  );
 
+  debugPrint('[startup] START runApp');
   runApp(
     UncontrolledProviderScope(container: container, child: const AmbleApp()),
   );
+  debugPrint('[startup] DONE  runApp (returned — does not mean painted yet)');
 }
 
 class AmbleApp extends ConsumerWidget {
@@ -243,6 +348,8 @@ class AmbleApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // TEMPORARY diagnostic — see `_step`'s own doc comment above `main()`.
+    debugPrint('[startup] AmbleApp.build entered');
     final themeMode = ref.watch(themeModeSettingProvider);
     final hasSeenSplash = ref.watch(hasSeenSplashProvider);
     // A separate step from the splash/carousel above, not folded into it
@@ -318,16 +425,51 @@ class AmbleApp extends ConsumerWidget {
         // `hasCompletedOnboarding` as their own "already shown" state, so
         // toggling a dev switch never re-shows something already seen —
         // only what a fresh, unseen install would reach.
-        home: !hasSeenSplash && newSplashEnabled
-            ? SplashScreen(onFinished: () {})
-            : !hasSeenSplash && legacyCarouselEnabled
-            ? SplashCarouselScreen(onFinished: () {})
-            : !hasCompletedOnboarding && onboardingQuizEnabled
-            ? const OnboardingQuizScreen()
-            : const AmbleHome(),
+        home: _loggedHome(
+          hasSeenSplash: hasSeenSplash,
+          newSplashEnabled: newSplashEnabled,
+          legacyCarouselEnabled: legacyCarouselEnabled,
+          hasCompletedOnboarding: hasCompletedOnboarding,
+          onboardingQuizEnabled: onboardingQuizEnabled,
+        ),
       ),
     );
   }
+}
+
+// TEMPORARY diagnostic — see `_step`'s own doc comment above `main()`.
+// Logs which branch of the home gate was actually selected, and schedules
+// a log for the first real painted frame (`addPostFrameCallback` fires
+// once per frame; `WidgetsBinding.instance.firstFrameRasterized` is the
+// more specific signal, but this callback alone already tells us whether
+// the engine reaches "a frame was scheduled and drawn" at all).
+Widget _loggedHome({
+  required bool hasSeenSplash,
+  required bool newSplashEnabled,
+  required bool legacyCarouselEnabled,
+  required bool hasCompletedOnboarding,
+  required bool onboardingQuizEnabled,
+}) {
+  final Widget home;
+  final String label;
+  if (!hasSeenSplash && newSplashEnabled) {
+    label = 'SplashScreen';
+    home = SplashScreen(onFinished: () {});
+  } else if (!hasSeenSplash && legacyCarouselEnabled) {
+    label = 'SplashCarouselScreen';
+    home = SplashCarouselScreen(onFinished: () {});
+  } else if (!hasCompletedOnboarding && onboardingQuizEnabled) {
+    label = 'OnboardingQuizScreen';
+    home = const OnboardingQuizScreen();
+  } else {
+    label = 'AmbleHome';
+    home = const AmbleHome();
+  }
+  debugPrint('[startup] home gate selected: $label');
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    debugPrint('[startup] first frame callback fired (home: $label)');
+  });
+  return home;
 }
 
 /// The brightness actually in effect, resolving [AppThemeMode.system]
@@ -644,7 +786,8 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
         : 'settings';
     _publishScene(
       _ShellScene(
-        key: '$activeIndex:$activeViewId:${timelineMode.name}:$trackedTabVisible',
+        key:
+            '$activeIndex:$activeViewId:${timelineMode.name}:$trackedTabVisible',
         viewId: activeViewId,
         forward: _pageMotionForward,
         child: screens[activeIndex],
@@ -703,141 +846,148 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
       enabled: ref.watch(whatMattersEnabledSettingProvider),
       visible: _selectedIndex == 0,
       child: Scaffold(
-      resizeToAvoidBottomInset: false,
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          children: [
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                theme.spacingScreenPadding,
-                theme.spacingSm,
-                theme.spacingScreenPadding,
-                theme.spacingSm,
+        resizeToAvoidBottomInset: false,
+        body: SafeArea(
+          bottom: false,
+          child: Column(
+            children: [
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  theme.spacingScreenPadding,
+                  theme.spacingSm,
+                  theme.spacingScreenPadding,
+                  theme.spacingSm,
+                ),
+                child: AppShellHeader(
+                  controller: _chromeController,
+                  child: AppTopNav(
+                    destinations: _topNavLabels(trackedTabVisible),
+                    // **Real bug, fixed 2026-09-22**: this used to fall back
+                    // to `0` whenever `_selectedIndex` was Settings' own
+                    // index (out of range for `destinations`, which never
+                    // includes it) — which made "Day" light up as active
+                    // while Settings was actually open. `_TopNavLabel`'s own
+                    // `i == selectedIndex` comparison never matches `i`
+                    // against Settings' index anyway (`destinations` only
+                    // ever runs 0..settingsIndex-1), so passing the real
+                    // index through unclamped correctly leaves every label
+                    // unselected — `settingsSelected` below is what now
+                    // carries the "Settings is active" signal instead, onto
+                    // the gear icon.
+                    selectedIndex: _selectedIndex,
+                    settingsSelected: _selectedIndex == screens.length - 1,
+                    // Tapping the Day destination (index 0) again while it's
+                    // already selected toggles spatial/Zone view — the
+                    // nav-tap half of "1 nav item, but when tapped again it
+                    // switches view," mirrored by `AppCalendarHeader`'s own
+                    // switcher button reaching the same provider.
+                    onDestinationSelected: (index) {
+                      if (index == 0 && _selectedIndex == 0) {
+                        ref
+                            .read(zoneViewEnabledSettingProvider.notifier)
+                            .set(!zoneViewEnabled);
+                        return;
+                      }
+                      setState(() {
+                        _pageMotionForward = index > _selectedIndex;
+                        _selectedIndex = index;
+                      });
+                    },
+                    onSettingsTap: () {
+                      final settingsIndex = screens.length - 1;
+                      final wasAlreadyOnSettings =
+                          _selectedIndex == settingsIndex;
+                      setState(() {
+                        _pageMotionForward = settingsIndex > _selectedIndex;
+                        _selectedIndex = settingsIndex;
+                      });
+                      // Only on an actual transition INTO Settings, not on a
+                      // repeated tap while already there — `onSettingsTap` fires
+                      // on every tap regardless of current tab, unlike
+                      // `onDestinationSelected`'s own already-selected check
+                      // above.
+                      if (!wasAlreadyOnSettings &&
+                          FeatureFlags.subscriptionEnabled &&
+                          RevenueCatConfig.isAvailable) {
+                        unawaited(
+                          ref
+                              .read(purchasesRepositoryProvider)
+                              .presentPaywallIfNeeded(
+                                RevenueCatConfig.pantaProEntitlementId,
+                              ),
+                        );
+                      }
+                    },
+                  ),
+                ),
               ),
-              child: AppShellHeader(controller: _chromeController, child: AppTopNav(
-                destinations: _topNavLabels(trackedTabVisible),
-                // **Real bug, fixed 2026-09-22**: this used to fall back
-                // to `0` whenever `_selectedIndex` was Settings' own
-                // index (out of range for `destinations`, which never
-                // includes it) — which made "Day" light up as active
-                // while Settings was actually open. `_TopNavLabel`'s own
-                // `i == selectedIndex` comparison never matches `i`
-                // against Settings' index anyway (`destinations` only
-                // ever runs 0..settingsIndex-1), so passing the real
-                // index through unclamped correctly leaves every label
-                // unselected — `settingsSelected` below is what now
-                // carries the "Settings is active" signal instead, onto
-                // the gear icon.
-                selectedIndex: _selectedIndex,
-                settingsSelected: _selectedIndex == screens.length - 1,
-                // Tapping the Day destination (index 0) again while it's
-                // already selected toggles spatial/Zone view — the
-                // nav-tap half of "1 nav item, but when tapped again it
-                // switches view," mirrored by `AppCalendarHeader`'s own
-                // switcher button reaching the same provider.
-                onDestinationSelected: (index) {
-                  if (index == 0 && _selectedIndex == 0) {
-                    ref
-                        .read(zoneViewEnabledSettingProvider.notifier)
-                        .set(!zoneViewEnabled);
-                    return;
-                  }
-                  setState(() {
-                    _pageMotionForward = index > _selectedIndex;
-                    _selectedIndex = index;
-                  });
-                },
-                onSettingsTap: () {
-                  final settingsIndex = screens.length - 1;
-                    final wasAlreadyOnSettings =
-                        _selectedIndex == settingsIndex;
-                  setState(() {
-                    _pageMotionForward = settingsIndex > _selectedIndex;
-                    _selectedIndex = settingsIndex;
-                  });
-                  // Only on an actual transition INTO Settings, not on a
-                  // repeated tap while already there — `onSettingsTap` fires
-                  // on every tap regardless of current tab, unlike
-                  // `onDestinationSelected`'s own already-selected check
-                  // above.
-                  if (!wasAlreadyOnSettings &&
-                      FeatureFlags.subscriptionEnabled &&
-                      RevenueCatConfig.isAvailable) {
-                    unawaited(
-                      ref
-                          .read(purchasesRepositoryProvider)
-                          .presentPaywallIfNeeded(
-                            RevenueCatConfig.pantaProEntitlementId,
-                          ),
-                    );
-                  }
-                },
-              )),
-            ),
-            Expanded(
-              child: AppShellChromeScope(
-                controller: _chromeController,
-                child: Stack(
-                  children: [
-                    Navigator(
-                      key: _contentNavigatorKey,
-                      onGenerateRoute: (_) => PageRouteBuilder<void>(
-                        pageBuilder: (context, animation, secondaryAnimation) =>
-                            ValueListenableBuilder<_ShellScene?>(
-                              valueListenable: _sceneNotifier,
-                              builder: (context, scene, child) => scene == null
-                                  ? const SizedBox.shrink()
-                                  : AppViewTransition(
-                                      viewId: scene.viewId,
-                                      slide: true,
-                                      forward: scene.forward,
-                                      child: scene.child,
-                                    ),
-                            ),
-                        transitionDuration: Duration.zero,
-                        reverseTransitionDuration: Duration.zero,
+              Expanded(
+                child: AppShellChromeScope(
+                  controller: _chromeController,
+                  child: Stack(
+                    children: [
+                      Navigator(
+                        key: _contentNavigatorKey,
+                        onGenerateRoute: (_) => PageRouteBuilder<void>(
+                          pageBuilder:
+                              (context, animation, secondaryAnimation) =>
+                                  ValueListenableBuilder<_ShellScene?>(
+                                    valueListenable: _sceneNotifier,
+                                    builder: (context, scene, child) =>
+                                        scene == null
+                                        ? const SizedBox.shrink()
+                                        : AppViewTransition(
+                                            viewId: scene.viewId,
+                                            slide: true,
+                                            forward: scene.forward,
+                                            child: scene.child,
+                                          ),
+                                  ),
+                          transitionDuration: Duration.zero,
+                          reverseTransitionDuration: Duration.zero,
+                        ),
                       ),
-                    ),
-                    SafeArea(
-                      top: false,
-                      child: Align(
-                        alignment: Alignment.bottomLeft,
-                        child: Padding(
-                          padding: EdgeInsets.all(theme.spacingMd),
-                          child: AppBottomDock(
-                            activeView: zoneViewEnabled
-                                ? AppBottomDockView.list
-                                : AppBottomDockView.timeline,
-                            onSelectView: (view) => ref
-                                .read(zoneViewEnabledSettingProvider.notifier)
-                                .set(view == AppBottomDockView.list),
-                            onEditTap: () => showEditScreen(
-                              context,
-                              navigator: _contentNavigatorKey.currentState,
+                      SafeArea(
+                        top: false,
+                        child: Align(
+                          alignment: Alignment.bottomLeft,
+                          child: Padding(
+                            padding: EdgeInsets.all(theme.spacingMd),
+                            child: AppBottomDock(
+                              activeView: zoneViewEnabled
+                                  ? AppBottomDockView.list
+                                  : AppBottomDockView.timeline,
+                              onSelectView: (view) => ref
+                                  .read(zoneViewEnabledSettingProvider.notifier)
+                                  .set(view == AppBottomDockView.list),
+                              onEditTap: () => showEditScreen(
+                                context,
+                                navigator: _contentNavigatorKey.currentState,
+                              ),
+                              whatMattersEnabled: ref.watch(
+                                whatMattersEnabledSettingProvider,
+                              ),
+                              onWhatMattersTap: () => ref
+                                  .read(
+                                    whatMattersEnabledSettingProvider.notifier,
+                                  )
+                                  .set(
+                                    !ref.read(
+                                      whatMattersEnabledSettingProvider,
+                                    ),
+                                  ),
+                              visible:
+                                  activeIndex == 0 &&
+                                  ref.watch(pendingTaskDraftProvider) == null &&
+                                  !ref.watch(editModeEnabledProvider),
                             ),
-                            whatMattersEnabled: ref.watch(
-                              whatMattersEnabledSettingProvider,
-                            ),
-                            onWhatMattersTap: () => ref
-                                .read(
-                                  whatMattersEnabledSettingProvider.notifier,
-                                )
-                                .set(
-                                  !ref.read(whatMattersEnabledSettingProvider),
-                                ),
-                            visible:
-                                activeIndex == 0 &&
-                                ref.watch(pendingTaskDraftProvider) == null &&
-                                !ref.watch(editModeEnabledProvider),
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
             ],
           ),
         ),

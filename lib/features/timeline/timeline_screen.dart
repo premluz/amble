@@ -10,6 +10,7 @@ import '../../core/dev_config.dart';
 import '../../core/feature_flags.dart';
 import '../../core/haptics.dart';
 import '../../core/haptics_provider.dart';
+import '../../core/tokens/component_tokens.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_context_menu.dart';
 import '../../core/widgets/app_floating_create_button.dart';
@@ -2630,7 +2631,7 @@ class _DayTimelineState extends State<_DayTimeline> {
                             right: rightEdgeInset,
                             child: IgnorePointer(
                               child: Opacity(
-                                opacity: 0.2,
+                                opacity: DragPreviewTokens.ghostOpacity,
                                 child: TaskCapsuleBlock(
                                   task: draggedTask,
                                   category: widget

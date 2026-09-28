@@ -2336,3 +2336,24 @@ filter also changed text rasterization in the resting-task golden.
 Regression: `flutter test test/features/timeline/timeline_capsule_preview_test.dart
  test/core/widgets/app_floating_surface_test.dart
  test/core/widgets/floating_surface_paint_test.dart`.
+
+### 2026-09-28 — iOS can keep showing an outdated launch screen
+
+After replacing launch artwork, an incremental device build may still show the
+old launch snapshot. Apple’s [TN3118](https://developer.apple.com/documentation/technotes/tn3118-debugging-your-apps-launch-screen)
+recommends cleaning the build folder, removing the installed app, then building
+and installing again. If the device still shows the old mark, verify the
+compiled `Assets.car` contains the current `LaunchImage` renditions before
+changing the source artwork again.
+
+### 2026-09-28 — Debug Test Store key rejected before RevenueCat setup
+
+`RevenueCatConfig` resolves the explicit `--dart-define` ahead of its
+App Store default. A debug assertion that only accepted `appl_`/`goog_`
+prefixes nevertheless rejected RevenueCat's `test_` Test Store key before
+the SDK could initialize, stopping startup before `runApp`. Test Store keys
+are supported by the installed RevenueCat Flutter SDK in debug builds. Allow
+`test_` only in debug; in release, resolve it as unavailable because
+RevenueCat intentionally crashes release configurations using Test Store.
+Keep SDK setup inside the repository's guarded startup path and log its
+underlying error if configuration fails.

@@ -199,10 +199,17 @@ to extend this widget, not to hand-roll a look-alike.
 
 Saved weekly zones use `ZoneGridBlock`: `colorSurfaceSecondary`, `radiusSm`,
 and the compact `textZoneName` label. Body drags move the current selection
-in both time and weekday; top/bottom handles resize time; side handles extend
-the active zone's hours to additional weekdays. Empty grid space remains scrollable.
+in both time and weekday; horizontal body movement snaps to whole weekday
+lanes, while vertical movement retains its 5-minute time snap. Top/bottom
+handles resize time. Side handles copy the active zone to additional weekdays
+only when exactly one zone is selected; multi-selection keeps group move and
+time-resize available. Empty grid space remains scrollable.
 Batch actions read the current selected IDs at invocation, not the set captured
 when the toolbar first appeared.
+
+During a body move, the source slot remains as a non-interactive silhouette
+under the moving blocks. Its 20% opacity comes from
+`DragPreviewTokens.ghostOpacity`, shared with the Timeline task drag ghost.
 
 The new-zone and existing-zone extension previews share `_marqueeBody` and
 `_Phantom` in `zone_grid_screen.dart`:
@@ -212,8 +219,9 @@ The new-zone and existing-zone extension previews share `_marqueeBody` and
 - During side extension the moving boundary follows pointer pixels; weekday
   ghost membership and the saved placements snap to columns.
 - Each covered weekday has a non-interactive ghost: `colorSurfaceSecondary`
-  at 55% alpha, `radiusMd`, a centered rotated `textCaption` title in
-  `colorTextSecondary`, and ellipsis overflow. No independent accent outline.
+  at `DragPreviewTokens.ghostOpacity` overall opacity, `radiusMd`, a centered
+  rotated `textCaption` title in `colorTextSecondary`, and ellipsis overflow.
+  No independent accent outline.
 - Ghosts are inset by `spacingXs` horizontally and half `spacingXs` vertically.
   They preview placement only; persistence occurs on release or confirmation.
 - Hide the original source block visually during extension, preserving its

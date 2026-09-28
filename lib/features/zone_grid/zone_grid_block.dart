@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/tokens/component_tokens.dart';
 import '../../core/tokens/semantic_theme.dart';
 import 'zone_body_gesture.dart';
 import '../../core/widgets/selected_pill_border.dart';
@@ -34,6 +35,7 @@ class ZoneGridBlock extends StatelessWidget {
     required this.dayColumnLeft,
     this.horizontalOffset = 0,
     this.extending = false,
+    this.moveGhostOffset,
     this.liveStartMinutes,
     this.liveEndMinutes,
     required this.onTap,
@@ -60,6 +62,7 @@ class ZoneGridBlock extends StatelessWidget {
   /// other Timeline block already uses.
   final bool extending;
   final double horizontalOffset;
+  final Offset? moveGhostOffset;
   final double top;
   final double height;
 
@@ -138,7 +141,31 @@ class ZoneGridBlock extends StatelessWidget {
           fit: StackFit.expand,
           clipBehavior: Clip.none,
           children: [
+            if (moveGhostOffset case final ghostOffset?)
+              Positioned(
+                key: ValueKey('zone-move-ghost-${zone.id}'),
+                left: ghostOffset.dx,
+                right: -ghostOffset.dx,
+                top: ghostOffset.dy,
+                bottom: -ghostOffset.dy,
+                child: IgnorePointer(
+                  child: Opacity(
+                    key: ValueKey('zone-move-ghost-opacity-${zone.id}'),
+                    opacity: DragPreviewTokens.ghostOpacity,
+                    child: DecoratedBox(
+                      key: ValueKey('zone-move-ghost-shape-${zone.id}'),
+                      decoration: BoxDecoration(
+                        color: theme.colorSurfaceSecondary,
+                        borderRadius: BorderRadius.circular(theme.radiusSm),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            // Keep the recognizer mounted when the move ghost is inserted
+            // before it in this Stack during an active drag.
             ZoneBodyGesture(
+              key: ValueKey('zone-body-gesture-${zone.id}'),
               onTap: onTap,
               onStart: onMoveStart,
               onUpdate: onMoveUpdate,

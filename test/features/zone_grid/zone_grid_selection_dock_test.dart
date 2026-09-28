@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive_ce.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
+import 'package:amble/core/widgets/app_bottom_dock.dart';
+import 'package:amble/core/widgets/app_shell_chrome.dart';
 import 'package:amble/core/widgets/app_switch.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/timeline/edit_selection_provider.dart';
@@ -77,8 +79,17 @@ void main() {
     await taskTemplateBox.deleteFromDisk();
   });
 
-  Future<ProviderContainer> pumpEditScreen(WidgetTester tester) async {
+  Future<ProviderContainer> pumpEditScreen(
+    WidgetTester tester, {
+    bool useShellDock = false,
+  }) async {
     late ProviderContainer container;
+    final shellChromeController = useShellDock
+        ? AppShellChromeController()
+        : null;
+    if (shellChromeController != null) {
+      addTearDown(shellChromeController.dispose);
+    }
     tester.view.physicalSize = const Size(430, 932);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -111,6 +122,36 @@ void main() {
                 useMaterial3: true,
                 extensions: [AmbleTheme.light],
               ),
+              builder: shellChromeController == null
+                  ? null
+                  : (context, child) => AppShellChromeScope(
+                      controller: shellChromeController,
+                      child: Overlay(
+                        initialEntries: [
+                          OverlayEntry(
+                            builder: (_) => Stack(
+                              children: [
+                                child!,
+                                Align(
+                                  alignment: Alignment.bottomLeft,
+                                  child: SafeArea(
+                                    top: false,
+                                    child: AppBottomDock(
+                                      activeView: AppBottomDockView.timeline,
+                                      onSelectView: (_) {},
+                                      onEditTap: () {},
+                                      whatMattersEnabled: false,
+                                      onWhatMattersTap: () {},
+                                      visible: false,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
               home: Builder(
                 builder: (context) => Scaffold(
                   body: Center(
@@ -310,13 +351,8 @@ void main() {
       await tester.runAsync(() async {
         await tester.tap(find.byTooltip('Remove selected'));
         await tester.pump();
-        // `_removeSelectedTasks` awaits `deleteTask` in a LOOP (one Hive
-        // write per selected task) — a single zero-delay drain only lets
-        // one queued continuation resolve, not a whole sequential chain
-        // of them. Poll until the real repository state settles instead
-        // of guessing a fixed number of delays, same reasoning as this
-        // codebase's other "drain real I/O before the block returns"
-        // helpers (see docs/ERROR_LOG.md).
+        // Batch deletion still writes to real Hive storage, so poll until
+        // the repository state settles rather than guessing a fixed delay.
         for (var i = 0; i < 20 && container.read(taskListProvider).isNotEmpty;
             i++) {
           await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -326,6 +362,75 @@ void main() {
 
       expect(container.read(taskListProvider), isEmpty);
       expect(container.read(editSelectionProvider), isEmpty);
+    },
+  );
+
+  testWidgets(
+    'shell dock Remove uses tasks added after the selection action appears',
+    (tester) async {
+      final container = await pumpEditScreen(tester, useShellDock: true);
+      final firstId = await createTask(
+        tester,
+        container,
+        title: 'Buy milk',
+        scheduledAt: DateTime.now(),
+      );
+      final secondId = await createTask(
+        tester,
+        container,
+        title: 'Buy eggs',
+        scheduledAt: DateTime.now().add(const Duration(hours: 1)),
+      );
+
+      container.read(editSelectionProvider.notifier).toggle(firstId);
+      await tester.pump();
+      container.read(editSelectionProvider.notifier).toggle(secondId);
+      await tester.pump();
+
+      expect(container.read(editSelectionProvider), {firstId, secondId});
+      await tester.runAsync(() async {
+        await tester.tap(find.byTooltip('Remove selected'));
+        for (
+          var i = 0;
+          i < 20 && container.read(taskListProvider).isNotEmpty;
+          i++
+        ) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          await tester.pump();
+        }
+      });
+
+      expect(container.read(taskListProvider), isEmpty);
+      expect(container.read(editSelectionProvider), isEmpty);
+    },
+  );
+
+  testWidgets(
+    'shell dock Edit uses tasks added after the selection action appears',
+    (tester) async {
+      final container = await pumpEditScreen(tester, useShellDock: true);
+      final firstId = await createTask(
+        tester,
+        container,
+        title: 'Buy milk',
+        scheduledAt: DateTime.now(),
+      );
+      final secondId = await createTask(
+        tester,
+        container,
+        title: 'Buy eggs',
+        scheduledAt: DateTime.now().add(const Duration(hours: 1)),
+      );
+
+      container.read(editSelectionProvider.notifier).toggle(firstId);
+      await tester.pump();
+      container.read(editSelectionProvider.notifier).toggle(secondId);
+      await tester.pump();
+
+      await tester.tap(find.byTooltip('Edit selected'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('2 tasks selected'), findsOneWidget);
     },
   );
 

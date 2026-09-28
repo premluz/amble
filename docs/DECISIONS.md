@@ -4472,3 +4472,98 @@ full-screen voice flow covers persistent app navigation while retaining the
 existing fade/slide motion and inherited theme/provider scope. The voice page
 keeps its own close control. Empty-state guidance says “Plan holidays” and
 explains that multiple tasks can be added at once.
+
+## 2026-09-28 — App icon lives in SIX places, not one; a generation script now covers all of them
+
+Supersedes/extends the Phase 9 entry above ("App icon and splash screen
+are explicit placeholders") now that a real source image
+(`assets/branding/icon-App-1024x1024@1x.png`, dropped directly into the
+repo) replaced that procedurally-generated placeholder. Documenting this
+because the count of places an app icon has to be regenerated is
+genuinely surprising and easy to under-cover on a future re-run — this
+session found the sixth location the hard way, after already having
+regenerated the other five.
+
+**Why there are six, not one**: Flutter has no single source-of-truth app
+icon asset — each native platform's own build tooling (Xcode's asset
+catalog, Android's `mipmap` resource system) wants its own pre-rendered
+PNG set at fixed filenames/sizes, and this repo additionally ships a
+`widgetbook/` sub-project (a second, near-complete copy of the iOS/
+Android/macOS platform folders for the component-storybook build) plus a
+leftover native SwiftUI Xcode project that predates the Flutter app.
+Nothing links these six locations to each other — they're independent
+copies, each requiring its own regenerated file set:
+
+1. **`ios/Runner/Assets.xcassets/AppIcon.appiconset/`** — the real
+   shipping iOS app's icon. 15 files, exact filenames/sizes read from
+   this folder's own `Contents.json` (not guessed) — 14 device-icon sizes
+   plus the 1024×1024 `ios-marketing` slot for App Store Connect
+   submission. **That marketing slot must have NO alpha channel** — Apple
+   rejects a submitted icon that has one — so it's the one file in the
+   whole set flattened onto an opaque background (`sage500`, this app's
+   real accent primitive) rather than kept transparent like every other
+   size.
+2. **`android/app/src/main/res/mipmap-*/ic_launcher.png`** — the real
+   shipping Android app's icon, one file per density
+   (mdpi/hdpi/xhdpi/xxhdpi/xxxhdpi = 48/72/96/144/192px).
+3. **`macos/Runner/Assets.xcassets/AppIcon.appiconset/`** — the macOS
+   build's own icon (this repo also builds a macOS target). 7 distinct
+   filenames (16 through 1024px, `Contents.json`'s own `app_icon_*.png`
+   naming), independent of iOS's own file set despite sharing a source.
+4. **`widgetbook/ios/Runner/Assets.xcassets/AppIcon.appiconset/`** — same
+   15-file iOS set, but for the `widgetbook/` sub-project's own iOS
+   platform folder, not the main app's.
+5. **`widgetbook/macos/Runner/Assets.xcassets/AppIcon.appiconset/`** —
+   same as (3), for `widgetbook/`.
+6. **`Amble/Amble/Assets.xcassets/AppIcon.appiconset/appicon.png`** — a
+   genuinely separate, plain SwiftUI Xcode project (`Amble/Amble.xcodeproj`,
+   with its own `AmbleApp.swift`/`ContentView.swift`) tracked in git
+   alongside the real Flutter app but not part of its build at all —
+   almost certainly a leftover from before this became a Flutter project.
+   Confirmed via AskUserQuestion to update this too, for consistency,
+   rather than leave it showing stale placeholder branding just because
+   it's unused. Its `AppIcon.appiconset` uses the newer single-file
+   "universal" format — one 1024×1024 PNG (`appicon.png`), no per-size
+   set — its `Contents.json`'s `mac` idiom entries have no `filename` at
+   all and are unpopulated placeholders Xcode would show empty regardless,
+   so only that one file needed replacing.
+
+Android has no Android equivalent of (6) — no stray native Android
+project exists in this repo, only the stray iOS/SwiftUI one.
+
+**Generation script** (session scratchpad, not committed to the repo —
+same "one-off tool, not a permanent script" posture the original Phase 9
+script had, since Flutter apps don't have one obvious place for this and
+`flutter_launcher_icons` was deliberately not added as a dependency):
+resizes the single 1024×1024 source with Lanczos resampling into every
+location above, reading exact filenames/sizes from each location's own
+`Contents.json` rather than hardcoding them from memory. Idempotent — a
+re-run with an unchanged source produces byte-identical output. Updated
+mid-session to add location (6) once it was found, so a future re-run of
+the SAME script now covers all six without needing to remember this
+entry.
+
+**Verification**: after each of the two source-image updates this
+session, spot-checked generated PNG dimensions against each location's
+own manifest (iOS 60×60@3x → 180×180, macOS 1024, Android xxxhdpi → 192,
+mdpi → 48) and confirmed the iOS marketing slot's mode is `RGB` (no
+alpha) while every other size stays `RGBA`. No Dart code references any
+of these files directly (confirmed via `grep -rn "app_icon\|appicon" lib/`
+— zero hits outside `AppIconButton`, an unrelated widget name) — the
+icon is resolved entirely by each platform's own native tooling from
+these fixed paths, so there is no `pubspec.yaml`/asset-declaration
+counterpart to update for the icon itself (unlike the in-app
+`Logo_on_light.svg`/`Logo_on_dark.svg` wordmark, which IS a declared
+Flutter asset — see this file's earlier 2026-09-28 entries on that).
+
+## 2026-09-28 — Weekly zone copy handles are single-selection; body moves snap to weekday lanes
+
+Requested directly: hide the left/right day-copy handles when more than one
+zone is selected, snap zone body movement to weekday lanes, and keep the
+source-slot ghost at the same opacity as a dragged task. Single-zone selection
+retains day-copy handles; multi-selection still supports group body movement
+and top/bottom time resizing. Horizontal body previews snap at the nearest
+lane boundary while the existing 5-minute vertical snap remains. During a
+move, each source slot stays visible as a non-interactive 20% silhouette;
+`DragPreviewTokens.ghostOpacity` now drives both task and zone ghosts, including
+the per-day copies shown during extension.

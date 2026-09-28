@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
 
@@ -18,12 +20,22 @@ class RevenueCatPurchasesRepository implements PurchasesRepository {
     final key = RevenueCatConfig.keyForCurrentPlatformOrNull;
     if (key == null) return false;
 
-    // isConfigured guards against a hot-restart or a second call
-    // re-running configure() with a fresh appUserID, which RevenueCat
-    // treats as a login change.
-    if (await Purchases.isConfigured) return true;
-    await Purchases.configure(PurchasesConfiguration(key));
-    return true;
+    try {
+      // Avoid re-running configure() after a hot restart or second call.
+      if (await Purchases.isConfigured) return true;
+      await Purchases.configure(PurchasesConfiguration(key));
+      return true;
+    } catch (error, stackTrace) {
+      // Purchases are optional, so SDK setup failures should not block the
+      // first frame; retain the native error in logs for diagnosis.
+      developer.log(
+        'RevenueCat setup failed; purchases are disabled for this launch.',
+        name: 'RevenueCatPurchasesRepository',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return false;
+    }
   }
 
   @override

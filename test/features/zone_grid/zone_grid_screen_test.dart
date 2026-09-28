@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:amble/core/tokens/component_tokens.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_bottom_dock.dart';
 import 'package:amble/core/widgets/app_button.dart';
@@ -278,6 +279,14 @@ void main() {
       expect(find.byKey(const ValueKey('zone-marquee-body')), findsOneWidget);
       expect(find.byKey(const ValueKey('zone-paint-selection')), findsOneWidget);
       expect(find.byKey(const ValueKey('zone-phantom-3')), findsOneWidget);
+      expect(
+        tester
+            .widget<Opacity>(
+              find.byKey(const ValueKey('zone-phantom-opacity-3')),
+            )
+            .opacity,
+        DragPreviewTokens.ghostOpacity,
+      );
       expect(tester.getSize(find.byKey(const ValueKey('zone-marquee-body'))).width,
         greaterThan(column * 2));
       await g.up();
@@ -295,6 +304,95 @@ void main() {
       expect(container.read(zoneEditSelectionProvider), contains(source.id));
     });
   }
+
+  testWidgets(
+    'side copy handles are hidden when multiple zones are selected',
+    (tester) async {
+      final zones = await container
+          .read(zoneListProvider.notifier)
+          .paintWeeklyZones(
+            title: 'Work',
+            weekdays: {2, 4},
+            startMinutes: 240,
+            endMinutes: 360,
+          );
+      await pump(tester);
+
+      for (final zone in zones) {
+        await tester.tapAt(point(tester, zone.weekday!, 300));
+        await tester.pump();
+      }
+
+      expect(container.read(zoneEditSelectionProvider), {
+        for (final zone in zones) zone.id,
+      });
+      for (final zone in zones) {
+        final block = tester.widget<ZoneGridBlock>(
+          find.byWidgetPredicate(
+            (widget) => widget is ZoneGridBlock && widget.zone.id == zone.id,
+          ),
+        );
+        expect(block.onExtendStart, isNull);
+        expect(block.onExtendEnd, isNull);
+        expect(block.onResizeTopEnd, isNotNull);
+        expect(block.onResizeBottomEnd, isNotNull);
+      }
+    },
+  );
+
+  testWidgets(
+    'zone body movement snaps by weekday and leaves a task-opacity ghost',
+    (tester) async {
+      final source =
+          (await container
+                  .read(zoneListProvider.notifier)
+                  .paintWeeklyZones(
+                    title: 'Focus',
+                    weekdays: {3},
+                    startMinutes: 240,
+                    endMinutes: 300,
+                  ))
+              .single;
+      await pump(tester);
+      await tester.tapAt(point(tester, 3, 270));
+      await tester.pump();
+
+      final columnWidth =
+          (point(tester, 4, 270) - point(tester, 3, 270)).dx;
+      final gesture = await tester.startGesture(point(tester, 3, 270));
+      await gesture.moveBy(Offset(columnWidth * .3, 0));
+      await tester.pump();
+      var block = tester.widget<ZoneGridBlock>(
+        find.byKey(ValueKey(source.id)),
+      );
+      expect(block.horizontalOffset, 0);
+
+      await gesture.moveBy(Offset(columnWidth * .3, 0));
+      await tester.pump();
+      block = tester.widget<ZoneGridBlock>(find.byKey(ValueKey(source.id)));
+      expect(block.horizontalOffset, closeTo(columnWidth, 0.01));
+      expect(
+        find.byKey(ValueKey('zone-move-ghost-shape-${source.id}')),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<Opacity>(
+              find.byKey(ValueKey('zone-move-ghost-opacity-${source.id}')),
+            )
+            .opacity,
+        DragPreviewTokens.ghostOpacity,
+      );
+
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(repository.getAll().single.weekday, 4);
+      expect(
+        find.byKey(ValueKey('zone-move-ghost-shape-${source.id}')),
+        findsNothing,
+      );
+    },
+  );
 
   for (final sourceDay in [1, 7]) {
     testWidgets(

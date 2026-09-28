@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform;
+    show TargetPlatform, defaultTargetPlatform, kDebugMode;
 
 /// RevenueCat public SDK API keys. The iOS key ships as a real default so
 /// an ordinary `flutter build ipa`/Xcode archive has purchases working with
@@ -27,6 +27,10 @@ import 'package:flutter/foundation.dart'
 /// [RevenueCatConfig.keyForCurrentPlatformOrNull] for why this degrades
 /// instead of throwing.
 abstract final class RevenueCatConfig {
+  static const String _appStoreKeyPrefix = 'appl_';
+  static const String _playStoreKeyPrefix = 'goog_';
+  static const String _testStoreKeyPrefix = 'test_';
+
   static const String _iosApiKey = String.fromEnvironment(
     'REVENUECAT_IOS_API_KEY',
     defaultValue: 'appl_sbyrPnVlPLjIPVJDNuGphjWRQDk',
@@ -56,15 +60,19 @@ abstract final class RevenueCatConfig {
       TargetPlatform.android => _androidApiKey,
       _ => '',
     };
+    // RevenueCat deliberately crashes release builds configured with a Test
+    // Store key. Keep that key useful for local debug runs, but disable
+    // purchases if one is accidentally carried into a release build.
+    if (!kDebugMode && key.startsWith(_testStoreKeyPrefix)) return null;
     // Debug-only guard against a wrong key prefix landing in the default
-    // or a `--dart-define` override — e.g. RevenueCat's Test Store key
-    // (`test_`) or a secret key (`sk_`) where the App Store public key
-    // (`appl_`) belongs. Asserts strip from release builds, so this
-    // catches the mistake in development; it is not what keeps a wrong
-    // key out of a shipped build — the default value itself is.
+    // or a `--dart-define` override — e.g. a secret key (`sk_`) where a
+    // public SDK key belongs. Test Store keys are allowed in debug builds.
     assert(
-      key.isEmpty || key.startsWith('appl_') || key.startsWith('goog_'),
-      'Wrong RevenueCat key prefix for $defaultTargetPlatform: $key',
+      key.isEmpty ||
+          key.startsWith(_appStoreKeyPrefix) ||
+          key.startsWith(_playStoreKeyPrefix) ||
+          (kDebugMode && key.startsWith(_testStoreKeyPrefix)),
+      'Wrong RevenueCat key prefix for $defaultTargetPlatform',
     );
     return key.isEmpty ? null : key;
   }

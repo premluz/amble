@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/tokens/component_tokens.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_context_dock.dart';
 import '../../core/widgets/app_shell_chrome.dart';
@@ -329,14 +330,14 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                 id: 'edit-task-edit',
                 icon: Icons.edit_outlined,
                 tooltip: 'Edit selected',
-                onPressed: () => _editSelectedTasks(selectedIds),
+                onPressed: _editSelectedTasks,
               ),
               AppContextAction(
                 id: 'edit-task-remove',
                 icon: Icons.delete_outline_rounded,
                 tooltip: 'Remove selected',
                 destructive: true,
-                onPressed: () => _removeSelectedTasks(selectedIds),
+                onPressed: _removeSelectedTasks,
               ),
             ],
           ),
@@ -457,9 +458,13 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   /// path clears the selection itself — closing either sheet leaves the
   /// user back on the same selection, in case they want to also Remove or
   /// re-edit it.
-  void _editSelectedTasks(Set<String> selectedIds) {
+  void _editSelectedTasks() {
+    // The persistent shell retains callbacks while the selection count stays
+    // the same shape; resolve the selected IDs when the action is tapped.
+    final selectedIds = Set<String>.of(ref.read(editSelectionProvider));
+    if (selectedIds.isEmpty) return;
     if (selectedIds.length == 1) {
-      final task = ref.read(taskByIdProvider(selectedIds.first));
+      final task = ref.read(taskByIdProvider(selectedIds.single));
       if (task == null) return;
       showTaskDetailSheet(context, task: task);
       return;
@@ -491,7 +496,11 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   /// row is gone. Undo's own restore loop had the identical bug (reported
   /// in the same breath: "when they reappear also not at once") — now
   /// via [TaskList.restoreTasksInBatch] too.
-  Future<void> _removeSelectedTasks(Set<String> selectedIds) async {
+  Future<void> _removeSelectedTasks() async {
+    // The shell keeps this action alive as task selection changes, so don't
+    // use the selection captured when its configuration was first claimed.
+    final selectedIds = Set<String>.of(ref.read(editSelectionProvider));
+    if (selectedIds.isEmpty) return;
     final notifier = ref.read(taskListProvider.notifier);
     final snapshots = selectedIds
         .map((id) => ref.read(taskByIdProvider(id)))
@@ -1074,14 +1083,14 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   Future<void> _finishMove(List<Zone> zones) async {
     final kind = _moveKind;
     final delta = (_moveDy / _pixelsPerMinute / 5).round() * 5;
-    final dayDelta = (_moveDx / _columnWidth).round();
+    final selection = ref.read(zoneEditSelectionProvider);
+    final dayDelta = _snappedDayDelta(zones, selection);
     setState(() {
       _moveKind = null;
       _moveDy = 0;
       _moveDx = 0;
     });
     if (kind == null || (delta == 0 && dayDelta == 0)) return;
-    final selection = ref.read(zoneEditSelectionProvider);
     final moves = <ZoneMove>[];
     for (final z in zones.where((z) => selection.contains(z.id))) {
       final weekday = (z.weekday! + dayDelta).clamp(1, 7);
@@ -1274,6 +1283,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
         .where((z) => z.isWeeklyPlacement && !z.archived)
         .toList();
     final selected = ref.watch(zoneEditSelectionProvider);
+    final snappedDayDelta = _snappedDayDelta(zones, selected);
     final preview = _fillSelection ?? _paint;
     final previewTitle = _fillSource?.title ?? 'New zone';
     const labels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
@@ -1623,6 +1633,8 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                                                     zones,
                                                     theme,
                                                     selected.contains(zone.id),
+                                                    selected.length == 1,
+                                                    snappedDayDelta,
                                                     _axisWidth +
                                                         (day - 1) * width,
                                                   ),
@@ -1785,12 +1797,19 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                                                   theme.spacingXs,
                                             ),
                                             child: IgnorePointer(
-                                              child: _Phantom(
+                                              child: Opacity(
                                                 key: ValueKey(
-                                                  'zone-phantom-$day',
+                                                  'zone-phantom-opacity-$day',
                                                 ),
-                                                theme: theme,
-                                                title: previewTitle,
+                                                opacity: DragPreviewTokens
+                                                    .ghostOpacity,
+                                                child: _Phantom(
+                                                  key: ValueKey(
+                                                    'zone-phantom-$day',
+                                                  ),
+                                                  theme: theme,
+                                                  title: previewTitle,
+                                                ),
                                               ),
                                             ),
                                           ),
@@ -2089,6 +2108,8 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
     List<Zone> zones,
     AmbleTheme theme,
     bool selected,
+    bool canExtendDays,
+    int snappedDayDelta,
     double dayColumnLeft,
   ) {
     final delta = selected ? (_moveDy / _pixelsPerMinute / 5).round() * 5 : 0;
@@ -2111,7 +2132,13 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
       key: ValueKey(zone.id),
       theme: theme,
       zone: zone,
-      horizontalOffset: selected ? _moveDx : 0,
+      horizontalOffset: selected ? snappedDayDelta * _columnWidth : 0,
+      moveGhostOffset: selected && _moveKind == ZoneGroupGestureKind.move
+          ? Offset(
+              -snappedDayDelta * _columnWidth,
+              -delta * _pixelsPerMinute,
+            )
+          : null,
       extending: _fillSource?.id == zone.id,
       top: start * _pixelsPerMinute,
       // zoneBackgroundGap trimmed off the BOTTOM only — mirrors
@@ -2188,43 +2215,68 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
       onResizeBottomUpdate: selected ? update : null,
       onResizeBottomEnd: selected ? (_) => _finishMove(zones) : null,
       // Only side handles extend across days; body gestures use onMove.
-      onExtendStart: _sweepingZones
-          ? (d) => _updateZoneSweep(d.globalPosition, zones)
-          : selected
-          ? (d) {
-              _startFill(zone);
-              if (_grid != null) {
-                setState(
+      onExtendStart: selected
+          ? canExtendDays
+              ? (d) {
+                  _startFill(zone);
+                  if (_grid != null) {
+                    setState(
+                      () => _fillDx =
+                          _grid!.globalToLocal(d.globalPosition).dx -
+                          _axisWidth -
+                          (zone.weekday! - .5) * _columnWidth,
+                    );
+                  }
+                }
+              : null
+          : _sweepingZones
+              ? (d) => _updateZoneSweep(d.globalPosition, zones)
+              : _editing
+                  ? (d) => _startZoneSweep(zone, d.globalPosition)
+                  : null,
+      onExtendUpdate: selected
+          ? canExtendDays
+              ? (d) => setState(
                   () => _fillDx =
                       _grid!.globalToLocal(d.globalPosition).dx -
                       _axisWidth -
                       (zone.weekday! - .5) * _columnWidth,
-                );
-              }
-            }
-          : _editing
-          ? (d) => _startZoneSweep(zone, d.globalPosition)
-          : null,
-      onExtendUpdate: _sweepingZones
-          ? (d) => _updateZoneSweep(d.globalPosition, zones)
-          : selected
-          ? (d) => setState(
-              () => _fillDx =
-                  _grid!.globalToLocal(d.globalPosition).dx -
-                  _axisWidth -
-                  (zone.weekday! - .5) * _columnWidth,
-            )
-          : _editing
-          ? (d) => _updateZoneSweep(d.globalPosition, zones)
-          : null,
-      onExtendEnd: _sweepingZones
-          ? (_) => _endZoneSweep()
-          : selected
-          ? (_) => _finishFill()
-          : _editing
-          ? (_) => _endZoneSweep()
-          : null,
+                )
+              : null
+          : _sweepingZones
+              ? (d) => _updateZoneSweep(d.globalPosition, zones)
+              : _editing
+                  ? (d) => _updateZoneSweep(d.globalPosition, zones)
+                  : null,
+      onExtendEnd: selected
+          ? canExtendDays
+              ? (_) => _finishFill()
+              : null
+          : _sweepingZones
+              ? (_) => _endZoneSweep()
+              : _editing
+                  ? (_) => _endZoneSweep()
+                  : null,
     );
+  }
+
+  int _snappedDayDelta(List<Zone> zones, Set<String> selection) {
+    final selectedWeekdays = zones
+        .where((zone) => selection.contains(zone.id))
+        .map((zone) => zone.weekday)
+        .whereType<int>()
+        .toList();
+    if (selectedWeekdays.isEmpty) return 0;
+    final firstSelectedDay = selectedWeekdays.reduce(
+      (first, day) => first < day ? first : day,
+    );
+    final lastSelectedDay = selectedWeekdays.reduce(
+      (last, day) => last > day ? last : day,
+    );
+    return (_moveDx / _columnWidth)
+        .round()
+        .clamp(1 - firstSelectedDay, 7 - lastSelectedDay)
+        .toInt();
   }
 }
 
@@ -2240,7 +2292,7 @@ class _Phantom extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     decoration: BoxDecoration(
-      color: theme.colorSurfaceSecondary.withValues(alpha: .55),
+      color: theme.colorSurfaceSecondary,
       borderRadius: BorderRadius.circular(theme.radiusMd),
     ),
     child: Center(
