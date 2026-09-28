@@ -247,10 +247,11 @@ primitives rather than reproducing approximate hex values from mockups.
 - Lifted task: identical glass + drag shadow. Animated `strength` keeps the
   render subtree mounted; zero strength removes paint, blur, and clipping so
   resting resize handles remain visible and gestures retain ownership.
-- Grouped toolbars: glass container, transparent ordinary items, solid tonal
-  selected-item fill, no per-item border. Both dock renderers use `AppDockSurface`.
-- Independently floating toolbar buttons: solid elevated surface + menu shadow,
-  no glass border. Primary create (+) remains solid brand accent.
+- Every toolbar pane, whether it holds a group or one independently floating
+  action: the same glass fill, border, and menu shadow. Ordinary items stay
+  transparent; selected items get a solid tonal fill; there are no separate
+  borders on the icons. Both dock renderers use `AppDockSurface`. Primary create
+  (+) remains solid brand accent.
 - Solid sheets remain solid. A future glass sheet must opt into this component.
 - Task lanes, habit dots, zone backgrounds, draft rails, inputs, and ordinary
   buttons receive no floating glass border. Their existing treatments remain.
@@ -915,6 +916,21 @@ Stack(
 )
 ```
 
+**`new_zone_sheet.dart` briefly diverged from this rule (2026-09-24 –
+2026-09-28) — moved back into line, not a standing exception.** A direct
+request ("close and add at the bottom of the sheet") had put this one
+sheet's Close/"Add zone" row at the BOTTOM instead, with the drag handle
+left on its own at the top. Reversed back to the top per this rule,
+requested directly — `AppSheetHeader` (with `AppDragToCloseHandle` as its
+`handle`) is now this sheet's first `Column` child too, same as every
+other `AppSheetHeader` call site. **This section's own rule was never
+edited to describe a bottom exception during that window** — the
+divergence lived only in `new_zone_sheet.dart`'s own local comment, so
+there is nothing else here to revert; this note exists so a future
+"why does new_zone_sheet look different from the other two" question
+doesn't resurface without this history attached. See docs/DECISIONS.md's
+2026-09-28 entry for the full account.
+
 ### Spacing
 
 Every value below is the same one the quick-create sheet already uses —
@@ -1064,6 +1080,9 @@ Future<T?> pushFullScreenRoute<T>(BuildContext context, WidgetBuilder builder)
   every modal in the app, whichever shape it takes.
 
 **Current call site**: `voice_capture_screen.dart`'s `showVoiceCaptureScreen`.
+The helper pushes on the root navigator so this full-page voice mode covers
+the persistent top navigation as well as the Inbox content. Keep the voice
+screen's own close control as its only header action.
 
 **Never**: a bare `Navigator.push(MaterialPageRoute(...))` with Flutter's
 default transition for a full-screen feature — that is what a handful of

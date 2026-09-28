@@ -203,8 +203,25 @@ void main() {
     },
   );
 
+  /// Starts, holds past the long-press threshold, and releases a "quick
+  /// task add" hold at [point] — since **2026-09-27** this is what closes
+  /// an armed task on empty-space contact, not a plain tap (see
+  /// `place_task_line.dart`'s own doc comment on the redesign that moved
+  /// the empty-space trigger from a tap to this long-press).
+  Future<void> longPressAndReleaseAt(
+    WidgetTester tester,
+    Offset point,
+  ) async {
+    final gesture = await tester.startGesture(point);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    await gesture.up();
+    await tester.pump();
+  }
+
   testWidgets(
-    'tapping empty timeline space closes an armed task\'s edit state',
+    'long-pressing empty timeline space closes an armed task\'s edit '
+    'state',
     (tester) async {
       final task = makeTask('Focus block');
       await pumpTimeline(tester, tasks: [task]);
@@ -215,18 +232,17 @@ void main() {
       expect(capturedContainer!.read(armedEditTaskProvider), task.id);
 
       // A point on the timeline background, well clear of the 9:00 task's
-      // own pill — matches the empty-space-tap harness other timeline
-      // tests already use for the same kind of background tap.
-      await tester.tapAt(const Offset(220, 700));
-      await tester.pump();
+      // own pill — matches the empty-space harness other timeline tests
+      // already use for the same kind of background hold.
+      await longPressAndReleaseAt(tester, const Offset(220, 700));
 
       expect(capturedContainer!.read(armedEditTaskProvider), isNull);
     },
   );
 
   testWidgets(
-    'tapping empty timeline space while a task is armed ONLY closes the '
-    'arm — it does not also start a quick-create draft. Reported '
+    'long-pressing empty timeline space while a task is armed ONLY closes '
+    'the arm — it does not also start a quick-create draft. Reported '
     'directly: "tap anywhere on the screen... its not triggering (task '
     'creation if tapped on timeline) but stopping wiggling, so actually '
     'in edit mode of single task, tap on timeline anywhere stops '
@@ -239,27 +255,28 @@ void main() {
       await tester.pump();
       expect(capturedContainer!.read(armedEditTaskProvider), task.id);
 
-      await tester.tapAt(const Offset(220, 700));
-      await tester.pump();
+      await longPressAndReleaseAt(tester, const Offset(220, 700));
 
       expect(capturedContainer!.read(armedEditTaskProvider), isNull);
       expect(capturedContainer!.read(pendingTaskDraftProvider), isNull);
     },
   );
 
-  testWidgets('tapping empty timeline space with NOTHING armed still starts a '
-      'quick-create draft as before — the arm-clearing fix must not '
-      'suppress ordinary tap-to-create', (tester) async {
-    final task = makeTask('Focus block');
-    await pumpTimeline(tester, tasks: [task]);
+  testWidgets(
+    'long-pressing empty timeline space with NOTHING armed still starts a '
+    'quick-create draft as before — the arm-clearing fix must not '
+    'suppress the ordinary hold-to-create case',
+    (tester) async {
+      final task = makeTask('Focus block');
+      await pumpTimeline(tester, tasks: [task]);
 
-    expect(capturedContainer!.read(armedEditTaskProvider), isNull);
+      expect(capturedContainer!.read(armedEditTaskProvider), isNull);
 
-    await tester.tapAt(const Offset(220, 700));
-    await tester.pump();
+      await longPressAndReleaseAt(tester, const Offset(220, 700));
 
-    expect(capturedContainer!.read(pendingTaskDraftProvider), isNotNull);
-  });
+      expect(capturedContainer!.read(pendingTaskDraftProvider), isNotNull);
+    },
+  );
 
   testWidgets('tapping a DIFFERENT task while one is armed opens that task\'s '
       'detail sheet AND clears the arming', (tester) async {

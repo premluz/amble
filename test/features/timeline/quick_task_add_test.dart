@@ -37,12 +37,18 @@ import 'package:amble/shared/models/zone.dart';
 
 import '../../support/fake_notification_service.dart';
 
-/// End-to-end coverage, through the REAL `TimelineScreen`, for the tap-
-/// empty-space quick-create interaction — requested directly: "tap on an
-/// empty space in timeline view... puts a wiggly gray default task and
-/// opens a small sheet with a task name input without the keyboard
-/// opened... a little handle in the middle that the user can extend to
-/// near full size add sheet."
+/// End-to-end coverage, through the REAL `TimelineScreen`, for the "quick
+/// task add" long-press interaction — originally requested as a plain tap
+/// ("tap on an empty space in timeline view... puts a wiggly gray default
+/// task and opens a small sheet with a task name input without the
+/// keyboard opened... a little handle in the middle that the user can
+/// extend to near full size add sheet"), then **2026-09-27** superseded by
+/// a long-press: "Instead of tap to create new task we'll have 'quick
+/// task add'... long press and when task is shown (no sheet yet coming)
+/// user can move down or up to set length... on release we show sheet
+/// quick add." Every case below still exercises the same end state (the
+/// placeholder pill and the mini sheet) — only the gesture that reaches it
+/// changed, via `longPressAndReleaseAt`.
 ///
 /// The small sheet (`QuickCreateOverlay`) is deliberately NOT a pushed
 /// `Navigator` route — see that widget's own doc comment for why (a
@@ -165,17 +171,36 @@ void main() {
     await tester.runAsync(() => templateBox.put(template.id, template));
   }
 
+  /// Starts, holds past the long-press threshold, and releases a "quick
+  /// task add" hold at [point] — the full replacement for what a plain
+  /// `tester.tapAt` used to do before tap-to-create was removed (see
+  /// `place_task_line.dart`'s own doc comment on the 2026-09-27
+  /// redesign). Every call site in this file that used to drop a draft
+  /// with a bare tap now needs the whole hold-then-release sequence to
+  /// reach the same end state (pill AND sheet both visible) — the release
+  /// is what reveals `QuickCreateOverlay` now, not the hold itself.
+  Future<void> longPressAndReleaseAt(
+    WidgetTester tester,
+    Offset point,
+  ) async {
+    final gesture = await tester.startGesture(point);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    await gesture.up();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+  }
+
   testWidgets(
-    'tapping empty Timeline space drops a wiggly placeholder pill and '
-    'opens the small quick-create overlay with no keyboard',
+    'long-pressing empty Timeline space drops a wiggly placeholder pill '
+    'and, on release, opens the small quick-create overlay with no '
+    'keyboard',
     (tester) async {
       await pumpTimeline(tester);
 
-      // A tap well clear of any hour-gutter/chrome, inside the day
+      // A hold well clear of any hour-gutter/chrome, inside the day
       // column's empty background.
-      await tester.tapAt(const Offset(220, 400));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 250));
+      await longPressAndReleaseAt(tester, const Offset(220, 400));
 
       expect(
         find.byType(PendingTaskPill),
@@ -219,9 +244,7 @@ void main() {
 
       await pumpTimeline(tester);
 
-      await tester.tapAt(const Offset(220, 400));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 250));
+      await longPressAndReleaseAt(tester, const Offset(220, 400));
 
       // Reported directly: "still there is some padding from bottom of
       // screen.. sheet is not starting from edge bottom." The cause was
@@ -253,9 +276,7 @@ void main() {
       'and Schedule writes it to the created task', (tester) async {
     await pumpTimeline(tester);
 
-    await tester.tapAt(const Offset(220, 400));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
+    await longPressAndReleaseAt(tester, const Offset(220, 400));
 
     expect(find.text('Important'), findsOneWidget);
     final switchFinder = find.descendant(
@@ -299,9 +320,7 @@ void main() {
     );
     await pumpTimeline(tester);
 
-    await tester.tapAt(const Offset(220, 400));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
+    await longPressAndReleaseAt(tester, const Offset(220, 400));
 
     await tester.tap(find.byType(TemplateChip));
     await tester.pump();
@@ -377,9 +396,7 @@ void main() {
     await pumpTimeline(tester);
     expect(taskBox.values, isEmpty);
 
-    await tester.tapAt(const Offset(220, 400));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
+    await longPressAndReleaseAt(tester, const Offset(220, 400));
 
     // Same real-Hive-write polling the promoted-save test below uses —
     // createTask's disk write doesn't complete on any fixed frame
@@ -443,9 +460,7 @@ void main() {
 
     await pumpTimeline(tester);
 
-    await tester.tapAt(const Offset(220, 400));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
+    await longPressAndReleaseAt(tester, const Offset(220, 400));
 
     await tester.runAsync(() async {
       await tester.tap(find.widgetWithText(ElevatedButton, 'Schedule'));
@@ -468,9 +483,7 @@ void main() {
     (tester) async {
       await pumpTimeline(tester);
 
-      await tester.tapAt(const Offset(220, 400));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 250));
+      await longPressAndReleaseAt(tester, const Offset(220, 400));
 
       await tester.tap(find.byIcon(Icons.close_rounded));
       await tester.pump();
@@ -488,9 +501,7 @@ void main() {
     (tester) async {
       await pumpTimeline(tester);
 
-      await tester.tapAt(const Offset(220, 400));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 250));
+      await longPressAndReleaseAt(tester, const Offset(220, 400));
 
       expect(find.byType(PendingTaskPill), findsOneWidget);
       expect(find.byType(QuickCreateOverlay), findsOneWidget);
@@ -533,9 +544,7 @@ void main() {
     (tester) async {
       await pumpTimeline(tester);
 
-      await tester.tapAt(const Offset(220, 400));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 250));
+      await longPressAndReleaseAt(tester, const Offset(220, 400));
 
       expect(find.byType(QuickCreateOverlay), findsOneWidget);
 
@@ -600,9 +609,7 @@ void main() {
   ) async {
     await pumpTimeline(tester);
 
-    await tester.tapAt(const Offset(220, 400));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
+    await longPressAndReleaseAt(tester, const Offset(220, 400));
 
     expect(find.byType(PendingTaskPill), findsOneWidget);
 
@@ -643,9 +650,7 @@ void main() {
     (tester) async {
       await pumpTimeline(tester);
 
-      await tester.tapAt(const Offset(220, 400));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 250));
+      await longPressAndReleaseAt(tester, const Offset(220, 400));
 
       expect(find.byType(QuickCreateSheetHandle), findsOneWidget);
 
@@ -677,9 +682,7 @@ void main() {
     (tester) async {
       await pumpTimeline(tester);
 
-      await tester.tapAt(const Offset(220, 400));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 250));
+      await longPressAndReleaseAt(tester, const Offset(220, 400));
 
       expect(find.byType(QuickCreateSheetHandle), findsOneWidget);
 
@@ -800,13 +803,11 @@ void main() {
   // would be there"), replacing the plain translucent rectangle plus blue
   // start/end time boxes it used to be. Those blue labels belonged to the
   // superseded design and are gone (git holds them).
-  testWidgets('a tap-created draft renders as a task-shaped pill carrying '
+  testWidgets('a freshly-held draft renders as a task-shaped pill carrying '
       'the "New task" name, with no category emoji', (tester) async {
     await pumpTimeline(tester);
 
-    await tester.tapAt(const Offset(220, 400));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
+    await longPressAndReleaseAt(tester, const Offset(220, 400));
 
     expect(find.byType(PendingTaskPill), findsOneWidget);
     // The name appears on the pill itself, not only in the mini sheet's
@@ -823,9 +824,7 @@ void main() {
   testWidgets('the draft defaults to a 15-minute duration', (tester) async {
     await pumpTimeline(tester);
 
-    await tester.tapAt(const Offset(220, 400));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
+    await longPressAndReleaseAt(tester, const Offset(220, 400));
 
     // Read off the widget's own declared height rather than a provider
     // container this file doesn't capture — the pill is sized directly
@@ -865,9 +864,7 @@ void main() {
     testWidgets('the name is NOT inside any EditModeWiggle', (tester) async {
       await pumpTimeline(tester);
 
-      await tester.tapAt(const Offset(220, 400));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 250));
+      await longPressAndReleaseAt(tester, const Offset(220, 400));
 
       final titleOnPill = find.descendant(
         of: find.byType(PendingTaskPill),
@@ -895,11 +892,9 @@ void main() {
       await tester.runAsync(() => taskBox.put(existing.id, existing));
       await pumpTimeline(tester);
 
-      // Tapped well clear of the existing task, so both sit in lane 0 and
+      // Held well clear of the existing task, so both sit in lane 0 and
       // their names must therefore share one x.
-      await tester.tapAt(const Offset(220, 500));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 250));
+      await longPressAndReleaseAt(tester, const Offset(220, 500));
 
       final realNameX = tester.getTopLeft(find.text('Existing task')).dx;
       final draftNameX = tester
@@ -940,9 +935,7 @@ void main() {
       (tester) async {
         await pumpTimeline(tester);
 
-        await tester.tapAt(const Offset(220, 400));
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 250));
+        await longPressAndReleaseAt(tester, const Offset(220, 400));
 
         final surface = find.descendant(
           of: find.byType(PendingTaskPill),
@@ -985,7 +978,7 @@ void main() {
   // (what `_scrollToSavedTask` does once its own sheet has already
   // closed) still leaves it hidden under the sheet.
   testWidgets(
-    'tapping a late-evening slot scrolls the draft into the space ABOVE '
+    'holding a late-evening slot scrolls the draft into the space ABOVE '
     'the mini sheet, not just into the full viewport',
     (tester) async {
       await pumpTimeline(tester);
@@ -1027,9 +1020,12 @@ void main() {
       );
       await tester.pump();
 
-      // Tap at the now-visible 22:00 row.
+      // Hold, then release, at the now-visible 22:00 row.
       final screenY = targetY - position.pixels;
-      await tester.tapAt(Offset(220, screenY));
+      final gesture = await tester.startGesture(Offset(220, screenY));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      await gesture.up();
       // Two pumps before the settle wait, not one: `_scrollToPendingDraft`
       // runs inside a `WidgetsBinding.instance.addPostFrameCallback`
       // (needed because the scroll content's own bottom padding — which
@@ -1078,9 +1074,7 @@ void main() {
     await pumpTimeline(tester);
 
     // Tap a spot the existing task already occupies.
-    await tester.tapAt(const Offset(220, 400));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
+    await longPressAndReleaseAt(tester, const Offset(220, 400));
 
     expect(find.byType(PendingTaskPill), findsOneWidget);
 
@@ -1106,9 +1100,7 @@ void main() {
   ) async {
     await pumpTimeline(tester);
 
-    await tester.tapAt(const Offset(220, 400));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
+    await longPressAndReleaseAt(tester, const Offset(220, 400));
 
     final before = tester.getRect(find.byType(PendingTaskPill));
     // Guards the premise: if the pill ever stops flooring to badge size
@@ -1151,9 +1143,7 @@ void main() {
     await seedTemplate(tester, 'Meditation', BuiltInCategoryIds.health);
     await pumpTimeline(tester);
 
-    await tester.tapAt(const Offset(220, 400));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
+    await longPressAndReleaseAt(tester, const Offset(220, 400));
 
     final scrollable = find.descendant(
       of: find.byType(QuickCreateOverlay),
@@ -1206,9 +1196,7 @@ void main() {
         );
         await pumpTimeline(tester);
 
-        await tester.tapAt(const Offset(220, 400));
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 250));
+        await longPressAndReleaseAt(tester, const Offset(220, 400));
 
         final beforeHeight = tester
             .getRect(find.byType(PendingTaskPill))
@@ -1245,9 +1233,7 @@ void main() {
         await seedTemplate(tester, 'Meditation', BuiltInCategoryIds.health);
         await pumpTimeline(tester);
 
-        await tester.tapAt(const Offset(220, 400));
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 250));
+        await longPressAndReleaseAt(tester, const Offset(220, 400));
 
         await tester.tap(find.byType(TemplateChip));
         await tester.pump();
@@ -1266,9 +1252,7 @@ void main() {
         await seedTemplate(tester, 'Audiobook', BuiltInCategoryIds.personal);
         await pumpTimeline(tester);
 
-        await tester.tapAt(const Offset(220, 400));
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 250));
+        await longPressAndReleaseAt(tester, const Offset(220, 400));
 
         expect(find.byType(TemplateChip), findsNWidgets(2));
 
@@ -1296,9 +1280,7 @@ void main() {
         'rather than an empty-state inside a 25%-height sheet', (tester) async {
       await pumpTimeline(tester);
 
-      await tester.tapAt(const Offset(220, 400));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 250));
+      await longPressAndReleaseAt(tester, const Offset(220, 400));
 
       expect(find.byType(QuickCreateOverlay), findsOneWidget);
       expect(find.byType(TemplateChip), findsNothing);
@@ -1315,9 +1297,7 @@ void main() {
   // (rather than scrolling the timeline behind it).
   group('minimised state (2026-09-16)', () {
     Future<void> openThenMinimise(WidgetTester tester) async {
-      await tester.tapAt(const Offset(220, 400));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 250));
+      await longPressAndReleaseAt(tester, const Offset(220, 400));
 
       // A MODERATE pull: far enough to leave the small sheet, not so far
       // that it closes outright (300px does — see the drag-to-close test).

@@ -71,7 +71,8 @@ Future<T?> pushAppSheetRoute<T>(BuildContext context, WidgetBuilder builder) {
           ),
         );
       },
-      pageBuilder: (context, animation, secondaryAnimation) => modalBuilder(context),
+      pageBuilder: (context, animation, secondaryAnimation) =>
+          modalBuilder(context),
     ),
   );
 }
@@ -82,11 +83,10 @@ Future<T?> pushAppSheetRoute<T>(BuildContext context, WidgetBuilder builder) {
 /// revealing from halfway the way a sheet does.
 const double _fullScreenEntranceOffset = 0.15;
 
-/// Pushes [builder] as a true full-screen takeover — [AmbleTheme]'s first
-/// full-screen (not slide-up-sheet) modal convention, added for the
-/// voice-capture flow (`voice_capture_screen.dart`) and meant to be
-/// reused by any future full-screen feature rather than each inventing
-/// its own transition.
+/// Pushes [builder] as a true full-screen takeover on the root navigator,
+/// covering persistent shell chrome as well as page content. Added for the
+/// voice-capture flow (`voice_capture_screen.dart`) and reusable by other
+/// full-screen features.
 ///
 /// Shares [pushAppSheetRoute]'s easing/timing tokens
 /// ([AmbleTheme.curveDecelerate]/[AmbleTheme.curveStandard],
@@ -98,7 +98,8 @@ const double _fullScreenEntranceOffset = 0.15;
 /// already covers the screen rather than revealing from partway up.
 Future<T?> pushFullScreenRoute<T>(BuildContext context, WidgetBuilder builder) {
   final theme = Theme.of(context).extension<AmbleTheme>()!;
-  return Navigator.of(context).push<T>(
+  final rootBuilder = rootModalBuilder(context, builder);
+  return Navigator.of(context, rootNavigator: true).push<T>(
     PageRouteBuilder<T>(
       opaque: true,
       // Zero duration — see pushAppSheetRoute's own note above.
@@ -121,7 +122,8 @@ Future<T?> pushFullScreenRoute<T>(BuildContext context, WidgetBuilder builder) {
           ),
         );
       },
-      pageBuilder: (context, animation, secondaryAnimation) => builder(context),
+      pageBuilder: (context, animation, secondaryAnimation) =>
+          rootBuilder(context),
     ),
   );
 }
@@ -214,7 +216,8 @@ Route<T> directionalPageRoute<T>(
 /// falls out of covering it, with no separate chrome-controller wiring
 /// needed.
 Future<T?> pushRootScreenRoute<T>(BuildContext context, WidgetBuilder builder) {
-  return Navigator.of(context, rootNavigator: true).push<T>(
-    directionalPageRoute(rootModalBuilder(context, builder)),
-  );
+  return Navigator.of(
+    context,
+    rootNavigator: true,
+  ).push<T>(directionalPageRoute(rootModalBuilder(context, builder)));
 }

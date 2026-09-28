@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../core/tokens/semantic_theme.dart';
@@ -12,13 +13,16 @@ import '../../shared/providers/preferences_providers.dart';
 /// value-proposition carousel, then a CTA that routes straight into the
 /// real app. Shown once — [HasSeenSplash] gates whether `main.dart` routes
 /// here at all; this screen itself doesn't re-check that flag, it just
-/// marks it seen when the CTA is pressed.
+/// marks it seen when the CTA is pressed. Also reachable only when
+/// `DevLegacyOnboardingCarouselEnabled` (`core/dev_config.dart`) is on —
+/// default OFF, in favor of the newer, simpler [SplashScreen]
+/// (`splash_screen.dart`).
 ///
 /// **Placeholder content**, flagged per the work order rather than treated
-/// as final: the logo is a live-drawn version of the same diagonal
-/// line-and-dot mark used for the Phase 9 placeholder app icon (see
-/// docs/DECISIONS.md), not a new asset. The carousel copy in
-/// [_slides] is draft value-proposition text for review, not signed off.
+/// as final: the logo renders the dropped `assets/branding/logo.svg`
+/// (see [SplashLogo]) — real artwork, but not yet confirmed as final
+/// branding. The carousel copy in [_slides] is draft value-proposition
+/// text for review, not signed off.
 ///
 /// No onboarding logic lives here — the CTA on the final slide goes
 /// directly to [onFinished] (wired to the real app in `main.dart`), per
@@ -79,21 +83,33 @@ class _SplashCarouselScreenState extends ConsumerState<SplashCarouselScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
 
-    return Container(
-      color: theme.colorSurfacePrimary,
-      child: SafeArea(
-        child: AnimatedSwitcher(
-          duration: theme.motionNormal,
-          child: _showingSplash
-              ? _SplashLogo(key: const ValueKey('splash'), theme: theme)
-              : _Carousel(
-                  key: const ValueKey('carousel'),
-                  theme: theme,
-                  controller: _pageController,
-                  page: _page,
-                  onPageChanged: (page) => setState(() => _page = page),
-                  onFinish: _finish,
-                ),
+    // Material, not a bare Container — this screen is handed directly to
+    // MaterialApp.home with no Scaffold/Material ancestor anywhere above
+    // it. Without one, every Text in this subtree (including inside
+    // _Carousel/_SlideView/AppButton) falls back to MaterialApp's own
+    // `_errorTextStyle` (framework/material/app.dart) — a deliberate
+    // yellow double-underline meant to flag exactly this mistake, not an
+    // OS spell-checker artifact (an earlier diagnosis in this file's own
+    // history, before the framework source was actually checked). See
+    // splash_screen.dart's own identical fix/comment.
+    return Material(
+      type: MaterialType.transparency,
+      child: Container(
+        color: theme.colorSurfacePrimary,
+        child: SafeArea(
+          child: AnimatedSwitcher(
+            duration: theme.motionNormal,
+            child: _showingSplash
+                ? SplashLogo(key: const ValueKey('splash'), theme: theme)
+                : _Carousel(
+                    key: const ValueKey('carousel'),
+                    theme: theme,
+                    controller: _pageController,
+                    page: _page,
+                    onPageChanged: (page) => setState(() => _page = page),
+                    onFinish: _finish,
+                  ),
+          ),
         ),
       ),
     );
@@ -102,79 +118,50 @@ class _SplashCarouselScreenState extends ConsumerState<SplashCarouselScreen> {
 
 /// The splash mark shown briefly before the carousel — see the class doc
 /// on [SplashCarouselScreen] for why this is a placeholder, not final
-/// branding.
-class _SplashLogo extends StatelessWidget {
-  const _SplashLogo({super.key, required this.theme});
+/// branding. Also reused as-is by the one-off [SplashScreen]
+/// (`splash_screen.dart`), so both splash experiences share one logo
+/// rather than two near-identical renderings.
+///
+/// Renders one of two dropped SVGs directly — that pair already draws its
+/// own wordmark letterforms as vector paths, so there is no separate
+/// app-name [Text] alongside it (confirmed directly: dropping the old
+/// `BrandMark` + `Text('Amble', ...)` pairing in favor of the SVG's own
+/// baked-in lockup, rather than stacking two different name treatments on
+/// one screen).
+///
+/// **Two mode-specific files, not one recolored via a shared
+/// `ColorFilter`** — requested directly ("2 svg used per mode light
+/// dark"): `Logo_on_light.svg` (dark `#20211F` letterforms, for a light
+/// surface) and `Logo_on_dark.svg` (light `#E7E7E7` letterforms, for a
+/// dark surface). The three colored wave strokes are identical in both —
+/// only the letterform fill differs — but a shared source with a
+/// `ColorFilter` swap was rejected in favor of the two files actually
+/// provided, since they're what was dropped and there's no guarantee a
+/// future redesign keeps the wave strokes identical between modes.
+/// Neither file has a baked-in background rect — both paint transparently
+/// over whatever surface color a call site uses.
+class SplashLogo extends StatelessWidget {
+  const SplashLogo({super.key, required this.theme});
 
   final AmbleTheme theme;
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _BrandMark(theme: theme, size: theme.spacingXl * 3),
-          SizedBox(height: theme.spacingLg),
-          Text('Amble', style: theme.textHeadline),
-        ],
+      child: SvgPicture.asset(
+        isDark
+            ? 'assets/branding/Logo_on_dark.svg'
+            : 'assets/branding/Logo_on_light.svg',
+        // The source SVGs' own viewBox is a 512x512 square, but their
+        // glyph content is a short, wide horizontal lockup within it —
+        // sized by width (not `BrandMark`'s old square `size`) so it
+        // reads at a natural wordmark scale rather than leaving a large
+        // empty square around it.
+        width: theme.spacingXl * 6,
       ),
     );
   }
-}
-
-/// Live-drawn version of the same diagonal line-and-dot mark used for the
-/// placeholder app icon (Phase 9) — reused here rather than a new asset,
-/// so the splash stays visually consistent with the launcher icon while
-/// still being clearly a placeholder pending real branding.
-class _BrandMark extends StatelessWidget {
-  const _BrandMark({required this.theme, required this.size});
-
-  final AmbleTheme theme;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: theme.colorAccent,
-        borderRadius: BorderRadius.circular(theme.radiusXl),
-      ),
-      child: CustomPaint(
-        painter: _BrandMarkPainter(color: theme.colorSurfacePrimary),
-      ),
-    );
-  }
-}
-
-class _BrandMarkPainter extends CustomPainter {
-  const _BrandMarkPainter({required this.color});
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final stroke = Paint()
-      ..color = color
-      ..strokeWidth = size.shortestSide * 0.08
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-
-    final start = Offset(size.width * 0.28, size.height * 0.72);
-    final mid = Offset(size.width * 0.46, size.height * 0.54);
-    final end = Offset(size.width * 0.72, size.height * 0.28);
-
-    canvas.drawLine(start, mid, stroke);
-    canvas.drawLine(mid, end, stroke);
-    canvas.drawCircle(start, size.shortestSide * 0.05, Paint()..color = color);
-    canvas.drawCircle(end, size.shortestSide * 0.07, Paint()..color = color);
-  }
-
-  @override
-  bool shouldRepaint(covariant _BrandMarkPainter oldDelegate) =>
-      oldDelegate.color != color;
 }
 
 class _SlideContent {
@@ -413,8 +400,7 @@ class _SlideViewState extends State<_SlideView> {
     final tint = swatch;
     final iconColor = swatch;
 
-    final showVideo =
-        slide.videoAsset != null && _videoReady && !_videoFailed;
+    final showVideo = slide.videoAsset != null && _videoReady && !_videoFailed;
     final showImage = !showVideo && slide.imageAsset != null;
 
     return Column(

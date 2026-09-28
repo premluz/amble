@@ -60,8 +60,9 @@ import 'pending_task_draft_provider.dart';
 import 'quick_create_overlay.dart';
 import 'pending_task_pill.dart';
 import 'place_task_line.dart';
-import 'place_task_release_menu.dart';
-import 'move_all_sheet.dart';
+// place_task_release_menu.dart and move_all_sheet.dart are archived along
+// with the old hold-and-drag-a-line flow — see place_task_line.dart's own
+// doc comment. Left in the codebase, unused, per "archive, don't delete."
 import 'timeline_drag_math.dart';
 import 'recently_saved_task_provider.dart';
 import 'selected_date_provider.dart';
@@ -727,65 +728,54 @@ class TimelineScreen extends ConsumerWidget {
                                                     startAt,
                                                   ),
                                           ),
-                                      // Hold-and-drag placement release —
-                                      // requested directly: "on release we
-                                      // have context menu showing from
-                                      // position of release," replacing
-                                      // the previous "jump straight into
-                                      // the full create form" behavior.
-                                      onPlaceReleased: (droppedAt) =>
-                                          showPlaceTaskReleaseMenu(
-                                            context,
-                                            droppedAt: droppedAt,
-                                            onMoveAll: (around) =>
-                                                showMoveAllSheet(
-                                                  context,
-                                                  around: around,
-                                                ),
-                                            onNewTask: (startAt) => ref
-                                                .read(
-                                                  pendingTaskDraftProvider
-                                                      .notifier,
-                                                )
-                                                .start(
-                                                  scheduledAt: startAt,
-                                                  durationMinutes:
-                                                      quickAddDefaultMinutes,
-                                                ),
-                                          ),
-                                      // Tap-empty-space quick-create, requested
-                                      // directly: drops the wiggly placeholder
-                                      // pill immediately (so it's visible the
-                                      // instant the tap lands). QuickCreateOverlay
-                                      // (rendered below, gated on pendingDraft)
-                                      // owns the small sheet AND the eventual
-                                      // promotion to the real showTaskDetailSheet
-                                      // route once the user expands it — nothing
-                                      // pushed from here.
-                                      onEmptyTap: (tappedAt) {
-                                        // Tapping outside a long-press-armed
-                                        // task closes its armed/selected
-                                        // state — requested directly, the
-                                        // other half of "long press on task
-                                        // should enable its edit mode...
-                                        // tapping outside closes that mode."
-                                        // See _effectiveOnLongPress for the
+                                      // "Quick task add" — requested
+                                      // directly, replacing the previous
+                                      // hold-and-drag-a-line-then-release-menu
+                                      // flow archived in place_task_line.dart
+                                      // and place_task_release_menu.dart:
+                                      // "Instead of tap to create new task
+                                      // we'll have 'quick task add'... long
+                                      // press and when task is shown (no
+                                      // sheet yet coming) user can move down
+                                      // or up to set length... on release we
+                                      // show sheet quick add."
+                                      //
+                                      // The instant the long-press is
+                                      // recognized, the pending draft starts
+                                      // directly (so the placeholder pill
+                                      // appears before any drag) — same
+                                      // armed/selection-clearing guard the
+                                      // old plain-tap handler had, now
+                                      // gating the START of the hold instead
+                                      // of a tap. See that guard's own
+                                      // history below.
+                                      onHoldStarted: (startAt) {
+                                        // Long-pressing outside a
+                                        // long-press-armed task closes its
+                                        // armed/selected state — requested
+                                        // directly, the other half of "long
+                                        // press on task should enable its
+                                        // edit mode... tapping outside
+                                        // closes that mode." See
+                                        // _effectiveOnLongPress for the
                                         // arming side.
                                         //
-                                        // **2026-09-12 — a tap while a task IS
-                                        // armed now ONLY closes the arm.**
-                                        // Reported directly: "tap anywhere on
-                                        // the screen [while a task is
-                                        // armed]... its not triggering (task
-                                        // creation if tapped on timeline) but
-                                        // stopping [the selection]." The
-                                        // original behavior started a
-                                        // quick-create draft on the SAME tap
-                                        // that closed the arm — a tap meant
-                                        // only to dismiss the selection was
-                                        // silently also creating a task.
+                                        // **2026-09-12 — closing an armed
+                                        // task now ONLY closes the arm.**
+                                        // Reported directly (of the prior
+                                        // plain-tap handler this replaces):
+                                        // "tap anywhere on the screen [while
+                                        // a task is armed]... its not
+                                        // triggering (task creation if
+                                        // tapped on timeline) but stopping
+                                        // [the selection]." The original
+                                        // behavior started a quick-create
+                                        // draft on the SAME tap that closed
+                                        // the arm — meant only to dismiss
+                                        // the selection, it was silently
+                                        // also creating a task.
                                         //
-                                        // **2026-09-20 — the same rule now
+                                        // **2026-09-20 — the same rule
                                         // covers multi-task selection too.**
                                         // Requested directly: "on timeline
                                         // view selected item through long
@@ -796,7 +786,7 @@ class TimelineScreen extends ConsumerWidget {
                                         // non-empty [editSelectionProvider]
                                         // is the multi-task analogue of
                                         // "something is armed" — same
-                                        // clear-and-swallow shape, so a tap
+                                        // clear-and-swallow shape, so a hold
                                         // meant only to deselect never also
                                         // starts a quick-create draft.
                                         final wasArmed =
@@ -822,13 +812,58 @@ class TimelineScreen extends ConsumerWidget {
                                                     .notifier,
                                             )
                                             .start(
-                                              scheduledAt: tappedAt,
+                                              scheduledAt: startAt,
                                               durationMinutes:
                                                   quickAddDefaultMinutes,
                                             );
                                       },
+                                      // Live-resizes the same draft for the
+                                      // rest of the hold — reuses the
+                                      // pending draft's own updateDuration,
+                                      // same as its post-drop resize handle
+                                      // does.
+                                      onDurationDeltaChanged: (deltaMinutes) {
+                                        final draft = ref.read(
+                                          pendingTaskDraftProvider,
+                                        );
+                                        if (draft == null) return;
+                                        final newDuration = math.max(
+                                          minTaskDurationMinutes,
+                                          quickAddDefaultMinutes +
+                                              deltaMinutes,
+                                        );
+                                        ref
+                                            .read(
+                                              pendingTaskDraftProvider
+                                                  .notifier,
+                                            )
+                                            .updateDuration(newDuration);
+                                      },
+                                      // Release — reveal the quick-create
+                                      // sheet for the draft the hold already
+                                      // started. A hold that never actually
+                                      // started a draft (the armed/selection
+                                      // guard above returned early) has
+                                      // nothing to reveal for.
+                                      onHoldReleased: () {
+                                        if (ref.read(
+                                              pendingTaskDraftProvider,
+                                            ) ==
+                                            null) {
+                                          return;
+                                        }
+                                        ref
+                                            .read(
+                                              quickAddSheetVisibleProvider
+                                                  .notifier,
+                                            )
+                                            .show();
+                                      },
                                       pendingDraft: ref.watch(
                                         pendingTaskDraftProvider,
+                                      ),
+                                      quickAddSheetVisible: ref.watch(
+                                        quickAddSheetVisibleProvider,
                                       ),
                                       recentlySaved: ref.watch(
                                         recentlySavedTaskProvider,
@@ -1123,9 +1158,11 @@ class _DayTimeline extends StatefulWidget {
     required this.onToggleComplete,
     required this.onReschedule,
     required this.onCreateAt,
-    required this.onPlaceReleased,
-    required this.onEmptyTap,
+    required this.onHoldStarted,
+    required this.onDurationDeltaChanged,
+    required this.onHoldReleased,
     this.pendingDraft,
+    this.quickAddSheetVisible = false,
     required this.recentlySaved,
     required this.onSavedTaskConsumed,
     required this.disableClustering,
@@ -1209,25 +1246,35 @@ class _DayTimeline extends StatefulWidget {
   /// used by a free window's block (start of that gap).
   final ValueChanged<DateTime> onCreateAt;
 
-  /// The hold-and-drag placement line's own release (see
-  /// `PlaceTaskLineLayer.onPlaced`) — opens [showPlaceTaskReleaseMenu]
-  /// rather than jumping straight into the full create flow. Kept
-  /// separate from [onCreateAt] (not reused for it) because the free
-  /// window tap's "go straight to the full form" behavior is unchanged —
-  /// requested directly, this new menu is specific to "long press to show
-  /// indicator... on release."
-  final ValueChanged<DateTime> onPlaceReleased;
+  /// Fired the instant the "quick task add" long-press is recognized on
+  /// empty Timeline background (see `PlaceTaskLineLayer.onHoldStarted`) —
+  /// starts the pending draft immediately so the placeholder pill appears
+  /// before any drag. Requested directly: "long press and when task is
+  /// shown (no sheet yet coming) user can move down or up to set length."
+  final ValueChanged<DateTime> onHoldStarted;
 
-  /// A plain TAP (not hold-and-drag) on empty Timeline background —
-  /// requested directly: drops the wiggly placeholder pill and opens the
-  /// small quick-create sheet. See `PlaceTaskLineLayer.onTapAt`.
-  final ValueChanged<DateTime> onEmptyTap;
+  /// Fired on every pointer move for the rest of that same hold, with the
+  /// total snapped minutes delta since [onHoldStarted] — applies as a
+  /// live duration change on the same draft. See
+  /// `PlaceTaskLineLayer.onDurationDeltaChanged`.
+  final ValueChanged<int> onDurationDeltaChanged;
 
-  /// The in-progress, not-yet-persisted task created by [onEmptyTap], if
-  /// any — null whenever nothing is being quick-created. Threaded down as
-  /// a plain field (like [recentlySaved]) rather than making this
+  /// Fired on release — reveals the quick-create sheet for the draft
+  /// [onHoldStarted] already started. See
+  /// `PlaceTaskLineLayer.onHoldReleased`.
+  final VoidCallback onHoldReleased;
+
+  /// The in-progress, not-yet-persisted task created by [onHoldStarted],
+  /// if any — null whenever nothing is being quick-created. Threaded down
+  /// as a plain field (like [recentlySaved]) rather than making this
   /// StatefulWidget itself Riverpod-aware.
   final PendingTaskDraft? pendingDraft;
+
+  /// Whether the quick-create sheet (as opposed to just the placeholder
+  /// pill) should be showing — false for the whole span of the long-press
+  /// hold, true only once [onHoldReleased] has fired. See
+  /// `quickAddSheetVisibleProvider`.
+  final bool quickAddSheetVisible;
 
   /// The Settings opt-out (`DisableOverlapClusteringSetting`) — when true,
   /// Overlapping tasks stay individual capsules (naive spatial
@@ -1644,6 +1691,18 @@ class _DayTimelineState extends State<_DayTimeline> {
     // one is being dragged/resized.
     final draft = widget.pendingDraft;
     if (draft != null && draft.id != oldWidget.pendingDraft?.id) {
+      _revealPendingDraft(draft);
+    }
+    // The mini sheet's own reserved bottom space (what
+    // `_scrollToPendingDraft` scrolls clear of) only exists once
+    // `quickAddSheetVisible` flips true on release — a hold still in
+    // progress has only the pill, nothing to scroll clear of yet. Re-runs
+    // the same reveal once the sheet actually appears, in case the pill
+    // was sized/positioned (via the hold's own live resize) somewhere the
+    // sheet would now cover.
+    if (draft != null &&
+        widget.quickAddSheetVisible &&
+        !oldWidget.quickAddSheetVisible) {
       _revealPendingDraft(draft);
     }
     // Re-centers when the day being viewed changes (fresh day -> open on
@@ -2183,7 +2242,8 @@ class _DayTimelineState extends State<_DayTimeline> {
                   top: theme.spacingLg,
                   bottom:
                       theme.spacingLg +
-                      (widget.pendingDraft != null
+                      (widget.pendingDraft != null &&
+                              widget.quickAddSheetVisible
                           ? MediaQuery.sizeOf(context).height *
                                 quickCreateSheetMinFraction
                           : 0),
@@ -2215,8 +2275,9 @@ class _DayTimelineState extends State<_DayTimeline> {
                           rangeEnd: rangeEnd,
                           pixelsPerMinute: widget.pixelsPerMinute,
                           controller: _placeLineController,
-                          onPlaced: widget.onPlaceReleased,
-                          onTapAt: widget.onEmptyTap,
+                          onHoldStarted: widget.onHoldStarted,
+                          onDurationDeltaChanged: widget.onDurationDeltaChanged,
+                          onHoldReleased: widget.onHoldReleased,
                         ),
                       if (widget.showHourLabels)
                         TaskBoundaryMarkers(
@@ -2976,17 +3037,20 @@ class _DayTimelineState extends State<_DayTimeline> {
                           // not aligned with day hours on timeline."
                           leftInset: theme.timelineTimeLeft,
                         ),
-                      // LAST, deliberately — the placement line has to paint above
-                      // every task (reported directly: it was rendering underneath
-                      // them). Its press surface stays first in this list; see
-                      // PlaceTaskLineLayer's doc comment for why they're split.
-                      if (widget.showHourLabels)
-                        PlaceTaskLineOverlay(
-                          theme: theme,
-                          rangeStart: rangeStart,
-                          pixelsPerMinute: widget.pixelsPerMinute,
-                          controller: _placeLineController,
-                        ),
+                      // Archived alongside the rest of the old hold-and-
+                      // drag-a-line mechanism (see place_task_line.dart's
+                      // own doc comment) — `_placeLineController` is never
+                      // written to any more, so this would only ever
+                      // render `SizedBox.shrink()`. Commented out rather
+                      // than left executing dead, per "put it aside,
+                      // comment out or archive."
+                      // if (widget.showHourLabels)
+                      //   PlaceTaskLineOverlay(
+                      //     theme: theme,
+                      //     rangeStart: rangeStart,
+                      //     pixelsPerMinute: widget.pixelsPerMinute,
+                      //     controller: _placeLineController,
+                      //   ),
                       // The live drag-to-multi-select marquee — LAST in
                       // this list, so it paints above every task, the
                       // zone bands, the now-line and the placement line
@@ -3046,7 +3110,16 @@ class _DayTimelineState extends State<_DayTimeline> {
               // position, not scroll away with the day's content). See
               // QuickCreateOverlay's own doc comment for why this can't be
               // a pushed Navigator route.
-              if (widget.showHourLabels && widget.pendingDraft != null)
+              //
+              // Gated on `quickAddSheetVisible` too, not just a live draft
+              // — while the "quick task add" long-press hold is still in
+              // progress, the placeholder pill (rendered elsewhere, keyed
+              // off `pendingDraft` alone) is the only visible thing;
+              // requested directly: "long press and when task is shown (no
+              // sheet yet coming)... on release we show sheet quick add."
+              if (widget.showHourLabels &&
+                  widget.pendingDraft != null &&
+                  widget.quickAddSheetVisible)
                 QuickCreateOverlay(
                   key: ValueKey('quick-create-${widget.pendingDraft!.id}'),
                   draft: widget.pendingDraft!,

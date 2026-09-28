@@ -69,7 +69,7 @@ void main() {
     );
 
     testWidgets(
-      'grouped dock uses glass; separate button uses solid ${theme.colorSurfaceOverlay}',
+      'grouped and standalone dock panes both use glass ${theme.colorSurfaceOverlay}',
       (tester) async {
         await tester.pumpWidget(
           MaterialApp(
@@ -92,7 +92,7 @@ void main() {
             .toList();
         expect(surfaces.map((s) => s.material), [
           FloatingMaterial.glass,
-          FloatingMaterial.solid,
+          FloatingMaterial.glass,
         ]);
         expect(tester.takeException(), isNull);
       },

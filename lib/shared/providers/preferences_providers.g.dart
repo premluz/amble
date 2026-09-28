@@ -412,8 +412,8 @@ abstract class _$PreventOverlappingTasksSetting extends $Notifier<bool> {
 /// `PreferenceKeys.dualFontEnabled`'s own doc comment. `keepAlive: true` for
 /// the same reason as the other settings here: read once per app start (via
 /// `main.dart`'s own "resolve once, before MaterialApp" pass), not
-/// screen-scoped state. Defaults to **true** so a fresh install keeps the
-/// existing dual-font look; turning it off is an explicit opt-out.
+/// screen-scoped state. Defaults to **false** so a fresh install uses the
+/// app's unified DM Sans typography; turning it on opts into the mono split.
 
 @ProviderFor(DualFontSetting)
 final dualFontSettingProvider = DualFontSettingProvider._();
@@ -422,16 +422,16 @@ final dualFontSettingProvider = DualFontSettingProvider._();
 /// `PreferenceKeys.dualFontEnabled`'s own doc comment. `keepAlive: true` for
 /// the same reason as the other settings here: read once per app start (via
 /// `main.dart`'s own "resolve once, before MaterialApp" pass), not
-/// screen-scoped state. Defaults to **true** so a fresh install keeps the
-/// existing dual-font look; turning it off is an explicit opt-out.
+/// screen-scoped state. Defaults to **false** so a fresh install uses the
+/// app's unified DM Sans typography; turning it on opts into the mono split.
 final class DualFontSettingProvider
     extends $NotifierProvider<DualFontSetting, bool> {
   /// Whether the app's dual-font system is active — see
   /// `PreferenceKeys.dualFontEnabled`'s own doc comment. `keepAlive: true` for
   /// the same reason as the other settings here: read once per app start (via
   /// `main.dart`'s own "resolve once, before MaterialApp" pass), not
-  /// screen-scoped state. Defaults to **true** so a fresh install keeps the
-  /// existing dual-font look; turning it off is an explicit opt-out.
+  /// screen-scoped state. Defaults to **false** so a fresh install uses the
+  /// app's unified DM Sans typography; turning it on opts into the mono split.
   DualFontSettingProvider._()
     : super(
         from: null,
@@ -459,14 +459,14 @@ final class DualFontSettingProvider
   }
 }
 
-String _$dualFontSettingHash() => r'00701425ca89be49b35fde2db9d5c073db37b7ab';
+String _$dualFontSettingHash() => r'13d637bf42bd8a28cc98320e3d5074b8fe1faa72';
 
 /// Whether the app's dual-font system is active — see
 /// `PreferenceKeys.dualFontEnabled`'s own doc comment. `keepAlive: true` for
 /// the same reason as the other settings here: read once per app start (via
 /// `main.dart`'s own "resolve once, before MaterialApp" pass), not
-/// screen-scoped state. Defaults to **true** so a fresh install keeps the
-/// existing dual-font look; turning it off is an explicit opt-out.
+/// screen-scoped state. Defaults to **false** so a fresh install uses the
+/// app's unified DM Sans typography; turning it on opts into the mono split.
 
 abstract class _$DualFontSetting extends $Notifier<bool> {
   bool build();
@@ -790,9 +790,8 @@ abstract class _$TimelinePixelsPerMinuteSetting extends $Notifier<double> {
 /// List, and Zone) from one toggle — unlike
 /// [ShowTimelineConnectorsSetting] above, which is Task-view only, since a
 /// checkbox that disappeared in one view and not another would read as a
-/// bug rather than a setting. Defaults to **true**, matching the
-/// checkbox's existing unconditional rendering, so a fresh install is
-/// visually unchanged.
+/// bug rather than a setting. Defaults to **false**, as requested for the
+/// developer setting; turning it on restores the checkbox across all views.
 ///
 /// Note: this checkbox is currently the ONLY way to complete a SCHEDULED
 /// task — the task detail sheet has no completion control, and the Inbox's
@@ -810,9 +809,8 @@ final showCompletionCheckboxSettingProvider =
 /// List, and Zone) from one toggle — unlike
 /// [ShowTimelineConnectorsSetting] above, which is Task-view only, since a
 /// checkbox that disappeared in one view and not another would read as a
-/// bug rather than a setting. Defaults to **true**, matching the
-/// checkbox's existing unconditional rendering, so a fresh install is
-/// visually unchanged.
+/// bug rather than a setting. Defaults to **false**, as requested for the
+/// developer setting; turning it on restores the checkbox across all views.
 ///
 /// Note: this checkbox is currently the ONLY way to complete a SCHEDULED
 /// task — the task detail sheet has no completion control, and the Inbox's
@@ -827,9 +825,8 @@ final class ShowCompletionCheckboxSettingProvider
   /// List, and Zone) from one toggle — unlike
   /// [ShowTimelineConnectorsSetting] above, which is Task-view only, since a
   /// checkbox that disappeared in one view and not another would read as a
-  /// bug rather than a setting. Defaults to **true**, matching the
-  /// checkbox's existing unconditional rendering, so a fresh install is
-  /// visually unchanged.
+  /// bug rather than a setting. Defaults to **false**, as requested for the
+  /// developer setting; turning it on restores the checkbox across all views.
   ///
   /// Note: this checkbox is currently the ONLY way to complete a SCHEDULED
   /// task — the task detail sheet has no completion control, and the Inbox's
@@ -865,16 +862,15 @@ final class ShowCompletionCheckboxSettingProvider
 }
 
 String _$showCompletionCheckboxSettingHash() =>
-    r'6417aa668f6734e6ac15beb9f1d5387b72a11656';
+    r'8bf08a25ba9f3b5042c71cb9b58049b8be4abfc4';
 
 /// Whether a task's trailing completion checkbox renders at all.
 /// Requested directly, and deliberately spanning **all three views** (Task,
 /// List, and Zone) from one toggle — unlike
 /// [ShowTimelineConnectorsSetting] above, which is Task-view only, since a
 /// checkbox that disappeared in one view and not another would read as a
-/// bug rather than a setting. Defaults to **true**, matching the
-/// checkbox's existing unconditional rendering, so a fresh install is
-/// visually unchanged.
+/// bug rather than a setting. Defaults to **false**, as requested for the
+/// developer setting; turning it on restores the checkbox across all views.
 ///
 /// Note: this checkbox is currently the ONLY way to complete a SCHEDULED
 /// task — the task detail sheet has no completion control, and the Inbox's

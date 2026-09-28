@@ -85,6 +85,9 @@ class PendingTaskDraftNotifier extends Notifier<PendingTaskDraft?> {
       scheduledAt: scheduledAt,
       durationMinutes: durationMinutes,
     );
+    // A fresh hold always starts pill-only — see
+    // [QuickAddSheetVisibleNotifier]'s own doc comment.
+    ref.read(quickAddSheetVisibleProvider.notifier).hide();
   }
 
   void updatePosition(DateTime scheduledAt) {
@@ -99,10 +102,38 @@ class PendingTaskDraftNotifier extends Notifier<PendingTaskDraft?> {
     state = draft.copyWith(durationMinutes: durationMinutes);
   }
 
-  void clear() => state = null;
+  void clear() {
+    state = null;
+    ref.read(quickAddSheetVisibleProvider.notifier).hide();
+  }
 }
 
 final pendingTaskDraftProvider =
     NotifierProvider<PendingTaskDraftNotifier, PendingTaskDraft?>(
       PendingTaskDraftNotifier.new,
+    );
+
+/// Whether the small quick-create sheet ([QuickCreateOverlay]) should be
+/// showing alongside the placeholder pill — kept separate from
+/// [PendingTaskDraft] itself rather than a field on it, so a long-press
+/// hold can drive the pill (via [PendingTaskDraftNotifier.start]/
+/// `updateDuration`) while this stays false, with only the RELEASE that
+/// ends the hold flipping it true. Requested directly: "long press and
+/// when task is shown (no sheet yet coming) user can move down or up to
+/// set length... on release we show sheet quick add."
+///
+/// Screen-local UI state, same shape/reasoning as
+/// [PendingTaskDraftNotifier] itself.
+class QuickAddSheetVisibleNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void show() => state = true;
+
+  void hide() => state = false;
+}
+
+final quickAddSheetVisibleProvider =
+    NotifierProvider<QuickAddSheetVisibleNotifier, bool>(
+      QuickAddSheetVisibleNotifier.new,
     );

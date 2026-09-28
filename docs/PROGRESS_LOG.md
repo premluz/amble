@@ -7091,3 +7091,312 @@ test before shipping, with a dedicated regression test added
 `app_badge_test.dart` (5), `app_context_dock_test.dart` (+2),
 `app_shell_chrome_test.dart` (+1), `zone_grid_screen_test.dart` (+5). Full
 `flutter test` at the established pre-existing failure baseline.
+
+## [2026-09-27] Settings gear icon re-pointed to new colorForegroundTertiary token
+
+Requested directly: match the Settings gear's inactive color to the main
+nav labels' own inactive tone — but not by reusing `colorTextTertiary`
+literally, since the gear is an icon and that's a text-semantic token.
+Confirmed via AskUserQuestion: added a new token,
+`colorForegroundTertiary`, sharing `colorTextTertiary`'s exact primitive
+in both palettes but scoped to non-text foreground content, and repointed
+just the Settings gear (`app_top_nav.dart`) to it. The main nav label
+itself is untouched — it's genuine text, so `colorTextTertiary` stays
+correct there. No broader icon-token migration; every other icon in the
+app still borrows from `colorText*` as before.
+
+Wired the new field through all six required spots in
+`AmbleTheme` (`semantic_theme.dart`): constructor, both static light/dark
+instances, `copyWith`'s param + body, and `lerp`.
+
+`flutter analyze` clean (16 issues, established baseline). Updated the
+two `app_top_nav_test.dart` assertions pinned to the gear's old
+`colorTextSecondary` inactive color. Full `flutter test`: 21 pre-existing
+failures, none in files this change touched.
+
+## [2026-09-27] New one-off splash screen; legacy carousel + onboarding quiz moved behind dev toggles
+
+Requested directly: put the legacy 4-slide `SplashCarouselScreen` and the
+3-question `OnboardingQuizScreen` behind dev toggles, hidden by default,
+and build a new, simpler one-off first-launch splash (logo + headline +
+single CTA, matching a reviewed mockup) also behind its own dev toggle —
+but defaulting ON, since it's the intended replacement first-launch
+experience going forward (confirmed via AskUserQuestion on both the
+toggle split and this default).
+
+New `features/splash/splash_screen.dart` (`SplashScreen`) reuses
+`SplashCarouselScreen`'s own brand mark (`_SplashLogo`/`_BrandMark`,
+promoted to public `SplashLogo`/`BrandMark` so both screens share one
+drawing rather than duplicating it) and the real `trialLengthDays`
+constant for its "N days free" line — confirmed via AskUserQuestion,
+placeholder art per the mockup, not a new asset. Shares
+`HasSeenSplash`/`PreferenceKeys.hasSeenSplash` with the carousel rather
+than a second "seen" flag, since the two are mutually-exclusive
+first-launch presentations picked by a dev toggle, never shown together.
+
+Three new `kDebugMode`-gated Riverpod providers in `core/dev_config.dart`,
+matching this file's existing `DevTrackedTabInCycle`-style pattern (not
+`FeatureFlags`/`bool.fromEnvironment` — there is no compile-time flag for
+onboarding presentation): `DevNewSplashEnabled` (default ON),
+`DevLegacyOnboardingCarouselEnabled` (default OFF),
+`DevOnboardingQuizEnabled` (default OFF). `main.dart`'s root gate now
+checks all three alongside the existing `hasSeenSplash`/
+`hasCompletedOnboarding` flags — toggling a dev switch never re-shows
+something already marked seen, only changes what a fresh, unseen install
+reaches. All three switches surfaced in Settings → Developer's existing
+"reset splash/onboarding" panel, same `AppSwitch`/`SettingsPanel` pattern
+every other dev toggle there already uses.
+
+New `test/features/splash/splash_screen_test.dart` (2 tests: renders
+logo/headline/CTA with no carousel chrome; tapping "Start now" marks
+`hasSeenSplash` and calls `onFinished`) — the second needed the
+`runAsync`-plus-drain pattern from docs/ERROR_LOG.md's real-Hive-I/O
+entry, since a plain `pumpAndSettle()` hung indefinitely on the real
+preference write.
+
+`flutter analyze` clean (16 issues, established baseline, none new). Full
+`flutter test`: 21 pre-existing failures (same named files as this
+session's other work), none in any file this change touched.
+
+## [2026-09-27] Timeline "quick task add" redesign — long-press replaces hold-and-drag-a-line and tap-to-create
+
+Redesigned the Timeline's empty-space create gesture, requested directly:
+archive the existing "long-press-drag shows a line, release opens a
+Move-all/New-task menu" flow, and replace plain tap-to-create with a new
+long-press-based flow — hold shows the wiggly placeholder pill
+immediately (no sheet yet), dragging up/down while still holding
+live-resizes its duration, and release reveals the small quick-create
+sheet.
+
+`PlaceTaskLineLayer` (`place_task_line.dart`) now starts the pending
+draft directly on long-press-recognized (`onHoldStarted`), reports the
+hold's live vertical delta as a snapped duration change
+(`onDurationDeltaChanged`, reusing `timeline_drag_math.dart`'s
+`snappedDurationDelta`/`minTaskDurationMinutes`), and fires
+`onHoldReleased` on release. The old moving-line mechanism and
+`onTapAt`/plain-tap path are gone from this widget entirely — archived
+via a doc comment, not deleted, per instruction. `PlaceTaskLineOverlay`
+and `PlaceTaskLineController` are kept but now unused (nothing writes to
+the controller any more); its call site in `timeline_screen.dart` is
+commented out rather than removed, alongside `place_task_release_menu.dart`
+and `move_all_sheet.dart`'s own now-unreachable import.
+
+New `quickAddSheetVisibleProvider` (`pending_task_draft_provider.dart`) —
+a transient bool separate from `PendingTaskDraft` itself, so the pill can
+exist and resize for the whole span of the hold while the sheet
+(`QuickCreateOverlay`) stays hidden; only `onHoldReleased` flips it true.
+`PendingTaskDraftNotifier.start()`/`clear()` both reset it, so a fresh
+hold always starts pill-only and clearing the draft always hides the
+sheet too. `timeline_screen.dart`'s `QuickCreateOverlay` render gate and
+its bottom-padding scroll reservation both now check this flag alongside
+`pendingDraft != null`; `_scrollToPendingDraft`'s reveal-into-view logic
+re-runs when the flag flips true (the sheet's own reserved space doesn't
+exist until then).
+
+Tap-to-create is fully removed (confirmed directly, not just archived) —
+the armed-task/multi-selection "a plain tap on empty space only clears,
+never also creates" guard moved from the old `onEmptyTap` to the new
+`onHoldStarted`, same clearing logic, now gated on the hold's start
+instead of a tap's.
+
+Rewrote `test/features/timeline/place_task_line_test.dart` for the new
+contract (hold starts a draft, drag reports a duration delta, release
+fires once). Renamed `tap_empty_space_quick_create_test.dart` →
+`quick_task_add_test.dart` and converted all ~25 cases from
+`tester.tapAt` to a shared long-press-then-release helper — same
+assertions, new gesture reaching them. Updated `armed_edit_task_test.dart`
+and `multi_task_selection_test.dart`'s empty-space-clears-selection cases
+the same way.
+
+`flutter analyze`: clean. Full `flutter test`: 1682 total, 22 pre-existing
+failures (swipe actions, view-transition, zone-grid marquee/merge, drag
+time labels, floating nav pill, notification service, nav consolidation —
+all from other in-progress uncommitted work this session, confirmed via
+`git diff` showing zero changes to any of those files or their
+dependencies), none in any file this change touched.
+
+### 2026-09-28 — Shared floating glass completed and verified
+
+Added FloatingSurfaceTokens and AppFloatingSurface; anchored context menus,
+lifted task cards, and grouped docks now share raised glass with a subtle
+one-pixel graduated edge. Menu and drag shadows use the specified independent
+geometries and theme opacities. Separate dock actions stay solid elevated,
+selected actions gain a tonal fill, and create (+) keeps its brand fill.
+Documented the material/elevation split in DESIGN_SYSTEM; added Widgetbook
+Feedback/AppFloatingSurface and regression coverage for both themes.
+
+Final verification: 39 focused tests pass, including painted edge checks,
+resting-task golden, stable lift subtree, dock transitions, resize and swipe.
+Widgetbook macOS debug build succeeds. Full suite remains red: 1684 passed,
+20 failed; analyzer reports 16 issues including the stale Widgetbook test import
+and MyApp reference. Failures include existing swipe, view-transition, What
+Matters pane-structure, zone-grid, recurrence, and legacy navigation tests.
+Logs: /tmp/rios-glass-resumed-full.log and /tmp/rios-glass-resumed-analyze.log.
+
+## [2026-09-28] Add Zone sheet's Close/"Add zone" CTA moved back to the top
+
+Requested directly, plus asked whether a reusable element exists for
+this and whether docs/DESIGN_SYSTEM.md's Sheets section says anything
+about header position.
+
+`AppSheetHeader` was already the reusable element (already used by
+`quick_capture_sheet.dart`/`new_section_sheet.dart` at the top of their
+own sheets) — `new_zone_sheet.dart` was already using it too, just
+placed at the sheet's BOTTOM per an earlier direct request. Moved it back
+to being the sheet's first child, `AppDragToCloseHandle` wired in as its
+`handle` param (matching `quick_capture_sheet.dart`'s exact wiring)
+rather than sitting alone above it; removed the now-redundant bottom
+block.
+
+docs/DESIGN_SYSTEM.md's "Sheets > The header row" section already stated
+the top-left-Close/top-right-CTA rule and was never amended to carve out
+an exception for this sheet — added a short note there recording the
+2026-09-24 divergence and this reversal, so the history isn't lost.
+
+`flutter analyze` clean (16 issues, established baseline). `flutter test`
+on the zone_grid/zone_form suites: same 2 pre-existing failures as the
+unmodified baseline (confirmed via a scoped `git stash` of just the two
+touched files), neither position-dependent. Fixed one stale test comment
+referring to "the sheet's own bottom-row close button."
+Physical-device aesthetic/performance review remains outstanding.
+
+## 2026-09-28 — Developer defaults and full-width zone names
+
+Changed the unset defaults for Dual font and Show completion checkbox to off;
+existing persisted choices remain unchanged. Updated preference documentation
+and regenerated Riverpod output. Zone name cards on Settings → Zones now request
+full available width explicitly. Updated the existing dual-font provider
+expectation.
+
+`flutter analyze` result is recorded in `/tmp/rios-settings-defaults-analyze.log`.
+Tests were not run in this pass.
+
+## [2026-09-28] Real app icon generated from dropped source; new SVG logo replaces code-drawn splash mark
+
+User dropped `assets/branding/icon-App-1024x1024@1x.png` and
+`assets/branding/logo.svg`, asked to regenerate the app icon from the PNG
+("run that python again," referencing Phase 9's script) and wire the SVG
+into the splash/launch screen.
+
+The Phase 9 script was never committed, so wrote an equivalent from
+scratch against the real, current `Contents.json` manifests. Regenerated
+all 15 iOS sizes (`ios/Runner/Assets.xcassets/AppIcon.appiconset/`), all
+5 Android densities (`android/app/src/main/res/mipmap-*/`), and all 7
+macOS sizes (`macos/Runner/Assets.xcassets/AppIcon.appiconset/`) —
+confirmed via AskUserQuestion to include macOS alongside the requested
+iOS+Android. Same regeneration also applied to `widgetbook/`'s own copies
+of each platform folder. iOS's 1024px marketing slot is flattened onto
+`sage500` and saved with no alpha channel (App Store requirement); every
+other size keeps transparency.
+
+`logo.svg` had a baked-in `#E7E7E7` background rect and its own wordmark
+letterforms — stripped the rect (confirmed via AskUserQuestion) so it
+composites transparently, and replaced `SplashLogo`'s old `BrandMark`
+`CustomPaint` + separate `Text('Amble', ...)` with a direct
+`SvgPicture.asset` render of the stripped SVG (confirmed via
+AskUserQuestion not to stack the SVG's own letterforms with a second,
+differently-styled "Amble" text). Deleted the now-unused
+`BrandMark`/`_BrandMarkPainter` classes outright — no other call site
+referenced them. `assets/branding/` added to `pubspec.yaml`; this is
+`flutter_svg`'s first real call site (was declared, unused, before now).
+
+`flutter analyze` clean (16 issues, established baseline, none new).
+Updated `splash_screen_test.dart`'s `find.text('Amble')` assertion (now
+gone) to `find.byType(SvgPicture)`; all 8 splash tests pass. Generated
+PNG dimensions spot-checked against each platform's exact manifest.
+
+## [2026-09-28] Splash logo now picks light/dark SVG per theme; reported "yellow underline" traced to an OS setting
+
+User dropped `Logo_on_light.svg`/`Logo_on_dark.svg` (superseding the
+prior single `logo.svg`) and asked for the correct one per mode.
+`SplashLogo` now checks `Theme.of(context).brightness` and loads the
+matching file — same brightness-check convention already used elsewhere
+in the app. The two files only differ in letterform fill color; the wave
+strokes are identical, so no shared-source recolor approach was needed
+or used.
+
+Also investigated a reported yellow underline under every splash text
+line (headline, subtext, trial line, button label), on both device and
+Simulator. Found no `TextDecoration`/`CupertinoApp`/`SelectionArea`
+anywhere near the splash or the app at large — a plain `Text` widget
+cannot render this, since spell-check underlines are an OS feature
+exclusive to editable input. This matches iOS's own system-wide
+spelling/grammar overlay (which the Simulator mirrors from the host
+Mac), not an app bug — flagged as a device/OS setting to check rather
+than "fixed" with no real code change behind it.
+
+`flutter analyze` clean (16 issues, established baseline). New light/dark
+`SplashLogo` test group added to `splash_screen_test.dart`, verified
+against the real `flutter_svg` 2.3.0 API before writing (not guessed);
+all splash tests pass.
+
+## [2026-09-28] RevenueCat iOS key wired for real (Apple only)
+
+Added the real RevenueCat App Store API key (`appl_...`) to
+`lib/core/revenue_cat_config.dart` as `_iosApiKey`'s `defaultValue`,
+replacing the earlier `--dart-define`-only posture — an Xcode archive
+never goes through a `flutter build` this repo controls, so there was no
+way to attach the define to it, and every archived build was silently
+shipping with purchases disabled. A plain `flutter build ipa`/Xcode
+archive now configures RevenueCat correctly with no flags;
+`--dart-define=REVENUECAT_IOS_API_KEY=...` still overrides it if needed.
+Added a debug-only `assert` guarding the resolved key's prefix (`appl_`/
+`goog_`) against a wrong key (Test Store `test_`, a secret `sk_`) landing
+there by mistake. Android left untouched — still define-only, no
+default — since it isn't shipping yet.
+
+Full detail and the "why a public SDK key is safe to commit" reasoning in
+docs/DECISIONS.md. `flutter analyze` clean, no new issues; the one
+existing test touching `RevenueCatConfig.isAvailable`
+(`backup_settings_screen_test.dart`) still passes — the test binary's
+`defaultTargetPlatform` isn't iOS, so the new default never activates
+there.
+
+### 2026-09-28 — Glass on standalone toolbar panes
+
+Follow-up review found that AppDockSurface selected glass only for multi-action
+groups, leaving singleton panes (Edit, What Matters, and Edit Mode Back) solid.
+All dock panes now use the shared glass fill/border/shadow, while each button
+inside a pane retains its transparent/selected tonal behavior. Updated the
+floating-surface material expectation and clarified the design-system rule.
+No tests were run in this follow-up.
+
+## [2026-09-28] Fixed the real cause of the splash "yellow underline" — missing Material ancestor, not an OS setting
+
+Corrects an earlier same-day entry that misdiagnosed this as an OS-level
+spell-check overlay. User pushed back with the right lead: check the
+splash's widget ancestry for a `Scaffold`/`Material`, since Flutter's own
+framework can produce underlined text on its own.
+
+Confirmed by reading the actual Flutter SDK source: `MaterialApp` defines
+`_errorTextStyle` (`framework/material/app.dart`) — yellow
+(`#FFFFFF00`), double-underlined, explicitly documented as a deliberate
+nudge for text rendered with no `Material` ancestor to inherit a real
+style from. Both `SplashScreen` and `SplashCarouselScreen` are handed
+directly to `MaterialApp.home` with no `Scaffold`/`Material` of their
+own — `main.dart`'s only `Scaffold` belongs to the post-splash
+`AmbleHome`. `Text.build` merges a widget's own style ONTO the ambient
+default rather than replacing it, and none of this app's text styles set
+`decoration`, so the error style's underline survived on every splash
+`Text` untouched — explaining why it showed up everywhere, correctly
+spelled or not.
+
+Fixed by wrapping both screens' root in `Material(type:
+MaterialType.transparency, ...)` — same visible background as before,
+now with a real ambient text style for the whole subtree.
+
+Added a regression test to each screen's file asserting the actual
+ambient `DefaultTextStyle` (not `Text.style`, which wouldn't catch this)
+has no error-style decoration; confirmed both genuinely fail without the
+fix and pass with it via a temporary revert-and-restore. `flutter
+analyze` clean (16 issues, established baseline). All 11 splash tests
+pass; full suite unchanged from the established ~21 pre-existing
+failures, none touching splash.
+
+## 2026-09-28 — Full-page voice mode and prompt copy
+
+Moved the reusable `pushFullScreenRoute` helper to the root navigator so voice
+mode covers the persistent top navigation. It retains its existing entrance
+motion and inherited theme/provider scope. The empty-state hint now suggests
+“Plan holidays” and says, “You can add multiple tasks at once.”
+No tests were run in this pass.

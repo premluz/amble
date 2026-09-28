@@ -1570,3 +1570,299 @@ abstract class _$DevMultiTaskEditMode extends $Notifier<bool> {
     return element.handleCreate(ref, build);
   }
 }
+
+/// Whether `main.dart`'s root gate routes a fresh install to the new
+/// one-off [SplashScreen] (`features/splash/splash_screen.dart`) instead of
+/// the legacy [SplashCarouselScreen]. Requested directly: "put onboarding
+/// carousel and questionnaire behind dev toggles, as default we hide
+/// them... splash is also under dev toggle" — this is the splash side of
+/// that request.
+///
+/// **Default ON** — the new splash is the intended first-launch
+/// experience going forward, unlike [DevLegacyOnboardingCarouselEnabled]/
+/// [DevOnboardingQuizEnabled] below, which default OFF. All three are
+/// independent switches read directly by `main.dart`'s gate, not ANDed
+/// into a `FeatureFlags` entry — there is no compile-time flag for
+/// onboarding presentation, only this runtime, debug-only choice.
+
+@ProviderFor(DevNewSplashEnabled)
+final devNewSplashEnabledProvider = DevNewSplashEnabledProvider._();
+
+/// Whether `main.dart`'s root gate routes a fresh install to the new
+/// one-off [SplashScreen] (`features/splash/splash_screen.dart`) instead of
+/// the legacy [SplashCarouselScreen]. Requested directly: "put onboarding
+/// carousel and questionnaire behind dev toggles, as default we hide
+/// them... splash is also under dev toggle" — this is the splash side of
+/// that request.
+///
+/// **Default ON** — the new splash is the intended first-launch
+/// experience going forward, unlike [DevLegacyOnboardingCarouselEnabled]/
+/// [DevOnboardingQuizEnabled] below, which default OFF. All three are
+/// independent switches read directly by `main.dart`'s gate, not ANDed
+/// into a `FeatureFlags` entry — there is no compile-time flag for
+/// onboarding presentation, only this runtime, debug-only choice.
+final class DevNewSplashEnabledProvider
+    extends $NotifierProvider<DevNewSplashEnabled, bool> {
+  /// Whether `main.dart`'s root gate routes a fresh install to the new
+  /// one-off [SplashScreen] (`features/splash/splash_screen.dart`) instead of
+  /// the legacy [SplashCarouselScreen]. Requested directly: "put onboarding
+  /// carousel and questionnaire behind dev toggles, as default we hide
+  /// them... splash is also under dev toggle" — this is the splash side of
+  /// that request.
+  ///
+  /// **Default ON** — the new splash is the intended first-launch
+  /// experience going forward, unlike [DevLegacyOnboardingCarouselEnabled]/
+  /// [DevOnboardingQuizEnabled] below, which default OFF. All three are
+  /// independent switches read directly by `main.dart`'s gate, not ANDed
+  /// into a `FeatureFlags` entry — there is no compile-time flag for
+  /// onboarding presentation, only this runtime, debug-only choice.
+  DevNewSplashEnabledProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'devNewSplashEnabledProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$devNewSplashEnabledHash();
+
+  @$internal
+  @override
+  DevNewSplashEnabled create() => DevNewSplashEnabled();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(bool value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<bool>(value),
+    );
+  }
+}
+
+String _$devNewSplashEnabledHash() =>
+    r'4a6b2e228fc49f6990f302236f0b46e14e95ae68';
+
+/// Whether `main.dart`'s root gate routes a fresh install to the new
+/// one-off [SplashScreen] (`features/splash/splash_screen.dart`) instead of
+/// the legacy [SplashCarouselScreen]. Requested directly: "put onboarding
+/// carousel and questionnaire behind dev toggles, as default we hide
+/// them... splash is also under dev toggle" — this is the splash side of
+/// that request.
+///
+/// **Default ON** — the new splash is the intended first-launch
+/// experience going forward, unlike [DevLegacyOnboardingCarouselEnabled]/
+/// [DevOnboardingQuizEnabled] below, which default OFF. All three are
+/// independent switches read directly by `main.dart`'s gate, not ANDed
+/// into a `FeatureFlags` entry — there is no compile-time flag for
+/// onboarding presentation, only this runtime, debug-only choice.
+
+abstract class _$DevNewSplashEnabled extends $Notifier<bool> {
+  bool build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<bool, bool>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<bool, bool>,
+              bool,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
+
+/// Whether `main.dart`'s root gate can show the legacy 4-slide
+/// [SplashCarouselScreen] at all. Requested directly, alongside
+/// [DevOnboardingQuizEnabled] below: "let's put onboarding carousel and
+/// questionnaire behind dev toggles, as default we hide them."
+///
+/// **Default OFF** — reverses this screen's previous unconditional
+/// first-launch behavior. With this off, `main.dart` skips straight past
+/// where the carousel used to gate, same as [HasSeenSplash] already being
+/// true. Turning it on re-enables the original first-launch sequence for
+/// that screen specifically, independent of [DevNewSplashEnabled].
+
+@ProviderFor(DevLegacyOnboardingCarouselEnabled)
+final devLegacyOnboardingCarouselEnabledProvider =
+    DevLegacyOnboardingCarouselEnabledProvider._();
+
+/// Whether `main.dart`'s root gate can show the legacy 4-slide
+/// [SplashCarouselScreen] at all. Requested directly, alongside
+/// [DevOnboardingQuizEnabled] below: "let's put onboarding carousel and
+/// questionnaire behind dev toggles, as default we hide them."
+///
+/// **Default OFF** — reverses this screen's previous unconditional
+/// first-launch behavior. With this off, `main.dart` skips straight past
+/// where the carousel used to gate, same as [HasSeenSplash] already being
+/// true. Turning it on re-enables the original first-launch sequence for
+/// that screen specifically, independent of [DevNewSplashEnabled].
+final class DevLegacyOnboardingCarouselEnabledProvider
+    extends $NotifierProvider<DevLegacyOnboardingCarouselEnabled, bool> {
+  /// Whether `main.dart`'s root gate can show the legacy 4-slide
+  /// [SplashCarouselScreen] at all. Requested directly, alongside
+  /// [DevOnboardingQuizEnabled] below: "let's put onboarding carousel and
+  /// questionnaire behind dev toggles, as default we hide them."
+  ///
+  /// **Default OFF** — reverses this screen's previous unconditional
+  /// first-launch behavior. With this off, `main.dart` skips straight past
+  /// where the carousel used to gate, same as [HasSeenSplash] already being
+  /// true. Turning it on re-enables the original first-launch sequence for
+  /// that screen specifically, independent of [DevNewSplashEnabled].
+  DevLegacyOnboardingCarouselEnabledProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'devLegacyOnboardingCarouselEnabledProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() =>
+      _$devLegacyOnboardingCarouselEnabledHash();
+
+  @$internal
+  @override
+  DevLegacyOnboardingCarouselEnabled create() =>
+      DevLegacyOnboardingCarouselEnabled();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(bool value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<bool>(value),
+    );
+  }
+}
+
+String _$devLegacyOnboardingCarouselEnabledHash() =>
+    r'2982bf01361208ac34d3a11e5f00788059ccf456';
+
+/// Whether `main.dart`'s root gate can show the legacy 4-slide
+/// [SplashCarouselScreen] at all. Requested directly, alongside
+/// [DevOnboardingQuizEnabled] below: "let's put onboarding carousel and
+/// questionnaire behind dev toggles, as default we hide them."
+///
+/// **Default OFF** — reverses this screen's previous unconditional
+/// first-launch behavior. With this off, `main.dart` skips straight past
+/// where the carousel used to gate, same as [HasSeenSplash] already being
+/// true. Turning it on re-enables the original first-launch sequence for
+/// that screen specifically, independent of [DevNewSplashEnabled].
+
+abstract class _$DevLegacyOnboardingCarouselEnabled extends $Notifier<bool> {
+  bool build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<bool, bool>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<bool, bool>,
+              bool,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
+
+/// Whether `main.dart`'s root gate can show [OnboardingQuizScreen] (the
+/// 3-question Profile-catalog quiz) at all — see
+/// [DevLegacyOnboardingCarouselEnabled]'s own doc comment for the request
+/// this is paired with.
+///
+/// **Default OFF**, same reasoning as the carousel toggle above. With this
+/// off, `main.dart` treats onboarding as already complete regardless of
+/// [HasCompletedOnboarding]'s actual stored value, so no Profile ever gets
+/// materialized via the quiz path while this is off.
+
+@ProviderFor(DevOnboardingQuizEnabled)
+final devOnboardingQuizEnabledProvider = DevOnboardingQuizEnabledProvider._();
+
+/// Whether `main.dart`'s root gate can show [OnboardingQuizScreen] (the
+/// 3-question Profile-catalog quiz) at all — see
+/// [DevLegacyOnboardingCarouselEnabled]'s own doc comment for the request
+/// this is paired with.
+///
+/// **Default OFF**, same reasoning as the carousel toggle above. With this
+/// off, `main.dart` treats onboarding as already complete regardless of
+/// [HasCompletedOnboarding]'s actual stored value, so no Profile ever gets
+/// materialized via the quiz path while this is off.
+final class DevOnboardingQuizEnabledProvider
+    extends $NotifierProvider<DevOnboardingQuizEnabled, bool> {
+  /// Whether `main.dart`'s root gate can show [OnboardingQuizScreen] (the
+  /// 3-question Profile-catalog quiz) at all — see
+  /// [DevLegacyOnboardingCarouselEnabled]'s own doc comment for the request
+  /// this is paired with.
+  ///
+  /// **Default OFF**, same reasoning as the carousel toggle above. With this
+  /// off, `main.dart` treats onboarding as already complete regardless of
+  /// [HasCompletedOnboarding]'s actual stored value, so no Profile ever gets
+  /// materialized via the quiz path while this is off.
+  DevOnboardingQuizEnabledProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'devOnboardingQuizEnabledProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$devOnboardingQuizEnabledHash();
+
+  @$internal
+  @override
+  DevOnboardingQuizEnabled create() => DevOnboardingQuizEnabled();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(bool value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<bool>(value),
+    );
+  }
+}
+
+String _$devOnboardingQuizEnabledHash() =>
+    r'c132b51aa6f1f02507f205e620ca1bdbdcd624ff';
+
+/// Whether `main.dart`'s root gate can show [OnboardingQuizScreen] (the
+/// 3-question Profile-catalog quiz) at all — see
+/// [DevLegacyOnboardingCarouselEnabled]'s own doc comment for the request
+/// this is paired with.
+///
+/// **Default OFF**, same reasoning as the carousel toggle above. With this
+/// off, `main.dart` treats onboarding as already complete regardless of
+/// [HasCompletedOnboarding]'s actual stored value, so no Profile ever gets
+/// materialized via the quiz path while this is off.
+
+abstract class _$DevOnboardingQuizEnabled extends $Notifier<bool> {
+  bool build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<bool, bool>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<bool, bool>,
+              bool,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}

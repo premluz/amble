@@ -26,13 +26,18 @@ class VoiceCaptureHint extends StatelessWidget {
           ),
           SizedBox(height: theme.spacingSm),
           Text(
-            '"Reply to Laura\'s email, book the flight, and submit my '
-            'review. These are all high priority"',
+            '“Plan holidays”',
             textAlign: TextAlign.center,
             style: theme.textTitle.copyWith(
               color: theme.colorTextSecondary,
               fontWeight: FontWeight.w700,
             ),
+          ),
+          SizedBox(height: theme.spacingSm),
+          Text(
+            'You can add multiple tasks at once.',
+            textAlign: TextAlign.center,
+            style: theme.textBody.copyWith(color: theme.colorTextSecondary),
           ),
         ],
       ),

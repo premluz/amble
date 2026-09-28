@@ -9,22 +9,22 @@ import 'package:amble/features/timeline/place_task_line.dart';
 /// FIRST child of that column's Stack (its documented contract).
 const _pixelsPerMinute = 1.5;
 
-class _PlacedResult {
-  final placed = <DateTime>[];
-  final tapped = <DateTime>[];
+class _HoldResult {
+  final started = <DateTime>[];
+  final durationDeltas = <int>[];
+  int releasedCount = 0;
 }
 
-Future<_PlacedResult> _pumpLayer(
+Future<_HoldResult> _pumpLayer(
   WidgetTester tester, {
   required DateTime rangeStart,
   required DateTime rangeEnd,
-  bool withOnTapAt = false,
 }) async {
   tester.view.physicalSize = const Size(390, 844);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
 
-  final result = _PlacedResult();
+  final result = _HoldResult();
   final controller = PlaceTaskLineController(null);
   addTearDown(controller.dispose);
   final dayHeight =
@@ -43,22 +43,17 @@ Future<_PlacedResult> _pumpLayer(
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    // First and last, exactly as TimelineScreen mounts
-                    // them — the split is part of the contract under test.
+                    // First, exactly as TimelineScreen mounts it — the
+                    // stacking order is part of the contract under test.
                     PlaceTaskLineLayer(
                       theme: theme,
                       rangeStart: rangeStart,
                       rangeEnd: rangeEnd,
                       pixelsPerMinute: _pixelsPerMinute,
                       controller: controller,
-                      onPlaced: result.placed.add,
-                      onTapAt: withOnTapAt ? result.tapped.add : null,
-                    ),
-                    PlaceTaskLineOverlay(
-                      theme: theme,
-                      rangeStart: rangeStart,
-                      pixelsPerMinute: _pixelsPerMinute,
-                      controller: controller,
+                      onHoldStarted: result.started.add,
+                      onDurationDeltaChanged: result.durationDeltas.add,
+                      onHoldReleased: () => result.releasedCount++,
                     ),
                   ],
                 ),
@@ -77,185 +72,132 @@ void main() {
   final rangeStart = DateTime(2026, 8, 31, 9);
   final rangeEnd = DateTime(2026, 8, 31, 17);
 
-  testWidgets('a long press shows the line at the pressed position', (
-    tester,
-  ) async {
-    await _pumpLayer(tester, rangeStart: rangeStart, rangeEnd: rangeEnd);
-
-    // Nothing until the hold completes.
-    expect(find.byType(PlaceTaskLineLayer), findsOneWidget);
-
-    // 180px below the column's top == 120 minutes == 11:00.
-    final columnTopLeft = tester.getTopLeft(find.byType(PlaceTaskLineLayer));
-    final pressPoint = columnTopLeft + const Offset(150, 180);
-
-    // A bare pump() FIRST, before the timed one — matches Flutter's own
-    // draggable_test.dart pattern for exercising LongPressDraggable.
-    // Without it the delayed-drag recognizer's internal Timer can miss
-    // this test's advance, and the drag never starts at all.
-    final gesture = await tester.startGesture(pressPoint);
-    await tester.pump();
-    // Past kLongPressTimeout, so the hold is recognized.
-    await tester.pump(const Duration(milliseconds: 600));
-
-    // The line's own time label is what proves both that it appeared AND
-    // that it landed on the pressed position rather than the top of the
-    // column (the reported bug).
-    expect(find.text('11:00 AM'), findsOneWidget);
-
-    await gesture.up();
-    await tester.pumpAndSettle();
-  });
-
-  testWidgets('dragging after the hold moves the line and its time', (
-    tester,
-  ) async {
-    await _pumpLayer(tester, rangeStart: rangeStart, rangeEnd: rangeEnd);
-
-    final columnTopLeft = tester.getTopLeft(find.byType(PlaceTaskLineLayer));
-    final gesture = await tester.startGesture(
-      columnTopLeft + const Offset(150, 180),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 600));
-    expect(find.text('11:00 AM'), findsOneWidget);
-
-    // +90px == +60 minutes == 12:00.
-    await gesture.moveBy(const Offset(0, 90));
-    await tester.pump();
-
-    expect(find.text('12:00 PM'), findsOneWidget);
-    expect(find.text('11:00 AM'), findsNothing);
-
-    await gesture.up();
-    await tester.pumpAndSettle();
-  });
-
-  testWidgets('releasing reports the dropped time, snapped to 5 minutes', (
-    tester,
-  ) async {
-    final result = await _pumpLayer(
-      tester,
-      rangeStart: rangeStart,
-      rangeEnd: rangeEnd,
-    );
-
-    final columnTopLeft = tester.getTopLeft(find.byType(PlaceTaskLineLayer));
-    final gesture = await tester.startGesture(
-      columnTopLeft + const Offset(150, 180),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 600));
-    await gesture.moveBy(const Offset(0, 90));
-    await tester.pump();
-    await gesture.up();
-    await tester.pumpAndSettle();
-
-    expect(result.placed.single, DateTime(2026, 8, 31, 12));
-  });
-
-  testWidgets('the line disappears once released', (tester) async {
-    await _pumpLayer(tester, rangeStart: rangeStart, rangeEnd: rangeEnd);
-
-    final columnTopLeft = tester.getTopLeft(find.byType(PlaceTaskLineLayer));
-    final gesture = await tester.startGesture(
-      columnTopLeft + const Offset(150, 180),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 600));
-    expect(find.text('11:00 AM'), findsOneWidget);
-
-    await gesture.up();
-    await tester.pumpAndSettle();
-
-    expect(find.text('11:00 AM'), findsNothing);
-  });
-
-  testWidgets('a quick drag scrolls instead of placing a line', (tester) async {
-    final result = await _pumpLayer(
-      tester,
-      rangeStart: rangeStart,
-      rangeEnd: rangeEnd,
-    );
-
-    // No hold — an immediate drag, which is what an ordinary scroll is.
-    await tester.drag(
-      find.byType(SingleChildScrollView),
-      const Offset(0, -200),
-    );
-    await tester.pumpAndSettle();
-
-    // Nothing placed, and no line was ever shown.
-    expect(result.placed, isEmpty);
-  });
-
-  // New tap-empty-space interaction, requested directly: "tap on an empty
-  // space in timeline view... puts a wiggly gray default task and opens a
-  // small sheet" — distinct from the existing long-press-and-drag flow
-  // above, which stays unchanged.
-  group('onTapAt (2026-09-07)', () {
-    testWidgets('a plain tap fires onTapAt with the tapped time, snapped '
-        'to 5 minutes', (tester) async {
+  testWidgets(
+    'a long press fires onHoldStarted with the pressed position, snapped '
+    'to 5 minutes',
+    (tester) async {
       final result = await _pumpLayer(
         tester,
         rangeStart: rangeStart,
         rangeEnd: rangeEnd,
-        withOnTapAt: true,
       );
 
-      final columnTopLeft = tester.getTopLeft(find.byType(PlaceTaskLineLayer));
+      expect(find.byType(PlaceTaskLineLayer), findsOneWidget);
+
       // 180px below the column's top == 120 minutes == 11:00.
-      await tester.tapAt(columnTopLeft + const Offset(150, 180));
+      final columnTopLeft = tester.getTopLeft(find.byType(PlaceTaskLineLayer));
+      final pressPoint = columnTopLeft + const Offset(150, 180);
+
+      // A bare pump() FIRST, before the timed one — matches Flutter's own
+      // draggable_test.dart pattern for exercising LongPressDraggable.
+      // Without it the delayed-drag recognizer's internal Timer can miss
+      // this test's advance, and the drag never starts at all.
+      final gesture = await tester.startGesture(pressPoint);
+      await tester.pump();
+      // Past kLongPressTimeout, so the hold is recognized.
+      await tester.pump(const Duration(milliseconds: 600));
+
+      expect(result.started.single, DateTime(2026, 8, 31, 11));
+
+      await gesture.up();
       await tester.pumpAndSettle();
+    },
+  );
 
-      expect(result.tapped.single, DateTime(2026, 8, 31, 11));
-      expect(result.placed, isEmpty);
-    });
+  testWidgets('dragging after the hold reports a snapped duration delta', (
+    tester,
+  ) async {
+    final result = await _pumpLayer(
+      tester,
+      rangeStart: rangeStart,
+      rangeEnd: rangeEnd,
+    );
 
-    testWidgets('a plain tap never shows the placement line or fires '
-        'onPlaced', (tester) async {
+    final columnTopLeft = tester.getTopLeft(find.byType(PlaceTaskLineLayer));
+    final gesture = await tester.startGesture(
+      columnTopLeft + const Offset(150, 180),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(result.started.single, DateTime(2026, 8, 31, 11));
+
+    // +90px == +60 minutes, matching the resize snap.
+    await gesture.moveBy(const Offset(0, 90));
+    await tester.pump();
+
+    expect(result.durationDeltas.last, 60);
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('moving back up reports a negative duration delta', (
+    tester,
+  ) async {
+    final result = await _pumpLayer(
+      tester,
+      rangeStart: rangeStart,
+      rangeEnd: rangeEnd,
+    );
+
+    final columnTopLeft = tester.getTopLeft(find.byType(PlaceTaskLineLayer));
+    final gesture = await tester.startGesture(
+      columnTopLeft + const Offset(150, 180),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+
+    await gesture.moveBy(const Offset(0, -30));
+    await tester.pump();
+
+    expect(result.durationDeltas.last, -20);
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('releasing after a real hold fires onHoldReleased exactly once', (
+    tester,
+  ) async {
+    final result = await _pumpLayer(
+      tester,
+      rangeStart: rangeStart,
+      rangeEnd: rangeEnd,
+    );
+
+    final columnTopLeft = tester.getTopLeft(find.byType(PlaceTaskLineLayer));
+    final gesture = await tester.startGesture(
+      columnTopLeft + const Offset(150, 180),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    await gesture.moveBy(const Offset(0, 90));
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(result.releasedCount, 1);
+  });
+
+  testWidgets(
+    'a quick drag scrolls instead of starting a hold',
+    (tester) async {
       final result = await _pumpLayer(
         tester,
         rangeStart: rangeStart,
         rangeEnd: rangeEnd,
-        withOnTapAt: true,
       );
 
-      final columnTopLeft = tester.getTopLeft(find.byType(PlaceTaskLineLayer));
-      await tester.tapAt(columnTopLeft + const Offset(150, 180));
+      // No hold — an immediate drag, which is what an ordinary scroll is.
+      await tester.drag(
+        find.byType(SingleChildScrollView),
+        const Offset(0, -200),
+      );
       await tester.pumpAndSettle();
 
-      expect(find.text('11:00 AM'), findsNothing);
-      expect(result.placed, isEmpty);
-    });
-
-    testWidgets(
-      'a long press still shows the line and fires onPlaced, unaffected '
-      'by onTapAt being wired up',
-      (tester) async {
-        final result = await _pumpLayer(
-          tester,
-          rangeStart: rangeStart,
-          rangeEnd: rangeEnd,
-          withOnTapAt: true,
-        );
-
-        final columnTopLeft = tester.getTopLeft(
-          find.byType(PlaceTaskLineLayer),
-        );
-        final gesture = await tester.startGesture(
-          columnTopLeft + const Offset(150, 180),
-        );
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 600));
-        expect(find.text('11:00 AM'), findsOneWidget);
-
-        await gesture.up();
-        await tester.pumpAndSettle();
-
-        expect(result.placed.single, DateTime(2026, 8, 31, 11));
-        expect(result.tapped, isEmpty);
-      },
-    );
-  });
+      // Nothing started, and no release ever fired.
+      expect(result.started, isEmpty);
+      expect(result.releasedCount, 0);
+    },
+  );
 }

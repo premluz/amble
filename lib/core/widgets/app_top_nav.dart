@@ -92,17 +92,13 @@ class AppTopNav extends StatelessWidget {
               child: Icon(
                 Icons.settings_outlined,
                 // Same active/inactive contrast a selected destination
-                // label uses (colorTextPrimary vs. colorTextTertiary) —
-                // requested directly, "should highlight as Active (light)
-                // same as menu items in top nav." Kept as
-                // colorTextSecondary rather than colorTextTertiary for the
-                // INACTIVE state specifically, matching this icon's own
-                // pre-existing resting color (a label's own inactive tone
-                // was never applied to this icon before, and changing it
-                // was not asked for — only the missing ACTIVE state was).
+                // label uses. Inactive state uses colorForegroundTertiary,
+                // not colorTextTertiary — same resting tone as the main
+                // nav's own inactive label, but named for a non-text
+                // element since this is an icon, not text.
                 color: settingsSelected
                     ? theme.colorTextPrimary
-                    : theme.colorTextSecondary,
+                    : theme.colorForegroundTertiary,
                 size: theme.spacingLg,
               ),
             ),

@@ -24,7 +24,6 @@ class AppDockPane extends StatelessWidget {
   Widget build(BuildContext context) {
     return AppDockSurface(
       theme: theme,
-      grouped: children.length > 1,
       backgroundColor: backgroundColor,
       child: Padding(
         padding: EdgeInsets.all(theme.spacingXs),
@@ -115,17 +114,15 @@ class AppDockIconButton extends StatelessWidget {
   }
 }
 
-/// Grouped controls share glass; standalone actions keep a solid raised fill.
+/// Every dock pane uses the same glass, whether it holds one action or a group.
 class AppDockSurface extends StatelessWidget {
   const AppDockSurface({
     super.key,
     required this.theme,
-    required this.grouped,
     required this.child,
     this.backgroundColor,
   });
   final AmbleTheme theme;
-  final bool grouped;
   final Widget child;
   final Color? backgroundColor;
 
@@ -134,7 +131,7 @@ class AppDockSurface extends StatelessWidget {
     theme: theme,
     borderRadius: BorderRadius.circular(theme.radiusPillFull),
     surfaceColor: backgroundColor,
-    material: grouped ? FloatingMaterial.glass : FloatingMaterial.solid,
+    material: FloatingMaterial.glass,
     child: child,
   );
 }

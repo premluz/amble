@@ -221,11 +221,12 @@ void main() {
       // Tapping the armed task itself closes its edit state — 2026-09-12,
       // reported directly, this no longer ALSO opens the detail sheet
       // (see `armed_edit_task_test.dart`'s own "single tap on the armed
-      // task" test for the full reasoning). NOT an empty-space tap: this
-      // Timeline's own tap-to-quick-create feature (`onEmptyTap`) fires
-      // on ANY empty background tap and would create a brand new pending
-      // draft there — which now shows its OWN pair of edge labels (this
-      // same session's other feature), confounding this test's count.
+      // task" test for the full reasoning). NOT an empty-space press: an
+      // empty-space LONG-press (`onHoldStarted`, since 2026-09-27's
+      // "quick task add" redesign) would create a brand new pending draft
+      // there — which now shows its OWN pair of edge labels (this same
+      // session's other feature), confounding this test's count. A plain
+      // tap on the task pill itself doesn't reach that gesture at all.
       await tester.tap(find.text('Focus block'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));

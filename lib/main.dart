@@ -26,6 +26,7 @@ import 'features/inbox/inbox_screen.dart';
 import 'features/onboarding/onboarding_quiz_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/splash/splash_carousel_screen.dart';
+import 'features/splash/splash_screen.dart';
 import 'features/timeline/selected_date_provider.dart';
 import 'features/timeline/edit_mode_provider.dart';
 import 'features/timeline/pending_task_draft_provider.dart';
@@ -249,6 +250,16 @@ class AmbleApp extends ConsumerWidget {
     // onboarding slides." Only consulted once hasSeenSplash is already
     // true; the carousel's own CTA is completely unchanged.
     final hasCompletedOnboarding = ref.watch(hasCompletedOnboardingProvider);
+    // Dev toggles deciding WHICH first-launch presentation (if any) the
+    // gate below can show — see `core/dev_config.dart`'s own doc comments.
+    // Requested directly: "put onboarding carousel and questionnaire
+    // behind dev toggles, as default we hide them" plus a new one-off
+    // splash, "also under dev toggle."
+    final newSplashEnabled = ref.watch(devNewSplashEnabledProvider);
+    final legacyCarouselEnabled = ref.watch(
+      devLegacyOnboardingCarouselEnabledProvider,
+    );
+    final onboardingQuizEnabled = ref.watch(devOnboardingQuizEnabledProvider);
     // One global rung (sm/md/lg) resolved onto BOTH light and dark
     // palettes here, once, before either reaches MaterialApp — every
     // existing call site (TaskCapsuleBlock, ZoneContainerBlock,
@@ -300,17 +311,18 @@ class AmbleApp extends ConsumerWidget {
         theme: _themeDataFor(lightTheme, Brightness.light),
         darkTheme: _themeDataFor(darkTheme, Brightness.dark),
         themeMode: toFlutterThemeMode(themeMode),
-        // Three-way gate, both provider-watched so each CTA's write
-        // triggers an immediate rebuild with no separate Navigator.push:
-        // splash/carousel first (HasSeenSplash), then the onboarding
-        // Profile quiz (HasCompletedOnboarding) as its own distinct step
-        // — confirmed directly, "keep carousel and separately onboarding
-        // slides" — then the real app. Skipping the quiz still calls
-        // markDone(), so it can never be re-shown after either a genuine
-        // choice or an explicit skip.
-        home: !hasSeenSplash
+        // Gate, provider-watched so each CTA's write triggers an immediate
+        // rebuild with no separate Navigator.push. The one-off SplashScreen
+        // and the legacy carousel/quiz are independently dev-toggle-gated
+        // (see `core/dev_config.dart`) and share `hasSeenSplash`/
+        // `hasCompletedOnboarding` as their own "already shown" state, so
+        // toggling a dev switch never re-shows something already seen —
+        // only what a fresh, unseen install would reach.
+        home: !hasSeenSplash && newSplashEnabled
+            ? SplashScreen(onFinished: () {})
+            : !hasSeenSplash && legacyCarouselEnabled
             ? SplashCarouselScreen(onFinished: () {})
-            : !hasCompletedOnboarding
+            : !hasCompletedOnboarding && onboardingQuizEnabled
             ? const OnboardingQuizScreen()
             : const AmbleHome(),
       ),

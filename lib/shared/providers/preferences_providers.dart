@@ -153,8 +153,8 @@ class PreventOverlappingTasksSetting extends _$PreventOverlappingTasksSetting {
 /// `PreferenceKeys.dualFontEnabled`'s own doc comment. `keepAlive: true` for
 /// the same reason as the other settings here: read once per app start (via
 /// `main.dart`'s own "resolve once, before MaterialApp" pass), not
-/// screen-scoped state. Defaults to **true** so a fresh install keeps the
-/// existing dual-font look; turning it off is an explicit opt-out.
+/// screen-scoped state. Defaults to **false** so a fresh install uses the
+/// app's unified DM Sans typography; turning it on opts into the mono split.
 @Riverpod(keepAlive: true)
 class DualFontSetting extends _$DualFontSetting {
   @override
@@ -162,7 +162,7 @@ class DualFontSetting extends _$DualFontSetting {
     return ref
             .read(preferencesRepositoryProvider)
             .getValue<bool>(PreferenceKeys.dualFontEnabled) ??
-        true;
+        false;
   }
 
   Future<void> set(bool value) async {
@@ -243,8 +243,7 @@ class ShowTimelineConnectorsSetting extends _$ShowTimelineConnectorsSetting {
 /// extremes. Defaults to 1.5, the pre-existing default both old
 /// mechanisms already used.
 @Riverpod(keepAlive: true)
-class TimelinePixelsPerMinuteSetting
-    extends _$TimelinePixelsPerMinuteSetting {
+class TimelinePixelsPerMinuteSetting extends _$TimelinePixelsPerMinuteSetting {
   /// The most zoomed-out this setting will clamp to.
   static const double minPixelsPerMinute = 1.0;
 
@@ -273,9 +272,8 @@ class TimelinePixelsPerMinuteSetting
 /// List, and Zone) from one toggle — unlike
 /// [ShowTimelineConnectorsSetting] above, which is Task-view only, since a
 /// checkbox that disappeared in one view and not another would read as a
-/// bug rather than a setting. Defaults to **true**, matching the
-/// checkbox's existing unconditional rendering, so a fresh install is
-/// visually unchanged.
+/// bug rather than a setting. Defaults to **false**, as requested for the
+/// developer setting; turning it on restores the checkbox across all views.
 ///
 /// Note: this checkbox is currently the ONLY way to complete a SCHEDULED
 /// task — the task detail sheet has no completion control, and the Inbox's
@@ -290,7 +288,7 @@ class ShowCompletionCheckboxSetting extends _$ShowCompletionCheckboxSetting {
     return ref
             .read(preferencesRepositoryProvider)
             .getValue<bool>(PreferenceKeys.showCompletionCheckbox) ??
-        true;
+        false;
   }
 
   Future<void> set(bool value) async {

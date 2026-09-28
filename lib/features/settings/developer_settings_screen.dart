@@ -191,6 +191,8 @@ class _DeveloperSettingsScreenState
             ),
             SizedBox(height: theme.spacingLg),
           ],
+          Text('Onboarding', style: theme.textTitle),
+          SizedBox(height: theme.spacingSm),
           SettingsPanel(
             theme: theme,
             child: Column(
@@ -229,6 +231,128 @@ class _DeveloperSettingsScreenState
                   variant: AppButtonVariant.secondary,
                   onPressed: () =>
                       ref.read(installDateProvider.notifier).reset(),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(height: theme.spacingSm),
+          // Which first-launch presentation(s), if any, `main.dart`'s gate
+          // can show — see `core/dev_config.dart`'s own doc comments.
+          // Requested directly: "put onboarding carousel and questionnaire
+          // behind dev toggles, as default we hide them" plus a new
+          // one-off splash, "also under dev toggle."
+          SettingsPanel(
+            theme: theme,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'New splash screen',
+                            style: theme.textBody.copyWith(
+                              color: theme.colorTextPrimary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          SizedBox(height: theme.spacingXs),
+                          Text(
+                            'One-off logo + CTA splash, shown once on a '
+                            'fresh install.',
+                            style: theme.textBody.copyWith(
+                              color: theme.colorTextSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(width: theme.spacingMd),
+                    AppSwitch(
+                      value: ref.watch(devNewSplashEnabledProvider),
+                      onChanged: (value) => ref
+                          .read(devNewSplashEnabledProvider.notifier)
+                          .set(value),
+                    ),
+                  ],
+                ),
+                SizedBox(height: theme.spacingMd),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Legacy splash carousel',
+                            style: theme.textBody.copyWith(
+                              color: theme.colorTextPrimary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          SizedBox(height: theme.spacingXs),
+                          Text(
+                            'The original 4-slide value-prop carousel.',
+                            style: theme.textBody.copyWith(
+                              color: theme.colorTextSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(width: theme.spacingMd),
+                    AppSwitch(
+                      value: ref.watch(
+                        devLegacyOnboardingCarouselEnabledProvider,
+                      ),
+                      onChanged: (value) => ref
+                          .read(
+                            devLegacyOnboardingCarouselEnabledProvider
+                                .notifier,
+                          )
+                          .set(value),
+                    ),
+                  ],
+                ),
+                SizedBox(height: theme.spacingMd),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Onboarding quiz',
+                            style: theme.textBody.copyWith(
+                              color: theme.colorTextPrimary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          SizedBox(height: theme.spacingXs),
+                          Text(
+                            'The 3-question Profile-catalog quiz shown '
+                            'after the splash.',
+                            style: theme.textBody.copyWith(
+                              color: theme.colorTextSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(width: theme.spacingMd),
+                    AppSwitch(
+                      value: ref.watch(devOnboardingQuizEnabledProvider),
+                      onChanged: (value) => ref
+                          .read(devOnboardingQuizEnabledProvider.notifier)
+                          .set(value),
+                    ),
+                  ],
                 ),
               ],
             ),

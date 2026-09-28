@@ -246,25 +246,47 @@ class _NewZoneSheetState extends ConsumerState<NewZoneSheet>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // The drag-to-close handle, alone at the very top of the
-                  // sheet — moved OUT of AppSheetHeader's own row (see
-                  // below) so the sheet's outer content padding can drop
-                  // its top inset entirely: requested directly ("remove any
-                  // padding-top margin from sheet, header should have it").
-                  // This handle region now owns that inset itself
-                  // (`spacingSm`), rather than the whole scroll body being
-                  // pushed down by it.
+                  // Close left, primary action right — at the TOP of the
+                  // sheet, per docs/DESIGN_SYSTEM.md's "Sheets > The header
+                  // row" rule ("Close — top-LEFT... Primary action —
+                  // top-RIGHT"), matching every other sheet's own header
+                  // placement (`quick_capture_sheet.dart`,
+                  // `new_section_sheet.dart`). Reversed back from a
+                  // 2026-09-24 bottom placement, requested directly.
+                  //
+                  // The drag-to-close handle is layered BEHIND this row
+                  // (`AppSheetHeader`'s own `handle` param) rather than
+                  // alone in its own strip above it, matching the shared
+                  // header shape exactly — its drag/tap target still spans
+                  // the whole row.
                   Padding(
-                    padding: EdgeInsets.only(bottom: theme.spacingSm),
-                    child: AppDragToCloseHandle(
+                    padding: EdgeInsets.fromLTRB(
+                      theme.spacingMd,
+                      theme.spacingSm,
+                      theme.spacingMd,
+                      0,
+                    ),
+                    child: AppSheetHeader(
                       theme: theme,
-                      controller: _dragController,
-                      // Matches the old accumulator's own `!_saving` guard
-                      // — a save already in flight must not also let a
-                      // drag tear the sheet down underneath it.
+                      handle: AppDragToCloseHandle(
+                        theme: theme,
+                        controller: _dragController,
+                        // Matches the old accumulator's own `!_saving` guard
+                        // — a save already in flight must not also let a
+                        // drag tear the sheet down underneath it.
+                        onClose: _saving ? () {} : _close,
+                      ),
                       onClose: _saving ? () {} : _close,
+                      trailing: AppButton(
+                        label: 'Add zone',
+                        size: AppButtonSize.md,
+                        shape: AppButtonShape.pill,
+                        isLoading: _saving,
+                        onPressed: _save,
+                      ),
                     ),
                   ),
+                  SizedBox(height: theme.spacingSm),
                   // Flexible (loose fit), NOT Expanded — this Column stays
                   // `mainAxisSize.min` (matching every other Column in this
                   // sheet) so the whole sheet still SHRINKS to fit short
@@ -376,41 +398,6 @@ class _NewZoneSheetState extends ConsumerState<NewZoneSheet>
                               ),
                             ),
                         ],
-                      ),
-                    ),
-                  ),
-                  // Close left, primary action right — at the BOTTOM of the
-                  // sheet now, requested directly against a reference
-                  // screenshot ("close and add at the bottom of the
-                  // sheet"). Still [AppSheetHeader] — reused for the exact
-                  // same close-button/trailing-button styling every other
-                  // sheet's header row uses (`quick_capture_sheet.dart`,
-                  // `new_section_sheet.dart`), just placed as this sheet's
-                  // last row instead of its first. `handle: null` since the
-                  // drag handle now lives on its own at the top of the
-                  // sheet, not sharing this row.
-                  //
-                  // No bottom inset here — requested directly ("the sheet
-                  // should not have same bottom padding as side, no margin
-                  // bottom"): this row sits flush against the sheet's own
-                  // bottom edge (inside `SafeArea`), rather than matching
-                  // the `spacingMd` side padding on every edge.
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      theme.spacingMd,
-                      theme.spacingSm,
-                      theme.spacingMd,
-                      0,
-                    ),
-                    child: AppSheetHeader(
-                      theme: theme,
-                      onClose: _saving ? () {} : _close,
-                      trailing: AppButton(
-                        label: 'Add zone',
-                        size: AppButtonSize.md,
-                        shape: AppButtonShape.pill,
-                        isLoading: _saving,
-                        onPressed: _save,
                       ),
                     ),
                   ),

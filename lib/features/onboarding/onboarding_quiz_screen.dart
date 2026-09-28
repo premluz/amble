@@ -10,10 +10,13 @@ import '../../shared/services/onboarding_quiz.dart';
 import 'onboarding_profile_result_screen.dart';
 
 /// The onboarding Profile quiz — a short, skippable question flow shown
-/// once, AFTER the existing splash/carousel finishes (see `main.dart`'s
+/// once, AFTER whichever splash presentation finishes (see `main.dart`'s
 /// `home:` wiring) and BEFORE the real app. A separate step from the
 /// carousel, not folded into it — confirmed directly: "we need to keep
-/// carousel and separately onboarding slides."
+/// carousel and separately onboarding slides." Reachable only when
+/// `DevOnboardingQuizEnabled` (`core/dev_config.dart`) is on — default
+/// OFF, per "let's put onboarding carousel and questionnaire behind dev
+/// toggles, as default we hide them."
 ///
 /// Answers are scored against the bundled Profile catalog
 /// (`onboarding_profile_catalog.dart`) via [scoreOnboardingProfiles];

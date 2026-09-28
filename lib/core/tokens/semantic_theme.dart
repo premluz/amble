@@ -48,6 +48,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     required this.colorTextPrimary,
     required this.colorTextSecondary,
     required this.colorTextTertiary,
+    required this.colorForegroundTertiary,
     required this.colorBorder,
     required this.colorAccent,
     required this.colorTaskCompleted,
@@ -747,6 +748,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     colorTextPrimary: ColorPrimitives.slate900,
     colorTextSecondary: ColorPrimitives.slate500,
     colorTextTertiary: ColorPrimitives.slate400,
+    colorForegroundTertiary: ColorPrimitives.slate400,
     // **2026-09-20 — re-pointed from `sand300` to `surface3`.** Confirmed
     // directly: "card borders" is `surface3`'s own named role in the
     // confirmed layering — "use a fine border on cards... to create
@@ -1036,6 +1038,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     colorTextPrimary: ColorPrimitives.sand200,
     colorTextSecondary: ColorPrimitives.sand400,
     colorTextTertiary: ColorPrimitives.sand350,
+    colorForegroundTertiary: ColorPrimitives.sand350,
     colorBorder: ColorPrimitives.ink600,
     colorAccent: ColorPrimitives.brand300,
     // See the light palette — status green is not part of the accent role.
@@ -1268,6 +1271,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     Color? colorTextPrimary,
     Color? colorTextSecondary,
     Color? colorTextTertiary,
+    Color? colorForegroundTertiary,
     Color? colorBorder,
     Color? colorAccent,
     Color? colorTaskCompleted,
@@ -1360,6 +1364,8 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       colorTextPrimary: colorTextPrimary ?? this.colorTextPrimary,
       colorTextSecondary: colorTextSecondary ?? this.colorTextSecondary,
       colorTextTertiary: colorTextTertiary ?? this.colorTextTertiary,
+      colorForegroundTertiary:
+          colorForegroundTertiary ?? this.colorForegroundTertiary,
       colorBorder: colorBorder ?? this.colorBorder,
       colorAccent: colorAccent ?? this.colorAccent,
       colorTaskCompleted: colorTaskCompleted ?? this.colorTaskCompleted,
@@ -1509,6 +1515,11 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       colorTextTertiary: Color.lerp(
         colorTextTertiary,
         other.colorTextTertiary,
+        t,
+      )!,
+      colorForegroundTertiary: Color.lerp(
+        colorForegroundTertiary,
+        other.colorForegroundTertiary,
         t,
       )!,
       colorBorder: Color.lerp(colorBorder, other.colorBorder, t)!,

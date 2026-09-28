@@ -98,6 +98,7 @@ class ZoneListBody extends ConsumerWidget {
             onTap: () => showZoneNameSheet(context, facet: name),
             borderRadius: BorderRadius.circular(theme.radiusXl),
             child: Container(
+              width: double.infinity,
               padding: EdgeInsets.all(theme.spacingMd),
               decoration: BoxDecoration(
                 color: theme.colorSurfaceSecondary,

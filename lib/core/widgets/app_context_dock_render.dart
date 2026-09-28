@@ -98,7 +98,6 @@ class _AppContextDockLayout extends StatelessWidget {
                     curve: theme.curveStandard,
                     child: AppDockSurface(
                       theme: theme,
-                      grouped: pane.group.actions.length > 1,
                       backgroundColor: pane.group.backgroundColor,
                       child: const SizedBox.expand(),
                     ),

@@ -1,9 +1,9 @@
-import 'package:flutter/gestures.dart' show kLongPressTimeout, kTouchSlop;
 import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_press_feedback.dart';
 import 'task_edge_time_label.dart';
+import 'timeline_drag_math.dart';
 
 /// Snap granularity for the placement line's dropped time — matches the
 /// task-drag reschedule's own snap (see `timeline_screen.dart`'s
@@ -11,32 +11,38 @@ import 'task_edge_time_label.dart';
 /// the same rhythm of times.
 const _snapMinutes = 5;
 
-/// Layer that turns a long-press-and-drag anywhere on the timeline's empty
-/// background into "place a new task starting here." Requested directly:
-/// "press and hold any where but not the pill... after short hold line
-/// shows with time on the right... user could move it up and down...
-/// hold itself for a moment line shown when shown is drag a line mode...
-/// on release... create task flow is opened with start time as the line
-/// was dropped."
+/// **2026-09-27 — superseded by the "quick task add" long-press flow.**
+/// Requested directly: "on timeline day spatial long press shows line
+/// that when release in that position options create task or move / Let's
+/// put it aside comment out or archive... Instead of tap to create new
+/// task we'll have 'quick task add'... long press and when task is shown
+/// (no sheet yet coming) user can move down or up to set length... on
+/// release we show sheet quick add."
 ///
-/// Built on [LongPressDraggable] rather than a hand-rolled
+/// [PlaceTaskLineLayer] no longer draws a moving line and hands the
+/// release to a "Move all"/"New task" menu (`place_task_release_menu.dart`,
+/// left in the codebase unused per the same "archive, don't delete"
+/// instruction). It now starts a `PendingTaskDraft` directly the instant
+/// the long-press is recognized — so the wiggly placeholder PILL itself
+/// appears immediately, before any drag — then reports the hold's
+/// vertical delta as a live duration change for the rest of the hold, and
+/// fires [onHoldReleased] on release so the caller can reveal the
+/// quick-create sheet. [PlaceTaskLineOverlay] and
+/// [PlaceTaskLineController] are likewise kept, now unused, since nothing
+/// draws a line any more.
+///
+/// Still built on [LongPressDraggable] rather than a hand-rolled
 /// `RawGestureDetector`/`LongPressGestureRecognizer` — the earlier
 /// hand-rolled version never reliably worked once a `SingleChildScrollView`
 /// ancestor was in the picture (wrong drop position, no drag tracking at
 /// all on a real device). `LongPressDraggable` is Flutter's own
 /// purpose-built widget for exactly this interaction — the same mechanism
 /// `ReorderableListView` itself uses internally — and reliably survives a
-/// scrollable ancestor, which is the whole reason it exists.
-///
-/// The VISIBLE line/label is deliberately NOT `LongPressDraggable`'s own
-/// `feedback` (which the framework positions via the app-wide `Overlay`,
-/// a different coordinate space entirely, and can't reliably line up with
-/// the underlying timeline's own hour axis). `feedback` here is invisible
-/// and exists only to drive `onDragUpdate`'s stream of `globalPosition`s;
-/// the real visual is drawn by [PlaceTaskLineOverlay] in the timeline's
-/// own coordinate space — matching [CurrentTimeIndicator]'s own line+label
-/// shape and hairline weight, just accent-coloured instead of red, per
-/// direct request.
+/// scrollable ancestor, which is the whole reason it exists. `feedback` is
+/// invisible; the placeholder pill (drawn elsewhere in the Stack, driven
+/// by the pending-draft provider) is the real visual, in the timeline's
+/// own coordinate space rather than the app-wide `Overlay` `feedback`
+/// would otherwise float in.
 ///
 /// This widget MUST be the FIRST child in the timeline's Stack — a `Stack`
 /// hit-tests from last child to first, so every task pill and free-window
@@ -44,18 +50,7 @@ const _snapMinutes = 5;
 /// before it reaches this background layer. Combined with those widgets'
 /// own `HitTestBehavior.opaque`, a press that starts on a pill or a
 /// free-window block never reaches here at all — exactly "not on the
-/// pill." [PlaceTaskLineOverlay] correspondingly must be the LAST child,
-/// so the line paints above everything; the two communicate through a
-/// shared [PlaceTaskLineController].
-/// The line's live position while a placement drag is in progress, in the
-/// day column's own local Y — null whenever nothing is being placed.
-///
-/// Exists because the press surface and the visible line have opposite
-/// stacking requirements: the surface must be the timeline Stack's FIRST
-/// child (hit-tested last, so task pills win any press over it), while the
-/// line must paint ABOVE everything (requested directly — it was rendering
-/// underneath tasks). A Stack can't give one widget both, so the two are
-/// separate children sharing this notifier rather than duplicated state.
+/// pill."
 typedef PlaceTaskLineController = ValueNotifier<double?>;
 
 class PlaceTaskLineLayer extends StatefulWidget {
@@ -66,8 +61,9 @@ class PlaceTaskLineLayer extends StatefulWidget {
     required this.rangeEnd,
     required this.pixelsPerMinute,
     required this.controller,
-    required this.onPlaced,
-    this.onTapAt,
+    required this.onHoldStarted,
+    required this.onDurationDeltaChanged,
+    required this.onHoldReleased,
   });
 
   final AmbleTheme theme;
@@ -75,23 +71,30 @@ class PlaceTaskLineLayer extends StatefulWidget {
   final DateTime rangeEnd;
   final double pixelsPerMinute;
 
-  /// Publishes the line's position to [PlaceTaskLineOverlay], which the
-  /// caller renders as the LAST child of the same Stack.
+  /// Unused by the current "quick task add" gesture — kept only so
+  /// [PlaceTaskLineOverlay] (archived alongside the rest of the old
+  /// mechanism) still type-checks against a live controller.
   final PlaceTaskLineController controller;
 
-  /// Fired on release with the dropped instant, already snapped to
-  /// [_snapMinutes] and clamped inside [rangeStart]/[rangeEnd].
-  final ValueChanged<DateTime> onPlaced;
+  /// Fired the instant a long-press on empty Timeline background is
+  /// recognized, with the pressed instant already snapped to
+  /// [_snapMinutes] and clamped inside [rangeStart]/[rangeEnd] — the
+  /// caller starts the pending draft here so the placeholder pill appears
+  /// immediately, before any drag. Requested directly: "long press and
+  /// when task is shown (no sheet yet coming) user can move down or up to
+  /// set length."
+  final ValueChanged<DateTime> onHoldStarted;
 
-  /// Fired on a plain TAP (not a hold-and-drag) on empty Timeline
-  /// background — requested directly: "tap on an empty space in timeline
-  /// view... puts a wiggly gray default task and opens a small sheet."
-  /// A quick tap and a long-press-drag resolve independently in Flutter's
-  /// gesture arena (this widget's own `GestureDetector.onTapUp` alongside
-  /// [LongPressDraggable]'s recognizer below), so both interactions coexist
-  /// without custom arbitration. Optional — null leaves plain taps
-  /// unhandled, same as before this parameter existed.
-  final ValueChanged<DateTime>? onTapAt;
+  /// Fired on every pointer move for the rest of the same hold, with the
+  /// TOTAL vertical delta (in minutes, already snapped to
+  /// [resizeSnapMinutes]) since [onHoldStarted] — the caller applies this
+  /// as a live duration change on the same draft. Positive means the
+  /// finger has moved down (longer), matching a bottom-edge resize.
+  final ValueChanged<int> onDurationDeltaChanged;
+
+  /// Fired on release — the caller reveals the quick-create sheet for the
+  /// draft [onHoldStarted] already started.
+  final VoidCallback onHoldReleased;
 
   @override
   State<PlaceTaskLineLayer> createState() => _PlaceTaskLineLayerState();
@@ -106,76 +109,26 @@ class _PlaceTaskLineLayerState extends State<PlaceTaskLineLayer> {
   /// so the converted value and the rendered position can't disagree.
   final _anchorKey = GlobalKey();
 
-  /// The line's current position, in this layer's own local Y (the same
-  /// coordinate space every other Positioned child of the timeline's
-  /// Stack uses) — null while no drag is active. Mirrored onto
-  /// [PlaceTaskLineLayer.controller] so the separately-stacked overlay can
-  /// render it; kept here too so the drop handler can read it without
-  /// reaching back through the notifier.
-  double? get _lineTop => widget.controller.value;
-  set _lineTop(double? value) => widget.controller.value = value;
-
   /// The most recent raw pointer position, tracked independently of the
   /// drag's own gesture-arena participation via a `Listener` (see build())
   /// — `Draggable`'s own `onDragUpdate` only fires once the pointer has
   /// actually MOVED past its start (see `_DragAvatar.update`'s
   /// `_position != oldPosition` guard), so a hold that's released
-  /// perfectly still would never fire it at all and the line would never
-  /// appear. `onDragStarted` (fired the instant the hold completes) has
+  /// perfectly still would never fire it at all and the draft would never
+  /// start. `onDragStarted` (fired the instant the hold completes) has
   /// no position of its own — this field is what supplies one.
   Offset? _lastPointerPosition;
 
-  /// When the current pointer went down, and where — used by
-  /// [_handlePointerUp] to tell a quick tap from a hold or a drag.
-  /// The pointer-down moment, taken from the EVENT's own timestamp rather
-  /// than `DateTime.now()`.
-  ///
-  /// Pointer timestamps run on the same clock `WidgetTester.pump(Duration)`
-  /// advances; wall-clock time does not. With `DateTime.now()` a widget
-  /// test that held for a simulated 600ms measured ~0ms of real elapsed
-  /// time, so this guard never tripped, every long press was classified as
-  /// a tap, and `onTapAt` fired instead of the line appearing — which is
-  /// exactly what `place_task_line_test.dart`'s "a long press still shows
-  /// the line ... unaffected by onTapAt being wired up" case was failing
-  /// on. Event time is the correct source for gesture timing regardless:
-  /// it is what every Flutter recognizer itself uses.
-  Duration? _pointerDownAt;
-  Offset? _pointerDownPosition;
+  /// The Y position (this layer's own local coordinate space) the hold
+  /// started at — the draft's start time is fixed here for the rest of
+  /// the hold; only the duration changes as the finger moves, via
+  /// [_reportDurationDelta].
+  double? _holdStartY;
 
-  /// Set once [LongPressDraggable] actually begins a drag, so the release
-  /// at the end of that drag is never also treated as a tap.
+  /// Set once [LongPressDraggable] actually begins a drag, so
+  /// [PlaceTaskLineLayer.onHoldReleased] only fires for a hold that
+  /// actually started one.
   bool _dragStarted = false;
-
-  /// Fires [PlaceTaskLineLayer.onTapAt] straight from the raw pointer
-  /// stream, rather than through a `GestureDetector.onTapUp`.
-  ///
-  /// Reported directly: "the quick task add tap on the timeline is not
-  /// responsive. It opens after a few moments." A tap recognizer here
-  /// shares the gesture arena with [LongPressDraggable]'s own recognizer,
-  /// and `onTapUp` only fires once that arena resolves — so every tap
-  /// waited out the long-press contest before anything happened. A
-  /// [Listener] sits outside the arena entirely, so this fires on the
-  /// actual finger-lift.
-  ///
-  /// Guards reproduce what the tap recognizer was doing for us: ignore a
-  /// release that ended a drag, one that lingered past the long-press
-  /// threshold, and one that moved far enough to read as a scroll.
-  void _handlePointerUp(PointerUpEvent event) {
-    final downAt = _pointerDownAt;
-    final downPosition = _pointerDownPosition;
-    _pointerDownAt = null;
-    _pointerDownPosition = null;
-
-    final onTapAt = widget.onTapAt;
-    if (onTapAt == null || downAt == null || downPosition == null) return;
-    if (_dragStarted) return;
-    if (event.timeStamp - downAt > kLongPressTimeout) return;
-    if ((event.position - downPosition).distance > kTouchSlop) return;
-
-    final y = _localY(event.position);
-    if (y == null) return;
-    onTapAt(_instantAt(y.clamp(0.0, _maxTop)));
-  }
 
   double get _totalMinutes =>
       widget.rangeEnd.difference(widget.rangeStart).inMinutes.toDouble();
@@ -195,12 +148,18 @@ class _PlaceTaskLineLayerState extends State<PlaceTaskLineLayer> {
     return renderObject.globalToLocal(globalPosition).dy;
   }
 
-  void _updateFromGlobal(Offset globalPosition) {
+  /// Reports the total vertical delta since the hold started, converted
+  /// to a snapped minutes delta — [PlaceTaskLineLayer.onDurationDeltaChanged]
+  /// applies it as a live duration on the same draft [_holdStartY] already
+  /// anchored the start of.
+  void _reportDurationDelta(Offset globalPosition) {
+    final startY = _holdStartY;
+    if (startY == null) return;
     final y = _localY(globalPosition);
     if (y == null) return;
-    // No setState: this widget renders nothing that depends on the value.
-    // The notifier is what rebuilds the overlay that actually draws it.
-    _lineTop = y.clamp(0.0, _maxTop);
+    final rawDelta = y - startY;
+    final snapped = snappedDurationDelta(rawDelta, widget.pixelsPerMinute);
+    widget.onDurationDeltaChanged(snapped);
   }
 
   @override
@@ -215,27 +174,23 @@ class _PlaceTaskLineLayerState extends State<PlaceTaskLineLayer> {
       child: Listener(
         onPointerDown: (event) {
           _lastPointerPosition = event.position;
-          _pointerDownAt = event.timeStamp;
-          _pointerDownPosition = event.position;
           _dragStarted = false;
         },
         onPointerMove: (event) => _lastPointerPosition = event.position,
-        onPointerUp: _handlePointerUp,
-        onPointerCancel: (_) => _pointerDownAt = null,
         // The anchor key sits on a real RenderBox (this SizedBox), never
         // on a `Positioned`/`Listener` — `Positioned` is a
         // ParentDataWidget with no box of its own, so `findRenderObject()`
         // through it resolves to whatever descendant comes first, exactly
         // the ambiguity that can silently yield a consistently-wrong
         // offset. This box fills the day column, so its local space is the
-        // same one PlaceTaskLineOverlay positions the line in.
+        // same one the hold's start position is measured in.
         child: SizedBox.expand(
           key: _anchorKey,
           // decorationOnly: this layer's own GestureDetector below (and
           // LongPressDraggable beside it) must keep owning the gesture
           // arena exactly as documented there — AppPressFeedback here
-          // only OBSERVES pointers to paint the wash, so neither the tap
-          // nor the hold-to-drag interaction changes at all.
+          // only OBSERVES pointers to paint the wash, so the hold-to-place
+          // interaction doesn't change at all.
           //
           // maxRippleRadius, unlike every other caller: this layer covers
           // the whole day column, so an uncapped wash would flood the
@@ -250,21 +205,16 @@ class _PlaceTaskLineLayerState extends State<PlaceTaskLineLayer> {
             // the whole empty day column, so it sees the first touch of
             // every scroll and every drag that merely *starts* on blank
             // background. A tap haptic here would fire constantly while
-            // just moving around the Timeline. The real placement
-            // interactions this layer hosts (long-press to place, tap to
-            // create) carry their own haptics at their own commit points.
+            // just moving around the Timeline. The long-press-to-place
+            // interaction this layer hosts carries its own haptic at its
+            // own commit point (see [PlaceTaskLineLayer.onHoldStarted]'s
+            // call site).
             haptic: null,
-            // Deliberately NO onTap, even when widget.onTapAt is wired.
-            // A non-null onTap here builds a real TapGestureRecognizer as
-            // an ANCESTOR of LongPressDraggable's own recognizer; on a
-            // stationary hold both enter the arena, the tap one is nearer
-            // the root and never yields, so the long press never wins and
-            // onDragStarted never fires at all. That silently disabled
-            // hold-to-place whenever tap-to-create was enabled.
-            //
-            // The tap is fired from the raw pointer stream in
-            // _handlePointerUp instead — see its own note on staying out
-            // of the arena precisely so the two interactions coexist.
+            // Deliberately NO onTap. A non-null onTap here builds a real
+            // TapGestureRecognizer as an ANCESTOR of LongPressDraggable's
+            // own recognizer; on a stationary hold both enter the arena,
+            // the tap one is nearer the root and never yields, so the
+            // long press never wins and onDragStarted never fires at all.
             onTap: null,
             child: LongPressDraggable<Object>(
               // OPAQUE, not the default deferToChild — fixed directly after
@@ -275,21 +225,27 @@ class _PlaceTaskLineLayerState extends State<PlaceTaskLineLayer> {
               // recognizer ever seeing it. Opaque makes this layer claim
               // its whole area regardless of what its child paints.
               hitTestBehavior: HitTestBehavior.opaque,
-              // Invisible: the real line is drawn by PlaceTaskLineOverlay,
-              // in the timeline's own coordinate space, rather than the
-              // app-wide Overlay this feedback would otherwise float in.
+              // Invisible: the placeholder pill itself (drawn elsewhere in
+              // the Stack, driven by the pending-draft provider) is the
+              // real visual — this feedback exists only to drive
+              // `onDragUpdate`'s stream of `globalPosition`s.
               feedback: const SizedBox.shrink(),
               onDragStarted: () {
                 _dragStarted = true;
                 final position = _lastPointerPosition;
-                if (position != null) _updateFromGlobal(position);
+                final y = position == null ? null : _localY(position);
+                if (y == null) return;
+                final startY = y.clamp(0.0, _maxTop);
+                _holdStartY = startY;
+                widget.onHoldStarted(_instantAt(startY));
               },
               onDragUpdate: (details) =>
-                  _updateFromGlobal(details.globalPosition),
+                  _reportDurationDelta(details.globalPosition),
               onDragEnd: (details) {
-                final top = _lineTop;
-                _lineTop = null;
-                if (top != null) widget.onPlaced(_instantAt(top));
+                final started = _dragStarted;
+                _dragStarted = false;
+                _holdStartY = null;
+                if (started) widget.onHoldReleased();
               },
               child: const SizedBox.expand(),
             ),

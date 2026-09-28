@@ -342,6 +342,63 @@ class DevMultiTaskEditMode extends _$DevMultiTaskEditMode {
   void set(bool value) => state = value;
 }
 
+/// Whether `main.dart`'s root gate routes a fresh install to the new
+/// one-off [SplashScreen] (`features/splash/splash_screen.dart`) instead of
+/// the legacy [SplashCarouselScreen]. Requested directly: "put onboarding
+/// carousel and questionnaire behind dev toggles, as default we hide
+/// them... splash is also under dev toggle" — this is the splash side of
+/// that request.
+///
+/// **Default ON** — the new splash is the intended first-launch
+/// experience going forward, unlike [DevLegacyOnboardingCarouselEnabled]/
+/// [DevOnboardingQuizEnabled] below, which default OFF. All three are
+/// independent switches read directly by `main.dart`'s gate, not ANDed
+/// into a `FeatureFlags` entry — there is no compile-time flag for
+/// onboarding presentation, only this runtime, debug-only choice.
+@Riverpod(keepAlive: true)
+class DevNewSplashEnabled extends _$DevNewSplashEnabled {
+  @override
+  bool build() => true;
+
+  void set(bool value) => state = value;
+}
+
+/// Whether `main.dart`'s root gate can show the legacy 4-slide
+/// [SplashCarouselScreen] at all. Requested directly, alongside
+/// [DevOnboardingQuizEnabled] below: "let's put onboarding carousel and
+/// questionnaire behind dev toggles, as default we hide them."
+///
+/// **Default OFF** — reverses this screen's previous unconditional
+/// first-launch behavior. With this off, `main.dart` skips straight past
+/// where the carousel used to gate, same as [HasSeenSplash] already being
+/// true. Turning it on re-enables the original first-launch sequence for
+/// that screen specifically, independent of [DevNewSplashEnabled].
+@Riverpod(keepAlive: true)
+class DevLegacyOnboardingCarouselEnabled
+    extends _$DevLegacyOnboardingCarouselEnabled {
+  @override
+  bool build() => false;
+
+  void set(bool value) => state = value;
+}
+
+/// Whether `main.dart`'s root gate can show [OnboardingQuizScreen] (the
+/// 3-question Profile-catalog quiz) at all — see
+/// [DevLegacyOnboardingCarouselEnabled]'s own doc comment for the request
+/// this is paired with.
+///
+/// **Default OFF**, same reasoning as the carousel toggle above. With this
+/// off, `main.dart` treats onboarding as already complete regardless of
+/// [HasCompletedOnboarding]'s actual stored value, so no Profile ever gets
+/// materialized via the quiz path while this is off.
+@Riverpod(keepAlive: true)
+class DevOnboardingQuizEnabled extends _$DevOnboardingQuizEnabled {
+  @override
+  bool build() => false;
+
+  void set(bool value) => state = value;
+}
+
 /// True only in a debug build — the single guard every read site above
 /// must be wrapped in. A plain re-export of `kDebugMode` so call sites
 /// import one file for both the flag and the gate.

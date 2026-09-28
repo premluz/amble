@@ -490,13 +490,17 @@ void main() {
   // press when tapped outside once it removes selection completely —
   // let's adopt this for our multiselected in edit modes." Mirrors
   // `armedEditTaskProvider`'s own established rule exactly (see
-  // `onEmptyTap`'s own doc comment in timeline_screen.dart): a tap on
-  // empty space while something is selected ONLY clears the selection —
-  // it must never also start a quick-create draft on that same tap.
-  group('tapping empty space clears the selection (2026-09-20)', () {
+  // `onHoldStarted`'s own doc comment in timeline_screen.dart): a
+  // long-press on empty space while something is selected ONLY clears the
+  // selection — it must never also start a quick-create draft on that
+  // same hold. **2026-09-27** — the gesture this guards moved from a
+  // plain tap to the "quick task add" long-press (see
+  // `place_task_line.dart`'s own doc comment); the rule itself is
+  // unchanged, only the trigger.
+  group('holding empty space clears the selection (2026-09-20)', () {
     testWidgets(
-      'tapping empty Timeline space while tasks are multi-selected clears '
-      'the selection and does NOT also start a quick-create draft',
+      'long-pressing empty Timeline space while tasks are multi-selected '
+      'clears the selection and does NOT also start a quick-create draft',
       (tester) async {
         final a = makeTask('Focus block', hour: 9);
         final b = makeTask('Standup', hour: 10);
@@ -509,38 +513,44 @@ void main() {
         expect(capturedContainer!.read(editSelectionProvider), {a.id, b.id});
 
         // Empty background, well clear of either task's own pill — same
-        // fixed offset `tap_empty_space_quick_create_test.dart` already
-        // established for this exact 430x932 viewport.
-        await tester.tapAt(const Offset(220, 700));
+        // fixed offset `quick_task_add_test.dart` already established for
+        // this exact 430x932 viewport.
+        final gesture = await tester.startGesture(const Offset(220, 700));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 600));
+        await gesture.up();
         await tester.pump();
 
         expect(
           capturedContainer!.read(editSelectionProvider),
           isEmpty,
-          reason: 'the tap must clear the multi-task selection',
+          reason: 'the hold must clear the multi-task selection',
         );
         expect(
           capturedContainer!.read(pendingTaskDraftProvider),
           isNull,
           reason:
-              'a tap that only dismissed a selection must never also '
-              'start a quick-create draft on the same tap — the exact '
-              'bug already fixed once for the single-task armed case',
+              'a hold that only dismissed a selection must never also '
+              'start a quick-create draft — the exact bug already fixed '
+              'once for the single-task armed case',
         );
       },
     );
 
     testWidgets(
-      'with nothing selected, tapping empty Timeline space still starts '
-      'a quick-create draft as normal — the new clearing rule does not '
-      'swallow the ordinary case',
+      'with nothing selected, long-pressing empty Timeline space still '
+      'starts a quick-create draft as normal — the new clearing rule '
+      'does not swallow the ordinary case',
       (tester) async {
         final task = makeTask('Focus block', hour: 9);
         await pumpTimeline(tester, tasks: [task]);
 
         expect(capturedContainer!.read(editSelectionProvider), isEmpty);
 
-        await tester.tapAt(const Offset(220, 700));
+        final gesture = await tester.startGesture(const Offset(220, 700));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 600));
+        await gesture.up();
         await tester.pump();
 
         expect(capturedContainer!.read(pendingTaskDraftProvider), isNotNull);

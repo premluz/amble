@@ -1079,7 +1079,7 @@ void main() {
       expect(find.byType(NewZoneSheet), findsOneWidget);
       expect(find.byType(AppDockIconButton), findsNothing);
 
-      // Close via the sheet's own bottom-row close button.
+      // Close via the sheet's own header close button.
       await tester.tap(find.byIcon(Icons.close_rounded));
       await tester.pumpAndSettle();
 

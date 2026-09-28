@@ -56,6 +56,29 @@ void main() {
     expect(find.byIcon(Icons.arrow_back_rounded), findsNothing);
   });
 
+  // Regression for the reported "yellow underline on every splash text":
+  // this screen is handed directly to MaterialApp.home with no
+  // Scaffold/Material ancestor, so `Text.build` used to merge every
+  // slide's own style onto MaterialApp's `_errorTextStyle` fallback
+  // (yellow double underline, `framework/material/app.dart`) rather than
+  // an ordinary inherited default. Checking `Text.style` directly
+  // wouldn't catch this (that's the style PASSED IN, before the merge) —
+  // this asserts the actual ambient `DefaultTextStyle` a slide's own Text
+  // resolves against, which is what the Material wrapper fixes.
+  testWidgets(
+    'the ambient DefaultTextStyle is not MaterialApp\'s no-Material error style',
+    (tester) async {
+      await pumpCarousel(tester);
+
+      final headlineElement = tester.element(
+        find.text('See your day, not just your list'),
+      );
+      final ambientStyle = DefaultTextStyle.of(headlineElement).style;
+      expect(ambientStyle.decoration, isNot(TextDecoration.underline));
+      expect(ambientStyle.decorationColor, isNot(const Color(0xFFFFFF00)));
+    },
+  );
+
   testWidgets('swiping to a middle slide shows both Back and Skip', (
     tester,
   ) async {

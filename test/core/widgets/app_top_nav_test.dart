@@ -50,7 +50,7 @@ void main() {
       expect(labelColor(tester, 'Day'), theme.colorTextPrimary);
       expect(labelColor(tester, 'Inbox'), theme.colorTextTertiary);
       expect(labelColor(tester, 'Tracked'), theme.colorTextTertiary);
-      expect(gearColor(tester), theme.colorTextSecondary);
+      expect(gearColor(tester), theme.colorForegroundTertiary);
     },
   );
 
@@ -91,7 +91,7 @@ void main() {
       'unaffected', (tester) async {
     await pump(tester, selectedIndex: 1);
 
-    expect(gearColor(tester), theme.colorTextSecondary);
+    expect(gearColor(tester), theme.colorForegroundTertiary);
   });
 
   // Reported directly: switching between the main shell (this bar) and

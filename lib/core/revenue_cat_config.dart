@@ -1,27 +1,35 @@
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform;
 
-/// RevenueCat public SDK API keys, read at build time via `--dart-define`
-/// rather than committed as string literals — RevenueCat's iOS and Android
-/// keys are distinct even for one project, so both are declared and the
-/// right one is picked per platform. See docs/DECISIONS.md for why this
+/// RevenueCat public SDK API keys. The iOS key ships as a real default so
+/// an ordinary `flutter build ipa`/Xcode archive has purchases working with
+/// no flags — **2026-09-28**, reversing the earlier "no default, must be
+/// supplied via `--dart-define` every build" posture after it was pointed
+/// out directly: an Xcode archive doesn't go through a `flutter build`
+/// invocation this repo controls, so there was no way to attach the define
+/// to it at all, and every archived build silently shipped with purchases
+/// disabled. `--dart-define=REVENUECAT_IOS_API_KEY=...` still overrides the
+/// default when one is needed (e.g. a different RevenueCat project).
+///
+/// This is the App Store PUBLIC SDK key (`appl_` prefix) — RevenueCat's own
+/// model treats this as safe to embed client-side, unlike a secret key
+/// (`sk_`, never committed) or the Test Store key (`test_`, debug-only —
+/// see [keyForCurrentPlatformOrNull]'s own assert).
+///
+/// The Android key is unchanged — still `--dart-define`-only, no default,
+/// since Android isn't shipping yet. See docs/DECISIONS.md for why this
 /// lives here instead of `core/dev_config.dart` (that file is `kDebugMode`
 /// scratch config; this is real, required-in-every-build config).
 ///
-/// A missing define resolves to an empty string, which
-/// [RevenueCatConfig.isAvailable] reports as "purchases unavailable" — the
-/// app then runs normally without them rather than failing to start. See
+/// A missing/empty key resolves to [RevenueCatConfig.isAvailable] reporting
+/// "purchases unavailable" — the app then runs normally without them
+/// rather than failing to start. See
 /// [RevenueCatConfig.keyForCurrentPlatformOrNull] for why this degrades
 /// instead of throwing.
-///
-/// ```
-/// flutter run \
-///   --dart-define=REVENUECAT_IOS_API_KEY=appl_xxx \
-///   --dart-define=REVENUECAT_ANDROID_API_KEY=goog_xxx
-/// ```
 abstract final class RevenueCatConfig {
   static const String _iosApiKey = String.fromEnvironment(
     'REVENUECAT_IOS_API_KEY',
+    defaultValue: 'appl_sbyrPnVlPLjIPVJDNuGphjWRQDk',
   );
 
   static const String _androidApiKey = String.fromEnvironment(
@@ -48,6 +56,16 @@ abstract final class RevenueCatConfig {
       TargetPlatform.android => _androidApiKey,
       _ => '',
     };
+    // Debug-only guard against a wrong key prefix landing in the default
+    // or a `--dart-define` override — e.g. RevenueCat's Test Store key
+    // (`test_`) or a secret key (`sk_`) where the App Store public key
+    // (`appl_`) belongs. Asserts strip from release builds, so this
+    // catches the mistake in development; it is not what keeps a wrong
+    // key out of a shipped build — the default value itself is.
+    assert(
+      key.isEmpty || key.startsWith('appl_') || key.startsWith('goog_'),
+      'Wrong RevenueCat key prefix for $defaultTargetPlatform: $key',
+    );
     return key.isEmpty ? null : key;
   }
 

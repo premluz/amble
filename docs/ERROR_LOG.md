@@ -2325,3 +2325,14 @@ surface behind that inset independently of content layout. Pixel regression:
 `flutter test test/core/widgets/sheet_keyboard_background_test.dart` checks both
 edges just below the keyboard top in light/dark themes and two inset sizes.
 Image readback runs in `tester.runAsync`, outside the widget test's fake clock.
+
+### 2026-09-28 — Scaling a shadow does not fade its color
+
+`BoxShadow.scale(0)` scales geometry but preserves color. Keeping that shadow
+in a zero-strength floating surface painted a hard rectangle behind resting
+tasks. Use an empty shadow list at zero lift and scale shadow alpha explicitly
+during lift. Preserve zero-sigma backdrop compositing at rest: disabling the
+filter also changed text rasterization in the resting-task golden.
+Regression: `flutter test test/features/timeline/timeline_capsule_preview_test.dart
+ test/core/widgets/app_floating_surface_test.dart
+ test/core/widgets/floating_surface_paint_test.dart`.

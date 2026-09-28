@@ -67,7 +67,7 @@ abstract final class PreferenceKeys {
   /// JetBrains Mono for numeric/temporal labels and zone names — see
   /// `TypePrimitives`) is active. When off, every mono-bound token resolves
   /// to DM Sans instead, so the whole app reads as one font. Absent (null)
-  /// defaults to true — dual-font is ON by default. See [DualFontSetting].
+  /// defaults to false — dual-font is OFF by default. See [DualFontSetting].
   static const String dualFontEnabled = 'dualFontEnabled';
 
   /// Whether the 5 built-in [Category] rows have been seeded into the
@@ -97,7 +97,7 @@ abstract final class PreferenceKeys {
   static const String showTimelineConnectors = 'showTimelineConnectors';
 
   /// Whether a task's trailing completion checkbox renders at all. Absent
-  /// (null) defaults to true — see [ShowCompletionCheckboxSetting].
+  /// (null) defaults to false — see [ShowCompletionCheckboxSetting].
   /// Requested directly as a single setting spanning ALL THREE views (Task,
   /// List, Zone), unlike [showTimelineConnectors] above, which is Task-view
   /// only.
