@@ -8,16 +8,15 @@ part 'tracked_behavior_view_mode.g.dart';
 /// Timeline's own view-cycle button is a single global switcher, not a
 /// per-card one).
 ///
-/// - [weekly] — a 7-cell Mon-Sun row, one square per day of the current
+/// - [weekly] — a 7-cell Mon-Sun row, one square per day of the displayed
 ///   week.
 /// - [monthly] — a plain wrapping grid of numbered day cells for the
-///   current month (no weekday-column alignment — a simple left-to-right,
+///   displayed month (no weekday-column alignment — a simple left-to-right,
 ///   top-to-bottom wrap, confirmed directly as simpler than a real
 ///   calendar grid).
 /// - [sixMonthly] — a GitHub-heatmap-style grid of small day squares
-///   spanning the trailing 6 months, wrapping into rows (confirmed
-///   directly), with month names as loose labels above roughly where each
-///   month's squares begin rather than visually separated blocks.
+///   spanning the selected calendar half-year (January-June or July-December),
+///   wrapping into rows with month names as loose labels above the grid.
 ///
 /// Its own Hive type (not reused from anywhere else) for the same reason
 /// [TaskSize] has one: a persisted value needs a storage format that

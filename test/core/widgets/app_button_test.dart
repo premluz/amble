@@ -174,9 +174,7 @@ void main() {
         ),
       );
 
-      final button = tester.widget<ElevatedButton>(
-        find.byType(ElevatedButton),
-      );
+      final button = tester.widget<ElevatedButton>(find.byType(ElevatedButton));
       final backgroundColor = button.style?.backgroundColor?.resolve({});
       expect(backgroundColor, Colors.transparent);
     });
@@ -201,11 +199,7 @@ void main() {
     testWidgets('icon + label renders both, icon leading', (tester) async {
       await pump(
         tester,
-        AppButton(
-          label: 'Add',
-          icon: Icons.add_rounded,
-          onPressed: () {},
-        ),
+        AppButton(label: 'Add', icon: Icons.add_rounded, onPressed: () {}),
       );
 
       expect(find.text('Add'), findsOneWidget);

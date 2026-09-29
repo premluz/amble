@@ -261,10 +261,7 @@ class _TabSwitchSegment extends StatelessWidget {
               child: IgnorePointer(
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    border: Border.all(
-                      color: theme.colorTextPrimary,
-                      width: 2,
-                    ),
+                    border: Border.all(color: theme.colorTextPrimary, width: 2),
                     borderRadius: BorderRadius.circular(theme.radiusPill),
                   ),
                 ),

@@ -58,6 +58,41 @@ void _expectNoOverlaps(List<TaskMove> moves, List<Task> allTasks) {
   }
 }
 
+/// The dropped task clears everything, and every run of tasks that already
+/// overlapped each other keeps its internal offsets (moved as one block).
+void _expectOverlapsKept(
+  List<TaskMove> moves,
+  Task dragged,
+  List<Task> existing,
+) {
+  DateTime startOf(Task t) => _moveFor(moves, t.id) ?? t.scheduledAt!;
+  DateTime endOf(Task t) =>
+      startOf(t).add(Duration(minutes: t.durationMinutes!));
+  for (final other in existing) {
+    final overlaps =
+        startOf(dragged).isBefore(endOf(other)) &&
+        startOf(other).isBefore(endOf(dragged));
+    expect(overlaps, isFalse, reason: 'dropped task still overlaps a task');
+  }
+  for (final a in existing) {
+    for (final b in existing) {
+      final wereOverlapping =
+          a.scheduledAt!.isBefore(
+            b.scheduledAt!.add(Duration(minutes: b.durationMinutes!)),
+          ) &&
+          b.scheduledAt!.isBefore(
+            a.scheduledAt!.add(Duration(minutes: a.durationMinutes!)),
+          );
+      if (!wereOverlapping) continue;
+      expect(
+        startOf(a).difference(startOf(b)),
+        a.scheduledAt!.difference(b.scheduledAt!),
+        reason: 'an existing overlap was not kept',
+      );
+    }
+  }
+}
+
 void main() {
   group('computeCascadeMoves', () {
     test(
@@ -321,44 +356,50 @@ void main() {
       _expectNoOverlaps(moves!, [...tasks, dragged]);
     });
 
-    test('multiple tasks overlapping the SAME mover simultaneously all end '
-        'up non-overlapping, not collapsed onto the same slot', () {
-      // Regression test for a real reported bug: dropping a task into a
-      // dense cluster where 3+ existing tasks all overlap the drop
-      // simultaneously used to push every one of them independently
-      // from the dragged task's own edges, with no check against each
-      // other — so same-direction pushes landed on the exact same slot
-      // (confirmed via a standalone reproduction before this fix).
-      final dragged = _task(
-        scheduledAt: DateTime(2026, 8, 20, 20, 20),
-        durationMinutes: 40,
-      );
-      final a = _task(
-        scheduledAt: DateTime(2026, 8, 20, 20, 15),
-        durationMinutes: 40,
-      );
-      final b = _task(
-        scheduledAt: DateTime(2026, 8, 20, 20, 30),
-        durationMinutes: 40,
-      );
-      final c = _task(
-        scheduledAt: DateTime(2026, 8, 20, 20, 45),
-        durationMinutes: 40,
-      );
-      final d = _task(
-        scheduledAt: DateTime(2026, 8, 20, 21),
-        durationMinutes: 40,
-      );
+    test(
+      'multiple tasks overlapping the SAME mover: the drop clears them '
+      'all, none collapse onto one slot, and their own overlaps are kept',
+      () {
+        // Regression test for a real reported bug: dropping a task into a
+        // dense cluster where 3+ existing tasks all overlap the drop
+        // simultaneously used to push every one of them independently
+        // from the dragged task's own edges, with no check against each
+        // other — so same-direction pushes landed on the exact same slot
+        // (confirmed via a standalone reproduction before this fix).
+        final dragged = _task(
+          scheduledAt: DateTime(2026, 8, 20, 20, 20),
+          durationMinutes: 40,
+        );
+        final a = _task(
+          scheduledAt: DateTime(2026, 8, 20, 20, 15),
+          durationMinutes: 40,
+        );
+        final b = _task(
+          scheduledAt: DateTime(2026, 8, 20, 20, 30),
+          durationMinutes: 40,
+        );
+        final c = _task(
+          scheduledAt: DateTime(2026, 8, 20, 20, 45),
+          durationMinutes: 40,
+        );
+        final d = _task(
+          scheduledAt: DateTime(2026, 8, 20, 21),
+          durationMinutes: 40,
+        );
 
-      final moves = computeCascadeMoves(
-        draggedTask: dragged,
-        newStart: dragged.scheduledAt!,
-        sameDayTasks: [a, b, c, d],
-      );
+        final moves = computeCascadeMoves(
+          draggedTask: dragged,
+          newStart: dragged.scheduledAt!,
+          sameDayTasks: [a, b, c, d],
+        );
 
-      expect(moves, isNotNull);
-      _expectNoOverlaps(moves!, [a, b, c, d, dragged]);
-    });
+        expect(moves, isNotNull);
+        // a..d already overlapped each other before the drop, so they move as
+        // one block and keep those overlaps (previously asserted they were
+        // all lined up — the reported bug).
+        _expectOverlapsKept(moves!, dragged, [a, b, c, d]);
+      },
+    );
 
     test('a push that would land on a task already placed by an earlier '
         'branch of the same cascade walks further instead of colliding', () {
@@ -400,7 +441,97 @@ void main() {
       // once a's own push (a later mover pass) collides with it, which
       // is exactly the second-layer case this test targets.
       expect(_moveFor(moves!, d.id), isNot(d.scheduledAt));
-      _expectNoOverlaps(moves, [a, b, c, d, dragged]);
+      _expectOverlapsKept(moves, dragged, [a, b, c, d]);
+    });
+
+    test('Push all keeps tasks that already overlap each other overlapping: '
+        'the pair moves as one block by the same offset', () {
+      // Reported directly: "if tasks below are already overlappy, push all
+      // should retain that overlap; at the moment it removes all overlaps
+      // making all lined up."
+      final dragged = _task(
+        scheduledAt: DateTime(2026, 9, 28, 8),
+        durationMinutes: 60,
+      );
+      final a = _task(
+        scheduledAt: DateTime(2026, 9, 28, 10),
+        durationMinutes: 60,
+      );
+      final b = _task(
+        scheduledAt: DateTime(2026, 9, 28, 10, 30),
+        durationMinutes: 60,
+      );
+
+      final moves = computeCascadeMoves(
+        draggedTask: dragged,
+        newStart: DateTime(2026, 9, 28, 9, 30),
+        sameDayTasks: [a, b],
+      );
+
+      expect(moves, isNotNull);
+      expect(_moveFor(moves!, dragged.id), DateTime(2026, 9, 28, 9, 30));
+      expect(_moveFor(moves, a.id), DateTime(2026, 9, 28, 10, 30));
+      expect(
+        _moveFor(moves, b.id),
+        DateTime(2026, 9, 28, 11),
+        reason: 'b still starts 30 min into a — the overlap is kept',
+      );
+    });
+
+    test('an overlapping block pushed into a standalone task chains it on, '
+        'keeping the block intact', () {
+      final dragged = _task(
+        scheduledAt: DateTime(2026, 9, 28, 8),
+        durationMinutes: 60,
+      );
+      final a = _task(
+        scheduledAt: DateTime(2026, 9, 28, 10),
+        durationMinutes: 60,
+      );
+      final b = _task(
+        scheduledAt: DateTime(2026, 9, 28, 10, 30),
+        durationMinutes: 60,
+      );
+      final c = _task(
+        scheduledAt: DateTime(2026, 9, 28, 11, 45),
+        durationMinutes: 60,
+      );
+
+      final moves = computeCascadeMoves(
+        draggedTask: dragged,
+        newStart: DateTime(2026, 9, 28, 9, 30),
+        sameDayTasks: [a, b, c],
+      );
+
+      expect(moves, isNotNull);
+      // Block a+b now spans 10:30-12:00, so c is pushed to start at 12:00.
+      expect(_moveFor(moves!, c.id), DateTime(2026, 9, 28, 12));
+      _expectOverlapsKept(moves, dragged, [a, b, c]);
+    });
+
+    test('tasks that only touch (back-to-back) are separate units, not a '
+        'block', () {
+      final dragged = _task(
+        scheduledAt: DateTime(2026, 9, 28, 8),
+        durationMinutes: 30,
+      );
+      final a = _task(
+        scheduledAt: DateTime(2026, 9, 28, 10),
+        durationMinutes: 60,
+      );
+      final b = _task(
+        scheduledAt: DateTime(2026, 9, 28, 11),
+        durationMinutes: 60,
+      );
+
+      final moves = computeCascadeMoves(
+        draggedTask: dragged,
+        newStart: DateTime(2026, 9, 28, 10, 45),
+        sameDayTasks: [a, b],
+      );
+
+      expect(moves, isNotNull);
+      _expectNoOverlaps(moves!, [a, b, dragged]);
     });
   });
 }

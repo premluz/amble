@@ -47,9 +47,14 @@ const notificationHorizonDays = 14;
 /// service silently skips scheduling — the app must work fully without
 /// notification permission.
 class NotificationService {
-  NotificationService(this._plugin);
+  NotificationService(this._plugin, {DateTime Function()? clock})
+    : _clock = clock ?? DateTime.now;
 
   final FlutterLocalNotificationsPlugin _plugin;
+
+  /// Where "now" comes from; tests pass a fixed instant so a run late in the
+  /// day doesn't push "an hour from now" across midnight.
+  final DateTime Function() _clock;
 
   bool _permissionRequested = false;
 
@@ -216,7 +221,7 @@ class NotificationService {
   /// testable without a platform channel, and so [refreshScheduled] can
   /// apply exactly the same rule when topping the window up.
   bool isWithinSchedulingHorizon(DateTime scheduledAt, {DateTime? now}) {
-    final from = now ?? DateTime.now();
+    final from = now ?? _clock();
     if (!scheduledAt.isAfter(from)) return false;
     return scheduledAt.isBefore(
       from.add(const Duration(days: notificationHorizonDays)),
@@ -302,11 +307,11 @@ class NotificationService {
     if (!zone.notificationsEnabled ||
         zone.archived ||
         (zone.effectiveUntil != null &&
-            !DateTime.now().isBefore(zone.effectiveUntil!))) {
+            !_clock().isBefore(zone.effectiveUntil!))) {
       return;
     }
 
-    final occurrence = _zoneOccurrence(zone);
+    final occurrence = _zoneOccurrence(zone, now: _clock());
     if (occurrence == null) return;
     if (!isWithinSchedulingHorizon(occurrence)) return;
 
@@ -339,7 +344,7 @@ class NotificationService {
   /// Resolve the bounded notification calendar with the same exception rules
   /// as Timeline. Temporary dates are notification requests, never Hive rows.
   Future<void> scheduleZoneCalendar(List<Zone> zones) async {
-    final now = DateTime.now();
+    final now = _clock();
     for (final zone in zones.where((z) => z.isWeeklyPlacement)) {
       await cancelForZone(zone.id);
     }
@@ -366,7 +371,7 @@ class NotificationService {
 
   Future<void> cancelForZone(String zoneId) async {
     await _plugin.cancel(id: _zoneNotificationId(zoneId));
-    final now = DateTime.now();
+    final now = _clock();
     for (var offset = 0; offset < notificationHorizonDays; offset++) {
       final day = DateTime(now.year, now.month, now.day + offset);
       await _plugin.cancel(

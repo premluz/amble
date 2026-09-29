@@ -1644,6 +1644,76 @@ abstract class _$ZoneViewEnabledSetting extends $Notifier<bool> {
   }
 }
 
+/// Whether saved Zones are visible in the normal Timeline views. Turning
+/// this off removes spatial background bands and flattens zone-member rows
+/// into the Zone view, while the dedicated Zone editor continues to show
+/// and edit placements. Defaults to true to preserve the current display.
+
+@ProviderFor(ShowZonesSetting)
+final showZonesSettingProvider = ShowZonesSettingProvider._();
+
+/// Whether saved Zones are visible in the normal Timeline views. Turning
+/// this off removes spatial background bands and flattens zone-member rows
+/// into the Zone view, while the dedicated Zone editor continues to show
+/// and edit placements. Defaults to true to preserve the current display.
+final class ShowZonesSettingProvider
+    extends $NotifierProvider<ShowZonesSetting, bool> {
+  /// Whether saved Zones are visible in the normal Timeline views. Turning
+  /// this off removes spatial background bands and flattens zone-member rows
+  /// into the Zone view, while the dedicated Zone editor continues to show
+  /// and edit placements. Defaults to true to preserve the current display.
+  ShowZonesSettingProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'showZonesSettingProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$showZonesSettingHash();
+
+  @$internal
+  @override
+  ShowZonesSetting create() => ShowZonesSetting();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(bool value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<bool>(value),
+    );
+  }
+}
+
+String _$showZonesSettingHash() => r'cded86c180497a111594c8f7b1061a5c66f0af7b';
+
+/// Whether saved Zones are visible in the normal Timeline views. Turning
+/// this off removes spatial background bands and flattens zone-member rows
+/// into the Zone view, while the dedicated Zone editor continues to show
+/// and edit placements. Defaults to true to preserve the current display.
+
+abstract class _$ShowZonesSetting extends $Notifier<bool> {
+  bool build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<bool, bool>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<bool, bool>,
+              bool,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
+
 /// Whether the "What Matters" lens is on — a persistent dock toggle
 /// (`AppBottomDock`) that hides every [Task] with `isImportant == false`
 /// entirely from the Timeline, in BOTH display modes (spatial and zone).

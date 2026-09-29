@@ -241,6 +241,11 @@ void main() {
       // floating point noise (DateTime has none, but the intent here is
       // "moved by a real amount," so make that explicit).
       expect(deltaA.inMinutes.abs(), greaterThanOrEqualTo(5));
+      expect(
+        capturedContainer!.read(editSelectionProvider),
+        isEmpty,
+        reason: 'a completed group move dismisses the task selection',
+      );
     },
   );
 

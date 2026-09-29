@@ -6,17 +6,28 @@ import 'package:flutter_test/flutter_test.dart';
 import 'app_context_dock_test.dart' show dockHost, dockConfiguration;
 
 void main() {
-  testWidgets('selection exits stagger while retained control stays opaque', (tester) async {
-    await tester.pumpWidget(dockHost(dockConfiguration(
-      onSave: () {}, onRemove: () {}, onArchive: () {},
-    )));
+  testWidgets('selection exits stagger while retained control stays opaque', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      dockHost(
+        dockConfiguration(onSave: () {}, onRemove: () {}, onArchive: () {}),
+      ),
+    );
     await tester.pumpWidget(dockHost(dockConfiguration(onSave: () {})));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 20));
-    double opacity(String id) => tester.widget<FadeTransition>(find.descendant(
-      of: find.byKey(ValueKey('dock-action-$id')),
-      matching: find.byType(FadeTransition),
-    ).first).opacity.value;
+    double opacity(String id) => tester
+        .widget<FadeTransition>(
+          find
+              .descendant(
+                of: find.byKey(ValueKey('dock-action-$id')),
+                matching: find.byType(FadeTransition),
+              )
+              .first,
+        )
+        .opacity
+        .value;
     expect(opacity('remove'), lessThan(1));
     expect(opacity('archive'), 1);
     expect(opacity('save'), 1);
@@ -25,23 +36,35 @@ void main() {
     expect(find.byTooltip('Archive'), findsNothing);
   });
 
-  testWidgets('new selection actions enter in order while retained action stays visible', (tester) async {
-    await tester.pumpWidget(dockHost(dockConfiguration(onSave: () {})));
-    await tester.pumpWidget(dockHost(dockConfiguration(
-      onSave: () {}, onRemove: () {}, onArchive: () {},
-    )));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 20));
-    double opacity(String id) => tester.widget<FadeTransition>(find.descendant(
-      of: find.byKey(ValueKey('dock-action-$id')),
-      matching: find.byType(FadeTransition),
-    ).first).opacity.value;
-    expect(opacity('save'), 1);
-    expect(opacity('remove'), greaterThan(0));
-    expect(opacity('archive'), 0);
-    await tester.pumpAndSettle();
-    expect(opacity('archive'), 1);
-  });
+  testWidgets(
+    'new selection actions enter in order while retained action stays visible',
+    (tester) async {
+      await tester.pumpWidget(dockHost(dockConfiguration(onSave: () {})));
+      await tester.pumpWidget(
+        dockHost(
+          dockConfiguration(onSave: () {}, onRemove: () {}, onArchive: () {}),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 20));
+      double opacity(String id) => tester
+          .widget<FadeTransition>(
+            find
+                .descendant(
+                  of: find.byKey(ValueKey('dock-action-$id')),
+                  matching: find.byType(FadeTransition),
+                )
+                .first,
+          )
+          .opacity
+          .value;
+      expect(opacity('save'), 1);
+      expect(opacity('remove'), greaterThan(0));
+      expect(opacity('archive'), 0);
+      await tester.pumpAndSettle();
+      expect(opacity('archive'), 1);
+    },
+  );
 
   testWidgets('same Back action stays opaque and stationary across edit tabs', (
     tester,
@@ -115,6 +138,65 @@ void main() {
       tester.widget<FadeTransition>(paneFade).opacity.value,
       tester.widget<FadeTransition>(iconFade).opacity.value,
     );
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('a newly shown action springs in: larger, smaller, then its '
+      'real size — like the view switch bounce', (tester) async {
+    await tester.pumpWidget(dockHost(dockConfiguration(onSave: () {})));
+    await tester.pumpWidget(
+      dockHost(dockConfiguration(onSave: () {}, onRemove: () {})),
+    );
+    double scale() => tester
+        .widget<ScaleTransition>(
+          find
+              .descendant(
+                of: find.byKey(const ValueKey('dock-action-remove')),
+                matching: find.byType(ScaleTransition),
+              )
+              .first,
+        )
+        .scale
+        .value;
+    final scales = <double>[];
+    for (var i = 0; i < 60; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      scales.add(scale());
+    }
+    final peak = scales.reduce((a, b) => a > b ? a : b);
+    expect(peak, greaterThan(1));
+    expect(
+      scales.sublist(scales.indexOf(peak)).reduce((a, b) => a < b ? a : b),
+      lessThan(1),
+    );
+    await tester.pumpAndSettle();
+    expect(scale(), 1);
+  });
+
+  testWidgets('a leaving action submerges: swells larger first, then '
+      'shrinks away and fades', (tester) async {
+    await tester.pumpWidget(
+      dockHost(dockConfiguration(onSave: () {}, onRemove: () {})),
+    );
+    await tester.pumpWidget(dockHost(dockConfiguration(onSave: () {})));
+    ScaleTransition scale() => tester.widget<ScaleTransition>(
+      find
+          .descendant(
+            of: find.byKey(const ValueKey('dock-action-remove')),
+            matching: find.byType(ScaleTransition),
+          )
+          .first,
+    );
+    final scales = <double>[];
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      if (find.byKey(const ValueKey('dock-action-remove')).evaluate().isEmpty) {
+        break;
+      }
+      scales.add(scale().scale.value);
+    }
+    expect(scales.reduce((a, b) => a > b ? a : b), greaterThan(1));
+    expect(scales.last, lessThan(1));
     await tester.pumpAndSettle();
   });
 }

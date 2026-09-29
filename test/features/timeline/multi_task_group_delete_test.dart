@@ -29,13 +29,8 @@ import 'package:amble/shared/repositories/hive_zone_repository.dart';
 import '../../support/fake_notification_service.dart';
 import '../../support/seeded_category_box.dart';
 
-/// Covers Edit Mode's multi-task group DELETE — confirmed during planning
-/// (AskUserQuestion): dragging any SELECTED task onto the delete target
-/// removes every selected task, each via the plain "this occurrence only"
-/// path (never `removeTask`'s own recurring-scope dialog, which would
-/// otherwise stack once per selected recurring task — see the doc
-/// comment on this branch in timeline_screen.dart, and DECISIONS.md for
-/// the full reasoning).
+/// Ensures task drags in Edit Mode do not reveal or activate the bottom
+/// delete target, which is reserved for moving zones.
 void main() {
   late Box<Task> taskBox;
   late Box<Category> categoryBox;
@@ -165,8 +160,9 @@ void main() {
     (widget) => widget is TaskCapsuleBlock && widget.task.title == title,
   );
 
-  testWidgets('dragging one selected task onto the delete target removes every '
-      'selected task — an unselected task survives', (tester) async {
+  testWidgets('Edit Mode task movement does not show a bottom delete target', (
+    tester,
+  ) async {
     final a = makeTask('Focus block', hour: 9);
     final b = makeTask('Standup', hour: 13);
     final untouched = makeTask('Lunch', hour: 12);
@@ -181,17 +177,14 @@ void main() {
     await tester.runAsync(() async {
       final dragStart = tester.getCenter(pillFor('Focus block'));
       final gesture = await tester.startGesture(dragStart);
-      // A small initial move so the drag genuinely starts (registers
-      // onDragStart, which is what makes the delete target visible at
-      // all) before jumping to hover directly over it.
+      // A small initial move so the task drag genuinely starts.
       await gesture.moveBy(const Offset(0, 20));
       await tester.pump();
 
-      // The delete target only renders (AnimatedOpacity from 0) once a
-      // drag is in progress — resolve its center fresh, now that it's
-      // actually in the tree and positioned.
-      final targetCenter = tester.getCenter(find.byType(EditModeDeleteTarget));
-      await gesture.moveTo(targetCenter);
+      expect(find.byType(EditModeDeleteTarget), findsNothing);
+      // Return to the starting position so the move snaps back without
+      // changing the selected tasks' schedule.
+      await gesture.moveBy(const Offset(0, -20));
       await tester.pump();
       await gesture.up();
       await tester.pump();
@@ -199,34 +192,14 @@ void main() {
     });
     await tester.pump(const Duration(milliseconds: 400));
 
-    // A transient RenderFlex overflow fires here — the outgoing (about
-    // to be removed) task capsule's text row briefly re-lays-out at a
-    // narrower width for one frame while its siblings shift up mid-
-    // deletion, in this test's own fixed viewport. Cosmetic and specific
-    // to the test harness's synchronous frame timing, not a real
-    // rendering bug (nothing about it is specific to a GROUP delete
-    // rather than an ordinary single-task one) — consumed here rather
-    // than left to fail the test on an assertion this file never made.
     final exception = tester.takeException();
     if (exception != null) {
       expect(exception.toString(), contains('RenderFlex overflowed'));
     }
 
-    expect(taskBox.get(a.id), isNull);
-    expect(taskBox.get(b.id), isNull);
+    expect(taskBox.get(a.id), isNotNull);
+    expect(taskBox.get(b.id), isNotNull);
     expect(taskBox.get(untouched.id), isNotNull);
-    expect(capturedContainer!.read(editSelectionProvider), isEmpty);
-
-    // The group delete now shows an AppUndoToast (2026-09-22) — its own
-    // `Future.delayed(duration)` auto-dismiss uses a real platform Timer
-    // under the hood, which `flutter_test`'s own teardown asserts is
-    // never left pending when the test ends. Pumping past the toast's
-    // full default duration (4s, unmodified here) lets that timer fire
-    // and the toast clean itself up before this test returns — same
-    // "wait the real duration out" pattern `app_undo_toast_test.dart`'s
-    // own test already uses (there, over a shorter, test-only duration).
-    await tester.pump(const Duration(seconds: 4));
-    await tester.pump();
   });
 }
 

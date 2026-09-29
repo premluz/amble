@@ -7500,3 +7500,979 @@ Focused tests for handle visibility, lane snapping, ghost opacity, and the zone
 block gesture tests pass; targeted analysis is clean. The full
 `zone_grid_screen_test.dart` run still has two failures in marquee-sheet
 dismissal tests, outside these new interaction assertions.
+
+## 2026-09-28 — Anchored context-menu placement and press-drag highlight
+
+Split the shared context-menu library into focused parts. Both anchored entry
+points now center on the global touch/drop point, choose above or below based
+on available safe-area/keyboard space, and constrain oversized menus to a
+scrollable viewport. Menu height matches its actual compact row/padding size.
+During press-drag, a single rounded highlight animates between hit rows.
+Three focused widget tests pass, and targeted analysis is clean.
+
+## 2026-09-28 — Context-menu overlay and navigation dismissal
+
+Anchored popovers now use the root navigator and press-drag menus use the root
+overlay, placing them above the app header and bottom dock. A shared dismissal
+registry closes them on route changes and view-ID transitions. Added lifecycle
+coverage for shell chrome overlap, route changes, and view changes. Focused
+menu lifecycle and Inbox section tests pass; targeted analysis is clean.
+
+## 2026-09-28 — Zone edit rounding and lifted paint order
+
+Increased weekly zone-edit corner rounding from `radiusSm` to the shared
+`radiusMd` for saved blocks, selected outlines, and move ghosts. Flattened
+saved weekday zones into one paint order and place the actively moved zone
+last, so zones in later day columns cannot cover it while it crosses lanes.
+Documented the lifted-object foreground rule and added focused radius and
+cross-lane ordering coverage.
+
+## 2026-09-28 — Compact safe-area spacing for sheets and toolbars
+
+Added `spacingBottomClearance` as the shared compact gap after the device
+safe area. Applied it to modal-sheet padding and footers, floating create
+controls, and page-local toolbars; removed the extra top spacer before the
+main shell header while keeping the system status inset. Documented the
+rounded-phone safe-area rule and added focused token/widget coverage.
+
+## 2026-09-28 — Selected-item delete puff microinteraction
+
+Added `AppDeletePuff` as a deterministic, source-anchored root-overlay effect
+using the exported `rios-motion-v19` preset. Selected task and zone delete
+buttons emit it before clearing; the app effect omits the studio backdrop and
+sample object, supports reduced motion, and scales to the dock button.
+Registered a knob-controlled Widgetbook demo and documented the preset and
+integration. Focused widget and motion tests pass; targeted analysis is clean.
+
+## 2026-09-28 — Liquid motion, step 1: `AppLiquidPulse` on pill selection
+
+First step of the brand-motion refinement ("more liquid, fluid"). New
+`AppLiquidPulse` (core widget) plus `LiquidPulseSpec` (select/complete
+presets): a quick compress, then a native `SpringDescription
+.withDurationAndBounce` release that overshoots once and settles, with the
+horizontal axis deforming less than the vertical for a liquid rather than
+rigid feel. Wired to `TaskCapsuleBlock`'s rail on `isSelected`. Widgetbook:
+Feedback → AppLiquidPulse (Select/Complete, five knobs). No new dependency.
+
+A real bug was caught by the settle test: a `SpringSimulation` stops inside its
+tolerance, not at 0, which left the pill permanently at ~99.98% scale. The
+widget now snaps exactly to rest when the spring finishes.
+
+**Checks:** `app_liquid_pulse_test.dart` (7/7: rest identity, compress →
+overshoot → exact settle, squash ratio, no pulse on deactivate, reduced
+motion, child state preserved, capsule wiring). The capsule, selection and
+armed-edit suites pass (71 tests). `flutter analyze` stays at the 16-issue
+baseline, and the widgetbook analysis is clean. The feel on a real device has
+not been checked.
+
+**Next (not started):** completion pulse and water ripple, stronger shared
+press, a liquid entrance for the context menu, and the pending-pill shape morph.
+
+## 2026-09-28 — Liquid motion, step 2: completion bounce and water ripple, plus iOS haptics
+
+**Completion.** Swipe-to-done now plays the stronger `LiquidPulseSpec.complete`
+pulse on the pill (it triggers on `isCompleted`, so every completion path
+bounces) and a new `AppWaterRipple`: two hairline rings leave the pill's own
+outline and spread about 22px, very faint, alongside the existing bubbles.
+Widgetbook: Feedback → AppWaterRipple.
+
+**iOS haptics.** On Android haptics are felt, but on a recent iPhone taps
+were effectively silent. The cause: every `tap`/`selection` intention (14 call
+sites, including every `AppPressFeedback`) used `HapticFeedback.selectionClick`.
+The Flutter engine maps that to a freshly allocated, unprepared
+`UISelectionFeedbackGenerator` (read in `FlutterPlatformPlugin.mm`), which is
+iOS's weakest pattern. On iOS those two intentions now use `lightImpact`;
+Android is unchanged. The speech-to-text audio session was ruled out: it
+activates recording only while listening and restores the session afterwards.
+The app has no native audio-session or haptic code of its own.
+
+**Checks:** `app_water_ripple_test.dart` (5), `app_liquid_pulse_test.dart` (8,
+including capsule completion wiring), `haptics_test.dart` (+4 platform-mapping
+cases). All pass. `flutter analyze` stays at the 16-issue baseline. A wider
+regression run gives 423 passing and 8 failing, all pre-existing and unrelated
+(`app_view_transition_test` 4, `app_swipe_actions_test` 2,
+`what_matters_appearance_test` 2, every one a missing-widget finder in
+dock/transition code changed earlier today). The haptic feel on the iPhone has
+not been checked on a device.
+
+## 2026-09-28 — Liquid motion, step 3: stronger shared press, and a coverage work order
+
+**Press.** `AppPressFeedback`'s 2% linear dip is now a liquid squeeze:
+`LiquidPulseSpec.press` (4.5% depth, 80ms compress, spring release with bounce
+.4, slight squash). A release that arrives mid-compress waits for the compress
+to land, so a quick tap shows the full press rather than a flicker. The
+squeeze is skipped under reduced motion; the ripple and tap still run. The
+compress/spring/snap mechanics moved into one helper, `LiquidDeformation`,
+used by both `AppPressFeedback` and `AppLiquidPulse`. Widgetbook: Feedback →
+AppPressFeedback shows button, chip, row and circle shapes with five knobs.
+
+**Regression caught and fixed.** The selection pulse fired as a resize
+started and squeezed the pill under the finger, which broke both
+`resize_tracks_finger_test` cases. `AppLiquidPulse` gained `suppressed` (it
+snaps to rest and swallows activations), and the capsule passes
+`isLifted || isResizing`. It is covered by 2 new component tests.
+
+**Checks:** press (11), pulse (10), ripple (5) and haptics tests pass, plus 92 in
+the targeted capsule, drag and selection suites. Full suite (minus the known
+hang): 1726 passing. The 20 remaining failures are the same 20 that fail with
+the three touched app files restored to HEAD (compared name by name).
+`flutter analyze`: 18 issues. The 2 above baseline are in
+`app_context_dock.dart`, which another session was editing concurrently, not
+in this work.
+
+**Work order for a cheaper agent:** `docs/WORK_ORDER_DESIGN_SYSTEM_COVERAGE.md`.
+Tranche A registers about 20 missing components in Widgetbook, in priority
+order. Tranche B moves 21 audited raw `GestureDetector` tap sites onto
+`AppPressFeedback`, with an explicit do-not-migrate list of barriers and focus
+handlers. Flagged for a senior pass: 7 local chip widgets duplicating
+`AppSelectableChip`, two near-identical onboarding cards, and a task-pill
+Widgetbook harness.
+
+## 2026-09-28 — Liquid motion, step 4: context menus grow out of the touch
+
+New `AppLiquidMorph` (core) and `LiquidMorphSpec.popover`. On mount, a droplet
+at an origin point spreads into the child's own rounded shape. Width and
+height each have a native spring, with height slightly slower, so the panel
+widens, stretches toward where it opens, overshoots a touch and lands
+exactly. An origin outside the child is clamped to the nearest edge.
+Reduced motion shows it formed immediately.
+
+Both context-menu entry points use it, from the touch point:
+`AppContextMenu.showAt` replaces its fade + 92% scale (the route animation now
+only fades on exit), and `AppLongPressContextMenu` gains an entrance where it
+previously had none. This is the reusable shape-morph mechanism step 5 (the
+dot-to-pill draft task) will use. Widgetbook: Feedback → AppLiquidMorph (tap
+anywhere, seven knobs) and a new AppContextMenu → Long-press, drag, release.
+
+`app_context_menu_test`'s press-drag case measured a row mid-entrance and
+compared it to its settled position. It now settles first. Hover hit-testing
+uses live, transformed row bounds, so behaviour mid-entrance still matches
+what is on screen.
+
+**Checks:** `app_liquid_morph_test.dart` (5: droplet start, width leads height,
+exact settle incl. identity transform, edge clamping, reduced motion), both
+context-menu test files pass. Full suite (minus the known hang): 1735 passing,
+20 failing, and the failures match the HEAD baseline set exactly, name by name.
+`flutter analyze`: 18, none in files touched here (the 2 above the 16 baseline
+are in `app_context_dock.dart`, being edited concurrently by another session).
+Feel not yet checked on device.
+
+## 2026-09-28 — Liquid motion, step 5: draft task dot-to-line, and the task-pill Widgetbook page
+
+**Dot to line.** A new draft task (long-press or tap on empty Timeline) now
+enters as a rail-wide dot at the top of the pill, exactly where a real task's
+badge sits, and stretches down into the full-length pill on a bouncier height
+spring (`LiquidMorphSpec.draftPill`, reusing step 4's `AppLiquidMorph`). This
+is BRAND.md's dot → line grammar made literal. Only the rail morphs; the
+title, time labels and resize handles do not. Supporting changes to the morph:
+the droplet size is now optional (unset means the child's shortest side), and
+the clip turns off once the shape has formed, so the selection ring is never
+shaved.
+
+**Task pill Widgetbook page** (Feedback → Task pill): *All states* (normal,
+selected, important, completed, imported, draft), *Select and complete*
+(interactive: select pulse, completion pulse, ripple, bubbles) and *Draft:
+dot to line* (replay button). Covered by a new
+`widgetbook/test/task_pill_demo_test.dart` render smoke test. The work order's
+"task pill harness" item is removed as done.
+
+**Checks:** `pending_task_pill_test.dart` (12, incl. new dot-start and
+full-rail-settle case, with bounded pumps because the draft wiggle never
+settles), morph (5) and widgetbook smoke (3) tests pass. Full suite (minus
+the known hang): 1736 passing. The 20 failing are identical, name by name, to
+the HEAD baseline set. `flutter analyze`: 18, none in files touched this
+session. Feel not yet checked on device.
+
+**Motion plan status:** steps 1–5 are done. Remaining:
+`docs/WORK_ORDER_DESIGN_SYSTEM_COVERAGE.md` (Widgetbook gaps and raw-tap
+migration, for a cheaper agent). Still flagged for a senior pass: chip and
+card consolidation, and possibly a native iOS prepared-haptics channel if
+taps still feel weak on device.
+
+### 2026-09-28 — Reduce anchored context-menu corner radius
+
+Changed anchored and press-drag context menus from the 40 px sheet radius to
+the shared 16 px `radiusXl`; the glass panel and liquid entrance use the same
+shape. Documented the rule and added a regression assertion.
+
+### 2026-09-28 — Refine context-menu radius to 20 px
+
+Raised the anchored and press-drag context-menu radius from 16 px to the
+existing 20 px `radiusXxl` rung, keeping both menu entrance morphs aligned.
+The 40 px radius remains exclusive to sheets; updated the design rule and
+regression assertion.
+
+### 2026-09-28 — Match saved-zone side resize snapping to marquee
+
+Existing-zone side handles capture the original touch position and derive the
+current horizontal drag delta from it. Weekday ghosts and committed copies use
+the same delta-by-lane-width rounding as moving a pending marquee; crossing
+half a lane changes the adjacent day, independent of the handle inset. Added
+left/right threshold regressions and clarified the shared rule in the design
+system. The focused regression passed both directions and source analysis
+was clean. The full zone-grid screen file had 43 passing tests and the same
+two naming-sheet CTA hit-test failures recorded earlier.
+
+## 2026-09-28 — Liquid motion follow-ups from device review: coherent controls, Zone completion, zone select, faster menus
+
+Reported after trying it: the resize dots floated while the pill squeezed,
+Zone view's slide-to-done had no bounce, zones had no selection bounce, and
+the context menu felt slow.
+
+- **Controls move with the pill.** Both bounces now wrap the whole manipulation
+  unit (pill, selection rings, resize dots) in `TaskCapsuleBlock` instead of the
+  visual alone. The pivot is the pill's own centre, computed through the new
+  `TaskManipulationTargets.targetWidthFor` (no duplicated width rule).
+- **One completion moment.** The new `AppCompletionFeedback.play` fires bubbles
+  and ripple together. Task/List swipe and Zone view swipe both use it (Zone
+  view had bubbles only). Zone view's row badge now bounces on completion.
+  `complete` is more elastic (14% depth, bounce .7): about a 5% overshoot and
+  one visible return wobble.
+- **Zones.** `ZoneBackgroundBlock` and `ZoneGridBlock` bounce on selection with
+  fill, ring and handles as one piece, using a new gentler
+  `LiquidPulseSpec.selectSurface` (2.5%). A proportional 6% squeeze on a tall
+  zone is about 18px, which would read as a lurch. It is suppressed while the
+  zone is moved, resized or extended.
+- **Faster menus.** `LiquidMorphSpec.popover` springs are .34/.44s → .25/.32s.
+
+Flagged, not changed: the trailing checkbox still plays its Noto emoji
+celebration (an earlier explicit decision) while BRAND.md says "no emoji
+applause". The checkbox gets the bounce but not bubbles/ripple until that is
+decided.
+
+**Checks:** new tests for dots-inside-the-pulse and pill-centre pivot,
+elastic overshoot plus wobble, Zone view swipe playing bubbles + ripple +
+badge bounce, and zone-grid selection bounce with handles inside and
+suppression. All pass. Full suite (minus the known hang): 1741 passing. The 20
+failing are identical to the HEAD baseline set. `flutter analyze`: 18, none in
+touched files; widgetbook analyze clean. The formatter reflowed one unrelated
+line in `zone_container_block.dart`; restored by hand.
+
+## 2026-09-28 — Press swells like Liquid Glass; icon buttons swell as a whole
+
+Reported: the stronger press showed on text buttons, but icon buttons (sheet
+close, toolbar/dock) felt like "only the icon, subtle". Asked for press-and-hold
+to grow the control like Apple's Liquid Glass, with a fluid release, driven by
+one shared variable and made stronger.
+
+- New `LiquidPressSpec.standard` is the one press every control shares.
+  Holding grows the control. Growth is spread in pixels over its longest side
+  (8px, clamped 2–18%): a 44px icon button swells about 18%, a wide row about 3%.
+  Release springs home with a fluid overshoot past rest. `LiquidDeformation`
+  was generalised to signed targets (`moveTo`/`springHome`) and serves both the
+  press and the select/complete pulses. The old `LiquidPulseSpec.press` was
+  removed.
+- Cause of "only the icon": ghost icon buttons have no fill, so a scale moves
+  just the glyph. A glass hold-fill (8%) now covers the whole control while
+  held. `AppDockIconButton`'s selected tint moved inside the button
+  (`AppButton.fillColor`), so it swells with the press instead of staying put.
+- Widgetbook: AppPressFeedback now has eight knobs for the new spec (press and
+  hold).
+
+**Checks:** press tests rewritten for the swell (14, incl. size-aware growth,
+quick-tap return past rest, hold fill appearing only while held), new
+`app_dock_icon_button_test.dart` (2), and the button/dock/nav/haptics suites
+pass. Full suite (minus the known hang): 1744 passing; the 20 failing are
+identical to the HEAD baseline set. `flutter analyze`: 18, none in touched
+files; widgetbook analyze clean. Feel on device not yet checked.
+
+## 2026-09-28 — Bouncier context-menu entrance; single-action dock panes swell with their press
+
+- **Context menu:** `LiquidMorphSpec.popover` bounce raised (width .22 → .4,
+  height .28 → .45) and content now grows from 60%. The panel pops about 4–5%
+  oversized and settles back, as Liquid Glass does. Timings are unchanged
+  (.25/.32s).
+- **Bottom toolbar, "only the icon bounces":** the dock draws each pane's
+  glass as a separate background layer behind its actions, so the press could
+  never reach it. For a single-action pane (Edit, What Matters, Back) the pane
+  IS the button. The new `AppPressFollower` swells that pane with its action's
+  press, fed by a pointer `Listener` so it never competes for the tap.
+  Multi-action panes stay still while the pressed button swells on its own.
+  `_AppContextDockLayout` became a small stateful wrapper owning one notifier
+  per pane; the only edit to `app_context_dock.dart` itself is an import.
+
+**Checks:** new `app_dock_press_test.dart` (2) and a popover-overshoot case in
+`app_liquid_morph_test.dart`. Dock, menu and morph suites pass. One full run
+showed an extra `template_list_view_test` swipe failure; the test passes 5/5
+alone, in earlier full runs, and in an immediate full rerun, and it touches
+no code changed here. Treated as a load-timing flake (storage I/O). Final
+full run: 1749 passing, 20 failing, identical to the HEAD baseline.
+`flutter analyze`: 19, none in touched files; the one new since the last entry
+is in files another session is editing.
+
+## 2026-09-28 — Context menu's top highlight no longer blinks out mid-entrance
+
+Reported: "the white border on top when context menu shows gets under the pane,
+disappears, making it feel glitched — a reflection wouldn't suddenly
+disappear." Cause: a menu opening below the finger grows from a droplet on
+its top edge. The height spring's overshoot (raised this session) moved the
+clip's top edge past the rim INTO the panel, shaving the glass's 1px top
+highlight until it settled. Fix in `AppLiquidMorph`: the reveal is clamped to
+the child's edges, never shrinks once formed (the spring's return swing dipped
+below 1 too), and the clip switches off as soon as the shape forms. The pop is
+carried by the content scale only. The draft-pill morph benefits the same way.
+
+**Checks:** new morph test asserting that no frame after full reveal cuts
+inside the rim and that the clip drops while the spring still moves; it
+caught the return-swing case before the second half of the fix. Morph, menu
+and pending-pill suites pass. Full suite: 1749 passing. The 21st failure
+(`exit_confirmation_test` "Save changes") passes 3/3 alone and touches no
+changed code: another full-suite storage-I/O flake (see ERROR_LOG).
+
+## 2026-09-28 — "Push all" no longer lines up tasks that already overlapped
+
+Reported: dropping a task onto a collision and choosing Push all from the
+Overlap / Push all / Trim menu removed every existing overlap below, lining
+everything up. Cause: the cascade treated every task as an independent
+block and placed each pushed one in the next free slot, so an existing
+overlapping pair was split apart. Fix: new `overlapRuns`
+(`lib/shared/services/overlap_runs.dart`) groups already-overlapping tasks,
+and `computeCascadeMoves` cascades over those groups, shifting each group
+rigidly. See DECISIONS.md.
+
+**Checks:** `cascade_reschedule_test.dart` 14/14, including 3 new cases
+(pair keeps its 30-min overlap with exact times; an overlapping block chains a
+standalone task on; back-to-back tasks stay separate units) and 2 updated cases
+that had encoded the lining-up. 4 of them fail against the HEAD cascade,
+confirming they catch the bug. Full suite: 1752 passing; the only non-baseline
+failure is the known `template_list_view_test` swipe flake (3/3 alone;
+unrelated code). It has now flaked in 2 of the last 4 full runs, so it is
+worth a dedicated fix. Not verified on device.
+
+## 2026-09-28 — Overlap: affected tasks slide into their new lanes
+
+Requested: "when we do overlap, animate the transition of affected tasks."
+In Task view's split layout, a pill's vertical position already eased
+(outer `AnimatedPositioned`), but its LANE x was a plain `Positioned`, so
+choosing Overlap snapped tasks sideways into their new columns. The lane x
+now eases through a `TweenAnimationBuilder` around the plain `Positioned`,
+using the same timing rule as the vertical ease: instant while the finger is
+on the pill (drag, top-resize) or on a view-mode switch, and `motionNormal`
+otherwise. Text fades and the cluster title-list crossfade were already
+animated.
+
+A first attempt used `AnimatedPositioned` for the inner box and broke 38
+Timeline tests. It also eased the box's WIDTH, which widens the instant a
+task is armed so its resize handles are hit-testable, so taps right after
+arming missed. Now only `left` eases; size stays instant (see ERROR_LOG).
+
+**Checks:** new `overlap_lane_transition_test.dart` drives the real Timeline:
+a task rescheduled into a shared hour (the Overlap commit) sits between its
+old and new lane mid-transition. It fails against the plain `Positioned`.
+Full suite: 1754 passing, 20 failing, identical to the HEAD baseline.
+
+## 2026-09-28 — Task forms save overlapping schedules
+
+Quick-create Schedule, the full create form, and task schedule edits now save
+overlapping times without an inline error. Timeline overlap actions remain
+available for resolving saved conflicts. Added regression coverage for all
+three save paths, including the developer feasibility setting being enabled.
+
+**Checks:** focused quick-create/create/edit suites pass (44 tests). Full suite:
+1,754 passed, 24 failed; failures are outside the changed save paths. Analyzer
+still reports two `widgetbook/test/widget_test.dart` errors because its import
+of `package:widgetbook/main.dart` does not resolve, plus existing warnings and
+infos. No device run.
+
+## [2026-09-28] Added the Show zones setting
+
+Added a persisted, default-on `Show zones` switch to Settings → Zones. Turning
+it off hides spatial zone bands and flattens zone-member tasks/events into
+ordinary rows in the Zone Timeline; the Zone editing screen is unchanged.
+Focused tests pass (41). Full suite: 1,757 passed, 24 failed, matching the
+recorded baseline failure count. Full analyzer still reports the two existing
+widgetbook import errors and existing warnings/infos.
+
+## [2026-09-28] Compact top navigation and Timeline date control
+
+Reduced the main navigation labels and Timeline date label to the existing
+body text style, and reduced the Settings/date-chevron icon scale. The top
+navigation retains its 40px row and Settings hit target; expanded week-cell
+geometry remains unchanged. Added focused sizing assertions and documented
+the compact-chrome rule in `DESIGN_SYSTEM.md`.
+
+## [2026-09-28] Tracked current-day cells use a surface fill
+
+Replaced the accent outline on today's Tracked cell with the next field-surface
+step (`colorSurfaceFieldActive`). Completed days remain accent-filled, without
+a second outline. Added a regression test for both states; all 6 focused
+Tracked view-mode tests pass, and focused analysis is clean.
+
+## 2026-09-28 — Task states refined: done, unlabeled, important, What Matters star
+
+From a side-by-side of the app and a mockup. Done tasks were too bright in dark
+and too dark in light; new tasks looked red; important needed a brand title and
+star; the toolbar heart should be a star.
+
+- New `TaskStateTokens` (theme-derived colours) and `TaskStateStyle` (the one
+  resolver), applied to the Task/List pill, its text row, Zone view rows and
+  cluster rows. Cluster rows never showed a done state before; they now do.
+- Done: pale tint of the task's own label, title at 42%, strike tinted toward
+  the label and thicker than the text.
+- "General" (what new tasks get) resolves to a reserved pale neutral instead of
+  palette red.
+- Important: brand-coloured title plus `TaskImportantStar` on the pill's
+  top-right corner (inside the bounce, so it moves with the pill). The old
+  margin marker was removed.
+- What Matters toolbar icon: heart → star (outline, filled when on).
+- Widgetbook task-pill gallery now uses real categories (it had been showing
+  every pill in the neutral "loading" grey) and adds Unlabeled, Completed
+  unlabeled, and Completed important.
+
+**Checks:** new `task_state_style_test.dart` (11, both themes), updated
+text-row (brand title, no margin star) and Zone view (done colour, important
+star) tests, widgetbook smoke test, and the regenerated
+`timeline_capsule_preview.png` golden. Its diff was confirmed to be only the
+completed row before regenerating. Full suite at 23:14: 1772 passing. Beyond
+the HEAD baseline, the only failures are `drag_move_time_label_test` (2) and
+`notification_service_test` (2): fixtures anchored an hour after "now" that
+wrap past midnight after about 23:00. Notification code is untouched. The
+colour values are a first pass for review in Widgetbook, not yet seen on a
+device.
+
+## 2026-09-28 — Starred: tinted title, quieter gradient star on the pill edge
+
+Follow-up review of the task states. The starred title is now primary text
+tinted 35% toward the accent (theme-responsive), not full accent. The star is
+no longer accent: it is a softened primary tone (paper cream in dark, lighter
+charcoal in light) with a subtle diagonal gradient into a hint of accent. It
+moved left and down, straddling the pill's top-right edge (30% out, 15% up).
+All values are in `TaskStateTokens`. Tests updated to the tint, plus a new
+check that the star is never the accent and is softer than the text. Full
+suite unchanged from the previous run (baseline + the 4 late-evening fixture
+failures). Not yet seen on device.
+
+## 2026-09-28 — Open items closed: imported hatching, BRAND.md, zone Push all
+
+- Imported events: faint 45° hatching inside the flat grey rail (new
+  `lib/core/widgets/app_hatch.dart`, clipped to the pill; tokens in
+  `TaskStateTokens`). Used everywhere `DashedPillRail` renders (Task, List,
+  Zone view). `external_event_capsule_block.dart` was rebuilt from HEAD plus
+  only these edits, to avoid a 130-line formatter reflow of untouched code.
+- BRAND.md: What Matters in-app uses ★ (≋ remains the logo mark); §17 gains
+  Unlabeled and the refined Important/Completed treatments.
+- Zone Push all: no change, deliberately. Zones must never overlap, so there
+  is nothing to preserve (see DECISIONS.md).
+
+**Checks:** new `imported_hatch_test.dart` (light + dark: hatch present,
+quiet colour, clipped to the pill radius); imported-event and zone suites
+(111) pass. Full suite at 23:30: 1772 passing. Beyond the HEAD baseline, the
+only failures are the late-evening "now"-anchored fixtures
+(`drag_move_time_label_test` 5, `drag_haptics_test` 1,
+`notification_service_test` 2; see ERROR_LOG), which grow as midnight
+approaches. `flutter analyze` 20: the new ones are in `zone_list_screen.dart`
+and `what_matters_appearance_test.dart`, which another session is editing.
+
+**Still open (flagged, not started):** give the "now"-anchored Timeline
+fixtures a fixed clock; fix the `template_list_view_test` swipe flake; the
+coverage work order for a cheaper agent; chip/card consolidation (senior pass).
+
+## [2026-09-28] What Matters removes its persistent page tint
+
+Removed the full-screen accent fill from `WhatMattersScene`; the bottom ripple
+still animates, then the Timeline returns to its regular surface. The What
+Matters dock action keeps its selected tint. Updated the appearance test and
+its dock lookups to match the current sibling-pane layout. Appearance and
+motion suites pass (10 tests); focused analysis reports no issues.
+
+## [2026-09-28] Spatial day views gain scroll clearance
+
+Added shared 60px top and 200px bottom content clearance to the spatial day
+Timeline and weekly Zones grid, making both midnight ticks reachable above
+the fixed bottom dock. Updated Timeline time restoration/reporting and
+scroll-to-item offsets to account for the larger top inset. Documented the
+spatial-only rule and added widget checks for both scroll surfaces plus the
+viewed-time round trip. All three focused checks pass; targeted analysis has
+no errors and reports one existing curly-braces info in the Zones test.
+Broader suites also show one late-evening overlap fixture failure (its task
+ends at 20:00 while the tap is positioned at the current hour) and two
+marquee-dismiss failures; the latter reproduce with the original 24px insets.
+
+## 2026-09-28 — Paper glyphs; "now" provider fixes late-evening tests; flake fixed; chips consolidated
+
+- **Glyphs:** pill/badge icons are paper instead of white and charcoal instead
+  of black (`glyphColorOn` via `TaskStateTokens.glyphOnDark/Light`). Done
+  tasks' glyphs fade (`doneGlyphAlpha` .5). Also fixed the pill glyph
+  measuring contrast against the raw label colour instead of the actual fill.
+  The capsule-preview golden was regenerated after confirming only the five
+  glyphs changed.
+- **Clock:** new generated `nowProvider`; the Timeline's today, Today button,
+  scroll-to-now, current-time line and new-task default time read it.
+  `NotificationService(clock:)` is injectable. The fragile tests are pinned to
+  midday, so late-evening runs are clean (verified at 23:47).
+- **Flake:** `template_list_view_test` waits on the provider's list actually
+  emptying instead of one event-loop turn (3/3 alone, clean in full runs).
+- **Chips:** `CategoryChip` replaces three identical private copies (task
+  category modal, name+category modal, task detail sheet), now with the shared
+  press. `AppSelectableChip` gained `size: regular`, replacing
+  `_DevChip`/`_TypeChip`. The work order shrinks to 16 sites.
+
+**Checks:** new tests for paper/charcoal glyphs, faded done glyphs and the
+chip sizes; pinned tests pass. Full suite at 23:47: 1788 passing, 18 failing,
+all in the HEAD baseline (two baseline What Matters failures now pass,
+apparently fixed by the concurrent session). `flutter analyze` 20: no new
+issue in touched files. Noted, not touched: `task_detail_sheet.dart` also
+carries other uncommitted edits removing the create form's "Prevent
+overlapping tasks" inline error, which predate this change.
+
+## 2026-09-28 — Done tasks: icon way subtler, strike in the text's own colour
+
+Done glyph opacity .5 → .25; the strike line now uses exactly the done title's
+colour (the label-tinted strike tokens were removed as dead). Tests updated;
+the capsule golden was regenerated after confirming only the completed row
+changed. Two more "now"-anchored resize tests surfaced at 23:51 and got the
+`nowProvider` midday pin, and `category_list_screen_test`'s swipe got the
+provider-polling fix after failing in two consecutive runs.
+
+## 2026-09-29 — Tracked card and date hierarchy
+
+Removed the trailing chevron from tracked behavior cards. Kept the current
+day's active surface fill and emphasized its label one type scale above other
+dates; weekday initials and six-month month labels now use the tertiary text
+tone. The tracked view-mode suite passes (7 tests), and targeted analysis is
+clean.
+
+## 2026-09-29 — What Matters glow; depth create/delete; voice mode exit flight
+
+- **What Matters:** the ripple ring now plays only on turning the mode on; a
+  persistent radial glow from the bottom centre sits under all content while
+  it's on (`WhatMattersTokens.glow*`).
+- **Depth:** new `AppDepthPresence`/`AppDepthTransition` + `DepthMotionSpec`
+  (emerge from depth on create, recede into it on delete, opening and closing
+  the object's room, staggered arrivals, reduced-motion safe). Inbox rows use
+  it: new tasks emerge (tab switches don't replay), swipe-remove recedes and
+  then deletes with undo. The list gained keys + `findChildIndexCallback` so
+  each row's animation state follows its task. Widgetbook: AppDepthPresence.
+- **Voice mode exit:** own route (`pushVoiceModeRoute`, instant in, 0.8s out).
+  Controls recede first, the screen recedes (fade + 96%), and each new Inbox
+  task flies from its voice line into its row, staggered; the rows open room
+  (`voiceArrivalsProvider`, `emerge: false`). `captureTask` returns the task;
+  `submit` returns per-line Inbox ids.
+
+**Checks:** new `app_depth_test` (5), `inbox_depth_test` (2),
+`voice_flight_test` (2: an end-to-end flight with the shuttle seen mid-exit,
+and the stagger), updated What Matters tests (+2: no ripple on off, glow
+under content). The Inbox suite (72+) passes. Full suite: 1804 passing, 16
+failing, the same baseline set. `flutter analyze`: no issue in touched
+files (24 total, the rest elsewhere). Not verified on device, including the
+flight across the shell's nested navigator. Test-infra note: while unsticking
+a hung test I ran `pkill -f flutter_tester`, which would also have stopped
+any concurrent session's running tests at that moment.
+
+## 2026-09-29 — What Matters glow stronger
+
+Requested after review: the glow was too faint. Peak accent alpha .10/.12 →
+.22/.26 (light/dark), mid-stop share .4 → .5 so it carries further up the page.
+What Matters tests pass. Not yet seen on device.
+
+## 2026-09-29 — Emerge is bouncy and slower
+
+Requested: arrivals should overshoot (appear larger, then settle) and take
+longer. `DepthMotionSpec`: enter .48s → .8s, stagger .07 → .1s, plus
+`overshootScale` 1.04 peaking at 60% of the emergence, then easing back to
+exactly 1. Exits never swell. +2 tests (arrival peaks at the overshoot and
+settles at exactly 1; exit stays ≤ 1); depth, Inbox and voice-flight suites
+pass. Not yet seen on device.
+
+## 2026-09-29 — Emerge reworked: only the pill springs, text fades; no blur, no sideways motion
+
+Feedback after trying it on Inbox items: no blur, no sideways movement (the
+whole row was scaling about its centre); the pill should spring up from
+small, alpha 0, larger > smaller > actual, and the text should only fade.
+`AppDepthPresence` now opens the row's room and broadcasts its emergence
+through `AppDepthScope`. The parts opt in: `AppDepthShape` (native spring from
+30%: overshoot, dip under, settle; shrink+fade on removal) and `AppDepthFade`
+(opacity only). Blur and whole-object overshoot tokens were removed;
+`AppDepthTransition` remains as a whole-object recede (voice controls), now
+without blur. Inbox item: pill = shape, title/duration = fade. Tests
+rewritten (8: no sideways/blur, larger→smaller→actual, text fade only, exit
+no bounce, stagger, reduced motion, inert markers); Inbox depth test updated.
+Full suite: 1807 passing, 16 failing (same baseline). Not yet seen on device.
+
+## 2026-09-29 — Export the full color-token set for Tokens Studio
+
+Added a reusable Flutter test-runner exporter and generated
+`design_tokens/rios-color-tokens.json`. The single Tokens Studio legacy-format
+file groups 200 resolved color tokens under primitive, semantic light/dark,
+and component tiers, including transparent and shadow colors. Regenerate with
+`flutter test tool/export_color_tokens.dart`; add
+`--dart-define=COLOR_TOKEN_CHECK=true` to check for drift without rewriting.
+
+The exporter freshness check passes and all 200 JSON leaves validate as color
+tokens. The two exporter files analyze cleanly. Full `flutter test`: 1807 pass,
+16 failures matching the recorded baseline. Full `flutter analyze` still has
+20 diagnostics, including the existing unresolved Widgetbook import; no new
+diagnostics point to the exporter files.
+
+## 2026-09-29 — Springing pill no longer clipped
+
+Reported: the row's container cut off the left of the enlarged pill.
+`SizeTransition` clips its child on every side. `AppDepthPresence` now uses
+its own `_HeightReveal`, which clips only the growing bottom edge while the
+room opens and nothing once it is open, so the pill's overshoot shows fully.
+New regression test (clip covers only the bottom while opening; no clip while
+the pill still overshoots). It would fail against the old all-sides clip.
+Depth and Inbox suites pass.
+
+## 2026-09-29 — What Matters glow actually visible
+
+Reported: the glow could not be seen at all. Cause: it was painted in
+`WhatMattersScene` UNDER its child, and every child page paints an opaque
+background (the Timeline's `Container(colorSurfaceTimeline)`), so it was
+fully covered. Fix: new `WhatMattersBackdrop` paints the page colour AND the
+glow, then the content. It replaces the Timeline's background container. The
+Timeline's bottom scroll fade now fades out while the mode is on, so it does
+not cut through the glow. The glow test now renders the backdrop's pixels:
+page colour only when off, a visible tint rising from the bottom when on, and
+content drawn above it. Full suite: same failures as the earlier baseline
+(app_view_transition, floating_nav_pill, zone_grid, swipe_actions,
+nav_consolidation), plus tracked_behavior_view_mode failing to compile. That
+file is being edited concurrently by another session.
+
+## 2026-09-29 — Unassigned tone for new tasks + imported events
+
+Requested: new tasks looked grey. They and imported events need their own
+tone, used for nothing else, opaque, with the imported stripes kept. Added
+the `mist` primitive pair and routed `TaskStateTokens.unlabeledFill` and the
+new `importedFill` to it. `GlassPillSurface`'s flat material (imported rail
+only) is now that opaque tone instead of colorTextSecondary @22%. New test:
+the tone is opaque, not grey, shared by imported, and never equal to a done
+tint. Full suite: same 16 existing failures as the baseline, none new.
+Widgetbook's task pill demo shows both. The colour choice itself is a taste
+call awaiting on-device review.
+
+## 2026-09-29 — Voice mode entrance/exit, toolbar morph, glass mic, new glow
+
+Requested: voice mode's entrance was abrupt and its exit a plain fade. The
+Inbox toolbar should morph like the Day dock does, the mic needed the glass
+styling, the voice toolbar's y should match the other toolbars, and the
+gradient should sit at the base (≈¾ height, top clean), layered and modern.
+Shipped:
+- `AppPaneMorph`: a reusable glass pane morph driven by a route animation
+  (springs out, eases back), using `LiquidMorphSpec.dockPane`.
+- `AppVoiceGlow`: layered drifting glow, masked at `glowReach` .75.
+- `pushVoiceModeRoute` is now non-opaque with a .7s entrance.
+- The Inbox mic is an `AppDockSurface` pane and passes its rect as the
+  morph origin.
+- The voice toolbar is one glass pane placed with `voiceToolbarRect` (same
+  clearance as the docks). `VoiceCaptureToolbar` was split out, and the
+  pause button is now a dock icon button.
+- New tests: pane morph (4), glow pixels (3), toolbar placement and glass
+  mic. Two voice tests needed an entrance wait (the entrance used to be
+  instant).
+- Full suite: same 16 existing failures, none new. Widgetbook demo added.
+
+Open:
+- The look and feel on a real device is not verified.
+- The morph from a light-theme mic into the dark voice pane cross-fades the
+  surface over the first 15%.
+- voice_capture_screen.dart is 296 lines (was 260; over the 200 guideline).
+
+## 2026-09-29 — Recording fix, voice toolbar close pane + timing, page sweep, zone alpha
+
+- **Recording stuck on "Listening"**: the root cause was the
+  `speech_to_text` singleton ignoring listeners on re-initialize (see
+  ERROR_LOG). Fixed and covered by a regression test.
+  - Also flagged, not changed: the Android manifest lacks the
+    `android.speech.RecognitionService` `<queries>` entry that the plugin
+    documents for Android 11+.
+- **Close** is now a single-item glass pane beside the toolbar.
+  - Both panes split out of the mic.
+  - The entrance is firmer (lower bounce), same speed.
+  - The return accelerates and lands early.
+- **Page sweep**: Inbox tabs, headers and rows fade bottom-up with voice
+  mode's glow (`AppSweepFade`, `voiceModeSweepProvider`).
+- **Zone cards**: 80% alpha via `ZoneSurfaceTokens.fill`.
+- **Tests**: session (2), sweep (3), morph return, close pane, sweep
+  lifecycle and zone token. Two zone tests were updated for the new fill.
+- **Full suite**: same 16 existing failures, none new.
+
+Open: device feel of the timings; the voice status card showing
+"Listening" while idle.
+
+## 2026-09-29 — Dock items spring in and out (Day ↔ Edit and every dock change)
+
+Requested: when dock items appear/disappear (e.g. switching Day ↔ Edit)
+they only staggered and faded; they should also scale up and bounce (larger,
+smaller, actual), like the view switch. New reusable `AppSpringPresence`
+replaces the dock's `AnimatedOpacity` for both icons and panes. The fade
+timing is unchanged, so the stagger is kept. Showing springs from small;
+hiding shrinks without bouncing. Tests: spring presence (4), dock bounce (1).
+Existing dock tests pass unchanged. The Widgetbook AppBottomDock demo now
+switches Day ↔ Edit. Full suite: same 16 existing failures, none new.
+
+## 2026-09-29 — Speech recognition on Android + visible failure; decisive voice toolbar with size spring
+
+- **Android**: added the `android.speech.RecognitionService` `<queries>`
+  entry. Without it, on Android 11+ the app cannot see the recognizer and
+  `initialize()` is false; this affects voice mode and Quick Capture's mic.
+- **iOS**: the usage strings are present and no audio-session conflict was
+  found (the splash video isn't wired). The earlier listener-rebind fix
+  covers both platforms.
+- **Both platforms**: a failed start is now a visible state
+  (`VoiceCaptureStatus.unavailable`, "Can't listen", Resume retries)
+  instead of a silent "Listening". A platform exception also sets it and is
+  rethrown.
+- **Voice toolbar**:
+  - Springs play in real time, so the entrance is decisive.
+  - The whole pane springs larger → smaller → actual.
+  - The exit snaps home in the first 45%, accelerating.
+  - This adds `LiquidMorphSpec.popFrom/popSeconds/popBounce` and
+    `AppPaneMorph.forwardSeconds`.
+- **Tests**: unavailable (2), pane size spring, real-time settle.
+- **Full suite**: same 16 existing failures, none new.
+
+Open: on-device verification on both platforms (Android needs a rebuild for
+the manifest change). Quick Capture's mic still fails silently when
+unavailable.
+
+## 2026-09-29 — Voice mode exit: page returns with the toolbar
+
+Requested: the gradient sinking, the screen revealing the tasks, and the
+tasks themselves should start earlier, together with the toolbar. The scrim,
+glow and Inbox row sweep now use reverse curves over the first 45% of the
+exit (`revealShare`), the same moment the toolbar pane is home
+(`AppPaneMorph.returnEnd` .55). Hero flights land by 80% of the exit
+(`flightLandShare`). Test added. Full suite: same 16 existing failures,
+none new.
+
+## 2026-09-29 — Voice mode: "+" submerges and springs back; waveform piano keys
+
+- The Inbox "+" swells then shrinks and fades out as voice mode opens,
+  instead of being covered by the close pane. It springs back in as soon as
+  the exit starts. This adds `AppSpringPresence.swell`,
+  `AppFloatingCreateButton.visible` and `DepthMotionSpec.submergeSwell`.
+- The waveform bars stagger in like piano keys, each on a bouncy spring
+  (`AppVoiceWaveform.entranceDelay`, `waveformKeyScale`,
+  `VoiceModeTokens.key*`).
+- Tests: key order and bounce (3), swell (1), and the "+" state across
+  voice mode.
+- Full suite: same 16 existing failures, none new.
+
+## 2026-09-29 — Page slide follow-through for key items
+
+Requested: when pages slide, the key items on them should stagger and
+follow through in the travel direction, entering and leaving: Day
+non-spatial tasks, Inbox tasks, and Tracked cards with their dots
+following individually.
+- **New code**: `FollowThroughSpec`, and `AppFollowThroughScope` +
+  `AppFollowThrough` (a paint-only render object, delayed by screen
+  position, nested followers trailing their parent). `AppViewTransition`
+  provides the scope for slides.
+- **Timing change**: slide pages now take 380ms in total; the page's own
+  slide is 228ms (was 150ms).
+- **Wrapped**: Inbox rows, `_ZoneTaskRow`, `TrackedBehaviorRow`, `_DayCell`.
+- **Tests**: 6 (at rest, forward, outgoing, back, nested dots, inert).
+  Widgetbook demo added.
+- **Full suite**: same 16 existing failures, none new.
+
+Open: device feel (the amplitude of the trail and the 380ms total).
+app_view_transition.dart is 229 lines (was 200).
+
+## 2026-09-29 — Slide layering: the page being left paints on top
+
+Reported: going back (e.g. Inbox → Day), Day painted over Inbox and covered
+the follow-through, because slots stacked in the order they were first
+opened. `AppViewTransition` now paints the arriving slot underneath and the
+leaving slot on top, in both directions. The slots are keyed, so their
+state survives the reorder. Tests: 2 (both directions). Full suite: same 16
+existing failures, none new.
+
+## 2026-09-29 — Follow-through no longer cut off at the page edge
+
+Reported: going Inbox → Day or Patterns → Inbox, the new page still looked
+like it was on top. The z-order was already right (the page being left is on
+top). The leaving page's items trail back toward the arriving page, and its
+own ListView clipped them at its side edge, exactly where the new page
+begins. New `AppVerticalClip` (clips top/bottom only) wraps the Inbox, Zone
+view and Patterns lists, which now use `clipBehavior: Clip.none`. Test added.
+Full suite: same 16 existing failures, none new.
+
+Note: `dart format` re-indented zone_day_timeline.dart's `build` block,
+which was not in canonical format before (only whitespace; content is my
+wrap plus another session's uncommitted `showZones` work).
+
+## 2026-09-29 — Voice-added tasks: the pill emerges like a typed task's
+
+Requested: tasks added by voice should have their pill emerge like tasks
+added by typing. The flight shuttle is now per task
+(`voiceFlightShuttle(index)`). It wraps the flying row in an `AppDepthScope`
+driven by that task's own flight window (reversed route animation, from its
+stagger delay to `flightLandShare`), so the pill springs up mid-flight. A
+new `fadeText: false` keeps the title shown. The voice-side Hero no longer
+sets a shuttle, since the Inbox row's always takes precedence. The Hero
+cast is now checked. Test added (fails without the change). Full suite:
+same 16 existing failures, none new.
+
+## 2026-09-29 — Day view tasks: page follow-through + emerge/recede
+
+The user chose options 1 and 2:
+- Timeline (spatial) tasks now trail the page on page switches.
+- Both Day views emerge new tasks and recede leaving ones:
+  - New `day_task_motion.dart`: provider, scope and presence.
+  - `AppDepthPresence.opensSpace` and `AppDepthShape.alignment`.
+  - Wired in `timeline_screen.dart` (both block layouts, by hand; the file
+    isn't in canonical format so it was not run through the formatter),
+    `task_capsule_block.dart` (pill shape, text-row fade),
+    `zone_day_timeline.dart` (unzoned rows keyed plus
+    `findItemIndexCallback`) and `zone_container_block.dart` (zone rows).
+- Found and fixed along the way: post-frame clearing needed
+  `ensureVisualUpdate` and a `ref.mounted` guard (see ERROR_LOG).
+- Tests: 7 (provider and presence).
+- Full suite: same 16 existing failures, none new.
+- Open: an unzoned list row's inline title doesn't fade; device feel.
+
+## 2026-09-29 — List-view hour labels match the timeline's
+
+Reported: list (zone) view hours were smaller than the timeline's.
+`ZoneRowTimeLabel` had drifted from `textCaptionMono` (the style the
+timeline's `TaskBoundaryMarkers` use, and what DESIGN_SYSTEM specified) to
+the smaller `textTaskEdgeTime`. It is restored to `textCaptionMono`, and the
+two zone_container_block tests that pinned the smaller size were updated.
+Full suite: same 16 existing failures, none new.
+
+## 2026-09-29 — Motion cost fixes (sweep fade idle layer; follow-through per-slide placement)
+
+Following a cost review of the recent motion work:
+- **`AppSweepFade`**: paints its child directly at full opacity, so idle
+  Inbox rows and tabs no longer each carry an opacity layer. It is tested
+  (no layer at rest).
+- **`AppFollowThrough`**: places each follower once per slide (a
+  `generation` bumped by `AppViewTransition` on every view change) instead
+  of looking up screen positions every frame. The visual result is the
+  same. Tested: 10 placements across a 30-frame slide, for 10 followers.
+- **Voice glow**: continuous full-screen redraw while open, deliberately
+  left as is.
+- **Full suite**: same 16 existing failures, none new.
+- **Next**: measure on a profile build on a device.
+
+## 2026-09-29 — One task row for Inbox and voice mode; label-less colour; neater forming cue
+
+Requested:
+- Label-less tasks should match the timeline's colour.
+- Voice-mode pills should be the same size as the main view, reusing the
+  same card code.
+- The 2s-pause loader should be thinner and sit at the pill's edge.
+
+Shipped:
+- New `TaskListRow`, used by `_InboxListItem` and voice mode's
+  `_VoiceCaptureSegmentRow`.
+- Inbox "General" tasks (previously label palette swatch 0, a red) and
+  voice lines (previously `colorSurfaceField`, a circle) now use
+  `TaskStateTokens.unlabeledFill`.
+- The loader is now a hairline traced just outside the pill, filling over
+  the silence window.
+- Tests: 3 new, plus the Inbox colour assertion.
+- Full suite: same 16 existing failures, none new.
+
+## 2026-09-29 — Toolbars submerge/emerge on page change
+
+Requested: the dock buttons emerge; they should also submerge, and the
+other pages' toolbars should do the same on page change.
+- Dock items and panes now submerge (swell, then shrink and fade). The fade
+  starts immediately, so the stagger timing is unchanged.
+- New `app_page_toolbar.dart`: anchor, gate and item. Wired into
+  `AppFloatingCreateButton` (all pages' "+"), the Inbox mic pane and
+  `AppTrackedViewDock`.
+- Tests: page toolbar (4) and dock submerge (1).
+- Full suite: same 16 existing failures, none new.
+
+## 2026-09-29 — Page toolbar buttons stagger
+
+Requested: stagger when a page has several toolbar buttons (e.g. the Inbox).
+New `order` on `AppPageToolbarGate`/`AppPageToolbarItem` (and
+`AppFloatingCreateButton.toolbarOrder`): each later button submerges and
+emerges one dock stagger step (35ms) after the one before. Inbox: mic, then
+"+". Patterns: view dock, then "+". Test added. Full suite: same 16
+existing failures, none new.
+
+## 2026-09-29 — Day drag: just the pill
+
+The lift visuals (`isLifted`, `liftedTextInline`, full-width box, scale)
+are now gated on Edit mode via `_liftedDrag`. On the Day screen, dragging
+moves only the pill. Test added (fails with the old condition). Full suite:
+same 16 existing failures, none new.
+
+## 2026-09-29 — Dragged pill no longer shrinks
+
+Fixed: the resting caps (`maxPillHeight`, `bottomTrim`) were still applied
+during a drag (see ERROR_LOG). Test added. Full suite: same 16 existing
+failures, none new.
+
+## 2026-09-29 — Drag lift removed from Edit mode too
+
+At the user's request, Edit-mode drags are now also just the pill. The
+`_liftedDrag` getter, `_liftScale` and the drag block's AnimatedScale
+wrapper are removed, along with the `isLifted`/`liftedTextInline` call-site
+arguments and the stretched box. Test added (Edit-mode drag not lifted).
+The drag tests passed (5/5).
+- Not negative-checked: that would have meant overwriting
+  timeline_screen.dart while another session was actively editing it.
+- Concurrency note: another session was mid-way through removing the
+  timeline delete target (`onDeleteTask`, `deleteTargetKey`, …) in the same
+  file. At the last full run it did not compile
+  (multi_task_group_delete_test is the new failure). That is theirs, not
+  this change; re-run the suite once they finish.
+- Open: `TaskCapsuleBlock.isLifted`/`liftedTextInline` are now unused by
+  any screen.
+
+## 2026-09-29 — Moving task wears the purple edit ring (handles only in Edit mode)
+
+Requested: on the spatial timeline, the task being moved shows the purple
+edit border but no resize handles, except in Edit mode, where handles show
+too. `isSelected` now includes `_isDragging`. The handles were already gated
+on `editModeEnabled && isSelected` (`_editActive`: Edit mode or armed), so
+a Day-screen move gets the ring only. Drag tests assert both cases. Not
+negative-checked, since another session was actively editing
+timeline_screen.dart. The lift options on `TaskCapsuleBlock` are kept for
+now, per the user.
+Also: task_row_right_edge_test's source-text check matched an exact
+indentation, and broke when timeline_screen.dart was reformatted (my
+`_present(...)` wrapper adds one nesting level). It is now
+whitespace-insensitive (a regex), with the same guard. Full suite: same 16
+existing failures, none new.
+
+## 2026-09-29 — Moving task keeps its lane; ghost and neighbours don't shift
+
+Fixed lane re-numbering on drag start (see ERROR_LOG). Test added; it
+failed before the fix, passes after. Full suite: same 16 existing failures,
+none new.
+
+## 2026-09-29 — Faded star on done tasks; no wash on the week strip
+
+- Star fade: `TaskImportantStar.faded`, `TaskStateTokens.doneStarAlpha`,
+  wired in both callers.
+- `AppPressFeedback.ripple` (default true), set to false on the week-strip
+  day pills.
+- Tests: star faded/not faded; seven wash-less day pills; `ripple: false`
+  keeps the squeeze with no wash.
+- Full suite: same 16 existing failures, none new.
+
+## 2026-09-29 — Inbox tabs → sub nav in the page-heading slot
+
+Requested: the Inbox ("Things") tabs should share the main nav's styling
+and sit exactly where the Day/Habits date headings sit, so switching pages
+that line doesn't move.
+- Extracted `AppNavLabel` from `AppTopNav`; the main nav is unchanged.
+- New `AppSubNav`/`AppSubNavLabel`.
+- `InboxSectionTabs` rebuilt on it. It replaced the `AppSelectableChip`
+  pills and the 40px circular `IconButton` "+" (which was also a direct
+  Material widget in features). Drop targets, select, the
+  selected-tap/long-press menu and the drop-target wash are kept.
+- The Inbox list now starts ~19px higher, at the same place as the Habits
+  content.
+- Tests: alignment and style against the Day and Habits headings; the drop
+  wash doesn't move the text.
+- Widgetbook demo added.
+- Full suite: same 16 existing failures, none new.
+
+Not done (only noted by the user): the Day and Habits date headings are
+still two separate components with the same formatting; they could share
+one heading component later.
+
+## 2026-09-29 — Settings gear: slightly larger, optically on the right edge
+
+`TopNavTokens.settingsIconSize` (20). The gear's tap box is translated right
+by its inner padding, so the glyph's right edge is the nav's right edge. The
+old 16px size test was updated, and an edge-alignment test added. Full
+suite: same 16 existing failures, none new.

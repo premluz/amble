@@ -7,6 +7,7 @@ import 'motion_primitives.dart';
 import 'radius_primitives.dart';
 import 'spacing_primitives.dart';
 import 'type_primitives.dart';
+import 'what_matters_tokens.dart';
 
 /// Semantic task category. Fixed taxonomy, not a free color picker —
 /// see docs/DECISIONS.md ("Task colors are semantic categories").
@@ -202,16 +203,11 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   /// treatment; it carries no container/layout meaning.
   final Color colorZoneBackground;
 
-  /// The Timeline's own background surface ([colorSurfaceTimeline]) tinted
-  /// with [colorAccent] — the "What Matters" lens's at-rest background, at
-  /// the same ~11%/9% (light/dark) blend ratio `WhatMattersScene`'s own
-  /// `CustomPainter` now animates its flat wash to (see
-  /// `WhatMattersTokens.tintAlphaLight`/`tintAlphaDark`) — bumped from a
-  /// barely-visible 3-4% specifically because "big alpha" was requested
-  /// directly, so the lens reads as clearly distinct from the ordinary
-  /// Timeline. Precomputed here via `Color.alphaBlend` as a real, reusable
-  /// flat surface color, for any surface that wants this resting tint
-  /// without going through that animated painter.
+  /// The optional "What Matters" accent-tinted Timeline surface. The scene
+  /// currently uses only a transient ripple and leaves the page untinted at
+  /// rest; this reusable color remains available to surfaces that explicitly
+  /// opt into the persistent treatment. Its light/dark blend ratios are held
+  /// in `WhatMattersTokens.tintAlphaLight`/`tintAlphaDark`.
   final Color colorSurfaceWhatMatters;
 
   // Text
@@ -283,6 +279,11 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   // Spacing
   final double spacingXs;
   final double spacingSm;
+
+  /// App-added gap between bottom content and the device's safe-area edge.
+  /// Kept at the compact `spacingSm` rung so safe-area clearance does not
+  /// become a second, oversized padding layer on floating controls/sheets.
+  double get spacingBottomClearance => spacingSm;
 
   /// A standalone 12px value for the timeline task badge's icon top
   /// padding — not part of the general Xs(4)/Sm(8)/Md(16) progression,
@@ -731,18 +732,13 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     // isn't assigned yet at this point in the constructor call.
     colorFreeWindow: ColorPrimitives.surface3.withValues(alpha: 0.5),
     colorZoneBackground: ColorPrimitives.zoneBackground,
-    // Same primitive pairing as colorSurfaceTimeline/colorAccent below
-    // (cream2/brand500) — referenced directly rather than through
-    // `this.colorSurfaceTimeline`/`this.colorAccent`, which aren't
-    // assigned yet at this point in the constructor call. Originally
-    // ~11% ("big alpha," requested directly, so the lens reads as clearly
-    // distinct from the ordinary Timeline rather than the wash painter's
-    // own much fainter 3-4% at-rest tint), bumped again to 20% —
-    // requested directly a second time ("on light mode make it
-    // stronger"). Kept in sync with WhatMattersTokens.tintAlphaLight,
-    // which the animated wash painter uses for the same visual result.
+    // Reusable opt-in surface treatment. Refer to the palette primitives
+    // directly because this constructor has not assigned the theme fields
+    // yet; keep its alpha in sync with WhatMattersTokens.tintAlphaLight.
     colorSurfaceWhatMatters: Color.alphaBlend(
-      ColorPrimitives.brand500.withValues(alpha: 0.20),
+      ColorPrimitives.brand500.withValues(
+        alpha: WhatMattersTokens.tintAlphaLight,
+      ),
       ColorPrimitives.cream2,
     ),
     colorTextPrimary: ColorPrimitives.slate900,
@@ -1024,15 +1020,12 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     // reasoning as the light palette above.
     colorFreeWindow: ColorPrimitives.ink600.withValues(alpha: 0.5),
     colorZoneBackground: ColorPrimitives.zoneBackgroundDark,
-    // Same pairing as light — colorSurfaceTimeline/colorAccent's own dark
-    // values (ink800/brand300), referenced directly for the same
-    // not-yet-assigned reason. Unchanged at 9% when light was bumped to
-    // 20% ("on light mode make it stronger," requested directly, dark
-    // not called out) — a light accent tint already reads stronger
-    // against a dark base at a lower alpha than it needs against a light
-    // one, matching WhatMattersTokens' own light/dark asymmetry.
+    // Reusable opt-in surface treatment; the lower dark-mode alpha preserves
+    // the intended contrast. Keep it in sync with WhatMattersTokens.tintAlphaDark.
     colorSurfaceWhatMatters: Color.alphaBlend(
-      ColorPrimitives.brand300.withValues(alpha: 0.09),
+      ColorPrimitives.brand300.withValues(
+        alpha: WhatMattersTokens.tintAlphaDark,
+      ),
       ColorPrimitives.ink800,
     ),
     colorTextPrimary: ColorPrimitives.sand200,

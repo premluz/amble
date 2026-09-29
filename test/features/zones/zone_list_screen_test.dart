@@ -1,9 +1,12 @@
 import 'package:amble/core/tokens/semantic_theme.dart';
+import 'package:amble/core/widgets/app_switch.dart';
 import 'package:amble/features/zones/zone_list_screen.dart';
 import 'package:amble/shared/models/zone.dart';
 import 'package:amble/shared/models/zone_facet.dart';
+import 'package:amble/shared/providers/preferences_providers.dart';
 import 'package:amble/shared/providers/zone_facet_providers.dart';
 import 'package:amble/shared/providers/zone_providers.dart';
+import 'package:amble/shared/repositories/preferences_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -20,6 +23,7 @@ void main() {
     WidgetTester tester, {
     List<ZoneFacet> facets = const [],
     List<Zone> zones = const [],
+    bool fullScreen = false,
   }) async {
     final facetRepository = MemoryZoneFacetRepository();
     for (final facet in facets) {
@@ -30,10 +34,12 @@ void main() {
       await zoneRepository.save(zone);
     }
 
+    final preferences = MemoryPreferencesRepository();
     final container = ProviderContainer(
       overrides: [
         zoneFacetRepositoryProvider.overrideWithValue(facetRepository),
         zoneRepositoryProvider.overrideWithValue(zoneRepository),
+        preferencesRepositoryProvider.overrideWithValue(preferences),
       ],
     );
     addTearDown(container.dispose);
@@ -43,13 +49,36 @@ void main() {
         container: container,
         child: MaterialApp(
           theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
-          home: const Scaffold(body: ZoneListBody()),
+          home: fullScreen
+              ? const ZoneListScreen()
+              : const Scaffold(body: ZoneListBody()),
         ),
       ),
     );
     await tester.pumpAndSettle();
     return container;
   }
+
+  testWidgets('Show zones defaults on and persists its setting from Zones', (
+    tester,
+  ) async {
+    final container = await pumpList(tester, fullScreen: true);
+
+    expect(find.text('Show zones'), findsOneWidget);
+    expect(find.byType(AppSwitch), findsOneWidget);
+    expect(container.read(showZonesSettingProvider), isTrue);
+
+    await tester.tap(find.byType(AppSwitch));
+    await tester.pumpAndSettle();
+
+    expect(container.read(showZonesSettingProvider), isFalse);
+    expect(
+      container
+          .read(preferencesRepositoryProvider)
+          .getValue<bool>(PreferenceKeys.showZones),
+      isFalse,
+    );
+  });
 
   testWidgets(
     'swiping a zone name left past the threshold removes it when unused',

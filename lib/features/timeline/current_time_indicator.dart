@@ -24,7 +24,12 @@ class CurrentTimeIndicator extends StatefulWidget {
     this.leftInset = 0,
     this.rightInset = 0,
     this.pixelsPerMinute = 1.5,
+    this.now = DateTime.now,
   });
+
+  /// Where "now" comes from; the Timeline passes its clock provider so
+  /// tests can pin the time.
+  final DateTime Function() now;
 
   /// The day view's visible top/bottom edges — a dynamic, per-day computed
   /// window (see `_DayTimelineState`), not a fixed hour range. "Now" only
@@ -46,13 +51,13 @@ class CurrentTimeIndicator extends StatefulWidget {
 
 class _CurrentTimeIndicatorState extends State<CurrentTimeIndicator> {
   late Timer _timer;
-  DateTime _now = DateTime.now();
+  late DateTime _now = widget.now();
 
   @override
   void initState() {
     super.initState();
     _timer = Timer.periodic(const Duration(minutes: 1), (_) {
-      setState(() => _now = DateTime.now());
+      setState(() => _now = widget.now());
     });
   }
 

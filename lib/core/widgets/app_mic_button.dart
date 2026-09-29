@@ -101,7 +101,9 @@ class AppMicButton extends StatelessWidget {
       // Both fills (accent, and the alert color while listening) are
       // saturated, so the wash rides on the same light foreground the
       // icon uses rather than a dark one that wouldn't register.
-      rippleColor: isPrimary ? theme.colorSurfacePrimary : theme.colorTextPrimary,
+      rippleColor: isPrimary
+          ? theme.colorSurfacePrimary
+          : theme.colorTextPrimary,
       child: blurred,
     );
   }

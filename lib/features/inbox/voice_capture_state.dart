@@ -4,9 +4,15 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../../shared/services/quick_capture_parser.dart';
 
 enum VoiceCaptureStatus {
-  /// Not yet started, or permission/availability failed — the waveform
-  /// sits at its flat baseline and no session is open.
+  /// Not yet started — the waveform sits at its flat baseline and no
+  /// session is open.
   idle,
+
+  /// The recognizer could not start (microphone or speech permission
+  /// denied, or no recognizer on the device). Shown as such, never as
+  /// "Listening", so a dead session can't pass for a quiet one; Resume
+  /// retries.
+  unavailable,
 
   /// A [stt.SpeechToText] session is open and receiving results.
   listening,

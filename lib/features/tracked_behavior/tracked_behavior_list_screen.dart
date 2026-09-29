@@ -4,12 +4,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_floating_create_button.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
+import '../../core/widgets/app_vertical_clip.dart';
+import '../../shared/models/tracked_behavior_view_mode.dart';
 import '../../shared/models/tracked_behavior.dart';
 import '../../shared/providers/preferences_providers.dart';
 import '../../shared/providers/tracked_behavior_providers.dart';
 import 'app_tracked_view_dock.dart';
 import 'tracked_behavior_form.dart';
 import 'tracked_behavior_row.dart';
+import 'tracked_period_calendar.dart';
 
 /// The "Tracked" bottom-nav destination — every saved [TrackedBehavior],
 /// tap to edit, "+" to add.
@@ -50,93 +53,58 @@ class TrackedBehaviorListScreen extends ConsumerWidget {
         bottom: false,
         child: Stack(
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // **2026-09-20 — the whole header row is gone.** Page
-                // title removed first ("Inbox and Tracked no need page
-                // title any more since tab shows it"), and the view-cycle
-                // switcher that used to sit alongside it moved to its own
-                // bottom dock (`AppTrackedViewDock`, alongside
-                // `AppFloatingCreateButton` below) — requested directly:
-                // "add that bottom nav with 3 icons connected for
-                // changing views (and remove the top single icon)."
-                // Nothing was left in this header once both pieces moved
-                // out, so the `Padding`/`Row` wrapper went with them; no
-                // replacement top clearance is needed — matches
-                // `inbox_screen.dart`'s own identical header removal,
-                // where the top nav shell above already provides it.
-                Expanded(
-                  // Stack, so top/bottom fades overlay the list's own
-                  // scrolling content directly — reversed back from an
-                  // earlier attempt that moved the top fade INTO the fixed
-                  // heading above instead (a separate, non-scrolling sibling
-                  // box, never actually behind any real content). Reported
-                  // directly, matching the Inbox screen's identical fix and
-                  // reasoning: a fade living in its own static header can
-                  // only ever blend against that header's own flat
-                  // background, never the list sliding past underneath it —
-                  // the hard-cut-at-the-header-boundary bug this reverses.
-                  // The title above stays clear of the fade by construction:
-                  // the fade is confined to this Expanded's own bounds, which
-                  // start below the fixed heading, so it can never paint over
-                  // the title text (the original problem the header-embedded
-                  // fade was built to solve).
-                  child: Stack(
-                    children: [
-                      behaviors.isEmpty
-                          ? _EmptyState(theme: theme)
-                          : ListView.separated(
-                              padding: EdgeInsets.fromLTRB(
-                                theme.spacingScreenPadding,
-                                // spacingContentTop — the shared value every
-                                // list/sheet uses now, confirmed directly at
-                                // 30px so Tasks/Templates/Tracked all start
-                                // at the same y level.
-                                theme.spacingContentTop,
-                                theme.spacingScreenPadding,
-                                0,
-                              ),
-                              itemCount: behaviors.length,
-                              separatorBuilder: (context, _) =>
-                                  SizedBox(height: theme.spacingSm),
-                              itemBuilder: (context, index) {
-                                final behavior = behaviors[index];
-                                return TrackedBehaviorRow(
-                                  key: ValueKey(behavior.id),
-                                  theme: theme,
-                                  behavior: behavior,
-                                  viewMode: viewMode,
-                                  onTap: () => showTrackedBehaviorForm(
-                                    context,
-                                    behavior: behavior,
-                                  ),
-                                );
-                              },
+            TrackedPeriodCalendar(
+              viewMode: viewMode,
+              bodyBuilder: (context, periodDate) => Stack(
+                children: [
+                  behaviors.isEmpty
+                      ? _EmptyState(theme: theme)
+                      : AppVerticalClip(
+                          child: ListView.separated(
+                            // Sides open so cards can trail past the page edge while it slides.
+                            clipBehavior: Clip.none,
+                            padding: EdgeInsets.fromLTRB(
+                              theme.spacingScreenPadding,
+                              theme.spacingContentTop,
+                              theme.spacingScreenPadding,
+                              0,
                             ),
-                      Positioned(
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        child: AppTopScrollFade(
-                          color: theme.colorSurfaceTimeline,
+                            itemCount: behaviors.length,
+                            separatorBuilder: (context, _) =>
+                                SizedBox(height: theme.spacingSm),
+                            itemBuilder: (context, index) {
+                              final behavior = behaviors[index];
+                              return TrackedBehaviorRow(
+                                key: ValueKey(behavior.id),
+                                theme: theme,
+                                behavior: behavior,
+                                viewMode: viewMode,
+                                periodDate: periodDate,
+                                onTap: () => showTrackedBehaviorForm(
+                                  context,
+                                  behavior: behavior,
+                                ),
+                              );
+                            },
+                          ),
                         ),
-                      ),
-                      // Mirrored bottom fade — requested directly: "use same
-                      // at the bottom."
-                      Positioned(
-                        bottom: 0,
-                        left: 0,
-                        right: 0,
-                        child: AppTopScrollFade(
-                          color: theme.colorSurfaceTimeline,
-                          fromBottom: true,
-                        ),
-                      ),
-                    ],
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: AppTopScrollFade(color: theme.colorSurfaceTimeline),
                   ),
-                ),
-              ],
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: AppTopScrollFade(
+                      color: theme.colorSurfaceTimeline,
+                      fromBottom: true,
+                    ),
+                  ),
+                ],
+              ),
             ),
             // Floating independently above the bottom nav pill now
             // (2026-09-12, matching every other screen's own
@@ -144,15 +112,17 @@ class TrackedBehaviorListScreen extends ConsumerWidget {
             // with the view-cycle switcher.
             AppFloatingCreateButton(
               onPressed: () => showTrackedBehaviorForm(context),
+              // After the view dock's buttons, left to right.
+              toolbarOrder: TrackedBehaviorViewMode.values.length,
             ),
             // The view-mode switcher's new home — bottom-left, matching
             // `AppBottomDock`'s own placement on the Day screen exactly
-            // (`Positioned(left: spacingMd, bottom: spacingMd)` inside a
+            // (`Positioned(left: spacingMd, bottom: spacingBottomClearance)` inside a
             // top-false `SafeArea`), so both screens' floating docks sit
             // at the identical spot.
             Positioned(
               left: theme.spacingMd,
-              bottom: theme.spacingMd,
+              bottom: theme.spacingBottomClearance,
               child: SafeArea(
                 top: false,
                 child: AppTrackedViewDock(

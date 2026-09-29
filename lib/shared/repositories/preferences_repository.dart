@@ -84,6 +84,11 @@ abstract final class PreferenceKeys {
   /// Settings when `FeatureFlags.zoneEnabled` is also true.
   static const String zoneViewEnabled = 'zoneViewEnabled';
 
+  /// Whether saved Zones appear in either Timeline display mode. Absent
+  /// (null) defaults to true; zone authoring/editing remains available
+  /// regardless of this display preference. See [ShowZonesSetting].
+  static const String showZones = 'showZones';
+
   /// Whether the "What Matters" lens is on — hides every [Task] with
   /// `isImportant == false` entirely, in both Timeline display modes.
   /// Absent (null) defaults to false. See [WhatMattersEnabledSetting].

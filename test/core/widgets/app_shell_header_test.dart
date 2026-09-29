@@ -8,23 +8,39 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('header swap keeps calendar anchor and tabs retain identity', (tester) async {
+  testWidgets('header swap keeps calendar anchor and tabs retain identity', (
+    tester,
+  ) async {
     final controller = AppShellChromeController();
     addTearDown(controller.dispose);
-    await tester.pumpWidget(MaterialApp(theme: ThemeData(extensions: [AmbleTheme.light]),
-      home: Column(children: [
-        AppShellHeader(controller: controller, child: AppTopNav(
-          destinations: const ['Day', 'Inbox'], selectedIndex: 0,
-          onDestinationSelected: (_) {}, onSettingsTap: () {},
-        )),
-        const Text('Calendar'),
-      ]),
-    ));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(extensions: [AmbleTheme.light]),
+        home: Column(
+          children: [
+            AppShellHeader(
+              controller: controller,
+              child: AppTopNav(
+                destinations: const ['Days', 'Things'],
+                selectedIndex: 0,
+                onDestinationSelected: (_) {},
+                onSettingsTap: () {},
+              ),
+            ),
+            const Text('Calendar'),
+          ],
+        ),
+      ),
+    );
     final anchor = tester.getTopLeft(find.text('Calendar'));
-    Widget tabs(int value) => AppTabSwitch<int>(options: const [
-      AppOptionSwitchOption(value: 0, label: 'Tasks'),
-      AppOptionSwitchOption(value: 1, label: 'Zones'),
-    ], value: value, onChanged: (_) {});
+    Widget tabs(int value) => AppTabSwitch<int>(
+      options: const [
+        AppOptionSwitchOption(value: 0, label: 'Tasks'),
+        AppOptionSwitchOption(value: 1, label: 'Zones'),
+      ],
+      value: value,
+      onChanged: (_) {},
+    );
     controller.updateHeader('tasks', tabs(0));
     await tester.pumpAndSettle();
     expect(find.byType(AppTopNav), findsNothing);

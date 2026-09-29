@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../core/tokens/liquid_morph_spec.dart';
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/app_liquid_morph.dart';
 import '../../core/widgets/glass_pill_surface.dart';
 import '../../core/widgets/selected_pill_border.dart';
 import 'edit_mode_wiggle.dart';
@@ -37,7 +39,7 @@ class PendingTaskPill extends StatelessWidget {
     required this.endTime,
     required this.textColumnLeft,
     required this.textColumnRight,
-    this.title = 'New task',
+    this.title = 'New thing',
     required this.onMoveStart,
     required this.onMoveUpdate,
     required this.onMoveEnd,
@@ -83,7 +85,7 @@ class PendingTaskPill extends StatelessWidget {
   final double textColumnLeft;
   final double textColumnRight;
 
-  /// The placeholder's name. Defaults to the same "New task" the mini
+  /// The placeholder's name. Defaults to the same "New thing" the mini
   /// sheet seeds its own field with, so the pill and the sheet agree on
   /// what the task is called before the user types anything.
   final String title;
@@ -241,14 +243,28 @@ class PendingTaskPill extends StatelessWidget {
                       // `fillColor: null` — the glass below is the fill,
                       // and a flat colour underneath it would muddy the
                       // blur. See that parameter's own doc comment.
-                      SelectedPillBorder(
-                        theme: theme,
-                        contentRadius: BorderRadius.circular(theme.radiusPill),
-                        fillColor: null,
-                        child: GlassPillSurface(
-                          theme: theme,
-                          width: width,
-                          height: height,
+                      // Enters as the dot at the top of the rail and
+                      // stretches down into the pill (dot to line). Sized
+                      // explicitly: a Row child gets unbounded width.
+                      SizedBox(
+                        width: width,
+                        height: height,
+                        child: AppLiquidMorph(
+                          origin: Offset(width / 2, width / 2),
+                          borderRadius: theme.radiusPill,
+                          spec: LiquidMorphSpec.draftPill,
+                          child: SelectedPillBorder(
+                            theme: theme,
+                            contentRadius: BorderRadius.circular(
+                              theme.radiusPill,
+                            ),
+                            fillColor: null,
+                            child: GlassPillSurface(
+                              theme: theme,
+                              width: width,
+                              height: height,
+                            ),
+                          ),
                         ),
                       ),
                     ],

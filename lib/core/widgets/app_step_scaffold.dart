@@ -341,7 +341,7 @@ class StepScaffold extends StatelessWidget {
                         Positioned(
                           left: 0,
                           right: 0,
-                          bottom: theme.spacingLg,
+                          bottom: theme.spacingBottomClearance,
                           child: Padding(
                             padding: EdgeInsets.symmetric(
                               horizontal: theme.spacingLg,

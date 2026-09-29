@@ -1,5 +1,16 @@
 import 'bubble_burst_demo.dart';
+import 'delete_puff_demo.dart';
+import 'depth_demo.dart';
+import 'sub_nav_demo.dart';
+import 'follow_through_demo.dart';
+import 'voice_mode_demo.dart';
 import 'floating_surface_demo.dart';
+import 'liquid_morph_demo.dart';
+import 'liquid_pulse_demo.dart';
+import 'press_feedback_demo.dart';
+import 'task_pill_demo.dart';
+import 'water_ripple_demo.dart';
+
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_badge_chip.dart';
 import 'package:amble/core/widgets/app_button.dart';
@@ -7,6 +18,7 @@ import 'package:amble/core/widgets/app_chip_strip.dart';
 import 'package:amble/core/widgets/app_value_chip.dart';
 import 'package:amble/core/widgets/app_connected_buttons.dart';
 import 'package:amble/core/widgets/app_bottom_dock.dart';
+import 'package:amble/core/widgets/app_context_dock_config.dart';
 import 'package:amble/core/widgets/app_context_menu.dart';
 import 'package:amble/core/widgets/app_date_accordion.dart';
 import 'package:amble/core/widgets/app_option_switch_option.dart';
@@ -281,6 +293,15 @@ class AmbleWidgetbookApp extends StatelessWidget {
               ],
             ),
             WidgetbookComponent(
+              name: 'AppSubNav',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Page sections (Inbox)',
+                  builder: subNavDemo,
+                ),
+              ],
+            ),
+            WidgetbookComponent(
               name: 'AppTopNav',
               useCases: [
                 WidgetbookUseCase(
@@ -293,7 +314,7 @@ class AmbleWidgetbookApp extends StatelessWidget {
               name: 'AppBottomDock',
               useCases: [
                 WidgetbookUseCase(
-                  name: 'List / Timeline / Edit / What Matters',
+                  name: 'List / Timeline / Edit / What Matters (Edit ↔ Back)',
                   builder: (context) => const _BottomDockDemo(),
                 ),
               ],
@@ -379,6 +400,99 @@ class AmbleWidgetbookApp extends StatelessWidget {
               ],
             ),
             WidgetbookComponent(
+              name: 'Task pill',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'All states',
+                  builder: taskPillGalleryDemo,
+                ),
+                WidgetbookUseCase(
+                  name: 'Select and complete (interactive)',
+                  builder: taskPillInteractiveDemo,
+                ),
+                WidgetbookUseCase(
+                  name: 'Draft: dot to line',
+                  builder: taskPillDraftDemo,
+                ),
+              ],
+            ),
+            WidgetbookComponent(
+              name: 'AppPressFeedback',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Press on every surface shape',
+                  builder: pressFeedbackDemo,
+                ),
+              ],
+            ),
+            WidgetbookComponent(
+              name: 'AppDepthPresence',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Emerge and recede (create / delete)',
+                  builder: depthDemo,
+                ),
+              ],
+            ),
+            WidgetbookComponent(
+              name: 'AppFollowThrough',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Page slide with follow-through (‹ ›)',
+                  builder: followThroughDemo,
+                ),
+              ],
+            ),
+            WidgetbookComponent(
+              name: 'AppPaneMorph + AppVoiceGlow',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Voice mode in and out (tap)',
+                  builder: voiceModeDemo,
+                ),
+              ],
+            ),
+            WidgetbookComponent(
+              name: 'AppLiquidMorph',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Grow from a tap point',
+                  builder: liquidMorphDemo,
+                ),
+              ],
+            ),
+            WidgetbookComponent(
+              name: 'AppLiquidPulse',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Select (tap to toggle)',
+                  builder: liquidPulseSelectDemo,
+                ),
+                WidgetbookUseCase(
+                  name: 'Complete (tap to toggle)',
+                  builder: liquidPulseCompleteDemo,
+                ),
+              ],
+            ),
+            WidgetbookComponent(
+              name: 'AppWaterRipple',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Task completion (tap pill)',
+                  builder: waterRippleDemo,
+                ),
+              ],
+            ),
+            WidgetbookComponent(
+              name: 'AppDeletePuff',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Selected-item delete',
+                  builder: deletePuffDemo,
+                ),
+              ],
+            ),
+            WidgetbookComponent(
               name: 'AppUndoToast',
               useCases: [
                 WidgetbookUseCase(
@@ -409,6 +523,10 @@ class AmbleWidgetbookApp extends StatelessWidget {
                   name: 'With a destructive action',
                   builder: (context) =>
                       const _ContextMenuDemo(withDestructive: true),
+                ),
+                WidgetbookUseCase(
+                  name: 'Long-press, drag, release',
+                  builder: longPressContextMenuDemo,
                 ),
                 WidgetbookUseCase(
                   name: 'Anchored popover (showAt)',
@@ -1009,8 +1127,9 @@ class _TopNavDemoState extends State<_TopNavDemo> {
 /// Wraps a stateful demo around [AppBottomDock] — List/Timeline need a
 /// real, changeable active view, and What Matters needs a real,
 /// changeable on/off state, so both are held here rather than passed as
-/// fixed props (the "Edit" tap has no state of its own — it just opens a
-/// screen — so it's left a no-op in this gallery context).
+/// fixed props. "Edit" swaps in an edit-mode dock (Back · Add · Delete)
+/// the way the Day page does, so items can be seen springing in and out
+/// between the two; Back returns.
 class _BottomDockDemo extends StatefulWidget {
   const _BottomDockDemo();
 
@@ -1021,15 +1140,52 @@ class _BottomDockDemo extends StatefulWidget {
 class _BottomDockDemoState extends State<_BottomDockDemo> {
   AppBottomDockView _activeView = AppBottomDockView.timeline;
   bool _whatMattersEnabled = false;
+  bool _editing = false;
+
+  AppContextDockConfiguration get _editDock => AppContextDockConfiguration(
+    stateId: 'edit',
+    groups: [
+      AppContextGroup(
+        id: 'context-navigation',
+        actions: [
+          AppContextAction(
+            id: 'edit-back',
+            icon: Icons.arrow_back_rounded,
+            tooltip: 'Back',
+            onPressed: () => setState(() => _editing = false),
+          ),
+        ],
+      ),
+      AppContextGroup(
+        id: 'edit-actions',
+        actions: [
+          AppContextAction(
+            id: 'edit-add',
+            icon: Icons.add_rounded,
+            tooltip: 'Add',
+            onPressed: () {},
+          ),
+          AppContextAction(
+            id: 'edit-delete',
+            icon: Icons.delete_outline_rounded,
+            tooltip: 'Delete',
+            destructive: true,
+            onPressed: () {},
+          ),
+        ],
+      ),
+    ],
+  );
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(24),
       child: AppBottomDock(
+        configurationOverride: _editing ? _editDock : null,
         activeView: _activeView,
         onSelectView: (view) => setState(() => _activeView = view),
-        onEditTap: () {},
+        onEditTap: () => setState(() => _editing = true),
         whatMattersEnabled: _whatMattersEnabled,
         onWhatMattersTap: () =>
             setState(() => _whatMattersEnabled = !_whatMattersEnabled),

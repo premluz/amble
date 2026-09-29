@@ -76,6 +76,7 @@ class AppDockIconButton extends StatelessWidget {
       variant: AppButtonVariant.ghost,
       tooltip: tooltip,
       onPressed: onTap,
+      fillColor: selected ? FloatingSurfaceTokens.selected(theme) : null,
       // colorDestructive (a stronger, more saturated red), not
       // colorTaskAlert (a coral warning/attention color) — requested
       // directly: "delete needs stronger red." colorTaskAlert answers a
@@ -87,30 +88,24 @@ class AppDockIconButton extends StatelessWidget {
     );
 
     final badgeCount = this.badgeCount;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: selected ? FloatingSurfaceTokens.selected(theme) : null,
-        shape: BoxShape.circle,
-      ),
-      child: badgeCount == null
-          ? button
-          : Stack(
-              clipBehavior: Clip.none,
-              children: [
-                button,
-                // Top-right corner of the icon within the button —
-                // requested directly. Negative offsets deliberately let
-                // the badge sit half-outside the button's own circle
-                // (the conventional "notification badge" placement),
-                // hence `clipBehavior: Clip.none` above.
-                Positioned(
-                  top: -2,
-                  right: -2,
-                  child: AppBadge(count: badgeCount, size: AppBadgeSize.xs),
-                ),
-              ],
-            ),
-    );
+    return badgeCount == null
+        ? button
+        : Stack(
+            clipBehavior: Clip.none,
+            children: [
+              button,
+              // Top-right corner of the icon within the button —
+              // requested directly. Negative offsets deliberately let
+              // the badge sit half-outside the button's own circle
+              // (the conventional "notification badge" placement),
+              // hence `clipBehavior: Clip.none` above.
+              Positioned(
+                top: -2,
+                right: -2,
+                child: AppBadge(count: badgeCount, size: AppBadgeSize.xs),
+              ),
+            ],
+          );
   }
 }
 

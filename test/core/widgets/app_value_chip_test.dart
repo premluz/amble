@@ -210,26 +210,14 @@ void main() {
   });
 
   testWidgets('tapping fires onTap in both the empty and the set state — '
-      'a set chip reopens its picker rather than going inert', (
-    tester,
-  ) async {
+      'a set chip reopens its picker rather than going inert', (tester) async {
     var taps = 0;
 
-    await pump(
-      tester,
-      label: 'hh:mm',
-      hasValue: false,
-      onTap: () => taps++,
-    );
+    await pump(tester, label: 'hh:mm', hasValue: false, onTap: () => taps++);
     await tester.tap(find.byType(AppValueChip));
     expect(taps, 1);
 
-    await pump(
-      tester,
-      label: '09:30',
-      hasValue: true,
-      onTap: () => taps++,
-    );
+    await pump(tester, label: '09:30', hasValue: true, onTap: () => taps++);
     await tester.tap(find.byType(AppValueChip));
     expect(taps, 2);
   });

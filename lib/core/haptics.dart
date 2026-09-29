@@ -67,7 +67,15 @@ class PlatformHaptics implements Haptics {
     switch (haptic) {
       case AmbleHaptic.selection:
       case AmbleHaptic.tap:
-        _ignore(HapticFeedback.selectionClick());
+        // iOS: Flutter maps selectionClick to a fresh, unprepared
+        // UISelectionFeedbackGenerator — the weakest Taptic pattern, and
+        // on recent iPhones often imperceptible. A light impact is the
+        // closest match to Android's crisp CLOCK_TICK.
+        _ignore(
+          defaultTargetPlatform == TargetPlatform.iOS
+              ? HapticFeedback.lightImpact()
+              : HapticFeedback.selectionClick(),
+        );
       case AmbleHaptic.lift:
         _ignore(HapticFeedback.lightImpact());
       case AmbleHaptic.drop:

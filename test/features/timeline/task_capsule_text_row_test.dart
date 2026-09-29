@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:amble/core/tokens/task_state_tokens.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/features/timeline/completion_checkbox.dart';
 import 'package:amble/features/timeline/task_capsule_block.dart';
@@ -189,51 +190,59 @@ void main() {
   // all other tasks)". The alignment half is the load-bearing assertion:
   // a marker that shifted its own title would break the shared text
   // column every other row lines up against.
-  testWidgets('isImportant renders a marker without moving the title — a '
-      'marked and an unmarked task\'s titles start at the SAME x', (
+  // 2026-09-28: the important star moved from the title margin onto the
+  // pill's corner (TaskImportantStar); the title itself turns brand colour.
+  testWidgets('isImportant turns the title brand-coloured without moving it, '
+      'and puts no star in the text row (the star is on the pill)', (
     tester,
   ) async {
-    // Measured off the RichText's own box rather than `find.text`: the
-    // title is a nested TextSpan inside a parent span once the marker
-    // exists, and `find.text` only matches a Text widget's own `data`.
-    double titleX(WidgetTester tester) => tester
+    RichText title() => tester.widget<RichText>(
+      find.byWidgetPredicate(
+        (w) => w is RichText && w.text.toPlainText().contains('Stretching'),
+      ),
+    );
+    double titleX() => tester
         .getTopLeft(
           find.byWidgetPredicate(
             (w) => w is RichText && w.text.toPlainText().contains('Stretching'),
           ),
         )
         .dx;
+    Color? titleColor() {
+      Color? found;
+      title().text.visitChildren((span) {
+        if (span is TextSpan && span.text == 'Stretching') {
+          found = span.style?.color ?? title().text.style?.color;
+        }
+        return true;
+      });
+      return found ?? title().text.style?.color;
+    }
 
     await pumpRow(tester, taskAt(4), durationVisible: false);
-    final plainTitleX = titleX(tester);
-    expect(find.byIcon(Icons.star_rounded), findsNothing);
+    final plainX = titleX();
+    expect(titleColor(), AmbleTheme.light.colorTextPrimary);
 
-    final important = taskAt(4)..isImportant = true;
-    await pumpRow(tester, important, durationVisible: false);
-    final markedTitleX = titleX(tester);
-
-    expect(find.byIcon(Icons.star_rounded), findsOneWidget);
-    expect(
-      markedTitleX,
-      plainTitleX,
-      reason:
-          'the marker occupies zero layout width, so it must not displace '
-          'the title it precedes',
-    );
-  });
-
-  testWidgets('the marker also renders in List mode\'s inline layout, '
-      'still without moving the title', (tester) async {
-    final important = taskAt(4)..isImportant = true;
     await pumpRow(
       tester,
-      important,
+      taskAt(4)..isImportant = true,
+      durationVisible: false,
+    );
+    expect(titleX(), plainX);
+    expect(titleColor(), TaskStateTokens.importantTitle(AmbleTheme.light));
+    expect(find.byIcon(Icons.star_rounded), findsNothing);
+  });
+
+  testWidgets('List mode\'s inline layout also shows the brand title, with '
+      'no margin star', (tester) async {
+    await pumpRow(
+      tester,
+      taskAt(4)..isImportant = true,
       compactInlineLayout: true,
       durationVisible: false,
       alwaysShowTime: true,
     );
-
-    expect(find.byIcon(Icons.star_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.star_rounded), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

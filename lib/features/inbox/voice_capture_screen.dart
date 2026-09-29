@@ -2,23 +2,28 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
-import '../../core/widgets/app_button.dart';
-import '../../core/widgets/app_modal_route.dart';
+import '../../core/tokens/voice_mode_tokens.dart';
+import '../../core/widgets/app_depth.dart';
+import '../../core/widgets/app_dock_primitives.dart';
+import '../../core/widgets/app_pane_morph.dart';
 import '../../core/widgets/app_trial_gate.dart';
-import '../../core/widgets/app_voice_waveform.dart';
+import '../../core/widgets/app_voice_glow.dart';
 import '../../shared/providers/trial_providers.dart';
 import 'voice_capture_provider.dart';
 import 'voice_capture_screen_parts.dart';
+import 'voice_capture_toolbar.dart';
+import 'voice_flight.dart';
 
 /// Opens the full-screen "speak your tasks" flow — free speech, split
 /// into separate tasks on each natural pause, all added to the Inbox
 /// together on Submit. Requested directly, from two wireframes, as an
 /// entry point "next to the plus" on the Inbox screen (see
-/// `inbox_screen.dart`).
-Future<void> showVoiceCaptureScreen(BuildContext context) {
-  return pushFullScreenRoute<void>(
+/// `inbox_screen.dart`). [origin] is the global rect of the button it was
+/// opened from: the voice toolbar morphs out of it, and back into it.
+Future<void> showVoiceCaptureScreen(BuildContext context, {Rect? origin}) {
+  return pushVoiceModeRoute(
     context,
-    (context) => const VoiceCaptureScreen(),
+    (context) => VoiceCaptureScreen(origin: origin),
   );
 }
 
@@ -32,7 +37,15 @@ Future<void> showVoiceCaptureScreen(BuildContext context) {
 /// the segment list, the status card, the pause/resume button) — split
 /// out purely to keep this file under CLAUDE.md's 200-line guidance.
 class VoiceCaptureScreen extends ConsumerStatefulWidget {
-  const VoiceCaptureScreen({super.key, this.autoStartListening = true});
+  const VoiceCaptureScreen({
+    super.key,
+    this.autoStartListening = true,
+    this.origin,
+  });
+
+  /// The global rect of the pane voice mode was opened from; see
+  /// [showVoiceCaptureScreen].
+  final Rect? origin;
 
   /// Whether [initState] calls [VoiceCapture.startListening] on mount.
   /// Defaults true — see [initState]'s own doc comment for the real
@@ -52,6 +65,97 @@ class VoiceCaptureScreen extends ConsumerStatefulWidget {
 }
 
 class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
+  /// The lines as submitted, kept on screen (the provider resets on submit)
+  /// so each can fly from where it was into its Inbox row.
+  List<String>? _submitted;
+
+  /// Per submitted line: the Inbox task it became, or null if scheduled.
+  List<String?> _flightIds = const [];
+
+  /// The route's own animation, which drives the whole choreography; and
+  /// its curved slices, built once (a CurvedAnimation listens to its
+  /// parent). The controls arrive late and leave early; the page behind is
+  /// covered early and uncovered late.
+  Animation<double> _route = kAlwaysCompleteAnimation;
+  CurvedAnimation? _controlsExit;
+  CurvedAnimation? _scrimIn;
+  CurvedAnimation? _riseIn;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final routeAnimation = ModalRoute.of(context)?.animation;
+    if (_controlsExit != null || routeAnimation == null) return;
+    _route = routeAnimation;
+    _controlsExit = CurvedAnimation(
+      parent: routeAnimation,
+      curve: const Interval(1 - VoiceModeTokens.controlsExitShare, 1),
+    );
+    // On exit the page comes back early, in step with the toolbar
+    // returning into the mic, not dragged across the whole exit.
+    const reveal = Interval(1 - VoiceModeTokens.revealShare, 1);
+    _scrimIn = CurvedAnimation(
+      parent: routeAnimation,
+      curve: const Interval(0, VoiceModeTokens.scrimShare),
+      reverseCurve: reveal,
+    );
+    _riseIn = CurvedAnimation(
+      parent: routeAnimation,
+      curve: Curves.easeOutCubic,
+      reverseCurve: const Interval(
+        1 - VoiceModeTokens.revealShare,
+        1,
+        curve: Curves.easeInOutCubic,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controlsExit?.dispose();
+    _scrimIn?.dispose();
+    _riseIn?.dispose();
+    super.dispose();
+  }
+
+  Animation<double> get _controls => _controlsExit ?? kAlwaysCompleteAnimation;
+  Animation<double> get _scrim => _scrimIn ?? kAlwaysCompleteAnimation;
+  Animation<double> get _rise => _riseIn ?? kAlwaysCompleteAnimation;
+
+  /// Creates the tasks, then closes onto the Inbox: each Inbox-bound line
+  /// is tagged with its task so it flies into its row, one after another.
+  Future<void> _submit() async {
+    final notifier = ref.read(voiceCaptureProvider.notifier);
+    final segments = List.of(ref.read(voiceCaptureProvider).committedSegments);
+    List<String?> ids;
+    // Same "trial expired -> present the paywall -> retry once" shape as
+    // quick_capture_sheet.dart's own _retryAfterPaywallIfExpired.
+    try {
+      ids = await notifier.submit();
+    } on TrialExpiredException {
+      if (!mounted) return;
+      final unlocked = await presentPaywallForTrialExpired(context, ref);
+      if (!unlocked || !mounted) return;
+      ids = await notifier.submit();
+    }
+    if (!mounted) return;
+    ref.read(voiceArrivalsProvider.notifier).land(ids.whereType<String>());
+    setState(() {
+      _submitted = segments;
+      _flightIds = ids;
+    });
+    // Close on the next frame, once the tagged lines are built, so the
+    // flights have a source to leave from.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Navigator.of(context).pop();
+    });
+  }
+
+  Object? _flightTagFor(int index) {
+    final id = index < _flightIds.length ? _flightIds[index] : null;
+    return id == null ? null : voiceFlightTag(id);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -69,144 +173,137 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
   Widget build(BuildContext context) {
     final theme = AmbleTheme.dark;
     final state = ref.watch(voiceCaptureProvider);
-    final isPaused = state.status == VoiceCaptureStatus.paused;
     final isSubmitting = state.status == VoiceCaptureStatus.submitting;
 
     return Theme(
       data: ThemeData(useMaterial3: true, extensions: [theme]),
       child: Scaffold(
-        backgroundColor: theme.colorSurfaceBase,
-        body: DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: RadialGradient(
-              center: const Alignment(0, -0.3),
-              radius: 1.2,
-              colors: [
-                theme.colorAccent.withValues(alpha: 0.28),
-                theme.colorSurfaceBase,
-              ],
-            ),
-          ),
-          child: SafeArea(
-            child: Column(
+        backgroundColor: Colors.transparent,
+        body: LayoutBuilder(
+          builder: (context, box) {
+            final (:toolbar, :close) = voiceToolbarLayout(
+              theme,
+              box.biggest,
+              MediaQuery.viewPaddingOf(context),
+            );
+            // Both panes split out of the mic (and merge back into it).
+            // Without a source (no mic on screen), from where the mic
+            // usually sits: just left of the "+".
+            final origin =
+                widget.origin ??
+                close.translate(-close.width - theme.spacingMd, 0);
+            final mic = Icon(
+              Icons.mic_none_rounded,
+              color: theme.colorTextSecondary,
+            );
+            return Stack(
               children: [
-                Align(
-                  alignment: Alignment.topRight,
-                  child: Padding(
-                    padding: EdgeInsets.all(theme.spacingMd),
-                    child: AppButton(
-                      icon: Icons.close_rounded,
-                      shape: AppButtonShape.circle,
-                      variant: AppButtonVariant.secondary,
-                      tooltip: 'Close',
-                      onPressed: () => Navigator.of(context).pop(),
+                Positioned.fill(
+                  child: AppVoiceGlow(theme: theme, scrim: _scrim, rise: _rise),
+                ),
+                SafeArea(child: _content(theme, state, toolbar.height)),
+                Positioned.fill(
+                  child: AppPaneMorph(
+                    theme: theme,
+                    animation: _route,
+                    forwardSeconds: VoiceModeTokens.enterSeconds,
+                    origin: origin,
+                    target: close,
+                    from: mic,
+                    child: Padding(
+                      padding: EdgeInsets.all(theme.spacingXs),
+                      child: AppDockIconButton(
+                        theme: theme,
+                        icon: Icons.close_rounded,
+                        tooltip: 'Close',
+                        selected: false,
+                        onTap: () => Navigator.of(context).pop(),
+                      ),
                     ),
                   ),
                 ),
-                Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: theme.spacingXl),
-                    // Hint shows only while genuinely nothing has
-                    // happened yet — once the user has started speaking
-                    // (a live partial exists) the in-progress card itself
-                    // is the "something is happening" signal, so the
-                    // hint gives way to it exactly like it already does
-                    // once a segment commits.
-                    child:
-                        state.committedSegments.isEmpty &&
-                            state.partialText.isEmpty
-                        ? VoiceCaptureHint(theme: theme)
-                        : VoiceCaptureSegmentList(
-                            theme: theme,
-                            segments: state.committedSegments,
-                            partialText: state.partialText,
-                          ),
-                  ),
-                ),
-                Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    theme.spacingXl,
-                    0,
-                    theme.spacingXl,
-                    theme.spacingLg,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      VoiceCaptureStatusCard(theme: theme, state: state),
-                      SizedBox(height: theme.spacingMd),
-                      Row(
-                        children: [
-                          VoiceCapturePauseResumeButton(
-                            theme: theme,
-                            isPaused: isPaused,
-                            onPause: () =>
-                                ref.read(voiceCaptureProvider.notifier).pause(),
-                            onResume: () => ref
-                                .read(voiceCaptureProvider.notifier)
-                                .resume(),
-                          ),
-                          SizedBox(width: theme.spacingMd),
-                          Expanded(
-                            child: AppVoiceWaveform(
-                              theme: theme,
-                              level: state.soundLevel,
-                              isActive:
-                                  state.status == VoiceCaptureStatus.listening,
-                            ),
-                          ),
-                          SizedBox(width: theme.spacingMd),
-                          AppButton(
-                            icon: Icons.arrow_upward_rounded,
-                            shape: AppButtonShape.circle,
-                            isLoading: isSubmitting,
-                            tooltip: 'Submit',
-                            // Disabled while zero segments have been
-                            // captured yet — requested directly ("in
-                            // listening mode before anything is said or
-                            // created, it's disabled, not available").
-                            onPressed: state.canSubmit && !isSubmitting
-                                ? () async {
-                                    final notifier = ref.read(
-                                      voiceCaptureProvider.notifier,
-                                    );
-                                    // Same "trial expired -> present the
-                                    // paywall -> retry once" shape as
-                                    // quick_capture_sheet.dart's own
-                                    // _retryAfterPaywallIfExpired —
-                                    // submit()'s own per-segment
-                                    // createTask/captureTask calls throw
-                                    // TrialExpiredException identically.
-                                    try {
-                                      await notifier.submit();
-                                    } on TrialExpiredException {
-                                      if (!context.mounted) return;
-                                      final unlocked =
-                                          await presentPaywallForTrialExpired(
-                                            context,
-                                            ref,
-                                          );
-                                      if (!unlocked || !context.mounted) {
-                                        return;
-                                      }
-                                      await notifier.submit();
-                                    }
-                                    if (context.mounted) {
-                                      Navigator.of(context).pop();
-                                    }
-                                  }
-                                : null,
-                          ),
-                        ],
-                      ),
-                    ],
+                Positioned.fill(
+                  child: AppPaneMorph(
+                    theme: theme,
+                    animation: _route,
+                    forwardSeconds: VoiceModeTokens.enterSeconds,
+                    origin: origin,
+                    target: toolbar,
+                    from: mic,
+                    child: VoiceCaptureToolbar(
+                      theme: theme,
+                      // Unavailable offers Resume too: it retries starting.
+                      isPaused:
+                          state.status == VoiceCaptureStatus.paused ||
+                          state.status == VoiceCaptureStatus.unavailable,
+                      isListening: state.status == VoiceCaptureStatus.listening,
+                      isSubmitting: isSubmitting,
+                      soundLevel: state.soundLevel,
+                      onPause: () =>
+                          ref.read(voiceCaptureProvider.notifier).pause(),
+                      onResume: () =>
+                          ref.read(voiceCaptureProvider.notifier).resume(),
+                      // Disabled until something has been captured —
+                      // requested directly ("in listening mode before
+                      // anything is said or created, it's disabled").
+                      onSubmit: state.canSubmit && !isSubmitting
+                          ? _submit
+                          : null,
+                    ),
                   ),
                 ),
               ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  /// Everything above the toolbar panes: the transcript, and the status
+  /// card sitting one gap above them.
+  Widget _content(AmbleTheme theme, VoiceCaptureState state, double pane) {
+    return Column(
+      children: [
+        SizedBox(height: theme.spacingXl),
+        Expanded(
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: theme.spacingXl),
+            // The hint shows only while nothing has happened yet; once a
+            // live partial or a segment exists, that card is the signal.
+            // Lines not flying to the Inbox (scheduled ones) fade with the
+            // rest of the screen; the flying ones leave as their flights.
+            child: FadeTransition(
+              opacity: _controls,
+              child: _submitted != null
+                  ? VoiceCaptureSegmentList(
+                      theme: theme,
+                      segments: _submitted!,
+                      heroTagFor: _flightTagFor,
+                    )
+                  : state.committedSegments.isEmpty && state.partialText.isEmpty
+                  ? VoiceCaptureHint(theme: theme)
+                  : VoiceCaptureSegmentList(
+                      theme: theme,
+                      segments: state.committedSegments,
+                      partialText: state.partialText,
+                    ),
             ),
           ),
         ),
-      ),
+        AppDepthTransition(
+          depth: _controls,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              theme.spacingXl,
+              0,
+              theme.spacingXl,
+              theme.spacingBottomClearance + pane + theme.spacingMd,
+            ),
+            child: VoiceCaptureStatusCard(theme: theme, state: state),
+          ),
+        ),
+      ],
     );
   }
 }

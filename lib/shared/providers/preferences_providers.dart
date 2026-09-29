@@ -534,6 +534,28 @@ class ZoneViewEnabledSetting extends _$ZoneViewEnabledSetting {
   }
 }
 
+/// Whether saved Zones are visible in the normal Timeline views. Turning
+/// this off removes spatial background bands and flattens zone-member rows
+/// into the Zone view, while the dedicated Zone editor continues to show
+/// and edit placements. Defaults to true to preserve the current display.
+@Riverpod(keepAlive: true)
+class ShowZonesSetting extends _$ShowZonesSetting {
+  @override
+  bool build() {
+    return ref
+            .read(preferencesRepositoryProvider)
+            .getValue<bool>(PreferenceKeys.showZones) ??
+        true;
+  }
+
+  Future<void> set(bool value) async {
+    await ref
+        .read(preferencesRepositoryProvider)
+        .setValue(PreferenceKeys.showZones, value);
+    state = value;
+  }
+}
+
 /// Whether the "What Matters" lens is on — a persistent dock toggle
 /// (`AppBottomDock`) that hides every [Task] with `isImportant == false`
 /// entirely from the Timeline, in BOTH display modes (spatial and zone).

@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:tabler_icons_plus/tabler_icons_plus.dart';
 
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/tokens/task_state_tokens.dart';
+import '../../core/widgets/app_hatch.dart';
 import '../../core/widgets/glass_pill_surface.dart';
 import '../../shared/models/external_calendar_event.dart';
 import 'capsule_title_alignment.dart';
@@ -340,7 +342,11 @@ class ExternalEventCapsuleBlock extends StatelessWidget {
 /// **No longer dashed** (the name is kept so the many existing call sites
 /// and tests that reference it keep working): the outline was removed
 /// entirely per a direct instruction — "no dotted line, no line at all" —
-/// and replaced by a flat gray fill via the shared [GlassPillSurface].
+/// and replaced by a flat fill via the shared [GlassPillSurface]. That fill
+/// is now the opaque "unassigned" tone ([TaskStateTokens.importedFill]),
+/// shared with new unlabeled tasks and used for nothing else.
+/// **Hatched (2026-09-28):** faint 45° lines inside that fill mark the event
+/// as imported (BRAND.md §17's provenance texture) — still no outline.
 /// That is deliberately the FLAT material, not the frosted one the
 /// quick-create draft placeholder uses: a draft is airborne and
 /// provisional, while an imported event is a real thing on the calendar.
@@ -358,7 +364,7 @@ class DashedPillRail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // A FLAT gray fill, no outline — requested directly: "the imported
+    // A FLAT fill (now the unassigned tone), no outline — requested directly: "the imported
     // should have fill also but just gray not the same glassy / and no
     // dotted line, no line at all." This was a dashed outline over
     // nothing; it is now the shared `GlassPillSurface` in its flat
@@ -374,48 +380,62 @@ class DashedPillRail extends StatelessWidget {
       material: GlassPillMaterial.flat,
       width: width,
       height: height,
-      child: SizedBox(
-        width: width,
-        height: height,
-        // The glyph sits in the rail's own TOP square, not the middle of
-        // however tall the rail runs — matching `TaskCapsuleBlock`'s own
-        // `alignment: Alignment.topCenter`. Once the rail started scaling
-        // with duration, a centred glyph would drift to the middle of a
-        // long event and lose its alignment with the title beside it
-        // (which stays level with the icon, by design — see
-        // `external_event_title_alignment_test.dart`).
-        child: Align(
-          alignment: Alignment.topCenter,
-          // **2026-09-21 — a fixed badgeSize SQUARE, not height alone.**
-          // This `SizedBox` set only `height`, so it inherited the rail's
-          // full WIDTH and centred the glyph in a tall, wide box rather
-          // than the badge-sized square the native block uses
-          // (`TaskCapsuleBlock`'s own `SizedBox(width: badgeSize, height:
-          // badgeSize)`, which that file documents as load-bearing: "a
-          // Tabler Icon's tight glyph bounds sat flush to the very top
-          // instead" without it).
-          //
-          // Reported repeatedly from device screenshots, most recently
-          // with a line drawn from the icon's base showing the label not
-          // level with it. The two blocks measure identically in the
-          // widget-test harness, so the difference is in how each glyph
-          // resolves inside its box — which is exactly what an unequal
-          // box changes, and exactly what the harness's test font hides.
-          child: SizedBox(
-            width: theme.sizeTaskBadge,
-            height: theme.sizeTaskBadge,
-            // Tabler, not a Material icon — matches every category glyph
-            // elsewhere now using the Tabler set (reported directly: "the
-            // calendar icon for imported needs to come from new set").
-            child: Center(
-              child: Icon(
-                TablerIcons.calendar,
-                size: theme.sizeTaskBadge * 0.55,
-                color: theme.colorTextSecondary,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(theme.radiusPill),
+              child: AppHatch(
+                color: TaskStateTokens.importedHatch(theme),
+                spacing: TaskStateTokens.importedHatchSpacing,
+                strokeWidth: TaskStateTokens.importedHatchStroke,
               ),
             ),
           ),
-        ),
+      SizedBox(
+            width: width,
+            height: height,
+            // The glyph sits in the rail's own TOP square, not the middle of
+            // however tall the rail runs — matching `TaskCapsuleBlock`'s own
+            // `alignment: Alignment.topCenter`. Once the rail started scaling
+            // with duration, a centred glyph would drift to the middle of a
+            // long event and lose its alignment with the title beside it
+            // (which stays level with the icon, by design — see
+            // `external_event_title_alignment_test.dart`).
+            child: Align(
+              alignment: Alignment.topCenter,
+              // **2026-09-21 — a fixed badgeSize SQUARE, not height alone.**
+              // This `SizedBox` set only `height`, so it inherited the rail's
+              // full WIDTH and centred the glyph in a tall, wide box rather
+              // than the badge-sized square the native block uses
+              // (`TaskCapsuleBlock`'s own `SizedBox(width: badgeSize, height:
+              // badgeSize)`, which that file documents as load-bearing: "a
+              // Tabler Icon's tight glyph bounds sat flush to the very top
+              // instead" without it).
+              //
+              // Reported repeatedly from device screenshots, most recently
+              // with a line drawn from the icon's base showing the label not
+              // level with it. The two blocks measure identically in the
+              // widget-test harness, so the difference is in how each glyph
+              // resolves inside its box — which is exactly what an unequal
+              // box changes, and exactly what the harness's test font hides.
+              child: SizedBox(
+                width: theme.sizeTaskBadge,
+                height: theme.sizeTaskBadge,
+                // Tabler, not a Material icon — matches every category glyph
+                // elsewhere now using the Tabler set (reported directly: "the
+                // calendar icon for imported needs to come from new set").
+                child: Center(
+                  child: Icon(
+                    TablerIcons.calendar,
+                    size: theme.sizeTaskBadge * 0.55,
+                    color: theme.colorTextSecondary,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -1,8 +1,11 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 
 import '../tokens/semantic_theme.dart';
+import '../tokens/voice_mode_tokens.dart';
 
 /// A live audio-level waveform — a row of bars whose heights track
 /// [level] (0.0-1.0), used to show that a microphone is actively picking
@@ -26,6 +29,7 @@ class AppVoiceWaveform extends StatefulWidget {
     required this.level,
     this.isActive = true,
     this.barCount = 24,
+    this.entranceDelay,
   });
 
   final AmbleTheme theme;
@@ -44,20 +48,88 @@ class AppVoiceWaveform extends StatefulWidget {
   /// narrower use (e.g. inline in a smaller control) can ask for fewer.
   final int barCount;
 
+  /// When set, the bars rise in on mount after this delay, one after
+  /// another like piano keys (`VoiceModeTokens.key*`). Null: simply there.
+  final Duration? entranceDelay;
+
   @override
   State<AppVoiceWaveform> createState() => _AppVoiceWaveformState();
 }
 
+final _keySpring = SpringDescription.withDurationAndBounce(
+  duration: Duration(
+    microseconds:
+        (VoiceModeTokens.keySpringSeconds * Duration.microsecondsPerSecond)
+            .round(),
+  ),
+  bounce: VoiceModeTokens.keyBounce,
+);
+
+/// How long the keys' entrance lasts in total, until every bar has settled.
+double waveformKeysSeconds(double delaySeconds, int barCount) =>
+    delaySeconds +
+    VoiceModeTokens.keyStaggerSeconds * (barCount - 1) +
+    VoiceModeTokens.keySpringSeconds * 2;
+
+/// Height factor of bar [index], [elapsed] seconds into the keys' entrance:
+/// 0 before its turn, then a spring up past 1 and back; exactly 1 once all
+/// have settled.
+double waveformKeyScale(
+  double elapsed,
+  int index,
+  double delaySeconds,
+  int barCount,
+) {
+  if (elapsed >= waveformKeysSeconds(delaySeconds, barCount)) return 1;
+  final start = delaySeconds + index * VoiceModeTokens.keyStaggerSeconds;
+  if (elapsed <= start) return 0;
+  return SpringSimulation(_keySpring, 0, 1, 0).x(elapsed - start);
+}
+
 class _AppVoiceWaveformState extends State<AppVoiceWaveform>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
     duration: const Duration(seconds: 2),
   )..repeat();
 
+  /// Seconds since the keys' entrance began (unbounded: real time).
+  late final _keys = AnimationController.unbounded(vsync: this);
+  var _keysStarted = false;
+
+  double get _delaySeconds =>
+      (widget.entranceDelay?.inMicroseconds ?? 0) /
+      Duration.microsecondsPerSecond;
+
+  double get _keysTotalSeconds =>
+      waveformKeysSeconds(_delaySeconds, widget.barCount);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_keysStarted) return;
+    _keysStarted = true;
+    final still = MediaQuery.maybeOf(context)?.disableAnimations == true;
+    if (widget.entranceDelay == null || still) {
+      _keys.value = _keysTotalSeconds;
+      return;
+    }
+    _keys.animateTo(
+      _keysTotalSeconds,
+      duration: Duration(
+        microseconds: (_keysTotalSeconds * Duration.microsecondsPerSecond)
+            .round(),
+      ),
+    );
+  }
+
+  double _keyScale(int index) =>
+      waveformKeyScale(_keys.value, index, _delaySeconds, widget.barCount);
+
   @override
   void dispose() {
     _controller.dispose();
+    _keys.dispose();
     super.dispose();
   }
 
@@ -67,13 +139,14 @@ class _AppVoiceWaveformState extends State<AppVoiceWaveform>
       height: widget.theme.spacingXl,
       width: double.infinity,
       child: AnimatedBuilder(
-        animation: _controller,
+        animation: Listenable.merge([_controller, _keys]),
         builder: (context, child) => CustomPaint(
           painter: _WaveformPainter(
             theme: widget.theme,
             level: widget.level.clamp(0.0, 1.0),
             isActive: widget.isActive,
             barCount: widget.barCount,
+            keyScales: [for (var i = 0; i < widget.barCount; i++) _keyScale(i)],
             // Radians, not the raw [0,1] AnimationController value — each
             // bar reads its own phase-shifted point on one continuous
             // sine cycle (see the painter), so this needs to keep
@@ -94,6 +167,7 @@ class _WaveformPainter extends CustomPainter {
     required this.level,
     required this.isActive,
     required this.barCount,
+    required this.keyScales,
     required this.animationClock,
   });
 
@@ -101,6 +175,9 @@ class _WaveformPainter extends CustomPainter {
   final double level;
   final bool isActive;
   final int barCount;
+
+  /// Per-bar height factor from the keys' entrance (1 once settled).
+  final List<double> keyScales;
   final double animationClock;
 
   @override
@@ -132,6 +209,11 @@ class _WaveformPainter extends CustomPainter {
         barHeight = size.height * (0.12 + wave * amplitude * 0.88);
       }
 
+      barHeight *= keyScales[i];
+      // A bar whose key hasn't risen yet is not drawn at all (a zero-length
+      // round-capped line would still paint a dot).
+      if (barHeight <= 0) continue;
+
       final center = size.height / 2;
       canvas.drawLine(
         Offset(x, center - barHeight / 2),
@@ -146,5 +228,6 @@ class _WaveformPainter extends CustomPainter {
       oldDelegate.level != level ||
       oldDelegate.isActive != isActive ||
       oldDelegate.animationClock != animationClock ||
+      !listEquals(oldDelegate.keyScales, keyScales) ||
       oldDelegate.theme != theme;
 }

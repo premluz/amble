@@ -2357,3 +2357,143 @@ are supported by the installed RevenueCat Flutter SDK in debug builds. Allow
 RevenueCat intentionally crashes release configurations using Test Store.
 Keep SDK setup inside the repository's guarded startup path and log its
 underlying error if configuration fails.
+
+## `HapticFeedback.selectionClick` is effectively silent on recent iPhones
+
+Symptom: haptics are felt on Android, but taps give nothing on iOS. Flutter's
+iOS engine (`FlutterPlatformPlugin.mm`, `vibrateHapticFeedback`) builds a new,
+unprepared `UISelectionFeedbackGenerator` per call. That is the weakest
+Taptic pattern, and without `prepare()` it is often imperceptible. Fix: map
+tap-strength intentions to `lightImpact` on iOS (see `PlatformHaptics`). Also
+check Settings → Sounds & Haptics → System Haptics on the device: when it is
+off, iOS silences all `UIFeedbackGenerator` output, including impacts.
+
+## Full-suite-only failures in Hive-backed widget tests (flake under load)
+
+Symptom: a widget test that saves or removes through a real Hive repository
+(`template_list_view_test` swipe-to-remove, `exit_confirmation_test` "Save
+changes") fails in a full `flutter test` run but passes repeatedly alone and
+in an immediate full rerun. Seen 2026-09-28 with changes unrelated to those
+screens. Treat a single such failure as load timing around real disk I/O, not
+a regression: rerun the file alone several times and rerun the full suite
+before investigating. It is a regression if it reproduces alone or in two
+consecutive full runs.
+
+**Fixed 2026-09-28 for `template_list_view_test`:** the test waited one
+real event-loop turn after the swipe. It now polls, in real time with a 5s
+cap, until the provider's list is empty (the exact state the UI renders),
+then asserts the storage write too. Use the same pattern for any test that
+waits on real Hive I/O plus a provider refresh.
+
+## `AnimatedPositioned` eases size too, so hit targets arrive late
+
+Symptom: after animating a Timeline pill's position with
+`AnimatedPositioned`, 38 tests failed. Taps and drags on resize handles right
+after arming or selecting a task missed. `AnimatedPositioned` animates EVERY
+property it is given, including `width`/`right`, and the pill box widens the
+instant a task is armed so its handles meet the minimum tap target. Eased,
+that width lagged behind, and so did the hit area. Fix: animate only the
+property that should move (a `TweenAnimationBuilder` on `left`, building a
+plain `Positioned`, which is allowed because the builder adds no render
+object between it and the Stack). Rule: never ease a box whose size is also a
+hit target.
+
+## A filtered build_runner invocation can remove unrelated generated parts
+
+Symptom: after running `build_runner build --build-filter` for one Riverpod
+output, unrelated generated `*.g.dart` part files disappeared and Flutter
+tests failed to compile. Restore only the generated files that were clean
+before the run, then use the repository-wide `build_runner build` so all
+generated sources are retained and consistent. Avoid output filtering for
+codegen in this repository.
+
+## Tests fail after about 23:00: fixtures anchored to "now" wrap past midnight
+
+Symptom: `drag_move_time_label_test` (move and bottom-resize labels; e.g.
+"Expected 60, Actual 1380") and `notification_service_test` `scheduleForZone`
+cases ("Expected not 23") fail only in a late-evening run. Their fixtures place
+tasks/zones relative to `DateTime.now()` (clamped to the day), so a drag or an
+"upcoming in one hour" slot crosses midnight. Not a regression in whatever you
+just changed. **Fixed 2026-09-28:** the Timeline now reads "now" from
+`nowProvider` (`lib/core/clock_provider.dart`) and `NotificationService`
+takes an optional `clock`. The affected tests pin both to midday
+(`drag_move_time_label_test`, `drag_haptics_test`, `quick_task_add_test`,
+`notification_service_test`). New Timeline tests should do the same:
+override `nowProvider` and anchor fixtures to that instant, never to
+`DateTime.now()`.
+
+**2026-09-28, later:** `category_list_screen_test`'s swipe-to-remove failed in
+two consecutive full runs and got the same provider-polling fix. The
+single-turn wait (`await Future<void>.delayed(Duration.zero)` after a real
+Hive write) appears in 16 test files. Only where it waits on a write plus a
+provider refresh is it a flake risk; convert those the same way when they
+surface. `exit_confirmation_test` is the next likely candidate (seen once).
+The remaining "now"-anchored Timeline tests (see the entry above) likewise
+get a `nowProvider` pin when they surface; `resize_anchored_edge_test` and
+`resize_tracks_finger_test` were pinned at 23:51 when they did.
+
+## A glow/wash painted under a page is hidden by the page's own background
+
+**Symptom**: the What Matters glow was invisible, although its tests passed.
+**Cause**: it was a layer under the child in a Stack, and the child page
+paints an opaque background colour over it. The tests only checked the
+painter's pixels in isolation.
+**Fix**: the page's background itself paints the glow (`WhatMattersBackdrop`
+replaces the solid background container). Any "behind content" effect must be
+part of the background, not beneath it.
+
+## Voice mode stuck on "Listening" with no words: speech_to_text's singleton kept the first caller's listeners
+
+**Symptom**: voice mode opened and showed "Listening", but nothing it heard
+became a task once the platform had ended the first listen.
+**Cause**: `stt.SpeechToText()` is a process-wide singleton, and
+`initialize()` returns early once it has worked, WITHOUT taking the
+`onStatus`/`onError` passed to it. When Quick Capture's mic (which
+initializes with no listeners) or an earlier, since-disposed voice session
+initialized first, the new `VoiceCapture` never heard the platform end its
+listen, so `_reopenSession` never ran. On Android that is the first silence
+(`error_no_match`). A disposed session's listeners could also be the ones
+still bound. The status card reads "Listening" even when idle, which hid
+this.
+**Fix**: `startListening` binds `statusListener`/`errorListener` directly
+after `initialize`, and dispose unbinds them if they are still its own.
+Regression: `test/features/inbox/voice_capture_session_test.dart` (simulates
+the platform channel; fails without the fix).
+
+## A post-frame callback doesn't make a frame happen; and it can outlive its provider
+
+**Symptom**: `DayTaskMotion`'s "clear arrivals after their first frame"
+never ran in tests. Once a frame was forced, it then threw
+`UnmountedRefException` after the container was disposed.
+**Cause**: `addPostFrameCallback` only queues work for the NEXT frame; it
+does not schedule one. In the app the Day screen happened to rebuild; in a
+test, nothing did. The callback also ran after the provider was disposed.
+**Fix**: register it together with `ensureVisualUpdate()`, and check
+`ref.mounted` first in the callback.
+
+## A dragged timeline pill shrank while its start/end markers stayed right
+
+**Symptom**: some tasks' pills got shorter while being dragged, although
+the accent start/end markers on the left showed the correct time span.
+**Cause**: two resting-layout caps were still applied mid-drag.
+`maxPillHeight` stops a pill 2px short of the next task in its lane, and
+`bottomTrim` leaves a margin above a zone's end. Both are measured from
+where the task SITS, not where it is being dragged. Only tasks with a close
+same-lane neighbour, or ending exactly on a zone's end, were affected.
+**Fix**: while dragging, the block passes `bottomTrim: 0` and
+`maxPillHeight: null`, so the pill shows its true duration. Regression test
+in drag_haptics_test.dart (fails without the fix).
+
+## A dragged task (and its neighbours) jumped lanes when the drag began
+
+**Symptom**: on the spatial timeline, a task picked up from an overlapping
+stack moved sideways into another lane. The tasks beside it shifted too,
+and the ghost no longer matched where the task had been.
+**Cause**: lanes were laid out with `clusters`, which excludes the dragged
+task. That exclusion is meant for List mode's grouped rows, where dragging
+is disabled anyway. Removing one task from its overlap group re-numbered
+the group's lanes the moment a drag started.
+**Fix**: lanes always come from `restingClusters` (the full, stable layout,
+already used for the ghost). `clusters` still drives which rows render as
+grouped. Regression test in drag_haptics_test.dart; it failed before the
+fix with a 32px jump.

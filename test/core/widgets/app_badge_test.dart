@@ -45,20 +45,19 @@ void main() {
     expect(text.style!.color, AmbleTheme.light.colorSurfacePrimary);
   });
 
-  testWidgets(
-    'outline variant has a transparent-center ring, no fill color',
-    (tester) async {
-      await pumpBadge(tester, count: 5, variant: AppBadgeVariant.outline);
+  testWidgets('outline variant has a transparent-center ring, no fill color', (
+    tester,
+  ) async {
+    await pumpBadge(tester, count: 5, variant: AppBadgeVariant.outline);
 
-      final container = tester.widget<Container>(find.byType(Container));
-      final decoration = container.decoration! as BoxDecoration;
-      expect(decoration.color, AmbleTheme.light.colorSurfacePrimary);
-      expect(decoration.border, isNotNull);
+    final container = tester.widget<Container>(find.byType(Container));
+    final decoration = container.decoration! as BoxDecoration;
+    expect(decoration.color, AmbleTheme.light.colorSurfacePrimary);
+    expect(decoration.border, isNotNull);
 
-      final text = tester.widget<Text>(find.text('5'));
-      expect(text.style!.color, AmbleTheme.light.colorAccent);
-    },
-  );
+    final text = tester.widget<Text>(find.text('5'));
+    expect(text.style!.color, AmbleTheme.light.colorAccent);
+  });
 
   testWidgets('xs/sm/md sizes resolve to distinct, increasing diameters', (
     tester,

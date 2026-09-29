@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../core/tokens/component_tokens.dart';
+import '../../core/tokens/liquid_pulse_spec.dart';
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/app_liquid_pulse.dart';
 import 'zone_body_gesture.dart';
 import '../../core/widgets/selected_pill_border.dart';
 import '../../shared/models/zone.dart';
@@ -48,6 +50,7 @@ class ZoneGridBlock extends StatelessWidget {
     this.onResizeBottomStart,
     this.onResizeBottomUpdate,
     this.onResizeBottomEnd,
+    this.onExtendDown,
     this.onExtendStart,
     this.onExtendUpdate,
     this.onExtendEnd,
@@ -119,6 +122,7 @@ class ZoneGridBlock extends StatelessWidget {
   final GestureDragEndCallback? onResizeBottomEnd;
 
   /// Side handles extend the placement across days; the body moves it.
+  final GestureDragDownCallback? onExtendDown;
   final GestureDragStartCallback? onExtendStart;
   final GestureDragUpdateCallback? onExtendUpdate;
   final GestureDragEndCallback? onExtendEnd;
@@ -137,177 +141,183 @@ class ZoneGridBlock extends StatelessWidget {
       height: height,
       child: Opacity(
         opacity: extending ? 0 : 1,
-        child: Stack(
-          fit: StackFit.expand,
-          clipBehavior: Clip.none,
-          children: [
-            if (moveGhostOffset case final ghostOffset?)
-              Positioned(
-                key: ValueKey('zone-move-ghost-${zone.id}'),
-                left: ghostOffset.dx,
-                right: -ghostOffset.dx,
-                top: ghostOffset.dy,
-                bottom: -ghostOffset.dy,
-                child: IgnorePointer(
-                  child: Opacity(
-                    key: ValueKey('zone-move-ghost-opacity-${zone.id}'),
-                    opacity: DragPreviewTokens.ghostOpacity,
-                    child: DecoratedBox(
-                      key: ValueKey('zone-move-ghost-shape-${zone.id}'),
-                      decoration: BoxDecoration(
-                        color: theme.colorSurfaceSecondary,
-                        borderRadius: BorderRadius.circular(theme.radiusSm),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            // Keep the recognizer mounted when the move ghost is inserted
-            // before it in this Stack during an active drag.
-            ZoneBodyGesture(
-              key: ValueKey('zone-body-gesture-${zone.id}'),
-              onTap: onTap,
-              onStart: onMoveStart,
-              onUpdate: onMoveUpdate,
-              onEnd: onMoveEnd,
-              child: isSelected
-                  ? SelectedPillBorder(
-                      theme: theme,
-                      // radiusSm — Weekly Zone Authoring Grid EXCEPTION,
-                      // requested directly (2026-09-21, superseding the
-                      // radiusXl unification below): this dense authoring
-                      // surface reads better with the smallest rung on the
-                      // scale, not the "zone pane" radiusXl every other
-                      // zone-rendering surface uses. See
-                      // docs/DESIGN_SYSTEM.md's "Zone pane indicator"
-                      // section for the exception and its own reasoning.
-                      contentRadius: BorderRadius.circular(theme.radiusSm),
-                      fillColor: theme.colorSurfaceSecondary,
-                      child: _RotatedTitle(theme: theme, title: zone.title),
-                    )
-                  : DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: theme.colorSurfaceSecondary,
-                        // radiusSm — see this block's own doc comment above.
-                        borderRadius: BorderRadius.circular(theme.radiusSm),
-                      ),
-                      child: _RotatedTitle(theme: theme, title: zone.title),
-                    ),
-            ),
-            if (isSelected && onResizeTopEnd != null)
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: ResizeHandle(
-                  theme: theme,
-                  // `barAlignment`/`outwardShiftFactor` wired here too —
-                  // this call had neither, so the default
-                  // `Alignment.center` made `ResizeHandle`'s own outward
-                  // push (keyed off `barAlignment.y.sign`) a no-op,
-                  // leaving the dot at this box's MIDDLE — the same
-                  // "still inside, not outside" gap fixed on
-                  // `ZoneContainerBlock`'s equivalent handles. No
-                  // clipping ancestor here (this `Stack` is
-                  // `Clip.none`, same as that container's), so it gets
-                  // the same full `1.5` push.
-                  barAlignment: Alignment.topCenter,
-                  onDragStart: onResizeTopStart,
-                  onDragUpdate: onResizeTopUpdate,
-                  onDragEnd: onResizeTopEnd,
-                ),
-              ),
-            if (isSelected && onResizeBottomEnd != null)
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: ResizeHandle(
-                  theme: theme,
-                  barAlignment: Alignment.bottomCenter,
-                  onDragStart: onResizeBottomStart,
-                  onDragUpdate: onResizeBottomUpdate,
-                  onDragEnd: onResizeBottomEnd,
-                ),
-              ),
-            if (isSelected && onExtendEnd != null)
-              for (final side in [Alignment.centerLeft, Alignment.centerRight])
-                Align(
-                  alignment: side,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onHorizontalDragStart: onExtendStart,
-                    onHorizontalDragUpdate: onExtendUpdate,
-                    onHorizontalDragEnd: onExtendEnd,
-                    child: SizedBox(
-                      width: theme.spacingMd,
-                      height: theme.spacingMinTapTarget,
-                      child: Align(
-                        alignment: side,
-                        child: Transform.translate(
-                          offset: Offset(
-                            side.x *
-                                (theme.spacingSm / 2 -
-                                    ResizeHandleDot.edgeInset(theme)),
-                            0,
-                          ),
-                          child: ResizeHandleDot(theme: theme),
+        // Block, ring and handles bounce together on selection.
+        child: AppLiquidPulse(
+          active: isSelected,
+          spec: LiquidPulseSpec.selectSurface,
+          suppressed:
+              extending ||
+              moveGhostOffset != null ||
+              liveStartMinutes != null ||
+              liveEndMinutes != null,
+          child: Stack(
+            fit: StackFit.expand,
+            clipBehavior: Clip.none,
+            children: [
+              if (moveGhostOffset case final ghostOffset?)
+                Positioned(
+                  key: ValueKey('zone-move-ghost-${zone.id}'),
+                  left: ghostOffset.dx,
+                  right: -ghostOffset.dx,
+                  top: ghostOffset.dy,
+                  bottom: -ghostOffset.dy,
+                  child: IgnorePointer(
+                    child: Opacity(
+                      key: ValueKey('zone-move-ghost-opacity-${zone.id}'),
+                      opacity: DragPreviewTokens.ghostOpacity,
+                      child: DecoratedBox(
+                        key: ValueKey('zone-move-ghost-shape-${zone.id}'),
+                        decoration: BoxDecoration(
+                          color: theme.colorSurfaceSecondary,
+                          borderRadius: BorderRadius.circular(theme.radiusMd),
                         ),
                       ),
                     ),
                   ),
                 ),
-            // Last in this Stack so they paint ABOVE the rail and the
-            // resize handles rather than under them — same ordering
-            // `PendingTaskPill` uses for its own pair. Each straddles its
-            // edge via a half-height `FractionalTranslation`, matching
-            // `ZoneBackgroundBlock._liveZoneEdgeLabels`.
-            //
-            // Pinned INSIDE the grid's own hour-axis column — corrected
-            // directly: "zones also blue time from to on the left." A
-            // bare `left: 0` here only reached this DAY COLUMN's own local
-            // x=0 (`horizontalInset` past its own left edge), which in the
-            // grid's shared, absolute coordinate space landed at
-            // `dayColumnLeft + horizontalInset` — day 1's block sat right
-            // at the axis's own right edge, later days far to its right,
-            // nowhere near the actual hour-tick text. `-(dayColumnLeft +
-            // horizontalInset) + theme.spacingSm` walks back to the grid's
-            // true x=0, then forward to `theme.spacingSm` — the SAME x the
-            // hour-axis labels themselves use (see `zone_grid_screen.dart`'s
-            // own `Positioned(left: theme.spacingSm, ...)` for the "HH:00"
-            // ticks). Matches the identical fix already applied to
-            // `ZoneBackgroundBlock`'s own pair on the spatial Timeline.
-            if (liveStartMinutes case final startMinutes?)
-              Positioned(
-                top: 0,
-                left:
-                    -(dayColumnLeft + horizontalInset + horizontalOffset) +
-                    theme.spacingSm,
-                child: FractionalTranslation(
-                  translation: const Offset(0, -0.5),
-                  child: TaskEdgeTimeLabel(
+              // Keep the recognizer mounted when the move ghost is inserted
+              // before it in this Stack during an active drag.
+              ZoneBodyGesture(
+                key: ValueKey('zone-body-gesture-${zone.id}'),
+                onTap: onTap,
+                onStart: onMoveStart,
+                onUpdate: onMoveUpdate,
+                onEnd: onMoveEnd,
+                child: isSelected
+                    ? SelectedPillBorder(
+                        theme: theme,
+                        contentRadius: BorderRadius.circular(theme.radiusMd),
+                        fillColor: theme.colorSurfaceSecondary,
+                        child: _RotatedTitle(theme: theme, title: zone.title),
+                      )
+                    : DecoratedBox(
+                        key: ValueKey('zone-grid-block-shape-${zone.id}'),
+                        decoration: BoxDecoration(
+                          color: theme.colorSurfaceSecondary,
+                          borderRadius: BorderRadius.circular(theme.radiusMd),
+                        ),
+                        child: _RotatedTitle(theme: theme, title: zone.title),
+                      ),
+              ),
+              if (isSelected && onResizeTopEnd != null)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: ResizeHandle(
                     theme: theme,
-                    time: _timeOfDayFromMinutes(startMinutes),
-                    showLine: false,
+                    // `barAlignment`/`outwardShiftFactor` wired here too —
+                    // this call had neither, so the default
+                    // `Alignment.center` made `ResizeHandle`'s own outward
+                    // push (keyed off `barAlignment.y.sign`) a no-op,
+                    // leaving the dot at this box's MIDDLE — the same
+                    // "still inside, not outside" gap fixed on
+                    // `ZoneContainerBlock`'s equivalent handles. No
+                    // clipping ancestor here (this `Stack` is
+                    // `Clip.none`, same as that container's), so it gets
+                    // the same full `1.5` push.
+                    barAlignment: Alignment.topCenter,
+                    onDragStart: onResizeTopStart,
+                    onDragUpdate: onResizeTopUpdate,
+                    onDragEnd: onResizeTopEnd,
                   ),
                 ),
-              ),
-            if (liveEndMinutes case final endMinutes?)
-              Positioned(
-                bottom: 0,
-                left:
-                    -(dayColumnLeft + horizontalInset + horizontalOffset) +
-                    theme.spacingSm,
-                child: FractionalTranslation(
-                  translation: const Offset(0, 0.5),
-                  child: TaskEdgeTimeLabel(
+              if (isSelected && onResizeBottomEnd != null)
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: ResizeHandle(
                     theme: theme,
-                    time: _timeOfDayFromMinutes(endMinutes),
-                    showLine: false,
+                    barAlignment: Alignment.bottomCenter,
+                    onDragStart: onResizeBottomStart,
+                    onDragUpdate: onResizeBottomUpdate,
+                    onDragEnd: onResizeBottomEnd,
                   ),
                 ),
-              ),
-          ],
+              if (isSelected && onExtendEnd != null)
+                for (final side in [
+                  Alignment.centerLeft,
+                  Alignment.centerRight,
+                ])
+                  Align(
+                    alignment: side,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onHorizontalDragDown: onExtendDown,
+                      onHorizontalDragStart: onExtendStart,
+                      onHorizontalDragUpdate: onExtendUpdate,
+                      onHorizontalDragEnd: onExtendEnd,
+                      child: SizedBox(
+                        width: theme.spacingMd,
+                        height: theme.spacingMinTapTarget,
+                        child: Align(
+                          alignment: side,
+                          child: Transform.translate(
+                            offset: Offset(
+                              side.x *
+                                  (theme.spacingSm / 2 -
+                                      ResizeHandleDot.edgeInset(theme)),
+                              0,
+                            ),
+                            child: ResizeHandleDot(theme: theme),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              // Last in this Stack so they paint ABOVE the rail and the
+              // resize handles rather than under them — same ordering
+              // `PendingTaskPill` uses for its own pair. Each straddles its
+              // edge via a half-height `FractionalTranslation`, matching
+              // `ZoneBackgroundBlock._liveZoneEdgeLabels`.
+              //
+              // Pinned INSIDE the grid's own hour-axis column — corrected
+              // directly: "zones also blue time from to on the left." A
+              // bare `left: 0` here only reached this DAY COLUMN's own local
+              // x=0 (`horizontalInset` past its own left edge), which in the
+              // grid's shared, absolute coordinate space landed at
+              // `dayColumnLeft + horizontalInset` — day 1's block sat right
+              // at the axis's own right edge, later days far to its right,
+              // nowhere near the actual hour-tick text. `-(dayColumnLeft +
+              // horizontalInset) + theme.spacingSm` walks back to the grid's
+              // true x=0, then forward to `theme.spacingSm` — the SAME x the
+              // hour-axis labels themselves use (see `zone_grid_screen.dart`'s
+              // own `Positioned(left: theme.spacingSm, ...)` for the "HH:00"
+              // ticks). Matches the identical fix already applied to
+              // `ZoneBackgroundBlock`'s own pair on the spatial Timeline.
+              if (liveStartMinutes case final startMinutes?)
+                Positioned(
+                  top: 0,
+                  left:
+                      -(dayColumnLeft + horizontalInset + horizontalOffset) +
+                      theme.spacingSm,
+                  child: FractionalTranslation(
+                    translation: const Offset(0, -0.5),
+                    child: TaskEdgeTimeLabel(
+                      theme: theme,
+                      time: _timeOfDayFromMinutes(startMinutes),
+                      showLine: false,
+                    ),
+                  ),
+                ),
+              if (liveEndMinutes case final endMinutes?)
+                Positioned(
+                  bottom: 0,
+                  left:
+                      -(dayColumnLeft + horizontalInset + horizontalOffset) +
+                      theme.spacingSm,
+                  child: FractionalTranslation(
+                    translation: const Offset(0, 0.5),
+                    child: TaskEdgeTimeLabel(
+                      theme: theme,
+                      time: _timeOfDayFromMinutes(endMinutes),
+                      showLine: false,
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );

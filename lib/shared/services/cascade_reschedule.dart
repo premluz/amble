@@ -1,4 +1,5 @@
 import '../models/task.dart';
+import 'overlap_runs.dart';
 
 /// One task's move as part of a cascade — paired with the task's id (not the
 /// [Task] object itself) so callers can look the live task up fresh before
@@ -48,6 +49,13 @@ class TaskMove {
 /// before 00:00 or ending after 24:00 of the day the dragged task started
 /// on, the whole cascade is invalid — returns null so the caller can snap
 /// the drag back as if it never happened. Nothing partially applies.
+///
+/// Existing overlaps are kept: tasks that already overlap one another
+/// (directly or through a chain) move as ONE rigid unit, every member
+/// shifted by the same offset, so "Push all" makes room for the drop
+/// without also lining up a stack the user had deliberately overlapped.
+/// Requested directly: "if tasks below are already overlappy, push all
+/// should retain that overlap."
 List<TaskMove>? computeCascadeMoves({
   required Task draggedTask,
   required DateTime newStart,
@@ -60,23 +68,74 @@ List<TaskMove>? computeCascadeMoves({
   final draggedEnd = newStart.add(draggedDuration);
   if (newStart.isBefore(dayStart) || draggedEnd.isAfter(dayEnd)) return null;
 
-  // Working slot table: taskId -> (start, end), seeded with every other
-  // same-day scheduled task at its current slot, plus the dragged task at
-  // its proposed new slot. The dragged task is looked up by id below so a
-  // cascade can never re-push it.
-  final slots = <String, (DateTime start, DateTime end)>{
-    for (final task in sameDayTasks) task.id: (task.scheduledAt!, _endOf(task)),
+  final others = <String, (DateTime, DateTime)>{
+    for (final task in sameDayTasks)
+      if (task.id != draggedTask.id) task.id: (task.scheduledAt!, _endOf(task)),
   };
-  slots[draggedTask.id] = (newStart, draggedEnd);
+  // One unit per overlap run, spanning its members; the dragged task is
+  // its own unit at its proposed slot.
+  final members = <String, List<String>>{};
+  final unitSlots = <String, (DateTime, DateTime)>{};
+  final runs = overlapRuns(others);
+  for (var i = 0; i < runs.length; i++) {
+    final run = runs[i];
+    final unitId = '$_unitPrefix$i';
+    members[unitId] = run;
+    unitSlots[unitId] = (
+      others[run.first]!.$1,
+      run.map((id) => others[id]!.$2).reduce((a, b) => a.isAfter(b) ? a : b),
+    );
+  }
+  unitSlots[draggedTask.id] = (newStart, draggedEnd);
 
-  final moves = <String, DateTime>{draggedTask.id: newStart};
-  final pending = <String>[draggedTask.id];
-  final visited = <String>{draggedTask.id};
+  final unitMoves = _cascadeUnits(
+    unitSlots,
+    moverId: draggedTask.id,
+    dayStart: dayStart,
+    dayEnd: dayEnd,
+  );
+  if (unitMoves == null) return null;
 
-  // Cap the chain at the number of participating tasks — a cascade can
-  // never legitimately need to push more tasks than exist that day, so
-  // exceeding this bound means a cycle, not a valid long chain.
-  final maxChainLength = sameDayTasks.length + 1;
+  final moves = <TaskMove>[];
+  for (final MapEntry(key: unitId, value: unitStart) in unitMoves.entries) {
+    final run = members[unitId];
+    if (run == null) {
+      moves.add(TaskMove(taskId: unitId, newScheduledAt: unitStart));
+      continue;
+    }
+    final offset = unitStart.difference(others[run.first]!.$1);
+    for (final id in run) {
+      moves.add(
+        TaskMove(taskId: id, newScheduledAt: others[id]!.$1.add(offset)),
+      );
+    }
+  }
+  return moves;
+}
+
+/// Prefix for overlap-unit ids; `#` never appears in a task's UUID.
+const _unitPrefix = 'run#';
+
+/// The cascade proper, over units (a lone task, or an overlap run treated
+/// as one block spanning its members). Returns each moved unit's new start,
+/// the mover first, or null when the day cannot hold the result.
+Map<String, DateTime>? _cascadeUnits(
+  Map<String, (DateTime, DateTime)> unitSlots, {
+  required String moverId,
+  required DateTime dayStart,
+  required DateTime dayEnd,
+}) {
+  // Working slot table, mutated as units are placed. The mover is visited
+  // from the start so a cascade can never re-push it.
+  final slots = Map.of(unitSlots);
+  final moves = <String, DateTime>{moverId: slots[moverId]!.$1};
+  final pending = <String>[moverId];
+  final visited = <String>{moverId};
+
+  // Cap the chain at the number of units — a cascade can never
+  // legitimately push more units than exist that day, so exceeding this
+  // bound means a cycle, not a valid long chain.
+  final maxChainLength = slots.length;
 
   while (pending.isNotEmpty) {
     if (visited.length > maxChainLength) return null;
@@ -84,22 +143,22 @@ List<TaskMove>? computeCascadeMoves({
     final moverId = pending.removeAt(0);
     final (moverStart, moverEnd) = slots[moverId]!;
 
-    // Every task overlapping `moverId`'s slot must be pushed — but when
+    // Every unit overlapping `moverId`'s slot must be pushed — but when
     // MULTIPLE tasks overlap the same mover simultaneously, they can't
     // each be computed independently from the mover's edges: a real bug
     // (confirmed by reproduction) did exactly that and let 3 same-
     // direction pushes all land on the identical slot, since none of them
     // was ever checked against the others, only against the shared mover.
-    // Fixed by first computing which DIRECTION each conflicting task
+    // Fixed by first computing which DIRECTION each conflicting unit
     // pushes (still decided by its own distance to the mover's edges —
     // that part of the rule is unchanged), then chaining same-direction
     // pushes against one another in position order, so each one clears
     // the one before it rather than colliding with it.
-    final earlierPushes = <Task>[];
-    final laterPushes = <Task>[];
-    for (final other in sameDayTasks) {
-      if (visited.contains(other.id)) continue;
-      final (otherStart, otherEnd) = slots[other.id]!;
+    final earlierPushes = <String>[];
+    final laterPushes = <String>[];
+    for (final other in slots.keys) {
+      if (visited.contains(other)) continue;
+      final (otherStart, otherEnd) = slots[other]!;
       // Half-open interval overlap, matching task_overlap_layout.dart /
       // overlap_checker.dart's convention: back-to-back is not an overlap.
       final overlaps =
@@ -116,14 +175,14 @@ List<TaskMove>? computeCascadeMoves({
     }
 
     // Earlier-pushed tasks chain backward from the mover's new start,
-    // nearest-original-end first — the task whose end was closest to the
+    // nearest-original-end first — the unit whose end was closest to the
     // mover lands immediately before it, and each one further out lands
     // immediately before THAT one, so the whole group shifts earlier as a
     // contiguous, non-overlapping block.
-    earlierPushes.sort((a, b) => slots[b.id]!.$2.compareTo(slots[a.id]!.$2));
+    earlierPushes.sort((a, b) => slots[b]!.$2.compareTo(slots[a]!.$2));
     var earlierEdge = moverStart;
-    for (final task in earlierPushes) {
-      // Preferred direction first (earlier, per this task's own proximity
+    for (final unit in earlierPushes) {
+      // Preferred direction first (earlier, per this unit's own proximity
       // to the mover's edges), then the OPPOSITE direction as a fallback.
       // Requested directly: a drop should never be rejected just because
       // the preferred side ran out of day — "can't think of case that
@@ -135,9 +194,9 @@ List<TaskMove>? computeCascadeMoves({
           _findFreeSlot(
             slots,
             visited,
-            taskId: task.id,
+            taskId: unit,
             edge: earlierEdge,
-            duration: slots[task.id]!.$2.difference(slots[task.id]!.$1),
+            duration: slots[unit]!.$2.difference(slots[unit]!.$1),
             searchEarlier: true,
             dayStart: dayStart,
             dayEnd: dayEnd,
@@ -145,9 +204,9 @@ List<TaskMove>? computeCascadeMoves({
           _findFreeSlot(
             slots,
             visited,
-            taskId: task.id,
+            taskId: unit,
             edge: moverEnd,
-            duration: slots[task.id]!.$2.difference(slots[task.id]!.$1),
+            duration: slots[unit]!.$2.difference(slots[unit]!.$1),
             searchEarlier: false,
             dayStart: dayStart,
             dayEnd: dayEnd,
@@ -157,26 +216,26 @@ List<TaskMove>? computeCascadeMoves({
       // full 24 hours, which a 2h-per-task cap makes rare.
       if (placed == null) return null;
 
-      slots[task.id] = placed;
-      moves[task.id] = placed.$1;
-      visited.add(task.id);
-      pending.add(task.id);
+      slots[unit] = placed;
+      moves[unit] = placed.$1;
+      visited.add(unit);
+      pending.add(unit);
       earlierEdge = placed.$1;
     }
 
     // Same idea forward: later-pushed tasks chain from the mover's new
     // end, nearest-original-start first.
-    laterPushes.sort((a, b) => slots[a.id]!.$1.compareTo(slots[b.id]!.$1));
+    laterPushes.sort((a, b) => slots[a]!.$1.compareTo(slots[b]!.$1));
     var laterEdge = moverEnd;
-    for (final task in laterPushes) {
+    for (final unit in laterPushes) {
       // Mirror of the earlier-direction block above, same fallback.
       final placed =
           _findFreeSlot(
             slots,
             visited,
-            taskId: task.id,
+            taskId: unit,
             edge: laterEdge,
-            duration: slots[task.id]!.$2.difference(slots[task.id]!.$1),
+            duration: slots[unit]!.$2.difference(slots[unit]!.$1),
             searchEarlier: false,
             dayStart: dayStart,
             dayEnd: dayEnd,
@@ -184,29 +243,26 @@ List<TaskMove>? computeCascadeMoves({
           _findFreeSlot(
             slots,
             visited,
-            taskId: task.id,
+            taskId: unit,
             edge: moverStart,
-            duration: slots[task.id]!.$2.difference(slots[task.id]!.$1),
+            duration: slots[unit]!.$2.difference(slots[unit]!.$1),
             searchEarlier: true,
             dayStart: dayStart,
             dayEnd: dayEnd,
           );
       if (placed == null) return null;
 
-      slots[task.id] = placed;
-      moves[task.id] = placed.$1;
-      visited.add(task.id);
-      pending.add(task.id);
+      slots[unit] = placed;
+      moves[unit] = placed.$1;
+      visited.add(unit);
+      pending.add(unit);
       laterEdge = placed.$2;
     }
 
     if (visited.length > maxChainLength) return null;
   }
 
-  return [
-    for (final entry in moves.entries)
-      TaskMove(taskId: entry.key, newScheduledAt: entry.value),
-  ];
+  return moves;
 }
 
 DateTime _endOf(Task task) =>

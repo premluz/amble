@@ -65,9 +65,10 @@ class AppSheet {
       // "top padding should be in header" — a sheet whose content starts
       // with an [AppSheetHeader] already gets its own top spacing from
       // that header's own fixed-height row, so this padding's old
-      // `EdgeInsets.all` doubled it. Left/right/bottom are unaffected
-      // (bottom isn't provided anywhere else — `AppSheetRoute` only
-      // adds bottom inset for an actual on-screen keyboard, and
+      // `EdgeInsets.all` doubled it. Horizontal padding stays `spacingLg`;
+      // bottom clearance uses the compact shared `spacingBottomClearance`
+      // after the route's separate device safe-area inset. `AppSheetRoute`
+      // only adds additional clearance for an actual on-screen keyboard, and
       // `SafeArea(top: false)` guards the bottom edge, not top). Every
       // caller whose content does NOT start with [AppSheetHeader] (a plain
       // title `Text`, an `ActionRow`/[AppContextMenu] column, etc.) now
@@ -79,7 +80,7 @@ class AppSheet {
               padding: EdgeInsets.only(
                 left: theme.spacingLg,
                 right: theme.spacingLg,
-                bottom: theme.spacingLg,
+                bottom: theme.spacingBottomClearance,
               ),
               child: builder(sheetContext),
             )

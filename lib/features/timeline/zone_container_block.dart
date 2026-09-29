@@ -2,9 +2,16 @@ import '../../core/widgets/what_matters_motion.dart';
 
 import 'package:flutter/material.dart';
 
+import '../../core/tokens/component_tokens.dart';
+import '../../core/widgets/app_depth.dart';
+import '../../core/widgets/app_follow_through.dart';
+import 'day_task_motion.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_swipe_actions.dart';
-import '../../core/widgets/app_bubble_burst.dart';
+import '../../core/tokens/liquid_pulse_spec.dart';
+import '../../core/tokens/task_state_tokens.dart';
+import '../../core/widgets/app_completion_feedback.dart';
+import '../../core/widgets/app_liquid_pulse.dart';
 import '../../shared/models/category.dart';
 import '../../shared/models/external_calendar_event.dart';
 import '../../shared/models/task.dart';
@@ -12,6 +19,7 @@ import '../../shared/models/task_status.dart';
 import '../../shared/models/zone.dart';
 import '../task_detail/category_visual.dart';
 import 'completion_checkbox.dart';
+import 'task_state_style.dart';
 import 'duration_label.dart';
 import 'external_event_block.dart' show showExternalCalendarEventInfo;
 import 'external_event_capsule_block.dart' show DashedPillRail;
@@ -219,10 +227,11 @@ class ZoneRowTimeLabel extends StatelessWidget {
               alignment: Alignment.centerLeft,
               child: Text(
                 text,
-                // `textTaskEdgeTime` keeps task start/time text at the same
-                // compact scale as spatial and Edit edge labels. The
-                // hour-axis labels themselves remain `textCaptionMono`.
-                style: theme.textTaskEdgeTime.copyWith(
+                // `textCaptionMono`, the timeline's own hour-label style
+                // (`TaskBoundaryMarkers`): this label is the list view's
+                // hour, so it matches that size, not the smaller task-time
+                // rung.
+                style: theme.textCaptionMono.copyWith(
                   color: theme.colorTextSecondary,
                 ),
                 maxLines: 1,
@@ -521,7 +530,7 @@ class ZoneContainerBlock extends StatelessWidget {
           // meaningful feedback, not decorative chrome), so it's the ONE
           // thing this decoration always keeps.
           decoration: BoxDecoration(
-            color: flatStyle ? null : theme.colorSurfaceSecondary,
+            color: flatStyle ? null : ZoneSurfaceTokens.fill(theme),
             borderRadius: BorderRadius.circular(theme.radiusXl),
             // Only while this zone is the live drop target — the resting
             // state stays borderless (fill only), matching the Task view.
@@ -621,34 +630,42 @@ class ZoneContainerBlock extends StatelessWidget {
                       hidden: whatMattersEnabled && !row.isImportant,
                       child: Opacity(
                         opacity: row.id == draggingTaskId ? 0.0 : 1.0,
-                        child: _ZoneTaskRow(
-                          theme: theme,
-                          task: row,
-                          category: row.categoryId == null
-                              ? null
-                              : categoriesById[row.categoryId],
-                          onTap: onTaskTap == null
-                              ? null
-                              : () => onTaskTap!(row),
-                          onToggleComplete: onToggleComplete == null
-                              ? null
-                              : () => onToggleComplete!(row),
-                          onAddNote: onAddNote == null
-                              ? null
-                              : () => onAddNote!(row),
-                          stackAncestorKey: stackAncestorKey,
-                          onDragStart: onRowDragStart,
-                          onDragUpdate: onRowDragUpdate == null
-                              ? null
-                              : (details) => onRowDragUpdate!(row, details),
-                          onDragEnd: onRowDragEnd == null
-                              ? null
-                              : (_) => onRowDragEnd!(row),
-                          durationVisible: durationVisible,
-                          timeRangeVisible: timeRangeVisible,
-                          startTimeOnlyVisible: startTimeOnlyVisible,
-                          showCompletionCheckbox: showCompletionCheckbox,
-                          flatStyle: flatStyle,
+                        // Emerges / recedes with the day (DayTaskMotion)
+                        // and trails the page as it slides in or out.
+                        child: DayTaskPresence(
+                          taskId: row.id,
+                          opensSpace: true,
+                          child: AppFollowThrough(
+                            child: _ZoneTaskRow(
+                              theme: theme,
+                              task: row,
+                              category: row.categoryId == null
+                                  ? null
+                                  : categoriesById[row.categoryId],
+                              onTap: onTaskTap == null
+                                  ? null
+                                  : () => onTaskTap!(row),
+                              onToggleComplete: onToggleComplete == null
+                                  ? null
+                                  : () => onToggleComplete!(row),
+                              onAddNote: onAddNote == null
+                                  ? null
+                                  : () => onAddNote!(row),
+                              stackAncestorKey: stackAncestorKey,
+                              onDragStart: onRowDragStart,
+                              onDragUpdate: onRowDragUpdate == null
+                                  ? null
+                                  : (details) => onRowDragUpdate!(row, details),
+                              onDragEnd: onRowDragEnd == null
+                                  ? null
+                                  : (_) => onRowDragEnd!(row),
+                              durationVisible: durationVisible,
+                              timeRangeVisible: timeRangeVisible,
+                              startTimeOnlyVisible: startTimeOnlyVisible,
+                              showCompletionCheckbox: showCompletionCheckbox,
+                              flatStyle: flatStyle,
+                            ),
+                          ),
                         ),
                       ),
                     )
@@ -791,9 +808,7 @@ class _Header extends StatelessWidget {
             // with. `textZoneName` is already regular-weight/subtler than
             // a task title by design, matching this header's own
             // "container label, not a task" intent.
-            style: theme.textZoneName.copyWith(
-              color: theme.colorTextTertiary,
-            ),
+            style: theme.textZoneName.copyWith(color: theme.colorTextTertiary),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -951,6 +966,17 @@ class _ZoneTaskRow extends StatelessWidget {
     // completing a task in Zone view changed the checkbox but nothing
     // else. Matches `TaskCapsuleBlock`'s own `isCompleted` treatment.
     final isCompleted = task.status == TaskStatus.completed;
+    final resolvedLabel = category;
+    final state = TaskStateStyle.resolve(
+      theme: theme,
+      task: task,
+      labelColor: resolvedLabel == null
+          ? TaskStateTokens.unlabeledFill(theme)
+          : resolveCategoryVisual(
+              theme: theme,
+              category: resolvedLabel,
+            ).iconColor,
+    );
 
     // Matches TaskCapsuleBlock's own "start - end (duration)" format
     // exactly — requested directly, replacing this row's previous
@@ -1018,10 +1044,15 @@ class _ZoneTaskRow extends StatelessWidget {
               semanticLabel: isCompleted ? 'Mark undone' : 'Mark done',
               onActivate: () {
                 if (!isCompleted) {
-                  AppBubbleBurst.show(
+                  AppCompletionFeedback.play(
                     context: context,
-                    origin: Offset(badgeSize / 2, (zoneContainerRowHeight - badgeSize) / 2),
-                    sourceWidth: badgeSize,
+                    pill: Rect.fromLTWH(
+                      0,
+                      (zoneContainerRowHeight - badgeSize) / 2,
+                      badgeSize,
+                      badgeSize,
+                    ),
+                    radius: theme.radiusPill,
                   );
                 }
                 onToggleComplete!();
@@ -1035,7 +1066,7 @@ class _ZoneTaskRow extends StatelessWidget {
           // row always had, so this never affects normal style at all.
           decoration: flatStyle
               ? BoxDecoration(
-                  color: theme.colorSurfaceSecondary,
+                  color: ZoneSurfaceTokens.fill(theme),
                   borderRadius: BorderRadius.circular(theme.radiusXl),
                 )
               : const BoxDecoration(),
@@ -1176,44 +1207,69 @@ class _ZoneTaskRow extends StatelessWidget {
                         // doesn't retain a field's null-check promotion
                         // across the closure below.
                         final resolvedCategory = category;
-                        final badgeColor = resolvedCategory == null
-                            ? theme.colorTextSecondary
-                            : resolveCategoryVisual(
-                                theme: theme,
-                                category: resolvedCategory,
-                              ).iconColor;
-                        return Container(
-                          width: badgeSize,
-                          height: badgeSize,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: badgeColor,
-                            // theme.radiusPill, not BoxShape.circle —
-                            // requested directly ("make actually same shape
-                            // as timeline, not circle but rounded square").
-                            // Matches TaskCapsuleBlock's own pill rail
-                            // exactly, and tracks the SAME "Pill shape"
-                            // setting it does — see radiusPill's own doc
-                            // comment on AmbleTheme.
-                            borderRadius: BorderRadius.circular(
-                              theme.radiusPill,
+                        final badgeColor = state.fill;
+                        final star = TaskImportantStar(
+                          theme: theme,
+                          pillWidth: badgeSize,
+                          faded: state.isDone,
+                        );
+                        // The pill emerges from depth with its task (a no-op
+                        // outside a DayTaskPresence).
+                        return AppDepthShape(
+                          child: AppLiquidPulse(
+                            active: isCompleted,
+                            spec: LiquidPulseSpec.complete,
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Container(
+                                  width: badgeSize,
+                                  height: badgeSize,
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    color: badgeColor,
+                                    // theme.radiusPill, not BoxShape.circle —
+                                    // requested directly ("make actually same shape
+                                    // as timeline, not circle but rounded square").
+                                    // Matches TaskCapsuleBlock's own pill rail
+                                    // exactly, and tracks the SAME "Pill shape"
+                                    // setting it does — see radiusPill's own doc
+                                    // comment on AmbleTheme.
+                                    borderRadius: BorderRadius.circular(
+                                      theme.radiusPill,
+                                    ),
+                                  ),
+                                  // Tabler icon via CategoryGlyph — glyphColorOn
+                                  // rather than this badge's own `iconColor`
+                                  // directly, matching TaskCapsuleBlock's identical
+                                  // reasoning: a CUSTOM category's iconColor is the
+                                  // same swatch as this badge's own fill.
+                                  // No glyph for "no category" — see
+                                  // CategoryBadge's own 2026-09-23 comment on the
+                                  // same change.
+                                  child: resolvedCategory == null
+                                      ? null
+                                      : CategoryGlyph(
+                                          category: resolvedCategory,
+                                          color: glyphColorOn(badgeColor)
+                                              .withValues(
+                                                alpha: state.isDone
+                                                    ? TaskStateTokens
+                                                          .doneGlyphAlpha
+                                                    : 1,
+                                              ),
+                                          size: badgeSize * 0.55,
+                                        ),
+                                ),
+                                if (state.showStar)
+                                  Positioned(
+                                    left: star.cornerOffset.dx,
+                                    top: star.cornerOffset.dy,
+                                    child: star,
+                                  ),
+                              ],
                             ),
                           ),
-                          // Tabler icon via CategoryGlyph — glyphColorOn
-                          // rather than this badge's own `iconColor`
-                          // directly, matching TaskCapsuleBlock's identical
-                          // reasoning: a CUSTOM category's iconColor is the
-                          // same swatch as this badge's own fill.
-                          // No glyph for "no category" — see
-                          // CategoryBadge's own 2026-09-23 comment on the
-                          // same change.
-                          child: resolvedCategory == null
-                              ? null
-                              : CategoryGlyph(
-                                  category: resolvedCategory,
-                                  color: glyphColorOn(badgeColor),
-                                  size: badgeSize * 0.55,
-                                ),
                         );
                       },
                     ),
@@ -1236,28 +1292,25 @@ class _ZoneTaskRow extends StatelessWidget {
                 // the title to ~7px, so task names disappeared entirely
                 // (reported directly: "Cant see task names on zone view").
                 Expanded(
-                  child: Text(
-                    task.title,
-                    // **2026-09-20 — back to textTaskTitle, not
-                    // textTaskTitleZone.** Reported directly against a
-                    // screenshot: an in-zone task's title read too large
-                    // next to an unzoned task's own title just below it
-                    // (which uses `textTaskTitle` via `TaskCapsuleBlock`)
-                    // — confirmed the outside-zone size is the one to
-                    // keep, reversing the earlier "one rung up" decision
-                    // `textTaskTitleZone` itself documents.
-                    style: theme.textTaskTitle.copyWith(
-                      color: isCompleted
-                          ? theme.colorTextSecondary
-                          : theme.colorTextPrimary,
-                      fontWeight: FontWeight.w700,
-                      decoration: isCompleted
-                          ? TextDecoration.lineThrough
-                          : TextDecoration.none,
-                      decorationColor: theme.colorTextSecondary,
+                  child: AppDepthFade(
+                    child: Text(
+                      task.title,
+                      // **2026-09-20 — back to textTaskTitle, not
+                      // textTaskTitleZone.** Reported directly against a
+                      // screenshot: an in-zone task's title read too large
+                      // next to an unzoned task's own title just below it
+                      // (which uses `textTaskTitle` via `TaskCapsuleBlock`)
+                      // — confirmed the outside-zone size is the one to
+                      // keep, reversing the earlier "one rung up" decision
+                      // `textTaskTitleZone` itself documents.
+                      style: state.title(
+                        theme.textTaskTitle.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 // Dropped from the Row when hidden

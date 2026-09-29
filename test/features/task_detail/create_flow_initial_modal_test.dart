@@ -35,10 +35,14 @@ Finder _nameField() => find.descendant(
   matching: find.byType(TextField),
 );
 
-class _NoopPreventOverlappingTasksSetting
+class _ConfiguredPreventOverlappingTasksSetting
     extends PreventOverlappingTasksSetting {
+  _ConfiguredPreventOverlappingTasksSetting(this.enabled);
+
+  final bool enabled;
+
   @override
-  bool build() => false;
+  bool build() => enabled;
 }
 
 Future<GlobalKey<NavigatorState>> _pumpHost(
@@ -47,6 +51,7 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
   required Box<Category> categoryBox,
   required Box<TrackedBehavior> trackedBehaviorBox,
   required Box<TaskTemplate> templateBox,
+  bool preventOverlappingTasks = false,
 }) async {
   tester.view.physicalSize = const Size(390, 844);
   tester.view.devicePixelRatio = 1.0;
@@ -74,7 +79,9 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
           FakeNotificationService(),
         ),
         preventOverlappingTasksSettingProvider.overrideWith(
-          () => _NoopPreventOverlappingTasksSetting(),
+          () => _ConfiguredPreventOverlappingTasksSetting(
+            preventOverlappingTasks,
+          ),
         ),
       ],
       child: MaterialApp(
@@ -141,7 +148,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Create task'), findsOneWidget);
+      expect(find.text('New thing'), findsOneWidget);
       expect(_nameField(), findsOneWidget);
       expect(find.text('Label'), findsNothing);
       expect(find.text('Duration'), findsNothing);
@@ -209,6 +216,65 @@ void main() {
   );
 
   testWidgets(
+    'a new task can be scheduled into an occupied time without an overlap error',
+    (tester) async {
+      final scheduledAt = DateTime(2026, 8, 20, 9);
+      final existing = Task.create(
+        title: 'Existing task',
+        scheduledAt: scheduledAt,
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.general,
+      );
+      await tester.runAsync(() => box.put(existing.id, existing));
+
+      final navigatorKey = await _pumpHost(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+        trackedBehaviorBox: trackedBehaviorBox,
+        templateBox: templateBox,
+        preventOverlappingTasks: true,
+      );
+      showTaskDetailSheet(
+        navigatorKey.currentContext!,
+        initialScheduledAt: scheduledAt,
+        initialTimeOfDay: const TimeOfDay(hour: 9, minute: 0),
+        initialDurationMinutes: 30,
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(_nameField(), 'Overlapping task');
+      await tester.pumpAndSettle();
+      final doneButton = find.text('Done');
+      await tester.ensureVisible(doneButton);
+      await tester.pumpAndSettle();
+      await tester.tap(doneButton);
+      await tester.pumpAndSettle();
+
+      await tester.runAsync(() async {
+        await tester.tap(find.widgetWithText(ElevatedButton, 'Schedule'));
+        await tester.pump();
+        for (var i = 0; i < 20; i++) {
+          if (box.values.length > 1) break;
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          await tester.pump();
+        }
+        await Future<void>.delayed(Duration.zero);
+      });
+      await tester.pumpAndSettle();
+
+      expect(box.values, hasLength(2));
+      final created = box.values.singleWhere(
+        (task) => task.title == 'Overlapping task',
+      );
+      expect(created.scheduledAt, scheduledAt);
+      expect(created.durationMinutes, 30);
+      expect(find.textContaining('overlaps another task'), findsNothing);
+      expect(find.text('New thing'), findsNothing);
+    },
+  );
+
+  testWidgets(
     'tapping Done on the Name-only stage with NO name typed abandons the '
     'whole create flow',
     (tester) async {
@@ -224,7 +290,7 @@ void main() {
         initialScheduledAt: DateTime(2026, 8, 20, 9),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Create task'), findsOneWidget);
+      expect(find.text('New thing'), findsOneWidget);
 
       // Done tapped WITHOUT typing anything into the name field.
       final doneButton = find.text('Done');
@@ -233,10 +299,10 @@ void main() {
       await tester.tap(doneButton);
       await tester.pumpAndSettle();
 
-      // The whole "Create task" screen is gone, and nothing was saved. No
+      // The whole "New thing" screen is gone, and nothing was saved. No
       // confirmation dialog either: an empty title means there is
       // genuinely nothing to confirm discarding.
-      expect(find.text('Create task'), findsNothing);
+      expect(find.text('New thing'), findsNothing);
       expect(find.text('Discard this task?'), findsNothing);
       expect(box.values, isEmpty);
     },
@@ -262,7 +328,7 @@ void main() {
       await tester.tap(find.byIcon(Icons.close_rounded));
       await tester.pumpAndSettle();
 
-      expect(find.text('Create task'), findsNothing);
+      expect(find.text('New thing'), findsNothing);
       expect(find.text('Discard this task?'), findsNothing);
       expect(box.values, isEmpty);
     },

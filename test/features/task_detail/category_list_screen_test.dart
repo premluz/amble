@@ -53,9 +53,7 @@ void main() {
           categoryRepositoryProvider.overrideWithValue(
             HiveCategoryRepository(categoryBox),
           ),
-          taskRepositoryProvider.overrideWithValue(
-            HiveTaskRepository(taskBox),
-          ),
+          taskRepositoryProvider.overrideWithValue(HiveTaskRepository(taskBox)),
         ],
         child: MaterialApp(
           theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
@@ -72,35 +70,48 @@ void main() {
     expect(find.byIcon(Icons.chevron_right_rounded), findsNothing);
   });
 
-  testWidgets(
-    'swiping a user-created tag left past the threshold removes it',
-    (tester) async {
-      final custom = Category.create(name: 'Errands', colorToken: 9, emoji: '🛒');
-      await tester.runAsync(() => categoryBox.put(custom.id, custom));
-      await pumpList(tester);
-      expect(find.text('Errands'), findsOneWidget);
+  testWidgets('swiping a user-created tag left past the threshold removes it', (
+    tester,
+  ) async {
+    final custom = Category.create(name: 'Errands', colorToken: 9, emoji: '🛒');
+    await tester.runAsync(() => categoryBox.put(custom.id, custom));
+    await pumpList(tester);
+    expect(find.text('Errands'), findsOneWidget);
 
-      final gesture = await tester.startGesture(
-        tester.getCenter(find.text('Errands')),
-      );
-      for (var i = 0; i < 8; i++) {
-        await gesture.moveBy(const Offset(-40, 0));
-        await tester.pump();
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('Errands')),
+    );
+    for (var i = 0; i < 8; i++) {
+      await gesture.moveBy(const Offset(-40, 0));
+      await tester.pump();
+    }
+    // Same real-Hive-write-vs-fake-async-zone gotcha fixed in
+    // template_list_view_test.dart: `deleteCategory` awaits a real box
+    // write (and a task-reassignment loop) before returning, so the
+    // release must run inside `runAsync` or `pumpAndSettle` never
+    // observes it completing.
+    //
+    // Waits on the delete actually landing in the provider (the state the
+    // list renders), not one event-loop turn — the single turn failed
+    // under full-suite load (see docs/ERROR_LOG.md).
+    final container = ProviderScope.containerOf(
+      tester.element(find.text('Errands')),
+    );
+    await tester.runAsync(() async {
+      await gesture.up();
+      final deadline = DateTime.now().add(const Duration(seconds: 5));
+      while (container
+              .read(categoryListProvider)
+              .any((c) => c.id == custom.id) &&
+          DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
       }
-      // Same real-Hive-write-vs-fake-async-zone gotcha fixed in
-      // template_list_view_test.dart: `deleteCategory` awaits a real box
-      // write (and a task-reassignment loop) before returning, so the
-      // release must run inside `runAsync` or `pumpAndSettle` never
-      // observes it completing.
-      await tester.runAsync(() async {
-        await gesture.up();
-        await Future<void>.delayed(Duration.zero);
-      });
-      await tester.pumpAndSettle();
+    });
+    expect(categoryBox.containsKey(custom.id), isFalse);
+    await tester.pumpAndSettle();
 
-      expect(find.text('Errands'), findsNothing);
-    },
-  );
+    expect(find.text('Errands'), findsNothing);
+  });
 
   testWidgets('a built-in tag cannot be swiped at all', (tester) async {
     await pumpList(tester);

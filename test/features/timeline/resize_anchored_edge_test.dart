@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:amble/core/clock_provider.dart';
 import 'package:hive_ce/hive_ce.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/hive_registrar.g.dart';
@@ -29,6 +30,11 @@ import 'package:amble/shared/repositories/hive_zone_repository.dart';
 
 import '../../support/fake_notification_service.dart';
 import '../../support/seeded_category_box.dart';
+
+final _noon = () {
+  final now = DateTime.now();
+  return DateTime(now.year, now.month, now.day, 12);
+}();
 
 /// The anchored edge must NOT move, and the dragged edge must follow the
 /// finger continuously — reported directly after a first fix only removed
@@ -93,6 +99,8 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          // Pinned to midday: late-evening runs pushed resizes past midnight.
+          nowProvider.overrideWithValue(() => _noon),
           taskRepositoryProvider.overrideWithValue(HiveTaskRepository(taskBox)),
           categoryRepositoryProvider.overrideWithValue(
             HiveCategoryRepository(categoryBox),
@@ -124,7 +132,7 @@ void main() {
 
   // Anchored off `now`, like every other fixture in this directory.
   Task makeTask(String title, {int minutes = 30}) {
-    final now = DateTime.now();
+    final now = _noon;
     final minutesSinceMidnight = (now.hour * 60 + now.minute).clamp(
       60,
       24 * 60 - 1 - minutes,

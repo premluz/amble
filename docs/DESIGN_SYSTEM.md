@@ -33,7 +33,7 @@ from them; nothing re-states them, and nothing invents a third.
 
 | Token | Value | What it measures |
 | --- | --- | --- |
-| `theme.spacingScreenPadding` | 16 | Screen edge → page content. The top nav's "Day", the settings gear opposite it, page titles, list rows, sheet bodies, **and the Timeline's hour labels in both the spatial and non-spatial views.** |
+| `theme.spacingScreenPadding` | 16 | Screen edge → page content. The top nav's "Days", the settings gear opposite it, page titles, list rows, sheet bodies, **and the Timeline's hour labels in both the spatial and non-spatial views.** |
 | `theme.spacingHourGutter` | 90 | Screen edge → Timeline *content* (a task pill, a zone card). The hour labels occupy the space between this and `spacingScreenPadding`. |
 
 **The rule:** any horizontal distance from a screen edge is one of these
@@ -90,6 +90,66 @@ directly: *"edit zone view has its own more dense space, which is fine,
 keep it as is."* It is a distinct authoring surface, not a page view of
 the day, and its axis width also drives tap-target maths for
 drag-to-paint. Do not fold it into the tokens above.
+
+---
+
+## Compact top navigation and Timeline date control
+
+The persistent Days/Things/Habits navigation and Timeline date selector use
+`theme.textBody` for their visible labels. Settings and the date chevron use
+`theme.spacingMd` for their icon size. Keep the navigation row and Settings
+tap target at `AppButtonSize.md` (40px); compact the visible content without
+shrinking the interaction area. The expanded week strip keeps its existing
+cell padding and hit-area sizing.
+
+---
+
+## Vertical safe-area clearance — compact top and bottom edges
+
+The phone's status and gesture regions belong to the platform safe area.
+App padding is the small visual gap *inside* those safe boundaries, not a
+second safe-area inset.
+
+- The main shell starts its header directly below `SafeArea`'s top edge;
+  do not add another app-level top spacer. Keep the system status inset.
+- Floating toolbars, create buttons, sheet footers, and bottom-padded sheet
+  bodies use `theme.spacingBottomClearance`, which aliases `spacingSm`
+  (8px). This is the same gap as the quick-create sheet's top header inset.
+- Apply the bottom safe area once, then add `spacingBottomClearance` once.
+  The phone's rounded bottom and home-indicator region provide the larger
+  outer breathing room; extra `spacingMd`/`spacingLg` above them needlessly
+  lifts controls and wastes usable screen space.
+- Full-screen sheet surfaces may keep their own top-corner inset where it
+  reveals the rounded sheet edge. That local surface geometry is separate
+  from the main shell's removed top spacer.
+
+**Current call sites**: `AppBottomDock`, local task/zone/Tracked docks,
+`AppFloatingCreateButton`, Inbox's adjacent microphone button, `AppSheet`,
+`StepScaffold`'s primary footer, and the in-tree quick-capture sheet.
+
+**Never**: combine a full device bottom inset with this token manually,
+or stack multiple component-owned safe areas around one control. If a new
+bottom control sits too high, adjust the shared clearance rule instead of
+introducing a per-screen bottom value.
+
+`test/core/widgets/bottom_clearance_system_test.dart` pins the token to
+`spacingSm` in both themes and checks the shared sheet/create/footer
+components.
+
+## Spatial day scroll clearance
+
+The 24-hour spatial Timeline and weekly spatial Zones grid use the shared
+`TimelineScrollTokens` content insets: 60 logical px above the first tick and
+200 logical px after the final tick. These are scrollable-content clearances,
+not safe-area or toolbar padding. They let both midnight labels scroll fully
+into view above fixed chrome and leave enough lower-day space to start a task
+without the bottom dock covering the 00:00 time position. Keep the insets
+shared across both spatial surfaces; preserve their own existing page/header
+layout and do not apply them to the non-spatial zone list.
+
+`_DayTimelineState`'s center/report and scroll-to-item calculations include
+the top inset, so remembered times and newly created tasks remain aligned with
+the rendered time axis as clearance changes.
 
 ---
 
@@ -197,7 +257,7 @@ to extend this widget, not to hand-roll a look-alike.
 
 ## Zones — saved blocks and ghost placeholders
 
-Saved weekly zones use `ZoneGridBlock`: `colorSurfaceSecondary`, `radiusSm`,
+Saved weekly zones use `ZoneGridBlock`: `colorSurfaceSecondary`, `radiusMd`,
 and the compact `textZoneName` label. Body drags move the current selection
 in both time and weekday; horizontal body movement snaps to whole weekday
 lanes, while vertical movement retains its 5-minute time snap. Top/bottom
@@ -217,7 +277,10 @@ The new-zone and existing-zone extension previews share `_marqueeBody` and
 - One `SelectedPillBorder` encloses the span: accent ring, theme-surface
   separation, `radiusMd`, and accent fill at 9% alpha.
 - During side extension the moving boundary follows pointer pixels; weekday
-  ghost membership and the saved placements snap to columns.
+  ghost membership and saved placements use the same accumulated horizontal
+  drag delta as moving a pending marquee. The delta is rounded by lane width,
+  so an adjacent day appears once the pointer moves at least half a lane from
+  its original touch position, independent of the handle's inset.
 - Each covered weekday has a non-interactive ghost: `colorSurfaceSecondary`
   at `DragPreviewTokens.ghostOpacity` overall opacity, `radiusMd`, a centered
   rotated `textCaption` title in `colorTextSecondary`, and ellipsis overflow.
@@ -233,6 +296,8 @@ The new-zone and existing-zone extension previews share `_marqueeBody` and
 (`surfaceColor`, normally `colorSurfaceOverlay`), material (`solid` or `glass`),
 and elevation (`menu` or `drag`) are independent. `FloatingSurfaceTokens` owns
 the material and shadow values; ordinary controls do not inherit glass borders.
+Anchored context menus use `theme.radiusXxl` (20 px) for both the glass panel
+and its entrance morph; reserve `radiusModal` (40 px) for sheet corners.
 
 | Property | Light | Dark |
 | --- | --- | --- |
@@ -252,6 +317,17 @@ alter shadow opacity/color only, never geometry. Use the repository's palette
 primitives rather than reproducing approximate hex values from mockups.
 
 - Anchored context menus and floating popovers: elevated glass + menu shadow.
+- Position anchored menus from the global touch/drop point. Prefer below when
+  the full menu fits; otherwise open above when that gives more room, then
+  clamp within safe-area and keyboard insets. Center horizontally on the
+  anchor and keep the gap to the anchor small. Constrain and scroll only when
+  the menu itself is taller than the available viewport.
+- During press-drag, one inset capsule highlight tracks the row under the
+  finger and eases to the next row. Keep the caller's action order, with
+  destructive actions last; don't add edge-to-edge row fills.
+- Present anchored and press-drag menus in the root overlay layer so they
+  cover the app's top navigation and bottom toolbar. Dismiss open menus on
+  route changes and when an `AppViewTransition` changes its view ID.
 - Lifted task: identical glass + drag shadow. Animated `strength` keeps the
   render subtree mounted; zero strength removes paint, blur, and clipping so
   resting resize handles remain visible and gestures retain ownership.
@@ -265,7 +341,8 @@ primitives rather than reproducing approximate hex values from mockups.
   buttons receive no floating glass border. Their existing treatments remain.
 
 Primary/secondary content uses the existing semantic text tokens. What Matters
-retains its per-button active tint. Widgetbook: **Feedback → AppFloatingSurface
+retains its per-button active tint but leaves the page at its ordinary surface
+color when the ripple settles. Widgetbook: **Feedback → AppFloatingSurface
 → Glass and solid elevation**; existing context-menu demos use the real material.
 Verification: `flutter test test/core/widgets/app_floating_surface_test.dart
 test/core/widgets/floating_surface_paint_test.dart` checks lift identity, dock
@@ -308,6 +385,356 @@ separate from the What Matters ripple. Reduced motion skips emission entirely.
 Widgetbook: **Feedback → AppBubbleBurst → Task completion** exposes all eight
 controls, a real swipe action, and replay. Focused verification:
 `flutter test test/core/widgets/app_bubble_burst_test.dart test/features/timeline/task_completion_bubbles_test.dart`.
+
+## Tracked day cells — current-day surface fill
+
+The shared Tracked `_DayCell` uses theme-scale colors across all three views.
+Light mode uses `colorSurfaceField` for incomplete days and for today's cell;
+today's label uses `textCaption` and `colorTextTertiary` so both its size and
+contrast stay quiet. Dark mode uses the intermediate
+`colorSurfaceOverlay` rung and `colorTextTertiary` for incomplete
+non-current days; today's cell keeps
+`colorSurfaceFieldActive` and primary `textLabel` styling. Other incomplete
+dark-mode day labels use `textCaption` and `colorTextTertiary`. Completion
+takes precedence in both themes and uses `colorAccent` with
+`colorSurfacePrimary` text; there is no accent outline. Weekday initials and
+six-month month names use `colorTextTertiary` as supporting labels. Tracked
+behavior cards have no trailing chevron; the card remains tappable without
+implying a separate navigation destination.
+
+## Tracked period calendar
+
+`TrackedPeriodCalendar` occupies the Day calendar header's position below
+the shared top navigation. Its caption uses `textBody`, the same horizontal
+screen padding and bottom spacing as `AppDateAccordion`, and a fixed reserved
+slot where Day's collapsed grip sits; it has no chevron, grip, or expansion.
+This keeps the header's height and caption position stable when switching
+between Day and Tracked.
+
+The caption follows the selected Tracked view: a Monday-Sunday date range for
+Weekly, the month name for Monthly, and January-June or July-December plus the
+year for Six-monthly. Swiping left advances by one week, month, or aligned
+half-year; swiping right goes back. The same period bounds drive every
+behavior's completion cells. This cursor is local to Tracked and never
+changes Day's selected date. The six-month grid uses fixed calendar
+half-years, not a trailing 183-day window.
+The period caption is left-aligned. A small trailing `Today` action fades in
+when the displayed week, month, or half-year differs from the current period;
+tapping it returns the Tracked cursor to the current period.
+
+## Selected-item deletion puff — `AppDeletePuff`
+
+`AppDeletePuff.show(context:)` is reusable overlay feedback for a delete
+control. It captures the control's top-center point before its selected-item
+action clears the dock, then emits seeded smoke clusters above that point. The
+root-overlay effect is transparent, ignores pointers and accessibility focus,
+survives the source button disappearing, and removes itself after 1.25 seconds.
+Reduced motion skips it. Existing delete behavior and haptics remain owned by
+the action.
+
+`DeletePuffSpec` copies the numeric preset and smoke/shadow/highlight colors
+from `rios-motion-v19/delete-puff-config.json`: 11 clusters, 104 spread, 34
+lift, 22 size and curl, .27 stagger, .325 fade start, .85 scale, seed 15.
+Distances scale with the source button relative to the export's 136px object
+width. The studio's sample object and opaque background are omitted because
+the live delete button is the source and the effect must layer over the app.
+Widgetbook: **Feedback → AppDeletePuff → Selected-item delete** exposes the
+export's ten numeric controls. Selected task and zone delete actions in Edit
+use the same component. Verification:
+`flutter test test/core/widgets/app_delete_puff_test.dart`.
+
+## Liquid pulse — `AppLiquidPulse`
+
+The single "something just happened to this object" response. When `active`
+turns true, the child compresses quickly (ease-out), then a native Flutter
+spring (`SpringDescription.withDurationAndBounce`, the SwiftUI duration/bounce
+model) releases it past rest once and settles exactly at identity. The
+horizontal axis deforms less than the vertical (`squash`), which makes it read
+as liquid rather than a rigid zoom. Turning `active` false never pulses. Only
+paint is transformed, so layout and neighbours never move. Reduced motion
+skips it.
+
+`LiquidPulseSpec` holds the presets: `select` (6% depth, bounce .5) is
+felt more than seen; `selectSurface` (2.5%, bounce .45) is for large blocks
+like zones, where a proportional squeeze would lurch; `complete` (14%, bounce
+.7) is clearly elastic, with about a 5% overshoot and one visible return wobble.
+Brand rule: fluid and springy, never cartoonish; overshoot stays below the
+compress depth.
+
+**Current call sites**:
+- `TaskCapsuleBlock` (Task and List views): `select` on `isSelected`,
+  `complete` on `isCompleted`. Both wrap the **whole manipulation unit**
+  (pill, selection rings and resize dots, via `TaskManipulationTargets`),
+  pivoting on the pill's centre (`TaskManipulationTargets.targetWidthFor`), so
+  the controls move with the pill instead of floating while it squeezes.
+- Zone view rows (`_ZoneTaskRow` badge): `complete` on completion.
+- `ZoneBackgroundBlock` (Task view) and `ZoneGridBlock` (weekly grid):
+  `selectSurface` on selection, wrapping fill, ring and handles together.
+
+**Rule:** a pulse wraps the selected unit *with* its controls, never the
+visual alone.
+
+**Press: swell, Liquid Glass style.** `AppPressFeedback` runs on the same
+`LiquidDeformation` helper, driven by the ONE shared press spec,
+`LiquidPressSpec.standard`. Press-and-hold **grows** the control toward the
+finger (like Apple's Liquid Glass), and release springs it home with a fluid
+overshoot just past rest. Growth is sized in pixels, not as a flat percentage:
+8px spread over the control's longest side, clamped to 2–18%. A 44px icon
+button swells about 18%, a full-width row about 3%. While held, a faint glass fill
+(`holdFillAlpha`, 8%) covers the whole control, so a fill-less ghost icon
+button (sheet close, toolbar and dock buttons) visibly swells as a whole, not
+just its icon. A release that arrives mid-swell waits for it to land, so the
+quickest tap shows the full press. Every `AppButton`, chip, row, icon button
+and `HeaderCircleButton` inherits it. `AppDockIconButton`'s selected tint is
+the button's own `fillColor`, so it swells with the press rather than
+sitting still behind it. A **single-action dock pane** (Edit, What Matters,
+Back) IS the visible button, but its glass is drawn as a separate layer
+behind the action. `AppPressFollower` swells that pane with its action's
+press, fed by a pointer `Listener` that never competes for the tap.
+Multi-action panes stay still while the pressed button swells on its own,
+as in Liquid Glass toolbars. Widgetbook: **Feedback → AppPressFeedback** (four
+shapes, eight knobs; press and hold).
+
+Deliberately different from the pulses: a press *swells* (the control
+answers the finger), while select and complete *squeeze then rebound* (an
+event happened to the object).
+
+**Never deform an object under the finger.** Pass `suppressed: true` while
+the child is being dragged or resized: any pulse in flight snaps to rest, and
+activations during it are swallowed. `TaskCapsuleBlock` suppresses on
+`isLifted || isResizing`. This came from a real regression: selecting on
+resize-start squeezed the pill 6% while it had to track the finger. **Never** hand-roll a scale bounce with `easeOutBack` or
+`elasticOut` for a state change; use this component with a spec.
+Widgetbook: **Feedback → AppLiquidPulse** (Select / Complete) exposes all
+five spec values. Verification:
+`flutter test test/core/widgets/app_liquid_pulse_test.dart`.
+
+## Liquid entrance and shape morph — `AppLiquidMorph`
+
+The one way a surface appears out of a point. On mount, a droplet
+(`dropletDiameter`) at `origin` spreads into the child's own rounded shape.
+Width and height ride separate native springs, with height a beat slower, so
+the shape widens and then stretches toward where it opens, overshooting a
+touch before landing exactly. The content grows with the shape
+(`contentScaleFrom`) and fades in over the first quarter of the width spring.
+An origin outside the child is clamped to its nearest edge, so a popover
+anchored beside a finger grows from the side facing it. The clip's reveal
+never passes the child's own edges and never shrinks once the shape has
+formed; the overshoot is carried only by the content scale, and the clip
+switches off the moment the shape forms. Otherwise the spring pulled an edge
+back inside the rim and briefly hid the glass's top highlight (reported as a
+"glitch": a reflection doesn't blink out). Reduced motion shows
+the finished shape immediately.
+
+`LiquidMorphSpec.popover`: 28px droplet, width .25s / bounce .4, height .32s
+/ bounce .45, content from 60%. It pops about 4–5% oversized and settles back,
+after Liquid Glass (fast, and bouncier after device review), content from 70%. **Current call sites**: both context-menu
+entry points (`AppContextMenu.showAt` and `AppLongPressContextMenu`), growing
+from the touch point. The route's own animation now only fades the popover
+out. **Never** use a plain `FadeTransition` + `ScaleTransition` for a surface
+that emerges from a touch; use this. It is also the draft task's entrance. Widgetbook: **Feedback → AppLiquidMorph** (tap
+anywhere, seven knobs) and **AppContextMenu → Long-press, drag, release**.
+**Draft task: dot to line.** `PendingTaskPill`'s rail enters with
+`LiquidMorphSpec.draftPill`. Its droplet size is unset, which means the
+child's own shortest side, so the droplet is a rail-wide dot at the top of the
+pill, exactly where a real task's badge sits. It then stretches down into the
+full-length pill on the longer, bouncier height spring. This is BRAND.md's
+dot → line grammar made literal: a thing becomes something placed in time.
+Only the rail morphs; the title, edge time labels and resize handles do not.
+The clip switches off once the shape has formed, so the selection ring at the
+rail's edge is never shaved.
+
+Widgetbook: **Feedback → Task pill** has three use cases: *All states*
+(normal, selected, important, completed, imported, draft), *Select and
+complete* (interactive: every pulse, the ripple and the bubbles) and *Draft:
+dot to line* (replays the entrance). They are smoke-tested by
+`widgetbook/test/task_pill_demo_test.dart`.
+
+Verification: `flutter test test/core/widgets/app_liquid_morph_test.dart`.
+
+## Task states — `TaskStateStyle` and `TaskStateTokens`
+
+Every row that draws a task (Task/List pill `TaskCapsuleBlock`, its text row
+`TaskCapsuleTextRow`, Zone view `_ZoneTaskRow`, cluster rows) resolves its look
+through ONE `TaskStateStyle.resolve(theme, task, labelColor)`. No call site
+picks a "completed grey" itself. Colours come from `TaskStateTokens`, derived
+per theme from text/surface/accent, so light and dark each read correctly.
+
+| State | Pill fill | Title | Extra |
+| --- | --- | --- | --- |
+| Normal | label colour | primary | — |
+| Unlabeled (new, "General") | reserved opaque "mist" tone `unlabeledFill` (`ColorPrimitives.mistLight/mistDark`, hue 218°) | primary | never in the label palette; shared ONLY with imported events (`importedFill`, plus the hatch) |
+| Important | label colour | primary tinted 35% toward accent (`importantTitle`) | star straddling the pill's top-right edge (`TaskImportantStar`) |
+| Done | pale tint of its own label (`doneFill`, 72% page) | receding (`doneTitle`, primary at 42%) | strike line in the title's own colour, 1.6px; glyph at 25% (`doneGlyphAlpha`) |
+| Done + important | as done | as done | star stays |
+| Imported | flat grey rail with faint 45° hatching (`AppHatch`, `importedHatch`), clipped to the pill, no outline | secondary | calendar glyph |
+
+The star is not accent-coloured. It is a softened primary-text tone (paper
+cream in dark, a lighter charcoal in light, `importantStarSoften`) with a
+subtle diagonal gradient into a hint of accent (`importantStarAccentMix`). It
+sits on the pill's edge, 30% past the right side and 15% above the top, with a
+1.5px outline in `colorSurfaceBase` to separate it from the pill fill. Both
+spatial and zone/list views use this shared `TaskImportantStar` treatment.
+
+Glyphs on a pill are warm paper (`glyphOnDark`) or charcoal
+(`glyphOnLight`), chosen against the pill's ACTUAL fill (including a done
+task's pale tint), never pure white or black; a done task's glyph fades to
+`doneGlyphAlpha` (25%, barely there) with its pill.
+
+Rules: done must never look like unlabeled. Done keeps a trace of its label's
+hue and is struck; unlabeled keeps a full-strength title. The important star
+lives on the pill, never in the title margin, and bounces with the pill. The
+Toolbar's What Matters action is a star (outline off / filled on), matching the
+star it filters for. Widgetbook: **Feedback → Task pill → All states** shows
+all six rows. Verification:
+`flutter test test/features/timeline/task_state_style_test.dart`.
+
+## Chips — `AppSelectableChip` and `CategoryChip`
+
+`AppSelectableChip` has two sizes: `compact` (default; caption text, fixed
+height, for day and preset rows) and `regular` (body text, roomier padding,
+for option pickers such as a behavior's type or a developer setting). Both
+follow the "Pill shape" setting (`radiusPill`). `CategoryChip`
+(`lib/features/task_detail/category_chip.dart`) is the one category picker
+chip (label colour, glyph, name, hairline ring when selected), shared by the
+category modal, the name+category modal and the task detail sheet. Both use
+the shared press. **Never** hand-build a private chip. Extend one of these.
+
+## Depth: create and delete — `AppDepthPresence`, `AppDepthShape`, `AppDepthFade`
+
+The one motion for an object coming into and leaving the page (BRAND.md
+§18). The object never scales, blurs or slides as a whole. Instead:
+
+- **Room:** `AppDepthPresence` opens the object's own height first, so
+  neighbours make room, and closes it after removal. Only then does it call
+  `onExited`, so the caller deletes the data.
+- **Shape:** the part marked `AppDepthShape` (a pill, a badge) springs up
+  from small (30%) and transparent: **larger, smaller, then actual**, a
+  real spring (`shapeSpringSeconds` .5, `shapeBounce` .45), in place about
+  its own centre. On removal it simply shrinks and fades, with no bounce.
+- **Text:** the parts marked `AppDepthFade` only fade in (and out).
+- No blur anywhere. Several arrivals are staggered
+  (`DepthMotionSpec.staggerFor`, 0.1s); the entrance is 0.8s. Reduced
+  motion is instant. Markers are inert outside a presence.
+  `emerge: false` keeps the room-making but holds the parts still, for when
+  something else supplies the entrance (a card flying in).
+- `AppDepthTransition` is the separate whole-object recede (fade + slight
+  shrink), used for voice mode's controls.
+
+Current use: Inbox rows (pill = shape, title and duration badge = fade). New
+tasks emerge; switching section tabs does not replay them; swipe-remove
+recedes and then deletes (with undo, and an undone task emerges again).
+**Not** on Timeline pills: a just-created pill entrance was removed there on
+request because it replayed on view switches. Widgetbook: **Feedback →
+AppDepthPresence**. Verification: `flutter test
+test/core/widgets/app_depth_test.dart test/features/inbox/inbox_depth_test.dart`.
+
+## What Matters — ripple on, glow while on
+
+Turning What Matters ON plays the upward ripple ring once. Turning it OFF
+plays no ripple; the page just returns. While on, a soft radial glow
+rises from the bottom centre (where the toolbar button sits), painted UNDER
+all content, so the page itself reads as in a mode and a sparse day never
+looks like missing tasks. The glow is painted by `WhatMattersBackdrop`, which
+REPLACES the page's own solid background (`WhatMattersBackdrop(color: …)` in
+place of `Container(color: …)`). A glow under an opaque page background is
+never seen. The Timeline's bottom scroll fade is hidden while the mode is on,
+because it would otherwise cut through the glow. It is low and soft (accent at 22–26% at its peak,
+`WhatMattersTokens.glow*`), unlike voice mode's layered rising glow, so it
+doesn't read as an AI mode. The What Matters toolbar action is the star.
+Verification: `flutter test test/core/widgets/what_matters_appearance_test.dart`.
+
+## Voice mode — morph in, glow rises; morph back, fly
+
+Voice mode opens on its own root route (`pushVoiceModeRoute`). The route is
+non-opaque and only supplies the timing (`VoiceModeTokens.enterSeconds` .7,
+`exitSeconds` .8). The screen choreographs itself from the route animation:
+
+- **Toolbar morph** (`AppPaneMorph`, reusable, `LiquidMorphSpec.dockPane`):
+  the Inbox mic is a glass dock pane (`AppDockSurface` + `AppDockIconButton`,
+  like the Day dock). Voice mode's toolbar (pause · waveform · submit) is one
+  glass pane that stretches out of the mic's own rect with a spring, like the
+  Day dock regrouping between views. The mic icon cross-fades into the
+  toolbar content. On close it eases back into the mic without bouncing.
+  It takes taps only once formed.
+- **Toolbar position**: same height and bottom clearance as every other
+  toolbar dock (`voiceToolbarLayout`: `spacingBottomClearance` above the
+  safe area, pane = md button + `spacingXs` × 2). Close is its own
+  single-item pane at the right edge (where the Inbox "+" sits). The
+  pause/submit toolbar fills the row from `spacingXl`, one `spacingSm` dock
+  gap to its left. Both panes split out of the mic and merge back into it.
+- **Morph timing**: the entrance plays its springs in real time
+  (`forwardSeconds` = `VoiceModeTokens.enterSeconds`), so the stretch is done
+  in about 0.4s and then holds. It is firm (width bounce .12, height .08,
+  `LiquidMorphSpec.dockPane`), and the whole pane springs larger, smaller,
+  then actual (`popFrom` .75, `popBounce` .6). The return accelerates hard
+  (ease-out-quart played backwards) and is home at `AppPaneMorph.returnEnd`
+  (.55), i.e. in the first 45% of the exit.
+- **Exit sequence**: everything returns together with the toolbar. The
+  scrim lifts, the glow sinks and the Inbox rows sweep back (top first)
+  within the first 45% of the exit (`VoiceModeTokens.revealShare`). That is
+  the moment the toolbar is home in the mic. Flying tasks land by 80%
+  (`flightLandShare`), still staggered.
+- **"+" submerges**: as voice mode opens, the Inbox "+" swells
+  (`DepthMotionSpec.submergeSwell` .15), then shrinks away while fading
+  (`AppSpringPresence(swell:)`), so the close pane isn't just covering it.
+  When voice mode starts closing, it springs back: larger, smaller,
+  actual.
+- **Waveform keys**: the bars rise in left to right, one after another, each
+  on its own bouncy spring (up past its height, back under, then settled),
+  like a run of piano keys. They start once the pane has stretched open
+  (`AppVoiceWaveform(entranceDelay:)`, `VoiceModeTokens.key*`).
+- **Can't listen**: if the recognizer can't start (permission denied, no
+  recognizer), the status card says "Can't listen" with what to do, and
+  Resume retries. It never passes for "Listening".
+- **Page sweep** (`AppSweepFade`, reusable): while voice mode covers the
+  Inbox, its tabs, day headers and rows fade by their own screen position,
+  bottom first, as the glow rises (`voiceModeSweepProvider`, over the scrim
+  share). They return top first as it sinks.
+- **Glow** (`AppVoiceGlow`, reusable): the page colour fades in over the
+  first half of the entrance. A layered glow rises from the bottom: a wide
+  deep base, two drifting accent/light lobes and a bright core
+  (`VoiceModeTokens.glowLayers`). It reaches ¾ of the height, and above that
+  the screen is left clean (masked, not just faded). The lobes drift and
+  breathe slowly (18s cycle), and are still under reduced motion. On exit it
+  sinks.
+- **Controls** (status card, transcript) arrive in the last 45% of the
+  entrance and leave in the first 45% of the exit.
+- **On Submit**, every line that became an Inbox task flies from where it
+  sat into its Inbox row as a hero (`voiceFlightTag`), staggered so they land
+  one after another. The rows open room for them (`AppDepthPresence(emerge:
+  false)` via `voiceArrivalsProvider`). While each task flies, its pill
+  emerges from depth exactly like a typed task's pill (small and
+  transparent, then larger, smaller, actual), over that task's own staggered
+  flight window. Its text, already on screen in voice mode, stays shown
+  (`voiceFlightShuttle(index)`, `AppDepthScope(fadeText: false)`). Lines that became scheduled tasks
+  fade with the transcript.
+
+Widgetbook: "AppPaneMorph + AppVoiceGlow". Verification:
+`flutter test test/core/widgets/app_sweep_fade_test.dart test/core/widgets/app_pane_morph_test.dart
+test/core/widgets/app_voice_glow_test.dart test/features/inbox/voice_flight_test.dart
+test/features/inbox/voice_capture_screen_test.dart`.
+
+## Completion ripple — `AppWaterRipple`
+
+`AppWaterRipple.show(context:, rect:, radius:)` is the "stone in water" half of
+completion. Hairline rings leave the source shape's own outline (same corner
+radius) and spread outward on a decelerating curve. Each ring thins and fades
+as it travels, and each later ring travels less far. It uses the accent colour.
+It sits on the root overlay, so it survives the row reflowing, and it ignores
+pointers and semantics. Reduced motion skips it.
+
+`WaterRippleSpec` defaults: 2 rings, .9s each, .14s apart, 22px spread, 1px
+stroke, .22 peak opacity. It must stay very subtle: it confirms the event, it
+doesn't decorate it. **Fired only through `AppCompletionFeedback.play`**,
+which plays bubbles + ripple together; the `complete` pulse is state-driven
+and plays on its own. Current callers: swipe-to-done in `TaskCapsuleBlock` and
+in Zone view rows. The trailing checkbox still plays its own Noto emoji
+celebration (an earlier explicit decision that conflicts with BRAND.md's "no
+emoji applause"), so it gets the bounce but not bubbles/ripple until that is
+decided. Widgetbook: **Feedback → AppWaterRipple → Task completion** plays the
+pulse and the ripple together with six knobs. Verification:
+`flutter test test/core/widgets/app_water_ripple_test.dart`.
 
 ## Hour/time indicator — `TaskEdgeTimeLabel`
 
@@ -476,10 +903,11 @@ before the time, and misalignment with the hour column).
 
 **File**: `lib/shared/services/zone_selection_order.dart`
 
-**What it is**: the ONE rule for ordering a list of zones before
-rendering them inside a `Stack` — a selected zone paints LAST (i.e. on
-top) among its siblings. Added 2026-09-19, requested directly: "selected
-zone z index goes to top of stack."
+**What it is**: the ONE rule for ordering zones before rendering them —
+unselected zones paint first, selected zones next, and the actively lifted
+zone paints last above every other zone. A moved object must stay in the
+foreground while crossing lanes; being selected alone does not identify
+which item owns the active drag.
 
 **Why this exists as a real bug, not a theoretical one**: both the
 spatial Timeline and the Weekly Zone Authoring Grid explicitly allow
@@ -494,19 +922,31 @@ directly over the selected zone's ring/handles/live-edge labels.
 
 **API**:
 ```dart
-List<Zone> selectedZonesLast(Iterable<Zone> zones, Set<String> selectedIds)
+List<Zone> selectedZonesLast(
+  Iterable<Zone> zones,
+  Set<String> selectedIds, {
+  String? liftedId,
+})
 ```
-Stable sort — ties (both selected, or both unselected) keep their
-original relative order; only the selected/unselected boundary changes.
+Stable partition — items keep their input order within each priority. The zone
+grid supplies weekday-ordered zones to one shared stack so later day
+columns cannot cover a lifted block that crosses into them.
 
-**Current call sites** (as of 2026-09-19):
+**Current call sites** (as of 2026-09-28):
 - `lib/features/timeline/timeline_screen.dart` — the spatial Task view's own zone band, via a `Consumer` reading `zoneEditSelectionProvider` (the outer `_DayTimelineState` is a plain, non-Riverpod-aware `State`, so a local `Consumer` is what reads the selection to reorder against, mirroring how `_DraggableZoneBlock` itself is already Riverpod-aware for the same "read `ref` locally rather than thread it" reason).
-- `lib/features/zone_grid/zone_grid_screen.dart` — each day column's own zone list, ahead of the `_block(...)` builder call.
+- `lib/features/zone_grid/zone_grid_screen.dart` — all saved day-column zones in one shared paint stack; the moving zone ID is passed as `liftedId`.
 
-**Never**: rely on a zone repository's own return order for render
-z-order, or sort inside the zone's own block widget (`ZoneBackgroundBlock`/`ZoneGridBlock`) — a block only knows its OWN selection state, not
-its siblings', so reordering has to happen one level up, where the
-whole list is visible at once.
+**General lifted-object rule**: active drag objects belong to the final
+foreground interaction layer of their content canvas. They paint above
+all peer content, including other selected objects and items in later
+lanes. Their hit testing follows that same foreground order. A sheet or
+system overlay may still cover the canvas as a separate higher-level
+surface.
+
+**Never**: rely on a repository's return order for render z-order, sort
+inside an individual block widget, or keep cross-lane siblings in separate
+stacks when one can move across them. Reordering belongs at the common
+paint parent, where the whole peer set is visible.
 
 ---
 
@@ -689,8 +1129,10 @@ This is toolbar suppression, not promotion to a modal root overlay.
   flat surface (a real, reported bug: "sheets across the app should have
   next surface level to bg").
 - Barrier: `theme.colorScrim`.
-- Body padding: `theme.spacingLg` on all sides (`padded: true`, the
-  default) — see "Spacing" below.
+- Body padding: `theme.spacingLg` horizontally and
+  `theme.spacingBottomClearance` at the bottom (`padded: true`, the
+  default). The route's `SafeArea` supplies the platform bottom inset
+  separately — see "Vertical safe-area clearance" above.
 - Three sizes (`AppSheetSize`): `small` (sizes to content — the default,
   and what every sheet in this section uses), `half` (fixed 50% of
   viewport, scrollable), `nearFull` (matches `StepScaffold`'s near-full
@@ -972,6 +1414,13 @@ spatial Task view's `TaskBoundaryMarkers` hour-gutter labels — same text
 style, same distance from the true screen edge — for a view that has no
 shared time axis to place a real gutter column against.
 
+**2026-09-29 — text style back to `textCaptionMono`.** It had drifted to the
+smaller `textTaskEdgeTime` (the task start/end time rung), making list-view
+hours visibly smaller than the timeline's. Reported directly: "hours zone
+view are smaller than spatial view... should align." It now uses the same
+`textCaptionMono` + `colorTextSecondary` as `TaskBoundaryMarkers`.
+`textTaskEdgeTime` stays for task edge times (`TaskEdgeTimeLabel`).
+
 **Why this can't just reuse `TaskBoundaryMarkers` directly**: that widget
 `Positioned`s every label against ONE shared, continuous, absolutely-
 positioned `Stack` spanning the whole day — every task block in the
@@ -1164,17 +1613,12 @@ named as the reference. `ZoneBackgroundBlock` previously used
 `theme.radiusMd` (8), a real, previously undocumented divergence from the
 non-spatial view.
 
-**Exception — Weekly Zone Authoring Grid uses `theme.radiusSm`**
-(2026-09-21, same day, superseding this section's own original
-unification for that ONE surface): requested directly, "the rounding of
-zone edit zone mode should be xs." `ZoneGridBlock` briefly matched
-`radiusXl` alongside `ZoneBackgroundBlock` per the unification above, then
-was confirmed as its own deliberately smaller rung — this dense authoring
-surface (see the horizontal-spacing section's own "edit zone view has its
-own more dense space" carve-out) reads better with the smallest radius on
-the scale than with the same large rounding a full-size zone pane
-elsewhere gets. `ZoneBackgroundBlock` (spatial Timeline) keeps
-`radiusXl`, unaffected.
+**Exception — Weekly Zone Authoring Grid uses `theme.radiusMd`**
+(2026-09-28, superseding its earlier `radiusSm` exception): the compact
+weekday blocks need more corner rounding in edit mode, while `radiusMd`
+preserves their narrow lane shape. The saved fill, selected outline,
+move-source ghost, and cross-day ghost all use this same radius. The
+spatial Timeline's `ZoneBackgroundBlock` keeps `radiusXl`.
 
 **Standing gap between adjacent zones**: `zoneBackgroundGap` (4.0,
 `lib/features/timeline/zone_background_block.dart`) — taken entirely off
@@ -1308,14 +1752,11 @@ full `duration` before the test ends, or `flutter_test`'s own teardown
 fails on "a Timer is still pending." A test that taps Undo instead needs
 no such drain — the timer is cancelled the moment Undo fires.
 
-**Current call sites** (as of 2026-09-22): `task_remove.dart`'s
-`removeTask` (the action sheet's Remove row, the detail screen's delete
-button, the Timeline's drag-to-delete-target — single-instance AND
-whole-series removal), `zone_grid_screen.dart` (the Edit Mode selection
-dock's group Remove for tasks, and the Zones tab's own bulk "Remove
-placements"), `zone_form_screen.dart` (its own delete button),
-`timeline_screen.dart` (the spatial Timeline's zone drag-to-delete, and
-the multi-task group drag-to-delete-target path), `inbox_screen.dart`
+**Current call sites** (as of 2026-09-29): `task_remove.dart`'s
+`removeTask` (the action sheet's Remove row and the detail screen's delete
+button), `zone_grid_screen.dart` (the Edit Mode selection dock's group
+Remove for tasks, the Zones tab's own bulk "Remove placements", and its
+zone drag-to-delete), `zone_form_screen.dart` (its own delete button), `inbox_screen.dart`
 (swipe-to-delete), and `quick_capture_sheet.dart`/
 `quick_capture_undo_main.dart` (the original confident-parse creation
 that introduced this widget). Registered in the Widgetbook gallery under
@@ -1373,10 +1814,21 @@ backgrounds. A retained action can therefore move between groups while its
 button element, haptic behavior, focus identity, and tooltip remain stable.
 Its rectangle, group bounds, and gaps animate with
 `MotionPrimitives.durationContextDockMs` (200ms) and `curveStandard`.
-Removed actions lose input, focus, and semantics immediately, then fade out;
-new actions are laid out at their final position before fading in. The
+Removed actions lose input, focus, and semantics immediately, then fade out
+while shrinking (no bounce). New actions are laid out at their final position,
+then fade in while springing up from small: larger, smaller, then their real
+size, the same bounce as the view switch press. New panes do the same, with
+their first icon. This is `AppSpringPresence` (reusable; springs from
+`DepthMotionSpec.shapeFromScale/shapeSpringSeconds/shapeBounce`). Every
+configuration change uses it, including Day ↔ Edit and the selection
+actions. The
 floating create button is a separate primary-action slot and is not a dock
 action.
+
+The main dock and standalone bottom controls sit inside the bottom safe
+area with one additional `spacingBottomClearance`. Use that same placement
+for every page-local dock so toolbar buttons share a baseline across Day,
+Inbox, Tracked, and Edit.
 
 Inline creation sheets temporarily suppress the shell toolbox through
 `AppShellChromeController.dockObscured`; see **Inline creation sheets and toolbox**
@@ -1423,3 +1875,158 @@ last departing action. The shell's `AppShellHeader` crossfades main navigation
 and Edit tabs in the same md-button-height slot, with shell-owned padding.
 Changing Edit tabs updates the retained tab control without another header
 crossfade. Edit bodies paint an opaque base under their content transitions.
+
+## Page slide follow-through — `AppFollowThrough`
+
+When the top-nav pages slide (`AppViewTransition(slide: true)`), the page's
+KEY items (things the user adds on that page) follow through: they trail
+the page and catch up one after another.
+- **Timeline**: one timeline of `FollowThroughSpec.pages.totalMs` (380ms).
+  The page slides over its first 60% (228ms, was 150ms), and each item runs
+  the same motion delayed within the remaining 40%, so everything lands by
+  the end.
+- **Order** (by position on screen, no indexes): rows higher up go first
+  (`rowWeight` .75). Across the page, the edge leading the travel goes
+  first: moving left (forward), the left side leads; moving right (back),
+  the right side leads.
+- **Direction**: it works entering and leaving, in whichever direction the
+  page travels.
+- **Nested**: a follower inside another (a Tracked card's dots) trails its
+  own card, not the page, within `nestedShare` (.3) of the tail. So a card's
+  dots ripple after the card.
+- **Where**: Inbox task rows, Day non-spatial (Zone view) task rows, Tracked
+  cards and each day dot (`_DayCell`, in every view mode).
+- **Mechanism**: paint-only (layout and hit testing never move), and inert
+  outside a sliding page.
+- **Cost**: each follower works out where it sits (its delay, and the card
+  it trails) ONCE per slide (`AppFollowThroughScope.generation`), not every
+  frame. The screen-position lookups are the expensive part, and a
+  six-month heatmap puts ~900 dots on screen. Per frame, a follower only
+  evaluates its curve and translates its canvas (no layer).
+- **Layering**: during a slide, the page being left paints ABOVE the
+  arriving one, in either direction (e.g. Inbox → Day: Inbox on top). Its
+  items trail back toward the arriving side, and the arriving page's
+  background would otherwise cover them.
+- **Clipping**: a page's scrolling list clips at its top and bottom only
+  (`AppVerticalClip` around a `clipBehavior: Clip.none` list). Otherwise the
+  list cuts trailing items off at the page's side edge, which reads as the
+  new page covering them. This applies to the Inbox, Day (Zone view) and
+  Patterns lists.
+
+Widgetbook: "AppFollowThrough". Verification: `flutter test
+test/core/widgets/app_follow_through_test.dart`.
+
+## Day tasks emerge and recede — `DayTaskMotion`
+
+Day tasks now do the same create/delete motion as Inbox tasks, in both
+views:
+- **Arriving** (created, scheduled onto this day, undone back): the pill
+  springs up from depth (small and transparent, then larger, smaller,
+  actual) and the title fades in.
+- **Leaving** (deleted, moved to another day or back to the Inbox): the pill
+  and title recede. The timeline task recedes in place, since tasks sit at
+  fixed times (`AppDepthPresence(opensSpace: false)`). A list row also
+  closes its room.
+- **Changing the day never animates.**
+- **Tracking lives above the widgets**, in `dayTaskMotionProvider`, which
+  listens to the day's tasks. Switching timeline ↔ list remounts every task,
+  and a mount-time entrance used to replay on every switch (the reason the
+  old one was removed). Arrivals are cleared once their first frame is
+  built. Leaving tasks stay drawn (`DayTaskMotion.shown`, in time order),
+  untouchable, until they have receded.
+- **Wiring**: `DayTaskMotionScope` (placed by `TimelineScreen` over both
+  views) feeds `DayTaskPresence`, which is inert outside it. Marked parts:
+  the pill (`AppDepthShape`, about the pill's own centre) and
+  `TaskCapsuleTextRow` (`AppDepthFade`), plus the list rows' badge and
+  title.
+- **Page switches**: timeline tasks also trail the page as it slides
+  (`AppFollowThrough`), like the list rows.
+
+Known gap: an unzoned list row (a `TaskCapsuleBlock` with its own inline
+text) emerges its pill, but its inline title does not fade.
+
+## Task list row — `TaskListRow`
+
+**File**: `lib/features/inbox/task_list_row.dart`. The ONE card for a task
+in a list: the Inbox rows AND voice mode's spoken lines both use it, so a
+task looks identical while being spoken, while flying into the Inbox, and
+once it lands.
+- **Pill**: `sizeTaskBadge` at `radiusPill`, with the category glyph at 55%.
+  A task with no label yet ("General") wears the reserved unassigned tone
+  (`TaskStateTokens.unlabeledFill`), exactly as on the timeline, never a
+  label swatch. Voice lines have no label yet, so they wear it too.
+- **Title**: `textTaskTitle` w700. A line still being spoken uses the
+  secondary colour.
+- **Forming cue** (`pendingProgress`): a hairline (`borderWidthHairline`,
+  accent) traced just OUTSIDE the pill's edge, one hairline away, from the
+  top clockwise. It never paints over the pill. Voice mode fills it over
+  the 2s silence window (`voiceCaptureSilenceGap`), restarting with each
+  new word, so it closes as the task is finalised. It replaced the
+  spinner that sat inside the pill.
+- Takes part in depth emergence (`AppDepthShape` pill, `AppDepthFade`
+  title).
+
+## Toolbars on page change — submerge and emerge
+
+- **Dock buttons** (every `AppContextDock`) now leave by submerging: they
+  swell (`DepthMotionSpec.submergeSwell` .15), then shrink away and fade.
+  That mirrors their springy arrival (larger, smaller, actual). The fade
+  starts at once, so the stagger reads the same as before.
+- **Page toolbars** (the "+" on Day/Inbox/Patterns, the Inbox mic, the
+  Patterns view dock) live inside their pages but don't slide with them.
+  `AppPageToolbarAnchor` holds them in place while the page slides, and
+  `AppPageToolbarGate` hides them the moment their page starts leaving, so
+  they submerge. On arrival they are revealed after `revealDelay` (200ms),
+  once the leaving toolbar has gone: out, then in. `AppPageToolbarItem`
+  combines these with the spring for single buttons. The Patterns view
+  dock empties and refills, so its buttons stagger like the Day dock's.
+- **Several buttons stagger**, left to right, both going and coming, one
+  dock step (35ms) apart (`AppPageToolbarItem.order`,
+  `AppFloatingCreateButton.toolbarOrder`). Inbox: mic 0, "+" 1. Patterns:
+  the view dock's three buttons, then the "+" (order 3).
+- **Exceptions**: a toolbar that is there at app start doesn't animate.
+  Outside a sliding page (e.g. the Edit screen's "+") it is always shown.
+
+## Done tasks fade their star; the week strip has no tap wash
+
+- **Star**: a completed important task's star fades with its title
+  (`TaskImportantStar(faded:)`, `TaskStateTokens.doneStarAlpha` =
+  `doneTitleAlpha`). Only the star's fill fades; its surface-coloured
+  outline keeps separating it from the pill. This applies on the timeline
+  (`TaskCapsuleBlock`) and in list rows (`zone_container_block`).
+- **Week strip**: the Day screen's 7-day pills (`AppDateAccordion`'s
+  `_WeekDayCell`) have no tap wash (`AppPressFeedback(ripple: false)`),
+  the one exception to the shared press feedback. The selected-day state
+  already answers the tap. The press squeeze and haptic stay. `ripple`
+  defaults to true everywhere else.
+
+## Sub nav — `AppSubNav` (page-heading slot)
+
+**File**: `lib/core/widgets/app_sub_nav.dart`. A page's own navigation
+under the main nav (first user: the Inbox sections).
+- **Same labels as the main nav**: `AppNavLabel` (extracted from
+  `AppTopNav`), i.e. `textBody`, w700 primary when selected, w500 tertiary
+  when not, with the main nav's `spacingLg` gap. The main nav keeps its
+  40px row; the sub nav uses the labels at text height.
+- **The page-heading slot**: screen padding at the sides, no top padding,
+  then `spacingXs × 2` and `spacingSm` below. This is exactly the Day date's
+  (`AppDateAccordion` in `AppCalendarHeader`) and the Habits period
+  heading's (`_TrackedPeriodHeading`) footprint. The first label sits where
+  those dates sit, so switching Day ↔ Inbox ↔ Habits the heading line
+  doesn't move. Pinned by `inbox_sub_nav_alignment_test.dart`.
+- **`AppSubNavLabel.highlighted`**: a soft `colorSurfaceField` wash behind
+  the label that takes no layout, used for "drop a row here". Tapping the
+  selected section still opens Rename/Remove, and long-press still works.
+- **Trailing action**: never taller than the labels (the Inbox's "+" is a
+  bare `spacingMd` icon), and the row is top-aligned so it can't push the
+  labels down.
+
+Widgetbook: "AppSubNav".
+
+## Main nav settings gear — optical right edge
+
+The gear is `TopNavTokens.settingsIconSize` (20, was `spacingMd` 16) in its
+unchanged 40px tap box. The box is pulled right by (40 − 20) / 2, so the
+glyph, not the invisible box, ends on the screen-padding line, optically
+aligned with that edge. The tap box moves with it. Pinned in
+app_top_nav_test.dart.

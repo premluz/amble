@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/widgets/app_follow_through.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_press_feedback.dart';
 import '../../shared/models/task.dart';
@@ -9,17 +10,25 @@ import '../../shared/models/tracked_behavior_view_mode.dart';
 import '../../shared/providers/task_providers.dart';
 import 'behavior_completion.dart';
 import 'tracked_behavior_form.dart' show unitLabelFor;
+import 'tracked_calendar_period.dart';
 
 const _weekdayInitials = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
+double _weeklyDaySpacing(double availableWidth, AmbleTheme theme) {
+  final dayCount = _weekdayInitials.length;
+  final gapCount = dayCount - 1;
+  final unusedWidth = availableWidth - dayCount * theme.spacingXl;
+  return unusedWidth <= 0 ? 0 : unusedWidth / gapCount;
+}
+
 /// One behavior card — title, its target read back in words, and a
 /// completion-history visualization matching [viewMode]: a Mon-Sun week
-/// row, a wrapping grid of the current month's days, or a GitHub-heatmap-
-/// style grid of the trailing 6 months. Requested directly, from a
-/// mockup: "let us build these views on the tracked section... this is
-/// replacing the current cards... in the same way like in timeline we
-/// have view switcher, in the same positions there will be view switcher
-/// for each of these here, weekly, monthly, and six monthly."
+/// row, a wrapping grid of the displayed month, or a GitHub-heatmap-style
+/// grid of the displayed January-June or July-December half-year. Requested
+/// directly, from a mockup: "let us build these views on the tracked
+/// section... this is replacing the current cards... in the same way like
+/// in timeline we have view switcher, in the same positions there will be
+/// view switcher for each of these here, weekly, monthly, and six monthly."
 ///
 /// Public so a widget test can target it directly.
 class TrackedBehaviorRow extends ConsumerWidget {
@@ -28,12 +37,14 @@ class TrackedBehaviorRow extends ConsumerWidget {
     required this.theme,
     required this.behavior,
     required this.viewMode,
+    required this.periodDate,
     required this.onTap,
   });
 
   final AmbleTheme theme;
   final TrackedBehavior behavior;
   final TrackedBehaviorViewMode viewMode;
+  final DateTime periodDate;
   final VoidCallback onTap;
 
   @override
@@ -41,75 +52,70 @@ class TrackedBehaviorRow extends ConsumerWidget {
     final tasks = ref.watch(taskListProvider);
     final today = DateTime.now();
 
-    return AppPressFeedback(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(theme.radiusXl),
-      child: Container(
-        width: double.infinity,
-        padding: EdgeInsets.all(theme.spacingMd),
-        decoration: BoxDecoration(
-          color: theme.colorSurfaceSecondary,
-          borderRadius: BorderRadius.circular(theme.radiusXl),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                // Just the title now — requested directly: hide the
-                // unit/type line underneath it (see
-                // `describeBehaviorTarget`'s own doc comment for the
-                // line this replaces).
-                Expanded(
-                  child: Text(
-                    behavior.title,
-                    style: theme.textBody.copyWith(
-                      color: theme.colorTextPrimary,
-                      fontWeight: FontWeight.w700,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+    // The card trails the page as it slides in or out.
+    return AppFollowThrough(
+      child: AppPressFeedback(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(theme.radiusXl),
+        child: Container(
+          width: double.infinity,
+          padding: EdgeInsets.all(theme.spacingMd),
+          decoration: BoxDecoration(
+            color: theme.colorSurfaceSecondary,
+            borderRadius: BorderRadius.circular(theme.radiusXl),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Just the title now — requested directly: hide the unit/type
+              // line underneath it (see `describeBehaviorTarget`'s own doc
+              // comment for the line this replaces).
+              Text(
+                behavior.title,
+                style: theme.textBody.copyWith(
+                  color: theme.colorTextPrimary,
+                  fontWeight: FontWeight.w700,
                 ),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  color: theme.colorTextSecondary,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              SizedBox(height: theme.spacingMd),
+              switch (viewMode) {
+                TrackedBehaviorViewMode.weekly => _WeeklyRow(
+                  theme: theme,
+                  behavior: behavior,
+                  tasks: tasks,
+                  today: today,
+                  periodDate: periodDate,
                 ),
-              ],
-            ),
-            SizedBox(height: theme.spacingMd),
-            switch (viewMode) {
-              TrackedBehaviorViewMode.weekly => _WeeklyRow(
-                theme: theme,
-                behavior: behavior,
-                tasks: tasks,
-                today: today,
-              ),
-              TrackedBehaviorViewMode.monthly => _MonthlyGrid(
-                theme: theme,
-                behavior: behavior,
-                tasks: tasks,
-                today: today,
-              ),
-              TrackedBehaviorViewMode.sixMonthly => _SixMonthlyHeatmap(
-                theme: theme,
-                behavior: behavior,
-                tasks: tasks,
-                today: today,
-              ),
-            },
-          ],
+                TrackedBehaviorViewMode.monthly => _MonthlyGrid(
+                  theme: theme,
+                  behavior: behavior,
+                  tasks: tasks,
+                  today: today,
+                  periodDate: periodDate,
+                ),
+                TrackedBehaviorViewMode.sixMonthly => _SixMonthlyHeatmap(
+                  theme: theme,
+                  behavior: behavior,
+                  tasks: tasks,
+                  today: today,
+                  periodDate: periodDate,
+                ),
+              },
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// One day cell shared by all three views — a small circle, filled solid
-/// accent when [completed], accent-outlined (never both) when [isToday],
-/// plain otherwise. Sized via [size] so the same widget serves the
-/// weekly row's larger cells and the six-month heatmap's much smaller
-/// ones.
+/// One day cell shared by all three views. Completion uses the accent;
+/// incomplete cells use quieter theme-scale surfaces and labels, with a
+/// distinct current-day treatment in dark mode. Completion takes precedence;
+/// today is not also accent-outlined. Sized via [size] so the same widget
+/// serves the weekly row and six-month heatmap.
 ///
 /// **2026-09-21 — circular, was a rounded square.** Requested directly:
 /// tracked slots should be fully rounded across every view. `BoxShape
@@ -124,6 +130,7 @@ class _DayCell extends StatelessWidget {
     required this.isToday,
     required this.size,
     this.label,
+    this.weekdayLabel = false,
   });
 
   final AmbleTheme theme;
@@ -131,39 +138,47 @@ class _DayCell extends StatelessWidget {
   final bool isToday;
   final double size;
   final String? label;
+  final bool weekdayLabel;
+
+  bool get _isDark =>
+      theme.colorTextPrimary.computeLuminance() >
+      theme.colorSurfaceBase.computeLuminance();
+
+  Color get _fillColor {
+    if (completed) return theme.colorAccent;
+    if (!_isDark) return theme.colorSurfaceField;
+    return isToday ? theme.colorSurfaceFieldActive : theme.colorSurfaceOverlay;
+  }
+
+  Color get _labelColor {
+    if (completed) return theme.colorSurfacePrimary;
+    if (isToday && _isDark) return theme.colorTextPrimary;
+    if (isToday || weekdayLabel || _isDark) return theme.colorTextTertiary;
+    return theme.colorTextSecondary;
+  }
+
+  TextStyle get _labelStyle =>
+      isToday && _isDark ? theme.textLabel : theme.textCaption;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: completed ? theme.colorAccent : theme.colorSurfaceField,
-        shape: BoxShape.circle,
-        border: isToday
-            ? Border.all(
-                color: theme.colorAccent,
-                width: theme.borderWidthHairline * 1.5,
-              )
-            : null,
+    // Each dot trails its own card as the page slides, so the card's dots
+    // follow through one after another.
+    return AppFollowThrough(
+      child: Container(
+        width: size,
+        height: size,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(color: _fillColor, shape: BoxShape.circle),
+        child: label == null
+            ? null
+            : Text(label!, style: _labelStyle.copyWith(color: _labelColor)),
       ),
-      child: label == null
-          ? null
-          : Text(
-              label!,
-              style: theme.textCaption.copyWith(
-                color: completed
-                    ? theme.colorSurfacePrimary
-                    : theme.colorTextSecondary,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
     );
   }
 }
 
-/// The current Mon-Sun week — 7 cells, weekday initials underneath (M T W
+/// The selected Mon-Sun week — 7 cells, weekday initials underneath (M T W
 /// T F S S), matching the mockup's "W T F S" row generalized to the full
 /// week.
 class _WeeklyRow extends StatelessWidget {
@@ -172,25 +187,32 @@ class _WeeklyRow extends StatelessWidget {
     required this.behavior,
     required this.tasks,
     required this.today,
+    required this.periodDate,
   });
 
   final AmbleTheme theme;
   final TrackedBehavior behavior;
   final List<Task> tasks;
   final DateTime today;
+  final DateTime periodDate;
 
   @override
   Widget build(BuildContext context) {
     final todayDay = DateTime(today.year, today.month, today.day);
     // Monday-start week — matches _weekdayInitials' own M-first order and
     // every other weekday strip in this codebase (day_strip.dart).
-    final monday = todayDay.subtract(Duration(days: todayDay.weekday - 1));
-    final sunday = monday.add(const Duration(days: 6));
+    final monday = TrackedCalendarPeriod.start(
+      periodDate,
+      TrackedBehaviorViewMode.weekly,
+    );
     final completedDays = completedDaysFor(
       behavior,
       tasks: tasks,
       start: monday,
-      end: sunday,
+      end: TrackedCalendarPeriod.end(
+        periodDate,
+        TrackedBehaviorViewMode.weekly,
+      ),
     );
 
     return Row(
@@ -211,13 +233,14 @@ class _WeeklyRow extends StatelessWidget {
             isToday: isToday(monday.add(Duration(days: i)), todayDay),
             size: theme.spacingXl,
             label: _weekdayInitials[i],
+            weekdayLabel: true,
           ),
       ],
     );
   }
 }
 
-/// A plain wrapping grid of the current month's numbered day cells — no
+/// A plain wrapping grid of the selected month's numbered day cells — no
 /// weekday-column alignment, confirmed directly as simpler than a real
 /// calendar grid: days just wrap left-to-right, top-to-bottom in
 /// declaration order (1, 2, 3, ...).
@@ -227,19 +250,26 @@ class _MonthlyGrid extends StatelessWidget {
     required this.behavior,
     required this.tasks,
     required this.today,
+    required this.periodDate,
   });
 
   final AmbleTheme theme;
   final TrackedBehavior behavior;
   final List<Task> tasks;
   final DateTime today;
+  final DateTime periodDate;
 
   @override
   Widget build(BuildContext context) {
     final todayDay = DateTime(today.year, today.month, today.day);
-    final firstOfMonth = DateTime(today.year, today.month);
-    final daysInMonth = DateTime(today.year, today.month + 1, 0).day;
-    final lastOfMonth = DateTime(today.year, today.month, daysInMonth);
+    final firstOfMonth = TrackedCalendarPeriod.start(
+      periodDate,
+      TrackedBehaviorViewMode.monthly,
+    );
+    final lastOfMonth = TrackedCalendarPeriod.end(
+      periodDate,
+      TrackedBehaviorViewMode.monthly,
+    );
     final completedDays = completedDaysFor(
       behavior,
       tasks: tasks,
@@ -247,48 +277,56 @@ class _MonthlyGrid extends StatelessWidget {
       end: lastOfMonth,
     );
 
-    return Wrap(
-      spacing: theme.spacingXs,
-      runSpacing: theme.spacingXs,
-      children: [
-        for (var d = 1; d <= daysInMonth; d++)
-          _DayCell(
-            theme: theme,
-            completed: isDayCompleted(
-              completedDays,
-              DateTime(today.year, today.month, d),
-            ),
-            isToday: isToday(DateTime(today.year, today.month, d), todayDay),
-            size: theme.spacingXl,
-            label: '$d',
-          ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final daySpacing = _weeklyDaySpacing(constraints.maxWidth, theme);
+        return Wrap(
+          spacing: daySpacing,
+          runSpacing: daySpacing,
+          children: [
+            for (var d = 1; d <= lastOfMonth.day; d++)
+              _DayCell(
+                theme: theme,
+                completed: isDayCompleted(
+                  completedDays,
+                  DateTime(periodDate.year, periodDate.month, d),
+                ),
+                isToday: isToday(
+                  DateTime(periodDate.year, periodDate.month, d),
+                  todayDay,
+                ),
+                size: theme.spacingXl,
+                label: '$d',
+              ),
+          ],
+        );
+      },
     );
   }
 }
 
 const _sixMonthlyCellSize = 12.0;
-const _sixMonthlyDayCount = 183; // Trailing ~6 months.
 
-/// A GitHub-heatmap-style grid spanning the trailing 6 months — small day
-/// squares wrapping into rows (confirmed directly, over a single
-/// horizontally-scrollable row), with month names as loose labels above
-/// roughly where each month's squares begin. Requested directly: "same as
-/// day and week grid of squares that don't distinguish when month ends
-/// when new starts" — so the squares themselves flow continuously; only
-/// the label row above marks month boundaries.
+/// A GitHub-heatmap-style grid spanning the selected Jan-Jun or Jul-Dec
+/// half-year. Day squares wrap continuously into rows, with month names as
+/// loose labels above roughly where each month's squares begin. Requested
+/// directly: "same as day and week grid of squares that don't distinguish
+/// when month ends when new starts" — only the label row marks month
+/// boundaries.
 class _SixMonthlyHeatmap extends StatelessWidget {
   const _SixMonthlyHeatmap({
     required this.theme,
     required this.behavior,
     required this.tasks,
     required this.today,
+    required this.periodDate,
   });
 
   final AmbleTheme theme;
   final TrackedBehavior behavior;
   final List<Task> tasks;
   final DateTime today;
+  final DateTime periodDate;
 
   static const _monthAbbreviations = [
     'Jan',
@@ -308,18 +346,23 @@ class _SixMonthlyHeatmap extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final todayDay = DateTime(today.year, today.month, today.day);
-    final start = todayDay.subtract(
-      const Duration(days: _sixMonthlyDayCount - 1),
+    final start = TrackedCalendarPeriod.start(
+      periodDate,
+      TrackedBehaviorViewMode.sixMonthly,
     );
+    final end = TrackedCalendarPeriod.end(
+      periodDate,
+      TrackedBehaviorViewMode.sixMonthly,
+    );
+    final dayCount = end.difference(start).inDays + 1;
     final completedDays = completedDaysFor(
       behavior,
       tasks: tasks,
       start: start,
-      end: todayDay,
+      end: end,
     );
     final days = [
-      for (var i = 0; i < _sixMonthlyDayCount; i++)
-        start.add(Duration(days: i)),
+      for (var i = 0; i < dayCount; i++) start.add(Duration(days: i)),
     ];
 
     // Month labels: one per calendar month actually spanned, positioned
@@ -347,7 +390,7 @@ class _SixMonthlyHeatmap extends StatelessWidget {
                 child: Text(
                   label,
                   style: theme.textCaption.copyWith(
-                    color: theme.colorTextSecondary,
+                    color: theme.colorTextTertiary,
                   ),
                 ),
               ),
@@ -355,18 +398,22 @@ class _SixMonthlyHeatmap extends StatelessWidget {
           ],
         ),
         SizedBox(height: theme.spacingXs),
-        Wrap(
-          spacing: theme.spacingXs / 2,
-          runSpacing: theme.spacingXs / 2,
-          children: [
-            for (final day in days)
-              _DayCell(
-                theme: theme,
-                completed: isDayCompleted(completedDays, day),
-                isToday: isToday(day, todayDay),
-                size: _sixMonthlyCellSize,
-              ),
-          ],
+        SizedBox(
+          width: double.infinity,
+          child: Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            spacing: theme.spacingXs / 2,
+            runSpacing: theme.spacingXs / 2,
+            children: [
+              for (final day in days)
+                _DayCell(
+                  theme: theme,
+                  completed: isDayCompleted(completedDays, day),
+                  isToday: isToday(day, todayDay),
+                  size: _sixMonthlyCellSize,
+                ),
+            ],
+          ),
         ),
       ],
     );

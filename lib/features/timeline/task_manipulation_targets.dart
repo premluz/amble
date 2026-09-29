@@ -57,9 +57,22 @@ class TaskManipulationTargets extends StatelessWidget {
   final GestureDragEndCallback? onEndResizeEnd;
   final VoidCallback? onEndResizeCancel;
 
-  double get targetWidth {
-    if (!active) return visualWidth;
-    if (!interactionPrimary) return visualWidth;
+  double get targetWidth => targetWidthFor(
+    theme: theme,
+    visualWidth: visualWidth,
+    active: active,
+    interactionPrimary: interactionPrimary,
+  );
+
+  /// The hit-test width, widened to the minimum tap target while active.
+  /// Public so a wrapper can find the visual's centre inside this box.
+  static double targetWidthFor({
+    required AmbleTheme theme,
+    required double visualWidth,
+    required bool active,
+    required bool interactionPrimary,
+  }) {
+    if (!active || !interactionPrimary) return visualWidth;
     return math.max(visualWidth, theme.spacingMinTapTarget);
   }
 

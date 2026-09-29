@@ -1,5 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:amble/features/timeline/task_state_style.dart';
+import 'package:amble/core/tokens/component_tokens.dart';
+import 'package:amble/core/tokens/liquid_pulse_spec.dart';
+import 'package:amble/core/tokens/task_state_tokens.dart';
+import 'package:amble/core/widgets/app_bubble_burst.dart';
+import 'package:amble/core/widgets/app_liquid_pulse.dart';
+import 'package:amble/core/widgets/app_water_ripple.dart';
 import 'package:tabler_icons_plus/tabler_icons_plus.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_swipe_actions.dart';
@@ -89,8 +96,8 @@ void main() {
   // pin is just the time line's own token, not a title/time-line size
   // relationship that no longer means anything.
   testWidgets(
-    'the time line renders at textTaskEdgeTime\'s size and font, matching '
-    'the compact spatial/Edit task-time treatment',
+    'the time line renders at textCaptionMono\'s size and font, matching '
+    'the timeline view\'s own hour labels',
     (tester) async {
       await pump(tester);
 
@@ -99,12 +106,12 @@ void main() {
         find.textContaining('9:00', findRichText: false),
       );
 
-      expect(timeText.style?.fontSize, theme.textTaskEdgeTime.fontSize);
+      expect(timeText.style?.fontSize, theme.textCaptionMono.fontSize);
       // **2026-09-22** — this is the header's OWN start-end time-range
       // text, a second real instance of the same textCaption-instead-of-
       // textCaptionMono bug `ZoneRowTimeLabel` had (see
       // docs/DESIGN_SYSTEM.md's "Two-font system" section).
-      expect(timeText.style?.fontFamily, theme.textTaskEdgeTime.fontFamily);
+      expect(timeText.style?.fontFamily, theme.textCaptionMono.fontFamily);
     },
   );
 
@@ -117,8 +124,8 @@ void main() {
   // `TaskCapsuleBlock`'s own completed-title treatment (muted secondary
   // color + strikethrough).
   testWidgets(
-    'a completed task\'s title is greyed out and struck through, matching '
-    'the Spatial Task View\'s own treatment',
+    'a completed task\'s title recedes to the shared done colour and is '
+    'struck through, matching the Spatial Task View (TaskStateStyle)',
     (tester) async {
       final completedTask = Task.create(
         title: 'Deep work',
@@ -132,8 +139,8 @@ void main() {
       final titleText = tester.widget<Text>(find.text('Deep work'));
       expect(
         titleText.style?.color,
-        AmbleTheme.light.colorTextSecondary,
-        reason: 'a completed task\'s title must grey out',
+        TaskStateTokens.doneTitle(AmbleTheme.light),
+        reason: 'a completed task\'s title must recede',
       );
       expect(
         titleText.style?.decoration,
@@ -142,6 +149,27 @@ void main() {
       );
     },
   );
+
+  testWidgets('an important task shows the brand title and the corner star '
+      'on its badge', (tester) async {
+    final important = Task.create(
+      title: 'Deep work',
+      scheduledAt: DateTime(2026, 9, 4, 9),
+      durationMinutes: 230,
+      categoryId: BuiltInCategoryIds.work,
+      isImportant: true,
+    );
+    await pump(
+      tester,
+      tasksOverride: [important],
+      categoriesById: {BuiltInCategoryIds.work: category},
+    );
+    expect(
+      tester.widget<Text>(find.text('Deep work')).style?.color,
+      TaskStateTokens.importantTitle(AmbleTheme.light),
+    );
+    expect(find.byType(TaskImportantStar), findsOneWidget);
+  });
 
   testWidgets('an INCOMPLETE task\'s title stays bold primary color with no '
       'strikethrough', (tester) async {
@@ -622,7 +650,7 @@ void main() {
         find.byType(DecoratedBox).first,
       );
       final decoration = decoratedBox.decoration as BoxDecoration;
-      expect(decoration.color, AmbleTheme.light.colorSurfaceSecondary);
+      expect(decoration.color, ZoneSurfaceTokens.fill(AmbleTheme.light));
 
       // RIGHT stays zero so the trailing completion checkbox lines up
       // with the one on a task row outside a zone (see "a nested checkbox
@@ -670,7 +698,7 @@ void main() {
     // they are in manage (but keep size of them as they are in zone view
     // atm)."
     testWidgets(
-      'each task row gets its own Manage-style card (colorSurfaceSecondary '
+      'each task row gets its own Manage-style card (zone fill '
       'fill, radiusXl corners), with the row\'s own height unchanged',
       (tester) async {
         await pump(tester, flatStyle: true);
@@ -681,7 +709,7 @@ void main() {
           find.byType(DecoratedBox).at(1),
         );
         final decoration = rowDecoratedBox.decoration as BoxDecoration;
-        expect(decoration.color, AmbleTheme.light.colorSurfaceSecondary);
+        expect(decoration.color, ZoneSurfaceTokens.fill(AmbleTheme.light));
         expect(
           decoration.borderRadius,
           BorderRadius.circular(AmbleTheme.light.radiusXl),
@@ -1119,10 +1147,7 @@ void main() {
       );
 
       expect(title.style?.fontSize, AmbleTheme.light.textZoneName.fontSize);
-      expect(
-        title.style?.fontFamily,
-        AmbleTheme.light.textZoneName.fontFamily,
-      );
+      expect(title.style?.fontFamily, AmbleTheme.light.textZoneName.fontFamily);
     },
   );
 
@@ -1167,6 +1192,55 @@ void main() {
       expect(swipe.endAction!.semanticLabel, 'Mark done');
       swipe.endAction!.onActivate();
       expect(toggled, task);
+    });
+
+    testWidgets('swipe-to-done plays the full completion moment: bubbles, '
+        'ripple, and the badge bounces with the elastic complete spec', (
+      tester,
+    ) async {
+      final pending = Task.create(
+        title: 'Deep work',
+        scheduledAt: DateTime(2026, 9, 4, 9),
+        durationMinutes: 230,
+        categoryId: BuiltInCategoryIds.work,
+      );
+      await pump(
+        tester,
+        tasksOverride: [pending],
+        categoriesById: {BuiltInCategoryIds.work: category},
+        onToggleComplete: (t) => t.status = TaskStatus.completed,
+      );
+      final completePulse = find.byWidgetPredicate(
+        (w) => w is AppLiquidPulse && w.spec == LiquidPulseSpec.complete,
+      );
+      expect(tester.widget<AppLiquidPulse>(completePulse).active, isFalse);
+
+      tester
+          .widget<AppSwipeActions>(find.byType(AppSwipeActions))
+          .endAction!
+          .onActivate();
+      await tester.pump();
+      expect(find.byType(BubbleBurstEffect), findsOneWidget);
+      expect(find.byType(WaterRippleEffect), findsOneWidget);
+
+      await pump(
+        tester,
+        tasksOverride: [pending],
+        categoriesById: {BuiltInCategoryIds.work: category},
+        onToggleComplete: (_) {},
+      );
+      expect(tester.widget<AppLiquidPulse>(completePulse).active, isTrue);
+      await tester.pump(LiquidPulseSpec.complete.compressDuration);
+      final scaleY = tester
+          .widget<Transform>(
+            find
+                .descendant(of: completePulse, matching: find.byType(Transform))
+                .first,
+          )
+          .transform
+          .storage[5];
+      expect(scaleY, closeTo(1 - LiquidPulseSpec.complete.depth, .005));
+      await tester.pumpAndSettle();
     });
 
     testWidgets('the end (swipe-left) action shows "mark undone" on a '
@@ -1330,15 +1404,15 @@ void main() {
     // identical between the two tokens — so it kept passing straight
     // through the regression. See docs/DESIGN_SYSTEM.md's "Two-font
     // system" section.
-    testWidgets('styled as textTaskEdgeTime + colorTextSecondary, matching '
-        'the compact spatial/Edit task-time treatment — including the '
-        'MONO font family, not just size/color', (tester) async {
+    testWidgets('styled as textCaptionMono + colorTextSecondary, matching '
+        'the timeline view\'s hour labels — including the MONO font '
+        'family, not just size/color', (tester) async {
       await pumpLabel(tester, leftPaddingToEscape: 40);
 
       final theme = AmbleTheme.light;
       final text = tester.widget<Text>(find.text('9:00 AM'));
-      expect(text.style?.fontSize, theme.textTaskEdgeTime.fontSize);
-      expect(text.style?.fontFamily, theme.textTaskEdgeTime.fontFamily);
+      expect(text.style?.fontSize, theme.textCaptionMono.fontSize);
+      expect(text.style?.fontFamily, theme.textCaptionMono.fontFamily);
       expect(
         text.style?.fontFamily,
         isNot(theme.textCaption.fontFamily),

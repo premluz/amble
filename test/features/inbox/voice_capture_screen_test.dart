@@ -1,9 +1,11 @@
+import 'package:amble/core/tokens/voice_mode_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive_ce.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_button.dart';
+import 'package:amble/core/widgets/app_dock_primitives.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/inbox/voice_capture_provider.dart';
 import 'package:amble/features/inbox/voice_capture_screen.dart';
@@ -104,6 +106,9 @@ void main() {
     // other Timeline-embedding harness in this codebase.
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pump(const Duration(milliseconds: 400));
+    // Voice mode now has a real entrance (the toolbar morphs out of the
+    // mic); its toolbar takes taps only once that has finished.
+    await tester.pump(VoiceModeTokens.enterDuration);
     return container;
   }
 
@@ -235,4 +240,46 @@ void main() {
       expect(find.byTooltip('Pause'), findsOneWidget);
     },
   );
+
+  testWidgets('the toolbar is one glass pane at the same height and bottom '
+      'clearance as every other toolbar dock', (tester) async {
+    await pumpScreen(tester);
+    final pane = tester.getRect(
+      find.ancestor(
+        of: find.byTooltip('Submit'),
+        matching: find.byType(AppDockSurface),
+      ),
+    );
+    final theme = AmbleTheme.dark;
+    final screen = tester.getSize(find.byType(VoiceCaptureScreen));
+    expect(pane.bottom, screen.height - theme.spacingBottomClearance);
+    expect(
+      pane.height,
+      appButtonHeightFor(theme, AppButtonSize.md) + theme.spacingXs * 2,
+    );
+    expect(
+      find.ancestor(
+        of: find.byTooltip('Pause'),
+        matching: find.byType(AppDockSurface),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('Close is its own single-item pane at the right edge, apart '
+      'from the pause/submit toolbar', (tester) async {
+    await pumpScreen(tester);
+    Finder paneOf(String tooltip) => find.ancestor(
+      of: find.byTooltip(tooltip),
+      matching: find.byType(AppDockSurface),
+    );
+    final close = tester.getRect(paneOf('Close'));
+    final toolbar = tester.getRect(paneOf('Submit'));
+    final theme = AmbleTheme.dark;
+    final screen = tester.getSize(find.byType(VoiceCaptureScreen));
+    expect(close.right, screen.width - theme.spacingMd);
+    expect(close.width, close.height, reason: 'a single-item pane');
+    expect(close.top, toolbar.top, reason: 'on the same row');
+    expect(toolbar.right, close.left - theme.spacingSm);
+  });
 }

@@ -8,8 +8,13 @@ import 'package:amble/shared/services/zone_selection_order.dart';
 /// siblings so its selection ring/resize handles/live-edge labels aren't
 /// covered by an unselected neighbour rendered after it.
 void main() {
-  Zone zoneOf(String id) =>
-      Zone(id: id, title: id, startMinutes: 0, endMinutes: 60);
+  Zone zoneOf(String id, {int? weekday}) => Zone(
+    id: id,
+    title: id,
+    startMinutes: 0,
+    endMinutes: 60,
+    weekday: weekday,
+  );
 
   test('an unselected list keeps its original order unchanged', () {
     final zones = [zoneOf('a'), zoneOf('b'), zoneOf('c')];
@@ -35,6 +40,42 @@ void main() {
     final ordered = selectedZonesLast(zones, {'a', 'c'});
 
     expect(ordered.map((z) => z.id), ['b', 'd', 'a', 'c']);
+  });
+
+  test('the actively moved selection paints above other selected zones', () {
+    final zones = [
+      zoneOf('monday', weekday: 1),
+      zoneOf('tuesday', weekday: 2),
+      zoneOf('wednesday', weekday: 3),
+    ];
+
+    final ordered = selectedZonesLast(zones, {
+      'tuesday',
+      'wednesday',
+    }, liftedId: 'tuesday');
+
+    expect(ordered.map((z) => z.id), ['monday', 'wednesday', 'tuesday']);
+  });
+
+  test('lifted item remains last with a different lane ordering', () {
+    final zones = [
+      zoneOf('friday', weekday: 5),
+      zoneOf('monday', weekday: 1),
+      zoneOf('sunday', weekday: 7),
+      zoneOf('wednesday', weekday: 3),
+    ];
+
+    final ordered = selectedZonesLast(zones, {
+      'friday',
+      'sunday',
+    }, liftedId: 'friday');
+
+    expect(ordered.map((z) => z.id), [
+      'monday',
+      'wednesday',
+      'sunday',
+      'friday',
+    ]);
   });
 
   test('every zone selected leaves the order unchanged', () {

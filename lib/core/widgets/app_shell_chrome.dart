@@ -66,15 +66,14 @@ class AppShellChromeController extends ChangeNotifier {
 
   bool _disposed = false;
 
-  String _configurationSignature(AppContextDockConfiguration configuration) =>
-      [
-        configuration.stateId,
-        for (final group in configuration.groups) ...[
-          group.id,
-          for (final action in group.actions)
-            '${action.id}:${action.icon.codePoint}:${action.tooltip}:${action.selected}:${action.enabled}:${action.destructive}:${action.badgeCount}',
-        ],
-      ].join('|');
+  String _configurationSignature(AppContextDockConfiguration configuration) => [
+    configuration.stateId,
+    for (final group in configuration.groups) ...[
+      group.id,
+      for (final action in group.actions)
+        '${action.id}:${action.icon.codePoint}:${action.tooltip}:${action.selected}:${action.enabled}:${action.destructive}:${action.badgeCount}',
+    ],
+  ].join('|');
 
   @override
   void dispose() {
@@ -90,8 +89,7 @@ class AppShellChromeScope extends InheritedNotifier<AppShellChromeController> {
     required super.child,
   }) : super(notifier: controller);
 
-  static AppShellChromeController? maybeOf(BuildContext context) =>
-      context
-          .dependOnInheritedWidgetOfExactType<AppShellChromeScope>()
-          ?.notifier;
+  static AppShellChromeController? maybeOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<AppShellChromeScope>()
+      ?.notifier;
 }

@@ -9,6 +9,7 @@ class AppContextAction {
     required this.icon,
     required this.tooltip,
     required this.onPressed,
+    this.onPressedWithContext,
     this.selected = false,
     this.enabled = true,
     this.destructive = false,
@@ -21,6 +22,11 @@ class AppContextAction {
   final IconData icon;
   final String tooltip;
   final VoidCallback? onPressed;
+
+  /// Receives the actual action subtree context, for overlays anchored to
+  /// this button. When provided, this callback takes precedence over
+  /// [onPressed].
+  final ValueChanged<BuildContext>? onPressedWithContext;
   final bool selected;
   final bool enabled;
   final bool destructive;

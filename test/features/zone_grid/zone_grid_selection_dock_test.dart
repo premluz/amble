@@ -6,6 +6,7 @@ import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_bottom_dock.dart';
 import 'package:amble/core/widgets/app_shell_chrome.dart';
 import 'package:amble/core/widgets/app_switch.dart';
+import 'package:amble/core/widgets/app_tab_switch.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/timeline/edit_selection_provider.dart';
 import 'package:amble/features/zone_grid/zone_grid_screen.dart';
@@ -22,6 +23,7 @@ import 'package:amble/shared/providers/task_providers.dart';
 import 'package:amble/shared/providers/task_template_providers.dart';
 import 'package:amble/shared/providers/tracked_behavior_providers.dart';
 import 'package:amble/shared/providers/zone_providers.dart';
+import 'package:amble/shared/providers/zone_facet_providers.dart';
 import 'package:amble/shared/repositories/hive_category_repository.dart';
 import 'package:amble/shared/repositories/hive_preferences_repository.dart';
 import 'package:amble/shared/repositories/hive_task_repository.dart';
@@ -30,12 +32,11 @@ import 'package:amble/shared/repositories/hive_tracked_behavior_repository.dart'
 import 'package:amble/shared/repositories/hive_zone_repository.dart';
 
 import '../../support/fake_notification_service.dart';
+import '../../support/memory_zone_repositories.dart';
 import '../../support/seeded_category_box.dart';
 
-/// Covers the Tasks tab's bottom dock swapping from plain "Close" to a
-/// selection context menu (back-arrow / Edit / Remove) whenever
-/// [editSelectionProvider] is non-empty — requested directly: "on edit
-/// task mode when item(s) selected we need selection context menu."
+/// Covers the Edit screen's selection toolbar: Back always closes Edit, while
+/// Edit/Remove appear for selected tasks and zones.
 ///
 /// Every real Hive write here (`createTask`/`deleteTask`, even called
 /// directly on a notifier rather than through a tap) runs inside
@@ -82,6 +83,7 @@ void main() {
   Future<ProviderContainer> pumpEditScreen(
     WidgetTester tester, {
     bool useShellDock = false,
+    ZoneGridTab initialTab = ZoneGridTab.tasks,
   }) async {
     late ProviderContainer container;
     final shellChromeController = useShellDock
@@ -107,6 +109,9 @@ void main() {
             HiveCategoryRepository(categoryBox),
           ),
           zoneRepositoryProvider.overrideWithValue(HiveZoneRepository(zoneBox)),
+          zoneFacetRepositoryProvider.overrideWithValue(
+            MemoryZoneFacetRepository(),
+          ),
           trackedBehaviorRepositoryProvider.overrideWithValue(
             HiveTrackedBehaviorRepository(trackedBehaviorBox),
           ),
@@ -159,7 +164,7 @@ void main() {
                       onPressed: () => Navigator.of(context).push<void>(
                         MaterialPageRoute(
                           builder: (_) =>
-                              const ZoneGridScreen(initialTab: ZoneGridTab.tasks),
+                              ZoneGridScreen(initialTab: initialTab),
                         ),
                       ),
                       child: const Text('open'),
@@ -193,12 +198,14 @@ void main() {
   }) async {
     late String id;
     await tester.runAsync(() async {
-      await container.read(taskListProvider.notifier).createTask(
-        title: title,
-        scheduledAt: scheduledAt,
-        durationMinutes: 30,
-        categoryId: BuiltInCategoryIds.general,
-      );
+      await container
+          .read(taskListProvider.notifier)
+          .createTask(
+            title: title,
+            scheduledAt: scheduledAt,
+            durationMinutes: 30,
+            categoryId: BuiltInCategoryIds.general,
+          );
       id = container
           .read(taskListProvider)
           .firstWhere((t) => t.title == title)
@@ -207,90 +214,176 @@ void main() {
     return id;
   }
 
-  testWidgets(
-    'with no selection, the dock shows plain Close (unchanged)',
-    (tester) async {
-      await pumpEditScreen(tester);
+  testWidgets('with no selection, the dock shows plain Close (unchanged)', (
+    tester,
+  ) async {
+    await pumpEditScreen(tester);
 
-      expect(find.byTooltip('Close'), findsOneWidget);
-      expect(find.byTooltip('Clear selection'), findsNothing);
-      expect(find.byTooltip('Edit selected'), findsNothing);
-      expect(find.byTooltip('Remove selected'), findsNothing);
-    },
-  );
+    expect(find.byTooltip('Close'), findsOneWidget);
+    expect(find.byTooltip('Clear selection'), findsNothing);
+    expect(find.byTooltip('Edit selected'), findsNothing);
+    expect(find.byTooltip('Remove selected'), findsNothing);
+  });
 
-  testWidgets(
-    'selecting a task swaps the dock to back-arrow / Edit / Remove',
-    (tester) async {
-      final container = await pumpEditScreen(tester);
-      final savedId = await createTask(
-        tester,
-        container,
-        title: 'Buy milk',
-        scheduledAt: DateTime.now(),
-      );
+  testWidgets('selecting a task keeps Close and adds Edit / Remove', (
+    tester,
+  ) async {
+    final container = await pumpEditScreen(tester);
+    final savedId = await createTask(
+      tester,
+      container,
+      title: 'Buy milk',
+      scheduledAt: DateTime.now(),
+    );
 
-      container.read(editSelectionProvider.notifier).toggle(savedId);
-      await tester.pump();
+    container.read(editSelectionProvider.notifier).toggle(savedId);
+    await tester.pump();
 
-      expect(find.byTooltip('Close'), findsNothing);
-      expect(find.byTooltip('Clear selection'), findsOneWidget);
-      expect(find.byTooltip('Edit selected'), findsOneWidget);
-      expect(find.byTooltip('Remove selected'), findsOneWidget);
-    },
-  );
+    expect(find.byTooltip('Close'), findsOneWidget);
+    expect(find.byTooltip('Clear selection'), findsOneWidget);
+    expect(find.byTooltip('Edit selected'), findsOneWidget);
+    expect(find.byTooltip('Remove selected'), findsOneWidget);
+  });
 
-  testWidgets(
-    'tapping the back-arrow clears the selection but does not close the '
-    'screen',
-    (tester) async {
-      final container = await pumpEditScreen(tester);
-      final savedId = await createTask(
-        tester,
-        container,
-        title: 'Buy milk',
-        scheduledAt: DateTime.now(),
-      );
-      container.read(editSelectionProvider.notifier).toggle(savedId);
-      await tester.pump();
+  testWidgets('Deselect clears multi-task selection without exiting Edit', (
+    tester,
+  ) async {
+    final container = await pumpEditScreen(tester);
+    final firstId = await createTask(
+      tester,
+      container,
+      title: 'Buy milk',
+      scheduledAt: DateTime.now(),
+    );
+    final secondId = await createTask(
+      tester,
+      container,
+      title: 'Call Alex',
+      scheduledAt: DateTime.now().add(const Duration(hours: 1)),
+    );
+    container.read(editSelectionProvider.notifier).toggle(firstId);
+    container.read(editSelectionProvider.notifier).toggle(secondId);
+    await tester.pumpAndSettle();
 
-      await tester.tap(find.byTooltip('Clear selection'));
-      await tester.pump();
+    expect(find.byTooltip('Close'), findsOneWidget);
+    expect(find.byTooltip('Clear selection'), findsOneWidget);
+    expect(find.text('2'), findsOneWidget);
 
-      expect(container.read(editSelectionProvider), isEmpty);
-      // Still on the Edit screen — the back-arrow only cleared selection,
-      // it did not pop this route (confirmed directly, distinct from the
-      // old Close semantics).
-      expect(find.byType(ZoneGridScreen), findsOneWidget);
-      expect(find.byTooltip('Close'), findsOneWidget);
-    },
-  );
+    await tester.tap(find.byTooltip('Clear selection'));
+    await tester.pumpAndSettle();
 
-  testWidgets(
-    'tapping Edit with exactly ONE task selected opens the ordinary '
-    'task detail sheet, not the multi-edit sheet',
-    (tester) async {
-      final container = await pumpEditScreen(tester);
-      final savedId = await createTask(
-        tester,
-        container,
-        title: 'Buy milk',
-        scheduledAt: DateTime.now(),
-      );
-      container.read(editSelectionProvider.notifier).toggle(savedId);
-      await tester.pump();
+    expect(container.read(editSelectionProvider), isEmpty);
+    expect(find.byType(ZoneGridScreen), findsOneWidget);
+    expect(find.byTooltip('Close'), findsOneWidget);
+  });
 
-      await tester.tap(find.byTooltip('Edit selected'));
-      await tester.pumpAndSettle();
+  testWidgets('Back exits task Edit and clears the selected task', (
+    tester,
+  ) async {
+    final container = await pumpEditScreen(tester);
+    final savedId = await createTask(
+      tester,
+      container,
+      title: 'Buy milk',
+      scheduledAt: DateTime.now(),
+    );
+    container.read(editSelectionProvider.notifier).toggle(savedId);
+    await tester.pump();
 
-      // Never the multi-edit sheet's own "N tasks selected" header, nor
-      // its distinctive "Notifications" row label (the single-task detail
-      // sheet has its own "Tag" field too, so that text alone can't
-      // disambiguate the two sheets) — the single-task path opened
-      // instead (the ordinary detail sheet).
-      expect(find.textContaining('tasks selected'), findsNothing);
-    },
-  );
+    await tester.tap(find.byTooltip('Close'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(editSelectionProvider), isEmpty);
+    expect(find.byType(ZoneGridScreen), findsNothing);
+    expect(find.byTooltip('Close'), findsNothing);
+  });
+
+  testWidgets('Back exits Zone Edit and clears the selected zone', (
+    tester,
+  ) async {
+    final container = await pumpEditScreen(
+      tester,
+      initialTab: ZoneGridTab.zones,
+    );
+    late Zone zone;
+    await tester.runAsync(() async {
+      zone =
+          (await container
+                  .read(zoneListProvider.notifier)
+                  .paintWeeklyZones(
+                    title: 'Focus',
+                    weekdays: {1},
+                    startMinutes: 240,
+                    endMinutes: 300,
+                  ))
+              .single;
+    });
+    await tester.pump();
+    container.read(zoneEditSelectionProvider.notifier).add(zone.id);
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Close zones'), findsOneWidget);
+    await tester.tap(find.byTooltip('Close zones'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(zoneEditSelectionProvider), isEmpty);
+    expect(find.byType(ZoneGridScreen), findsNothing);
+  });
+
+  testWidgets('switching Tasks and Zones clears both edit selections', (
+    tester,
+  ) async {
+    final container = await pumpEditScreen(tester);
+    void switchTo(ZoneGridTab tab) {
+      tester
+          .widget<AppTabSwitch<ZoneGridTab>>(
+            find.byType(AppTabSwitch<ZoneGridTab>).first,
+          )
+          .onChanged(tab);
+    }
+
+    container.read(editSelectionProvider.notifier).toggle('task-id');
+    container.read(zoneEditSelectionProvider.notifier).add('zone-id');
+    await tester.pump();
+    switchTo(ZoneGridTab.zones);
+    await tester.pump();
+
+    expect(container.read(editSelectionProvider), isEmpty);
+    expect(container.read(zoneEditSelectionProvider), isEmpty);
+
+    container.read(editSelectionProvider.notifier).toggle('task-id');
+    container.read(zoneEditSelectionProvider.notifier).add('zone-id');
+    await tester.pump();
+    switchTo(ZoneGridTab.tasks);
+    await tester.pump();
+
+    expect(container.read(editSelectionProvider), isEmpty);
+    expect(container.read(zoneEditSelectionProvider), isEmpty);
+  });
+
+  testWidgets('tapping Edit with exactly ONE task selected opens the ordinary '
+      'task detail sheet, not the multi-edit sheet', (tester) async {
+    final container = await pumpEditScreen(tester);
+    final savedId = await createTask(
+      tester,
+      container,
+      title: 'Buy milk',
+      scheduledAt: DateTime.now(),
+    );
+    container.read(editSelectionProvider.notifier).toggle(savedId);
+    await tester.pump();
+
+    await tester.tap(find.byTooltip('Edit selected'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(editSelectionProvider), isEmpty);
+    // Never the multi-edit sheet's own "N tasks selected" header, nor
+    // its distinctive "Notifications" row label (the single-task detail
+    // sheet has its own "Tag" field too, so that text alone can't
+    // disambiguate the two sheets) — the single-task path opened
+    // instead (the ordinary detail sheet).
+    expect(find.textContaining('tasks selected'), findsNothing);
+  });
 
   testWidgets(
     'tapping Edit with TWO tasks selected opens the multi-edit sheet',
@@ -317,6 +410,7 @@ void main() {
       await tester.tap(find.byTooltip('Edit selected'));
       await tester.pumpAndSettle();
 
+      expect(container.read(editSelectionProvider), isEmpty);
       expect(find.text('2 tasks selected'), findsOneWidget);
       expect(find.text('Label'), findsOneWidget);
       expect(find.text('Track'), findsOneWidget);
@@ -353,8 +447,11 @@ void main() {
         await tester.pump();
         // Batch deletion still writes to real Hive storage, so poll until
         // the repository state settles rather than guessing a fixed delay.
-        for (var i = 0; i < 20 && container.read(taskListProvider).isNotEmpty;
-            i++) {
+        for (
+          var i = 0;
+          i < 20 && container.read(taskListProvider).isNotEmpty;
+          i++
+        ) {
           await Future<void>.delayed(const Duration(milliseconds: 20));
           await tester.pump();
         }
@@ -475,10 +572,12 @@ void main() {
       await tester.ensureVisible(saveButton);
       await tester.runAsync(() async {
         await tester.tap(saveButton);
-        for (var i = 0;
-            i < 20 &&
-                !container.read(taskListProvider).every((t) => t.isImportant);
-            i++) {
+        for (
+          var i = 0;
+          i < 20 &&
+              !container.read(taskListProvider).every((t) => t.isImportant);
+          i++
+        ) {
           await Future<void>.delayed(const Duration(milliseconds: 20));
           await tester.pump();
         }

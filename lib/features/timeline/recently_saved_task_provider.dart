@@ -22,6 +22,7 @@ class RecentlySavedTask {
     required this.taskId,
     required this.change,
     this.previousDurationMinutes,
+    this.checkForOverlapAfterSave = false,
   });
 
   final String taskId;
@@ -33,6 +34,11 @@ class RecentlySavedTask {
   /// animate to the real value — otherwise the resize happens behind the
   /// modal and there's nothing left to see.
   final int? previousDurationMinutes;
+
+  /// The Timeline should offer its overlap-resolution menu after revealing
+  /// an existing task whose schedule changed. Creation still validates in
+  /// its sheet because there is no committed task to anchor the menu to.
+  final bool checkForOverlapAfterSave;
 }
 
 /// Screen-local UI state, not app-level — lives under features/timeline/
@@ -49,11 +55,13 @@ class RecentlySavedTaskNotifier extends Notifier<RecentlySavedTask?> {
     String taskId,
     SavedTaskChange change, {
     int? previousDurationMinutes,
+    bool checkForOverlapAfterSave = false,
   }) {
     state = RecentlySavedTask(
       taskId: taskId,
       change: change,
       previousDurationMinutes: previousDurationMinutes,
+      checkForOverlapAfterSave: checkForOverlapAfterSave,
     );
   }
 

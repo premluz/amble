@@ -175,33 +175,30 @@ void main() {
       expect(bordersOf(tester), isNotEmpty);
     });
 
-    testWidgets(
-      'the border is the neutral hairline color when unselected, and '
-      'accent when selected',
-      (tester) async {
-        await pump(
-          tester,
-          selected: false,
-          onTap: () {},
-          variant: AppValueChipVariant.outlined,
-        );
-        expect(
-          bordersOf(tester).any((b) => b.top.color == theme.colorBorder),
-          isTrue,
-        );
+    testWidgets('the border is the neutral hairline color when unselected, and '
+        'accent when selected', (tester) async {
+      await pump(
+        tester,
+        selected: false,
+        onTap: () {},
+        variant: AppValueChipVariant.outlined,
+      );
+      expect(
+        bordersOf(tester).any((b) => b.top.color == theme.colorBorder),
+        isTrue,
+      );
 
-        await pump(
-          tester,
-          selected: true,
-          onTap: () {},
-          variant: AppValueChipVariant.outlined,
-        );
-        expect(
-          bordersOf(tester).any((b) => b.top.color == theme.colorAccent),
-          isTrue,
-        );
-      },
-    );
+      await pump(
+        tester,
+        selected: true,
+        onTap: () {},
+        variant: AppValueChipVariant.outlined,
+      );
+      expect(
+        bordersOf(tester).any((b) => b.top.color == theme.colorAccent),
+        isTrue,
+      );
+    });
 
     testWidgets(
       'a selected outlined chip paints exactly ONE accent border, not '
@@ -215,9 +212,8 @@ void main() {
           variant: AppValueChipVariant.outlined,
         );
 
-        final accentBorders = bordersOf(
-          tester,
-        ).where((b) => b.top.color == theme.colorAccent);
+        final accentBorders = bordersOf(tester)
+            .where((b) => b.top.color == theme.colorAccent);
         expect(accentBorders, hasLength(1));
       },
     );
@@ -241,11 +237,7 @@ void main() {
         );
         final outlinedSize = tester.getSize(find.byType(AppBadgeChip));
 
-        expect(
-          outlinedSize,
-          filledSize,
-          reason: 'selected=$selected',
-        );
+        expect(outlinedSize, filledSize, reason: 'selected=$selected');
       }
     });
   });
@@ -328,23 +320,20 @@ void main() {
       },
     );
 
-    testWidgets(
-      'xs and sm both render text at the SAME font size AppValueChip '
-      'renders those rungs at (both map to textCaption)',
-      (tester) async {
-        for (final size in [AppValueChipSize.xs, AppValueChipSize.sm]) {
-          await pump(tester, size: size);
-          final chipText = tester.widget<Text>(
-            find.descendant(
-              of: find.byType(AppBadgeChip),
-              matching: find.text('Deep work'),
-            ),
-          );
+    testWidgets('xs and sm both render text at the SAME font size AppValueChip '
+        'renders those rungs at (both map to textCaption)', (tester) async {
+      for (final size in [AppValueChipSize.xs, AppValueChipSize.sm]) {
+        await pump(tester, size: size);
+        final chipText = tester.widget<Text>(
+          find.descendant(
+            of: find.byType(AppBadgeChip),
+            matching: find.text('Deep work'),
+          ),
+        );
 
-          expect(chipText.style!.fontSize, theme.textCaption.fontSize);
-        }
-      },
-    );
+        expect(chipText.style!.fontSize, theme.textCaption.fontSize);
+      }
+    });
 
     testWidgets(
       'the label is ALWAYS w700, regardless of size or selection state — '
@@ -394,9 +383,7 @@ void main() {
       'is skipped too, not just the leading slot itself',
       (tester) async {
         await pump(tester, leading: null);
-        final withoutLeading = tester
-            .getSize(find.byType(AppBadgeChip))
-            .width;
+        final withoutLeading = tester.getSize(find.byType(AppBadgeChip)).width;
 
         await pump(tester);
         final withLeading = tester.getSize(find.byType(AppBadgeChip)).width;

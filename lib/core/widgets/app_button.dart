@@ -76,6 +76,7 @@ class AppButton extends StatelessWidget {
     this.tooltip,
     this.iconColor,
     this.borderColor,
+    this.fillColor,
     this.haptic = AmbleHaptic.tap,
   }) : assert(
          label != null || icon != null || child != null,
@@ -109,6 +110,11 @@ class AppButton extends StatelessWidget {
   /// literal border — it now tints the circle's own blurred fill instead.
   final Color? iconColor;
   final Color? borderColor;
+
+  /// Resting fill for a ghost circle (a dock button's selected tint). Lives
+  /// inside the button so it swells with the press rather than sitting
+  /// still behind it.
+  final Color? fillColor;
 
   /// Shows a small spinner in place of [label] and disables the button —
   /// regardless of what [onPressed] itself is — for the duration of an
@@ -414,7 +420,7 @@ class AppButton extends StatelessWidget {
 
     final background = isPrimary
         ? theme.colorAccent
-        : (isSecondary ? (borderColor ?? subtleTint(theme)) : null);
+        : (isSecondary ? (borderColor ?? subtleTint(theme)) : fillColor);
     final foreground = isPrimary
         ? theme.colorSurfacePrimary
         : (iconColor ?? theme.colorTextPrimary);

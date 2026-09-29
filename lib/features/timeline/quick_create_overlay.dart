@@ -12,10 +12,8 @@ import '../../core/widgets/app_trial_gate.dart';
 import '../../shared/models/category.dart';
 import '../../shared/models/task.dart';
 import '../../shared/models/task_template.dart';
-import '../../shared/providers/preferences_providers.dart';
 import '../../shared/providers/task_providers.dart';
 import '../../shared/providers/trial_providers.dart';
-import '../../shared/services/overlap_checker.dart';
 import 'recently_saved_task_provider.dart';
 import '../task_detail/quick_create_sheet_shell.dart';
 import '../task_detail/task_detail_sheet.dart';
@@ -110,12 +108,6 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
   /// user-overridable afterward, same as the title field is.
   bool _isImportant = false;
 
-  /// Set when a direct Schedule would collide with an existing task and
-  /// the "Prevent overlapping tasks" setting is on — surfaced in the
-  /// panel rather than silently refusing the tap. Mirrors the full
-  /// sheet's own `_overlapError`.
-  String? _overlapError;
-
   /// Re-entrancy guards for the direct save, mirroring the full sheet's
   /// own pair: [_isSaving] stops two taps overlapping, [_hasSaved] stops
   /// a second tap arriving after the first committed from creating a
@@ -128,11 +120,11 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
   @override
   void initState() {
     super.initState();
-    // A real default name ("New task") rather than starting empty —
+    // A real default name ("New thing") rather than starting empty —
     // requested directly, so Schedule is always meaningful even if the
     // user never types. Tapping the field clears it outright (see the
     // field's own onFocusChanged) so typing starts from scratch.
-    _titleController = TextEditingController(text: 'New task');
+    _titleController = TextEditingController(text: 'New thing');
     _heightController = QuickCreateSheetHeightController(
       initialFraction: quickCreateSheetMinFraction,
     )..addListener(_onHeightChanged);
@@ -188,7 +180,7 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
   /// up, so typing continues uninterrupted in what reads as the same
   /// field. The handle-drag and Done-button paths, by contrast, both
   /// mean "I'm done with the name" (whatever it currently reads,
-  /// including the untouched "New task" default), so they skip straight
+  /// including the untouched "New thing" default), so they skip straight
   /// to the schedule fields as usual.
   void _promote({bool stayOnNameStage = false}) {
     if (_promoted) return;
@@ -216,16 +208,15 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
   /// and it already sets the task there."
   ///
   /// Everything needed is already settled by this point: the title (typed
-  /// or from a chip or the "New task" default), the category (from a chip,
+  /// or from a chip or the "New thing" default), the category (from a chip,
   /// else General), and the start/duration (from where the user dropped
   /// and sized the placeholder pill). So this is a complete answer, not a
   /// shortcut past unanswered questions — the full sheet stays reachable
   /// for anything more (notes, repeats, notifications) by tapping the
   /// Name field.
   ///
-  /// Enforces the same "Prevent overlapping tasks" guard the full sheet's
-  /// own `_save` does. Skipping it here would make the mini sheet a way
-  /// to create exactly the overlaps that setting exists to prevent.
+  /// Saves the chosen position and size as-is. Overlaps are valid task
+  /// layout; the timeline exposes explicit resolution actions afterward.
   Future<void> _schedule() async {
     if (_isSaving || _hasSaved) return;
 
@@ -237,23 +228,7 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
     final scheduledAt = widget.draft.scheduledAt;
     final durationMinutes = widget.draft.durationMinutes;
 
-    if (ref.read(preventOverlappingTasksSettingProvider) &&
-        overlapsExistingTask(
-          scheduledAt: scheduledAt,
-          durationMinutes: durationMinutes,
-          existingTasks: ref.read(taskListProvider),
-        )) {
-      setState(
-        () => _overlapError =
-            'This overlaps another task. Choose a different time.',
-      );
-      return;
-    }
-
-    setState(() {
-      _overlapError = null;
-      _isSaving = true;
-    });
+    setState(() => _isSaving = true);
 
     try {
       final notifier = ref.read(taskListProvider.notifier);
@@ -685,29 +660,6 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
                                 ],
                               ),
                             ),
-                            // Surfaced in the panel rather than letting the
-                            // Schedule tap silently do nothing — the mini
-                            // sheet has no other way to explain a refusal.
-                            if (_overlapError != null) ...[
-                              SizedBox(height: theme.spacingSm),
-                              Padding(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: theme.spacingLg,
-                                ),
-                                child: SizedBox(
-                                  width: double.infinity,
-                                  child: Text(
-                                    _overlapError!,
-                                    // Same token pair StepScaffold uses for
-                                    // this identical message in the full
-                                    // sheet.
-                                    style: theme.textBody.copyWith(
-                                      color: theme.colorTaskAlert,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
                             // Matches the sheet's own side padding, reported
                             // directly: "larger gap from task name (same as
                             // from side paddings)."

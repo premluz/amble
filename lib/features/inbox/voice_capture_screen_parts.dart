@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
-import '../../core/widgets/app_button.dart';
+import '../../core/tokens/task_state_tokens.dart';
+import 'task_list_row.dart';
 import 'voice_capture_state.dart';
 
 /// The private sub-widgets [VoiceCaptureScreen] composes — split into
@@ -51,7 +52,13 @@ class VoiceCaptureSegmentList extends StatelessWidget {
     required this.theme,
     required this.segments,
     this.partialText = '',
+    this.heroTagFor,
   });
+
+  /// Once submitted, each line that became an Inbox task carries that task's
+  /// flight tag, so it flies into its row as voice mode closes. Null (or a
+  /// null tag) means the line simply recedes with the screen.
+  final Object? Function(int index)? heroTagFor;
 
   final AmbleTheme theme;
 
@@ -77,16 +84,26 @@ class VoiceCaptureSegmentList extends StatelessWidget {
       separatorBuilder: (context, index) => SizedBox(height: theme.spacingMd),
       itemBuilder: (context, index) {
         final isPartialRow = index == segments.length;
-        return _VoiceCaptureSegmentRow(
+        final row = _VoiceCaptureSegmentRow(
           theme: theme,
           text: isPartialRow ? partialText : segments[index],
           committed: !isPartialRow,
         );
+        final tag = isPartialRow ? null : heroTagFor?.call(index);
+        return tag == null
+            ? row
+            // The Inbox row it lands in supplies the flight's shuttle.
+            : Hero(tag: tag, child: row);
       },
     );
   }
 }
 
+/// One spoken line, drawn as the same card as an Inbox task ([TaskListRow])
+/// so it looks identical before, during and after its flight into the
+/// Inbox. It has no label yet, so its pill is the unassigned tone. While the
+/// line is still being spoken, a hairline traces round just outside the
+/// pill over the silence window: when it closes, the task is done.
 class _VoiceCaptureSegmentRow extends StatelessWidget {
   const _VoiceCaptureSegmentRow({
     required this.theme,
@@ -97,49 +114,28 @@ class _VoiceCaptureSegmentRow extends StatelessWidget {
   final AmbleTheme theme;
   final String text;
 
-  /// False only for the one trailing in-progress row — dims the badge and
-  /// text so it visibly reads as "still being said," not yet a real task,
-  /// distinct from every committed row above it.
+  /// False for the in-progress (still being spoken) line.
   final bool committed;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: theme.sizeTaskBadge,
-          height: theme.sizeTaskBadge,
-          decoration: BoxDecoration(
-            color: theme.colorSurfaceField,
-            shape: BoxShape.circle,
-          ),
-          child: committed
-              ? null
-              : Center(
-                  child: SizedBox(
-                    width: theme.spacingSm,
-                    height: theme.spacingSm,
-                    child: CircularProgressIndicator(
-                      strokeWidth: theme.borderWidthHairline * 1.5,
-                      color: theme.colorTextTertiary,
-                    ),
-                  ),
-                ),
-        ),
-        SizedBox(width: theme.spacingMd),
-        Expanded(
-          child: Text(
-            text,
-            style: theme.textBody.copyWith(
-              color: committed
-                  ? theme.colorTextPrimary
-                  : theme.colorTextSecondary,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
+    final pillColor = TaskStateTokens.unlabeledFill(theme);
+    if (committed) {
+      return TaskListRow(theme: theme, title: text, pillColor: pillColor);
+    }
+    // Restarts with every new word: the silence gap is measured from the
+    // last recognised speech (see `VoiceCapture._restartSilenceTimer`).
+    return TweenAnimationBuilder<double>(
+      key: ValueKey(text),
+      tween: Tween(begin: 0, end: 1),
+      duration: voiceCaptureSilenceGap,
+      builder: (context, progress, _) => TaskListRow(
+        theme: theme,
+        title: text,
+        pillColor: pillColor,
+        titleColor: theme.colorTextSecondary,
+        pendingProgress: progress,
+      ),
     );
   }
 }
@@ -156,13 +152,22 @@ class VoiceCaptureStatusCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isPaused = state.status == VoiceCaptureStatus.paused;
-    final title = isPaused ? 'Paused' : 'Listening';
+    final unavailable = state.status == VoiceCaptureStatus.unavailable;
+    // Unavailable reads as stopped, not as a quiet "Listening".
+    final isPaused = unavailable || state.status == VoiceCaptureStatus.paused;
+    final title = unavailable
+        ? 'Can\'t listen'
+        : isPaused
+        ? 'Paused'
+        : 'Listening';
     // Static — requested directly: this card's text never changes while
     // listening. The live, word-by-word transcript is shown in its OWN
     // task card instead, in `VoiceCaptureSegmentList` below, not echoed
     // here.
-    final subtitle = isPaused
+    final subtitle = unavailable
+        ? 'Allow microphone and speech recognition in Settings, then tap '
+              'Resume.'
+        : isPaused
         ? 'Resume to keep adding tasks, or save what you\'ve got.'
         : 'Say everything you need to get done';
 
@@ -197,36 +202,6 @@ class VoiceCaptureStatusCard extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class VoiceCapturePauseResumeButton extends StatelessWidget {
-  const VoiceCapturePauseResumeButton({
-    super.key,
-    required this.theme,
-    required this.isPaused,
-    required this.onPause,
-    required this.onResume,
-  });
-
-  final AmbleTheme theme;
-  final bool isPaused;
-  final VoidCallback onPause;
-  final VoidCallback onResume;
-
-  @override
-  Widget build(BuildContext context) {
-    // Icon-swap-by-state on one button, matching AppMicButton's own
-    // listening/idle icon swap (`app_mic_button.dart`) rather than two
-    // separately-shown buttons — the mock shows the same slot holding
-    // Pause while listening and Resume (circular arrow) once paused.
-    return AppButton(
-      icon: isPaused ? Icons.refresh_rounded : Icons.pause_rounded,
-      shape: AppButtonShape.circle,
-      variant: AppButtonVariant.secondary,
-      tooltip: isPaused ? 'Resume' : 'Pause',
-      onPressed: isPaused ? onResume : onPause,
     );
   }
 }

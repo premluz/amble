@@ -72,17 +72,16 @@ void main() {
     expect(list.scrollDirection, Axis.horizontal);
   });
 
-  testWidgets(
-    'defaults item spacing to theme.spacingSm when none is given',
-    (tester) async {
-      await pump(tester, items: ['A', 'B']);
+  testWidgets('defaults item spacing to theme.spacingSm when none is given', (
+    tester,
+  ) async {
+    await pump(tester, items: ['A', 'B']);
 
-      final gap = tester
-          .widgetList<SizedBox>(find.byType(SizedBox))
-          .firstWhere((box) => box.width != null && box.height == null);
-      expect(gap.width, theme.spacingSm);
-    },
-  );
+    final gap = tester
+        .widgetList<SizedBox>(find.byType(SizedBox))
+        .firstWhere((box) => box.width != null && box.height == null);
+    expect(gap.width, theme.spacingSm);
+  });
 
   testWidgets('uses a custom itemSpacing when given', (tester) async {
     await pump(tester, items: ['A', 'B'], itemSpacing: 24);

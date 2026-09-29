@@ -40,6 +40,11 @@ import 'app_press_feedback.dart';
 /// `colorTextPrimary`-derived, not `colorSurfaceBlurOverlay`. Primary
 /// (the old flat-accent look) stays available for any future caller that
 /// specifically wants it, but no current caller passes it.
+/// [AppSelectableChip]'s two sizes: `compact` (caption text, fixed height —
+/// day-of-week and preset rows) and `regular` (body text, roomier padding —
+/// option pickers such as a behavior's type or a developer setting).
+enum AppSelectableChipSize { compact, regular }
+
 class AppSelectableChip extends StatelessWidget {
   const AppSelectableChip({
     super.key,
@@ -47,12 +52,14 @@ class AppSelectableChip extends StatelessWidget {
     required this.selected,
     required this.onTap,
     this.variant = AppButtonVariant.secondary,
+    this.size = AppSelectableChipSize.compact,
   });
 
   final String label;
   final bool selected;
   final VoidCallback onTap;
   final AppButtonVariant variant;
+  final AppSelectableChipSize size;
 
   @override
   Widget build(BuildContext context) {
@@ -67,10 +74,16 @@ class AppSelectableChip extends StatelessWidget {
         ? theme.colorTextSecondary
         : (isSecondary ? theme.colorTextPrimary : theme.colorSurfacePrimary);
 
+    final isCompact = size == AppSelectableChipSize.compact;
     final content = Container(
-      height: theme.spacingXl,
-      alignment: Alignment.center,
-      padding: EdgeInsets.symmetric(horizontal: theme.spacingSm),
+      height: isCompact ? theme.spacingXl : null,
+      alignment: isCompact ? Alignment.center : null,
+      padding: isCompact
+          ? EdgeInsets.symmetric(horizontal: theme.spacingSm)
+          : EdgeInsets.symmetric(
+              horizontal: theme.spacingMd,
+              vertical: theme.spacingSm,
+            ),
       decoration: BoxDecoration(
         // Primary's selected fill is the original flat `colorAccent`,
         // painted directly here (no blur needed). Secondary's selected
@@ -86,7 +99,7 @@ class AppSelectableChip extends StatelessWidget {
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: theme.textCaption.copyWith(
+        style: (isCompact ? theme.textCaption : theme.textBody).copyWith(
           color: foreground,
           fontWeight: FontWeight.w700,
         ),

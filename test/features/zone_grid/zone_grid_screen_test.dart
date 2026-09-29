@@ -23,6 +23,7 @@ import 'package:amble/shared/repositories/task_repository.dart';
 
 import '../../support/memory_zone_repositories.dart';
 import '../../support/fake_notification_service.dart';
+
 import 'package:amble/shared/providers/notification_providers.dart';
 
 void main() {
@@ -35,7 +36,9 @@ void main() {
     container = ProviderContainer(
       overrides: [
         taskRepositoryProvider.overrideWithValue(_MemoryTasks()),
-        notificationServiceProvider.overrideWithValue(FakeNotificationService()),
+        notificationServiceProvider.overrideWithValue(
+          FakeNotificationService(),
+        ),
         zoneRepositoryProvider.overrideWithValue(repository),
         zoneFacetRepositoryProvider.overrideWithValue(facets),
         preferencesRepositoryProvider.overrideWithValue(
@@ -133,6 +136,23 @@ void main() {
       rect.top + minute * pixelsPerMinute,
     );
   }
+
+  testWidgets('spatial Zones reserve scroll clearance around the weekly grid', (
+    tester,
+  ) async {
+    await pump(tester);
+
+    final scrollView = tester.widget<SingleChildScrollView>(
+      find.byType(SingleChildScrollView).first,
+    );
+    expect(
+      scrollView.padding,
+      EdgeInsets.only(
+        top: TimelineScrollTokens.topClearance,
+        bottom: TimelineScrollTokens.bottomClearance,
+      ),
+    );
+  });
 
   testWidgets(
     'long press paints across days; nothing is persisted before naming',
@@ -241,6 +261,65 @@ void main() {
     },
   );
   for (final direction in [-1, 1]) {
+    testWidgets(
+      'selected zone side handle snaps at the same lane threshold as marquee direction $direction',
+      (tester) async {
+        final source =
+            (await container
+                    .read(zoneListProvider.notifier)
+                    .paintWeeklyZones(
+                      title: 'Work',
+                      weekdays: {3},
+                      startMinutes: 240,
+                      endMinutes: 360,
+                    ))
+                .single;
+        await pump(tester);
+        await tester.tapAt(point(tester, 3, 300));
+        await tester.pump();
+
+        final rect = tester.getRect(find.byKey(ValueKey(source.id)));
+        final from = Offset(
+          direction < 0 ? rect.left + 2 : rect.right - 2,
+          rect.center.dy,
+        );
+        final column = (point(tester, 4, 300) - point(tester, 3, 300)).dx;
+        final adjacentDay = direction < 0 ? 2 : 4;
+        final gesture = await tester.startGesture(from);
+        await tester.pump();
+        expect(find.byKey(ValueKey('zone-phantom-$adjacentDay')), findsNothing);
+
+        await gesture.moveBy(Offset(direction * column * .4, 0));
+        await tester.pump();
+        expect(
+          find.byKey(const ValueKey('zone-marquee-body')),
+          findsOneWidget,
+          reason: 'the side-handle drag should own an extension preview',
+        );
+        expect(
+          find.byKey(ValueKey('zone-phantom-$adjacentDay')),
+          findsNothing,
+          reason:
+              'the adjacent day stays empty before crossing its lane center',
+        );
+
+        await gesture.moveBy(Offset(direction * column * .11, 0));
+        await tester.pump();
+        expect(
+          find.byKey(ValueKey('zone-phantom-$adjacentDay')),
+          findsOneWidget,
+          reason: 'the adjacent day appears after crossing the shared snap threshold',
+        );
+
+        await gesture.up();
+        await tester.pumpAndSettle();
+        expect(
+          repository.getAll().map((zone) => zone.weekday).toSet(),
+          direction < 0 ? {2, 3} : {3, 4},
+        );
+      },
+    );
+
     testWidgets('selected zone side handle fills days direction $direction', (
       tester,
     ) async {
@@ -272,12 +351,19 @@ void main() {
         await g.moveTo(from + Offset(direction * column * 2 * i / 30, 0));
         await tester.pump();
         final marker = find.byKey(const ValueKey('zone-marquee-body'));
-        if (marker.evaluate().isNotEmpty) widths.add(tester.getSize(marker).width);
+        if (marker.evaluate().isNotEmpty)
+          widths.add(tester.getSize(marker).width);
       }
-      expect(widths.toSet().length, greaterThan(10),
-        reason: 'the marker follows pixels, not whole-day jumps');
+      expect(
+        widths.toSet().length,
+        greaterThan(10),
+        reason: 'the marker follows pixels, not whole-day jumps',
+      );
       expect(find.byKey(const ValueKey('zone-marquee-body')), findsOneWidget);
-      expect(find.byKey(const ValueKey('zone-paint-selection')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('zone-paint-selection')),
+        findsOneWidget,
+      );
       expect(find.byKey(const ValueKey('zone-phantom-3')), findsOneWidget);
       expect(
         tester
@@ -287,8 +373,10 @@ void main() {
             .opacity,
         DragPreviewTokens.ghostOpacity,
       );
-      expect(tester.getSize(find.byKey(const ValueKey('zone-marquee-body'))).width,
-        greaterThan(column * 2));
+      expect(
+        tester.getSize(find.byKey(const ValueKey('zone-marquee-body'))).width,
+        greaterThan(column * 2),
+      );
       await g.up();
       await tester.pumpAndSettle();
       expect(
@@ -305,40 +393,39 @@ void main() {
     });
   }
 
-  testWidgets(
-    'side copy handles are hidden when multiple zones are selected',
-    (tester) async {
-      final zones = await container
-          .read(zoneListProvider.notifier)
-          .paintWeeklyZones(
-            title: 'Work',
-            weekdays: {2, 4},
-            startMinutes: 240,
-            endMinutes: 360,
-          );
-      await pump(tester);
-
-      for (final zone in zones) {
-        await tester.tapAt(point(tester, zone.weekday!, 300));
-        await tester.pump();
-      }
-
-      expect(container.read(zoneEditSelectionProvider), {
-        for (final zone in zones) zone.id,
-      });
-      for (final zone in zones) {
-        final block = tester.widget<ZoneGridBlock>(
-          find.byWidgetPredicate(
-            (widget) => widget is ZoneGridBlock && widget.zone.id == zone.id,
-          ),
+  testWidgets('side copy handles are hidden when multiple zones are selected', (
+    tester,
+  ) async {
+    final zones = await container
+        .read(zoneListProvider.notifier)
+        .paintWeeklyZones(
+          title: 'Work',
+          weekdays: {2, 4},
+          startMinutes: 240,
+          endMinutes: 360,
         );
-        expect(block.onExtendStart, isNull);
-        expect(block.onExtendEnd, isNull);
-        expect(block.onResizeTopEnd, isNotNull);
-        expect(block.onResizeBottomEnd, isNotNull);
-      }
-    },
-  );
+    await pump(tester);
+
+    for (final zone in zones) {
+      await tester.tapAt(point(tester, zone.weekday!, 300));
+      await tester.pump();
+    }
+
+    expect(container.read(zoneEditSelectionProvider), {
+      for (final zone in zones) zone.id,
+    });
+    for (final zone in zones) {
+      final block = tester.widget<ZoneGridBlock>(
+        find.byWidgetPredicate(
+          (widget) => widget is ZoneGridBlock && widget.zone.id == zone.id,
+        ),
+      );
+      expect(block.onExtendStart, isNull);
+      expect(block.onExtendEnd, isNull);
+      expect(block.onResizeTopEnd, isNotNull);
+      expect(block.onResizeBottomEnd, isNotNull);
+    }
+  });
 
   testWidgets(
     'zone body movement snaps by weekday and leaves a task-opacity ghost',
@@ -357,14 +444,11 @@ void main() {
       await tester.tapAt(point(tester, 3, 270));
       await tester.pump();
 
-      final columnWidth =
-          (point(tester, 4, 270) - point(tester, 3, 270)).dx;
+      final columnWidth = (point(tester, 4, 270) - point(tester, 3, 270)).dx;
       final gesture = await tester.startGesture(point(tester, 3, 270));
       await gesture.moveBy(Offset(columnWidth * .3, 0));
       await tester.pump();
-      var block = tester.widget<ZoneGridBlock>(
-        find.byKey(ValueKey(source.id)),
-      );
+      var block = tester.widget<ZoneGridBlock>(find.byKey(ValueKey(source.id)));
       expect(block.horizontalOffset, 0);
 
       await gesture.moveBy(Offset(columnWidth * .3, 0));
@@ -395,96 +479,119 @@ void main() {
   );
 
   for (final sourceDay in [1, 7]) {
+    testWidgets('sideways body drag from $sourceDay moves without copying', (
+      tester,
+    ) async {
+      final source =
+          (await container
+                  .read(zoneListProvider.notifier)
+                  .paintWeeklyZones(
+                    title: 'Commute',
+                    weekdays: {sourceDay},
+                    startMinutes: 240,
+                    endMinutes: 300,
+                  ))
+              .single;
+      await pump(tester);
+      await tester.tapAt(point(tester, sourceDay, 270));
+      await tester.pump();
+      expect(container.read(zoneEditSelectionProvider), contains(source.id));
+      final g = await tester.startGesture(point(tester, sourceDay, 270));
+      await g.moveTo(point(tester, sourceDay == 1 ? 2 : 6, 270));
+      await tester.pump();
+      await g.moveTo(point(tester, 4, 270));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('zone-phantom-4')), findsNothing);
+      expect(
+        tester
+            .widget<ZoneGridBlock>(find.byType(ZoneGridBlock))
+            .horizontalOffset,
+        isNot(0),
+      );
+      await g.up();
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(repository.getAll(), hasLength(1));
+      expect(repository.getAll().single.weekday, 4);
+      expect(repository.getAll().single.id, source.id);
+      expect(
+        repository.getAll().every(
+          (z) => z.startMinutes == 240 && z.endMinutes == 300,
+        ),
+        isTrue,
+      );
+      expect(find.byType(ZoneGridBlock), findsOneWidget);
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(repository.getAll().single.weekday, sourceDay);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final horizontal in [false, true]) {
     testWidgets(
-      'sideways body drag from $sourceDay moves without copying',
+      'selected zone group moves vertically and diagonal=$horizontal',
       (tester) async {
-        final source =
-            (await container
-                    .read(zoneListProvider.notifier)
-                    .paintWeeklyZones(
-                      title: 'Commute',
-                      weekdays: {sourceDay},
-                      startMinutes: 240,
-                      endMinutes: 300,
-                    ))
-                .single;
+        final zones = await container
+            .read(zoneListProvider.notifier)
+            .paintWeeklyZones(
+              title: 'Work',
+              weekdays: {2, 4},
+              startMinutes: 240,
+              endMinutes: 360,
+            );
         await pump(tester);
-        await tester.tapAt(point(tester, sourceDay, 270));
-        await tester.pump();
-        expect(container.read(zoneEditSelectionProvider), contains(source.id));
-        final g = await tester.startGesture(point(tester, sourceDay, 270));
-        await g.moveTo(point(tester, sourceDay == 1 ? 2 : 6, 270));
-        await tester.pump();
-        await g.moveTo(point(tester, 4, 270));
-        await tester.pump();
-        expect(find.byKey(const ValueKey('zone-phantom-4')), findsNothing);
+        for (final zone in zones) {
+          container.read(zoneEditSelectionProvider.notifier).toggle(zone.id);
+          await tester.pump();
+        }
+        final from = point(tester, 2, 300);
+        final to = point(tester, horizontal ? 3 : 2, 360);
+        final gesture = await tester.startGesture(from);
+        for (var step = 1; step <= 20; step++) {
+          await gesture.moveTo(Offset.lerp(from, to, step / 20)!);
+          await tester.pump();
+        }
+        await gesture.up();
+        await tester.pumpAndSettle();
+        final moved = repository.getAll();
+        expect(moved, hasLength(2));
+        expect(moved.map((z) => z.id).toSet(), zones.map((z) => z.id).toSet());
         expect(
-          tester.widget<ZoneGridBlock>(find.byType(ZoneGridBlock)).horizontalOffset,
-          isNot(0),
+          moved.map((z) => z.weekday).toSet(),
+          horizontal ? {3, 5} : {2, 4},
         );
-        await g.up();
-        await tester.pump(const Duration(milliseconds: 200));
-        await tester.pump(const Duration(milliseconds: 300));
-        expect(repository.getAll(), hasLength(1));
-        expect(repository.getAll().single.weekday, 4);
-        expect(repository.getAll().single.id, source.id);
         expect(
-          repository.getAll().every(
-            (z) => z.startMinutes == 240 && z.endMinutes == 300,
-          ),
+          moved.every((z) => z.startMinutes == 300 && z.endMinutes == 420),
           isTrue,
         );
-        expect(find.byType(ZoneGridBlock), findsOneWidget);
         await tester.tap(find.text('Undo'));
         await tester.pumpAndSettle();
-        expect(repository.getAll().single.weekday, sourceDay);
-        expect(tester.takeException(), isNull);
+        expect(repository.getAll().every((z) => z.startMinutes == 240), isTrue);
       },
     );
   }
 
-  for (final horizontal in [false, true]) {
-    testWidgets('selected zone group moves vertically and diagonal=$horizontal', (tester) async {
-      final zones = await container.read(zoneListProvider.notifier).paintWeeklyZones(
-        title: 'Work', weekdays: {2, 4}, startMinutes: 240, endMinutes: 360,
-      );
-      await pump(tester);
-      for (final zone in zones) {
-        container.read(zoneEditSelectionProvider.notifier).toggle(zone.id);
-        await tester.pump();
-      }
-      final from = point(tester, 2, 300);
-      final to = point(tester, horizontal ? 3 : 2, 360);
-      final gesture = await tester.startGesture(from);
-      for (var step = 1; step <= 20; step++) {
-        await gesture.moveTo(Offset.lerp(from, to, step / 20)!);
-        await tester.pump();
-      }
-      await gesture.up();
-      await tester.pumpAndSettle();
-      final moved = repository.getAll();
-      expect(moved, hasLength(2));
-      expect(moved.map((z) => z.id).toSet(), zones.map((z) => z.id).toSet());
-      expect(moved.map((z) => z.weekday).toSet(), horizontal ? {3, 5} : {2, 4});
-      expect(moved.every((z) => z.startMinutes == 300 && z.endMinutes == 420), isTrue);
-      await tester.tap(find.text('Undo'));
-      await tester.pumpAndSettle();
-      expect(repository.getAll().every((z) => z.startMinutes == 240), isTrue);
-    });
-  }
-
-
   for (final top in [true, false]) {
-    testWidgets('selected zone handle resizes the group top=$top', (tester) async {
-      final zones = await container.read(zoneListProvider.notifier).paintWeeklyZones(
-        title: 'Work', weekdays: {2, 4}, startMinutes: 240, endMinutes: 360,
-      );
+    testWidgets('selected zone handle resizes the group top=$top', (
+      tester,
+    ) async {
+      final zones = await container
+          .read(zoneListProvider.notifier)
+          .paintWeeklyZones(
+            title: 'Work',
+            weekdays: {2, 4},
+            startMinutes: 240,
+            endMinutes: 360,
+          );
       await pump(tester);
       for (final zone in zones) {
         container.read(zoneEditSelectionProvider.notifier).toggle(zone.id);
       }
       await tester.pump();
-      final block = find.byWidgetPredicate((w) => w is ZoneGridBlock && w.zone.id == zones.first.id);
+      final block = find.byWidgetPredicate(
+        (w) => w is ZoneGridBlock && w.zone.id == zones.first.id,
+      );
       final rect = tester.getRect(block);
       final from = Offset(rect.center.dx, top ? rect.top + 2 : rect.bottom - 2);
       final gesture = await tester.startGesture(from);
@@ -496,9 +603,18 @@ void main() {
       await tester.pumpAndSettle();
       final stored = repository.getAll();
       expect(stored.map((z) => z.weekday).toSet(), {2, 4});
-      expect(stored.map((z) => top ? z.startMinutes : z.endMinutes).toSet(), hasLength(1));
-      expect(stored.every((z) => top ? z.startMinutes > 240 && z.endMinutes == 360
-        : z.startMinutes == 240 && z.endMinutes > 360), isTrue);
+      expect(
+        stored.map((z) => top ? z.startMinutes : z.endMinutes).toSet(),
+        hasLength(1),
+      );
+      expect(
+        stored.every(
+          (z) => top
+              ? z.startMinutes > 240 && z.endMinutes == 360
+              : z.startMinutes == 240 && z.endMinutes > 360,
+        ),
+        isTrue,
+      );
     });
   }
 
@@ -1086,13 +1202,17 @@ void main() {
   });
 
   group('bottom dock does not overlap the naming sheet', () {
-    testWidgets('task draft suppresses claimed Edit chrome immediately', (tester) async {
+    testWidgets('task draft suppresses claimed Edit chrome immediately', (
+      tester,
+    ) async {
       await pumpWithShell(tester);
       expect(find.byType(AppDockIconButton), findsWidgets);
-      container.read(pendingTaskDraftProvider.notifier).start(
-        scheduledAt: DateTime(2026, 9, 27, 10),
-        durationMinutes: quickAddDefaultMinutes,
-      );
+      container
+          .read(pendingTaskDraftProvider.notifier)
+          .start(
+            scheduledAt: DateTime(2026, 9, 27, 10),
+            durationMinutes: quickAddDefaultMinutes,
+          );
       await tester.pump();
       expect(find.byType(AppDockIconButton), findsNothing);
       container.read(pendingTaskDraftProvider.notifier).clear();
@@ -1137,8 +1257,11 @@ void main() {
         await tester.pump();
         await gesture.up();
         await tester.pump();
-        expect(find.byType(AppDockIconButton), findsNothing,
-          reason: 'sheet entrance must not wait for the dock exit animation');
+        expect(
+          find.byType(AppDockIconButton),
+          findsNothing,
+          reason: 'sheet entrance must not wait for the dock exit animation',
+        );
         await tester.pumpAndSettle();
 
         expect(find.byType(NewZoneSheet), findsOneWidget);
@@ -1187,11 +1310,17 @@ void main() {
   });
 
   for (final count in [2, 3]) {
-    testWidgets('multi edit uses the current $count-zone shell selection', (tester) async {
-      final zones = await container.read(zoneListProvider.notifier).paintWeeklyZones(
-        title: 'Original', weekdays: {1, 2, 3, 4},
-        startMinutes: 240, endMinutes: 360,
-      );
+    testWidgets('multi edit uses the current $count-zone shell selection', (
+      tester,
+    ) async {
+      final zones = await container
+          .read(zoneListProvider.notifier)
+          .paintWeeklyZones(
+            title: 'Original',
+            weekdays: {1, 2, 3, 4},
+            startMinutes: 240,
+            endMinutes: 360,
+          );
       await pumpWithShell(tester);
       for (final zone in zones.take(count)) {
         container.read(zoneEditSelectionProvider.notifier).add(zone.id);
@@ -1200,7 +1329,10 @@ void main() {
       await tester.tap(find.byTooltip('Edit placement'));
       await tester.pumpAndSettle();
       expect(find.text('$count zones selected'), findsOneWidget);
-      await tester.enterText(find.byKey(const Key('multiZoneEditNameField')), 'Updated');
+      await tester.enterText(
+        find.byKey(const Key('multiZoneEditNameField')),
+        'Updated',
+      );
       final save = find.widgetWithText(AppButton, 'Save');
       await tester.ensureVisible(save);
       await tester.pumpAndSettle();
@@ -1231,26 +1363,25 @@ void main() {
       },
     );
 
-    testWidgets(
-      'exactly 1 selected shows the deselect button with no badge',
-      (tester) async {
-        final zones = await container
-            .read(zoneListProvider.notifier)
-            .paintWeeklyZones(
-              title: 'Focus',
-              weekdays: {1},
-              startMinutes: 240,
-              endMinutes: 300,
-            );
-        await pumpWithShell(tester);
+    testWidgets('exactly 1 selected shows the deselect button with no badge', (
+      tester,
+    ) async {
+      final zones = await container
+          .read(zoneListProvider.notifier)
+          .paintWeeklyZones(
+            title: 'Focus',
+            weekdays: {1},
+            startMinutes: 240,
+            endMinutes: 300,
+          );
+      await pumpWithShell(tester);
 
-        container.read(zoneEditSelectionProvider.notifier).add(zones.single.id);
-        await tester.pumpAndSettle();
+      container.read(zoneEditSelectionProvider.notifier).add(zones.single.id);
+      await tester.pumpAndSettle();
 
-        expect(find.byTooltip('Clear selection'), findsOneWidget);
-        expect(find.textContaining('selected'), findsNothing);
-      },
-    );
+      expect(find.byTooltip('Clear selection'), findsOneWidget);
+      expect(find.textContaining('selected'), findsNothing);
+    });
 
     testWidgets(
       'more than 1 selected shows the deselect button WITH a count badge',
@@ -1419,7 +1550,7 @@ void main() {
 
       for (final zone in all) {
         container.read(zoneEditSelectionProvider.notifier).toggle(zone.id);
-          await tester.pumpAndSettle();
+        await tester.pumpAndSettle();
       }
       expect(container.read(zoneEditSelectionProvider), hasLength(8));
       // See the 4-zone test's own comment: pumpAndSettle BEFORE the tap so
@@ -1450,6 +1581,7 @@ class _MemoryTasks implements TaskRepository {
   Future<void> saveTask(Task task) async {
     _tasks[task.id] = task;
   }
+
   @override
   Future<void> deleteTask(String id) async {
     _tasks.remove(id);

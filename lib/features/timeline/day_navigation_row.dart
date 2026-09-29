@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/clock_provider.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
 import 'selected_date_provider.dart';
@@ -53,7 +54,7 @@ class DayNavigationRow extends ConsumerWidget {
             color: theme.colorTextSecondary,
           ),
           Expanded(
-            child: _isSameDay(selectedDate, DateTime.now())
+            child: _isSameDay(selectedDate, ref.watch(nowProvider)())
                 ? Text(
                     'Today',
                     textAlign: TextAlign.center,
@@ -98,7 +99,7 @@ class TodayButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final selectedDate = ref.watch(selectedDateProvider);
-    final isToday = _isSameDay(selectedDate, DateTime.now());
+    final isToday = _isSameDay(selectedDate, ref.watch(nowProvider)());
     if (isToday) return const SizedBox.shrink();
 
     return AppButton(

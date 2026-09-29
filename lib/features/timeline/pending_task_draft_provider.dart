@@ -30,8 +30,8 @@ const quickAddDefaultMinutes = 15;
 /// two separate things: deferring the live CASCADE preview (a real,
 /// confirmed scope decision) and opting out of overlap LAYOUT entirely
 /// (never actually decided). The result was a draft that painted on top
-/// of tasks it collided with, in a position the Schedule button would
-/// then refuse to save — the user got no signal until they pressed it.
+/// of tasks it collided with. The shared layout now gives colliding tasks
+/// separate lanes, and saving an overlap is allowed.
 ///
 /// Same precedent, and the same reason, as [ExternalCalendarEvent]
 /// implementing this on 2026-09-07: a block that positions itself

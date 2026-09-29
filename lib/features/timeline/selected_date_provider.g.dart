@@ -50,7 +50,7 @@ final class SelectedDateProvider
   }
 }
 
-String _$selectedDateHash() => r'7756310ea660f31d20b5ac946cbf731232ebc7a9';
+String _$selectedDateHash() => r'a81d8c244ad926547dc7ef392b5856766e8ae2d0';
 
 /// The day currently shown on the Timeline screen. Screen-local UI state,
 /// not app-level — lives under features/timeline/, not shared/providers/,

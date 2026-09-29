@@ -117,9 +117,9 @@ Track cumulative displacement and maximum excursion; returning to the down posit
 Use one canonical time/viewport transform incorporating scroll offset. Auto-scroll must update preview time even when the finger remains stationary, using frame elapsed time rather than pointer-event frequency.
 Keep zoom fixed during an accepted manipulation. Extra fingers do not steal it; pinch may win while still pending. OS pointer cancellation still aborts cleanly.
 Release commits at most once through existing providers/undo. Persistence failure restores a consistent preview and reports the error. No writes on every move event.
-Clear all temporary group broadcasts, delete-target state, and auto-scroll on cancel, route disposal, or app interruption.
+Clear all temporary group broadcasts and auto-scroll on cancel, route disposal, or app interruption.
 If the affected item is removed or revised, or the date/view changes during manipulation, cancel the session rather than silently committing stale data; ordinary preview rebuilds do not count as revisions.
-Drag-to-delete is available only to the existing permitted move gesture; resize can never enter it.
+Task move drops always use the normal reschedule/overlap flow; task deletion stays an explicit toolbar action. Resize cannot trigger deletion. Zone authoring's delete interaction is separate and unchanged.
 
 ### Preserve existing domain semantics
 

@@ -7,9 +7,11 @@ import '../../core/widgets/app_text_field.dart';
 import '../../core/widgets/app_modal_route.dart';
 import '../../core/widgets/app_press_feedback.dart';
 import '../../core/widgets/app_sheet.dart';
+import '../../core/widgets/app_switch.dart';
 import '../../core/widgets/app_swipe_actions.dart';
 import '../../core/widgets/app_undo_toast.dart';
 import '../../shared/models/zone_facet.dart';
+import '../../shared/providers/preferences_providers.dart';
 import '../../shared/providers/zone_facet_providers.dart';
 import '../../shared/providers/zone_providers.dart';
 
@@ -62,7 +64,64 @@ class ZoneListScreen extends StatelessWidget {
                 ),
               ),
             ),
+            const _ShowZonesSetting(),
             const Expanded(child: ZoneListBody()),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ShowZonesSetting extends ConsumerWidget {
+  const _ShowZonesSetting();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context).extension<AmbleTheme>()!;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        theme.spacingScreenPadding,
+        0,
+        theme.spacingScreenPadding,
+        theme.spacingMd,
+      ),
+      child: Container(
+        width: double.infinity,
+        padding: EdgeInsets.all(theme.spacingMd),
+        decoration: BoxDecoration(
+          color: theme.colorSurfaceSecondary,
+          borderRadius: BorderRadius.circular(theme.radiusXl),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Show zones',
+                    style: theme.textBody.copyWith(
+                      color: theme.colorTextPrimary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  SizedBox(height: theme.spacingXs),
+                  Text(
+                    'Show zones on the Timeline. Zone editing stays available.',
+                    style: theme.textCaption.copyWith(
+                      color: theme.colorTextSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(width: theme.spacingSm),
+            AppSwitch(
+              value: ref.watch(showZonesSettingProvider),
+              onChanged: (value) =>
+                  ref.read(showZonesSettingProvider.notifier).set(value),
+            ),
           ],
         ),
       ),

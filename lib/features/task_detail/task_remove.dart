@@ -11,8 +11,8 @@ import '../../shared/providers/task_providers.dart';
 enum RemoveScope { thisInstance, allInstances }
 
 /// Removes [task] and shows an Undo toast — the flow the action sheet's
-/// own "Remove" row, the task edit screen's own delete button, and the
-/// Timeline's drag-to-delete-target all trigger, kept in one place so
+/// own "Remove" row and the task edit screen's own delete button trigger,
+/// kept in one place so
 /// neither the recurring-scope disambiguation nor the undo/restore logic
 /// is duplicated across them. A plain task removes immediately; a
 /// recurring one asks "this occurrence" vs. "all occurrences" first (see
@@ -95,9 +95,8 @@ Future<void> removeTask(
       AppUndoToast.show(
         context: rootContext,
         message: 'Removed the whole series',
-        onUndo: () => notifier.restoreTasksInBatch(
-          seriesSnapshots.map(Task.fromJson),
-        ),
+        onUndo: () =>
+            notifier.restoreTasksInBatch(seriesSnapshots.map(Task.fromJson)),
       );
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:amble/core/clock_provider.dart';
 import 'package:hive_ce/hive_ce.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/hive_registrar.g.dart';
@@ -30,6 +31,11 @@ import 'package:amble/shared/repositories/hive_zone_repository.dart';
 import '../../support/fake_notification_service.dart';
 import '../../support/seeded_category_box.dart';
 
+final _noon = () {
+  final now = DateTime.now();
+  return DateTime(now.year, now.month, now.day, 12);
+}();
+
 /// A move-drag or a resize now shows the task's own live edge time in an
 /// accent badge pinned over the hour gutter, ALWAYS on the LEFT — first
 /// reported directly for move only ("when dragging (moving) cant see
@@ -44,6 +50,7 @@ import '../../support/seeded_category_box.dart';
 /// should be shown in blue atm only beginning start time." A resize shows
 /// only the edge actually moving: top-resize the live START, bottom-resize
 /// the live END.
+
 void main() {
   late Box<Task> taskBox;
   late Box<Category> categoryBox;
@@ -87,6 +94,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          // Pinned to midday: tasks sit near "now" so they are on screen,
+          // and a late-evening run used to push them across midnight.
+          nowProvider.overrideWithValue(() => _noon),
           taskRepositoryProvider.overrideWithValue(HiveTaskRepository(taskBox)),
           categoryRepositoryProvider.overrideWithValue(
             HiveCategoryRepository(categoryBox),
@@ -120,7 +130,7 @@ void main() {
   // the same reason: a fixed clock hour only stays on-screen by
   // coincidence of when the suite happens to run.
   Task makeTask(String title, {int minutes = 60}) {
-    final now = DateTime.now();
+    final now = _noon;
     final minutesSinceMidnight = (now.hour * 60 + now.minute).clamp(
       60,
       24 * 60 - 1 - minutes,

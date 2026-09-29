@@ -82,6 +82,19 @@ void main() {
     },
   );
 
+  testWidgets('uses compact date text and chevron sizing', (tester) async {
+    await pumpHeader(tester, initialDate: DateTime(2026, 9, 28));
+
+    expect(
+      tester.widget<Text>(find.text('Mon 28 Sep')).style?.fontSize,
+      AmbleTheme.light.textBody.fontSize,
+    );
+    expect(
+      tester.widget<Icon>(find.byIcon(Icons.keyboard_arrow_down_rounded)).size,
+      AmbleTheme.light.spacingMd,
+    );
+  });
+
   testWidgets('tapping the date label reveals a full Mon-Sun week grid — 7 day '
       'cells, one per weekday header letter', (tester) async {
     await pumpHeader(tester);
@@ -284,48 +297,45 @@ void main() {
     },
   );
 
-  testWidgets(
-    'selecting a day (e.g. via a tap) snaps the strip back to that '
-    "day's own week, resetting any swipe-viewed offset",
-    (tester) async {
-      final anchor = DateTime(2026, 9, 10);
-      final container = await pumpHeader(tester, initialDate: anchor);
+  testWidgets('selecting a day (e.g. via a tap) snaps the strip back to that '
+      "day's own week, resetting any swipe-viewed offset", (tester) async {
+    final anchor = DateTime(2026, 9, 10);
+    final container = await pumpHeader(tester, initialDate: anchor);
 
-      await tester.tap(find.byIcon(Icons.keyboard_arrow_down_rounded));
-      await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.keyboard_arrow_down_rounded));
+    await tester.pumpAndSettle();
 
-      final weekRowSwipeArea = find.byWidgetPredicate(
-        (widget) =>
-            widget is GestureDetector && widget.onHorizontalDragEnd != null,
-      );
-      await tester.fling(weekRowSwipeArea, const Offset(-300, 0), 800);
-      await tester.pumpAndSettle();
-      expect(find.text('14'), findsOneWidget, reason: 'now viewing next week');
+    final weekRowSwipeArea = find.byWidgetPredicate(
+      (widget) =>
+          widget is GestureDetector && widget.onHorizontalDragEnd != null,
+    );
+    await tester.fling(weekRowSwipeArea, const Offset(-300, 0), 800);
+    await tester.pumpAndSettle();
+    expect(find.text('14'), findsOneWidget, reason: 'now viewing next week');
 
-      // An EXTERNAL selection change to a day in a genuinely DIFFERENT
-      // week (as if the Today button or another screen changed it) — not
-      // a tap inside this strip, and not a same-week reassignment (which
-      // wouldn't change `weekStart` at all, so there'd be nothing for
-      // `didUpdateWidget` to react to). 2026-09-03's own Monday is
-      // 2026-08-31 — a week earlier than both the originally-selected
-      // week (Monday 2026-09-07) and the swiped-to week (Monday
-      // 2026-09-14), so finding "31" can only mean the reset actually
-      // happened, not that the strip merely stayed put.
-      container
-          .read(selectedDateProvider.notifier)
-          .goTo(anchor.subtract(const Duration(days: 7)));
-      await tester.pump();
+    // An EXTERNAL selection change to a day in a genuinely DIFFERENT
+    // week (as if the Today button or another screen changed it) — not
+    // a tap inside this strip, and not a same-week reassignment (which
+    // wouldn't change `weekStart` at all, so there'd be nothing for
+    // `didUpdateWidget` to react to). 2026-09-03's own Monday is
+    // 2026-08-31 — a week earlier than both the originally-selected
+    // week (Monday 2026-09-07) and the swiped-to week (Monday
+    // 2026-09-14), so finding "31" can only mean the reset actually
+    // happened, not that the strip merely stayed put.
+    container
+        .read(selectedDateProvider.notifier)
+        .goTo(anchor.subtract(const Duration(days: 7)));
+    await tester.pump();
 
-      expect(
-        find.text('31'),
-        findsOneWidget,
-        reason:
-            "the strip must snap to the NEWLY selected day's own week, not "
-            'stay on whichever week the user last swiped to',
-      );
-      expect(find.text('14'), findsNothing);
-    },
-  );
+    expect(
+      find.text('31'),
+      findsOneWidget,
+      reason:
+          "the strip must snap to the NEWLY selected day's own week, not "
+          'stay on whichever week the user last swiped to',
+    );
+    expect(find.text('14'), findsNothing);
+  });
 
   testWidgets('tapping a day cell in the EXPANDED week grid selects that day', (
     tester,

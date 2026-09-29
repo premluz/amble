@@ -2,11 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../tokens/depth_motion_spec.dart';
 import '../tokens/motion_primitives.dart';
 import '../tokens/semantic_theme.dart';
 import 'app_button.dart';
 import 'app_context_dock_config.dart';
 import 'app_dock_primitives.dart';
+import 'app_press_follower.dart';
+import 'app_spring_presence.dart';
 
 export 'app_context_dock_config.dart';
 
@@ -132,8 +135,12 @@ class _AppContextDockState extends State<AppContextDock> {
       );
     _scheduleEntrance(generation);
     _pruneTimer = Timer(
-      Duration(milliseconds: MotionPrimitives.durationContextDockMs +
-          _pendingRemoval.length * MotionPrimitives.durationContextDockStaggerMs),
+      Duration(
+        milliseconds:
+            MotionPrimitives.durationContextDockMs +
+            _pendingRemoval.length *
+                MotionPrimitives.durationContextDockStaggerMs,
+      ),
       () {
         if (!mounted || generation != _transitionGeneration) return;
         setState(() {
@@ -155,7 +162,8 @@ class _AppContextDockState extends State<AppContextDock> {
       .join('|');
 
   void _revealEntry(_DockEntry entry, int generation) {
-    if (!mounted || generation != _transitionGeneration || !entry.present) return;
+    if (!mounted || generation != _transitionGeneration || !entry.present)
+      return;
     setState(() {
       entry.entering = false;
       // A new pane arrives with its first icon, never as an empty shell.
@@ -164,7 +172,8 @@ class _AppContextDockState extends State<AppContextDock> {
   }
 
   void _hideEntry(_DockEntry entry, int generation) {
-    if (!mounted || generation != _transitionGeneration || entry.present) return;
+    if (!mounted || generation != _transitionGeneration || entry.present)
+      return;
     setState(() => entry.exiting = true);
   }
 

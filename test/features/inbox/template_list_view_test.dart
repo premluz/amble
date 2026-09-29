@@ -256,46 +256,57 @@ void main() {
 
   // Requested directly: "[templates] can be slided left to be removed
   // (we have that pattern on tasks and notes in inbox)."
-  testWidgets(
-    'swiping a template row left past the threshold removes it',
-    (tester) async {
-      await pumpList(
-        tester,
-        templates: [
-          TaskTemplate.create(
-            title: 'Take a walk',
-            categoryId: BuiltInCategoryIds.health,
-          ),
-        ],
-      );
-      expect(find.byType(TemplateRow), findsOneWidget);
+  testWidgets('swiping a template row left past the threshold removes it', (
+    tester,
+  ) async {
+    await pumpList(
+      tester,
+      templates: [
+        TaskTemplate.create(
+          title: 'Take a walk',
+          categoryId: BuiltInCategoryIds.health,
+        ),
+      ],
+    );
+    expect(find.byType(TemplateRow), findsOneWidget);
 
-      final gesture = await tester.startGesture(
-        tester.getCenter(find.text('Take a walk')),
-      );
-      // Well past AppSwipeAction's own activate threshold (extent * 2) —
-      // this row's default `extent` (72) makes 300px comfortably past it.
-      for (var i = 0; i < 8; i++) {
-        await gesture.moveBy(const Offset(-40, 0));
-        await tester.pump();
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('Take a walk')),
+    );
+    // Well past AppSwipeAction's own activate threshold (extent * 2) —
+    // this row's default `extent` (72) makes 300px comfortably past it.
+    for (var i = 0; i < 8; i++) {
+      await gesture.moveBy(const Offset(-40, 0));
+      await tester.pump();
+    }
+    // Releasing past the threshold fires `onActivate`, which calls
+    // `TaskTemplateList.deleteTemplate` — a real, awaited Hive box
+    // write (see `HiveTaskTemplateRepository.delete`), not a
+    // synchronous state change. Confirmed directly: without `runAsync`
+    // here, `pumpAndSettle` alone never drains that real-I/O `Future`
+    // no matter how long it's given (the row release fires correctly,
+    // but the box write and its `_refresh()` never complete) — the
+    // exact same class of gotcha as this file's own `pumpList` seeding
+    // step (see docs/ERROR_LOG.md), just on the way out instead of in.
+    //
+    // Waits on the delete actually landing, not one event-loop turn: under
+    // full-suite disk load a single turn was sometimes not enough for the
+    // write, so this failed only in full runs (see docs/ERROR_LOG.md).
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(TemplateRow)),
+    );
+    await tester.runAsync(() async {
+      await gesture.up();
+      final deadline = DateTime.now().add(const Duration(seconds: 5));
+      while (container.read(taskTemplateListProvider).isNotEmpty &&
+          DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
       }
-      // Releasing past the threshold fires `onActivate`, which calls
-      // `TaskTemplateList.deleteTemplate` — a real, awaited Hive box
-      // write (see `HiveTaskTemplateRepository.delete`), not a
-      // synchronous state change. Confirmed directly: without `runAsync`
-      // here, `pumpAndSettle` alone never drains that real-I/O `Future`
-      // no matter how long it's given (the row release fires correctly,
-      // but the box write and its `_refresh()` never complete) — the
-      // exact same class of gotcha as this file's own `pumpList` seeding
-      // step (see docs/ERROR_LOG.md), just on the way out instead of in.
-      await tester.runAsync(() async {
-        await gesture.up();
-        await Future<void>.delayed(Duration.zero);
-      });
-      await tester.pumpAndSettle();
+    });
+    expect(templateBox.isEmpty, isTrue, reason: 'the delete was persisted');
+    await tester.pumpAndSettle();
 
-      expect(find.byType(TemplateRow), findsNothing);
-      expect(find.textContaining('No templates yet'), findsOneWidget);
-    },
-  );
+    expect(find.byType(TemplateRow), findsNothing);
+    expect(find.textContaining('No templates yet'), findsOneWidget);
+  });
 }

@@ -98,7 +98,7 @@ final class VoiceCaptureProvider
   }
 }
 
-String _$voiceCaptureHash() => r'91d585431590c3aee16edc8142b845d3add053e0';
+String _$voiceCaptureHash() => r'37d632a7bce55de61b221718a55c64339b247bb5';
 
 /// Owns one voice-capture session — the full-screen "speak your tasks"
 /// flow's own [stt.SpeechToText] instance, separate from Quick Capture's

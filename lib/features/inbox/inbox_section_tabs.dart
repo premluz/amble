@@ -3,7 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_context_menu.dart';
-import '../../core/widgets/app_selectable_chip.dart';
+import '../../core/widgets/app_press_feedback.dart';
+import '../../core/widgets/app_sub_nav.dart';
 import '../../core/widgets/app_undo_toast.dart';
 import '../../shared/models/section.dart';
 import '../../shared/providers/section_providers.dart';
@@ -58,16 +59,13 @@ class InboxSectionTabTargets {
 /// per user-created [Section] + "Unfiled", plus a trailing "+" to create
 /// a new one.
 ///
-/// **2026-09-21 — separated pill buttons, not a segmented control.**
-/// Requested directly: "Sections should be separated button tabs, not
-/// segmented button." Reversed from the earlier `AppTabSwitch` version
-/// (one shared recessed track, a sliding highlight) to [AppSelectableChip]
-/// — each tab its own independently filled/unfilled pill with a real gap
-/// between them, the same shape the Repeats day-of-week chips and the
-/// Duration modal's presets already use. No shared-track-width problem to
-/// solve here either: each chip already sizes to its own label, so a
-/// plain `SingleChildScrollView` is enough — no need for `AppTabSwitch`'s
-/// own fits-vs-scrolls measuring pass.
+/// **2026-09-29 — the main nav's own labels, as a sub nav.** Requested
+/// directly: the Inbox tabs should share the main nav's styling (text
+/// labels, bold when selected) and sit exactly where the Day date and the
+/// Habits period heading sit, so moving between those pages the heading
+/// text doesn't budge. Built on [AppSubNav]; it replaced separated
+/// `AppSelectableChip` pills (2026-09-21), which had replaced a segmented
+/// `AppTabSwitch`.
 ///
 /// Fixed so it never scrolls away with the list underneath it (the
 /// caller, `InboxScreen`, places this OUTSIDE the scrolling list's own
@@ -99,95 +97,41 @@ class InboxSectionTabs extends ConsumerWidget {
     const all = InboxSectionFilterAll();
     const unfiled = InboxSectionFilterUnfiled();
 
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        theme.spacingScreenPadding,
-        theme.spacingSm,
-        theme.spacingScreenPadding,
-        theme.spacingSm,
-      ),
-      child: SizedBox(
-        height: theme.sizeButtonMd,
-        child: Row(
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    _SectionTabChip(
-                      theme: theme,
-                      chipKey: targets.keys[all],
-                      label: 'All',
-                      selected: selected == all,
-                      isDropTarget: false,
-                      onTap: () => notifier.select(all),
-                    ),
-                    for (final section in sections) ...[
-                      SizedBox(width: theme.spacingXs),
-                      _SectionTabChip(
-                        theme: theme,
-                        chipKey:
-                            targets.keys[InboxSectionFilterSection(section.id)],
-                        label: section.name,
-                        selected:
-                            selected == InboxSectionFilterSection(section.id),
-                        isDropTarget:
-                            dropTargetFilter ==
-                            InboxSectionFilterSection(section.id),
-                        onTap: () => notifier.select(
-                          InboxSectionFilterSection(section.id),
-                        ),
-                        menuActions: _sectionTabMenuActions(
-                          context,
-                          ref,
-                          section,
-                        ),
-                      ),
-                    ],
-                    SizedBox(width: theme.spacingXs),
-                    _SectionTabChip(
-                      theme: theme,
-                      chipKey: targets.keys[unfiled],
-                      label: 'Unfiled',
-                      selected: selected == unfiled,
-                      isDropTarget: dropTargetFilter == unfiled,
-                      onTap: () => notifier.select(unfiled),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            SizedBox(width: theme.spacingSm),
-            _CreateSectionButton(theme: theme),
-          ],
+    // The main nav's own labels, in the page-heading slot where the Day
+    // date and Habits period sit — so switching pages, this line of text
+    // doesn't move (requested directly).
+    return AppSubNav(
+      trailing: _CreateSectionButton(theme: theme),
+      children: [
+        _SectionTab(
+          tabKey: targets.keys[all],
+          label: 'All',
+          selected: selected == all,
+          isDropTarget: false,
+          onTap: () => notifier.select(all),
         ),
-      ),
+        for (final section in sections)
+          _SectionTab(
+            tabKey: targets.keys[InboxSectionFilterSection(section.id)],
+            label: section.name,
+            selected: selected == InboxSectionFilterSection(section.id),
+            isDropTarget:
+                dropTargetFilter == InboxSectionFilterSection(section.id),
+            onTap: () => notifier.select(InboxSectionFilterSection(section.id)),
+            menuActions: _sectionTabMenuActions(context, ref, section),
+          ),
+        _SectionTab(
+          tabKey: targets.keys[unfiled],
+          label: 'Unfiled',
+          selected: selected == unfiled,
+          isDropTarget: dropTargetFilter == unfiled,
+          onTap: () => notifier.select(unfiled),
+        ),
+      ],
     );
   }
 }
 
-/// The "Rename / Remove" actions for one user-created [Section] tab's
-/// context menu — "All" and "Unfiled" are fixed, non-Section filters (see
-/// `InboxSectionFilter`'s own subtypes) and never get this menu, matching
-/// how they're already excluded from [InboxSectionTabTargets.hitTest]'s
-/// drag-drop targeting for the same reason: neither is a real,
-/// renameable/deletable [Section] row.
-///
-/// Returns the action list rather than opening anything itself — both
-/// [AppLongPressContextMenu] (the seamless press-drag-release path) and
-/// [AppContextMenu.showAt] (the plain tap-on-an-already-selected-tab path)
-/// need the SAME actions but drive their own, differently-shaped opening
-/// mechanics (see `_SectionTabChip`'s own doc comment for why there are
-/// two entry points). Same "Rename" / "Remove" (destructive,
-/// `colorTaskAlert`) content shape `task_action_sheet.dart`'s own Task
-/// menu already establishes — only the presentation differs here, not the
-/// actions.
-///
-/// Neither caller needs a manual `Navigator.pop()` inside these — both
-/// [AppLongPressContextMenu]'s overlay and [AppContextMenu.showAt]'s route
-/// already close themselves before running the tapped/released action's
-/// own `onTap` (see each one's own doc comment).
 List<AppContextMenuAction> _sectionTabMenuActions(
   BuildContext context,
   WidgetRef ref,
@@ -237,11 +181,9 @@ void _removeSectionWithUndo(
   );
 }
 
-/// One tab — [AppSelectableChip]'s own selected/unselected fill, plus an
-/// optional drop-target border overlay. Not folded into
-/// [AppSelectableChip] itself: drag-and-drop awareness is specific to
-/// this one Inbox use, and that shared component otherwise has no notion
-/// of a live drag hovering it.
+/// One tab — an [AppSubNavLabel], plus a drop-target wash while a row is
+/// dragged over it. Drag-and-drop awareness stays here, specific to this
+/// one Inbox use.
 ///
 /// **2026-09-23 — two ways into the Rename/Remove menu, both faster than
 /// Flutter's stock 500ms long-press.** Requested directly: "selected tab
@@ -257,13 +199,12 @@ void _removeSectionWithUndo(
 /// - A **plain tap on an ALREADY-selected tab** (previously a pure no-op —
 ///   `select` on the filter it's already showing) — opens the same menu
 ///   via [AppContextMenu.showAt] instead. This path has no "still-down
-///   finger to drag" to preserve (`AppSelectableChip.onTap` fires on
-///   release, not press), so it uses the route-based opener rather than
+///   finger to drag" to preserve (the label's tap fires on release, not
+///   press), so it uses the route-based opener rather than
 ///   [AppLongPressContextMenu]'s own overlay.
-class _SectionTabChip extends StatelessWidget {
-  const _SectionTabChip({
-    required this.theme,
-    required this.chipKey,
+class _SectionTab extends StatelessWidget {
+  const _SectionTab({
+    required this.tabKey,
     required this.label,
     required this.selected,
     required this.isDropTarget,
@@ -271,72 +212,54 @@ class _SectionTabChip extends StatelessWidget {
     this.menuActions,
   });
 
-  final AmbleTheme theme;
-  final GlobalKey? chipKey;
+  /// Measured by [InboxSectionTabTargets] to tell which tab a dragged row
+  /// is over.
+  final GlobalKey? tabKey;
   final String label;
   final bool selected;
+
+  /// A row is being dragged over this tab: a wash shows behind it.
   final bool isDropTarget;
   final VoidCallback onTap;
 
-  /// The Rename/Remove actions this tab's menu offers — null for
-  /// "All"/"Unfiled", which aren't real [Section] rows and have nothing to
-  /// rename/remove (so neither the long-press nor the tap-when-selected
-  /// path does anything for them).
+  /// Rename/remove for a user section — from a tap on the SELECTED tab, or
+  /// a long-press.
   final List<AppContextMenuAction>? menuActions;
 
   @override
   Widget build(BuildContext context) {
     Offset? lastPointerPosition;
 
-    final chip = Listener(
+    final tab = Listener(
+      key: tabKey,
       onPointerDown: (event) => lastPointerPosition = event.position,
-      child: Stack(
-        key: chipKey,
-        clipBehavior: Clip.none,
-        children: [
-          AppSelectableChip(
-            label: label,
-            selected: selected,
-            onTap: () {
-              final actions = menuActions;
-              if (selected && actions != null && lastPointerPosition != null) {
-                AppContextMenu.showAt(
-                  context,
-                  position: lastPointerPosition!,
-                  actions: actions,
-                );
-              } else {
-                onTap();
-              }
-            },
-          ),
-          // A 2px border over the resting fill, not a fill-color change —
-          // the same `ZoneContainerBlock.isDropTarget` idiom used
-          // elsewhere for "you're about to drop here" feedback.
-          if (isDropTarget)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: theme.colorTextPrimary,
-                      width: 2,
-                    ),
-                    borderRadius: BorderRadius.circular(theme.radiusMd),
-                  ),
-                ),
-              ),
-            ),
-        ],
+      child: AppSubNavLabel(
+        label: label,
+        selected: selected,
+        highlighted: isDropTarget,
+        onTap: () {
+          final actions = menuActions;
+          if (selected && actions != null && lastPointerPosition != null) {
+            AppContextMenu.showAt(
+              context,
+              position: lastPointerPosition!,
+              actions: actions,
+            );
+          } else {
+            onTap();
+          }
+        },
       ),
     );
 
     return menuActions == null
-        ? chip
-        : AppLongPressContextMenu(actions: menuActions!, child: chip);
+        ? tab
+        : AppLongPressContextMenu(actions: menuActions!, child: tab);
   }
 }
 
+/// "New section": a quiet "+" on the heading line — no taller than the
+/// labels, so it never moves them.
 class _CreateSectionButton extends StatelessWidget {
   const _CreateSectionButton({required this.theme});
 
@@ -344,19 +267,16 @@ class _CreateSectionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: theme.sizeButtonMd,
-      width: theme.sizeButtonMd,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: theme.colorSurfaceSecondary,
-          shape: BoxShape.circle,
-        ),
-        child: IconButton(
-          padding: EdgeInsets.zero,
-          icon: Icon(Icons.add_rounded, color: theme.colorTextSecondary),
-          tooltip: 'New section',
-          onPressed: () => showNewSectionSheet(context),
+    return Semantics(
+      button: true,
+      label: 'New section',
+      child: AppPressFeedback(
+        onTap: () => showNewSectionSheet(context),
+        borderRadius: BorderRadius.circular(theme.radiusSm),
+        child: Icon(
+          Icons.add_rounded,
+          size: theme.spacingMd,
+          color: theme.colorTextTertiary,
         ),
       ),
     );

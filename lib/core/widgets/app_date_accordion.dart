@@ -250,7 +250,7 @@ class _DateLabelRow extends StatelessWidget {
               // weekday abbreviation, day-of-month, month abbreviation.
               '${_weekdayNames[monthOf.weekday - 1]} ${monthOf.day} '
               '${_monthNames[monthOf.month - 1].substring(0, 3)}',
-              style: theme.textTitle,
+              style: theme.textBody,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -267,6 +267,7 @@ class _DateLabelRow extends StatelessWidget {
             child: Icon(
               Icons.keyboard_arrow_down_rounded,
               color: theme.colorTextPrimary,
+              size: theme.spacingMd,
             ),
           ),
         ],
@@ -1084,6 +1085,10 @@ class _WeekDayCell extends StatelessWidget {
     // ripple.
     final pill = AppPressFeedback(
       onTap: onTap,
+      // No wash on tap — the one exception to the shared press feedback:
+      // the selected-day state already answers the tap (requested
+      // directly). The squeeze and haptic stay.
+      ripple: false,
       // A stadium, not a circle — the pressed shape now spans letter +
       // number, which is taller than it is wide.
       borderRadius: BorderRadius.circular(theme.radiusPill),

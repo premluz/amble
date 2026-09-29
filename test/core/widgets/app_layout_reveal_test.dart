@@ -97,26 +97,25 @@ void main() {
     expect(_progress(tester), 1);
   });
 
-  testWidgets(
-    'input is blocked until reveal completes',
-    (tester) async {
-      var taps = 0;
-      await _open(
-        tester,
-        TextButton(onPressed: () => taps++, child: const Text('Act')),
-      );
-      final position = tester.getCenter(find.text('Act'));
-      await tester.tapAt(position);
-      expect(taps, 0);
-      await tester.pumpAndSettle();
-      await tester.tapAt(position);
-      expect(taps, 1);
-      await tester.pumpWidget(const SizedBox());
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
-    },
-  );
-  testWidgets('unmounting during the fade disposes the animation', (tester) async {
+  testWidgets('input is blocked until reveal completes', (tester) async {
+    var taps = 0;
+    await _open(
+      tester,
+      TextButton(onPressed: () => taps++, child: const Text('Act')),
+    );
+    final position = tester.getCenter(find.text('Act'));
+    await tester.tapAt(position);
+    expect(taps, 0);
+    await tester.pumpAndSettle();
+    await tester.tapAt(position);
+    expect(taps, 1);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('unmounting during the fade disposes the animation', (
+    tester,
+  ) async {
     await _open(tester, const Text('Incoming'));
     await tester.pump(_theme.motionFast * .5);
     expect(_progress(tester), allOf(greaterThan(0), lessThan(1)));

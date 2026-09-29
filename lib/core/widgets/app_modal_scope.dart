@@ -5,8 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 WidgetBuilder rootModalBuilder(BuildContext context, WidgetBuilder builder) {
   final navigator = Navigator.of(context, rootNavigator: true);
   final themes = InheritedTheme.capture(from: context, to: navigator.context);
-  final scope = context.findAncestorWidgetOfExactType<UncontrolledProviderScope>();
-  final container = scope == null ? null : ProviderScope.containerOf(context, listen: false);
+  final scope = context
+      .findAncestorWidgetOfExactType<UncontrolledProviderScope>();
+  final container = scope == null
+      ? null
+      : ProviderScope.containerOf(context, listen: false);
   return (modalContext) {
     final content = themes.wrap(Builder(builder: builder));
     return container == null

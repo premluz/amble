@@ -26,6 +26,17 @@ abstract final class AppViewTransitionMotion {
     return translations;
   }
 
+  /// Where a sliding slot travels from and to over this transition, so the
+  /// items on it can follow through ([AppFollowThroughScope]).
+  static (Offset, Offset) endpoints({
+    required String id,
+    required String? activeViewId,
+    required bool forward,
+    required Map<String, Offset> sourceTranslations,
+  }) => id == activeViewId
+      ? (Offset(forward ? 1 : -1, 0), Offset.zero)
+      : (sourceTranslations[id] ?? Offset.zero, Offset(forward ? -1 : 1, 0));
+
   static Offset translation({
     required String id,
     required String? activeViewId,

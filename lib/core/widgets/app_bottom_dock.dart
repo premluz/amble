@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:tabler_icons_plus/tabler_icons_plus.dart';
 
 import '../tokens/semantic_theme.dart';
 import '../tokens/what_matters_tokens.dart';
@@ -92,63 +93,71 @@ class AppBottomDock extends StatelessWidget {
 
     return AppContextDock(
       theme: theme,
-      configuration: configurationOverride ?? inheritedOverride ?? AppContextDockConfiguration(
-        stateId: 'day',
-        groups: visible
-            ? [
-                AppContextGroup(
-                  id: 'context-navigation',
-                  actions: [
-                    // Timeline (spatial Task view) first, List (Zone view)
-                    // second — requested directly: "first view default is
-                    // timeline spatial... second is zone view." Button
-                    // order only; the underlying default (spatial Task
-                    // view on a fresh install, via ZoneViewEnabledSetting's
-                    // own `false` default) was already correct.
-                    AppContextAction(
-                      id: 'day-timeline',
-              icon: Icons.view_timeline_outlined,
-              tooltip: 'Timeline',
-              selected: activeView == AppBottomDockView.timeline,
-                      onPressed: () => onSelectView(AppBottomDockView.timeline),
-            ),
-                    AppContextAction(
-                      id: 'day-list',
-              icon: Icons.view_agenda_outlined,
-              tooltip: 'List',
-              selected: activeView == AppBottomDockView.list,
-                      onPressed: () => onSelectView(AppBottomDockView.list),
-            ),
-          ],
-        ),
-                AppContextGroup(
-                  id: 'day-edit',
-                  actions: [
-                    AppContextAction(
+      configuration:
+          configurationOverride ??
+          inheritedOverride ??
+          AppContextDockConfiguration(
+            stateId: 'day',
+            groups: visible
+                ? [
+                    AppContextGroup(
+                      id: 'context-navigation',
+                      actions: [
+                        // Timeline (spatial Task view) first, List (Zone view)
+                        // second — requested directly: "first view default is
+                        // timeline spatial... second is zone view." Button
+                        // order only; the underlying default (spatial Task
+                        // view on a fresh install, via ZoneViewEnabledSetting's
+                        // own `false` default) was already correct.
+                        AppContextAction(
+                          id: 'day-timeline',
+                          icon: TablerIcons.congruentTo,
+                          tooltip: 'Timeline',
+                          selected: activeView == AppBottomDockView.timeline,
+                          onPressed: () =>
+                              onSelectView(AppBottomDockView.timeline),
+                        ),
+                        AppContextAction(
+                          id: 'day-list',
+                          icon: TablerIcons.checklist,
+                          tooltip: 'List',
+                          selected: activeView == AppBottomDockView.list,
+                          onPressed: () => onSelectView(AppBottomDockView.list),
+                        ),
+                      ],
+                    ),
+                    AppContextGroup(
                       id: 'day-edit',
-              icon: Icons.edit_outlined,
-              tooltip: 'Edit Day',
-                      onPressed: onEditTap,
-            ),
-          ],
-        ),
-                AppContextGroup(
-                  id: 'day-matters',
-                  backgroundColor: mattersBackground,
-                  actions: [
-                    AppContextAction(
-                      id: 'day-what-matters',
-              icon: Icons.favorite_border_rounded,
-              tooltip: 'What Matters',
-              selected: whatMattersEnabled,
-                      haptic: AmbleHaptic.lift,
-                      onPressed: onWhatMattersTap,
-            ),
-          ],
-        ),
-              ]
-            : const [],
-      ),
+                      actions: [
+                        AppContextAction(
+                          id: 'day-edit',
+                          icon: Icons.edit_outlined,
+                          tooltip: 'Edit Day',
+                          onPressed: onEditTap,
+                        ),
+                      ],
+                    ),
+                    AppContextGroup(
+                      id: 'day-matters',
+                      backgroundColor: mattersBackground,
+                      actions: [
+                        AppContextAction(
+                          id: 'day-what-matters',
+                          // A star, matching the star on important tasks:
+                          // this lens shows exactly the starred ones.
+                          icon: whatMattersEnabled
+                              ? Icons.star_rounded
+                              : Icons.star_border_rounded,
+                          tooltip: 'What Matters',
+                          selected: whatMattersEnabled,
+                          haptic: AmbleHaptic.lift,
+                          onPressed: onWhatMattersTap,
+                        ),
+                      ],
+                    ),
+                  ]
+                : const [],
+          ),
     );
   }
 }

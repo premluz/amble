@@ -234,7 +234,7 @@ void main() {
 
       expect(find.text('Discard this task?'), findsNothing);
       // The route itself is gone — the sheet's own title no longer shows.
-      expect(find.text('Create task'), findsNothing);
+      expect(find.text('New thing'), findsNothing);
     },
   );
 
@@ -261,7 +261,7 @@ void main() {
       initialScheduledAt: DateTime(2026, 8, 20, 9),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Create task'), findsOneWidget);
+    expect(find.text('New thing'), findsOneWidget);
 
     await tester.runAsync(() async {
       await navigatorKey.currentState!.maybePop();
@@ -273,7 +273,7 @@ void main() {
     expect(find.text('Discard this task?'), findsNothing);
     // The whole sheet closed, not just its keyboard — the route itself
     // is gone.
-    expect(find.text('Create task'), findsNothing);
+    expect(find.text('New thing'), findsNothing);
   });
 
   testWidgets(
@@ -305,7 +305,7 @@ void main() {
       expect(find.text('Discard this task?'), findsOneWidget);
       // The route is still there behind the dialog — a back gesture on a
       // real draft must never silently lose it.
-      expect(find.text('Create task'), findsOneWidget);
+      expect(find.text('New thing'), findsOneWidget);
     },
   );
 

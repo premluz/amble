@@ -3,7 +3,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../haptics.dart';
+import '../tokens/liquid_press_spec.dart';
 import '../tokens/semantic_theme.dart';
+import 'liquid_deformation.dart';
 
 /// Wraps a tap target so pressing it feels answered: a soft circular wash
 /// expands from the exact point the finger landed, while the whole control
@@ -47,7 +49,19 @@ class AppPressFeedback extends StatefulWidget {
     this.maxRippleRadius,
     this.haptic = AmbleHaptic.tap,
     this.haptics = const PlatformHaptics(),
+    this.spec = LiquidPressSpec.standard,
+    this.ripple = true,
   });
+
+  /// False drops the wash (the tap ripple and the held fill), keeping the
+  /// press squeeze and haptic — for a control whose own selected state
+  /// already answers the tap (the Day screen's week strip).
+  final bool ripple;
+
+  /// The press squeeze: compresses while held, springs back on release.
+  /// Every control shares [LiquidPressSpec.standard]; only a demo or a
+  /// genuinely different surface should pass another.
+  final LiquidPressSpec spec;
 
   /// Which [AmbleHaptic] fires when the press lands, or null for a
   /// silent control. Defaults to [AmbleHaptic.tap] so every existing
@@ -138,10 +152,14 @@ class _AppPressFeedbackState extends State<AppPressFeedback>
   /// almost no feedback at all.
   late final AnimationController _rippleController;
 
-  /// Drives the press-down dip. Separate from [_rippleController] because
-  /// it is genuinely reversible: it holds while the finger is down and
-  /// springs back on release/cancel, however long that takes.
-  late final AnimationController _scaleController;
+  /// The press squeeze. Separate from [_rippleController] because it is
+  /// genuinely reversible: it holds while the finger is down and springs
+  /// back on release/cancel, however long that takes.
+  late final LiquidDeformation _deformation;
+
+  /// The growth the current press is heading for; the glass hold-fill
+  /// fades with the deformation's progress toward it.
+  double _pressGrowth = 0;
 
   /// Where the finger landed, in this widget's own local coordinates —
   /// the ripple's origin. Null before the first tap.
@@ -151,13 +169,13 @@ class _AppPressFeedbackState extends State<AppPressFeedback>
   void initState() {
     super.initState();
     _rippleController = AnimationController(vsync: this);
-    _scaleController = AnimationController(vsync: this);
+    _deformation = LiquidDeformation(this);
   }
 
   @override
   void dispose() {
     _rippleController.dispose();
-    _scaleController.dispose();
+    _deformation.dispose();
     super.dispose();
   }
 
@@ -178,16 +196,21 @@ class _AppPressFeedbackState extends State<AppPressFeedback>
     final haptic = widget.haptic;
     if (haptic != null) widget.haptics.play(haptic);
 
-    setState(() => _tapPosition = localPosition);
-    _rippleController
-      ..duration = theme.motionNormal
-      ..forward(from: 0);
-    // motionFast (not motionNormal): the dip has to land while the finger
-    // is still going down, so it reads as the control yielding to the
-    // press rather than animating after it.
-    _scaleController
-      ..duration = theme.motionFast
-      ..forward();
+    if (widget.ripple) {
+      setState(() => _tapPosition = localPosition);
+      _rippleController
+        ..duration = theme.motionNormal
+        ..forward(from: 0);
+    }
+    // Swells toward the finger, Liquid Glass style, while it is still
+    // going down, so it reads as the control answering the press.
+    final size = context.size;
+    if (size != null &&
+        MediaQuery.maybeOf(context)?.disableAnimations != true) {
+      final longestSide = math.max(size.width, size.height);
+      _pressGrowth = widget.spec.growFor(longestSide);
+      _deformation.press(widget.spec, longestSide);
+    }
   }
 
   void _handleTapDown(TapDownDetails details, AmbleTheme theme) =>
@@ -197,7 +220,7 @@ class _AppPressFeedbackState extends State<AppPressFeedback>
 
   void _releasePress() {
     if (!mounted) return;
-    _scaleController.reverse();
+    _deformation.unpress(widget.spec);
   }
 
   @override
@@ -212,14 +235,14 @@ class _AppPressFeedbackState extends State<AppPressFeedback>
     final rippleColor = widget.rippleColor ?? theme.colorTextPrimary;
 
     final animated = AnimatedBuilder(
-      animation: Listenable.merge([_rippleController, _scaleController]),
+      animation: Listenable.merge([_rippleController, _deformation.listenable]),
       builder: (context, child) {
-        final pressT = theme.curveStandard.transform(_scaleController.value);
-        return Transform.scale(
-          // A deliberately small dip — the point is a physical sense of
-          // give, not a visible shrink. Anything deeper starts to read
-          // as the control moving away from the finger.
-          scale: 1 - (_pressScaleDepth * pressT),
+        final held = _pressGrowth <= 0
+            ? 0.0
+            : (_deformation.value / _pressGrowth).clamp(0.0, 1.0);
+        return Transform(
+          alignment: Alignment.center,
+          transform: _deformation.matrix(widget.spec.squash),
           // _RipplePaint is built INSIDE the builder, not passed as the
           // pre-built `child` below: whether it renders at all depends
           // on the ripple controller's own state (it drops out entirely
@@ -235,6 +258,7 @@ class _AppPressFeedbackState extends State<AppPressFeedback>
             shape: widget.shape,
             curve: theme.curveStandard,
             maxRadius: widget.maxRippleRadius,
+            holdAlpha: widget.ripple ? widget.spec.holdFillAlpha * held : 0,
             child: child!,
           ),
         );
@@ -279,9 +303,6 @@ class _AppPressFeedbackState extends State<AppPressFeedback>
   }
 }
 
-/// How far the control dips while held, as a fraction of its own size.
-const double _pressScaleDepth = 0.02;
-
 /// Peak opacity of the wash, at the very start of the ripple. Low by
 /// design — the ripple is confirmation, not decoration, and reads on both
 /// the light and dark palettes at this value.
@@ -298,8 +319,12 @@ class _RipplePaint extends StatelessWidget {
     required this.shape,
     required this.curve,
     required this.maxRadius,
+    required this.holdAlpha,
     required this.child,
   });
+
+  /// Opacity of the glass fill over the whole control while it is held.
+  final double holdAlpha;
 
   final AnimationController controller;
   final Offset? origin;
@@ -312,15 +337,14 @@ class _RipplePaint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tapOrigin = origin;
-    // Nothing tapped yet, or the ripple has fully played out — skip the
-    // clip and painter entirely rather than keeping an inert layer
-    // around. `isCompleted` (not `isDismissed`) is the finished state
-    // here: this controller only ever runs forward, so it settles at 1.0
-    // and never returns to 0.
-    if (tapOrigin == null || controller.isCompleted || controller.isDismissed) {
-      return child;
-    }
+    // Nothing tapped yet, or the ripple has fully played out and the
+    // control is no longer held — skip the clip and painter entirely
+    // rather than keeping an inert layer around. `isCompleted` (not
+    // `isDismissed`) is the finished state here: this controller only ever
+    // runs forward, so it settles at 1.0 and never returns to 0.
+    final rippling =
+        origin != null && !controller.isCompleted && !controller.isDismissed;
+    if (!rippling && holdAlpha <= 0) return child;
 
     return ClipPath(
       clipper: _ShapeClipper(borderRadius: borderRadius, shape: shape),
@@ -335,10 +359,11 @@ class _RipplePaint extends StatelessWidget {
         // [_rippleAlpha]) precisely so it can sit OVER the control's
         // content without obscuring the label underneath it.
         foregroundPainter: _RipplePainter(
-          progress: curve.transform(controller.value),
-          origin: tapOrigin,
+          progress: rippling ? curve.transform(controller.value) : 0,
+          origin: origin,
           color: color,
           maxRadius: maxRadius,
+          holdAlpha: holdAlpha,
         ),
         child: child,
       ),
@@ -374,11 +399,14 @@ class _RipplePainter extends CustomPainter {
     required this.origin,
     required this.color,
     required this.maxRadius,
+    required this.holdAlpha,
   });
+
+  final double holdAlpha;
 
   /// 0 → 1, already curve-transformed by the caller.
   final double progress;
-  final Offset origin;
+  final Offset? origin;
   final Color color;
 
   /// Caps how far the wash grows. Null lets it reach the furthest corner
@@ -389,7 +417,14 @@ class _RipplePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (progress <= 0 || progress >= 1) return;
+    if (holdAlpha > 0) {
+      canvas.drawRect(
+        Offset.zero & size,
+        Paint()..color = color.withValues(alpha: holdAlpha),
+      );
+    }
+    final origin = this.origin;
+    if (origin == null || progress <= 0 || progress >= 1) return;
 
     // Radius needed to reach whichever corner is furthest from the tap —
     // so the wash always covers the whole control by the time it finishes,
@@ -417,5 +452,6 @@ class _RipplePainter extends CustomPainter {
   bool shouldRepaint(_RipplePainter oldDelegate) =>
       oldDelegate.progress != progress ||
       oldDelegate.origin != origin ||
-      oldDelegate.color != color;
+      oldDelegate.color != color ||
+      oldDelegate.holdAlpha != holdAlpha;
 }

@@ -99,6 +99,15 @@ abstract final class ColorPrimitives {
   static final slate700 = oklch(0.359, 0.008, 255.5); // #3A3D41
   static final slate900 = oklch(0.217, 0.002, 247.9); // #191A1B
 
+  // Mist — the "unassigned" tone: new tasks with no label yet and imported
+  // calendar events. It is reserved for those, so it must not be reused for
+  // anything else. Its hue (218°) falls in the gap between the label
+  // palette's cyan (202°) and sky blue (235°), well away from the accent
+  // (287°), sage (138°) and slate (~250°, and near-grey). Its chroma is
+  // above any done-task tint (≤ .03), so it never reads as a done pill.
+  static final mistLight = oklch(0.855, 0.040, 218.0); // #B3D6E1
+  static final mistDark = oklch(0.420, 0.040, 218.0); // #33535C
+
   // Coral — attention/alert ramp.
   static final coral300 = oklch(0.851, 0.059, 35.3); // #F2C1B4
   static final coral500 = oklch(0.694, 0.113, 35.6); // #D9826B

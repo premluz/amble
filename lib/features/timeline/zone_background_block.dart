@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../core/tokens/liquid_pulse_spec.dart';
+import '../../core/tokens/component_tokens.dart';
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/widgets/app_liquid_pulse.dart';
 import '../../core/widgets/selected_pill_border.dart';
 import '../../shared/models/zone.dart';
 import 'resize_handle.dart';
@@ -303,118 +306,124 @@ class ZoneBackgroundBlock extends StatelessWidget {
       // added. expand stretches it back to the outer Positioned's own
       // tight top/left/width/height, matching what the plain DecoratedBox
       // got for free before this Stack existed.
-      child: Stack(
-        fit: StackFit.expand,
-        clipBehavior: Clip.none,
-        children: [
-          // Fill — the WHOLE block is now the tap/drag target (not a
-          // header strip with its own title/time label). Requested
-          // directly — "What I see is the addition of a title inside the
-          // zone, which we didn't ask for. Let's remove this title, and
-          // let's make the zone editable on top" — reversing the earlier
-          // header-row design (which mirrored `ZoneContainerBlock`'s own
-          // header) in favor of the plain fill itself being the target,
-          // with no visible label added.
-          //
-          // IgnorePointer wraps the GestureDetector (not the reverse) so
-          // `ignoring: true` genuinely stops the detector from claiming
-          // the gesture at all, letting a tap meant for a task pill or
-          // the placement line underneath fall through — matches this
-          // block's original purely-decorative contract whenever
-          // there's nothing to select or move here (Edit Mode off, or on
-          // but this isn't a draggable/selectable zone).
-          IgnorePointer(
-            ignoring: onMoveEnd == null && onHeaderTap == null,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onHeaderTap,
-              onVerticalDragStart: onMoveStart,
-              onVerticalDragUpdate: onMoveUpdate,
-              onVerticalDragEnd: onMoveEnd,
-              // Selected gets the SAME accent selection ring every other
-              // selected block in the app uses (`SelectedPillBorder`) —
-              // replacing the wiggle this zone used to signal selection
-              // with, requested directly: "wiggling is not anymore [a]
-              // pattern... any reference can be removed." `editModeEnabled`
-              // here is really "this zone is the selected one" (see that
-              // field's own doc comment), so the ring and the wiggle it
-              // replaces gate on the exact same condition.
-              child: editModeEnabled
-                  ? SelectedPillBorder(
-                      theme: theme,
-                      // radiusXxl (2026-09-23), not radiusXl — requested
-                      // directly: "zones in edit should have next step
-                      // larger rounding[,] next scale token." The resting
-                      // state below still uses radiusXl, matching the
-                      // non-spatial Zone view's own card (see that
-                      // decoration's own doc comment) — this is
-                      // specifically the Edit Mode selection ring rounding
-                      // MORE than the plain card it's drawn over.
-                      contentRadius: BorderRadius.circular(theme.radiusXxl),
-                      fillColor: theme.colorSurfaceSecondary,
-                      child: const SizedBox.expand(),
-                    )
-                  : DecoratedBox(
-                      // Plain, non-colored surface — matches the Zone
-                      // list row (Settings → Manage → Zones) and the
-                      // Tracked behavior card, requested directly: "the
-                      // zone card make the color of the card [same as]
-                      // on manage... as card on tracked... non colored."
-                      // Was `colorZoneBackground`, a distinct zone-tint
-                      // fill.
-                      decoration: BoxDecoration(
-                        color: theme.colorSurfaceSecondary,
-                        // radiusXl — see docs/DESIGN_SYSTEM.md's "Zone
-                        // pane indicator" section.
-                        borderRadius: BorderRadius.circular(theme.radiusXl),
+      // Fill, ring and handles bounce together on selection, as one piece.
+      child: AppLiquidPulse(
+        active: editModeEnabled,
+        spec: LiquidPulseSpec.selectSurface,
+        suppressed: liveStartMinutes != null || liveEndMinutes != null,
+        child: Stack(
+          fit: StackFit.expand,
+          clipBehavior: Clip.none,
+          children: [
+            // Fill — the WHOLE block is now the tap/drag target (not a
+            // header strip with its own title/time label). Requested
+            // directly — "What I see is the addition of a title inside the
+            // zone, which we didn't ask for. Let's remove this title, and
+            // let's make the zone editable on top" — reversing the earlier
+            // header-row design (which mirrored `ZoneContainerBlock`'s own
+            // header) in favor of the plain fill itself being the target,
+            // with no visible label added.
+            //
+            // IgnorePointer wraps the GestureDetector (not the reverse) so
+            // `ignoring: true` genuinely stops the detector from claiming
+            // the gesture at all, letting a tap meant for a task pill or
+            // the placement line underneath fall through — matches this
+            // block's original purely-decorative contract whenever
+            // there's nothing to select or move here (Edit Mode off, or on
+            // but this isn't a draggable/selectable zone).
+            IgnorePointer(
+              ignoring: onMoveEnd == null && onHeaderTap == null,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onHeaderTap,
+                onVerticalDragStart: onMoveStart,
+                onVerticalDragUpdate: onMoveUpdate,
+                onVerticalDragEnd: onMoveEnd,
+                // Selected gets the SAME accent selection ring every other
+                // selected block in the app uses (`SelectedPillBorder`) —
+                // replacing the wiggle this zone used to signal selection
+                // with, requested directly: "wiggling is not anymore [a]
+                // pattern... any reference can be removed." `editModeEnabled`
+                // here is really "this zone is the selected one" (see that
+                // field's own doc comment), so the ring and the wiggle it
+                // replaces gate on the exact same condition.
+                child: editModeEnabled
+                    ? SelectedPillBorder(
+                        theme: theme,
+                        // radiusXxl (2026-09-23), not radiusXl — requested
+                        // directly: "zones in edit should have next step
+                        // larger rounding[,] next scale token." The resting
+                        // state below still uses radiusXl, matching the
+                        // non-spatial Zone view's own card (see that
+                        // decoration's own doc comment) — this is
+                        // specifically the Edit Mode selection ring rounding
+                        // MORE than the plain card it's drawn over.
+                        contentRadius: BorderRadius.circular(theme.radiusXxl),
+                        fillColor: ZoneSurfaceTokens.fill(theme),
+                        child: const SizedBox.expand(),
+                      )
+                    : DecoratedBox(
+                        // Plain, non-colored surface — matches the Zone
+                        // list row (Settings → Manage → Zones) and the
+                        // Tracked behavior card, requested directly: "the
+                        // zone card make the color of the card [same as]
+                        // on manage... as card on tracked... non colored."
+                        // Was `colorZoneBackground`, a distinct zone-tint
+                        // fill.
+                        decoration: BoxDecoration(
+                          color: ZoneSurfaceTokens.fill(theme),
+                          // radiusXl — see docs/DESIGN_SYSTEM.md's "Zone
+                          // pane indicator" section.
+                          borderRadius: BorderRadius.circular(theme.radiusXl),
+                        ),
                       ),
-                    ),
-            ),
-          ),
-          if (editModeEnabled && onResizeTopEnd != null)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: ResizeHandle(
-                theme: theme,
-                onDragStart: onResizeTopStart,
-                onDragUpdate: onResizeTopUpdate,
-                onDragEnd: onResizeTopEnd,
               ),
             ),
-          if (editModeEnabled && onResizeBottomEnd != null)
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: ResizeHandle(
-                theme: theme,
-                onDragStart: onResizeBottomStart,
-                onDragUpdate: onResizeBottomUpdate,
-                onDragEnd: onResizeBottomEnd,
+            if (editModeEnabled && onResizeTopEnd != null)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: ResizeHandle(
+                  theme: theme,
+                  onDragStart: onResizeTopStart,
+                  onDragUpdate: onResizeTopUpdate,
+                  onDragEnd: onResizeTopEnd,
+                ),
               ),
+            if (editModeEnabled && onResizeBottomEnd != null)
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: ResizeHandle(
+                  theme: theme,
+                  onDragStart: onResizeBottomStart,
+                  onDragUpdate: onResizeBottomUpdate,
+                  onDragEnd: onResizeBottomEnd,
+                ),
+              ),
+            // Live move/resize time badges, pinned INSIDE the hour gutter
+            // itself, not just at the task-pill area's own left edge —
+            // corrected directly: "the blue time from to, should not be
+            // on top and bottom of task but on the left timeline where we
+            // [see] hours of day." `-(left - leftInset)` walks this
+            // Positioned back from the block's local origin (`left -
+            // leftInset`, this widget's own outer `Positioned.left` —
+            // tracks whatever [leftInset] the caller actually passed, not
+            // just the [zoneBackgroundOffset] default, so this stays
+            // correct in full-width mode too) to the day column's true
+            // x=0 — the SAME `+ theme.spacingSm` then lands it at the
+            // shared gutter label x every hour tick (`TaskBoundaryMarkers`)
+            // already uses. Each edge renders independently — a resize
+            // sets only the edge that's actually moving (the other stays
+            // null), while a move sets both (they shift together).
+            ..._liveZoneEdgeLabels(
+              gutterOffset: -(left - leftInset) + theme.spacingSm,
+              height: strictHeight - zoneBackgroundGap,
             ),
-          // Live move/resize time badges, pinned INSIDE the hour gutter
-          // itself, not just at the task-pill area's own left edge —
-          // corrected directly: "the blue time from to, should not be
-          // on top and bottom of task but on the left timeline where we
-          // [see] hours of day." `-(left - leftInset)` walks this
-          // Positioned back from the block's local origin (`left -
-          // leftInset`, this widget's own outer `Positioned.left` —
-          // tracks whatever [leftInset] the caller actually passed, not
-          // just the [zoneBackgroundOffset] default, so this stays
-          // correct in full-width mode too) to the day column's true
-          // x=0 — the SAME `+ theme.spacingSm` then lands it at the
-          // shared gutter label x every hour tick (`TaskBoundaryMarkers`)
-          // already uses. Each edge renders independently — a resize
-          // sets only the edge that's actually moving (the other stays
-          // null), while a move sets both (they shift together).
-          ..._liveZoneEdgeLabels(
-            gutterOffset: -(left - leftInset) + theme.spacingSm,
-            height: strictHeight - zoneBackgroundGap,
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

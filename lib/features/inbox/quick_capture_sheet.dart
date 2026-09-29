@@ -394,10 +394,8 @@ class _QuickCaptureFormState extends ConsumerState<_QuickCaptureForm> {
         child: child,
       ),
       child: Padding(
-        // Breathing room below the header row, so the sheet doesn't end
-        // flush against the keyboard's top edge or the screen bottom.
-        // Requested directly: "add padding bottom to that add/edit note
-        // sheet."
+        // Keep the header content clear of the bottom safe-area edge by
+        // the same compact gap used above this sheet's header.
         //
         // The KEYBOARD's own inset is deliberately NOT added here any more:
         // AppSheet now applies it for every sheet, via an AnimatedPadding
@@ -405,7 +403,7 @@ class _QuickCaptureFormState extends ConsumerState<_QuickCaptureForm> {
         // Reading `viewInsets` here as well would double-count it — and
         // reading it raw, per frame, is exactly what made the sheet jitter
         // against its own slide-up transition.
-        padding: EdgeInsets.only(bottom: theme.spacingLg),
+        padding: EdgeInsets.only(bottom: theme.spacingBottomClearance),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,

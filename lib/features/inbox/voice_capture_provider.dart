@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
@@ -68,6 +69,10 @@ class VoiceCapture extends _$VoiceCapture {
       _silenceTimer?.cancel();
       _reopenTimer?.cancel();
       if (_speech.isListening) _speech.stop();
+      // The singleton outlives this session (see [startListening]); a later
+      // session or Quick Capture must not call back into a disposed one.
+      if (_speech.statusListener == _onStatus) _speech.statusListener = null;
+      if (_speech.errorListener == _onError) _speech.errorListener = null;
     });
     return const VoiceCaptureState();
   }
@@ -81,16 +86,31 @@ class VoiceCapture extends _$VoiceCapture {
   Future<void> startListening() async {
     if (state.status == VoiceCaptureStatus.listening) return;
 
-    // Registered on `initialize`, not `listen` (which has no such
-    // parameters) — the `statusListener`/`errorListener` these set
-    // persist for the life of this `_speech` instance, so [_onStatus]
-    // and [_onError] keep covering any later session the platform cuts
-    // short.
-    final available = await _speech.initialize(
-      onStatus: _onStatus,
-      onError: _onError,
-    );
-    if (!available) return;
+    // Status/error listeners belong to `initialize`, not `listen` (which
+    // has no such parameters); they cover any later listen the platform
+    // cuts short. See below for why they are also bound directly.
+    final bool available;
+    try {
+      available = await _speech.initialize(
+        onStatus: _onStatus,
+        onError: _onError,
+      );
+    } on PlatformException {
+      state = state.copyWith(status: VoiceCaptureStatus.unavailable);
+      rethrow;
+    }
+    if (!available) {
+      state = state.copyWith(status: VoiceCaptureStatus.unavailable);
+      return;
+    }
+    // `SpeechToText()` is a process-wide singleton, and once it has been
+    // initialized (by Quick Capture's mic, or by an earlier voice session)
+    // `initialize` returns early WITHOUT taking the listeners above. This
+    // session then never heard the platform end its listen, so nothing
+    // reopened it: stuck on "Listening" with no words arriving.
+    _speech
+      ..statusListener = _onStatus
+      ..errorListener = _onError;
 
     _liveText = '';
     _committedText = '';
@@ -334,9 +354,13 @@ class VoiceCapture extends _$VoiceCapture {
   /// today (`quick_capture_sheet.dart`'s own `_submit`) — no new
   /// task-creation logic, so a spoken "call John tomorrow at 3pm" is
   /// scheduled exactly like a typed one, confirmed directly.
-  Future<void> submit() async {
+  ///
+  /// Returns, per committed segment in order, the id of the Inbox task it
+  /// became, or null when it was scheduled onto the Timeline instead — the
+  /// voice screen flies each Inbox arrival into its row.
+  Future<List<String?>> submit() async {
     if (!state.canSubmit || state.status == VoiceCaptureStatus.submitting) {
-      return;
+      return const [];
     }
 
     _silenceTimer?.cancel();
@@ -347,6 +371,7 @@ class VoiceCapture extends _$VoiceCapture {
     final categories = ref.read(categoryListProvider);
     final notifier = ref.read(taskListProvider.notifier);
 
+    final inboxIds = <String?>[];
     for (final segment in state.committedSegments) {
       final result = parseQuickCapture(
         segment,
@@ -355,9 +380,10 @@ class VoiceCapture extends _$VoiceCapture {
       );
 
       if (!result.isConfident) {
-        await notifier.captureTask(segment);
+        inboxIds.add((await notifier.captureTask(segment)).id);
         continue;
       }
+      inboxIds.add(null);
 
       await notifier.createTask(
         title: result.title.isEmpty ? segment : result.title,
@@ -370,5 +396,6 @@ class VoiceCapture extends _$VoiceCapture {
     }
 
     state = const VoiceCaptureState();
+    return inboxIds;
   }
 }

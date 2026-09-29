@@ -6,10 +6,9 @@ import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_pane.dart';
 import '../../core/widgets/app_sheet.dart';
 import '../../core/widgets/app_text_field.dart';
-import '../../shared/models/category.dart';
 import '../../shared/providers/category_providers.dart';
 import 'add_category_modal.dart';
-import 'category_visual.dart';
+import 'category_chip.dart';
 
 /// The compact "Name and category" modal — one of three per-field modals
 /// the single-screen create/edit flow opens from its preview card's
@@ -168,7 +167,7 @@ class _TaskNameCategoryModalState extends ConsumerState<TaskNameCategoryModal> {
               runSpacing: theme.spacingSm,
               children: [
                 for (final option in categories)
-                  _CategoryChip(
+                  CategoryChip(
                     category: option,
                     selected: option.id == _categoryId,
                     onSelected: () {
@@ -192,61 +191,3 @@ class _TaskNameCategoryModalState extends ConsumerState<TaskNameCategoryModal> {
   }
 }
 
-/// Swatch-filled category pill — identical styling to the old step 1's
-/// `_CategoryTag`, now reading its color/emoji from a live [Category] row
-/// via [resolveCategoryVisual] instead of the old fixed enum.
-class _CategoryChip extends StatelessWidget {
-  const _CategoryChip({
-    required this.category,
-    required this.selected,
-    required this.onSelected,
-  });
-
-  final Category category;
-  final bool selected;
-  final VoidCallback onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context).extension<AmbleTheme>()!;
-    final visual = resolveCategoryVisual(theme: theme, category: category);
-
-    return GestureDetector(
-      onTap: onSelected,
-      child: AnimatedContainer(
-        duration: theme.motionFast,
-        curve: theme.curveStandard,
-        padding: EdgeInsets.symmetric(
-          horizontal: theme.spacingMd,
-          vertical: theme.spacingSm,
-        ),
-        decoration: BoxDecoration(
-          color: visual.pillColor,
-          borderRadius: BorderRadius.circular(theme.radiusMd),
-          border: Border.all(
-            color: selected ? theme.colorTextPrimary : Colors.transparent,
-            width: theme.borderWidthHairline * 1.5,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CategoryGlyph(
-              category: category,
-              color: glyphColorOn(visual.pillColor),
-              size: theme.textBody.fontSize!,
-            ),
-            SizedBox(width: theme.spacingSm),
-            Text(
-              category.name,
-              style: theme.textBody.copyWith(
-                color: theme.colorTextPrimary,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

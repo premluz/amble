@@ -27,11 +27,9 @@ import '../../shared/models/task.dart';
 import '../../shared/models/tracked_behavior.dart';
 import '../../shared/providers/category_providers.dart';
 import '../../shared/models/task_template.dart';
-import '../../shared/providers/preferences_providers.dart';
 import '../../shared/providers/task_providers.dart';
 import '../../shared/providers/tracked_behavior_providers.dart';
 import '../../shared/providers/trial_providers.dart';
-import '../../shared/services/overlap_checker.dart';
 import '../timeline/template_chip_strip.dart';
 import 'category_visual.dart';
 import 'task_category_modal.dart';
@@ -41,6 +39,7 @@ import 'task_remove.dart';
 import 'task_start_time_modal.dart';
 import '../timeline/pending_task_draft_provider.dart';
 import '../timeline/recently_saved_task_provider.dart';
+import 'category_chip.dart';
 
 /// Pushes [child] using the same slide-up, near-full-screen presentation
 /// used by every task-detail-family modal (create wizard, edit-details,
@@ -430,12 +429,6 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
   late final bool _initialIsImportant;
   late final Set<int> _initialSelectedDays;
 
-  /// Set when Save was blocked by the "Prevent overlapping tasks"
-  /// preference — shown inline near the Save button per the confirmed
-  /// design (sheet stays open, nothing persisted, no popup). Cleared on
-  /// every fresh save attempt.
-  String? _overlapError;
-
   /// True for the duration of an in-flight [_save] — drives the primary
   /// button's spinner (see [AppButton.isLoading]) AND is the actual
   /// re-entrancy guard: [_save] returns immediately if this is already
@@ -696,21 +689,6 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
     // placeholder's own id — see _syncDraftFromForm's own doc comment.
     _syncDraftFromForm();
 
-    setState(() => _overlapError = null);
-    if (ref.read(preventOverlappingTasksSettingProvider) &&
-        overlapsExistingTask(
-          scheduledAt: scheduledAt,
-          durationMinutes: durationMinutes,
-          existingTasks: ref.read(taskListProvider),
-          excludeTaskId: widget.task?.id,
-        )) {
-      setState(
-        () => _overlapError =
-            'This overlaps another task. Choose a different time.',
-      );
-      return;
-    }
-
     setState(() => _isSaving = true);
 
     // try/finally, not to swallow an error (nothing here catches one —
@@ -750,6 +728,7 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
         // decides whether the Timeline animates the pill's height or just
         // fades the (unchanged-size) block in.
         final previousDuration = existing.durationMinutes;
+        final previousScheduledAt = existing.scheduledAt;
 
         existing.title = title;
         existing.description = description.isEmpty ? null : description;
@@ -843,6 +822,9 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
               ? SavedTaskChange.durationChanged
               : SavedTaskChange.created,
           previousDurationMinutes: durationChanged ? previousDuration : null,
+          checkForOverlapAfterSave:
+              previousScheduledAt != scheduledAt ||
+              previousDuration != existing.durationMinutes,
         );
       }
 
@@ -1107,7 +1089,7 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
       },
       child: StepScaffold(
         theme: theme,
-        modalTitle: isEditing ? 'Edit task' : 'Create task',
+        modalTitle: isEditing ? 'Edit task' : 'New thing',
         titleAlignment: TextAlign.left,
         headerColor: headerColor,
         headerContent: null,
@@ -1117,7 +1099,6 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
         onPrimaryPressed: _isNameStage
             ? _confirmNameStage
             : (_canSave ? _save : null),
-        errorMessage: _isNameStage ? null : _overlapError,
         footerContent: !_isNameStage && _showFutureInstancesToggle
             ? _AffectFutureInstancesToggle(
                 theme: theme,
@@ -2076,10 +2057,6 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
   late final bool _initialIsImportant;
   late final String? _initialBehaviorId;
 
-  /// See _TaskDetailFlowState's matching field — same inline-error contract
-  /// for the "Prevent overlapping tasks" preference.
-  String? _overlapError;
-
   /// Repeats panel state — requested directly, alongside the create flow's
   /// own [_TaskDetailFlowState._repeats]/`_selectedDays`. Fully editable
   /// now, including for an already-recurring task (follow-up requested
@@ -2180,21 +2157,6 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
           _durationMinutes != _initialDurationMinutes);
 
   Future<void> _save() async {
-    setState(() => _overlapError = null);
-    if (ref.read(preventOverlappingTasksSettingProvider) &&
-        overlapsExistingTask(
-          scheduledAt: _scheduledAt,
-          durationMinutes: _durationMinutes,
-          existingTasks: ref.read(taskListProvider),
-          excludeTaskId: widget.task.id,
-        )) {
-      setState(
-        () => _overlapError =
-            'This overlaps another task. Choose a different time.',
-      );
-      return;
-    }
-
     final existing = widget.task;
     // Capture the slot this instance is VACATING before overwriting it —
     // must happen here, since the old value is unrecoverable afterward.
@@ -2393,7 +2355,6 @@ class _EditScheduleFormState extends ConsumerState<_EditScheduleForm> {
       onClose: _handleClose,
       primaryLabel: 'Save',
       onPrimaryPressed: _save,
-      errorMessage: _overlapError,
       showFutureInstancesToggle: _showFutureInstancesToggle,
       affectFutureInstances: _affectFutureInstances,
       onAffectFutureInstancesChanged: (value) =>
@@ -2550,7 +2511,7 @@ class _DetailsStepScaffold extends ConsumerWidget {
                   // without discovery.
                   children: [
                     for (final option in categories)
-                      _CategoryTag(
+                      CategoryChip(
                         category: option,
                         selected: option.id == categoryId,
                         onSelected: () => onCategoryChanged(option.id),
@@ -2609,7 +2570,6 @@ class _ScheduleStepScaffold extends ConsumerWidget {
     required this.onClose,
     required this.primaryLabel,
     required this.onPrimaryPressed,
-    this.errorMessage,
     required this.showFutureInstancesToggle,
     required this.affectFutureInstances,
     required this.onAffectFutureInstancesChanged,
@@ -2676,11 +2636,6 @@ class _ScheduleStepScaffold extends ConsumerWidget {
   /// Null disables the primary button — the create flow passes null until
   /// both time and duration are set.
   final VoidCallback? onPrimaryPressed;
-
-  /// Shown inline just above the primary button when Save was blocked by
-  /// the "Prevent overlapping tasks" preference. Null when there's nothing
-  /// to report.
-  final String? errorMessage;
 
   /// See [_EditScheduleFormState._showFutureInstancesToggle] — whether
   /// [_AffectFutureInstancesToggle] should render at all.
@@ -2750,7 +2705,6 @@ class _ScheduleStepScaffold extends ConsumerWidget {
       onBack: null,
       primaryLabel: primaryLabel,
       onPrimaryPressed: onPrimaryPressed,
-      errorMessage: errorMessage,
       footerContent: showFutureInstancesToggle
           ? _AffectFutureInstancesToggle(
               theme: theme,
@@ -3074,70 +3028,6 @@ class _SchedulePreviewCard extends StatelessWidget {
 String _formatDuration(int minutes) {
   if (minutes % 60 == 0) return '${minutes ~/ 60}h';
   return '${minutes}m';
-}
-
-class _CategoryTag extends StatelessWidget {
-  const _CategoryTag({
-    required this.category,
-    required this.selected,
-    required this.onSelected,
-  });
-
-  final Category category;
-  final bool selected;
-  final VoidCallback onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context).extension<AmbleTheme>()!;
-    final categoryColor = resolveCategoryVisual(
-      theme: theme,
-      category: category,
-    ).pillColor;
-
-    // One tint-filled pill holding emoji + label (mockup), rather than a
-    // separate circular icon beside loose text. Selection is carried by
-    // the outline: the fill already encodes WHICH category this is, so
-    // reusing it for state would make an unselected chip and a selected
-    // one differ only in weight.
-    return GestureDetector(
-      onTap: onSelected,
-      child: AnimatedContainer(
-        duration: theme.motionFast,
-        curve: theme.curveStandard,
-        padding: EdgeInsets.symmetric(
-          horizontal: theme.spacingMd,
-          vertical: theme.spacingSm,
-        ),
-        decoration: BoxDecoration(
-          color: categoryColor,
-          borderRadius: BorderRadius.circular(theme.radiusMd),
-          border: Border.all(
-            color: selected ? theme.colorTextPrimary : Colors.transparent,
-            width: theme.borderWidthHairline * 1.5,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CategoryGlyph(
-              category: category,
-              color: glyphColorOn(categoryColor),
-              size: theme.textBody.fontSize!,
-            ),
-            SizedBox(width: theme.spacingSm),
-            Text(
-              category.name,
-              style: theme.textBody.copyWith(
-                color: theme.colorTextPrimary,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 String _formatDate(DateTime dateTime) {

@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/tokens/depth_motion_spec.dart';
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/tokens/task_state_tokens.dart';
 import '../../core/tokens/type_primitives.dart';
 import '../../core/widgets/app_floating_create_button.dart';
-import '../../core/widgets/app_press_feedback.dart';
+import '../../core/widgets/app_sweep_fade.dart';
 import '../../core/widgets/app_swipe_actions.dart';
-import '../../core/widgets/app_button.dart';
+import '../../core/widgets/app_depth.dart';
+import '../../core/widgets/app_dock_primitives.dart';
+import '../../core/widgets/app_follow_through.dart';
+import '../../core/widgets/app_page_toolbar.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
 import '../../core/widgets/app_undo_toast.dart';
+import '../../core/widgets/app_vertical_clip.dart';
 import '../../shared/models/task.dart';
 import '../../shared/models/task_category.dart';
 import '../../shared/providers/section_providers.dart';
@@ -21,7 +27,9 @@ import 'inbox_section_filter_provider.dart';
 import 'inbox_section_tabs.dart';
 import 'inbox_tasks_provider.dart';
 import 'quick_capture_sheet.dart';
+import 'task_list_row.dart';
 import 'voice_capture_screen.dart';
+import 'voice_flight.dart';
 
 /// One flattened row in the Inbox list — either a day-divider header or a
 /// real task. [tasks] must already be sorted newest-first (see
@@ -76,6 +84,11 @@ List<_InboxRow> _groupByDay(List<Task> tasks, {required DateTime today}) {
 /// already has its own separate entry points (`showTemplateListScreen`/
 /// `showZoneListScreen`/`showCategoryListScreen`), so nothing becomes a
 /// dead end; this screen just stops being a second path to them.
+Key _rowKey(_InboxRow row) => switch (row) {
+  _InboxDayHeaderRow(:final label) => ValueKey('inbox-day-$label'),
+  _InboxTaskRow(:final task) => ValueKey('inbox-task-${task.id}'),
+};
+
 class InboxScreen extends ConsumerStatefulWidget {
   const InboxScreen({super.key});
 
@@ -90,6 +103,37 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
   /// dragged. See `_DraggableInboxRow`'s own doc comment for the drag
   /// gesture itself.
   InboxSectionFilter? _dropTargetFilter;
+
+  /// Inbox task ids already seen on this screen, so only genuinely new
+  /// tasks emerge from depth; null until the first build, whose list is
+  /// simply there. Tracked against the WHOLE Inbox, not the filtered view,
+  /// so switching section tabs never replays arrivals.
+  Set<String>? _seenTaskIds;
+
+  /// Rows receding into depth after a swipe-remove; deleted once gone.
+  final _leavingTaskIds = <String>{};
+
+  /// Ids that arrived since the previous build, in list order — each one
+  /// emerges, staggered by its position among them.
+  List<String> _arrivals(List<Task> inbox) {
+    final seen = _seenTaskIds;
+    _seenTaskIds = {...?seen, for (final task in inbox) task.id};
+    if (seen == null) return const [];
+    return [
+      for (final task in inbox)
+        if (!seen.contains(task.id)) task.id,
+    ];
+  }
+
+  void _removeAfterReceding(Task task) =>
+      setState(() => _leavingTaskIds.add(task.id));
+
+  Future<void> _commitRemove(Task task, TaskList notifier) async {
+    _leavingTaskIds.remove(task.id);
+    // An undo restores it as a fresh arrival, so it emerges again.
+    _seenTaskIds?.remove(task.id);
+    await _removeTaskWithUndo(task, notifier);
+  }
 
   /// Swipe-to-delete's own Remove action — snapshot-then-restore, same
   /// mechanism `removeTask`'s own undo uses, needed here specifically
@@ -140,6 +184,15 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     final tasks = ref.watch(filteredInboxTasksProvider);
     final rows = _groupByDay(tasks, today: DateTime.now());
+    final arrivals = _arrivals(ref.watch(inboxTasksProvider));
+    final flying = ref.watch(voiceArrivalsProvider);
+    // While voice mode covers this page, everything on it sweeps away from
+    // the bottom up as its glow rises, and returns as it sinks.
+    final sweep =
+        ref.watch(voiceModeSweepProvider) ?? kAlwaysDismissedAnimation;
+    final rowIndexByKey = <Key, int>{
+      for (var i = 0; i < rows.length; i++) _rowKey(rows[i]): i,
+    };
     final taskNotifier = ref.read(taskListProvider.notifier);
     final sections = ref.watch(sectionListProvider);
 
@@ -184,9 +237,12 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
                 // Stack below), so it never scrolls away with the list
                 // underneath it. Requested directly: "fixed so they
                 // don't scroll vertically with content."
-                InboxSectionTabs(
-                  targets: targets,
-                  dropTargetFilter: _dropTargetFilter,
+                AppSweepFade(
+                  sweep: sweep,
+                  child: InboxSectionTabs(
+                    targets: targets,
+                    dropTargetFilter: _dropTargetFilter,
+                  ),
                 ),
                 Expanded(
                   // Stack, so top/bottom fades overlay the list's own
@@ -212,125 +268,185 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
                     children: [
                       tasks.isEmpty
                           ? _EmptyInboxState(theme: theme)
-                          : ListView.builder(
-                              padding: EdgeInsets.fromLTRB(
-                                theme.spacingScreenPadding,
-                                // spacingContentTop — the shared value
-                                // every list/sheet's own first row uses,
-                                // confirmed directly at 30px: "tasks
-                                // templates tracked cards should all
-                                // start at same y level." Unrelated to
-                                // the fade above now that the fade lives
-                                // in the header, not over this list —
-                                // this is purely the card-alignment fix.
-                                theme.spacingContentTop,
-                                theme.spacingScreenPadding,
-                                theme.spacingSm,
-                              ),
-                              // Day-divider headers replace the old
-                              // ListView.separated's uniform SizedBox
-                              // gap — requested directly: "all tab
-                              // should have subtle label separating day
-                              // created... similar pattern to chat
-                              // messaging." Spacing between rows is now
-                              // baked into each row's own bottom margin
-                              // instead of a separate separatorBuilder,
-                              // since headers and tasks need DIFFERENT
-                              // amounts of it (see `_InboxDayHeader`'s
-                              // and the task row's own padding below).
-                              itemCount: rows.length,
-                              itemBuilder: (context, index) {
-                                final row = rows[index];
-                                if (row is _InboxDayHeaderRow) {
-                                  return Padding(
-                                    padding: EdgeInsets.only(
-                                      // No extra top gap before the
-                                      // very first header — spacingContentTop
-                                      // above already provides it; every
-                                      // later header gets a bigger gap
-                                      // than an ordinary inter-task one,
-                                      // so a new day genuinely reads as
-                                      // a new group.
-                                      top: index == 0 ? 0 : theme.spacingLg,
-                                      bottom: theme.spacingSm,
+                          : AppVerticalClip(
+                              child: ListView.builder(
+                                // Sides open so items can trail past the page edge while it slides.
+                                clipBehavior: Clip.none,
+                                padding: EdgeInsets.fromLTRB(
+                                  theme.spacingScreenPadding,
+                                  // spacingContentTop — the shared value
+                                  // every list/sheet's own first row uses,
+                                  // confirmed directly at 30px: "tasks
+                                  // templates tracked cards should all
+                                  // start at same y level." Unrelated to
+                                  // the fade above now that the fade lives
+                                  // in the header, not over this list —
+                                  // this is purely the card-alignment fix.
+                                  theme.spacingContentTop,
+                                  theme.spacingScreenPadding,
+                                  theme.spacingSm,
+                                ),
+                                // Day-divider headers replace the old
+                                // ListView.separated's uniform SizedBox
+                                // gap — requested directly: "all tab
+                                // should have subtle label separating day
+                                // created... similar pattern to chat
+                                // messaging." Spacing between rows is now
+                                // baked into each row's own bottom margin
+                                // instead of a separate separatorBuilder,
+                                // since headers and tasks need DIFFERENT
+                                // amounts of it (see `_InboxDayHeader`'s
+                                // and the task row's own padding below).
+                                itemCount: rows.length,
+                                // Keys + this lookup keep each row's own
+                                // state (its depth animation) attached to
+                                // its task when rows are inserted above it.
+                                findChildIndexCallback: (key) =>
+                                    rowIndexByKey[key],
+                                itemBuilder: (context, index) {
+                                  final row = rows[index];
+                                  if (row is _InboxDayHeaderRow) {
+                                    return Padding(
+                                      key: _rowKey(row),
+                                      padding: EdgeInsets.only(
+                                        // No extra top gap before the
+                                        // very first header — spacingContentTop
+                                        // above already provides it; every
+                                        // later header gets a bigger gap
+                                        // than an ordinary inter-task one,
+                                        // so a new day genuinely reads as
+                                        // a new group.
+                                        top: index == 0 ? 0 : theme.spacingLg,
+                                        bottom: theme.spacingSm,
+                                      ),
+                                      child: AppSweepFade(
+                                        sweep: sweep,
+                                        child: _InboxDayHeader(
+                                          theme: theme,
+                                          label: row.label,
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                  final task = (row as _InboxTaskRow).task;
+                                  void onSchedule() =>
+                                      showTaskDetailSheet(context, task: task);
+                                  // Swipe right schedules, swipe left removes
+                                  // — requested directly: "swipe right is
+                                  // schedule ... swipe left is remove."
+                                  //
+                                  // `deleteTask`, never `deleteTaskSeries`:
+                                  // an Inbox row is unscheduled by
+                                  // definition (see inboxTasksProvider's own
+                                  // `!task.isScheduled` filter) and a
+                                  // recurring instance always carries a
+                                  // scheduledAt, so no row reachable from
+                                  // this list belongs to a series at all —
+                                  // `deleteTaskSeries`'s own assert would
+                                  // fire if it were wired here.
+                                  final arrival = arrivals.indexOf(task.id);
+                                  return AppDepthPresence(
+                                    key: _rowKey(row),
+                                    present: !_leavingTaskIds.contains(task.id),
+                                    animateIn: arrival >= 0,
+                                    // A task flying in from voice mode brings
+                                    // its own entrance; its row only opens room.
+                                    emerge: !flying.contains(task.id),
+                                    delay: DepthMotionSpec.standard.staggerFor(
+                                      arrival < 0 ? 0 : arrival,
                                     ),
-                                    child: _InboxDayHeader(
-                                      theme: theme,
-                                      label: row.label,
+                                    onExited: () =>
+                                        _commitRemove(task, taskNotifier),
+                                    // Always present (the tag is unique per task) so the
+                                    // row's tree never changes shape; it only
+                                    // flies when voice mode closes onto it.
+                                    child: AppSweepFade(
+                                      sweep: sweep,
+                                      // Trails the page as it slides in or out.
+                                      child: AppFollowThrough(
+                                        child: Hero(
+                                          tag: voiceFlightTag(task.id),
+                                          createRectTween: voiceFlightTween(
+                                            arrival < 0 ? 0 : arrival,
+                                          ),
+                                          flightShuttleBuilder:
+                                              voiceFlightShuttle(
+                                                arrival < 0 ? 0 : arrival,
+                                              ),
+                                          child: Padding(
+                                            padding: EdgeInsets.only(
+                                              bottom: theme.spacingSm,
+                                            ),
+                                            child: _DraggableInboxRow(
+                                              key: ValueKey(task.id),
+                                              theme: theme,
+                                              targets: targets,
+                                              onHoverChanged: (filter) =>
+                                                  setState(
+                                                    () => _dropTargetFilter =
+                                                        filter,
+                                                  ),
+                                              onDropped: (filter) {
+                                                setState(
+                                                  () =>
+                                                      _dropTargetFilter = null,
+                                                );
+                                                final newSectionId =
+                                                    switch (filter) {
+                                                      InboxSectionFilterSection(
+                                                        :final id,
+                                                      ) =>
+                                                        id,
+                                                      InboxSectionFilterUnfiled() =>
+                                                        null,
+                                                      InboxSectionFilterAll() =>
+                                                        task.sectionId,
+                                                    };
+                                                if (newSectionId ==
+                                                    task.sectionId) {
+                                                  return;
+                                                }
+                                                task.sectionId = newSectionId;
+                                                taskNotifier.updateTask(task);
+                                              },
+                                              startAction: AppSwipeAction(
+                                                icon: Icons
+                                                    .calendar_today_rounded,
+                                                background: theme.colorAccent,
+                                                semanticLabel: 'Schedule',
+                                                onActivate: onSchedule,
+                                              ),
+                                              endAction: AppSwipeAction(
+                                                icon: Icons
+                                                    .delete_outline_rounded,
+                                                background:
+                                                    theme.colorDestructive,
+                                                semanticLabel: 'Remove',
+                                                destructive: true,
+                                                onActivate: () =>
+                                                    _removeAfterReceding(task),
+                                              ),
+                                              child: _InboxListItem(
+                                                task: task,
+                                                theme: theme,
+                                                onTap: () =>
+                                                    showQuickCaptureSheet(
+                                                      context,
+                                                      task: task,
+                                                    ),
+                                                onToggleComplete: () =>
+                                                    taskNotifier.toggleComplete(
+                                                      task,
+                                                    ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
                                     ),
                                   );
-                                }
-                                final task = (row as _InboxTaskRow).task;
-                                void onSchedule() =>
-                                    showTaskDetailSheet(context, task: task);
-                                // Swipe right schedules, swipe left removes
-                                // — requested directly: "swipe right is
-                                // schedule ... swipe left is remove."
-                                //
-                                // `deleteTask`, never `deleteTaskSeries`:
-                                // an Inbox row is unscheduled by
-                                // definition (see inboxTasksProvider's own
-                                // `!task.isScheduled` filter) and a
-                                // recurring instance always carries a
-                                // scheduledAt, so no row reachable from
-                                // this list belongs to a series at all —
-                                // `deleteTaskSeries`'s own assert would
-                                // fire if it were wired here.
-                                return Padding(
-                                  padding: EdgeInsets.only(
-                                    bottom: theme.spacingSm,
-                                  ),
-                                  child: _DraggableInboxRow(
-                                    key: ValueKey(task.id),
-                                    theme: theme,
-                                    targets: targets,
-                                    onHoverChanged: (filter) => setState(
-                                      () => _dropTargetFilter = filter,
-                                    ),
-                                    onDropped: (filter) {
-                                      setState(() => _dropTargetFilter = null);
-                                      final newSectionId = switch (filter) {
-                                        InboxSectionFilterSection(:final id) =>
-                                          id,
-                                        InboxSectionFilterUnfiled() => null,
-                                        InboxSectionFilterAll() =>
-                                          task.sectionId,
-                                      };
-                                      if (newSectionId == task.sectionId) {
-                                        return;
-                                      }
-                                      task.sectionId = newSectionId;
-                                      taskNotifier.updateTask(task);
-                                    },
-                                    startAction: AppSwipeAction(
-                                      icon: Icons.calendar_today_rounded,
-                                      background: theme.colorAccent,
-                                      semanticLabel: 'Schedule',
-                                      onActivate: onSchedule,
-                                    ),
-                                    endAction: AppSwipeAction(
-                                      icon: Icons.delete_outline_rounded,
-                                      background: theme.colorDestructive,
-                                      semanticLabel: 'Remove',
-                                      destructive: true,
-                                      onActivate: () => _removeTaskWithUndo(
-                                        task,
-                                        taskNotifier,
-                                      ),
-                                    ),
-                                    child: _InboxListItem(
-                                      task: task,
-                                      theme: theme,
-                                      onTap: () => showQuickCaptureSheet(
-                                        context,
-                                        task: task,
-                                      ),
-                                      onToggleComplete: () =>
-                                          taskNotifier.toggleComplete(task),
-                                    ),
-                                  ),
-                                );
-                              },
+                                },
+                              ),
                             ),
                       Positioned(
                         top: 0,
@@ -358,8 +474,17 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
             // (2026-09-12, matching every other screen's own
             // `AppFloatingCreateButton` — see that widget's doc comment),
             // rather than welded into a bar shared with the nav below.
-            AppFloatingCreateButton(
-              onPressed: () => showQuickCaptureSheet(context),
+            // Submerges as voice mode opens (its close pane takes this
+            // spot) and springs back as soon as voice mode starts closing.
+            // No render object in between, so it stays the Stack's child.
+            AnimatedBuilder(
+              animation: sweep,
+              builder: (context, _) => AppFloatingCreateButton(
+                visible: !sweep.isForwardOrCompleted,
+                // After the mic (order 0), left to right.
+                toolbarOrder: 1,
+                onPressed: () => showQuickCaptureSheet(context),
+              ),
             ),
             // The voice-capture entry point — "sits next to the plus,"
             // requested directly. A sibling `Positioned` at the same
@@ -380,16 +505,31 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
             // match.
             Positioned(
               right: theme.spacingMd + theme.sizeButtonLg + theme.spacingMd,
-              bottom: theme.spacingMd,
+              bottom: theme.spacingBottomClearance,
               child: SafeArea(
                 top: false,
-                child: AppButton(
-                  icon: Icons.mic_none_rounded,
-                  shape: AppButtonShape.circle,
-                  variant: AppButtonVariant.secondary,
-                  size: AppButtonSize.lg,
-                  tooltip: 'Speak your tasks',
-                  onPressed: () => showVoiceCaptureScreen(context),
+                // The same glass pane as the Day dock's single actions (48,
+                // matching the "+"). Voice mode's toolbar morphs out of this
+                // pane's own rect, and back into it on close.
+                child: AppPageToolbarItem(
+                  child: Builder(
+                    builder: (paneContext) => AppDockSurface(
+                      theme: theme,
+                      child: Padding(
+                        padding: EdgeInsets.all(theme.spacingXs),
+                        child: AppDockIconButton(
+                          theme: theme,
+                          icon: Icons.mic_none_rounded,
+                          tooltip: 'Speak your tasks',
+                          selected: false,
+                          onTap: () => showVoiceCaptureScreen(
+                            context,
+                            origin: _globalRect(paneContext),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -398,6 +538,15 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
       ),
     );
   }
+}
+
+/// [context]'s widget rect in screen coordinates.
+Rect _globalRect(BuildContext context) {
+  final box = context.findRenderObject();
+  if (box is! RenderBox) {
+    throw StateError('Voice mode origin is not laid out as a box: $box');
+  }
+  return box.localToGlobal(Offset.zero) & box.size;
 }
 
 /// Long-press-then-drag an Inbox row onto one of the Section tabs at the
@@ -579,109 +728,26 @@ class _InboxListItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final categoryColor = theme.categorySwatches[task.category.colorToken];
-    // `theme.sizeTaskBadge`/`theme.textTaskTitle`, NOT `spacingXl`/
-    // `textBody` (corrected 2026-09-12, reported directly: "manage items
-    // should have same size as zone view") — this row bypassed the
-    // shared "Task size" setting entirely, rendering visibly larger than
-    // every other task row in the app (Task view, Zone view) regardless
-    // of what size the user had actually chosen. These are the exact
-    // same resolved tokens `TaskCapsuleBlock`'s own badge/title already
-    // use, so Manage now tracks that one setting like every other view.
-    final badgeSize = theme.sizeTaskBadge;
-
-    // **2026-09-12 — the card is gone.** Requested directly: "remove cards
-    // from Manage." No fill, no shadow, no rounded corners — a plain row,
-    // separated from its neighbours by the list's own `separatorBuilder`
-    // gap rather than by a card edge.
-    //
-    // **2026-09-15 — vertical padding tightened from `spacingMd` (16) to
-    // `spacingSm` (8)**, requested directly: "reduce padding top bottom on
-    // inbox item cards, they should be more compact." One rung down the
-    // spacing scale rather than a bespoke value — the row still keeps a
-    // real tap target height via its content (badge/text line height),
-    // just without as much air around it.
-    return AppPressFeedback(
+    // A task with no label yet ("General") gets the reserved unassigned
+    // tone, exactly as on the timeline — never a label swatch.
+    final unlabeled = task.category == TaskCategory.general;
+    return TaskListRow(
+      theme: theme,
+      title: task.title,
+      pillColor: unlabeled
+          ? TaskStateTokens.unlabeledFill(theme)
+          : theme.categorySwatches[task.category.colorToken],
+      icon: unlabeled ? null : task.category.icon,
       onTap: onTap,
-      child: Padding(
-        padding: EdgeInsets.symmetric(vertical: theme.spacingSm),
-        child: Row(
-          children: [
-            AppPressFeedback(
-              onTap: onToggleComplete,
-              // theme.radiusPill, not BoxShape.circle — requested
-              // directly ("we have squary rounded shape of pills but
-              // rounded on inbox ... this should affect globally"). Was
-              // always fully round regardless of the Task/Zone view's own
-              // pill shape; now tracks the same "Pill shape" setting they
-              // do, via the SAME token — see radiusPill's own doc comment
-              // on AmbleTheme.
-              borderRadius: BorderRadius.circular(theme.radiusPill),
-              // The badge is a saturated category fill, so the wash rides
-              // on the light foreground its own icon uses.
-              rippleColor: theme.colorSurfacePrimary,
-              child: Container(
-                width: badgeSize,
-                height: badgeSize,
-                decoration: BoxDecoration(
-                  color: categoryColor,
-                  borderRadius: BorderRadius.circular(theme.radiusPill),
-                ),
-                // No glyph for General — matches the rule everywhere else
-                // a category badge renders (see `TaskCategoryTokenMapping
-                // .emoji`'s own doc comment: "both light dark mode default
-                // should not have emoji"). This row used `.icon` instead
-                // of `.emoji` and so kept showing a plain outlined circle
-                // glyph on top of the badge for an uncategorised task —
-                // reported directly ("there shouldn't be emoji on those
-                // items, same as default task emoji without category").
-                child: task.category == TaskCategory.general
-                    ? null
-                    : Icon(
-                        task.category.icon,
-                        size: badgeSize * 0.55,
-                        color: theme.colorSurfacePrimary,
-                      ),
-              ),
-            ),
-            SizedBox(width: theme.spacingSm),
-            Expanded(
-              child: Text(
-                task.title,
-                style: theme.textTaskTitle.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            // The duration badge — requested directly: "duration in tasks
-            // move to the right but text size 10px (smallest scale) in a
-            // 'badge' surface color next to current bg." Null-safe: an
-            // Inbox task is unscheduled and may genuinely have no
-            // duration set yet (Task.durationMinutes is nullable), so the
-            // badge only renders once one exists.
-            if (task.durationMinutes case final minutes?) ...[
-              SizedBox(width: theme.spacingSm),
-              _DurationBadge(theme: theme, minutes: minutes),
-            ],
-          ],
-        ),
-      ),
+      onPillTap: onToggleComplete,
+      trailing: switch (task.durationMinutes) {
+        final minutes? => _DurationBadge(theme: theme, minutes: minutes),
+        null => null,
+      },
     );
   }
 }
 
-/// The Manage-screen task row's duration pill — requested directly:
-/// "duration in tasks move to the right but text size 10px (smallest
-/// scale) in a 'badge' surface color next to current bg."
-///
-/// `textTaskTitleSm` (the smallest rung of the task-title scale,
-/// confirmed via AskUserQuestion to mean the existing token rather than a
-/// new literal 10px primitive) at [AmbleTheme.colorSurfaceSecondary] — one
-/// step up from this screen's own `colorSurfaceTimeline` background (see
-/// [InboxScreen]'s own `color:`), the same "next to current bg" surface
-/// direction every other nested badge in this app already uses.
 class _DurationBadge extends StatelessWidget {
   const _DurationBadge({required this.theme, required this.minutes});
 

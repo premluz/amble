@@ -1,0 +1,19 @@
+{
+  "duration": 1.25,
+  "count": 11,
+  "spread": 104,
+  "lift": 34,
+  "size": 22,
+  "curl": 22,
+  "stagger": 0.27,
+  "fadeStart": 0.325,
+  "scale": 0.85,
+  "seed": 15,
+  "background": "#191919",
+  "color": "#EDEBE5",
+  "shadow": "#A9A498",
+  "highlight": "#FFFFFF",
+  "objectColor": "#769AF5",
+  "showObject": true,
+  "transparent": false
+}

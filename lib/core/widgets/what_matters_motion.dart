@@ -38,6 +38,8 @@ class WhatMattersScene extends StatelessWidget {
     final amount = MediaQuery.disableAnimationsOf(context)
         ? (enabled ? 1.0 : 0.0)
         : value;
+    final accent = Theme.of(context).extension<AmbleTheme>()!.colorAccent;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return WhatMattersPhase(
       amount: amount,
       enabled: enabled,
@@ -45,20 +47,53 @@ class WhatMattersScene extends StatelessWidget {
         fit: StackFit.passthrough,
         children: [
           child,
-          if (visible)
+          // The ripple only announces turning the mode ON; turning it off
+          // simply lets the glow fade.
+          if (visible && enabled)
             Positioned.fill(
               child: IgnorePointer(
                 child: CustomPaint(
                   key: const ValueKey('what-matters-wash'),
-                  painter: _WashPainter(
-                    amount,
-                    Theme.of(context).extension<AmbleTheme>()!.colorAccent,
-                    Theme.of(context).brightness == Brightness.dark,
-                  ),
+                  painter: _WashPainter(amount, accent, isDark),
                 ),
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// A page's own background while What Matters can be on: it paints the
+/// page [color] and, while the mode is on, a soft glow rising from the bottom
+/// centre (where the toolbar button sits), with the page content on top.
+/// It replaces the page's solid background container. A glow drawn under
+/// that container instead would be covered by it and never seen.
+class WhatMattersBackdrop extends StatelessWidget {
+  const WhatMattersBackdrop({
+    super.key,
+    required this.color,
+    required this.child,
+  });
+
+  final Color color;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = WhatMattersPhase.enabledOf(context);
+    final theme = Theme.of(context).extension<AmbleTheme>()!;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return TweenAnimationBuilder<double>(
+      tween: Tween(end: enabled ? 1 : 0),
+      duration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : (enabled ? WhatMattersTokens.enter : WhatMattersTokens.leave),
+      child: child,
+      builder: (context, amount, child) => CustomPaint(
+        key: const ValueKey('what-matters-glow'),
+        painter: _GlowPainter(amount, theme.colorAccent, isDark, color),
+        child: child,
       ),
     );
   }
@@ -87,6 +122,50 @@ class WhatMattersPhase extends InheritedWidget {
       compactLanes != oldWidget.compactLanes || enabled != oldWidget.enabled;
 }
 
+class _GlowPainter extends CustomPainter {
+  _GlowPainter(this.amount, this.accent, this.isDark, this.background);
+  final double amount;
+  final Color accent;
+  final bool isDark;
+  final Color background;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    canvas.drawRect(Offset.zero & size, Paint()..color = background);
+    if (amount <= 0) return;
+    final peak =
+        (isDark
+            ? WhatMattersTokens.glowAlphaDark
+            : WhatMattersTokens.glowAlphaLight) *
+        amount;
+    final bounds = Offset.zero & size;
+    canvas.drawRect(
+      bounds,
+      Paint()
+        ..shader = RadialGradient(
+          center: Alignment.bottomCenter,
+          radius: WhatMattersTokens.glowRadius,
+          stops: const [0, WhatMattersTokens.glowMidStop, 1],
+          colors: [
+            accent.withValues(alpha: peak),
+            accent.withValues(
+              alpha: peak * WhatMattersTokens.glowMidAlphaShare,
+            ),
+            accent.withValues(alpha: 0),
+          ],
+        ).createShader(bounds),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_GlowPainter oldDelegate) =>
+      amount != oldDelegate.amount ||
+      accent != oldDelegate.accent ||
+      isDark != oldDelegate.isDark ||
+      background != oldDelegate.background;
+}
+
 class _WashPainter extends CustomPainter {
   _WashPainter(this.amount, this.accent, this.isDark);
   final double amount;
@@ -97,17 +176,8 @@ class _WashPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
     final bounds = Offset.zero & size;
-    canvas.drawRect(
-      bounds,
-      Paint()
-        ..color = accent.withValues(
-          alpha:
-              (isDark
-                  ? WhatMattersTokens.tintAlphaDark
-                  : WhatMattersTokens.tintAlphaLight) *
-              amount,
-        ),
-    );
+    // Keep the mode's color feedback transient; the page returns to its
+    // ordinary surface once the ripple passes.
     final wash = _rippleBounds(bounds, size);
     canvas.save();
     canvas.clipRect(bounds);

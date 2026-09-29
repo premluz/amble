@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../tokens/semantic_theme.dart';
 import 'app_button.dart';
+import 'app_page_toolbar.dart';
 
 /// The "+" create button, floating independently above the bottom nav
 /// pill — not sharing a pane with it. Replaces the old `AppBottomExtensionBar`
@@ -15,6 +16,8 @@ class AppFloatingCreateButton extends StatelessWidget {
     super.key,
     required this.onPressed,
     this.opacity = 1,
+    this.visible = true,
+    this.toolbarOrder = 0,
   });
 
   final VoidCallback? onPressed;
@@ -29,16 +32,25 @@ class AppFloatingCreateButton extends StatelessWidget {
   /// instead, keeping `Positioned` a direct `Stack` child at all times.
   final double opacity;
 
+  /// False submerges the button — it swells, then shrinks away while
+  /// fading (e.g. while voice mode covers the page); true again springs it
+  /// back: larger, smaller, actual.
+  final bool visible;
+
+  /// Its place among the page's toolbar buttons, for the stagger as the
+  /// page changes (see `AppPageToolbarGate.order`).
+  final int toolbarOrder;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     return Positioned(
       right: theme.spacingMd,
-      bottom: theme.spacingMd,
+      bottom: theme.spacingBottomClearance,
       child: SafeArea(
         top: false,
         child: IgnorePointer(
-          ignoring: onPressed == null,
+          ignoring: onPressed == null || !visible,
           child: AnimatedOpacity(
             opacity: opacity,
             duration: theme.motionFast,
@@ -50,11 +62,18 @@ class AppFloatingCreateButton extends StatelessWidget {
             // circles beside it; reported directly, twice: "+ is smaller."
             // Matching the PANE, not the button inside it, is what makes
             // the row read as one set of equal circles.
-            child: AppButton(
-              icon: Icons.add_rounded,
-              shape: AppButtonShape.circle,
-              size: AppButtonSize.lg,
-              onPressed: onPressed ?? () {},
+            // Held in place while its page slides: it submerges as the
+            // page leaves and springs back in as it arrives, like the Day
+            // dock's buttons.
+            child: AppPageToolbarItem(
+              visible: visible,
+              order: toolbarOrder,
+              child: AppButton(
+                icon: Icons.add_rounded,
+                shape: AppButtonShape.circle,
+                size: AppButtonSize.lg,
+                onPressed: onPressed ?? () {},
+              ),
             ),
           ),
         ),

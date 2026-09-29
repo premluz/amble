@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:tabler_icons_plus/tabler_icons_plus.dart';
 
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/tokens/task_state_tokens.dart';
 import '../../shared/models/category.dart';
 import '../../shared/models/tag_color_style.dart';
 
@@ -49,6 +50,13 @@ CategoryVisual resolveCategoryVisual({
   required AmbleTheme theme,
   required Category category,
 }) {
+  // "General" is what a task carries before the user picks a label, so it
+  // gets the reserved pale neutral rather than palette swatch 0 (a red any
+  // real label can also pick), which made brand-new tasks look labelled.
+  if (category.id == BuiltInCategoryIds.general) {
+    final blank = TaskStateTokens.unlabeledFill(theme);
+    return CategoryVisual(pillColor: blank, iconColor: blank);
+  }
   final swatch = theme.categorySwatches[category.colorToken];
   return CategoryVisual(pillColor: swatch, iconColor: swatch);
 }
@@ -465,10 +473,13 @@ class CategoryBadge extends StatelessWidget {
 /// than a hand-rolled luminance check — this codebase has no existing
 /// contrast helper to reuse (confirmed by search) and this is the
 /// standard Flutter primitive for exactly this question.
+///
+/// Paper and charcoal rather than pure white and black: a softer, warmer
+/// glyph on the pill, matching the brand's paper-and-ink material.
 Color glyphColorOn(Color background) =>
     ThemeData.estimateBrightnessForColor(background) == Brightness.dark
-    ? Colors.white
-    : Colors.black;
+    ? TaskStateTokens.glyphOnDark
+    : TaskStateTokens.glyphOnLight;
 
 /// Maps a built-in [Category]'s fixed id back to its original
 /// [TaskCategoryToken], so a built-in category still renders through the

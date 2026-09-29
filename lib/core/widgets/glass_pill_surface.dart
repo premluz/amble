@@ -3,6 +3,7 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/widgets.dart';
 
 import '../tokens/semantic_theme.dart';
+import '../tokens/task_state_tokens.dart';
 
 /// A filled pill-shaped surface, in one of two materials — the shared
 /// treatment for Timeline blocks that are NOT real, saved tasks.
@@ -20,7 +21,8 @@ import '../tokens/semantic_theme.dart';
 ///   `BackdropFilter`, for the quick-create draft placeholder
 ///   (`PendingTaskPill`). It is airborne: provisional, not yet saved, and
 ///   sitting over whatever is underneath it.
-/// - [GlassPillMaterial.flat] — a plain, opaque-enough gray with NO blur,
+/// - [GlassPillMaterial.flat] — the opaque "unassigned" tone
+///   ([TaskStateTokens.importedFill]) with NO blur,
 ///   for an imported calendar event's rail. It is a real thing on the
 ///   calendar, just not an Amble task, so it reads as solid rather than
 ///   floating.
@@ -40,7 +42,7 @@ enum GlassPillMaterial {
   /// Translucent + blurred. For content that floats over other content.
   glass,
 
-  /// Flat gray, no blur. For content that sits in the timeline normally.
+  /// Opaque unassigned tone, no blur. For content that sits in the timeline normally.
   flat,
 }
 
@@ -63,14 +65,6 @@ class GlassPillSurface extends StatelessWidget {
   /// calendar glyph. The draft placeholder passes none: it has no category
   /// until the user picks one, so any glyph would be inventing one.
   final Widget? child;
-
-  /// The flat material's own fill: [AmbleTheme.colorTextSecondary] at low
-  /// alpha. Derived from the muted text color rather than a surface token
-  /// deliberately — the intent is "a gray stand-in where a category color
-  /// would go," which is what the rail it replaces was already doing, and
-  /// it stays legible against both themes' backgrounds without needing a
-  /// per-theme pair of its own.
-  static const double _flatFillAlpha = 0.22;
 
   /// The glass material's own tint alpha. Deliberately NOT
   /// [AmbleTheme.colorSurfaceBlurOverlay] itself: that token is
@@ -98,7 +92,8 @@ class GlassPillSurface extends StatelessWidget {
     if (material == GlassPillMaterial.flat) {
       return DecoratedBox(
         decoration: BoxDecoration(
-          color: theme.colorTextSecondary.withValues(alpha: _flatFillAlpha),
+          // Opaque, so the timeline behind never shows through the rail.
+          color: TaskStateTokens.importedFill(theme),
           borderRadius: radius,
         ),
         child: box,

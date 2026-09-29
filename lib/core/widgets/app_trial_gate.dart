@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:purchases_ui_flutter/purchases_ui_flutter.dart' show PaywallResult;
+import 'package:purchases_ui_flutter/purchases_ui_flutter.dart'
+    show PaywallResult;
 
 import '../revenue_cat_config.dart';
 import '../../shared/providers/purchases_providers.dart';
@@ -29,7 +30,8 @@ Future<bool> presentPaywallForTrialExpired(
     if (context.mounted) {
       AppUndoToast.show(
         context: context,
-        message: 'Your free trial has ended, and purchases are not '
+        message:
+            'Your free trial has ended, and purchases are not '
             'available in this build.',
       );
     }

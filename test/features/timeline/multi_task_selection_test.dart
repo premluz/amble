@@ -7,6 +7,7 @@ import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/timeline/edit_mode_provider.dart';
 import 'package:amble/features/timeline/edit_selection_provider.dart';
+import 'package:amble/features/timeline/armed_edit_task_provider.dart';
 import 'package:amble/features/timeline/pending_task_draft_provider.dart';
 import 'package:amble/features/timeline/task_capsule_block.dart';
 import 'package:amble/features/timeline/timeline_screen.dart';
@@ -467,6 +468,34 @@ void main() {
     expect(capturedContainer!.read(editSelectionProvider), isEmpty);
   });
 
+  testWidgets('view and What Matters changes clear task edit selections', (
+    tester,
+  ) async {
+    final task = makeTask('Focus block');
+    await pumpTimeline(tester, tasks: [task]);
+
+    capturedContainer!.read(editSelectionProvider.notifier).toggle(task.id);
+    await tester.runAsync(() async {
+      await capturedContainer!
+          .read(zoneViewEnabledSettingProvider.notifier)
+          .set(true);
+    });
+    await tester.pump();
+    expect(capturedContainer!.read(editSelectionProvider), isEmpty);
+
+    capturedContainer!.read(editSelectionProvider.notifier).toggle(task.id);
+    capturedContainer!.read(armedEditTaskProvider.notifier).arm(task.id);
+    await tester.runAsync(() async {
+      await capturedContainer!
+          .read(whatMattersEnabledSettingProvider.notifier)
+          .set(true);
+    });
+    await tester.pump();
+
+    expect(capturedContainer!.read(editSelectionProvider), isEmpty);
+    expect(capturedContainer!.read(armedEditTaskProvider), isNull);
+  });
+
   testWidgets(
     'turning multi-task mode off clears the selection even while Edit '
     'Mode stays on',
@@ -498,6 +527,22 @@ void main() {
   // `place_task_line.dart`'s own doc comment); the rule itself is
   // unchanged, only the trigger.
   group('holding empty space clears the selection (2026-09-20)', () {
+    testWidgets(
+      'tapping empty Timeline space clears the selection immediately',
+      (tester) async {
+        final task = makeTask('Focus block', hour: 9);
+        await pumpTimeline(tester, tasks: [task]);
+        capturedContainer!.read(editSelectionProvider.notifier).toggle(task.id);
+        await tester.pump();
+
+        await tester.tapAt(const Offset(220, 700));
+        await tester.pump();
+
+        expect(capturedContainer!.read(editSelectionProvider), isEmpty);
+        expect(capturedContainer!.read(pendingTaskDraftProvider), isNull);
+      },
+    );
+
     testWidgets(
       'long-pressing empty Timeline space while tasks are multi-selected '
       'clears the selection and does NOT also start a quick-create draft',

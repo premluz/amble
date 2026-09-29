@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
@@ -64,6 +65,7 @@ class PlaceTaskLineLayer extends StatefulWidget {
     required this.onHoldStarted,
     required this.onDurationDeltaChanged,
     required this.onHoldReleased,
+    this.onEmptyTap,
   });
 
   final AmbleTheme theme;
@@ -95,6 +97,11 @@ class PlaceTaskLineLayer extends StatefulWidget {
   /// Fired on release — the caller reveals the quick-create sheet for the
   /// draft [onHoldStarted] already started.
   final VoidCallback onHoldReleased;
+
+  /// A short tap on empty Timeline space. Observed from raw pointer events
+  /// so it does not add a TapGestureRecognizer that could defeat the
+  /// long-press quick-create recognizer below.
+  final VoidCallback? onEmptyTap;
 
   @override
   State<PlaceTaskLineLayer> createState() => _PlaceTaskLineLayerState();
@@ -129,6 +136,9 @@ class _PlaceTaskLineLayerState extends State<PlaceTaskLineLayer> {
   /// [PlaceTaskLineLayer.onHoldReleased] only fires for a hold that
   /// actually started one.
   bool _dragStarted = false;
+  int? _tapPointer;
+  Offset? _tapOrigin;
+  Duration? _tapStartedAt;
 
   double get _totalMinutes =>
       widget.rangeEnd.difference(widget.rangeStart).inMinutes.toDouble();
@@ -162,6 +172,47 @@ class _PlaceTaskLineLayerState extends State<PlaceTaskLineLayer> {
     widget.onDurationDeltaChanged(snapped);
   }
 
+  void _observePointerDown(PointerDownEvent event) {
+    if (_tapPointer != null) {
+      _cancelTapCandidate();
+      return;
+    }
+    _tapPointer = event.pointer;
+    _tapOrigin = event.position;
+    _tapStartedAt = event.timeStamp;
+    _lastPointerPosition = event.position;
+    _dragStarted = false;
+  }
+
+  void _observePointerMove(PointerMoveEvent event) {
+    _lastPointerPosition = event.position;
+    if (event.pointer != _tapPointer) return;
+    final origin = _tapOrigin;
+    if (origin != null && (event.position - origin).distance > kTouchSlop) {
+      _cancelTapCandidate();
+    }
+  }
+
+  void _observePointerUp(PointerUpEvent event) {
+    if (event.pointer != _tapPointer) return;
+    final origin = _tapOrigin;
+    final startedAt = _tapStartedAt;
+    final isTap =
+        !_dragStarted &&
+        origin != null &&
+        startedAt != null &&
+        (event.position - origin).distance <= kTouchSlop &&
+        event.timeStamp - startedAt < kLongPressTimeout;
+    _cancelTapCandidate();
+    if (isTap) widget.onEmptyTap?.call();
+  }
+
+  void _cancelTapCandidate() {
+    _tapPointer = null;
+    _tapOrigin = null;
+    _tapStartedAt = null;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Positioned.fill(
@@ -172,11 +223,10 @@ class _PlaceTaskLineLayerState extends State<PlaceTaskLineLayer> {
       // finger currently is at the moment the hold completes (see
       // _lastPointerPosition's own doc comment).
       child: Listener(
-        onPointerDown: (event) {
-          _lastPointerPosition = event.position;
-          _dragStarted = false;
-        },
-        onPointerMove: (event) => _lastPointerPosition = event.position,
+        onPointerDown: _observePointerDown,
+        onPointerMove: _observePointerMove,
+        onPointerUp: _observePointerUp,
+        onPointerCancel: (_) => _cancelTapCandidate(),
         // The anchor key sits on a real RenderBox (this SizedBox), never
         // on a `Positioned`/`Listener` — `Positioned` is a
         // ParentDataWidget with no box of its own, so `findRenderObject()`

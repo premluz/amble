@@ -3,7 +3,9 @@ import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_press_feedback.dart';
 import 'package:amble/core/widgets/app_switch.dart';
 import 'package:amble/features/timeline/completion_checkbox.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'recording_haptics.dart';
@@ -164,5 +166,43 @@ void main() {
 
       expect(haptics.played, [AmbleHaptic.selection]);
     });
+  });
+
+  group('PlatformHaptics platform mapping', () {
+    Future<List<Object?>> sent(
+      WidgetTester tester,
+      TargetPlatform platform,
+      AmbleHaptic haptic,
+    ) async {
+      final calls = <Object?>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'HapticFeedback.vibrate') {
+            calls.add(call.arguments);
+          }
+          return null;
+        },
+      );
+      debugDefaultTargetPlatformOverride = platform;
+      const PlatformHaptics().play(haptic);
+      debugDefaultTargetPlatformOverride = null;
+      await tester.pump();
+      return calls;
+    }
+
+    for (final haptic in [AmbleHaptic.tap, AmbleHaptic.selection]) {
+      testWidgets('iOS: $haptic uses a light impact', (tester) async {
+        expect(await sent(tester, TargetPlatform.iOS, haptic), [
+          'HapticFeedbackType.lightImpact',
+        ]);
+      });
+
+      testWidgets('Android: $haptic keeps selectionClick', (tester) async {
+        expect(await sent(tester, TargetPlatform.android, haptic), [
+          'HapticFeedbackType.selectionClick',
+        ]);
+      });
+    }
   });
 }

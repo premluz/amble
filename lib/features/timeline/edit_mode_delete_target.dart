@@ -2,19 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
 
-/// The drag-to-delete target — a bar fixed to the bottom of the Timeline's
-/// viewport, visible only while a Task is being dragged AND Edit Mode is
-/// active (see CONSTITUTION.md's "Edit Mode" section: "same interaction
-/// shape as Android/YouTube's drag-to-dismiss picture-in-picture
-/// pattern"). Fades in on drag start, fades out on drag end regardless of
-/// outcome.
+/// A reusable drag-to-delete target — a bar fixed to the bottom of a
+/// Timeline viewport. The caller controls when it appears and reports
+/// whether the current drag is armed for deletion.
 ///
 /// [isArmed] additionally highlights the target once a drag is currently
-/// hovering inside its hit area — the same "about to drop here" affordance
-/// `ZoneContainerBlock.isDropTarget` already gives Zone-view drag targets,
-/// reused for consistency rather than inventing a second highlight
-/// language for what is conceptually the same "you're about to drop on
-/// me" signal.
+/// hovering inside its hit area, providing a consistent "about to drop
+/// here" affordance for drag targets.
 class EditModeDeleteTarget extends StatelessWidget {
   const EditModeDeleteTarget({
     super.key,
@@ -76,9 +70,9 @@ class EditModeDeleteTarget extends StatelessWidget {
 }
 
 /// Whether [globalPosition] falls within [targetKey]'s current on-screen
-/// bounds — a pure geometry check, widget-free, so the drop decision in
-/// `_DraggableTaskBlockState.onDragEnd` reads as "was the drop inside the
-/// target" rather than reaching into rendering internals inline.
+/// bounds — a pure geometry check, widget-free, so a drag handler can ask
+/// whether the drop was inside the target without reaching into rendering
+/// internals inline.
 bool isInsideDeleteTarget(GlobalKey targetKey, Offset globalPosition) {
   final renderObject = targetKey.currentContext?.findRenderObject();
   if (renderObject is! RenderBox || !renderObject.attached) return false;

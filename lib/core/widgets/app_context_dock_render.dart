@@ -1,6 +1,6 @@
 part of 'app_context_dock.dart';
 
-class _AppContextDockLayout extends StatelessWidget {
+class _AppContextDockLayout extends StatefulWidget {
   const _AppContextDockLayout({
     required this.theme,
     required this.configuration,
@@ -15,6 +15,54 @@ class _AppContextDockLayout extends StatelessWidget {
   final Map<String, _DockPaneEntry> panes;
   final Duration duration;
 
+  @override
+  State<_AppContextDockLayout> createState() => _AppContextDockLayoutState();
+}
+
+/// Owns one press notifier per pane, so a single-action pane — which IS the
+/// visible button — swells with its action instead of only the icon moving.
+class _AppContextDockLayoutState extends State<_AppContextDockLayout> {
+  final _pressed = <String, ValueNotifier<bool>>{};
+
+  ValueNotifier<bool> _pressFor(String groupId) =>
+      _pressed.putIfAbsent(groupId, () => ValueNotifier(false));
+
+  @override
+  void dispose() {
+    for (final notifier in _pressed.values) {
+      notifier.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => _AppContextDockLayoutView(
+    theme: widget.theme,
+    configuration: widget.configuration,
+    entries: widget.entries,
+    panes: widget.panes,
+    duration: widget.duration,
+    pressFor: _pressFor,
+  );
+}
+
+class _AppContextDockLayoutView extends StatelessWidget {
+  const _AppContextDockLayoutView({
+    required this.theme,
+    required this.configuration,
+    required this.entries,
+    required this.panes,
+    required this.duration,
+    required this.pressFor,
+  });
+
+  final AmbleTheme theme;
+  final AppContextDockConfiguration configuration;
+  final Map<String, _DockEntry> entries;
+  final Map<String, _DockPaneEntry> panes;
+  final Duration duration;
+  final ValueNotifier<bool> Function(String groupId) pressFor;
+
   double get _buttonSize => appButtonHeightFor(theme, AppButtonSize.md);
 
   Map<String, List<_DockEntry>> _entriesByGroup() {
@@ -26,6 +74,11 @@ class _AppContextDockLayout extends StatelessWidget {
     }
     return result;
   }
+
+  static bool _isSingleton(
+    Map<String, List<_DockEntry>> byGroup,
+    String groupId,
+  ) => byGroup[groupId]?.length == 1;
 
   double _groupWidth(int count) =>
       theme.spacingXs * 2 +
@@ -83,23 +136,29 @@ class _AppContextDockLayout extends StatelessWidget {
                 width: rect.width,
                 height: rect.height,
                 child: IgnorePointer(
-                  child: AnimatedOpacity(
-                    opacity:
+                  // Panes arrive and leave like their icons: fading while
+                  // springing up (larger, smaller, actual), or shrinking out.
+                  child: AppSpringPresence(
+                    // Leaving, it submerges: swells, then shrinks away —
+                    // the mirror of its springy arrival.
+                    swell: DepthMotionSpec.standard.submergeSwell,
+                    visible:
                         !pane.entering &&
-                            (pane.present ||
-                                entries.values.any(
-                                  (entry) =>
-                                      entry.groupId == pane.group.id &&
-                                      !entry.exiting,
-                                ))
-                        ? 1
-                        : 0,
+                        (pane.present ||
+                            entries.values.any(
+                              (entry) =>
+                                  entry.groupId == pane.group.id &&
+                                  !entry.exiting,
+                            )),
                     duration: duration,
                     curve: theme.curveStandard,
-                    child: AppDockSurface(
-                      theme: theme,
-                      backgroundColor: pane.group.backgroundColor,
-                      child: const SizedBox.expand(),
+                    child: AppPressFollower(
+                      pressed: pressFor(pane.group.id),
+                      child: AppDockSurface(
+                        theme: theme,
+                        backgroundColor: pane.group.backgroundColor,
+                        child: const SizedBox.expand(),
+                      ),
                     ),
                   ),
                 ),
@@ -114,8 +173,9 @@ class _AppContextDockLayout extends StatelessWidget {
                 top: rect.top,
                 width: rect.width,
                 height: rect.height,
-                child: AnimatedOpacity(
-                  opacity: !entry.exiting && !entry.entering ? 1 : 0,
+                child: AppSpringPresence(
+                  swell: DepthMotionSpec.standard.submergeSwell,
+                  visible: !entry.exiting && !entry.entering,
                   duration: duration,
                   curve: theme.curveStandard,
                   // `entering` is deliberately EXCLUDED from every gate
@@ -156,17 +216,40 @@ class _AppContextDockLayout extends StatelessWidget {
                           label:
                               entry.action.accessibilityLabel ??
                               entry.action.tooltip,
-                          child: AppDockIconButton(
-                            theme: theme,
-                            icon: entry.action.icon,
-                            tooltip: entry.action.tooltip,
-                            selected: entry.action.selected,
-                            isDestructive: entry.action.destructive,
-                            haptic: entry.action.haptic,
-                            badgeCount: entry.action.badgeCount,
-                            onTap: entry.action.enabled && entry.present
-                                ? entry.action.onPressed
-                                : null,
+                          // Observes the pointer without competing for it: a
+                          // lone action's pane swells with the press.
+                          child: Listener(
+                            onPointerDown: (_) {
+                              if (_isSingleton(byGroup, entry.groupId)) {
+                                pressFor(entry.groupId).value = true;
+                              }
+                            },
+                            onPointerUp: (_) =>
+                                pressFor(entry.groupId).value = false,
+                            onPointerCancel: (_) =>
+                                pressFor(entry.groupId).value = false,
+                            child: Builder(
+                              builder: (actionContext) => AppDockIconButton(
+                                theme: theme,
+                                icon: entry.action.icon,
+                                tooltip: entry.action.tooltip,
+                                selected: entry.action.selected,
+                                isDestructive: entry.action.destructive,
+                                haptic: entry.action.haptic,
+                                badgeCount: entry.action.badgeCount,
+                                onTap: entry.action.enabled && entry.present
+                                    ? () {
+                                        final callback =
+                                            entry.action.onPressedWithContext;
+                                        if (callback != null) {
+                                          callback(actionContext);
+                                        } else {
+                                          entry.action.onPressed?.call();
+                                        }
+                                      }
+                                    : null,
+                              ),
+                            ),
                           ),
                         ),
                       ),

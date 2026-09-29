@@ -50,7 +50,9 @@ void main() {
   });
 
   // A prior keyboard must not leave a later plain sheet floating in empty space.
-  testWidgets('plain sheets use only the current keyboard inset', (tester) async {
+  testWidgets('plain sheets use only the current keyboard inset', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1080, 2400);
     tester.view.devicePixelRatio = 3.0;
     addTearDown(tester.view.reset);
@@ -84,8 +86,10 @@ void main() {
 
     expect(
       afterKeyboard,
-      beforeKeyboard - tester.view.viewInsets.bottom / tester.view.devicePixelRatio,
-      reason: 'plain sheets track the current inset without a session-wide cache',
+      beforeKeyboard -
+          tester.view.viewInsets.bottom / tester.view.devicePixelRatio,
+      reason:
+          'plain sheets track the current inset without a session-wide cache',
     );
 
     navigatorKey.currentState!.pop();

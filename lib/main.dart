@@ -16,6 +16,7 @@ import 'core/revenue_cat_config.dart';
 import 'core/tokens/color_primitives.dart';
 import 'core/tokens/semantic_theme.dart';
 import 'core/tokens/type_primitives.dart';
+import 'core/widgets/app_context_menu.dart';
 import 'core/widgets/app_bottom_dock.dart';
 import 'core/widgets/app_shell_chrome.dart';
 import 'core/widgets/app_shell_header.dart';
@@ -28,6 +29,8 @@ import 'features/settings/settings_screen.dart';
 import 'features/splash/splash_carousel_screen.dart';
 import 'features/splash/splash_screen.dart';
 import 'features/timeline/selected_date_provider.dart';
+import 'features/timeline/armed_edit_task_provider.dart';
+import 'features/timeline/edit_selection_provider.dart';
 import 'features/timeline/edit_mode_provider.dart';
 import 'features/timeline/pending_task_draft_provider.dart';
 import 'features/timeline/timeline_screen.dart';
@@ -57,6 +60,8 @@ import 'shared/providers/purchases_providers.dart';
 import 'shared/providers/tracked_behavior_providers.dart';
 import 'shared/providers/trial_providers.dart';
 import 'shared/providers/zone_providers.dart';
+
+final _rootContextMenuNavigatorObserver = AppContextMenuNavigatorObserver();
 
 // TEMPORARY diagnostic instrumentation — added to track down a reported
 // "white launch screen, then full black screen, app unresponsive" on both
@@ -413,6 +418,7 @@ class AmbleApp extends ConsumerWidget {
       // declaration covers both without a Platform check.
       value: _overlayStyleFor(_effectiveBrightness(context, themeMode)),
       child: MaterialApp(
+        navigatorObservers: [_rootContextMenuNavigatorObserver],
         debugShowCheckedModeBanner: false,
         title: 'Amble',
         theme: _themeDataFor(lightTheme, Brightness.light),
@@ -684,6 +690,8 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
   int _selectedIndex = 0;
   bool _pageMotionForward = true;
   final _contentNavigatorKey = GlobalKey<NavigatorState>();
+  final _contentContextMenuNavigatorObserver =
+      AppContextMenuNavigatorObserver();
   final _sceneNotifier = ValueNotifier<_ShellScene?>(null);
   final _chromeController = AppShellChromeController();
 
@@ -708,10 +716,16 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
     });
   }
 
+  void _clearTimelineSelections() {
+    ref.read(editSelectionProvider.notifier).clear();
+    ref.read(zoneEditSelectionProvider.notifier).clear();
+    ref.read(armedEditTaskProvider.notifier).clear();
+  }
+
   /// **2026-09-20 — top nav replaces the bottom `NavigationBar` as the
   /// primary section switcher.** Requested directly, as a deliberate
   /// reversal of conventional mobile navigation: "Top: choose the part of
-  /// Panta. Bottom: choose how to work with your day." Day/Inbox/Tracked
+  /// Panta. Bottom: choose how to work with your day." Days/Things/Habits
   /// are quiet text-label destinations at the TOP now ([AppTopNav]);
   /// Settings moved out of the destination row entirely into that same
   /// top nav's own separate icon (confirmed directly — Tracked keeps its
@@ -724,9 +738,9 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
   /// Settings is index 3, reached only via [AppTopNav.onSettingsTap] —
   /// it deliberately has NO entry in [_topNavLabels]/`AppTopNav`'s own
   /// destination row, matching "Settings as separate icon on far right,"
-  /// not a fourth quiet label indistinguishable from Day/Inbox/Tracked.
+  /// not a fourth quiet label indistinguishable from Days/Things/Habits.
   ///
-  /// "Tracked" is present when [FeatureFlags.trackedBehaviorEnabled] is on
+  /// "Habits" is present when [FeatureFlags.trackedBehaviorEnabled] is on
   /// (default true) AND — in a debug build only — the
   /// `DevTrackedTabInCycle` dev toggle (`core/dev_config.dart`) hasn't
   /// been switched off; the flag omits the destination entirely rather
@@ -749,15 +763,15 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
     const SettingsScreen(),
   ];
 
-  /// The top nav's own quiet text labels — "Day" (renamed from the old
+  /// The top nav's own quiet text labels — "Days" (renamed from the old
   /// icon-only "Timeline" destination's tooltip, matching the spec's own
-  /// naming), "Inbox", and "Tracked" when visible. Kept in the SAME order
+  /// naming), "Things", and "Habits" when visible. Kept in the SAME order
   /// as [_screens]'s first three entries; Settings (index 3) is
   /// deliberately excluded — see [_screens]'s own doc comment.
   List<String> _topNavLabels(bool trackedTabVisible) => [
-    'Day',
-    'Inbox',
-    if (trackedTabVisible) 'Tracked',
+    'Days',
+    'Things',
+    if (trackedTabVisible) 'Habits',
   ];
 
   @override
@@ -800,7 +814,7 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
     // rather than crashing IndexedStack/NavigationBar on an out-of-range
     // index. Mirrors `DevZoneViewInCycle`'s own "don't strand the user in
     // a mode the toggle just removed" reasoning. Timeline (index 0) can
-    // never itself be removed by this toggle (only "Tracked" can), so it's
+    // never itself be removed by this toggle (only "Habits" can), so it's
     // always a safe fallback.
     if (_selectedIndex >= screens.length) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -826,6 +840,7 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
       // destination into spatial mode even if the user had it in Zone
       // view, same as switching tabs used to do outright.
       ref.read(zoneViewEnabledSettingProvider.notifier).set(false);
+      _clearTimelineSelections();
       setState(() {
         _pageMotionForward = _selectedIndex == 0;
         _selectedIndex = 0;
@@ -852,11 +867,10 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
           child: Column(
             children: [
               Padding(
-                padding: EdgeInsets.fromLTRB(
-                  theme.spacingScreenPadding,
-                  theme.spacingSm,
-                  theme.spacingScreenPadding,
-                  theme.spacingSm,
+                padding: EdgeInsets.only(
+                  left: theme.spacingScreenPadding,
+                  right: theme.spacingScreenPadding,
+                  bottom: theme.spacingSm,
                 ),
                 child: AppShellHeader(
                   controller: _chromeController,
@@ -865,7 +879,7 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
                     // **Real bug, fixed 2026-09-22**: this used to fall back
                     // to `0` whenever `_selectedIndex` was Settings' own
                     // index (out of range for `destinations`, which never
-                    // includes it) — which made "Day" light up as active
+                    // includes it) — which made "Days" light up as active
                     // while Settings was actually open. `_TopNavLabel`'s own
                     // `i == selectedIndex` comparison never matches `i`
                     // against Settings' index anyway (`destinations` only
@@ -883,10 +897,14 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
                     // switcher button reaching the same provider.
                     onDestinationSelected: (index) {
                       if (index == 0 && _selectedIndex == 0) {
+                        _clearTimelineSelections();
                         ref
                             .read(zoneViewEnabledSettingProvider.notifier)
                             .set(!zoneViewEnabled);
                         return;
+                      }
+                      if (index != _selectedIndex) {
+                        _clearTimelineSelections();
                       }
                       setState(() {
                         _pageMotionForward = index > _selectedIndex;
@@ -897,6 +915,9 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
                       final settingsIndex = screens.length - 1;
                       final wasAlreadyOnSettings =
                           _selectedIndex == settingsIndex;
+                      if (!wasAlreadyOnSettings) {
+                        _clearTimelineSelections();
+                      }
                       setState(() {
                         _pageMotionForward = settingsIndex > _selectedIndex;
                         _selectedIndex = settingsIndex;
@@ -928,6 +949,7 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
                     children: [
                       Navigator(
                         key: _contentNavigatorKey,
+                        observers: [_contentContextMenuNavigatorObserver],
                         onGenerateRoute: (_) => PageRouteBuilder<void>(
                           pageBuilder:
                               (context, animation, secondaryAnimation) =>
@@ -952,30 +974,46 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
                         child: Align(
                           alignment: Alignment.bottomLeft,
                           child: Padding(
-                            padding: EdgeInsets.all(theme.spacingMd),
+                            padding: EdgeInsets.only(
+                              left: theme.spacingMd,
+                              right: theme.spacingMd,
+                              bottom: theme.spacingBottomClearance,
+                            ),
                             child: AppBottomDock(
                               activeView: zoneViewEnabled
                                   ? AppBottomDockView.list
                                   : AppBottomDockView.timeline,
-                              onSelectView: (view) => ref
-                                  .read(zoneViewEnabledSettingProvider.notifier)
-                                  .set(view == AppBottomDockView.list),
-                              onEditTap: () => showEditScreen(
-                                context,
-                                navigator: _contentNavigatorKey.currentState,
-                              ),
+                              onSelectView: (view) {
+                                _clearTimelineSelections();
+                                ref
+                                    .read(
+                                      zoneViewEnabledSettingProvider.notifier,
+                                    )
+                                    .set(view == AppBottomDockView.list);
+                              },
+                              onEditTap: () {
+                                _clearTimelineSelections();
+                                showEditScreen(
+                                  context,
+                                  navigator: _contentNavigatorKey.currentState,
+                                );
+                              },
                               whatMattersEnabled: ref.watch(
                                 whatMattersEnabledSettingProvider,
                               ),
-                              onWhatMattersTap: () => ref
-                                  .read(
-                                    whatMattersEnabledSettingProvider.notifier,
-                                  )
-                                  .set(
-                                    !ref.read(
-                                      whatMattersEnabledSettingProvider,
-                                    ),
-                                  ),
+                              onWhatMattersTap: () {
+                                _clearTimelineSelections();
+                                ref
+                                    .read(
+                                      whatMattersEnabledSettingProvider
+                                          .notifier,
+                                    )
+                                    .set(
+                                      !ref.read(
+                                        whatMattersEnabledSettingProvider,
+                                      ),
+                                    );
+                              },
                               visible:
                                   activeIndex == 0 &&
                                   ref.watch(pendingTaskDraftProvider) == null &&

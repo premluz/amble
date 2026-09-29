@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:amble/core/tokens/component_tokens.dart';
 
 /// The scroll-position round trip shared by BOTH spatial views (Task and
 /// Zone): each reports its centered time-of-day as it scrolls, and each
@@ -13,9 +14,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// symmetric at ANY single scale, and — verified here — a Task->Zone->Task
 /// round trip through the pure formulas returns the same minute even
 /// WITHOUT the top-padding term, because the padding cancels itself out on
-/// both sides. The padding term was still added to both directions (so the
-/// reported minute matches the time actually centered on screen rather than
-/// being 24px off), but it is NOT what caused the reported drift.
+/// both sides. The padding term was still added to both directions so the
+/// reported minute matches the time actually centered on screen, but it is
+/// NOT what caused the reported drift.
 ///
 /// The asymmetry these tests do expose is the `.clamp(0, maxScrollExtent)`
 /// in the real `jumpTo` call: the two views have different content heights
@@ -52,7 +53,7 @@ double restoreOffset({
 }
 
 void main() {
-  const topPadding = 24.0; // theme.spacingLg
+  const topPadding = TimelineScrollTokens.topClearance;
   const viewportHeight = 800.0;
   const taskViewScale = 1.5;
   const zoneViewScale = 3.0;

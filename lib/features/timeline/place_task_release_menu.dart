@@ -71,7 +71,7 @@ class _PlaceTaskReleaseMenuContent extends StatelessWidget {
         ActionRow(
           theme: theme,
           icon: Icons.add_rounded,
-          label: 'New task',
+          label: 'New thing',
           onTap: () {
             Navigator.of(context).pop();
             onNewTask(droppedAt);

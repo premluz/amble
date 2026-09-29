@@ -208,10 +208,7 @@ void main() {
   /// an armed task on empty-space contact, not a plain tap (see
   /// `place_task_line.dart`'s own doc comment on the redesign that moved
   /// the empty-space trigger from a tap to this long-press).
-  Future<void> longPressAndReleaseAt(
-    WidgetTester tester,
-    Offset point,
-  ) async {
+  Future<void> longPressAndReleaseAt(WidgetTester tester, Offset point) async {
     final gesture = await tester.startGesture(point);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 600));
@@ -219,10 +216,25 @@ void main() {
     await tester.pump();
   }
 
-  testWidgets(
-    'long-pressing empty timeline space closes an armed task\'s edit '
-    'state',
-    (tester) async {
+  testWidgets('tapping empty timeline space closes an armed task immediately', (
+    tester,
+  ) async {
+    final task = makeTask('Focus block');
+    await pumpTimeline(tester, tasks: [task]);
+
+    await tester.longPress(find.text('Focus block'));
+    await tester.pump();
+    expect(capturedContainer!.read(armedEditTaskProvider), task.id);
+
+    await tester.tapAt(const Offset(220, 700));
+    await tester.pump();
+
+    expect(capturedContainer!.read(armedEditTaskProvider), isNull);
+    expect(capturedContainer!.read(pendingTaskDraftProvider), isNull);
+  });
+
+  testWidgets('long-pressing empty timeline space closes an armed task\'s edit '
+      'state', (tester) async {
       final task = makeTask('Focus block');
       await pumpTimeline(tester, tasks: [task]);
 
@@ -237,8 +249,7 @@ void main() {
       await longPressAndReleaseAt(tester, const Offset(220, 700));
 
       expect(capturedContainer!.read(armedEditTaskProvider), isNull);
-    },
-  );
+  });
 
   testWidgets(
     'long-pressing empty timeline space while a task is armed ONLY closes '

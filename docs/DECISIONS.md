@@ -4567,3 +4567,279 @@ lane boundary while the existing 5-minute vertical snap remains. During a
 move, each source slot stays visible as a non-interactive 20% silhouette;
 `DragPreviewTokens.ghostOpacity` now drives both task and zone ghosts, including
 the per-day copies shown during extension.
+
+## 2026-09-28 — Anchored context menus stay near their invocation point
+
+Tap-open and press-drag menus share one placement rule: use the global
+touch/drop point, prefer below when the menu fits, otherwise choose above when
+that side has more room, then clamp to safe-area and keyboard insets. Center
+the panel on the anchor and size it from its compact rows and padding; scroll
+only when the available viewport is shorter than the menu. During a held drag,
+one rounded capsule highlight eases between the row hit by the pointer.
+Preserve action order and keep destructive actions last, consistent with
+[Apple's context-menu guidance](https://developer.apple.com/design/human-interface-guidelines/context-menus/).
+
+## 2026-09-28 — Context menus use the app overlay and dismiss on navigation
+
+Anchored routes push onto the root navigator, and held press-drag menus insert
+into the root overlay, keeping both above persistent app chrome. A shared
+dismissal registry closes either presentation when a route changes or an
+`AppViewTransition` changes view ID. Route observers are attached to the root
+and shell-content navigators so pushed detail pages also close the menu.
+
+## 2026-09-28 — Zone edit blocks use a medium radius and lifted zones own the foreground
+
+Weekly zone-edit blocks, their selected outlines, and move-source ghosts use
+`theme.radiusMd`. This supersedes the earlier `radiusSm` edit-grid exception:
+the user asked for more rounded zones while keeping the weekday cells compact.
+When a zone is moved, the grid paints that active zone after all other saved
+zones in one shared cross-day stack. Selected siblings remain above unselected
+zones, and the active dragged zone is last so later weekday columns cannot
+cover it. Canvas drag objects should follow this foreground rule throughout
+the app.
+
+## 2026-09-28 — Compact safe-area clearance for sheets and bottom controls
+
+The main shell adds no design spacer above its header beyond the operating
+system's status safe area. Bottom toolbars, floating controls, sheet bodies,
+and primary sheet footers keep only `spacingBottomClearance` (the same 8px
+as `spacingSm`) after the device's bottom safe area. This matches the
+quick-create sheet's compact top header gap and leaves more usable height;
+the platform home-indicator/rounded-corner region remains reserved by
+`SafeArea` rather than duplicated in app padding. Full-screen sheet top
+corner insets remain local surface geometry.
+
+## 2026-09-28 — Selected-item deletion uses an anchored puff overlay
+
+Selected task and zone removal in Edit emits the `rios-motion-v19` puff from
+the delete dock action's top-center before its selection and button disappear.
+The exported numeric/color preset remains one `DeletePuffSpec`; deterministic
+sampling keeps frame output stable, and effect distances scale to the source
+control. The live effect omits the studio's sample object and opaque canvas so
+it stays transparent and can sit above the app. Reduced motion suppresses the
+decorative overlay without changing the delete action.
+
+**[2026-09-28] Liquid motion uses Flutter's native springs and (later) fragment shaders — no motion package.**
+`SpringDescription.withDurationAndBounce` (in this SDK) is the same
+duration/bounce model SwiftUI uses, so springs can feel iOS-like while staying
+identical on Android. Candidate packages (`flutter_animate`, `motor`,
+`liquid_glass_renderer`) were considered. The springs need none of them. The
+metaball-style "liquid" shape morph planned for the pending pill can be a
+bundled GLSL `FragmentProgram`, which is also native. `liquid_glass_renderer`
+remains the one package worth re-evaluating if a true refractive glass look is
+wanted: it renders on Impeller only and has a real per-frame cost. All pulse
+tuning lives in `LiquidPulseSpec`, a Tier-3 component spec like
+`BubbleBurstSpec`, rather than on `AmbleTheme`. It is a single component's
+physics and not a theme-varying value.
+
+**[2026-09-28] On iOS, `AmbleHaptic.tap`/`selection` play `lightImpact`, not `selectionClick`.**
+Flutter's engine creates a new, unprepared `UISelectionFeedbackGenerator` for
+every `selectionClick`. That is iOS's lightest pattern and was reported as no
+haptic at all on a recent iPhone, while Android's `CLOCK_TICK` equivalent is
+clearly felt. A light impact is the closest iOS match to the Android tick.
+Android keeps `selectionClick`. The mapping lives only in `PlatformHaptics`,
+so no call site changed. If this still feels weak on device, the next step is a
+small native channel that keeps prepared generators alive. Apple recommends
+that for latency, but it adds native code, so it was not done now.
+
+## 2026-09-28 — Anchored context menus use the compact popover radius
+
+The floating context-menu panel and its liquid entrance morph both use
+`theme.radiusXl` (16 px). They no longer borrow `radiusModal` (40 px), which is
+reserved for sheet corners; the smaller popover radius gives short menus a
+clearer, less pill-shaped silhouette. Bottom-sheet context menus are unchanged.
+
+## 2026-09-28 — Refine anchored context-menu radius to 20 px
+
+After trying 16 px, the user asked for a slightly rounder menu while keeping
+the sheet's 40 px corners reserved for sheets. Both the floating panel and
+its entrance morph now use `theme.radiusXxl` (20 px); bottom-sheet context
+menus remain unchanged.
+
+**[2026-09-28] Press swells instead of squeezing (Liquid Glass), and is one shared spec.**
+Requested after trying the squeeze: "follow motion of liquid glass on Apple:
+press and hold makes it larger, and bouncy fluid when released", and "if one
+variable steers bounce across buttons, make it stronger". The press is now
+`LiquidPressSpec.standard`. Holding a control grows it, and release springs it
+home past rest. Growth is spread in pixels over the control's longest side
+(8px, clamped 2–18%) rather than as a flat percentage. A flat percentage large
+enough to be felt on a 44px icon button would make a full-width row jump off
+its margins. A held glass fill (8%) makes fill-less ghost icon buttons swell
+visibly. This reverses the same day's 4.5% squeeze. Select and complete keep
+their squeeze-and-rebound, because they mark an event on the object rather
+than a response to the finger. `AppButton` gained an optional `fillColor` for
+the ghost circle, so the dock's selected tint moves with the press.
+
+## 2026-09-28 — Saved-zone side resize follows marquee drag-delta snapping
+
+Existing-zone side handles capture their original pointer-down position and
+derive the cumulative horizontal delta from the live pointer. Weekday preview
+and saved placements use the same rounded delta-by-lane-width rule as moving a
+pending marquee: a half-lane movement changes the neighboring day regardless
+of the side handle's inset. Pending marquee edge resizing still snaps its
+geometric edge to lane boundaries.
+
+**[2026-09-28] "Push all" keeps existing overlaps: overlapping tasks move as one block.**
+Reported directly: "if tasks below are already overlapping, push all should
+retain that overlap — at the moment it removes all overlaps making all lined
+up." `computeCascadeMoves` now groups the other same-day tasks into overlap
+runs first (`overlapRuns`, half-open: back-to-back is not an overlap) and
+cascades over those units. A run moves rigidly, every member by the same
+offset, so the drop makes room without re-planning a stack the user
+deliberately overlapped. The push direction for a run follows the existing
+nearest-edge rule, measured against the run's whole span. A lone task
+behaves exactly as before. This reverses what two earlier regression tests
+asserted (that pre-overlapping tasks all end up non-overlapping); they now
+assert the drop clears everything while existing overlaps are kept. Trim
+and the zone cascade (`zone_cascade_reschedule.dart`, which mirrors this
+algorithm) are unchanged. Zones may need the same rule; not yet requested.
+
+## [2026-09-28] Task create/edit saves permit overlapping schedules
+
+Requested: a long-press quick-create task that has been positioned/resized into
+an overlap must still save, and editing a task into an overlap must not show an
+error or block Save. Removed overlap rejection and the inline overlap message
+from the mini quick-create Schedule action, the full create flow, and the task
+edit schedule form. The developer feasibility setting now describes only its
+remaining pending-draft movement check; it does not control form saves.
+
+Overlaps remain valid timeline layout. Existing explicit Timeline overlap
+actions (Overlap / Push all / Trim) and drag/drop resolution are unchanged.
+Regression tests cover quick-create Schedule, full create-form Schedule, and
+editing into an occupied slot with the setting enabled.
+
+## [2026-09-28] Show zones is a persisted Timeline display preference
+
+Settings → Zones has a `Show zones` switch, default on. Off hides spatial zone
+backgrounds and removes zone cards from the Zone Timeline view; tasks and
+calendar events that were inside those zones remain visible as ordinary rows.
+The dedicated Zone editing screen ignores this display preference so saved
+placements can always be reviewed and edited.
+
+## [2026-09-28] Tracked current day uses a surface fill, without an accent outline
+
+An incomplete current day in Tracked uses `colorSurfaceFieldActive`, one step
+above ordinary days' `colorSurfaceField`. Completed days keep the accent fill;
+neither state receives a separate current-day outline. This supersedes the
+2026-09-10 tracked-card decision that marked today with an accent outline.
+Because all three tracked views share `_DayCell`, the treatment stays uniform.
+
+## [2026-09-28] What Matters leaves no persistent page tint
+
+The page-level accent wash is disabled. What Matters retains its transient
+bottom ripple and the selected tint on its dock action, then returns the page
+to its ordinary surface color. The optional `colorSurfaceWhatMatters` token
+remains available for a surface that explicitly opts into a persistent tint.
+
+**[2026-09-28] Task state grammar: one resolver, reserved unlabeled colour, brand title + pill star for important, star for What Matters.**
+Requested from a side-by-side of the app and a mockup: done tasks were too
+bright in dark mode (indistinguishable from live ones) and too dark in light
+mode; new tasks looked red; starred tasks should get a brand-coloured title and
+a little star; the What Matters heart should become a star. Decisions:
+(1) `TaskStateStyle` is the only place task-state colours are chosen, fed by
+`TaskStateTokens`, which derives every value from the theme. (2) Done = a pale
+tint of the task's own label plus a receding title and a stronger, label-tinted
+strike, not flat grey, so it can't be confused with (3) unlabeled: the
+built-in "General" category now resolves to a reserved pale neutral that no
+label can pick (it previously took palette swatch 0, red). (4) The important
+star moved from the title margin onto the pill's corner. (5) The What Matters
+toolbar icon is a star. This departs from BRAND.md §6, which pairs ★
+(important) with ≋ (What Matters); the user chose the star directly. Update
+BRAND.md if this is the settled direction. Imported is unchanged; BRAND.md
+§17 and the mockup suggest hatching, still open.
+
+**[2026-09-28] Imported events are hatched; zone "Push all" does not keep overlaps.**
+(1) Imported calendar events keep their flat grey rail (the outline was
+removed earlier on request) and gain faint 45° hatching inside it, per
+BRAND.md §17 and the reviewed mockup. The new reusable `AppHatch` is clipped to
+the pill; colour/spacing live in `TaskStateTokens`. (2) The "keep existing
+overlaps" rule adopted for task Push all is deliberately NOT applied to zones:
+the zone cascade's own contract is "zones should never overlap" (weekly grid
+paint validation enforces it), so there are no legitimate pre-existing zone
+overlaps to preserve, and keeping them would contradict that rule. (3)
+BRAND.md §6/§16/§17 updated: the in-app What Matters action uses ★ (≋ stays
+the logo), plus the Unlabeled state and the refined Important/Completed
+treatments.
+
+**[2026-09-28] "Now" is a provider; glyphs are paper and charcoal; chips consolidated.**
+(1) `nowProvider` (`lib/core/clock_provider.dart`, generated like
+`hapticsProvider`) is the single source of "now" for the Timeline: today's
+date, the Today button, scroll-to-now, the current-time line and the
+new-task default time. `NotificationService` takes an optional `clock`. No
+new dependency: `package:clock` is only transitive and would have needed a
+direct dependency. (2) `glyphColorOn` returns paper (#F1F0EC) or charcoal
+(slate900) via `TaskStateTokens`, never pure white or black, and pills measure
+contrast against their real fill, so done glyphs sit on the pale tint and fade
+with it. (3) Three identical private category chips became `CategoryChip`, and
+two identical option chips moved onto `AppSelectableChip`'s new `regular`
+size. They now follow the "Pill shape" setting like every other chip (the
+2026-09-23 rule), a small change from their hard-coded fully-round corners.
+The behavior chips and onboarding cards are not duplicates and were left
+alone.
+
+**[2026-09-29] Depth is the create/delete motion; What Matters gets a glow; voice mode exits by flight.**
+(1) `AppDepthPresence` is the shared create/delete motion (emerge from and
+recede into depth, making and giving back room), first used on Inbox rows.
+It is not applied to Timeline pills, where a creation entrance was removed
+earlier on request. (2) What Matters: the ripple plays on turning on only;
+a persistent bottom glow under the content signals the mode while on. It is
+kept low and quiet so it doesn't read as an AI mode like voice's gradient.
+(3) Voice mode gets its own route with a real exit: controls recede, the
+screen recedes, and each new Inbox task flies into its row with Flutter's
+`Hero` (no package), staggered by a delayed rect tween. `captureTask` now
+returns the created task, and `VoiceCapture.submit` returns each line's Inbox
+task id (null when scheduled), so a line can be tied to its row. Hero
+discovery works across the shell's nested navigator when the Inbox page is
+a current page route. The end-to-end test uses a single navigator, so the
+nested case is confirmed only by Flutter's rule, not yet on device.
+
+## 2026-09-29 — A reserved "unassigned" tone for new tasks and imported events
+
+New (unlabeled) tasks and imported calendar events share one opaque tone,
+`ColorPrimitives.mistLight` #B3D6E1 / `mistDark` #33535C (OKLCH hue 218°).
+They reach it through `TaskStateTokens.unlabeledFill` / `importedFill`.
+Imported events keep their hatch on top. It replaces a translucent grey that
+read as "grey/disabled". The hue sits in the label palette's gap between cyan
+(202°) and sky blue (235°), away from the accent, sage and slate. Its chroma is
+above every done tint. Rule: nothing else may use this tone.
+
+## 2026-09-29 — Voice mode's toolbar is a dock pane that morphs out of the mic
+
+Voice mode's controls (pause · waveform · submit) live in one glass
+`AppDockSurface` pane at the standard dock clearance. They are not separate
+circles floating at their own offset. The pane morphs out of (and back into)
+the Inbox mic pane via `AppPaneMorph`, driven by the route animation instead
+of a Hero, so both directions follow the route exactly and no
+cross-navigator hero is needed. The route is non-opaque; the screen paints
+its own scrim.
+
+## 2026-09-29 — Zone cards get their own slightly translucent fill
+
+`ZoneSurfaceTokens.fill` (Tier 3, `component_tokens.dart`) is
+`colorSurfaceSecondary` at 80% alpha. It is used only for zone cards (the
+Timeline zone backdrop, the Edit selection fill, and Zone view cards). Other
+cards on `colorSurfaceSecondary` (Tracked, Manage rows) stay opaque.
+
+## 2026-09-29 — Day task create/delete motion is tracked above the task widgets
+
+`dayTaskMotionProvider` (keep-alive) decides which tasks just arrived or
+left by listening to `tasksForSelectedDayProvider`. The task widgets don't
+decide it themselves, because a timeline ↔ list switch remounts them all
+(the previous mount-time entrance was removed for replaying on every
+switch). Delete call sites are unchanged: a task that leaves the day, by
+any route, is kept drawn until it has receded.
+
+## 2026-09-29 — Day-screen drag moves just the pill; lifted treatment kept for Edit mode
+
+Requested: "archive that elevated zone and just keep pill being moved", on
+the Day screen first (not Edit). While dragging a task on the Day timeline
+there is no longer a frosted lifted surface, inline start–end time and
+title, full-width box or 1.04 scale. Only the pill moves (the faded ghost
+still marks where it came from). The lifted treatment is kept, unchanged,
+for Edit mode (`_DraggableTaskBlockState._liftedDrag`), pending a decision
+there.
+**Update (same day)**: removed from Edit mode too, at the user's request.
+A drag is just the pill everywhere, and `_liftedDrag`/`_liftScale` are
+gone. `TaskCapsuleBlock` still has its `isLifted`/`liftedTextInline`
+options (with their own widget tests), but no screen uses them any more.
+Whether to delete them is an open question for the user.

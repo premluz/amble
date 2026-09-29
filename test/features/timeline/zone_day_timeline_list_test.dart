@@ -35,6 +35,7 @@ void main() {
     bool devHideEmptyZones = false,
     bool devIconsVisible = true,
     bool devZoneTaskStartTimeVisible = false,
+    bool showZones = true,
     bool whatMattersEnabled = false,
     Map<String, Category> categoryById = const <String, Category>{},
   }) async {
@@ -62,6 +63,7 @@ void main() {
             devHideEmptyZones: devHideEmptyZones,
             devIconsVisible: devIconsVisible,
             devZoneTaskStartTimeVisible: devZoneTaskStartTimeVisible,
+            showZones: showZones,
             whatMattersEnabled: whatMattersEnabled,
           ),
         ),
@@ -187,6 +189,39 @@ void main() {
             as ZoneContainerBlock;
     expect(container.tasks.map((t) => t.id), contains(task.id));
     expect(find.textContaining('Stretch'), findsOneWidget);
+  });
+
+  testWidgets('hiding zones keeps their tasks visible as ordinary rows', (
+    tester,
+  ) async {
+    final zone = zoneAt('z1', 'Morning ritual', 7, 8);
+    final task = Task.create(
+      title: 'Stretch',
+      scheduledAt: DateTime(2026, 9, 2, 7, 15),
+      durationMinutes: 15,
+      categoryId: BuiltInCategoryIds.health,
+    );
+    final event = ExternalCalendarEvent(
+      id: 'evt-1',
+      title: 'Dentist',
+      start: DateTime(2026, 9, 2, 7, 30),
+      end: DateTime(2026, 9, 2, 7, 45),
+      sourceCalendarId: 'cal-1',
+    );
+
+    await pump(
+      tester,
+      zones: [zone],
+      tasks: [task],
+      externalEvents: [event],
+      showZones: false,
+    );
+
+    expect(find.byType(ZoneContainerBlock), findsNothing);
+    expect(find.byType(TaskCapsuleBlock), findsNWidgets(1));
+    expect(find.byType(DashedPillRail), findsOneWidget);
+    expect(find.textContaining('Stretch'), findsOneWidget);
+    expect(find.textContaining('Dentist'), findsOneWidget);
   });
 
   // Requested directly: "wire for zoned" — swipe-to-reveal's add-note
@@ -508,7 +543,10 @@ void main() {
 
         expect(
           cardLeft,
-          moreOrLessEquals(zoneContentLeftInset(AmbleTheme.light), epsilon: 0.5),
+          moreOrLessEquals(
+            zoneContentLeftInset(AmbleTheme.light),
+            epsilon: 0.5,
+          ),
           reason:
               'the zone card must start where the spatial view\'s own '
               'zone band does (AmbleTheme.timelineZoneLeft), not at the '
@@ -555,9 +593,7 @@ void main() {
   group('unzoned rows line up with zoned rows (2026-09-15)', () {
     testWidgets('an unzoned task\'s own badge sits spacingLg further right '
         'than the zone container\'s own edge, matching a zoned task\'s '
-        'own inset', (
-      tester,
-    ) async {
+        'own inset', (tester) async {
       final zone = zoneAt('z1', 'Morning ritual', 7, 8);
       final unzonedTask = Task.create(
         title: 'Out of zone',
@@ -1096,7 +1132,7 @@ void main() {
 
       await pump(tester, zones: [zone], whatMattersEnabled: true);
 
-        expect(find.byType(ZoneContainerBlock).hitTestable(), findsNothing);
+      expect(find.byType(ZoneContainerBlock).hitTestable(), findsNothing);
     });
   });
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:amble/core/tokens/component_tokens.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_button.dart';
 import 'package:amble/core/widgets/app_press_feedback.dart';
@@ -14,7 +15,7 @@ import 'package:amble/core/widgets/app_top_nav.dart';
 /// icon (settings)."
 void main() {
   final theme = AmbleTheme.light;
-  const destinations = ['Day', 'Inbox', 'Tracked'];
+  const destinations = ['Days', 'Things', 'Habits'];
 
   Future<void> pump(
     WidgetTester tester, {
@@ -47,9 +48,9 @@ void main() {
     (tester) async {
       await pump(tester, selectedIndex: 0);
 
-      expect(labelColor(tester, 'Day'), theme.colorTextPrimary);
-      expect(labelColor(tester, 'Inbox'), theme.colorTextTertiary);
-      expect(labelColor(tester, 'Tracked'), theme.colorTextTertiary);
+      expect(labelColor(tester, 'Days'), theme.colorTextPrimary);
+      expect(labelColor(tester, 'Things'), theme.colorTextTertiary);
+      expect(labelColor(tester, 'Habits'), theme.colorTextTertiary);
       expect(gearColor(tester), theme.colorForegroundTertiary);
     },
   );
@@ -66,7 +67,7 @@ void main() {
       // Settings is the one actually showing.
       await pump(tester, selectedIndex: 0, settingsSelected: true);
 
-      expect(labelColor(tester, 'Day'), theme.colorTextPrimary);
+      expect(labelColor(tester, 'Days'), theme.colorTextPrimary);
       expect(gearColor(tester), theme.colorTextPrimary);
     },
   );
@@ -80,9 +81,9 @@ void main() {
       // settingsSelected: true.
       await pump(tester, selectedIndex: 3, settingsSelected: true);
 
-      expect(labelColor(tester, 'Day'), theme.colorTextTertiary);
-      expect(labelColor(tester, 'Inbox'), theme.colorTextTertiary);
-      expect(labelColor(tester, 'Tracked'), theme.colorTextTertiary);
+      expect(labelColor(tester, 'Days'), theme.colorTextTertiary);
+      expect(labelColor(tester, 'Things'), theme.colorTextTertiary);
+      expect(labelColor(tester, 'Habits'), theme.colorTextTertiary);
       expect(gearColor(tester), theme.colorTextPrimary);
     },
   );
@@ -94,23 +95,53 @@ void main() {
     expect(gearColor(tester), theme.colorForegroundTertiary);
   });
 
+  testWidgets('uses compact chrome styling while retaining the 40px row', (
+    tester,
+  ) async {
+    await pump(tester, selectedIndex: 0);
+
+    expect(
+      tester.widget<Text>(find.text('Days')).style?.fontSize,
+      theme.textBody.fontSize,
+    );
+    expect(
+      tester.widget<Icon>(find.byIcon(Icons.settings_outlined)).size,
+      TopNavTokens.settingsIconSize,
+    );
+    final settingsHitArea = tester.getSize(
+      find.ancestor(
+        of: find.byIcon(Icons.settings_outlined),
+        matching: find.byType(AppPressFeedback),
+      ),
+    );
+    expect(settingsHitArea.width, appButtonHeightFor(theme, AppButtonSize.md));
+    expect(settingsHitArea.height, appButtonHeightFor(theme, AppButtonSize.md));
+  });
+
+  testWidgets('the settings gear sits optically on the right edge: its '
+      'glyph, not its invisible tap box, ends where the nav ends (the '
+      'screen-padding line)', (tester) async {
+    await pump(tester, selectedIndex: 0);
+    expect(
+      tester.getRect(find.byIcon(Icons.settings_outlined)).right,
+      tester.getRect(find.byType(AppTopNav)).right,
+    );
+  });
+
   // Reported directly: switching between the main shell (this bar) and
   // the merged Edit screen's `AppTabSwitch` (Tasks/Zones) visibly
   // "jumped" — this bar previously had no fixed height at all, sizing to
   // bare text with no padding, while `AppTabSwitch` reserves a deliberate
   // `appButtonHeightFor(theme, AppButtonSize.md)` track.
   group('height/hit-area matches AppTabSwitch (2026-09-26)', () {
-    testWidgets(
-      'the whole bar is exactly AppButtonSize.md tall, same as '
-      "AppTabSwitch's own track",
-      (tester) async {
-        await pump(tester, selectedIndex: 0);
+    testWidgets('the whole bar is exactly AppButtonSize.md tall, same as '
+        "AppTabSwitch's own track", (tester) async {
+      await pump(tester, selectedIndex: 0);
 
-        final barHeight = tester.getSize(find.byType(AppTopNav)).height;
+      final barHeight = tester.getSize(find.byType(AppTopNav)).height;
 
-        expect(barHeight, appButtonHeightFor(theme, AppButtonSize.md));
-      },
-    );
+      expect(barHeight, appButtonHeightFor(theme, AppButtonSize.md));
+    });
 
     testWidgets(
       "each destination label's own tap target is the full bar height, "
@@ -121,7 +152,7 @@ void main() {
         final labelHitArea = tester
             .getSize(
               find.ancestor(
-                of: find.text('Day'),
+                of: find.text('Days'),
                 matching: find.byType(AppPressFeedback),
               ),
             )

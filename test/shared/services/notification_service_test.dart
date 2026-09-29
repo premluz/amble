@@ -172,13 +172,15 @@ void main() {
 
     test('a valid upcoming non-recurring zone resolves an occurrence and '
         'attempts to schedule (reaches the platform channel)', () async {
-      final now = DateTime.now();
+      // Pinned to midday so 23:40 is always still ahead, whatever time
+      // the suite runs (it used to fail in any late-evening run).
+      final noon = _todayAt(12);
+      final service = NotificationService(
+        FlutterLocalNotificationsPlugin(),
+        clock: () => noon,
+      );
       final zone = Zone.create(
         title: 'Later today',
-        // 23:40-23:59 is always still ahead of "now" unless the test
-        // runs in that exact window — good enough for proving the
-        // scheduling guard passed rather than pinning an exact
-        // occurrence time.
         startMinutes: 23 * 60 + 40,
         endMinutes: 1439,
       );
@@ -188,15 +190,17 @@ void main() {
       // no-op guards were cleared, mirroring how the no-op tests prove
       // the opposite by NOT throwing.
       await expectLater(service.scheduleForZone(zone), throwsA(anything));
-      // Guard against the 23:40+ edge case flaking right at day's end.
-      expect(now.hour, isNot(23));
     });
 
     test('a materialized recurring instance anchored on TODAY, still '
         'upcoming, resolves directly to its own anchorDate and attempts to '
         'schedule (reaches the platform channel)', () async {
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
+      final noon = _todayAt(12);
+      final service = NotificationService(
+        FlutterLocalNotificationsPlugin(),
+        clock: () => noon,
+      );
+      final today = DateTime(noon.year, noon.month, noon.day);
       final zone = Zone.create(
         title: 'Recurring later today',
         startMinutes: 23 * 60 + 40,
@@ -205,7 +209,6 @@ void main() {
         anchorDate: today,
       );
       await expectLater(service.scheduleForZone(zone), throwsA(anything));
-      expect(now.hour, isNot(23));
     });
 
     test('a materialized recurring instance anchored on a PAST day '
@@ -252,4 +255,9 @@ void main() {
       },
     );
   });
+}
+
+DateTime _todayAt(int hour) {
+  final now = DateTime.now();
+  return DateTime(now.year, now.month, now.day, hour);
 }

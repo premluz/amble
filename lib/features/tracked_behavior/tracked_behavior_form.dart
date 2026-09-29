@@ -11,6 +11,8 @@ import '../../shared/models/behavior_target_type.dart';
 import '../../shared/models/tracked_behavior.dart';
 import '../../shared/providers/tracked_behavior_providers.dart';
 import 'custom_unit_sheet.dart';
+import '../../core/widgets/app_selectable_chip.dart';
+import '../../core/widgets/app_button.dart' show AppButtonVariant;
 
 /// Opens the create/edit screen for a [TrackedBehavior] — [behavior] null
 /// to create, non-null to edit that row.
@@ -222,8 +224,9 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
             // binary third, for backward-compatible Hive field indices —
             // see that enum's own doc comment).
             for (final type in _measuredInOrder)
-              _TypeChip(
-                theme: theme,
+              AppSelectableChip(
+                variant: AppButtonVariant.primary,
+                size: AppSelectableChipSize.regular,
                 label: _labelFor(type),
                 selected: type == _targetType,
                 onTap: () {
@@ -349,44 +352,3 @@ String _unitFor(BehaviorTargetType type, {String? customUnitName}) =>
 /// a generic placeholder.
 String unitLabelFor(BehaviorTargetType type, {String? customUnitName}) =>
     _unitFor(type, customUnitName: customUnitName);
-
-class _TypeChip extends StatelessWidget {
-  const _TypeChip({
-    required this.theme,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final AmbleTheme theme;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: EdgeInsets.symmetric(
-          horizontal: theme.spacingMd,
-          vertical: theme.spacingSm,
-        ),
-        decoration: BoxDecoration(
-          color: selected ? theme.colorAccent : theme.colorSurfaceTimeline,
-          borderRadius: BorderRadius.circular(theme.radiusTaskPill),
-        ),
-        child: Text(
-          label,
-          style: theme.textBody.copyWith(
-            color: selected
-                ? theme.colorSurfacePrimary
-                : theme.colorTextSecondary,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
-    );
-  }
-}

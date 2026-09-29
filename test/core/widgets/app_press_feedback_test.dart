@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:amble/core/tokens/liquid_press_spec.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_press_feedback.dart';
 
@@ -41,17 +42,24 @@ Finder _within(Type type) => find.descendant(
   matching: find.byType(type),
 );
 
-/// The press dip, read from the x-scale entry of this widget's own
-/// `Transform` matrix. Deliberately NOT `getMaxScaleOnAxis()`, which
-/// reports 1.0 here: `Transform.scale` composes the scale with an origin
-/// translation, and that helper doesn't see through the composition.
-double _currentScale(WidgetTester tester) {
-  final scales = tester
-      .widgetList<Transform>(_within(Transform))
-      .map((t) => t.transform.storage[0]);
-  // At rest every Transform in the subtree is 1.0; while held, only this
-  // widget's own dips below that.
-  return scales.reduce((a, b) => a < b ? a : b);
+/// The press deformation on the vertical axis (the one carrying the full
+/// growth), taken as whichever Transform in the subtree departs furthest from
+/// rest.
+double _verticalScale(WidgetTester tester) => tester
+    .widgetList<Transform>(_within(Transform))
+    .map((t) => t.transform.storage[5])
+    .reduce((a, b) => (a - 1).abs() > (b - 1).abs() ? a : b);
+
+/// Growth for the 200-wide test control (longest side 200).
+final _growth = LiquidPressSpec.standard.growFor(200);
+
+Future<List<double>> _sample(WidgetTester tester, int frames) async {
+  final samples = <double>[];
+  for (var i = 0; i < frames; i++) {
+    await tester.pump(const Duration(milliseconds: 8));
+    samples.add(_verticalScale(tester));
+  }
+  return samples;
 }
 
 void main() {
@@ -76,49 +84,126 @@ void main() {
     expect(taps, 1);
   });
 
-  testWidgets('the control dips while held and springs back on release', (
-    tester,
-  ) async {
+  testWidgets('swells while held, Liquid Glass style, and springs back on '
+      'release', (tester) async {
     await _pump(tester, onTap: () {});
-
-    expect(
-      _currentScale(tester),
-      1.0,
-      reason: 'at rest the control is at its natural size',
-    );
+    expect(_verticalScale(tester), 1.0, reason: 'natural size at rest');
 
     final gesture = await tester.startGesture(
       tester.getCenter(find.text('Tap me')),
     );
-    // A bare pump first so the tap-down handler's own setState lands and
-    // starts the controller; only then does elapsing time advance it.
     await tester.pump();
-    // Past the dip's own duration (motionFast, 150ms) so it has fully
-    // landed rather than being caught mid-animation.
-    await tester.pump(const Duration(milliseconds: 200));
-
-    final heldScale = _currentScale(tester);
+    await tester.pump(const Duration(milliseconds: 600));
     expect(
-      heldScale,
-      lessThan(1.0),
-      reason: 'held: the control gives slightly under the press',
-    );
-    expect(
-      heldScale,
-      greaterThan(0.9),
-      reason:
-          'the dip is deliberately subtle — a deep shrink would read as '
-          'the control moving away from the finger',
+      _verticalScale(tester),
+      closeTo(1 + _growth, .001),
+      reason: 'held: the control grows toward the finger and stays grown',
     );
 
     await gesture.up();
     await tester.pumpAndSettle();
+    expect(_verticalScale(tester), 1.0, reason: 'lands exactly at rest');
+  });
 
-    expect(
-      _currentScale(tester),
-      1.0,
-      reason: 'released: springs back to its natural size',
+  testWidgets('a quick tap still shows the full swell, then a fluid return '
+      'that dips just past rest once', (tester) async {
+    await _pump(tester, onTap: () {});
+    await tester.tap(find.text('Tap me'));
+
+    final samples = await _sample(tester, 90);
+    final highest = samples.reduce((a, b) => a > b ? a : b);
+    final lowest = samples.reduce((a, b) => a < b ? a : b);
+    expect(highest, closeTo(1 + _growth, .002));
+    expect(lowest, lessThan(1.0), reason: 'the release overshoots rest');
+    expect(lowest, greaterThan(1 - _growth), reason: 'never cartoonish');
+    await tester.pumpAndSettle();
+    expect(_verticalScale(tester), 1.0);
+  });
+
+  testWidgets('growth is sized in pixels: a small icon button swells more '
+      'than a wide row', (tester) async {
+    Future<double> heldScale(double width, double height) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
+          home: Scaffold(
+            body: Center(
+              child: AppPressFeedback(
+                key: ValueKey('$width'),
+                onTap: () {},
+                child: SizedBox(width: width, height: height),
+              ),
+            ),
+          ),
+        ),
+      );
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byType(AppPressFeedback)),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      final scale = _verticalScale(tester);
+      await gesture.up();
+      await tester.pumpAndSettle();
+      return scale;
+    }
+
+    final icon = await heldScale(44, 44);
+    final row = await heldScale(300, 60);
+    expect(icon, closeTo(1 + LiquidPressSpec.standard.growFor(44), .001));
+    expect(row, closeTo(1 + LiquidPressSpec.standard.growFor(300), .001));
+    expect(icon - 1, greaterThan((row - 1) * 3));
+  });
+
+  testWidgets('held: a glass fill covers the whole control (so a fill-less '
+      'icon button visibly swells), gone once released', (tester) async {
+    await _pump(tester, onTap: () {});
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('Tap me')),
     );
+    await tester.pump();
+    // Past the ripple's own life, so only the hold fill keeps the layer.
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(_within(ClipPath), findsOneWidget);
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(_within(ClipPath), findsNothing);
+  });
+
+  testWidgets('reduced motion: no swell, but the tap still fires', (
+    tester,
+  ) async {
+    var taps = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(disableAnimations: true),
+          child: child!,
+        ),
+        home: Scaffold(
+          body: Center(
+            child: AppPressFeedback(
+              onTap: () => taps++,
+              child: const SizedBox(
+                width: 200,
+                height: 60,
+                child: Text('Tap me'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('Tap me')),
+    );
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(_verticalScale(tester), 1.0);
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(taps, 1);
   });
 
   testWidgets('a press paints a ripple, which clears itself once the '
@@ -246,8 +331,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
 
     expect(
-      _currentScale(tester),
-      lessThan(1.0),
+      _verticalScale(tester),
+      greaterThan(1.0),
       reason:
           'observing the pointer is enough to drive the dip — the whole '
           'point of this mode is feedback without owning the gesture',
@@ -352,6 +437,33 @@ void main() {
     expect(path.contains(const Offset(1, 1)), isFalse);
     expect(path.contains(const Offset(100, 30)), isTrue);
 
+    await gesture.up();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('ripple: false drops the wash (no tap ripple, no held fill) but '
+      'keeps the press squeeze', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
+        home: Scaffold(
+          body: Center(
+            child: AppPressFeedback(
+              onTap: () {},
+              ripple: false,
+              child: const SizedBox(width: 200, height: 60),
+            ),
+          ),
+        ),
+      ),
+    );
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byType(AppPressFeedback)),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(_within(ClipPath), findsNothing, reason: 'no wash');
+    expect(_verticalScale(tester), isNot(1.0), reason: 'still squeezes');
     await gesture.up();
     await tester.pumpAndSettle();
   });

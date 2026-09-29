@@ -17,6 +17,7 @@ import '../../shared/providers/trial_providers.dart';
 import '../../shared/providers/zone_providers.dart';
 import 'settings_detail_scaffold.dart';
 import 'settings_panel.dart';
+import '../../core/widgets/app_selectable_chip.dart';
 
 /// One-line summary of how many behaviors exist, so the panel says
 /// something useful before any have been created.
@@ -37,7 +38,7 @@ Future<void> showDeveloperSettingsScreen(BuildContext context) {
 }
 
 /// Debug-build-only tools plus the settings folded in here per direct
-/// request: Scheduling ("Prevent overlapping tasks"), Timeline (hour
+/// request: Scheduling (quick-create overlap feasibility), Timeline (hour
 /// labels, connectors, completion checkbox, overlap clustering), and Zone
 /// view — moved out of their previous always-visible top-level sections
 /// and out of the "Manage" panel respectively.
@@ -174,14 +175,14 @@ class _DeveloperSettingsScreenState
                     ),
                   ),
                   SizedBox(height: theme.spacingMd),
-                  // Points at the "Tracked" nav tab rather than opening
+                  // Points at the "Patterns" nav tab rather than opening
                   // the create form inline: with a real top-level
                   // destination for this entity, a second creation entry
                   // point here would be two places to learn instead of
                   // one. The summary line stays, so this page still
                   // reports what exists.
                   Text(
-                    'Manage tracked behaviors from the Tracked tab.',
+                    'Manage tracked behaviors from the Patterns tab.',
                     style: theme.textBody.copyWith(
                       color: theme.colorTextSecondary,
                     ),
@@ -312,8 +313,7 @@ class _DeveloperSettingsScreenState
                       ),
                       onChanged: (value) => ref
                           .read(
-                            devLegacyOnboardingCarouselEnabledProvider
-                                .notifier,
+                            devLegacyOnboardingCarouselEnabledProvider.notifier,
                           )
                           .set(value),
                     ),
@@ -371,7 +371,7 @@ class _DeveloperSettingsScreenState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Prevent overlapping tasks',
+                        'Check quick-create overlap feasibility',
                         style: theme.textBody.copyWith(
                           color: theme.colorTextPrimary,
                           fontWeight: FontWeight.w700,
@@ -379,9 +379,10 @@ class _DeveloperSettingsScreenState
                       ),
                       SizedBox(height: theme.spacingXs),
                       Text(
-                        'When on, scheduling or moving a task into a time '
-                        'slot that overlaps another task is blocked '
-                        'instead of shown side by side.',
+                        'When on, a pending quick-create task cannot move '
+                        'into an overlap that cannot be resolved within the '
+                        'day. Saving an overlap is allowed; resolve it from '
+                        'the timeline when needed.',
                         style: theme.textBody.copyWith(
                           color: theme.colorTextSecondary,
                         ),
@@ -601,8 +602,9 @@ class _DeveloperSettingsScreenState
                     for (final shape in PillShape.values) ...[
                       if (shape != PillShape.values.first)
                         SizedBox(width: theme.spacingSm),
-                      _DevChip(
-                        theme: theme,
+                      AppSelectableChip(
+                        variant: AppButtonVariant.primary,
+                        size: AppSelectableChipSize.regular,
                         label: switch (shape) {
                           PillShape.small => 'Small',
                           PillShape.rounded => 'Rounded',
@@ -658,8 +660,9 @@ class _DeveloperSettingsScreenState
                     for (final style in TagColorStyle.values) ...[
                       if (style != TagColorStyle.values.first)
                         SizedBox(width: theme.spacingSm),
-                      _DevChip(
-                        theme: theme,
+                      AppSelectableChip(
+                        variant: AppButtonVariant.primary,
+                        size: AppSelectableChipSize.regular,
                         label: switch (style) {
                           TagColorStyle.pill => 'Whole pill',
                           TagColorStyle.iconOnly => 'Icon only',
@@ -947,8 +950,9 @@ class _DeveloperSettingsScreenState
                 Row(
                   children: [
                     for (final layout in TimelineTaskTextLayout.values) ...[
-                      _DevChip(
-                        theme: theme,
+                      AppSelectableChip(
+                        variant: AppButtonVariant.primary,
+                        size: AppSelectableChipSize.regular,
                         label: switch (layout) {
                           TimelineTaskTextLayout.stacked => 'Stacked',
                           TimelineTaskTextLayout.inline => 'Inline',
@@ -1136,7 +1140,7 @@ class _DeveloperSettingsScreenState
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Tracked tab',
+                            'Patterns tab',
                             style: theme.textBody.copyWith(
                               color: theme.colorTextPrimary,
                               fontWeight: FontWeight.w700,
@@ -1144,7 +1148,7 @@ class _DeveloperSettingsScreenState
                           ),
                           SizedBox(height: theme.spacingXs),
                           Text(
-                            'When off, the bottom nav\'s "Tracked" tab is '
+                            'When off, the bottom nav\'s "Patterns" tab is '
                             'hidden. Debug builds only — '
                             'FeatureFlags.trackedBehaviorEnabled stays the '
                             'real on/off switch.',
@@ -1327,8 +1331,9 @@ class _PixelsPerMinuteChipRow extends StatelessWidget {
       runSpacing: theme.spacingSm,
       children: [
         for (final preset in _presets)
-          _DevChip(
-            theme: theme,
+          AppSelectableChip(
+            variant: AppButtonVariant.primary,
+            size: AppSelectableChipSize.regular,
             label: preset == preset.roundToDouble()
                 ? preset.toStringAsFixed(0)
                 : preset.toStringAsFixed(1),
@@ -1336,51 +1341,6 @@ class _PixelsPerMinuteChipRow extends StatelessWidget {
             onTap: () => onChanged(preset),
           ),
       ],
-    );
-  }
-}
-
-/// A selectable chip for the Developer page's dev-config pickers — same
-/// visual shape as `ThemeModeSelector`'s own `_ModeChip`, duplicated
-/// rather than shared since that one is private to its own file and this
-/// is the only other place a segmented chip choice is needed.
-class _DevChip extends StatelessWidget {
-  const _DevChip({
-    required this.theme,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final AmbleTheme theme;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: EdgeInsets.symmetric(
-          horizontal: theme.spacingMd,
-          vertical: theme.spacingSm,
-        ),
-        decoration: BoxDecoration(
-          color: selected ? theme.colorAccent : theme.colorSurfaceTimeline,
-          borderRadius: BorderRadius.circular(theme.radiusTaskPill),
-        ),
-        child: Text(
-          label,
-          style: theme.textBody.copyWith(
-            color: selected
-                ? theme.colorSurfacePrimary
-                : theme.colorTextSecondary,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
     );
   }
 }

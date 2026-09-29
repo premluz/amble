@@ -13,6 +13,7 @@ class _HoldResult {
   final started = <DateTime>[];
   final durationDeltas = <int>[];
   int releasedCount = 0;
+  int emptyTapCount = 0;
 }
 
 Future<_HoldResult> _pumpLayer(
@@ -54,6 +55,7 @@ Future<_HoldResult> _pumpLayer(
                       onHoldStarted: result.started.add,
                       onDurationDeltaChanged: result.durationDeltas.add,
                       onHoldReleased: () => result.releasedCount++,
+                      onEmptyTap: () => result.emptyTapCount++,
                     ),
                   ],
                 ),
@@ -71,6 +73,22 @@ void main() {
   // 09:00 -> 17:00, so the column is 8h * 60 * 1.5 = 720px tall.
   final rangeStart = DateTime(2026, 8, 31, 9);
   final rangeEnd = DateTime(2026, 8, 31, 17);
+
+  testWidgets('a short empty-space tap is observed without a tap recognizer', (
+    tester,
+  ) async {
+    final result = await _pumpLayer(
+      tester,
+      rangeStart: rangeStart,
+      rangeEnd: rangeEnd,
+    );
+
+    await tester.tap(find.byType(PlaceTaskLineLayer));
+
+    expect(result.emptyTapCount, 1);
+    expect(result.started, isEmpty);
+    expect(result.releasedCount, 0);
+  });
 
   testWidgets(
     'a long press fires onHoldStarted with the pressed position, snapped '
@@ -179,9 +197,9 @@ void main() {
     expect(result.releasedCount, 1);
   });
 
-  testWidgets(
-    'a quick drag scrolls instead of starting a hold',
-    (tester) async {
+  testWidgets('a quick drag scrolls instead of starting a hold', (
+    tester,
+  ) async {
       final result = await _pumpLayer(
         tester,
         rangeStart: rangeStart,
@@ -198,6 +216,5 @@ void main() {
       // Nothing started, and no release ever fired.
       expect(result.started, isEmpty);
       expect(result.releasedCount, 0);
-    },
-  );
+  });
 }

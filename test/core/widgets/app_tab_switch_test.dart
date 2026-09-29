@@ -75,11 +75,7 @@ void main() {
     final theme = AmbleTheme.light;
     await pump(
       tester,
-      AppTabSwitch<String>(
-        options: options,
-        value: 'all',
-        onChanged: (_) {},
-      ),
+      AppTabSwitch<String>(options: options, value: 'all', onChanged: (_) {}),
     );
 
     final selectedText = tester.widget<Text>(find.text('All'));
@@ -159,30 +155,23 @@ void main() {
       },
     );
 
-    testWidgets(
-      'a caller-supplied segmentKey resolves to that option\'s own '
-      'rendered segment',
-      (tester) async {
-        final key = GlobalKey();
-        await pump(
-          tester,
-          AppTabSwitch<String>(
-            options: [
-              AppOptionSwitchOption(
-                value: 'all',
-                label: 'All',
-                segmentKey: key,
-              ),
-              const AppOptionSwitchOption(value: 'crypto', label: 'Crypto'),
-            ],
-            value: 'all',
-            onChanged: (_) {},
-          ),
-        );
+    testWidgets('a caller-supplied segmentKey resolves to that option\'s own '
+        'rendered segment', (tester) async {
+      final key = GlobalKey();
+      await pump(
+        tester,
+        AppTabSwitch<String>(
+          options: [
+            AppOptionSwitchOption(value: 'all', label: 'All', segmentKey: key),
+            const AppOptionSwitchOption(value: 'crypto', label: 'Crypto'),
+          ],
+          value: 'all',
+          onChanged: (_) {},
+        ),
+      );
 
-        expect(key.currentContext, isNotNull);
-      },
-    );
+      expect(key.currentContext, isNotNull);
+    });
 
     testWidgets('isDropTarget paints a border over the segment', (
       tester,

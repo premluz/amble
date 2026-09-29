@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/widgets/app_page_toolbar.dart';
 import '../../core/widgets/app_context_dock.dart';
 import '../../shared/models/tracked_behavior_view_mode.dart';
 
@@ -22,7 +23,7 @@ extension TrackedBehaviorViewModeDisplay on TrackedBehaviorViewMode {
 
   IconData get icon => switch (this) {
     TrackedBehaviorViewMode.weekly => Icons.view_week_outlined,
-    TrackedBehaviorViewMode.monthly => Icons.calendar_view_month_outlined,
+    TrackedBehaviorViewMode.monthly => Icons.border_all,
     TrackedBehaviorViewMode.sixMonthly => Icons.grid_view_rounded,
   };
 
@@ -57,25 +58,34 @@ class AppTrackedViewDock extends StatelessWidget {
   final TrackedBehaviorViewMode activeMode;
   final ValueChanged<TrackedBehaviorViewMode> onSelectMode;
 
+  // Held in place while the page slides; its buttons submerge as the page
+  // leaves and spring back in, one after another, as it arrives — the
+  // same motion as the Day dock's.
   @override
-  Widget build(BuildContext context) => AppContextDock(
-    configuration: AppContextDockConfiguration(
-      stateId: 'tracked-view',
-      groups: [
-        AppContextGroup(
-          id: 'tracked-view-modes',
-          actions: [
-            for (final mode in TrackedBehaviorViewMode.values)
-              AppContextAction(
-                id: 'tracked-${mode.name}',
-                icon: mode.icon,
-                tooltip: mode.label,
-                selected: mode == activeMode,
-                onPressed: () => onSelectMode(mode),
-              ),
-          ],
+  Widget build(BuildContext context) => AppPageToolbarAnchor(
+    child: AppPageToolbarGate(
+      builder: (context, showing) => AppContextDock(
+        configuration: AppContextDockConfiguration(
+          stateId: 'tracked-view',
+          groups: showing
+              ? [
+                  AppContextGroup(
+                    id: 'tracked-view-modes',
+                    actions: [
+                      for (final mode in TrackedBehaviorViewMode.values)
+                        AppContextAction(
+                          id: 'tracked-${mode.name}',
+                          icon: mode.icon,
+                          tooltip: mode.label,
+                          selected: mode == activeMode,
+                          onPressed: () => onSelectMode(mode),
+                        ),
+                    ],
+                  ),
+                ]
+              : const [],
         ),
-      ],
+      ),
     ),
   );
 }

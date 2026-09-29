@@ -34,10 +34,14 @@ import '../../support/seeded_category_box.dart';
 /// `_canSave`'s validation already used). See task_detail_sheet.dart's own
 /// fix-site comment for the full explanation.
 
-class _NoopPreventOverlappingTasksSetting
+class _ConfiguredPreventOverlappingTasksSetting
     extends PreventOverlappingTasksSetting {
+  _ConfiguredPreventOverlappingTasksSetting(this.enabled);
+
+  final bool enabled;
+
   @override
-  bool build() => false;
+  bool build() => enabled;
 }
 
 // Same real-time-I/O-vs-pump-loop race documented in
@@ -60,6 +64,7 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
   required Box<Category> categoryBox,
   required Box<TrackedBehavior> trackedBehaviorBox,
   required Box<TaskTemplate> templateBox,
+  bool preventOverlappingTasks = false,
 }) async {
   tester.view.physicalSize = const Size(390, 844);
   tester.view.devicePixelRatio = 1.0;
@@ -83,7 +88,9 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
           FakeNotificationService(),
         ),
         preventOverlappingTasksSettingProvider.overrideWith(
-          () => _NoopPreventOverlappingTasksSetting(),
+          () => _ConfiguredPreventOverlappingTasksSetting(
+            preventOverlappingTasks,
+          ),
         ),
       ],
       child: MaterialApp(
@@ -177,6 +184,51 @@ void main() {
 
       final saved = box.get(task.id)!;
       expect(saved.scheduledAt, DateTime(2026, 9, 4, 14, 0));
+    },
+  );
+
+  testWidgets(
+    'editing a task into an occupied time saves without an overlap error',
+    (tester) async {
+      final task = Task.create(
+        title: 'Standup',
+        scheduledAt: DateTime(2026, 9, 4, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      );
+      final neighbor = Task.create(
+        title: 'Neighbor',
+        scheduledAt: DateTime(2026, 9, 4, 14),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.work,
+      );
+      await tester.runAsync(() async {
+        await box.put(task.id, task);
+        await box.put(neighbor.id, neighbor);
+      });
+
+      final navigatorKey = await _pumpHost(
+        tester,
+        box: box,
+        categoryBox: categoryBox,
+        trackedBehaviorBox: trackedBehaviorBox,
+        templateBox: templateBox,
+        preventOverlappingTasks: true,
+      );
+      showTaskDetailSheet(navigatorKey.currentContext!, task: task);
+      await tester.pumpAndSettle();
+
+      await _tapAndSettle(tester, find.text('Time'));
+      tester
+          .widget<AppWheelPicker>(find.byType(AppWheelPicker))
+          .onChanged(14, 0);
+      await tester.pumpAndSettle();
+      await _tapAndSettle(tester, find.text('Save'));
+
+      expect(box.values, hasLength(2));
+      expect(box.get(task.id)!.scheduledAt, DateTime(2026, 9, 4, 14));
+      expect(find.textContaining('overlaps another task'), findsNothing);
+      expect(find.text('Edit task'), findsNothing);
     },
   );
 

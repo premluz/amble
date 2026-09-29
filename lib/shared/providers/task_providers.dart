@@ -294,13 +294,16 @@ class TaskList extends _$TaskList {
   /// Throws [TrialExpiredException] — see [createTask]'s own doc comment;
   /// this is the other of the two methods that ever persist a brand-new
   /// Task, so it carries the identical gate.
-  Future<void> captureTask(String title) async {
+  /// Returns the created task, so a caller can follow it on screen (voice
+  /// mode flies each new task into its Inbox row).
+  Future<Task> captureTask(String title) async {
     if (!ref.read(canCreateTaskProvider)) {
       throw const TrialExpiredException();
     }
     final task = Task.captured(title: title);
     await ref.read(taskRepositoryProvider).saveTask(task);
     _refresh();
+    return task;
   }
 
   /// Moves an Inbox [task] onto the Timeline by giving it a schedule —

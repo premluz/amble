@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:amble/core/clock_provider.dart';
 import 'package:hive_ce/hive_ce.dart';
+import 'package:amble/core/tokens/component_tokens.dart';
+import 'package:amble/core/widgets/app_wheel_time_picker.dart';
+import 'package:amble/core/widgets/app_press_feedback.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/core/widgets/app_text_field.dart';
@@ -37,6 +41,36 @@ import 'package:amble/shared/models/zone.dart';
 
 import '../../support/fake_notification_service.dart';
 
+Future<void> _tapAndSettle(WidgetTester tester, Finder finder) async {
+  await tester.ensureVisible(finder);
+  await tester.pumpAndSettle();
+  await tester.runAsync(() async {
+    await tester.tap(finder);
+    await tester.pump();
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+  });
+}
+
+Future<void> _moveTaskStart(
+  WidgetTester tester, {
+  required String title,
+  required int hour,
+}) async {
+  final titleFinder = find.text(title);
+  await tester.ensureVisible(titleFinder);
+  await tester.tap(titleFinder);
+  await tester.pumpAndSettle();
+  await _tapAndSettle(tester, find.text('Time'));
+  tester.widget<AppWheelPicker>(find.byType(AppWheelPicker)).onChanged(hour, 0);
+  await tester.pumpAndSettle();
+}
+
+final _noon = () {
+  final now = DateTime.now();
+  return DateTime(now.year, now.month, now.day, 12);
+}();
+
 /// End-to-end coverage, through the REAL `TimelineScreen`, for the "quick
 /// task add" long-press interaction — originally requested as a plain tap
 /// ("tap on an empty space in timeline view... puts a wiggly gray default
@@ -62,6 +96,7 @@ import '../../support/fake_notification_service.dart';
 ///
 /// Mirrors `zone_move_end_to_end_test.dart`'s own full-`TimelineScreen`-
 /// pump harness (real Hive boxes, `ProviderScope` overrides).
+
 void main() {
   late Box<Task> taskBox;
   late Box<Category> categoryBox;
@@ -113,6 +148,10 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          // Pinned to midday so the Timeline opens scrolled into the
+          // fixtures' hours at any time of day (late runs used to open
+          // past them).
+          nowProvider.overrideWithValue(() => _noon),
           taskRepositoryProvider.overrideWithValue(HiveTaskRepository(taskBox)),
           categoryRepositoryProvider.overrideWithValue(
             HiveCategoryRepository(categoryBox),
@@ -179,10 +218,7 @@ void main() {
   /// with a bare tap now needs the whole hold-then-release sequence to
   /// reach the same end state (pill AND sheet both visible) — the release
   /// is what reveals `QuickCreateOverlay` now, not the hold itself.
-  Future<void> longPressAndReleaseAt(
-    WidgetTester tester,
-    Offset point,
-  ) async {
+  Future<void> longPressAndReleaseAt(WidgetTester tester, Offset point) async {
     final gesture = await tester.startGesture(point);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 600));
@@ -221,7 +257,7 @@ void main() {
       // Pre-filled with a real default rather than starting empty.
       // Two now: the sheet's own Name field AND the pill, which carries
       // its title since it became a real task-shaped capsule.
-      expect(find.text('New task'), findsNWidgets(2));
+      expect(find.text('New thing'), findsNWidgets(2));
     },
   );
 
@@ -391,6 +427,23 @@ void main() {
     }
   });
 
+  testWidgets('spatial Timeline reserves scroll clearance around the day', (
+    tester,
+  ) async {
+    await pumpTimeline(tester);
+
+    final scrollView = tester.widget<SingleChildScrollView>(
+      find.byType(SingleChildScrollView).first,
+    );
+    expect(
+      scrollView.padding,
+      EdgeInsets.only(
+        top: TimelineScrollTokens.topClearance,
+        bottom: TimelineScrollTokens.bottomClearance,
+      ),
+    );
+  });
+
   testWidgets('tapping Schedule creates the task directly, with no full '
       'sheet in between, and clears the placeholder pill', (tester) async {
     await pumpTimeline(tester);
@@ -423,7 +476,7 @@ void main() {
     // A real task exists, carrying the default name and the duration the
     // placeholder pill was created with.
     expect(taskBox.values, hasLength(1));
-    expect(taskBox.values.first.title, 'New task');
+    expect(taskBox.values.first.title, 'New thing');
 
     // The full sheet never appeared, and the placeholder is gone — the
     // real task pill replaces it.
@@ -432,14 +485,10 @@ void main() {
     expect(find.byType(PendingTaskPill), findsNothing);
   });
 
-  // The mini sheet must not become a way to create exactly the overlaps
-  // the "Prevent overlapping tasks" setting exists to prevent — the full
-  // sheet's own save enforces this, so the direct-schedule path has to
-  // as well.
-  testWidgets('Schedule refuses to create an overlapping task when the '
-      'prevent-overlap setting is on, and says so in the sheet', (
-    tester,
-  ) async {
+  // Overlapping schedules are allowed in forms. The setting only constrains
+  // whether a pending draft can be moved into an unresolvable slot.
+  testWidgets('Schedule creates an overlapping task when overlap checks are '
+      'enabled', (tester) async {
     await tester.runAsync(
       () => preferencesBox.put('preventOverlappingTasks', true),
     );
@@ -449,7 +498,9 @@ void main() {
     // overlapped the tap's actual landing spot by coincidence of when the
     // suite happened to run, and missed it (as a real, reproducible
     // failure, not flakiness) once `now` fell outside that window.
-    final now = DateTime.now();
+    // The Timeline's clock is pinned to midday (see pumpTimeline), so anchor
+    // to that same instant.
+    final now = _noon;
     final existing = Task.create(
       title: 'Existing task',
       scheduledAt: now.subtract(const Duration(hours: 5)),
@@ -461,20 +512,91 @@ void main() {
     await pumpTimeline(tester);
 
     await longPressAndReleaseAt(tester, const Offset(220, 400));
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(TimelineScreen)),
+    );
+    container.read(pendingTaskDraftProvider.notifier).updateDuration(90);
+    await tester.pump();
 
     await tester.runAsync(() async {
       await tester.tap(find.widgetWithText(ElevatedButton, 'Schedule'));
       await tester.pump();
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-      await tester.pump();
+      for (var i = 0; i < 20; i++) {
+        if (taskBox.values.length > 1) break;
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+      }
+      await Future<void>.delayed(Duration.zero);
     });
     await tester.pump();
 
-    // Still just the one pre-existing task — nothing was created.
-    expect(taskBox.values, hasLength(1));
-    expect(find.textContaining('overlaps another task'), findsOneWidget);
-    expect(find.byType(QuickCreateOverlay), findsOneWidget);
+    expect(taskBox.values, hasLength(2));
+    final created = taskBox.values.singleWhere(
+      (task) => task.title == 'New thing',
+    );
+    expect(created.scheduledAt, isNotNull);
+    expect(created.durationMinutes, 90);
+    expect(
+      created.scheduledAt!.isBefore(
+        existing.scheduledAt!.add(Duration(minutes: existing.durationMinutes!)),
+      ),
+      isTrue,
+    );
+    expect(
+      created.scheduledAt!
+          .add(Duration(minutes: created.durationMinutes!))
+          .isAfter(existing.scheduledAt!),
+      isTrue,
+    );
+    expect(find.textContaining('overlaps another task'), findsNothing);
+    expect(find.byType(QuickCreateOverlay), findsNothing);
   });
+
+  testWidgets(
+    'editing a task into an occupied time saves, scrolls to it, and opens '
+    'the overlap resolution menu',
+    (tester) async {
+      await tester.runAsync(
+        () => preferencesBox.put('preventOverlappingTasks', true),
+      );
+      final now = DateTime.now();
+      final firstStart = DateTime(now.year, now.month, now.day, 9);
+      final edited = Task.create(
+        title: 'Edited task',
+        scheduledAt: firstStart,
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.general,
+      );
+      final neighbor = Task.create(
+        title: 'Neighbor task',
+        scheduledAt: firstStart.add(const Duration(hours: 1)),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.general,
+      );
+      await tester.runAsync(() async {
+        await taskBox.put(edited.id, edited);
+        await taskBox.put(neighbor.id, neighbor);
+      });
+      await pumpTimeline(tester);
+
+      await _moveTaskStart(tester, title: 'Edited task', hour: 10);
+      final saveAction = find.ancestor(
+        of: find.text('Save'),
+        matching: find.byType(AppPressFeedback),
+      );
+      await _tapAndSettle(tester, saveAction);
+
+      expect(find.text('Edit task'), findsNothing);
+      expect(find.textContaining('overlaps another task'), findsNothing);
+      expect(find.text('Overlap'), findsOneWidget);
+      expect(find.text('Push all'), findsOneWidget);
+      expect(find.text('Trim'), findsOneWidget);
+      expect(
+        taskBox.get(edited.id)!.scheduledAt,
+        firstStart.add(const Duration(hours: 1)),
+      );
+    },
+  );
 
   testWidgets(
     'tapping the small sheet\'s own X button closes it and clears the '
@@ -705,18 +827,18 @@ void main() {
       );
       expect(promotedField.autofocus, isTrue);
 
-      // The "New task" default does NOT come across — reported directly:
+      // The "New thing" default does NOT come across — reported directly:
       // "New task name input should be reset to nothing, clears, so user
       // can type in from scratch." The mini sheet clears its own field on
       // the tap, and the empty string is what seeds the full sheet.
       expect(promotedField.controller!.text, isEmpty);
-      // Scoped to the sheet: the PILL still shows its own "New task"
+      // Scoped to the sheet: the PILL still shows its own "New thing"
       // label (it has no other name to show), so an unscoped
       // findsNothing would fail for the wrong reason.
       expect(
         find.descendant(
           of: find.byType(QuickCreateOverlay),
-          matching: find.text('New task'),
+          matching: find.text('New thing'),
         ),
         findsNothing,
       );
@@ -804,7 +926,7 @@ void main() {
   // start/end time boxes it used to be. Those blue labels belonged to the
   // superseded design and are gone (git holds them).
   testWidgets('a freshly-held draft renders as a task-shaped pill carrying '
-      'the "New task" name, with no category emoji', (tester) async {
+      'the "New thing" name, with no category emoji', (tester) async {
     await pumpTimeline(tester);
 
     await longPressAndReleaseAt(tester, const Offset(220, 400));
@@ -815,7 +937,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byType(PendingTaskPill),
-        matching: find.text('New task'),
+        matching: find.text('New thing'),
       ),
       findsOneWidget,
     );
@@ -868,7 +990,7 @@ void main() {
 
       final titleOnPill = find.descendant(
         of: find.byType(PendingTaskPill),
-        matching: find.text('New task'),
+        matching: find.text('New thing'),
       );
       expect(titleOnPill, findsOneWidget);
       expect(
@@ -901,7 +1023,7 @@ void main() {
           .getTopLeft(
             find.descendant(
               of: find.byType(PendingTaskPill),
-              matching: find.text('New task'),
+              matching: find.text('New thing'),
             ),
           )
           .dx;
@@ -1211,7 +1333,7 @@ void main() {
         expect(
           find.descendant(
             of: find.byType(QuickCreateOverlay),
-            matching: find.text('New task'),
+            matching: find.text('New thing'),
           ),
           findsNothing,
         );
@@ -1338,7 +1460,7 @@ void main() {
       expect(
         find.descendant(
           of: find.byType(QuickCreateOverlay),
-          matching: find.text('New task'),
+          matching: find.text('New thing'),
         ),
         findsOneWidget,
       );

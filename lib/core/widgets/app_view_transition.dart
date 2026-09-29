@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../tokens/motion_primitives.dart';
 import '../tokens/semantic_theme.dart';
+import '../tokens/follow_through_spec.dart';
+import 'app_context_menu.dart';
+import 'app_follow_through.dart';
 import 'app_view_transition_motion.dart';
 import 'app_view_transition_slot.dart';
 
-/// Opt-in, readiness-aware transitions retain keyed live slots and sample
-/// their current positions on interruption instead of building snapshots.
+/// Readiness-aware transitions sample live slot positions on interruption.
 class AppViewTransition extends StatefulWidget {
   const AppViewTransition({
     super.key,
@@ -39,19 +41,27 @@ class _AppViewTransitionState extends State<AppViewTransition>
   bool _waitingForLayout = false;
   bool _layoutCallbackScheduled = false;
 
+  /// Bumped on every view change, so followers place themselves once per
+  /// slide ([AppFollowThroughScope.generation]).
+  int _generation = 0;
+
   Duration get _duration =>
       widget.duration ??
-      Duration(
-        milliseconds: widget.slide
-            ? MotionPrimitives.durationFastMs
-            : MotionPrimitives.durationViewCrossfadeMs,
-      );
+      (widget.slide
+          // The page slides over the first part; its items follow through.
+          ? FollowThroughSpec.pages.duration
+          : const Duration(
+              milliseconds: MotionPrimitives.durationViewCrossfadeMs,
+            ));
 
-  double get _motionProgress =>
-      Theme.of(context)
-          .extension<AmbleTheme>()!
-          .curveDecelerate
-          .transform(_controller.value);
+  double get _motionProgress {
+    final t = _controller.value;
+    return Theme.of(context).extension<AmbleTheme>()!.curveDecelerate.transform(
+      widget.slide
+          ? const Interval(0, FollowThroughSpec.pagesPageShare).transform(t)
+          : t,
+    );
+  }
 
   @override
   void initState() {
@@ -78,7 +88,8 @@ class _AppViewTransitionState extends State<AppViewTransition>
       }
       return;
     }
-
+    AppContextMenu.dismissOpenMenusAfterFrame();
+    _generation++;
     final current = _currentWeights();
     _sourceTranslations = AppViewTransitionMotion.sample(
       slide: oldWidget.slide,
@@ -155,6 +166,30 @@ class _AppViewTransitionState extends State<AppViewTransition>
   @override
   Widget build(BuildContext context) {
     if (_waitingForLayout) _scheduleLayoutReadiness();
+    return LayoutBuilder(
+      builder: (context, box) => _slots(box.hasBoundedWidth ? box.maxWidth : 0),
+    );
+  }
+
+  Widget _followed(MapEntry<String, Widget> entry, double width) {
+    final (from, to) = AppViewTransitionMotion.endpoints(
+      id: entry.key,
+      activeViewId: _activeViewId,
+      forward: widget.forward,
+      sourceTranslations: _sourceTranslations,
+    );
+    return AppFollowThroughScope(
+      timeline: _controller,
+      from: from,
+      to: to,
+      pageWidth: width,
+      curve: Theme.of(context).extension<AmbleTheme>()!.curveDecelerate,
+      generation: _generation,
+      child: entry.value,
+    );
+  }
+
+  Widget _slots(double width) {
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, _) {
@@ -163,7 +198,14 @@ class _AppViewTransitionState extends State<AppViewTransition>
         return Stack(
           fit: StackFit.passthrough,
           children: [
-            for (final entry in _views.entries)
+            // The arriving page paints underneath and the page being left
+            // on top, so the leaving page's items, trailing back toward the
+            // arriving side, stay visible whichever way the pages travel.
+            // Keyed slots keep their state when reordered.
+            for (final entry in [
+              ..._views.entries.where((e) => e.key == _activeViewId),
+              ..._views.entries.where((e) => e.key != _activeViewId),
+            ])
               AppViewTransitionSlot(
                 key: ValueKey('view-slot-${entry.key}'),
                 opacity: entry.key == _activeViewId && !_waitingForLayout
@@ -190,7 +232,7 @@ class _AppViewTransitionState extends State<AppViewTransition>
                 participating:
                     entry.key == _activeViewId ||
                     weights.containsKey(entry.key),
-                child: entry.value,
+                child: widget.slide ? _followed(entry, width) : entry.value,
               ),
           ],
         );

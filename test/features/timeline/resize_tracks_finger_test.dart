@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:amble/core/clock_provider.dart';
 import 'package:hive_ce/hive_ce.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/hive_registrar.g.dart';
@@ -28,6 +29,11 @@ import 'package:amble/shared/repositories/hive_zone_repository.dart';
 
 import '../../support/fake_notification_service.dart';
 import '../../support/seeded_category_box.dart';
+
+final _noon = () {
+  final now = DateTime.now();
+  return DateTime(now.year, now.month, now.day, 12);
+}();
 
 /// A resize drag must track the finger 1:1 — reported directly:
 /// "when resizing the size of pill should follow (resize top does it) but
@@ -89,6 +95,8 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          // Pinned to midday: late-evening runs pushed resizes past midnight.
+          nowProvider.overrideWithValue(() => _noon),
           taskRepositoryProvider.overrideWithValue(HiveTaskRepository(taskBox)),
           categoryRepositoryProvider.overrideWithValue(
             HiveCategoryRepository(categoryBox),
@@ -121,7 +129,7 @@ void main() {
   // Anchored off `now` for the same reason every other file here does —
   // a fixed clock hour only stays on-screen by coincidence of run time.
   Task makeTask(String title, {int minutes = 120}) {
-    final now = DateTime.now();
+    final now = _noon;
     final minutesSinceMidnight = (now.hour * 60 + now.minute).clamp(
       60,
       24 * 60 - 1 - minutes,

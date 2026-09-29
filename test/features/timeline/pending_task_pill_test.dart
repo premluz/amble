@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:amble/core/tokens/liquid_morph_spec.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
+import 'package:amble/core/widgets/app_liquid_morph.dart';
 import 'package:amble/features/timeline/edit_mode_wiggle.dart';
 import 'package:amble/features/timeline/pending_task_pill.dart';
 import 'package:amble/features/timeline/resize_handle.dart';
@@ -68,6 +70,35 @@ void main() {
     // the block's own.
     expect(size.height, 80);
     expect(size.width, greaterThan(40));
+  });
+
+  testWidgets('enters as the dot at the top of the rail and stretches into '
+      'the full pill (dot to line)', (tester) async {
+    await pump(tester);
+    final morph = tester.widget<AppLiquidMorph>(find.byType(AppLiquidMorph));
+    expect(morph.spec, LiquidMorphSpec.draftPill);
+
+    RRect clip() => tester
+        .widget<ClipRRect>(
+          find
+              .descendant(
+                of: find.byType(AppLiquidMorph),
+                matching: find.byType(ClipRRect),
+              )
+              .first, // the morph's own; the glass below clips too
+        )
+        .clipper!
+        .getClip(const Size(40, 80));
+
+    // First frame: a rail-wide circle sitting where a task's badge would.
+    expect(clip().outerRect, const Rect.fromLTWH(0, 0, 40, 40));
+    expect(clip().tlRadiusX, 20);
+
+    // Bounded, not pumpAndSettle: the draft's wiggle never settles.
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(clip().outerRect, const Rect.fromLTWH(0, 0, 40, 80));
   });
 
   testWidgets('wraps its body in EditModeWiggle, enabled', (tester) async {
@@ -176,7 +207,7 @@ void main() {
         'same way a real task measures its own', (tester) async {
       await pump(tester);
 
-      final titleLeft = tester.getTopLeft(find.text('New task')).dx;
+      final titleLeft = tester.getTopLeft(find.text('New thing')).dx;
       // left: 56 and textColumnLeft: 120 in this file's own harness.
       //
       // The expected value is `left + textColumnLeft`, because
@@ -200,7 +231,7 @@ void main() {
       // one would rotate along with the rail.
       expect(
         find.ancestor(
-          of: find.text('New task'),
+          of: find.text('New thing'),
           matching: find.byType(EditModeWiggle),
         ),
         findsNothing,

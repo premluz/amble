@@ -7,6 +7,7 @@ import '../../shared/models/task.dart';
 import '../../shared/models/task_status.dart';
 import '../../shared/services/overlap_cluster.dart';
 import 'completion_checkbox.dart';
+import 'task_state_style.dart';
 import 'duration_label.dart';
 import 'external_event_block.dart' show showExternalCalendarEventInfo;
 
@@ -254,6 +255,13 @@ class _ClusterTaskRow extends StatelessWidget {
   }
 
   Widget _rowContent(BuildContext context, TimeOfDay start, TimeOfDay end) {
+    // Same state look as every other task row (done, important); this row
+    // carries no label colour, so a done strike stays neutral.
+    final titleStyle = TaskStateStyle.resolve(
+      theme: theme,
+      task: task,
+      labelColor: theme.colorTextSecondary,
+    ).title(titleTextStyle.copyWith(fontWeight: FontWeight.w700));
     // `alwaysShowTime` (List mode only — see its own doc comment) is what
     // distinguishes this row's two real callers: Task view's own cluster
     // row (alwaysShowTime: false), where `durationVisible` alone still
@@ -317,10 +325,7 @@ class _ClusterTaskRow extends StatelessWidget {
                         ),
                       TextSpan(
                         text: task.title,
-                        style: titleTextStyle.copyWith(
-                          color: theme.colorTextPrimary,
-                          fontWeight: FontWeight.w700,
-                        ),
+                        style: titleStyle,
                       ),
                     ],
                   ),
@@ -339,10 +344,7 @@ class _ClusterTaskRow extends StatelessWidget {
                   Flexible(
                     child: Text(
                       task.title,
-                      style: titleTextStyle.copyWith(
-                        color: theme.colorTextPrimary,
-                        fontWeight: FontWeight.w700,
-                      ),
+                      style: titleStyle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),

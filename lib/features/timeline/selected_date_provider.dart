@@ -1,5 +1,7 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../core/clock_provider.dart';
+
 part 'selected_date_provider.g.dart';
 
 DateTime _dateOnly(DateTime dateTime) =>
@@ -11,9 +13,9 @@ DateTime _dateOnly(DateTime dateTime) =>
 @riverpod
 class SelectedDate extends _$SelectedDate {
   @override
-  DateTime build() => _dateOnly(DateTime.now());
+  DateTime build() => _dateOnly(ref.read(nowProvider)());
 
-  void goToToday() => state = _dateOnly(DateTime.now());
+  void goToToday() => state = _dateOnly(ref.read(nowProvider)());
 
   void goToPreviousDay() => state = state.subtract(const Duration(days: 1));
 

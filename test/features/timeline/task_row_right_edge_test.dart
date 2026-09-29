@@ -94,28 +94,28 @@ void main() {
       expect(
         source.contains('right: textColumnRightInset,'),
         isTrue,
-        reason: 'the overlap-cluster row should use the same page-absolute '
+        reason:
+            'the overlap-cluster row should use the same page-absolute '
             'inset',
       );
     },
   );
 
-  test(
-    "_DraggableTaskBlock's own nested text row uses a hardcoded 0, not "
-    'textColumnRightInset',
-    () {
-      // That text row sits inside a box already positioned at
-      // `right: widget.rightInset` (== rightEdgeInset) — a SECOND inset
-      // here would stack on top of it. See this file's own class doc
-      // comment for the exact bug this guards against.
-      expect(
-        source.contains('right: 0,\n            child: TaskCapsuleTextRow('),
-        isTrue,
-        reason:
-            'the nested text row must use a bare 0, not widget.textColumnRight',
-      );
-    },
-  );
+  test("_DraggableTaskBlock's own nested text row uses a hardcoded 0, not "
+      'textColumnRightInset', () {
+    // That text row sits inside a box already positioned at
+    // `right: widget.rightInset` (== rightEdgeInset) — a SECOND inset
+    // here would stack on top of it. See this file's own class doc
+    // comment for the exact bug this guards against.
+    expect(
+      // Whitespace-insensitive: formatting (and wrappers added around
+      // the block) change the indentation, not what is being guarded.
+      RegExp(r'right:\s*0,\s*child:\s*TaskCapsuleTextRow\(').hasMatch(source),
+      isTrue,
+      reason:
+          'the nested text row must use a bare 0, not widget.textColumnRight',
+    );
+  });
 
   test('pill positioning and the drag-lift pane still use the wider rightEdgeInset', () {
     // These were never part of either report — narrowing the checkbox

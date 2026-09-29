@@ -133,8 +133,8 @@ class _ZoneFormScreenState extends ConsumerState<_ZoneFormScreen> {
   late bool _notificationsEnabled;
 
   /// Set only when Save was blocked by a real overlap against another
-  /// zone — cleared on every field change, matching how the task-creation
-  /// flow's own `_overlapError` behaves (`task_detail_sheet.dart`).
+  /// zone — cleared on every field change. Task schedule forms permit
+  /// overlaps and do not use this zone-specific validation.
   String? _overlapError;
   bool _isSaving = false;
 

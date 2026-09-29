@@ -1,4 +1,4 @@
-# Rios signature motion · v16
+# Rios signature motion · v19
 
 A configurable JavaScript/SVG motion study for the Rios mark. The three colored lanes move as a coordinated river, gather into the logo, reveal the wordmark, and flow out again. The studio runs locally in a browser and exports settings plus SVG and PNG still frames.
 
@@ -14,9 +14,9 @@ The preview stays in view while the settings rail scrolls independently. Use **F
 - **Wordmark font weight** adjusts the SVG font weight from 400 to 900.
 - **Wordmark letter spacing** adjusts the distance between letters.
 - **Logo size** drives formation and the final lockup together. It begins scaling as the mark forms and reaches the chosen size as formation finishes, so the assembled logo does not need a second resize.
-- **Wordmark font** offers system font stacks: System UI, Arial, Helvetica Neue, Georgia, Trebuchet MS, and Courier New. The chosen font is used in the studio, JSON settings, and SVG export.
+- **Wordmark font** defaults to DS Sans, with System UI, Arial, Helvetica Neue, Georgia, Trebuchet MS, and Courier New as alternatives. System UI is the operating system default, not DS Sans. The chosen font is used in the studio, JSON settings, and SVG export.
 
-The wordmark is live SVG text using Arial/Helvetica. The reconstructed Rios glyph spacing is tuned for the letters R-i-o-s.
+The wordmark is live SVG text. **DS Sans** is the default brand font; the SVG references `DS Sans` with Arial/Helvetica fallback. The package does not include a DS Sans font file, so install or load the font in the host app for exact rendering. The browser shapes the wordmark as one continuous SVG text run, preserving native kerning while revealing each character with a staggered fade.
 
 ## Appearance
 
@@ -26,7 +26,7 @@ Choose **Dark**, **Light**, or **Custom**. Dark uses a charcoal background and w
 
 1. Three lanes with distinct lengths travel across the frame on related wave paths. Tapered dots follow each lane.
 2. A second river pass approaches the center. Formation begins before arrival according to **Formation lead-in**; each lane settles and scales down with its own stagger.
-3. Right-side bubbles emit only while the mark settles and the wordmark appears. Their lifetime, emission, spacing, travel, spread, and randomness are configurable.
+3. Right-side bubbles emit while the mark settles and the wordmark appears. They render above the wordmark, with configurable lifetime, emission, spacing, travel, spread, and randomness.
 4. The letters reveal with a small stagger and a longer fade. The assembled logo can then scale as one lockup.
 5. On flow-out, letters fade in reverse order while each lane continues its wave motion and leaves the frame. Text exit timing can be offset from the waves.
 
@@ -55,7 +55,7 @@ Timing controls are score-relative. `duration` scales the full score. `frame().t
 | Letter fade | 0.8s | 0.25–1.2s |
 | Right-side dots | 0.65 | 0–1 |
 | Tail follow delay | 0.3s | 0–1.2s |
-| Entrance waves / screen | 2.5 | 1–6 |
+| Entrance waves / screen | 1.7 | 1–6 |
 | Exit waves / screen | 3.5 | 1–6 |
 | Exit bend depth | 7px | 4–70px |
 | Tail emission frequency | 6/s | 0–6/s; 0 uses fixed dots |
@@ -68,15 +68,15 @@ Timing controls are score-relative. `duration` scales the full score. `frame().t
 | Settling bubbles: lifetime | 3s | 0.5–3s |
 | Bubbles: emission window | 0.7s | 0.2–3s |
 | Bubbles: emission rate | 6/s | 1–12/s |
-| Bubbles: lane stagger | 0.6 | 0–0.6 |
+| Bubbles: lane stagger | 0.18 | 0–0.6 |
 | Bubbles: randomness | 1 | 0–1 |
-| Bubble travel distance | 135px | 25–220px |
-| Bubble dispersion | 95px | 0–160px |
-| Mark to wordmark gap | 26px | 0–80px |
-| Wordmark font weight | 600 | 400–900 |
-| Wordmark letter spacing | 0px | −2–10px |
-| Logo size (formation and lockup) | 1× | 0.6–1.5× |
-| Wordmark font | Arial | 6 system font stacks |
+| Bubble travel distance | 175px | 25–220px |
+| Bubble dispersion | 55px | 0–160px |
+| Mark to wordmark gap | 15px | 0–80px |
+| Wordmark font weight | 800 | 400–900 |
+| Wordmark letter spacing | −2px | −2–10px |
+| Logo size (formation and lockup) | 1.5× | 0.6–1.5× |
+| Wordmark font | DS Sans | 6 system font alternatives |
 
 Default lane colors are violet `#9950E9`, periwinkle `#91A5FF`, and teal `#19A59F`. Dark mode uses background `#191919` and text `#F3F0EB`; light mode uses background `#F3F1EF` and text `#242321`.
 
@@ -107,3 +107,31 @@ API: `play()`, `pause()`, `replay()`, `seek(seconds)`, `configure(options)`, `sv
 The studio exports JSON configuration, editable SVG still frames, and 1920×1080 PNG still frames. Load a saved JSON object with `configure(parsedSettings)`. SVG text remains editable; outline it in a design tool if a fixed vector wordmark is needed. These are still-frame exports, not animated SVG, video, or Lottie.
 
 Run `node verify-v4.cjs` for geometry, timing, theme, and logo control checks. Files include the engine, studio UI and styles, standalone preview, documentation, and verification script.
+
+
+## Delete puff study
+
+Switch between **Logo flow** and **Delete puff** using the tabs. Each studio remembers its settings and playhead for the current browser session. `puff.html` is the independent puff studio; `puff-standalone.html` bundles its engine, styles, and controls into one file. `standalone.html` is the matching logo studio; keep both files together to switch between their tabs.
+
+The puff follows the reference's rounded cloud ring: the example object contracts, clustered smoke expands around it, and the clusters drift apart, shrink, and fade. Click the preview or Replay to trigger it. The default duration is 1.25 seconds. Controls cover cloud count, spread, upward drift, cloud size, curl, emission stagger, fade start, effect scale, variation seed, and five colors. Show demo object and Transparent background are separate toggles. SVG and PNG exports are still frames.
+
+The reusable engine has no dependency on the logo engine or studio. To place it over an object in your app:
+
+```html
+<div id="delete-effect"></div>
+<script src="delete-puff.js"></script>
+<script>
+  const effect = new DeletePuff(document.querySelector('#delete-effect'), {
+    duration: 1.25,
+    showObject: false,
+    transparent: true,
+    spread: 86
+  });
+  // Position the overlay so its center matches your object's center.
+  // Your application handles removal of its own object.
+  effect.oncomplete = () => effect.destroy();
+  effect.play();
+</script>
+```
+
+`DeletePuffTools.frame(seconds, options)` samples deterministic geometry; `svgAt(seconds, options)` renders it. Controller methods: `configure`, `seek`, `play`, `pause`, `replay`, `svg`, `destroy`. Hooks: `onupdate`, `onplaystate`, `oncomplete`. The engine does not autoplay. Honor reduced-motion preferences in the host application; the studio starts at rest.

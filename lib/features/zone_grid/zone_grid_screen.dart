@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/tokens/component_tokens.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_context_dock.dart';
+import '../../core/widgets/app_delete_puff.dart';
 import '../../core/widgets/app_shell_chrome.dart';
 import '../../core/widgets/app_floating_create_button.dart';
 import '../../core/widgets/app_layout_reveal.dart';
@@ -31,6 +32,7 @@ import '../task_detail/multi_task_edit_sheet.dart';
 import '../task_detail/task_detail_sheet.dart';
 import '../timeline/edit_mode_provider.dart';
 import '../timeline/edit_selection_provider.dart';
+import '../timeline/armed_edit_task_provider.dart';
 import '../timeline/pending_task_draft_provider.dart';
 import '../timeline/task_edge_time_label.dart';
 import '../timeline/timeline_pinch_zoom.dart';
@@ -179,6 +181,9 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   NewZoneTarget? _pending;
   Zone? _fillSource;
   double _fillDx = 0;
+  double _fillDragDx = 0;
+  double? _fillPointerDownX;
+  _MarqueeEdge? _fillEdge;
 
   /// Live while a drag that STARTED on an unselected zone is sweeping
   /// zones into the selection — requested directly, twice: "when tap and
@@ -205,6 +210,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   Offset? _sweepCurrent;
 
   ZoneGroupGestureKind? _moveKind;
+  String? _liftedZoneId;
   double _moveDy = 0;
   double _moveDx = 0;
 
@@ -263,10 +269,18 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   }
 
   void _switchTab(ZoneGridTab tab) {
+    if (_tab == tab) return;
+    _clearTimelineSelections();
     setState(() => _tab = tab);
     // Same reasoning as `initState` above — this runs from an event
     // handler, not build, so no post-frame deferral is needed here.
     _syncEditMode();
+  }
+
+  void _clearTimelineSelections() {
+    ref.read(editSelectionProvider.notifier).clear();
+    ref.read(zoneEditSelectionProvider.notifier).clear();
+    ref.read(armedEditTaskProvider.notifier).clear();
   }
 
   @override
@@ -298,6 +312,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   /// as the backstop for the paths that never touch this button (system
   /// back, the iOS swipe gesture).
   void _close() {
+    _clearTimelineSelections();
     if (ref.read(editModeEnabledProvider)) {
       ref.read(editModeEnabledProvider.notifier).toggle();
     }
@@ -315,10 +330,8 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
             AppContextAction(
               id: 'edit-back',
               icon: Icons.arrow_back_rounded,
-              tooltip: selectedIds.isEmpty ? 'Close' : 'Clear selection',
-              onPressed: selectedIds.isEmpty
-                  ? _close
-                  : () => ref.read(editSelectionProvider.notifier).clear(),
+              tooltip: 'Close',
+              onPressed: _close,
             ),
           ],
         ),
@@ -326,6 +339,14 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
           AppContextGroup(
             id: 'edit-task-selection-actions',
             actions: [
+              AppContextAction(
+                id: 'edit-task-deselect',
+                icon: Icons.deselect_rounded,
+                tooltip: 'Clear selection',
+                badgeCount: selectedIds.length > 1 ? selectedIds.length : null,
+                onPressed: () =>
+                    ref.read(editSelectionProvider.notifier).clear(),
+              ),
               AppContextAction(
                 id: 'edit-task-edit',
                 icon: Icons.edit_outlined,
@@ -338,6 +359,10 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                 tooltip: 'Remove selected',
                 destructive: true,
                 onPressed: _removeSelectedTasks,
+                onPressedWithContext: (buttonContext) {
+                  AppDeletePuff.show(context: buttonContext);
+                  unawaited(_removeSelectedTasks());
+                },
               ),
             ],
           ),
@@ -361,85 +386,89 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
     return AppContextDock(configuration: configuration);
   }
 
-  Widget _zoneContextDock(Set<String> selected, List<Zone> zones) =>
-      _claimOrBuildDock(
-        ZoneGridTab.zones,
-        AppContextDockConfiguration(
-          // Standalone screens also remove their local dock while naming.
-          // Shell-hosted Edit additionally suppresses chrome without an exit
-          // fade, so outgoing actions cannot paint above the inline sheet.
-          stateId: _pending != null
-              ? 'edit-zone-naming'
-              : selected.isEmpty
-              ? 'edit-zone'
-              : 'edit-zone-selection',
-          groups: _pending != null
-              ? const []
-              : [
-                  AppContextGroup(
-                    id: 'context-navigation',
-                    actions: [
-                      // Always "Close zones," never repurposed for
-                      // clearing selection — confirmed directly: "Back
-                      // actually is the only one that is active and
-                      // exits edit mode[,] while deselect deselects
-                      // only." Deselection now has its own dedicated
-                      // button (below) and its own existing "tap empty
-                      // timeline space" gesture; this one has a single,
-                      // unambiguous meaning regardless of selection state.
-                      AppContextAction(
-                        id: 'edit-back',
-                        icon: Icons.arrow_back_rounded,
-                        tooltip: 'Close zones',
-                        onPressed: _close,
-                      ),
-                    ],
+  Widget _zoneContextDock(
+    Set<String> selected,
+    List<Zone> zones,
+  ) => _claimOrBuildDock(
+    ZoneGridTab.zones,
+    AppContextDockConfiguration(
+      // Standalone screens also remove their local dock while naming.
+      // Shell-hosted Edit additionally suppresses chrome without an exit
+      // fade, so outgoing actions cannot paint above the inline sheet.
+      stateId: _pending != null
+          ? 'edit-zone-naming'
+          : selected.isEmpty
+          ? 'edit-zone'
+          : 'edit-zone-selection',
+      groups: _pending != null
+          ? const []
+          : [
+              AppContextGroup(
+                id: 'context-navigation',
+                actions: [
+                  // Always "Close zones," never repurposed for
+                  // clearing selection — confirmed directly: "Back
+                  // actually is the only one that is active and
+                  // exits edit mode[,] while deselect deselects
+                  // only." Deselection now has its own dedicated
+                  // button (below) and its own existing "tap empty
+                  // timeline space" gesture; this one has a single,
+                  // unambiguous meaning regardless of selection state.
+                  AppContextAction(
+                    id: 'edit-back',
+                    icon: Icons.arrow_back_rounded,
+                    tooltip: 'Close zones',
+                    onPressed: _close,
                   ),
-                  if (selected.isNotEmpty)
-                    AppContextGroup(
-                      id: 'edit-zone-selection-actions',
-                      actions: [
-                        // Requested directly, replacing the top-of-screen
-                        // "N selected" text label entirely: a dedicated
-                        // deselect button carrying the count as a small
-                        // corner badge — icon alone at exactly 1 selected,
-                        // badge only appears once there's more than one
-                        // ("if 1 selected icon only if more than one icon
-                        // and small circular badge with number").
-                        AppContextAction(
-                          id: 'edit-zone-deselect',
-                          icon: Icons.deselect_rounded,
-                          tooltip: 'Clear selection',
-                          badgeCount: selected.length > 1
-                              ? selected.length
-                              : null,
-                          onPressed: () => ref
-                              .read(zoneEditSelectionProvider.notifier)
-                              .clear(),
-                        ),
-                        AppContextAction(
-                          id: 'edit-zone-edit',
-                          icon: Icons.edit_outlined,
-                          tooltip: 'Edit placement',
-                          onPressed: _editSelectedZones,
-                        ),
-                        AppContextAction(
-                          id: 'edit-zone-remove',
-                          icon: Icons.delete_outline_rounded,
-                          tooltip: 'Remove placements',
-                          destructive: true,
-                          onPressed: _removeSelectedZones,
-                        ),
-                      ],
-                    ),
                 ],
-        ),
-      );
+              ),
+              if (selected.isNotEmpty)
+                AppContextGroup(
+                  id: 'edit-zone-selection-actions',
+                  actions: [
+                    // Requested directly, replacing the top-of-screen
+                    // "N selected" text label entirely: a dedicated
+                    // deselect button carrying the count as a small
+                    // corner badge — icon alone at exactly 1 selected,
+                    // badge only appears once there's more than one
+                    // ("if 1 selected icon only if more than one icon
+                    // and small circular badge with number").
+                    AppContextAction(
+                      id: 'edit-zone-deselect',
+                      icon: Icons.deselect_rounded,
+                      tooltip: 'Clear selection',
+                      badgeCount: selected.length > 1 ? selected.length : null,
+                      onPressed: () =>
+                          ref.read(zoneEditSelectionProvider.notifier).clear(),
+                    ),
+                    AppContextAction(
+                      id: 'edit-zone-edit',
+                      icon: Icons.edit_outlined,
+                      tooltip: 'Edit placement',
+                      onPressed: _editSelectedZones,
+                    ),
+                    AppContextAction(
+                      id: 'edit-zone-remove',
+                      icon: Icons.delete_outline_rounded,
+                      tooltip: 'Remove placements',
+                      destructive: true,
+                      onPressed: _removeSelectedZones,
+                      onPressedWithContext: (buttonContext) {
+                        AppDeletePuff.show(context: buttonContext);
+                        unawaited(_removeSelectedZones());
+                      },
+                    ),
+                  ],
+                ),
+            ],
+    ),
+  );
 
   void _editSelectedZones() {
     // Dock actions outlive selection rebuilds; resolve IDs when invoked.
     final selected = Set<String>.of(ref.read(zoneEditSelectionProvider));
     if (selected.isEmpty) return;
+    _clearTimelineSelections();
     if (selected.length == 1) {
       final zone = ref
           .read(zoneListProvider)
@@ -454,15 +483,15 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   /// The selection dock's own Edit action — a single task opens the
   /// ordinary detail sheet unchanged ([showTaskDetailSheet], the app's one
   /// edit entry point); 2+ opens the bulk [showMultiTaskEditSheet]
-  /// (tag/track/duration/notification only), confirmed directly. Neither
-  /// path clears the selection itself — closing either sheet leaves the
-  /// user back on the same selection, in case they want to also Remove or
-  /// re-edit it.
+  /// (tag/track/duration/notification only), confirmed directly. Both
+  /// paths clear the selection before opening the sheet so returning to
+  /// the editor starts with the task selection dismissed.
   void _editSelectedTasks() {
     // The persistent shell retains callbacks while the selection count stays
     // the same shape; resolve the selected IDs when the action is tapped.
     final selectedIds = Set<String>.of(ref.read(editSelectionProvider));
     if (selectedIds.isEmpty) return;
+    _clearTimelineSelections();
     if (selectedIds.length == 1) {
       final task = ref.read(taskByIdProvider(selectedIds.single));
       if (task == null) return;
@@ -501,6 +530,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
     // use the selection captured when its configuration was first claimed.
     final selectedIds = Set<String>.of(ref.read(editSelectionProvider));
     if (selectedIds.isEmpty) return;
+    _clearTimelineSelections();
     final notifier = ref.read(taskListProvider.notifier);
     final snapshots = selectedIds
         .map((id) => ref.read(taskByIdProvider(id)))
@@ -508,7 +538,6 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
         .map((task) => task.toJson())
         .toList();
     await notifier.deleteTasksInBatch(selectedIds);
-    ref.read(editSelectionProvider.notifier).clear();
     if (!mounted) return;
     AppUndoToast.show(
       context: context,
@@ -532,6 +561,8 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   Future<void> _removeSelectedZones() => _write(() async {
     // The shell retains action identity while selection changes.
     final selectedIds = Set<String>.of(ref.read(zoneEditSelectionProvider));
+    if (selectedIds.isEmpty) return;
+    _clearTimelineSelections();
     final zones = ref.read(zoneListProvider);
     final zoneNotifier = ref.read(zoneListProvider.notifier);
     final snapshots = selectedIds
@@ -540,7 +571,6 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
         .map((z) => z.toJson())
         .toList();
     await zoneNotifier.deleteZonesInBatch(selectedIds);
-    ref.read(zoneEditSelectionProvider.notifier).clear();
     if (!mounted) return;
     AppUndoToast.show(
       context: context,
@@ -739,11 +769,11 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
       _axisWidth +
           (edge == _MarqueeEdge.left ? paint.lastDay - 1 : 7) * _columnWidth,
     );
-    final day =
-        (edge == _MarqueeEdge.right
-                ? ((x - _axisWidth) / _columnWidth).round()
-                : ((x - _axisWidth) / _columnWidth).round() + 1)
-            .clamp(1, 7);
+    final boundary = _snappedDayBoundary(x);
+    final day = (edge == _MarqueeEdge.right ? boundary : boundary + 1).clamp(
+      1,
+      7,
+    );
     final next = switch (edge) {
       _MarqueeEdge.top => ZonePaintSelection(
         paint.firstDay,
@@ -781,22 +811,38 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
     });
   }
 
-  double _previewLeft(ZonePaintSelection preview) =>
-      _fillSource != null
-      ? math.min(
-          _axisWidth + (_fillSource!.weekday! - 1) * _columnWidth,
-          _axisWidth + (_fillSource!.weekday! - .5) * _columnWidth + _fillDx,
-        ).clamp(_axisWidth, _axisWidth + 7 * _columnWidth)
+  /// Maps a grid-local horizontal position to the nearest weekday lane
+  /// boundary. Both a pending marquee and an existing zone's side handles
+  /// use this threshold so their day ghosts appear at the same point.
+  int _snappedDayBoundary(double x) =>
+      ((x - _axisWidth) / _columnWidth).round();
+
+  /// Uses the same accumulated horizontal delta as moving a pending
+  /// marquee, so both gestures switch weekday lanes at the half-column mark.
+  int _snappedDayShift(double delta) => (delta / _columnWidth).round();
+
+  double _previewLeft(ZonePaintSelection preview) => _fillSource != null
+      ? math
+            .min(
+              _axisWidth + (_fillSource!.weekday! - 1) * _columnWidth,
+              _axisWidth +
+                  (_fillSource!.weekday! - .5) * _columnWidth +
+                  _fillDx,
+            )
+            .clamp(_axisWidth, _axisWidth + 7 * _columnWidth)
       : _resizeEdge == _MarqueeEdge.left && _resizeX != null
       ? _resizeX!
       : _axisWidth + (preview.firstDay - 1) * _columnWidth;
 
-  double _previewRight(ZonePaintSelection preview) =>
-      _fillSource != null
-      ? math.max(
-          _axisWidth + _fillSource!.weekday! * _columnWidth,
-          _axisWidth + (_fillSource!.weekday! - .5) * _columnWidth + _fillDx,
-        ).clamp(_axisWidth, _axisWidth + 7 * _columnWidth)
+  double _previewRight(ZonePaintSelection preview) => _fillSource != null
+      ? math
+            .max(
+              _axisWidth + _fillSource!.weekday! * _columnWidth,
+              _axisWidth +
+                  (_fillSource!.weekday! - .5) * _columnWidth +
+                  _fillDx,
+            )
+            .clamp(_axisWidth, _axisWidth + 7 * _columnWidth)
       : _resizeEdge == _MarqueeEdge.right && _resizeX != null
       ? _resizeX!
       : _axisWidth + preview.lastDay * _columnWidth;
@@ -836,7 +882,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
     _marqueeMoveDx += delta.dx;
     _marqueeMoveDy += delta.dy;
 
-    final dayShift = (_marqueeMoveDx / _columnWidth).round();
+    final dayShift = _snappedDayShift(_marqueeMoveDx);
     final minuteShift = (_marqueeMoveDy / _pixelsPerMinute / 5).round() * 5;
 
     // Clamp as a RIGID body: the span never changes, it just stops at the
@@ -1002,21 +1048,28 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
     );
   }
 
-  void _startFill(Zone zone) {
-    if (_saving) return;
+  void _startFill(Zone zone, DragStartDetails details) {
+    final box = _grid;
+    if (_saving || box == null || zone.weekday == null) return;
+    final localX =
+        _fillPointerDownX ?? box.globalToLocal(details.globalPosition).dx;
+    final centerX = _axisWidth + (zone.weekday! - .5) * _columnWidth;
     setState(() {
       _fillSource = zone;
-      _fillDx = 0;
+      _fillDx = localX - centerX;
+      _fillDragDx = 0;
+      _fillEdge = localX < centerX ? _MarqueeEdge.left : _MarqueeEdge.right;
     });
   }
 
   ZonePaintSelection? get _fillSelection {
     final zone = _fillSource;
-    if (zone?.weekday == null) return null;
-    final endDay = (zone!.weekday! + (_fillDx / _columnWidth).round()).clamp(
-      1,
-      7,
-    );
+    final edge = _fillEdge;
+    if (zone?.weekday == null || edge == null) return null;
+    final dayShift = _snappedDayShift(_fillDragDx);
+    final endDay = edge == _MarqueeEdge.left
+        ? (zone!.weekday! + dayShift).clamp(1, zone.weekday!)
+        : (zone!.weekday! + dayShift).clamp(zone.weekday!, 7);
     return ZonePaintSelection.between(
       zone.weekday!,
       zone.startMinutes,
@@ -1046,6 +1099,9 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
     setState(() {
       _fillSource = null;
       _fillDx = 0;
+      _fillDragDx = 0;
+      _fillPointerDownX = null;
+      _fillEdge = null;
     });
     if (days.isEmpty) return;
     await _write(() async {
@@ -1087,6 +1143,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
     final dayDelta = _snappedDayDelta(zones, selection);
     setState(() {
       _moveKind = null;
+      _liftedZoneId = null;
       _moveDy = 0;
       _moveDx = 0;
     });
@@ -1151,6 +1208,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
             ref.read(zoneListProvider.notifier).commitZoneCascade(moves),
       ),
     );
+    ref.read(zoneEditSelectionProvider.notifier).clear();
   }
 
   @override
@@ -1175,7 +1233,9 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     _container = ProviderScope.containerOf(context);
     ref.listen(pendingTaskDraftProvider, (_, draft) {
-      _shellChromeController?.setDockObscured(_pending != null || draft != null);
+      _shellChromeController?.setDockObscured(
+        _pending != null || draft != null,
+      );
     });
     _shellChromeController?.setDockObscured(
       _pending != null || ref.watch(pendingTaskDraftProvider) != null,
@@ -1263,7 +1323,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                       final selectedIds = ref.watch(editSelectionProvider);
                       return Positioned(
                         left: theme.spacingMd,
-                        bottom: theme.spacingMd,
+                        bottom: theme.spacingBottomClearance,
                         child: SafeArea(
                           top: false,
                           child: _taskContextDock(selectedIds),
@@ -1365,13 +1425,12 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                             // padding top bottom as cant see 00 and 00 end
                             // day."
                             //
-                            // `spacingLg` matches the Timeline's own fix for
-                            // the identical report on its hour gutter (see
-                            // `timeline_screen.dart`'s scroll padding, where
-                            // spacingMd was explicitly found too small to clear
-                            // half a caption line).
-                            padding: EdgeInsets.symmetric(
-                              vertical: theme.spacingLg,
+                            // Shared spatial clearance keeps the opening and
+                            // closing midnight ticks reachable above the fixed
+                            // dock, matching the day Timeline.
+                            padding: EdgeInsets.only(
+                              top: TimelineScrollTokens.topClearance,
+                              bottom: TimelineScrollTokens.bottomClearance,
                             ),
                             // Suppressed only while a gesture is actually in
                             // flight — NOT unconditionally, even though this
@@ -1392,6 +1451,20 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                               builder: (context, constraints) {
                                 final width =
                                     (constraints.maxWidth - _axisWidth) / 7;
+                                final zonesInDayOrder = <Zone>[
+                                  for (var day = 1; day <= 7; day++)
+                                    ...zones.where(
+                                      (zone) => zone.weekday == day,
+                                    ),
+                                ];
+                                final zonePaintOrder = selectedZonesLast(
+                                  zonesInDayOrder,
+                                  selected,
+                                  liftedId:
+                                      _moveKind == ZoneGroupGestureKind.move
+                                      ? _liftedZoneId
+                                      : null,
+                                );
                                 return SizedBox(
                                   key: _gridKey,
                                   height: _gridHeight,
@@ -1585,9 +1658,18 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                                             ),
                                           ),
                                         ),
-                                      for (var day = 1; day <= 7; day++)
+                                      // Keep every saved zone in the same
+                                      // paint stack. Per-day nested stacks
+                                      // let a later column cover a zone
+                                      // being dragged across weekday lanes.
+                                      for (final zone in zonePaintOrder)
                                         Positioned(
-                                          left: _axisWidth + (day - 1) * width,
+                                          key: ValueKey(
+                                            'zone-layer-${zone.id}',
+                                          ),
+                                          left:
+                                              _axisWidth +
+                                              (zone.weekday! - 1) * width,
                                           width: width,
                                           top: 0,
                                           bottom: 0,
@@ -1613,31 +1695,17 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                                             child: Stack(
                                               clipBehavior: Clip.none,
                                               children: [
-                                                // The selected zone paints LAST
-                                                // among this day's siblings —
-                                                // see `selectedZonesLast`'s own
-                                                // doc comment. Overlapping/
-                                                // adjacent zones are a
-                                                // designed-for, common case on
-                                                // this screen (see `_Phantom`'s
-                                                // own doc comment).
-                                                for (final zone
-                                                    in selectedZonesLast(
-                                                      zones.where(
-                                                        (z) => z.weekday == day,
-                                                      ),
-                                                      selected,
-                                                    ))
-                                                  _block(
-                                                    zone,
-                                                    zones,
-                                                    theme,
-                                                    selected.contains(zone.id),
-                                                    selected.length == 1,
-                                                    snappedDayDelta,
-                                                    _axisWidth +
-                                                        (day - 1) * width,
-                                                  ),
+                                                _block(
+                                                  zone,
+                                                  zones,
+                                                  theme,
+                                                  selected.contains(zone.id),
+                                                  selected.length == 1,
+                                                  snappedDayDelta,
+                                                  _axisWidth +
+                                                      (zone.weekday! - 1) *
+                                                          width,
+                                                ),
                                               ],
                                             ),
                                           ),
@@ -1782,8 +1850,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                                                 _axisWidth +
                                                 (day - 1) * width +
                                                 theme.spacingXs,
-                                            width:
-                                                width - 2 * theme.spacingXs,
+                                            width: width - 2 * theme.spacingXs,
                                             top:
                                                 preview.startMinutes *
                                                     _pixelsPerMinute +
@@ -2080,7 +2147,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
             // (see the Tasks tab's own matching fix and its doc comment).
             Positioned(
               left: theme.spacingMd,
-              bottom: theme.spacingMd,
+              bottom: theme.spacingBottomClearance,
               child: SafeArea(
                 top: false,
                 child: _zoneContextDock(selected, zones),
@@ -2101,6 +2168,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
         ),
       ),
     );
+    ref.read(zoneEditSelectionProvider.notifier).clear();
   }
 
   Widget _block(
@@ -2121,6 +2189,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
         (_moveKind == ZoneGroupGestureKind.resizeTop ? 0 : delta);
     void begin(ZoneGroupGestureKind kind) => setState(() {
       _moveKind = kind;
+      _liftedZoneId = kind == ZoneGroupGestureKind.move ? zone.id : null;
       _moveDy = 0;
       _moveDx = 0;
     });
@@ -2134,10 +2203,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
       zone: zone,
       horizontalOffset: selected ? snappedDayDelta * _columnWidth : 0,
       moveGhostOffset: selected && _moveKind == ZoneGroupGestureKind.move
-          ? Offset(
-              -snappedDayDelta * _columnWidth,
-              -delta * _pixelsPerMinute,
-            )
+          ? Offset(-snappedDayDelta * _columnWidth, -delta * _pixelsPerMinute)
           : null,
       extending: _fillSource?.id == zone.id,
       top: start * _pixelsPerMinute,
@@ -2215,48 +2281,54 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
       onResizeBottomUpdate: selected ? update : null,
       onResizeBottomEnd: selected ? (_) => _finishMove(zones) : null,
       // Only side handles extend across days; body gestures use onMove.
+      onExtendDown: selected && canExtendDays
+          ? (details) {
+              final box = _grid;
+              if (box != null) {
+                _fillPointerDownX = box
+                    .globalToLocal(details.globalPosition)
+                    .dx;
+              }
+            }
+          : null,
       onExtendStart: selected
           ? canExtendDays
-              ? (d) {
-                  _startFill(zone);
-                  if (_grid != null) {
-                    setState(
-                      () => _fillDx =
-                          _grid!.globalToLocal(d.globalPosition).dx -
-                          _axisWidth -
-                          (zone.weekday! - .5) * _columnWidth,
-                    );
-                  }
-                }
-              : null
+                ? (d) => _startFill(zone, d)
+                : null
           : _sweepingZones
-              ? (d) => _updateZoneSweep(d.globalPosition, zones)
-              : _editing
-                  ? (d) => _startZoneSweep(zone, d.globalPosition)
-                  : null,
+          ? (d) => _updateZoneSweep(d.globalPosition, zones)
+          : _editing
+          ? (d) => _startZoneSweep(zone, d.globalPosition)
+          : null,
       onExtendUpdate: selected
           ? canExtendDays
-              ? (d) => setState(
-                  () => _fillDx =
-                      _grid!.globalToLocal(d.globalPosition).dx -
-                      _axisWidth -
-                      (zone.weekday! - .5) * _columnWidth,
-                )
-              : null
+                ? (d) {
+                    final box = _grid;
+                    final pointerDownX = _fillPointerDownX;
+                    if (box == null || pointerDownX == null) return;
+                    final localX = box.globalToLocal(d.globalPosition).dx;
+                    final centerX =
+                        _axisWidth + (zone.weekday! - .5) * _columnWidth;
+                    setState(() {
+                      _fillDx = localX - centerX;
+                      _fillDragDx = localX - pointerDownX;
+                    });
+                  }
+                : null
           : _sweepingZones
-              ? (d) => _updateZoneSweep(d.globalPosition, zones)
-              : _editing
-                  ? (d) => _updateZoneSweep(d.globalPosition, zones)
-                  : null,
+          ? (d) => _updateZoneSweep(d.globalPosition, zones)
+          : _editing
+          ? (d) => _updateZoneSweep(d.globalPosition, zones)
+          : null,
       onExtendEnd: selected
           ? canExtendDays
-              ? (_) => _finishFill()
-              : null
+                ? (_) => _finishFill()
+                : null
           : _sweepingZones
-              ? (_) => _endZoneSweep()
-              : _editing
-                  ? (_) => _endZoneSweep()
-                  : null,
+          ? (_) => _endZoneSweep()
+          : _editing
+          ? (_) => _endZoneSweep()
+          : null,
     );
   }
 
