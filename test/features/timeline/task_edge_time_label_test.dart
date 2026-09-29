@@ -33,7 +33,7 @@ void main() {
   testWidgets('renders the given time, formatted', (tester) async {
     await pump(tester, const TimeOfDay(hour: 9, minute: 30));
 
-    expect(find.text('9:30 AM'), findsOneWidget);
+    expect(find.text('9:30a'), findsOneWidget);
   });
 
   testWidgets('the time pill uses the accent background color', (tester) async {
@@ -41,7 +41,7 @@ void main() {
 
     final container = tester.widget<Container>(
       find
-          .ancestor(of: find.text('2:00 PM'), matching: find.byType(Container))
+          .ancestor(of: find.text('2 pm'), matching: find.byType(Container))
           .first,
     );
     final decoration = container.decoration! as BoxDecoration;
@@ -51,7 +51,7 @@ void main() {
   testWidgets('uses the shared compact task-time style', (tester) async {
     await pump(tester, const TimeOfDay(hour: 14, minute: 0));
 
-    final text = tester.widget<Text>(find.text('2:00 PM'));
+    final text = tester.widget<Text>(find.text('2 pm'));
     expect(text.style?.fontSize, AmbleTheme.light.textTaskEdgeTime.fontSize);
     expect(
       text.style?.fontFamily,
@@ -111,11 +111,11 @@ void main() {
     ) async {
       await pump(tester, const TimeOfDay(hour: 8, minute: 0), showLine: false);
 
-      expect(find.text('8:00 AM'), findsOneWidget);
+      expect(find.text('8 am'), findsOneWidget);
       final container = tester.widget<Container>(
         find
             .ancestor(
-              of: find.text('8:00 AM'),
+              of: find.text('8 am'),
               matching: find.byType(Container),
             )
             .first,

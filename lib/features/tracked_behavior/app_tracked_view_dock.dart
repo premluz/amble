@@ -24,7 +24,7 @@ extension TrackedBehaviorViewModeDisplay on TrackedBehaviorViewMode {
   IconData get icon => switch (this) {
     TrackedBehaviorViewMode.weekly => Icons.view_week_outlined,
     TrackedBehaviorViewMode.monthly => Icons.border_all,
-    TrackedBehaviorViewMode.sixMonthly => Icons.grid_view_rounded,
+    TrackedBehaviorViewMode.sixMonthly => Icons.calendar_view_month_outlined,
   };
 
   String get label => switch (this) {

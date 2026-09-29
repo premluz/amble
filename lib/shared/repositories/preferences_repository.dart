@@ -34,6 +34,10 @@ abstract class PreferencesRepository {
 abstract final class PreferenceKeys {
   static const String themeMode = 'themeMode';
 
+  /// 12- or 24-hour time, or the device's (a [TimeFormatPreference] name).
+  /// Absent (null) follows the device — see [TimeFormatSetting].
+  static const String timeFormat = 'timeFormat';
+
   /// Whether the first-launch splash/carousel has already been shown.
   /// Absent (null) on a fresh install — the splash shows once, then this
   /// is set true and every later launch skips straight to the app.

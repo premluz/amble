@@ -253,8 +253,8 @@ void main() {
         endTime: const TimeOfDay(hour: 10, minute: 30),
       );
 
-      expect(find.text('9:00 AM'), findsOneWidget);
-      expect(find.text('10:30 AM'), findsOneWidget);
+      expect(find.text('9 am'), findsOneWidget);
+      expect(find.text('10:30a'), findsOneWidget);
     });
 
     testWidgets('renders exactly two TaskEdgeTimeLabels — one per edge', (

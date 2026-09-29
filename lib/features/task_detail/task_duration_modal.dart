@@ -5,6 +5,7 @@ import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_segmented_time_field.dart';
 import '../../core/widgets/app_selectable_chip.dart';
 import '../../core/widgets/app_sheet.dart';
+import '../../core/widgets/app_sheet_header.dart';
 import '../../core/widgets/app_wheel_time_picker.dart';
 
 /// Common durations offered as one-tap presets, in minutes. 5 is the
@@ -105,6 +106,10 @@ class _TaskDurationModalState extends State<TaskDurationModal> {
     });
   }
 
+  void _finish() {
+    Navigator.of(context).pop(_totalMinutes < 1 ? 1 : _totalMinutes);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
@@ -118,18 +123,18 @@ class _TaskDurationModalState extends State<TaskDurationModal> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // AppSheet's own outer padding no longer provides a top inset
-          // (2026-09-23 — "top padding should be in header").
-          SizedBox(height: theme.spacingLg),
-          Text(
-            'Duration',
-            textAlign: TextAlign.center,
-            style: theme.textTitle.copyWith(
-              color: theme.colorTextPrimary,
-              fontWeight: FontWeight.w700,
+          AppSheetHeader(
+            theme: theme,
+            title: 'Duration',
+            onClose: () => Navigator.of(context).pop(),
+            trailing: AppButton(
+              label: 'Done',
+              size: AppButtonSize.md,
+              shape: AppButtonShape.pill,
+              onPressed: _finish,
             ),
           ),
-          SizedBox(height: theme.spacingLg),
+          SizedBox(height: theme.spacingMd),
           AppSegmentedTimeField(
             label: 'Duration',
             first: _hour,
@@ -191,16 +196,6 @@ class _TaskDurationModalState extends State<TaskDurationModal> {
             ),
           ),
           SizedBox(height: theme.spacingLg),
-          AppButton(
-            label: 'Done',
-            size: AppButtonSize.lg,
-            shape: AppButtonShape.pill,
-            onPressed: () {
-              // A task must have SOME duration — floor at 1 minute rather
-              // than allowing 0h 0m, matching the main screen's own field.
-              Navigator.of(context).pop(_totalMinutes < 1 ? 1 : _totalMinutes);
-            },
-          ),
         ],
       ),
     );

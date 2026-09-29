@@ -155,6 +155,80 @@ abstract class _$ThemeModeSetting extends $Notifier<AppThemeMode> {
   }
 }
 
+/// 12-hour ("9:00 PM") or 24-hour ("21:00") time across the app, or the
+/// device's own choice (the default). `main.dart` applies it once, at the
+/// root, as `MediaQuery.alwaysUse24HourFormat`, which every
+/// `TimeOfDay.format` reads. `keepAlive` for the same reason as
+/// [ThemeModeSetting]: the root widget is its reader.
+
+@ProviderFor(TimeFormatSetting)
+final timeFormatSettingProvider = TimeFormatSettingProvider._();
+
+/// 12-hour ("9:00 PM") or 24-hour ("21:00") time across the app, or the
+/// device's own choice (the default). `main.dart` applies it once, at the
+/// root, as `MediaQuery.alwaysUse24HourFormat`, which every
+/// `TimeOfDay.format` reads. `keepAlive` for the same reason as
+/// [ThemeModeSetting]: the root widget is its reader.
+final class TimeFormatSettingProvider
+    extends $NotifierProvider<TimeFormatSetting, TimeFormatPreference> {
+  /// 12-hour ("9:00 PM") or 24-hour ("21:00") time across the app, or the
+  /// device's own choice (the default). `main.dart` applies it once, at the
+  /// root, as `MediaQuery.alwaysUse24HourFormat`, which every
+  /// `TimeOfDay.format` reads. `keepAlive` for the same reason as
+  /// [ThemeModeSetting]: the root widget is its reader.
+  TimeFormatSettingProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'timeFormatSettingProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$timeFormatSettingHash();
+
+  @$internal
+  @override
+  TimeFormatSetting create() => TimeFormatSetting();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(TimeFormatPreference value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<TimeFormatPreference>(value),
+    );
+  }
+}
+
+String _$timeFormatSettingHash() => r'4acb20c535c4ce91125b2d98036b3f9c6d2c5f9f';
+
+/// 12-hour ("9:00 PM") or 24-hour ("21:00") time across the app, or the
+/// device's own choice (the default). `main.dart` applies it once, at the
+/// root, as `MediaQuery.alwaysUse24HourFormat`, which every
+/// `TimeOfDay.format` reads. `keepAlive` for the same reason as
+/// [ThemeModeSetting]: the root widget is its reader.
+
+abstract class _$TimeFormatSetting extends $Notifier<TimeFormatPreference> {
+  TimeFormatPreference build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<TimeFormatPreference, TimeFormatPreference>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<TimeFormatPreference, TimeFormatPreference>,
+              TimeFormatPreference,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
+
 /// Whether the first-launch splash/carousel has already been shown.
 ///
 /// `keepAlive: true` for the same reason as [ThemeModeSetting] — this is

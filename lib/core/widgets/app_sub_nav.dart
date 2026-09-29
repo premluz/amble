@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../tokens/component_tokens.dart';
 import '../tokens/semantic_theme.dart';
 import 'app_top_nav.dart';
 
 /// A page's own navigation under the main nav — e.g. the Inbox's sections.
-/// Built from the main nav's own [AppNavLabel]s (same type, same weights,
-/// same gap), and set in the PAGE-HEADING SLOT: its first label sits
+/// Built from the main nav's own [AppNavLabel]s, in their sub-nav variant
+/// (the page-heading type, like the Day date), with the main nav's gap,
+/// and set in the PAGE-HEADING SLOT: its first label sits
 /// exactly where the Day date and the Habits period heading sit (screen
 /// padding in, flush with the page's top), and it leaves the same room
 /// below. So moving between those pages, that line of text doesn't budge.
@@ -34,28 +36,30 @@ class AppSubNav extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            // Top, so a trailing action can never push the labels down off
-            // the heading line.
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  // Room for a tab's highlight wash to show past its text.
-                  clipBehavior: Clip.none,
-                  child: Row(
-                    children: [
-                      for (var i = 0; i < children.length; i++) ...[
-                        if (i > 0) SizedBox(width: theme.spacingLg),
-                        children[i],
+          // The shared page-heading line: fixed height, text centred, so it
+          // matches the Day date and the Habits period exactly.
+          SizedBox(
+            height: PageHeadingTokens.rowHeight(theme),
+            child: Row(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    // Room for a tab's highlight wash to show past its text.
+                    clipBehavior: Clip.none,
+                    child: Row(
+                      children: [
+                        for (var i = 0; i < children.length; i++) ...[
+                          if (i > 0) SizedBox(width: theme.spacingLg),
+                          children[i],
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
-              ),
-              if (extra != null) ...[SizedBox(width: theme.spacingSm), extra],
-            ],
+                if (extra != null) ...[SizedBox(width: theme.spacingSm), extra],
+              ],
+            ),
           ),
           // …and the collapsed Day accordion's footprint under it (its
           // `spacingXs` gap plus 4px grip), as the Habits heading also
@@ -67,10 +71,10 @@ class AppSubNav extends StatelessWidget {
   }
 }
 
-/// One tab of an [AppSubNav]: an [AppNavLabel] at its text height, with an
-/// optional [highlighted] wash behind it (e.g. "drop here"). The wash
-/// extends past the text without taking any layout, so the label never
-/// moves.
+/// One tab of an [AppSubNav]: an [AppNavLabel] at its text height. Its
+/// active surface ([AppNavWash]) shows while pressed, and while
+/// [highlighted] (e.g. a dragged row hovering it, "drop here"); it extends
+/// past the text without taking any layout, so the label never moves.
 class AppSubNavLabel extends StatelessWidget {
   const AppSubNavLabel({
     super.key,
@@ -86,34 +90,13 @@ class AppSubNavLabel extends StatelessWidget {
   final bool highlighted;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context).extension<AmbleTheme>()!;
-    final outset = theme.spacingXs;
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        if (highlighted)
-          Positioned(
-            left: -outset * 2,
-            right: -outset * 2,
-            top: -outset,
-            bottom: -outset,
-            child: IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: theme.colorSurfaceField,
-                  borderRadius: BorderRadius.circular(theme.radiusPill),
-                ),
-              ),
-            ),
-          ),
-        AppNavLabel(
-          theme: theme,
-          label: label,
-          selected: selected,
-          onTap: onTap,
-        ),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => AppNavLabel(
+    theme: Theme.of(context).extension<AmbleTheme>()!,
+    label: label,
+    selected: selected,
+    onTap: onTap,
+    variant: AppNavLabelVariant.sub,
+    // Hovered by a drag: the same active surface a press shows.
+    highlighted: highlighted,
+  );
 }

@@ -78,12 +78,17 @@ class AppButton extends StatelessWidget {
     this.borderColor,
     this.fillColor,
     this.haptic = AmbleHaptic.tap,
+    this.ripple = true,
   }) : assert(
          label != null || icon != null || child != null,
          'must provide a label, an icon, or a child',
        );
 
   final AmbleHaptic haptic;
+
+  /// False drops the tap wash, for a button whose selection already
+  /// answers the tap (a segment in a group with a sliding highlight).
+  final bool ripple;
 
   final String? label;
   final IconData? icon;
@@ -302,6 +307,7 @@ class AppButton extends StatelessWidget {
       // light-on-dark) text color, which is exactly what a translucent or
       // empty fill needs.
       rippleColor: foreground,
+      ripple: ripple,
       // AbsorbPointer, NOT IgnorePointer: both stop the platform button
       // handling the tap, but IgnorePointer also removes it from hit
       // testing entirely — which left 40 existing tests (which target
@@ -458,6 +464,7 @@ class AppButton extends StatelessWidget {
       // rounded/pill shapes above. Secondary/ghost have a light or no
       // fill, so the wash rides on the neutral default instead.
       rippleColor: isPrimary ? foreground : null,
+      ripple: ripple,
       child: blurred,
     );
 

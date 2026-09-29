@@ -390,4 +390,50 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
   });
+
+  testWidgets('a second finger landing mid-move makes it a pinch: the move '
+      'is dropped unsaved and the task stays where it was', (tester) async {
+    final task = makeTask('Focus block');
+    await pumpTimeline(tester, task: task);
+    Finder ghost() => find.byWidgetPredicate(
+      (w) =>
+          w is TaskCapsuleBlock &&
+          w.task.title == 'Focus block' &&
+          w.glyphHidden,
+    );
+
+    // Inside runAsync: a two-finger move is a pinch, which writes the zoom
+    // level to Hive (real I/O).
+    await tester.runAsync(() async {
+      final first = await tester.startGesture(
+        tester.getCenter(pillFor('Focus block').first),
+      );
+      for (var i = 0; i < 8; i++) {
+        await first.moveBy(const Offset(0, 5));
+        await tester.pump();
+      }
+      expect(ghost(), findsOneWidget, reason: 'moving');
+
+      final second = await tester.startGesture(const Offset(300, 700));
+      await tester.pump();
+      expect(ghost(), findsNothing, reason: 'the move is dropped');
+
+      for (var i = 0; i < 4; i++) {
+        await first.moveBy(const Offset(0, 10));
+        await tester.pump();
+      }
+      await first.up();
+      await second.up();
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(
+      taskBox.get(task.id)!.scheduledAt,
+      task.scheduledAt,
+      reason: 'nothing saved',
+    );
+  });
 }

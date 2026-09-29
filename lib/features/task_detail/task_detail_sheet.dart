@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/feature_flags.dart';
+import '../../core/tokens/component_tokens.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_alert_dialog.dart';
 import '../../core/widgets/app_button.dart';
@@ -130,6 +131,9 @@ Future<void> showTaskDetailSheet(
   // carried straight through, matching the Inbox's own `useTemplate` and
   // the full sheet's own `_seedFromTemplate`.
   bool initialIsImportant = false,
+  // Seeds [_behaviorId] when quick add has already chosen a tracked
+  // behavior or a preset carrying one.
+  String? initialBehaviorId,
   // True only for the quick-create overlay's Name-field-tap promotion
   // path (see quick_create_overlay.dart) — requested directly: "when
   // name input is tapped then it goes into near full screen mode," with
@@ -163,6 +167,7 @@ Future<void> showTaskDetailSheet(
       initialDurationMinutes: initialDurationMinutes,
       initialCategoryId: initialCategoryId,
       initialIsImportant: initialIsImportant,
+      initialBehaviorId: initialBehaviorId,
       stayOnNameStage: stayOnNameStage,
     ),
   );
@@ -243,6 +248,7 @@ class _TaskDetailFlow extends ConsumerStatefulWidget {
     this.initialDurationMinutes,
     this.initialCategoryId,
     this.initialIsImportant = false,
+    this.initialBehaviorId,
     this.stayOnNameStage = false,
   });
 
@@ -297,6 +303,9 @@ class _TaskDetailFlow extends ConsumerStatefulWidget {
   /// Seeds [_isImportant] on a from-scratch create — see
   /// [showTaskDetailSheet]'s own `initialIsImportant` doc comment.
   final bool initialIsImportant;
+
+  /// Seeds [_behaviorId] on a from-scratch create from quick add.
+  final String? initialBehaviorId;
   final bool stayOnNameStage;
 
   @override
@@ -492,7 +501,7 @@ class _TaskDetailFlowState extends ConsumerState<_TaskDetailFlow> {
         seed?.categoryId ??
         widget.initialCategoryId ??
         BuiltInCategoryIds.general;
-    _behaviorId = seed?.behaviorId;
+    _behaviorId = seed?.behaviorId ?? widget.initialBehaviorId;
     _initialBehaviorId = _behaviorId;
     _templateId = widget.templateId;
     _notificationsEnabled = seed?.notificationsEnabled ?? true;
@@ -1345,7 +1354,7 @@ class _ScheduleFieldsStage extends ConsumerWidget {
               label: 'Time',
               value: (startTime == null || endTime == null)
                   ? '--:-- - --:--'
-                  : '${_formatTime(startTime)} - ${_formatTime(endTime)}',
+                  : '${_formatTime(context, startTime)} - ${_formatTime(context, endTime)}',
               onTap: () => onTimeExpandedChanged(!timeExpanded),
             ),
             if (timeExpanded) ...[
@@ -2992,7 +3001,7 @@ class _SchedulePreviewCard extends StatelessWidget {
                           endTime == null ||
                           durationMinutes == null)
                       ? 'Set a time and duration'
-                      : '${_formatTime(startTime!)} - ${_formatTime(endTime!)} '
+                      : '${_formatTime(context, startTime!)} - ${_formatTime(context, endTime!)} '
                             '(${_formatDuration(durationMinutes!)})',
                   style: theme.textBody.copyWith(
                     color: theme.colorTextSecondary,
@@ -3060,11 +3069,10 @@ String _formatDate(DateTime dateTime) {
   return '$weekday $month ${dateTime.day}, ${dateTime.year}';
 }
 
-String _formatTime(DateTime dateTime) {
-  final hour = dateTime.hour.toString().padLeft(2, '0');
-  final minute = dateTime.minute.toString().padLeft(2, '0');
-  return '$hour:$minute';
-}
+/// In the app's 12- or 24-hour format (Settings → Appearance, applied at the
+/// root as `MediaQuery.alwaysUse24HourFormat`) — previously always 24-hour.
+String _formatTime(BuildContext context, DateTime dateTime) =>
+    TimeOfDay.fromDateTime(dateTime).format(context);
 
 /// "Repeats" control — an adaptive switch that reveals a day-of-week picker
 /// only once enabled. Selecting all 7 days saves as
@@ -3177,7 +3185,7 @@ class _AffectFutureInstancesToggle extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: theme.colorSurfaceSecondary,
+        color: SheetTokens.inset(theme),
         borderRadius: BorderRadius.circular(theme.radiusTaskPill),
       ),
       child: Padding(

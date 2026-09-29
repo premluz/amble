@@ -27,6 +27,19 @@ class AppDragToCloseController extends ChangeNotifier {
   /// [AppDragToCloseHandle] has finished animating back.
   double get offset => _offset;
 
+  _AppDragToCloseHandleState? _handle;
+
+  /// The close was refused (a `PopScope` kept the sheet open): the handle
+  /// eases the sheet back to rest.
+  void cancelClose() => _handle?._animateBackToRest();
+
+  /// Feeds a drag caught elsewhere — a scroll view pulled down past its top
+  /// — through the same follow-and-decide logic as the handle's own.
+  void dragBy(double dy) => _handle?._dragBy(dy);
+
+  /// Ends a drag fed through [dragBy]; [velocity] is px/s, down positive.
+  void release(double velocity) => _handle?._release(velocity);
+
   void _setOffset(double value) {
     if (_offset == value) return;
     _offset = value;
@@ -38,7 +51,7 @@ class AppDragToCloseController extends ChangeNotifier {
 /// from `quick_capture_sheet.dart`'s and `new_zone_sheet.dart`'s own
 /// near-identical hand-rolled `GestureDetector`s (both: accumulate
 /// `details.delta.dy` silently, decide close-or-not only once the finger
-/// lifts). See docs/DESIGN_SYSTEM.md's "Sheets > Drag handle" section for
+/// lifts). See docs/DESIGN_SYSTEM.md's "Sheets — components and interaction pattern" section for
 /// the full account of the two modes this documents.
 ///
 /// **Responsive by default** (requested directly: "the handle pattern in
@@ -68,7 +81,12 @@ class AppDragToCloseHandle extends StatefulWidget {
     this.responsive = true,
     this.closeDistance,
     this.closeVelocity = 800.0,
+    this.child,
   });
+
+  /// What the drag is caught on. Null draws the handle bar; a whole sheet
+  /// panel makes the panel itself draggable (see `AppSheetDragDismiss`).
+  final Widget? child;
 
   final AmbleTheme theme;
   final AppDragToCloseController controller;
@@ -109,13 +127,36 @@ class _AppDragToCloseHandleState extends State<AppDragToCloseHandle>
   );
 
   @override
+  void initState() {
+    super.initState();
+    widget.controller._handle = this;
+  }
+
+  @override
+  void didUpdateWidget(AppDragToCloseHandle oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller == widget.controller) return;
+    if (oldWidget.controller._handle == this) {
+      oldWidget.controller._handle = null;
+    }
+    widget.controller._handle = this;
+  }
+
+  @override
   void dispose() {
+    if (widget.controller._handle == this) widget.controller._handle = null;
     _snapBack.dispose();
     super.dispose();
   }
 
-  void _handleDragUpdate(DragUpdateDetails details) {
-    _dragDistance += details.delta.dy;
+  void _handleDragUpdate(DragUpdateDetails details) =>
+      _dragBy(details.delta.dy);
+
+  void _handleDragEnd(DragEndDetails details) =>
+      _release(details.velocity.pixelsPerSecond.dy);
+
+  void _dragBy(double dy) {
+    _dragDistance += dy;
     if (widget.responsive) {
       // Never follows the finger UPWARD past rest — this handle only ever
       // closes downward (there is no "drag up" state for a fixed-size
@@ -127,9 +168,8 @@ class _AppDragToCloseHandleState extends State<AppDragToCloseHandle>
     }
   }
 
-  void _handleDragEnd(DragEndDetails details) {
+  void _release(double velocity) {
     final distance = _dragDistance;
-    final velocity = details.velocity.pixelsPerSecond.dy;
     _dragDistance = 0;
     final farEnough =
         distance > (widget.closeDistance ?? widget.theme.spacingXl);
@@ -172,18 +212,9 @@ class _AppDragToCloseHandleState extends State<AppDragToCloseHandle>
       behavior: HitTestBehavior.opaque,
       onVerticalDragUpdate: _handleDragUpdate,
       onVerticalDragEnd: _handleDragEnd,
-      // Top-aligned with a small top inset, matching both existing
-      // callers' own identical positioning exactly (see
-      // `QuickCreateSheetHandle`'s own doc comment on why: it reads as a
-      // separate drag affordance rather than one more control on a
-      // header row's own centre line).
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: Padding(
-          padding: EdgeInsets.only(top: widget.theme.spacingSm),
-          child: AppSheetHandle(theme: widget.theme),
-        ),
-      ),
+      child: widget.child ?? _bar(),
     );
   }
+
+  Widget _bar() => AppSheetTopHandle(theme: widget.theme);
 }

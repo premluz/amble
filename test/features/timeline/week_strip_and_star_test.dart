@@ -69,4 +69,53 @@ void main() {
       expect(opacity, done ? TaskStateTokens.doneStarAlpha : 1);
     });
   }
+
+  for (final (name, theme) in [
+    ('light', AmbleTheme.light),
+    ('dark', AmbleTheme.dark),
+  ]) {
+    testWidgets('$name: the selected day sits one subtle surface step off the page', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(useMaterial3: true, extensions: [theme]),
+          home: Scaffold(
+            body: AppDateAccordion(
+              selectedDate: DateTime(2026, 9, 29),
+              onDateSelected: (_) {},
+              initiallyExpanded: true,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final fills = tester
+          .widgetList<DecoratedBox>(find.byType(DecoratedBox))
+          .map((box) => box.decoration)
+          .whereType<BoxDecoration>()
+          .map((d) => d.color)
+          .whereType<Color>();
+      expect(fills, contains(theme.colorSurfaceSecondary));
+
+      double contrast(Color a, Color b) {
+        final la = a.computeLuminance() + .05;
+        final lb = b.computeLuminance() + .05;
+        return la > lb ? la / lb : lb / la;
+      }
+
+      final step = contrast(
+        theme.colorSurfaceSecondary,
+        theme.colorSurfaceTimeline,
+      );
+      expect(step, greaterThan(1.04), reason: 'a visible step off the page');
+      expect(
+        step,
+        lessThan(
+          contrast(theme.colorSurfaceFieldActive, theme.colorSurfaceTimeline),
+        ),
+        reason: 'but subtler than the active-field grey, which was too strong',
+      );
+    });
+  }
 }

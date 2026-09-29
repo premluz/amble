@@ -51,9 +51,13 @@ class AppValueChip extends StatelessWidget {
     required this.hasValue,
     required this.onTap,
     this.icon,
+    this.iconOnly = false,
     this.variant = AppValueChipVariant.filled,
     this.size = AppValueChipSize.sm,
-  });
+  }) : assert(
+         !iconOnly || icon != null || label != '',
+         'iconOnly chips need an icon or a label',
+       );
 
   /// What the chip reads right now — the chosen value when [hasValue], or
   /// the placeholder ("hh:mm", "Duration") when not. One field rather than
@@ -72,13 +76,17 @@ class AppValueChip extends StatelessWidget {
   /// row pairs with some of its chips. Omitted for a text-only chip.
   final IconData? icon;
 
+  /// Renders a fixed square chip with no horizontal inset. Use this for a
+  /// standalone glyph so it stays circular instead of inheriting the value
+  /// pill's content width.
+  final bool iconOnly;
+
   final AppValueChipVariant variant;
   final AppValueChipSize size;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
-    final radius = BorderRadius.circular(theme.radiusPill);
     final isOutlined = variant == AppValueChipVariant.outlined;
 
     // A set value reads at full strength; a placeholder recedes to
@@ -91,37 +99,29 @@ class AppValueChip extends StatelessWidget {
         : theme.colorTextSecondary;
 
     final height = appButtonHeightFor(theme, _buttonSize);
+    final radius = iconOnly
+        ? BorderRadius.circular(height / 2)
+        : BorderRadius.circular(theme.radiusPill);
     // Horizontal padding scales with the rung so a 28px chip doesn't carry
     // a 40px chip's roomy inset — half the height reads as a balanced pill
     // end-cap at every rung, and it keeps the value/placeholder swap from
     // shifting the text's optical position.
     final horizontalPadding = height / 3;
 
-    // `Alignment.center` is deliberately NOT set here: on a `Container`
-    // with no width, an alignment makes it expand to every pixel the
-    // parent offers (a real bug caught by a size probe — the chip
-    // rendered 800px wide inside a `Center`). A chip must hug its
-    // content so a row of them packs tightly; the `Row` below centers
-    // the label vertically on its own via the fixed `height`.
-    final content = Container(
-      height: height,
-      padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-      decoration: BoxDecoration(
-        // Filled-and-unset is the only case that paints a flat opaque
-        // fill. A SET chip's fill comes from the `BackdropFilter` wrap
-        // below in BOTH variants, so this stays null there — an opaque
-        // color painted here would sit on top of that blur and hide it
-        // (the same trap `AppSelectableChip` documents).
-        color: hasValue || isOutlined ? null : theme.colorSurfaceTimeline,
-        borderRadius: radius,
-        border: isOutlined
-            ? Border.all(
-                color: hasValue ? theme.colorTextPrimary : theme.colorBorder,
-                width: theme.borderWidthHairline,
-              )
-            : null,
+    final chipChild = switch ((iconOnly, icon)) {
+      (true, final glyph?) => Icon(
+        glyph,
+        size: _iconSize(theme),
+        color: foreground,
       ),
-      child: Row(
+      (true, null) => Text(
+        label,
+        style: _textStyle(theme).copyWith(
+          color: foreground,
+          fontWeight: hasValue ? FontWeight.w700 : FontWeight.w500,
+        ),
+      ),
+      (false, _) => Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon case final glyph?) ...[
@@ -144,6 +144,30 @@ class AppValueChip extends StatelessWidget {
           ),
         ],
       ),
+    };
+
+    final content = Container(
+      width: iconOnly ? height : null,
+      height: height,
+      padding: iconOnly
+          ? EdgeInsets.zero
+          : EdgeInsets.symmetric(horizontal: horizontalPadding),
+      decoration: BoxDecoration(
+        // Filled-and-unset is the only case that paints a flat opaque
+        // fill. A SET chip's fill comes from the `BackdropFilter` wrap
+        // below in BOTH variants, so this stays null there — an opaque
+        // color painted here would sit on top of that blur and hide it
+        // (the same trap `AppSelectableChip` documents).
+        color: hasValue || isOutlined ? null : theme.colorSurfaceTimeline,
+        borderRadius: radius,
+        border: isOutlined
+            ? Border.all(
+                color: hasValue ? theme.colorTextPrimary : theme.colorBorder,
+                width: theme.borderWidthHairline,
+              )
+            : null,
+      ),
+      child: iconOnly ? Center(child: chipChild) : chipChild,
     );
 
     return AppPressFeedback(

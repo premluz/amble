@@ -2,7 +2,9 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../tokens/semantic_theme.dart';
+import 'app_sheet_drag_dismiss.dart';
 import 'app_sheet_motion.dart';
+import 'app_sheet_surface.dart';
 
 class AppSheetRoute<T> extends PopupRoute<T> {
   AppSheetRoute({
@@ -34,16 +36,14 @@ class AppSheetRoute<T> extends PopupRoute<T> {
   Color get barrierColor =>
       isCupertino ? kCupertinoModalBarrierColor : theme.colorScrim;
 
-  Widget _surface() => Container(
-    decoration: BoxDecoration(
-      color: theme.colorSurfaceOverlay,
-      borderRadius: BorderRadius.vertical(
-        top: Radius.circular(theme.radiusModal),
+  Widget _surface() => AppSheetDragDismiss(
+    theme: theme,
+    child: AppSheetSurface(
+      theme: theme,
+      child: Material(
+        type: MaterialType.transparency,
+        child: SafeArea(top: false, child: Builder(builder: builder)),
       ),
-    ),
-    child: Material(
-      type: MaterialType.transparency,
-      child: SafeArea(top: false, child: Builder(builder: builder)),
     ),
   );
 

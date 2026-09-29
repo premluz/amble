@@ -2,6 +2,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../timeline_clock.dart';
+import 'component_tokens.dart';
+
 import 'color_primitives.dart';
 import 'motion_primitives.dart';
 import 'radius_primitives.dart';
@@ -600,8 +603,12 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   /// annotations do not compete with task content.
   final TextStyle textZoneName;
 
-  /// Compact monospace time used by [TaskEdgeTimeLabel] across spatial task
-  /// and Edit/resize surfaces.
+  /// Monospace time used by [TaskEdgeTimeLabel] across spatial task and
+  /// Edit/resize surfaces. Same size as [textCaptionMono] (12), so every
+  /// time on the left of the Day screen — hour ticks, a task's start/end,
+  /// the list view's row times — reads at one size (2026-09-29, reported
+  /// directly: the hours differed between the two views). Its own token so
+  /// it can still diverge deliberately.
   final TextStyle textTaskEdgeTime;
 
   /// The three fixed rungs of the task-size scale's own font size —
@@ -902,7 +909,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     ),
     textTaskEdgeTime: TextStyle(
       fontFamily: TypePrimitives.fontFamily,
-      fontSize: TypePrimitives.size0,
+      fontSize: TypePrimitives.size1,
       fontWeight: TypePrimitives.weightRegular,
       height: TypePrimitives.lineHeightNormal,
       color: ColorPrimitives.slate900,
@@ -1175,7 +1182,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     ),
     textTaskEdgeTime: TextStyle(
       fontFamily: TypePrimitives.fontFamily,
-      fontSize: TypePrimitives.size0,
+      fontSize: TypePrimitives.size1,
       fontWeight: TypePrimitives.weightRegular,
       height: TypePrimitives.lineHeightNormal,
       color: ColorPrimitives.sand200,
@@ -1687,34 +1694,62 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
 /// we have literally three columns of the same size," with the reason to
 /// rebuild rather than patch: the old structure "would mean future
 /// problems with some other devices and sizes."
+/// Per-theme cache for [TimelineColumns.timelineTimeColumnFixedWidth].
+final _timeColumnWidths = Expando<double>('timelineTimeColumnWidth');
+
 extension TimelineColumns on AmbleTheme {
   /// Column 1's left edge — the time column starts here.
   double get timelineTimeLeft => spacingTimelineGutter;
 
-  /// Column 1's width for the clock format actually in use, rather than
-  /// for the widest one any locale could ask for.
+  /// Column 1's width — FIXED, the same in 12- and 24-hour, so switching
+  /// the time format never pushes the timeline (reported directly: "PM
+  /// seems to be pushing the spatial view and non spatial too").
   ///
-  /// [spacingTimeColumnWidth] is sized for `"12:00 PM"`, which measures
-  /// exactly 96 in `textCaptionMono` — correct for a 12-hour locale, but
-  /// on a 24-hour one every label ("05:00", "13:41") measures 60, leaving
-  /// a dead 36px stripe between the time text and where zones begin.
-  /// Reported directly against annotated screenshots marking that gap in
-  /// red across both views, with zones expected to start where the gap
-  /// does.
+  /// Sized for the widest label the column's own compact clock writes in
+  /// either format ("13:41" in 24-hour; "12:45p" in 12-hour, whose whole
+  /// hours read "12 pm" — see `timelineClock`), measured in
+  /// `textCaptionMono`. That also keeps the earlier fix: no dead stripe
+  /// between the times and where zones begin (at most one character of
+  /// slack in 24-hour). Never wider than [spacingTimeColumnWidth] (sized for
+  /// the old full "12:00 PM").
   ///
-  /// Measures the real rendered format via [MediaQuery.alwaysUse24HourFormat]
-  /// so a 12-hour locale keeps its full 96 and nothing clips. Never wider
-  /// than [spacingTimeColumnWidth] — this only ever reclaims slack.
-  double timelineTimeColumnWidth(BuildContext context) {
-    final use24Hour = MediaQuery.maybeOf(context)?.alwaysUse24HourFormat;
-    if (use24Hour != true) return spacingTimeColumnWidth;
-    // "13:41" — the widest a 24-hour label gets; every digit is the same
-    // advance in a monospace face, so one sample measures them all.
-    final painter = TextPainter(
-      text: TextSpan(text: '13:41', style: textCaptionMono),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    return math.min(spacingTimeColumnWidth, painter.width);
+  /// [context] is kept for callers; the width no longer depends on it.
+  double timelineTimeColumnWidth(BuildContext context) =>
+      timelineTimeColumnFixedWidth;
+
+  /// [timelineTimeColumnWidth] without a context — it no longer depends on
+  /// one. Measured once per theme (text measurement is not free, and this
+  /// is read during layout).
+  double get timelineTimeColumnFixedWidth =>
+      _timeColumnWidths[this] ??= _measureTimeColumnWidth();
+
+  double _measureTimeColumnWidth() {
+    var widest = 0.0;
+    // Regular AND bold: the "now" label writes the same text in bold,
+    // which is wider — a bold "12 pm" ran its "m" under the zones.
+    final styles = [
+      textCaptionMono,
+      textCaptionMono.copyWith(fontWeight: FontWeight.w700),
+    ];
+    for (final sample in timelineClockSamples().toSet()) {
+      for (final style in styles) {
+        final painter = TextPainter(
+          text: TextSpan(text: sample, style: style),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        widest = math.max(widest, painter.width);
+        painter.dispose();
+      }
+    }
+    // Plus what the zones' side inset gave up (ZoneInsetTokens), so the
+    // column grows and zones start later while tasks don't move.
+    // The widest real label (never clipped, whatever the font), a little
+    // breathing room, plus what the zones' side inset and the time->zone
+    // gap lend the column.
+    return widest +
+        TimeColumnTokens.labelSlack +
+        ZoneInsetTokens.freedForTimeColumn(this) +
+        TimeColumnTokens.borrowedFromZoneGap;
   }
 
   /// Column 2's left edge for the clock format in use — the context-aware
@@ -1725,16 +1760,22 @@ extension TimelineColumns on AmbleTheme {
   double timelineZoneLeftFor(BuildContext context) =>
       spacingTimelineGutter +
       timelineTimeColumnWidth(context) +
-      spacingTimelineGutter;
+      timelineTimeToZoneGap;
+
+  /// The gap between the time column and the zones: the Timeline's gutter,
+  /// less what the column borrowed for its labels
+  /// ([TimeColumnTokens.borrowedFromZoneGap]).
+  double get timelineTimeToZoneGap =>
+      spacingTimelineGutter - TimeColumnTokens.borrowedFromZoneGap;
 
   /// Column 2's left edge — zone bands and task pills start here.
   ///
-  /// Format-agnostic (assumes the widest, 12-hour label). Prefer
-  /// [timelineZoneLeftFor] wherever a [BuildContext] is available; this
-  /// remains for the token-level contract tests and for callers with no
-  /// context to measure from.
+  /// The same as [timelineZoneLeftFor]: the time column no longer depends
+  /// on the clock format, so no context is needed.
   double get timelineZoneLeft =>
-      spacingTimelineGutter + spacingTimeColumnWidth + spacingTimelineGutter;
+      spacingTimelineGutter +
+      timelineTimeColumnFixedWidth +
+      timelineTimeToZoneGap;
 
   /// Column 3's left edge — task titles/content start here, at a fixed x
   /// that does NOT move with the day's own overlap depth.

@@ -2497,3 +2497,49 @@ the group's lanes the moment a drag started.
 already used for the ghost). `clusters` still drives which rows render as
 grouped. Regression test in drag_haptics_test.dart; it failed before the
 fix with a 32px jump.
+
+## Light mode: the selected day in the Day week strip was invisible
+
+**Symptom**: in light mode the week strip's selected-day pill couldn't be
+seen; dark mode was fine.
+**Cause**: wrong token. The indicator used `colorSurfaceField` (resting
+field, surface2 `#F6F5F1`) on the Day page's `colorSurfaceTimeline`
+(cream2 `#F8F6F2`), a contrast of about 1.01. In dark mode, `inkField` on
+`ink800` happened to be visible.
+**Fix**: `colorSurfaceFieldActive` (light surface3 `#D5D5D1`, dark
+`inkFieldActive`), i.e. the active-field surface, which is what a selected
+day is. A test asserts the token and a visible contrast (>1.2) against the
+page in both themes.
+**Revised (same day)**: `colorSurfaceFieldActive` was too strong in both
+themes. The indicator now uses `colorSurfaceSecondary` (light cream1, dark
+ink700), the same subtle next-surface step as the Settings group
+containers. The test asserts a visible step (>1.04) that is subtler than
+the active-field grey.
+
+## Two-finger gestures in widget tests that trigger a pinch hang on Hive
+
+**Symptom**: a widget test moving a finger while another was down never
+finished.
+**Cause**: once two fingers are down, any move is a pinch, which writes
+the zoom level (`timelinePixelsPerMinuteSettingProvider`) to Hive. That is
+real I/O inside fake async time.
+**Fix**: run such gestures inside `tester.runAsync` with a short real
+delay before leaving it (multi_task_selection_test.dart). Tests that only
+put two fingers DOWN, without moving, don't need it.
+
+## 2026-09-29 — Chips inset from the field above them (quick-create)
+
+**Symptom:** the quick-create chip rows sat inset from the name field, with
+empty space at both ends. **Cause:** a start-aligned `Column` of `Wrap`s
+shrink-wraps to its widest row (a `Wrap` sizes to its content), and the
+sheet's outer `Column` (default `CrossAxisAlignment.center`) centred it.
+**Fix:** `CrossAxisAlignment.stretch` on the chip column. **Rule:** inside a
+centring parent, give a left-aligned group full width explicitly.
+
+## 2026-09-29 — Page scroll fade painted over an in-tree sheet
+
+**Symptom:** a dark band at the quick-create sheet's bottom. **Cause:** in
+`timeline_screen.dart` the page's bottom `AppTopScrollFade` came AFTER
+`QuickCreateOverlay` in the Stack, so it painted over the sheet. **Fix:**
+the overlay is now last. **Rule:** page chrome (fades) goes below any
+in-tree sheet.

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:amble/core/tokens/component_tokens.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_top_scroll_fade.dart';
 import 'package:amble/features/timeline/external_event_capsule_block.dart'
@@ -576,7 +577,7 @@ void main() {
         );
 
         final timeLeft = tester
-            .getTopLeft(find.textContaining('8:00', findRichText: false))
+            .getTopLeft(find.textContaining('8 am', findRichText: false))
             .dx;
 
         expect(
@@ -627,7 +628,10 @@ void main() {
 
       expect(
         unzonedRowLeft,
-        moreOrLessEquals(zoneLeft + AmbleTheme.light.spacingLg, epsilon: 0.5),
+        moreOrLessEquals(
+          zoneLeft + ZoneInsetTokens.side(AmbleTheme.light),
+          epsilon: 0.5,
+        ),
         reason:
             'an unzoned task row must sit spacingLg inside the zone '
             'container\'s own left edge — matching where a zoned task\'s '
@@ -875,7 +879,10 @@ void main() {
       // kinds of unzoned row share one x-origin with zoned content.
       expect(
         eventRowLeft,
-        moreOrLessEquals(zoneLeft + AmbleTheme.light.spacingLg, epsilon: 0.5),
+        moreOrLessEquals(
+          zoneLeft + ZoneInsetTokens.side(AmbleTheme.light),
+          epsilon: 0.5,
+        ),
       );
     });
 

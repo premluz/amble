@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:amble/core/tokens/component_tokens.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
+import 'package:amble/core/widgets/app_sheet_drag_dismiss.dart';
+import 'package:amble/core/widgets/app_sheet_surface.dart';
 import 'package:amble/core/widgets/app_step_scaffold.dart';
 import 'package:amble/core/widgets/app_top_scroll_fade.dart';
 
@@ -41,9 +44,7 @@ void main() {
   }
 
   testWidgets('shows a mirrored bottom scroll-fade above the primary-button '
-      'footer, blending from the body\'s own colorSurfaceOverlay', (
-    tester,
-  ) async {
+      'footer, blending from the body\'s own sheet surface', (tester) async {
     await pump(tester, modalTitle: 'New task');
 
     final bottomFade = find.byWidgetPredicate(
@@ -55,7 +56,7 @@ void main() {
     // background) up to the elevation ramp's top rung — requested
     // directly, "sheets across the app should have next surface level to
     // bg." This fade has to keep matching the body it blends into.
-    expect(fade.color, theme.colorSurfaceOverlay);
+    expect(fade.color, SheetTokens.surface(theme));
   });
 
   // Reported directly (2026-09-09), after the header/body seam still cut
@@ -77,8 +78,8 @@ void main() {
       expect(topFade, findsOneWidget);
       final fade = tester.widget<AppTopScrollFade>(topFade);
       // See the bottom-fade test above — the sheet body is now
-      // `colorSurfaceOverlay`, and this fade tracks it.
-      expect(fade.color, theme.colorSurfaceOverlay);
+      // `SheetTokens.surface`, and this fade tracks it.
+      expect(fade.color, SheetTokens.surface(theme));
     },
   );
 
@@ -97,7 +98,7 @@ void main() {
 
   testWidgets('the title header\'s own background IS a gradient — '
       'colorSurfaceSecondary at the top blending down into the body\'s '
-      'colorSurfaceOverlay at the header\'s bottom edge — rather than a flat '
+      'sheet surface at the header\'s bottom edge — rather than a flat '
       'fill with a separate (and, against an identical fill underneath '
       'it, invisible) fade painted on top. Reported directly: "heading '
       'not have nice gradient... sheet heading section different color '
@@ -121,7 +122,7 @@ void main() {
     // stop here would recreate the very report this test's name quotes.
     expect(gradient.colors, [
       theme.colorSurfaceSecondary,
-      theme.colorSurfaceOverlay,
+      SheetTokens.surface(theme),
     ]);
   });
 
@@ -174,4 +175,17 @@ void main() {
       );
     },
   );
+
+  testWidgets('the step sheet drags down to close, like every sheet', (
+    tester,
+  ) async {
+    await pump(tester, modalTitle: 'New task');
+    expect(
+      find.ancestor(
+        of: find.byType(AppSheetSurface),
+        matching: find.byType(AppSheetDragDismiss),
+      ),
+      findsOneWidget,
+    );
+  });
 }

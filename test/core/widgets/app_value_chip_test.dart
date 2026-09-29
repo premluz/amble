@@ -26,6 +26,7 @@ void main() {
     AppValueChipVariant variant = AppValueChipVariant.filled,
     AppValueChipSize size = AppValueChipSize.sm,
     IconData? icon,
+    bool iconOnly = false,
     VoidCallback? onTap,
   }) {
     return tester.pumpWidget(
@@ -39,6 +40,7 @@ void main() {
               variant: variant,
               size: size,
               icon: icon,
+              iconOnly: iconOnly,
               onTap: onTap ?? () {},
             ),
           ),
@@ -207,6 +209,21 @@ void main() {
     );
     expect(find.byIcon(Icons.schedule_rounded), findsOneWidget);
     expect(find.text('hh:mm'), findsOneWidget);
+  });
+
+  testWidgets('icon-only chips are exact circles without label padding', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      label: '',
+      hasValue: false,
+      icon: Icons.star_rounded,
+      iconOnly: true,
+    );
+
+    final size = tester.getSize(find.byType(AppValueChip));
+    expect(size.width, size.height);
   });
 
   testWidgets('tapping fires onTap in both the empty and the set state — '

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../tokens/component_tokens.dart';
 import '../tokens/semantic_theme.dart';
 import 'app_press_feedback.dart';
 import 'app_sheet_handle.dart';
@@ -158,22 +159,26 @@ class _AppDateAccordionState extends State<AppDateAccordion> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            _DateLabelRow(
-              theme: theme,
-              monthOf: widget.selectedDate,
-              expanded: _expanded,
-              onTap: () => _setExpanded(!_expanded),
-            ),
-            const Spacer(),
-            if (widget.showTodayLabel)
-              _TodayFadeLabel(
+        // The shared page-heading line (see PageHeadingTokens.rowHeight).
+        SizedBox(
+          height: PageHeadingTokens.rowHeight(theme),
+          child: Row(
+            children: [
+              _DateLabelRow(
                 theme: theme,
-                visible: !_isSameDay(widget.selectedDate, today),
-                onTap: () => widget.onDateSelected(today),
+                monthOf: widget.selectedDate,
+                expanded: _expanded,
+                onTap: () => _setExpanded(!_expanded),
               ),
-          ],
+              const Spacer(),
+              if (widget.showTodayLabel)
+                _TodayFadeLabel(
+                  theme: theme,
+                  visible: !_isSameDay(widget.selectedDate, today),
+                  onTap: () => widget.onDateSelected(today),
+                ),
+            ],
+          ),
         ),
         // AnimatedSize, not a bare conditional — an accordion that pops
         // open/shut with no transition reads as a layout glitch, not a
@@ -250,7 +255,9 @@ class _DateLabelRow extends StatelessWidget {
               // weekday abbreviation, day-of-month, month abbreviation.
               '${_weekdayNames[monthOf.weekday - 1]} ${monthOf.day} '
               '${_monthNames[monthOf.month - 1].substring(0, 3)}',
-              style: theme.textBody,
+              // The page-heading type, shared with the Habits period and
+              // the sub nav beside it.
+              style: PageHeadingTokens.text(theme),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -1024,7 +1031,12 @@ class _WeekDaySelectionIndicatorState extends State<_WeekDaySelectionIndicator>
               rect: rect,
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: theme.colorSurfaceField,
+                  // The next surface up from the page — the same subtle step
+                  // the Settings group containers use. `colorSurfaceField`
+                  // was all but the page itself in light mode (invisible),
+                  // and `colorSurfaceFieldActive` too strong in both themes
+                  // (both reported directly).
+                  color: theme.colorSurfaceSecondary,
                   borderRadius: BorderRadius.circular(theme.radiusPill),
                 ),
               ),

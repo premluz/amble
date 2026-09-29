@@ -4,11 +4,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive_ce.dart';
 import 'package:tabler_icons_plus/tabler_icons_plus.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
+import 'package:amble/core/widgets/app_button.dart';
 import 'package:amble/core/widgets/app_pane.dart';
+import 'package:amble/core/widgets/app_value_chip.dart';
 import 'package:amble/core/widgets/app_text_field.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/task_detail/add_category_modal.dart';
+import 'package:amble/features/task_detail/category_color_modal.dart';
+import 'package:amble/features/task_detail/category_icon_modal.dart';
 import 'package:amble/features/task_detail/category_visual.dart';
+import 'package:amble/features/task_detail/task_name_category_modal.dart';
+import 'package:amble/core/widgets/app_sheet_flow.dart';
 import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/models/task.dart';
 import 'package:amble/shared/providers/category_providers.dart';
@@ -22,7 +28,9 @@ import 'package:amble/shared/repositories/hive_task_repository.dart';
 /// siblings, so descending through the labeled `AppTextField` ancestor is
 /// what actually finds it.
 Finder _nameField() => find.descendant(
-  of: find.widgetWithText(AppTextField, 'Label name'),
+  of: find.byWidgetPredicate(
+    (widget) => widget is AppTextField && widget.label == 'Label name',
+  ),
   matching: find.byType(TextField),
 );
 
@@ -76,91 +84,87 @@ void main() {
     await taskBox.close();
   });
 
-  testWidgets(
-    'opens on the Name-only stage 1, matching the task/zone creation flows '
-    '— color and icon are not in the tree yet',
-    (tester) async {
-      // Requested directly: "this would be a pattern of progressive
-      // disclosure that applies to task, zone, category."
-      final navigatorKey = await _pumpHost(tester, box: box, taskBox: taskBox);
-      unawaited(showAddCategoryModal(navigatorKey.currentContext!));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Done'), findsOneWidget);
-      expect(find.widgetWithText(ElevatedButton, 'Save'), findsNothing);
-      expect(find.text('Color'), findsNothing);
-      expect(find.text('Icon'), findsNothing);
-
-      // Done is always enabled at stage 1 (matching the task/zone flows'
-      // own _confirmNameStage) — an empty name closes the whole screen
-      // rather than the button being disabled.
-      await tester.enterText(_nameField(), 'Gardening');
-      await tester.pump();
-      await tester.tap(find.widgetWithText(ElevatedButton, 'Done'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Color'), findsOneWidget);
-      expect(find.text('Icon'), findsOneWidget);
-      expect(find.widgetWithText(ElevatedButton, 'Save'), findsOneWidget);
-    },
-  );
-
-  testWidgets('tapping Done with no name typed closes the whole screen', (
+  testWidgets('opens as one sheet with Color and Icon value chips', (
     tester,
   ) async {
     final navigatorKey = await _pumpHost(tester, box: box, taskBox: taskBox);
     unawaited(showAddCategoryModal(navigatorKey.currentContext!));
     await tester.pumpAndSettle();
 
-    await tester.testTextInput.receiveAction(TextInputAction.done);
+    expect(find.text('New label'), findsOneWidget);
+    expect(find.text('Done'), findsNothing);
+    expect(find.byType(AppPane), findsNothing);
+    expect(find.byType(AppValueChip), findsNWidgets(2));
+    expect(find.widgetWithText(AppValueChip, 'Color'), findsOneWidget);
+    expect(find.widgetWithText(AppValueChip, 'Icon'), findsOneWidget);
+
+    final saveButton = find.ancestor(
+      of: find.byIcon(Icons.check_rounded),
+      matching: find.byType(AppButton),
+    );
+    expect(tester.widget<AppButton>(saveButton).onPressed, isNull);
+  });
+
+  testWidgets('the close button dismisses the blank label sheet', (
+    tester,
+  ) async {
+    final navigatorKey = await _pumpHost(tester, box: box, taskBox: taskBox);
+    unawaited(showAddCategoryModal(navigatorKey.currentContext!));
     await tester.pumpAndSettle();
 
-    expect(find.text('Color'), findsNothing);
+    await tester.tap(find.byIcon(Icons.close_rounded));
+    await tester.pumpAndSettle();
+
     expect(find.text('New label'), findsNothing);
   });
 
-  testWidgets(
-    'Save is disabled until color and icon are both set, once past stage 1',
-    (tester) async {
-      final navigatorKey = await _pumpHost(tester, box: box, taskBox: taskBox);
-      unawaited(showAddCategoryModal(navigatorKey.currentContext!));
-      await tester.pumpAndSettle();
+  testWidgets('value chips open color and icon as pages of the same sheet', (
+    tester,
+  ) async {
+    final navigatorKey = await _pumpHost(tester, box: box, taskBox: taskBox);
+    unawaited(showAddCategoryModal(navigatorKey.currentContext!));
+    await tester.pumpAndSettle();
 
-      await tester.enterText(_nameField(), 'Gardening');
-      await tester.pump();
-      await tester.tap(find.widgetWithText(ElevatedButton, 'Done'));
-      await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(AppValueChip, 'Color'));
+    await tester.pumpAndSettle();
+    expect(find.byType(CategoryColorPage), findsOneWidget);
 
-      ElevatedButton saveButton() => tester.widget<ElevatedButton>(
-        find.widgetWithText(ElevatedButton, 'Save'),
-      );
-
-      // Nothing set yet.
-      expect(saveButton().onPressed, isNull);
-
-      // Color, still no icon.
-      final colorSwatch = find
+    await tester.tap(
+      find
           .descendant(
-            of: find.widgetWithText(AppPane, 'Color'),
-            matching: find.byType(GestureDetector),
+            of: find.byType(CategoryColorPage),
+            matching: find.byType(AnimatedContainer),
           )
-          .first;
-      await tester.tap(colorSwatch);
-      await tester.pump();
-      expect(saveButton().onPressed, isNull);
+          .first,
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(CategoryColorPage), findsNothing);
+    expect(
+      tester
+          .widget<AppValueChip>(find.widgetWithText(AppValueChip, 'Color'))
+          .hasValue,
+      isTrue,
+    );
 
-      // Color + icon — now enabled. ensureVisible first: the icon grid
-      // scrolls, and the default test viewport doesn't fit every icon
-      // without scrolling to it — same fix as edit_schedule_repeats_test.dart
-      // needed for its own scrollable schedule stage (see docs/ERROR_LOG.md).
-      final icon = find.byIcon(TablerIcons.heart);
-      await tester.ensureVisible(icon);
-      await tester.pump();
-      await tester.tap(icon);
-      await tester.pump();
-      expect(saveButton().onPressed, isNotNull);
-    },
-  );
+    await tester.tap(find.widgetWithText(AppValueChip, 'Icon'));
+    await tester.pumpAndSettle();
+    expect(find.byType(CategoryIconPage), findsOneWidget);
+
+    final icon = find.descendant(
+      of: find.byType(CategoryIconPage),
+      matching: find.byIcon(TablerIcons.heart),
+    );
+    await tester.ensureVisible(icon);
+    await tester.tap(icon);
+    await tester.pumpAndSettle();
+    expect(find.byType(CategoryIconPage), findsNothing);
+    expect(
+      tester
+          .widget<AppValueChip>(find.widgetWithText(AppValueChip, 'Icon'))
+          .hasValue,
+      isTrue,
+    );
+  });
 
   testWidgets(
     'creating a category saves it and resolves it back to the caller, '
@@ -176,28 +180,33 @@ void main() {
 
       await tester.enterText(_nameField(), 'Gardening');
       await tester.pump();
-      await tester.tap(find.widgetWithText(ElevatedButton, 'Done'));
+      await tester.tap(find.widgetWithText(AppValueChip, 'Color'));
       await tester.pumpAndSettle();
 
-      // Tap the first color swatch.
-      final colorSwatch = find
-          .descendant(
-            of: find.widgetWithText(AppPane, 'Color'),
-            matching: find.byType(GestureDetector),
-          )
-          .first;
-      await tester.tap(colorSwatch);
-      await tester.pump();
+      await tester.tap(
+        find
+            .descendant(
+              of: find.byType(CategoryColorPage),
+              matching: find.byType(AnimatedContainer),
+            )
+            .first,
+      );
+      await tester.pumpAndSettle();
 
-      // Tap the first curated icon. ensureVisible first — same scrollable
-      // grid reasoning as the test above.
-      final icon = find.byIcon(curatedCategoryIcons.first);
+      await tester.tap(find.widgetWithText(AppValueChip, 'Icon'));
+      await tester.pumpAndSettle();
+      final icon = find.descendant(
+        of: find.byType(CategoryIconPage),
+        matching: find.byIcon(curatedCategoryIcons.first),
+      );
       await tester.ensureVisible(icon);
-      await tester.pump();
       await tester.tap(icon);
-      await tester.pump();
+      await tester.pumpAndSettle();
 
-      final saveButton = find.widgetWithText(ElevatedButton, 'Save');
+      final saveButton = find.ancestor(
+        of: find.byIcon(Icons.check_rounded),
+        matching: find.byType(AppButton),
+      );
       await tester.ensureVisible(saveButton);
       await tester.pump();
       // tap, the real-I/O delay, AND the final pumpAndSettle all inside
@@ -208,7 +217,7 @@ void main() {
       // boundaries and hung — caught by actually running this, not by
       // reasoning about it.
       await tester.runAsync(() async {
-        await tester.tap(saveButton);
+        await tester.tap(find.byIcon(Icons.check_rounded));
         // Not pumpAndSettle immediately: Save shows a spinner
         // (AppButton.isLoading/_isSaving) for the duration of the
         // in-flight createCategory write, and a spinner's animation never
@@ -312,13 +321,73 @@ void main() {
       unawaited(showAddCategoryModal(navigatorKey.currentContext!));
       await tester.pumpAndSettle();
 
-      await tester.enterText(_nameField(), 'Gardening');
-      await tester.pump();
-      await tester.tap(find.widgetWithText(ElevatedButton, 'Done'));
-      await tester.pumpAndSettle();
-
       expect(find.byIcon(Icons.delete_outline_rounded), findsNothing);
     });
+  });
+
+  testWidgets('from Name and category, New label is a page of the SAME sheet '
+      'and saving comes back with it selected', (tester) async {
+    final navigatorKey = await _pumpHost(tester, box: box, taskBox: taskBox);
+    final title = TextEditingController();
+    final notes = TextEditingController();
+    addTearDown(title.dispose);
+    addTearDown(notes.dispose);
+    final picked = <String>[];
+    unawaited(
+      TaskNameCategoryModal.show(
+        context: navigatorKey.currentContext!,
+        titleController: title,
+        notesController: notes,
+        categoryId: null,
+        onCategoryChanged: picked.add,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Name and category'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(AppValueChip, 'New label'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AppSheetFlow), findsOneWidget);
+    expect(find.byIcon(Icons.arrow_back_ios_new_rounded), findsOneWidget);
+
+    await tester.enterText(_nameField(), 'Garden');
+    await tester.tap(find.widgetWithText(AppValueChip, 'Color'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find
+          .descendant(
+            of: find.byType(CategoryColorPage),
+            matching: find.byType(AnimatedContainer),
+          )
+          .first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(AppValueChip, 'Icon'));
+    await tester.pumpAndSettle();
+    final icon = find.descendant(
+      of: find.byType(CategoryIconPage),
+      matching: find.byIcon(TablerIcons.heart),
+    );
+    await tester.ensureVisible(icon);
+    await tester.tap(icon);
+    await tester.pumpAndSettle();
+    // Save writes to Hive: tap, real delay and settle in ONE runAsync (see
+    // the create test above and docs/ERROR_LOG.md).
+    await tester.runAsync(() async {
+      await tester.tap(find.byTooltip('Save label'));
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      await tester.pumpAndSettle();
+    });
+    // The page slide back runs on the test clock.
+    await tester.pumpAndSettle();
+
+    // Back on the first page of the same sheet (× again, not ‹).
+    expect(find.byType(AddCategoryPage), findsNothing);
+    expect(find.text('Name and category'), findsOneWidget);
+    expect(find.byIcon(Icons.close_rounded), findsOneWidget);
+    expect(picked, hasLength(1));
+    expect(find.text('Garden'), findsOneWidget);
   });
 }
 

@@ -19,7 +19,7 @@ import '../../core/widgets/app_sheet_handle.dart';
 /// `QuickCreateOverlay`), but it must not be what makes the normal case
 /// fit. Raising this is the correct fix if content is ever added to the
 /// panel; letting it scroll is not.
-const quickCreateSheetMinFraction = 0.34;
+const quickCreateSheetMinFraction = 0.35;
 
 /// The MINIMISED state's height fraction — the third of the sheet's three
 /// states, below [quickCreateSheetMinFraction].

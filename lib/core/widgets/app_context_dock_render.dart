@@ -75,6 +75,11 @@ class _AppContextDockLayoutView extends StatelessWidget {
     return result;
   }
 
+  static bool _isGrouped(
+    Map<String, List<_DockEntry>> byGroup,
+    String groupId,
+  ) => (byGroup[groupId]?.length ?? 0) > 1;
+
   static bool _isSingleton(
     Map<String, List<_DockEntry>> byGroup,
     String groupId,
@@ -163,6 +168,27 @@ class _AppContextDockLayoutView extends StatelessWidget {
                   ),
                 ),
               ),
+          // One highlight per multi-button group (e.g. Timeline | List),
+          // moving between its buttons like a liquid rather than jumping.
+          for (final group in groups)
+            if ((byGroup[group.id]?.length ?? 0) > 1)
+              if (byGroup[group.id]!
+                      .where((entry) => entry.action.selected)
+                      .firstOrNull
+                  case final selected?)
+                if (positions[selected.action.id] case final rect?)
+                  AppLiquidSlide(
+                    key: ValueKey('dock-selection-${group.id}'),
+                    target: rect,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: FloatingSurfaceTokens.selected(theme),
+                        borderRadius: BorderRadius.circular(
+                          theme.radiusPillFull,
+                        ),
+                      ),
+                    ),
+                  ),
           for (final entry in entries.values)
             if (positions[entry.action.id] case final rect?)
               AnimatedPositioned(
@@ -234,6 +260,11 @@ class _AppContextDockLayoutView extends StatelessWidget {
                                 icon: entry.action.icon,
                                 tooltip: entry.action.tooltip,
                                 selected: entry.action.selected,
+                                // A group's shared highlight draws it.
+                                showsSelectedFill: !_isGrouped(
+                                  byGroup,
+                                  entry.groupId,
+                                ),
                                 isDestructive: entry.action.destructive,
                                 haptic: entry.action.haptic,
                                 badgeCount: entry.action.badgeCount,

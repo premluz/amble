@@ -49,7 +49,13 @@ class AppDockIconButton extends StatelessWidget {
     this.isDestructive = false,
     this.haptic = AmbleHaptic.tap,
     this.badgeCount,
+    this.showsSelectedFill = true,
   });
+
+  /// False when the dock draws one shared, moving selection highlight for
+  /// this button's group (`AppLiquidSlide`) instead of each button filling
+  /// itself. Also drops the tap ripple: the moving highlight is the feedback.
+  final bool showsSelectedFill;
 
   final AmbleTheme theme;
   final IconData icon;
@@ -76,7 +82,11 @@ class AppDockIconButton extends StatelessWidget {
       variant: AppButtonVariant.ghost,
       tooltip: tooltip,
       onPressed: onTap,
-      fillColor: selected ? FloatingSurfaceTokens.selected(theme) : null,
+      // In a group, the moving highlight and the icon's lift answer the tap.
+      ripple: showsSelectedFill,
+      fillColor: selected && showsSelectedFill
+          ? FloatingSurfaceTokens.selected(theme)
+          : null,
       // colorDestructive (a stronger, more saturated red), not
       // colorTaskAlert (a coral warning/attention color) — requested
       // directly: "delete needs stronger red." colorTaskAlert answers a

@@ -1,3 +1,4 @@
+import 'package:amble/core/tokens/component_tokens.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/features/tracked_behavior/tracked_calendar_period.dart';
 import 'package:amble/features/tracked_behavior/tracked_period_calendar.dart';
@@ -110,7 +111,7 @@ void main() {
 
     expect(find.text('Mon 29 Sep – Sun 5 Oct'), findsOneWidget);
     final label = tester.widget<Text>(find.text('Mon 29 Sep – Sun 5 Oct'));
-    expect(label.style, AmbleTheme.light.textBody);
+    expect(label.style, PageHeadingTokens.text(AmbleTheme.light));
     final labelTop = tester.getTopLeft(find.text('Mon 29 Sep – Sun 5 Oct')).dy;
     expect(find.text('2025-9-29'), findsOneWidget);
 

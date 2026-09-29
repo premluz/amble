@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 
+import 'package:amble/core/tokens/component_tokens.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_sheet_motion.dart';
 import 'package:amble/core/widgets/app_step_scaffold.dart';
@@ -29,7 +30,7 @@ Widget _sheet(AmbleTheme theme, bool step) => step
           key: _content,
           width: double.infinity,
           height: 120,
-          child: ColoredBox(color: theme.colorSurfaceOverlay),
+          child: ColoredBox(color: SheetTokens.surface(theme)),
         ),
       );
 
@@ -62,7 +63,7 @@ void main() {
   for (final theme in [AmbleTheme.light, AmbleTheme.dark]) {
     for (final step in [false, true]) {
       testWidgets(
-        'keyboard corners have sheet fill: step=$step ${theme.colorSurfaceOverlay}',
+        'keyboard corners have sheet fill: step=$step ${SheetTokens.surface(theme)}',
         (tester) async {
           addTearDown(tester.view.resetViewInsets);
           await tester.pumpWidget(
@@ -83,7 +84,7 @@ void main() {
             );
             await tester.pumpAndSettle();
             await tester.runAsync(
-              () => _expectCorners(tester, theme.colorSurfaceOverlay, inset),
+              () => _expectCorners(tester, SheetTokens.surface(theme), inset),
             );
             final screenHeight =
                 tester.view.physicalSize.height / tester.view.devicePixelRatio;

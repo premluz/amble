@@ -3,7 +3,11 @@ import 'package:flutter/material.dart';
 import '../tokens/component_tokens.dart';
 import '../tokens/semantic_theme.dart';
 import 'app_button.dart';
-import 'app_press_feedback.dart';
+import 'app_nav_label.dart';
+import 'app_nav_press.dart';
+import 'app_stagger_exit.dart';
+
+export 'app_nav_label.dart';
 
 /// The app's primary section switcher — "Day · Inbox · Tracked" as plain
 /// text-label destinations, left-aligned, with Settings as a separate icon
@@ -77,12 +81,15 @@ class AppTopNav extends StatelessWidget {
         children: [
           for (var i = 0; i < destinations.length; i++) ...[
             if (i > 0) SizedBox(width: theme.spacingLg),
-            AppNavLabel(
-              theme: theme,
-              label: destinations[i],
-              selected: i == selectedIndex,
-              onTap: () => onDestinationSelected(i),
-              height: appButtonHeightFor(theme, AppButtonSize.md),
+            AppStaggerExit(
+              index: i,
+              child: AppNavLabel(
+                theme: theme,
+                label: destinations[i],
+                selected: i == selectedIndex,
+                onTap: () => onDestinationSelected(i),
+                height: appButtonHeightFor(theme, AppButtonSize.md),
+              ),
             ),
           ],
           const Spacer(),
@@ -90,31 +97,38 @@ class AppTopNav extends StatelessWidget {
           // right edge, so the GLYPH (not the invisible box) ends on the
           // screen-padding line — optically aligned with everything else
           // that sits at that edge. The tap box moves with it.
-          Transform.translate(
-            offset: Offset(
-              (appButtonHeightFor(theme, AppButtonSize.md) -
-                      TopNavTokens.settingsIconSize) /
-                  2,
-              0,
-            ),
-            child: AppPressFeedback(
-              onTap: onSettingsTap,
-              borderRadius: BorderRadius.circular(theme.radiusSm),
-              child: SizedBox(
-                width: appButtonHeightFor(theme, AppButtonSize.md),
-                height: appButtonHeightFor(theme, AppButtonSize.md),
-                child: Center(
-                  child: Icon(
-                    Icons.settings_outlined,
-                    // Same active/inactive contrast a selected destination
-                    // label uses. Inactive state uses colorForegroundTertiary,
-                    // not colorTextTertiary — same resting tone as the main
-                    // nav's own inactive label, but named for a non-text
-                    // element since this is an icon, not text.
-                    color: settingsSelected
-                        ? theme.colorTextPrimary
-                        : theme.colorForegroundTertiary,
-                    size: TopNavTokens.settingsIconSize,
+          // Settings leaves last, after every destination.
+          AppStaggerExit(
+            index: destinations.length,
+            child: Transform.translate(
+              offset: Offset(
+                (appButtonHeightFor(theme, AppButtonSize.md) -
+                        TopNavTokens.settingsIconSize) /
+                    2,
+                0,
+              ),
+              child: AppNavPress(
+                onTap: onSettingsTap,
+                borderRadius: BorderRadius.circular(theme.radiusSm),
+                builder: (context, pressed) => SizedBox(
+                  width: appButtonHeightFor(theme, AppButtonSize.md),
+                  height: appButtonHeightFor(theme, AppButtonSize.md),
+                  child: Center(
+                    child: AppNavWash(
+                      visible: pressed,
+                      child: Icon(
+                        Icons.settings_outlined,
+                        // Same active/inactive contrast a selected destination
+                        // label uses. Inactive state uses colorForegroundTertiary,
+                        // not colorTextTertiary — same resting tone as the main
+                        // nav's own inactive label, but named for a non-text
+                        // element since this is an icon, not text.
+                        color: settingsSelected
+                            ? theme.colorTextPrimary
+                            : theme.colorForegroundTertiary,
+                        size: TopNavTokens.settingsIconSize,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -122,55 +136,6 @@ class AppTopNav extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// A navigation label — the main nav's destinations and the page-level sub
-/// nav's tabs (`AppSubNav`) share it, so both read as one navigation
-/// language: `textBody`, bold primary when selected, medium tertiary when
-/// not. [height] null keeps the label at its text height (the sub nav,
-/// which sits in the page-heading slot); the main nav passes its 40px row.
-class AppNavLabel extends StatelessWidget {
-  const AppNavLabel({
-    super.key,
-    required this.theme,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-    this.height,
-  });
-
-  final AmbleTheme theme;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-  final double? height;
-
-  /// The label's text style, for anything that must match it exactly.
-  static TextStyle styleFor(AmbleTheme theme, {required bool selected}) =>
-      theme.textBody.copyWith(
-        color: selected ? theme.colorTextPrimary : theme.colorTextTertiary,
-        fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-      );
-
-  @override
-  Widget build(BuildContext context) {
-    final text = Text(label, style: styleFor(theme, selected: selected));
-    final rowHeight = height;
-    return AppPressFeedback(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(theme.radiusSm),
-      // In the main nav: the full row height, not just the text's own
-      // intrinsic bounds — see `AppTopNav.build`'s own comment on why this
-      // bar's hit area matches `AppTabSwitch`'s 40px track exactly.
-      // `Center` keeps the text vertically centered inside that taller box.
-      child: rowHeight == null
-          ? text
-          : SizedBox(
-              height: rowHeight,
-              child: Center(child: text),
-            ),
     );
   }
 }

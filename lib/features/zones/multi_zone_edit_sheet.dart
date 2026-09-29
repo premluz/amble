@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/tokens/component_tokens.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_field_action_button.dart';
@@ -41,8 +42,7 @@ class _MultiZoneEditForm extends ConsumerStatefulWidget {
   final List<String> zoneIds;
 
   @override
-  ConsumerState<_MultiZoneEditForm> createState() =>
-      _MultiZoneEditFormState();
+  ConsumerState<_MultiZoneEditForm> createState() => _MultiZoneEditFormState();
 }
 
 class _MultiZoneEditFormState extends ConsumerState<_MultiZoneEditForm> {
@@ -78,10 +78,7 @@ class _MultiZoneEditFormState extends ConsumerState<_MultiZoneEditForm> {
 
   List<Zone> get _zones => widget.zoneIds
       .map(
-        (id) => ref
-            .read(zoneListProvider)
-            .where((z) => z.id == id)
-            .firstOrNull,
+        (id) => ref.read(zoneListProvider).where((z) => z.id == id).firstOrNull,
       )
       .whereType<Zone>()
       .toList();
@@ -167,7 +164,9 @@ class _MultiZoneEditFormState extends ConsumerState<_MultiZoneEditForm> {
           zone.startMinutes = _startMinutes!;
           changed = true;
         }
-        if (_endTouched && _endMinutes != null && zone.endMinutes != _endMinutes) {
+        if (_endTouched &&
+            _endMinutes != null &&
+            zone.endMinutes != _endMinutes) {
           zone.endMinutes = _endMinutes!;
           changed = true;
         }
@@ -290,9 +289,7 @@ class _MultiZoneEditFormState extends ConsumerState<_MultiZoneEditForm> {
               Expanded(
                 child: Text(
                   'Date',
-                  style: theme.textBody.copyWith(
-                    color: theme.colorTextPrimary,
-                  ),
+                  style: theme.textBody.copyWith(color: theme.colorTextPrimary),
                 ),
               ),
               GestureDetector(
@@ -303,7 +300,7 @@ class _MultiZoneEditFormState extends ConsumerState<_MultiZoneEditForm> {
                     vertical: theme.spacingSm,
                   ),
                   decoration: BoxDecoration(
-                    color: theme.colorSurfaceSecondary,
+                    color: SheetTokens.inset(theme),
                     borderRadius: BorderRadius.circular(theme.radiusXl),
                   ),
                   child: Text(

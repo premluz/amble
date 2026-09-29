@@ -46,3 +46,21 @@ class AppSheetHandle extends StatelessWidget {
     );
   }
 }
+
+/// [AppSheetHandle] in its place: centred at the top of a sheet's header,
+/// a small inset down. Decoration only — the whole sheet is the drag target
+/// (`AppSheetDragDismiss`), so the bar never moves on its own.
+class AppSheetTopHandle extends StatelessWidget {
+  const AppSheetTopHandle({super.key, required this.theme});
+
+  final AmbleTheme theme;
+
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: Alignment.topCenter,
+    child: Padding(
+      padding: EdgeInsets.only(top: theme.spacingSm),
+      child: AppSheetHandle(theme: theme),
+    ),
+  );
+}

@@ -9,6 +9,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:amble/core/tokens/component_tokens.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_date_accordion.dart';
 import 'package:amble/core/widgets/app_press_feedback.dart';
@@ -87,7 +88,7 @@ void main() {
 
     expect(
       tester.widget<Text>(find.text('Mon 28 Sep')).style?.fontSize,
-      AmbleTheme.light.textBody.fontSize,
+      PageHeadingTokens.text(AmbleTheme.light).fontSize,
     );
     expect(
       tester.widget<Icon>(find.byIcon(Icons.keyboard_arrow_down_rounded)).size,

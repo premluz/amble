@@ -337,6 +337,80 @@ void main() {
     );
 
     testWidgets(
+      'a second finger landing mid-sweep makes it a pinch: the marquee goes '
+      'and the selection returns to what it was',
+      (tester) async {
+        final a = makeTask('Focus block', hour: 9);
+        final b = makeTask('Standup', hour: 10);
+        await pumpTimeline(tester, tasks: [a, b]);
+        final marquee = find.byKey(const ValueKey('task-sweep-selection'));
+
+        final from = tester.getCenter(pillFor('Focus block'));
+        final to = tester.getCenter(pillFor('Standup'));
+        // Inside runAsync: once two fingers are down, moving one IS a
+        // pinch, and a pinch writes the zoom level to Hive (real I/O).
+        await tester.runAsync(() async {
+          final first = await tester.startGesture(from);
+          await tester.pump();
+          for (var i = 1; i <= 4; i++) {
+            await first.moveTo(Offset.lerp(from, to, i / 8)!);
+            await tester.pump();
+          }
+          expect(marquee, findsOneWidget, reason: 'sweeping');
+
+          final second = await tester.startGesture(to + const Offset(0, 80));
+          await tester.pump();
+          expect(marquee, findsNothing, reason: 'a pinch, not a sweep');
+          expect(capturedContainer!.read(editSelectionProvider), isEmpty);
+
+          // The pinch carries on; the first finger's later moves still
+          // don't sweep.
+          for (var i = 5; i <= 8; i++) {
+            await first.moveTo(Offset.lerp(from, to, i / 8)!);
+            await tester.pump();
+          }
+          expect(capturedContainer!.read(editSelectionProvider), isEmpty);
+
+          await first.up();
+          await second.up();
+          await tester.pump();
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        });
+        expect(capturedContainer!.read(editSelectionProvider), isEmpty);
+      },
+    );
+
+    testWidgets(
+      'a drag that begins with two fingers already down never sweeps',
+      (tester) async {
+        final a = makeTask('Focus block', hour: 9);
+        final b = makeTask('Standup', hour: 10);
+        await pumpTimeline(tester, tasks: [a, b]);
+
+        final from = tester.getCenter(pillFor('Focus block'));
+        final to = tester.getCenter(pillFor('Standup'));
+        await tester.runAsync(() async {
+          final other = await tester.startGesture(to + const Offset(0, 80));
+          final first = await tester.startGesture(from);
+          await tester.pump();
+          for (var i = 1; i <= 8; i++) {
+            await first.moveTo(Offset.lerp(from, to, i / 8)!);
+            await tester.pump();
+          }
+          expect(
+            find.byKey(const ValueKey('task-sweep-selection')),
+            findsNothing,
+          );
+          expect(capturedContainer!.read(editSelectionProvider), isEmpty);
+          await first.up();
+          await other.up();
+          await tester.pump();
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        });
+      },
+    );
+
+    testWidgets(
       'the sweep is ADDITIVE — crossing back over a task already swept '
       'leaves it selected rather than toggling it off',
       (tester) async {

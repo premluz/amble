@@ -4,6 +4,7 @@ import '../../core/widgets/what_matters_motion.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/dev_config.dart';
+import '../../core/tokens/component_tokens.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_follow_through.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
@@ -383,7 +384,9 @@ class ZoneDayTimeline extends StatelessWidget {
                       opensSpace: true,
                       child: AppFollowThrough(
                         child: Padding(
-                          padding: EdgeInsets.only(left: theme.spacingLg),
+                          padding: EdgeInsets.only(
+                            left: ZoneInsetTokens.side(theme),
+                          ),
                           // IntrinsicHeight, not a fixed height — TaskCapsuleBlock
                           // sizes itself naturally here (badgeSize floor, or the
                           // 48px completion-checkbox tap target when that's
@@ -482,7 +485,7 @@ class ZoneDayTimeline extends StatelessWidget {
                                                 theme,
                                                 context,
                                               ) +
-                                              theme.spacingLg,
+                                              ZoneInsetTokens.side(theme),
                                           reservedWidth:
                                               zoneRowTimeLabelReservedWidth,
                                         ),
@@ -540,7 +543,9 @@ class ZoneDayTimeline extends StatelessWidget {
                     hidden: whatMattersEnabled,
                     collapse: true,
                     child: Padding(
-                      padding: EdgeInsets.only(left: theme.spacingLg),
+                      padding: EdgeInsets.only(
+                        left: ZoneInsetTokens.side(theme),
+                      ),
                       child: _UnzonedEventRow(
                         theme: theme,
                         event: row,
@@ -655,7 +660,8 @@ class _UnzonedEventRow extends StatelessWidget {
                   theme: theme,
                   text: timeLabel,
                   leftPaddingToEscape:
-                      zoneContentLeftInset(theme, context) + theme.spacingLg,
+                      zoneContentLeftInset(theme, context) +
+                      ZoneInsetTokens.side(theme),
                   reservedWidth: zoneRowTimeLabelReservedWidth,
                 ),
               ),

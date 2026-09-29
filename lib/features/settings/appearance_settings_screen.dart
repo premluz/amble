@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_selectable_chip.dart';
 import '../../shared/models/task_size.dart';
+import '../../shared/models/time_format.dart';
 import '../../shared/providers/preferences_providers.dart';
 import 'settings_detail_scaffold.dart';
 import 'settings_panel.dart';
@@ -41,6 +42,51 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                 ),
                 SizedBox(height: theme.spacingMd),
                 const ThemeModeSelector(),
+              ],
+            ),
+          ),
+          SizedBox(height: theme.spacingSm),
+          SettingsPanel(
+            theme: theme,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Time format',
+                  style: theme.textBody.copyWith(
+                    color: theme.colorTextPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                SizedBox(height: theme.spacingXs),
+                Text(
+                  '12-hour (9:00 PM) or 24-hour (21:00), everywhere a time '
+                  'shows. System follows your device.',
+                  style: theme.textBody.copyWith(
+                    color: theme.colorTextSecondary,
+                  ),
+                ),
+                SizedBox(height: theme.spacingSm),
+                Row(
+                  children: [
+                    for (final format in TimeFormatPreference.values) ...[
+                      if (format != TimeFormatPreference.values.first)
+                        SizedBox(width: theme.spacingSm),
+                      AppSelectableChip(
+                        label: switch (format) {
+                          TimeFormatPreference.system => 'System',
+                          TimeFormatPreference.twelveHour => '12-hour',
+                          TimeFormatPreference.twentyFourHour => '24-hour',
+                        },
+                        selected:
+                            ref.watch(timeFormatSettingProvider) == format,
+                        onTap: () => ref
+                            .read(timeFormatSettingProvider.notifier)
+                            .set(format),
+                      ),
+                    ],
+                  ],
+                ),
               ],
             ),
           ),

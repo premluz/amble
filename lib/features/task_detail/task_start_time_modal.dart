@@ -4,6 +4,7 @@ import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_segmented_time_field.dart';
 import '../../core/widgets/app_sheet.dart';
+import '../../core/widgets/app_sheet_header.dart';
 import '../../core/widgets/app_wheel_time_picker.dart';
 
 /// The compact "Start time" modal — one of three per-field modals the
@@ -63,6 +64,13 @@ class _TaskStartTimeModalState extends State<TaskStartTimeModal> {
     _minute = widget.initialMinute;
   }
 
+  void _finish() {
+    final hour = _hour;
+    final minute = _minute;
+    Navigator.of(context)
+        .pop(hour == null || minute == null ? null : (hour, minute));
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
@@ -76,18 +84,18 @@ class _TaskStartTimeModalState extends State<TaskStartTimeModal> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // AppSheet's own outer padding no longer provides a top inset
-          // (2026-09-23 — "top padding should be in header").
-          SizedBox(height: theme.spacingLg),
-          Text(
-            'Start time',
-            textAlign: TextAlign.center,
-            style: theme.textTitle.copyWith(
-              color: theme.colorTextPrimary,
-              fontWeight: FontWeight.w700,
+          AppSheetHeader(
+            theme: theme,
+            title: 'Start time',
+            onClose: () => Navigator.of(context).pop(),
+            trailing: AppButton(
+              label: 'Done',
+              size: AppButtonSize.md,
+              shape: AppButtonShape.pill,
+              onPressed: _finish,
             ),
           ),
-          SizedBox(height: theme.spacingLg),
+          SizedBox(height: theme.spacingMd),
           AppSegmentedTimeField(
             label: 'Time',
             first: _hour,
@@ -118,17 +126,6 @@ class _TaskStartTimeModalState extends State<TaskStartTimeModal> {
             ),
           ),
           SizedBox(height: theme.spacingLg),
-          AppButton(
-            label: 'Done',
-            size: AppButtonSize.lg,
-            shape: AppButtonShape.pill,
-            onPressed: () {
-              final hour = _hour;
-              final minute = _minute;
-              Navigator.of(context)
-                  .pop(hour == null || minute == null ? null : (hour, minute));
-            },
-          ),
         ],
       ),
     );

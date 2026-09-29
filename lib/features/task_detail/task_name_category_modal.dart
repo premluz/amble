@@ -5,7 +5,9 @@ import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_pane.dart';
 import '../../core/widgets/app_sheet.dart';
+import '../../core/widgets/app_sheet_flow.dart';
 import '../../core/widgets/app_text_field.dart';
+import '../../core/widgets/app_value_chip.dart';
 import '../../shared/providers/category_providers.dart';
 import 'add_category_modal.dart';
 import 'category_chip.dart';
@@ -24,9 +26,9 @@ import 'category_chip.dart';
 ///
 /// Iterates live [visibleCategoryListProvider] data (General excluded —
 /// see that provider's own doc comment) rather than the old fixed
-/// `TaskCategory` enum, and adds a right-aligned "+ Add new" link on the
-/// title row that opens [showAddCategoryModal] — the newly created category
-/// becomes this sheet's own selection immediately, via
+/// `TaskCategory` enum. A "New label" chip after the labels pushes
+/// [AddCategoryPage] as the next page of this sheet ([AppSheetFlow]); the
+/// new label becomes this sheet's selection immediately, via
 /// [onCategoryChanged], same as tapping an existing chip.
 class TaskNameCategoryModal extends ConsumerStatefulWidget {
   const TaskNameCategoryModal({
@@ -54,11 +56,14 @@ class TaskNameCategoryModal extends ConsumerStatefulWidget {
   }) {
     return AppSheet.show<void>(
       context: context,
-      builder: (context) => TaskNameCategoryModal(
-        titleController: titleController,
-        notesController: notesController,
-        categoryId: categoryId,
-        onCategoryChanged: onCategoryChanged,
+      builder: (context) => AppSheetFlow(
+        theme: Theme.of(context).extension<AmbleTheme>()!,
+        root: TaskNameCategoryModal(
+          titleController: titleController,
+          notesController: notesController,
+          categoryId: categoryId,
+          onCategoryChanged: onCategoryChanged,
+        ),
       ),
     );
   }
@@ -82,6 +87,25 @@ class _TaskNameCategoryModalState extends ConsumerState<TaskNameCategoryModal> {
     _categoryId = widget.categoryId;
   }
 
+  void _select(String categoryId) {
+    setState(() => _categoryId = categoryId);
+    widget.onCategoryChanged(categoryId);
+  }
+
+  /// New label is the next page of this sheet, not a sheet on top; saving
+  /// selects it and comes back here, where Done still closes.
+  void _addNewCategory() {
+    final flow = AppSheetFlow.of(context);
+    flow.push(
+      AddCategoryPage(
+        onSaved: (created) {
+          _select(created.id);
+          flow.pop();
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
@@ -99,44 +123,19 @@ class _TaskNameCategoryModalState extends ConsumerState<TaskNameCategoryModal> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // AppSheet's own outer padding no longer provides a top inset
-          // (2026-09-23 — "top padding should be in header").
-          SizedBox(height: theme.spacingLg),
-          Row(
-            children: [
-              // Left-aligned, not centered — corrected directly (same fix
-              // as task_category_modal.dart): a centered title with a
-              // fixed-width balancing spacer left too little room for "+
-              // Add new" and wrapped it onto two lines, worse here since
-              // this title ("Name and category") is longer.
-              Expanded(
-                child: Text(
-                  'Name and category',
-                  style: theme.textTitle.copyWith(
-                    color: theme.colorTextPrimary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              TextButton(
-                onPressed: () async {
-                  final created = await showAddCategoryModal(context);
-                  if (created != null && mounted) {
-                    setState(() => _categoryId = created.id);
-                    widget.onCategoryChanged(created.id);
-                  }
-                },
-                child: Text(
-                  '+ Add new',
-                  style: theme.textBody.copyWith(
-                    color: theme.colorAccent,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
+          // The sheet header row: title centred, Done (primary) right —
+          // see DESIGN_SYSTEM.md "Sheets".
+          AppSheetFlowHeader(
+            theme: theme,
+            title: 'Name and category',
+            trailing: AppButton(
+              label: 'Done',
+              size: AppButtonSize.md,
+              shape: AppButtonShape.pill,
+              onPressed: () => Navigator.of(context).pop(),
+            ),
           ),
-          SizedBox(height: theme.spacingLg),
+          SizedBox(height: theme.spacingMd),
           // Name and Description share one bare pane (no section header),
           // matching the schedule screen's own Time/Duration/Date grouping.
           AppPane(
@@ -170,24 +169,19 @@ class _TaskNameCategoryModalState extends ConsumerState<TaskNameCategoryModal> {
                   CategoryChip(
                     category: option,
                     selected: option.id == _categoryId,
-                    onSelected: () {
-                      setState(() => _categoryId = option.id);
-                      widget.onCategoryChanged(option.id);
-                    },
+                    onSelected: () => _select(option.id),
                   ),
+                AppValueChip(
+                  label: 'New label',
+                  icon: Icons.add_rounded,
+                  hasValue: false,
+                  onTap: _addNewCategory,
+                ),
               ],
             ),
-          ),
-          SizedBox(height: theme.spacingLg),
-          AppButton(
-            label: 'Done',
-            size: AppButtonSize.lg,
-            shape: AppButtonShape.pill,
-            onPressed: () => Navigator.of(context).pop(),
           ),
         ],
       ),
     );
   }
 }
-

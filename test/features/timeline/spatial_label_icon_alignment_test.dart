@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive_ce.dart';
 import 'package:tabler_icons_plus/tabler_icons_plus.dart';
+import 'package:amble/core/tokens/component_tokens.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_layout_reveal.dart';
 import 'package:amble/features/zone_grid/zone_grid_screen.dart';
@@ -108,7 +109,10 @@ void main() {
       band.right,
       tester.view.physicalSize.width - theme.spacingScreenPadding,
     );
-    expect(firstIcon - theme.sizeTaskBadge / 2 - band.left, theme.spacingLg);
+    expect(
+      firstIcon - theme.sizeTaskBadge / 2 - band.left,
+      ZoneInsetTokens.side(theme),
+    );
   }
 
   Future<void> pumpTimeline(WidgetTester tester, {required Task task}) async {

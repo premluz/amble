@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../tokens/component_tokens.dart';
 import '../tokens/motion_primitives.dart';
 import '../tokens/semantic_theme.dart';
 import 'app_sheet_keyboard.dart';
@@ -159,7 +160,7 @@ class _AppSheetMotionState extends State<AppSheetMotion>
       animation: Listenable.merge([widget.routeAnimation, _entrance]),
       builder: (context, child) => SheetKeyboardBackground(
         inset: _visibleProgress() == 0 ? 0 : inset,
-        color: widget.theme.colorSurfaceOverlay,
+        color: SheetTokens.surface(widget.theme),
         child: child!,
       ),
       child: _content(inset),

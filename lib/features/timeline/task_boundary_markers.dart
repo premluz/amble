@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/timeline_clock.dart';
 
 /// One left-gutter time label — a clean clock-hour tick within the
 /// visible range.
@@ -164,7 +165,7 @@ class TaskBoundaryMarkers extends StatelessWidget {
                   // gone the two views construct the position the same
                   // way, which is what stops them drifting again.
                   child: Text(
-                    TimeOfDay.fromDateTime(tick.time).format(context),
+                    timelineClock(context, TimeOfDay.fromDateTime(tick.time)),
                     // textCaptionMono — a time label, not a name.
                     style: theme.textCaptionMono.copyWith(
                       color: theme.colorTextSecondary,

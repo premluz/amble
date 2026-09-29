@@ -2,9 +2,12 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 
+import '../tokens/component_tokens.dart';
 import '../tokens/semantic_theme.dart';
 import 'app_button.dart';
 import 'app_press_feedback.dart';
+import 'app_sheet_drag_dismiss.dart';
+import 'app_sheet_surface.dart';
 import 'app_top_scroll_fade.dart';
 import 'sheet_keyboard_background.dart';
 
@@ -101,7 +104,7 @@ class StepScaffold extends StatelessWidget {
   Widget build(BuildContext context) {
     return SheetKeyboardBackground(
       inset: MediaQuery.viewInsetsOf(context).bottom,
-      color: theme.colorSurfaceOverlay,
+      color: SheetTokens.surface(theme),
       child: _scaffold(context),
     );
   }
@@ -116,27 +119,20 @@ class StepScaffold extends StatelessWidget {
       // sheet reads as a panel pulled up over the screen.
       body: Padding(
         padding: EdgeInsets.only(top: theme.spacingXl),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            // `colorSurfaceOverlay`, the top of the elevation ramp — that
-            // token's doc comment names "a modal's own surface" as its
-            // purpose. This painted `colorSurfaceBase` (level 0, the app
-            // ground), so a near-full-screen sheet read as flat against
-            // the page behind it. Requested directly: "sheets across the
-            // app should have next surface level to bg."
-            //
-            // The two `AppTopScrollFade`s below MUST keep matching this
-            // value — they fade scrolling body content into this exact
-            // surface, so any divergence shows up as a visible band.
-            color: theme.colorSurfaceOverlay,
-            borderRadius: BorderRadius.vertical(
-              top: Radius.circular(theme.radiusModal),
-            ),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.vertical(
-              top: Radius.circular(theme.radiusModal),
-            ),
+        // `AppSheetSurface`: the Settings-group fill plus the floating
+        // edge every sheet shares. Requested directly: "sheets across the
+        // app should have next surface level to bg", then "the sheet bg
+        // should be same as that surface of settings sections" with "that
+        // elevated styling (border)" of the toolbar.
+        //
+        // The two `AppTopScrollFade`s below MUST keep matching this
+        // surface — they fade scrolling body content into it, so any
+        // divergence shows up as a visible band.
+        // Drag down anywhere to close, like every sheet.
+        child: AppSheetDragDismiss(
+          theme: theme,
+          child: AppSheetSurface(
+            theme: theme,
             child: SafeArea(
               // Top handled by the offset above; the sheet owns that edge.
               top: false,
@@ -176,14 +172,14 @@ class StepScaffold extends StatelessWidget {
                               colors: [
                                 theme.colorSurfaceSecondary,
                                 // The sheet body's own surface — see the
-                                // `colorSurfaceOverlay` note above. This
+                                // `AppSheetSurface` note above. This
                                 // gradient's job is to fade the header INTO
                                 // the body, so it has to end on whatever the
                                 // body actually paints; leaving it at level 0
                                 // would recreate the exact "sheet heading
                                 // section different color than body" report
                                 // the comment above records.
-                                theme.colorSurfaceOverlay,
+                                SheetTokens.surface(theme),
                               ],
                             )
                           : null,
@@ -320,7 +316,7 @@ class StepScaffold extends StatelessWidget {
                             top: 0,
                             child: AppTopScrollFade(
                               // Matches the sheet surface above.
-                              color: theme.colorSurfaceOverlay,
+                              color: SheetTokens.surface(theme),
                             ),
                           ),
                         // Mirrored bottom fade — requested directly:
@@ -334,7 +330,7 @@ class StepScaffold extends StatelessWidget {
                           bottom: 0,
                           child: AppTopScrollFade(
                             // Matches the sheet surface above.
-                            color: theme.colorSurfaceOverlay,
+                            color: SheetTokens.surface(theme),
                             fromBottom: true,
                           ),
                         ),

@@ -40,6 +40,12 @@ import 'task_edge_time_label.dart';
 /// time; only the TASK is inset.
 const zoneBackgroundOffset = 4.0;
 
+/// The gap above (and, with [zoneBackgroundGap], below) a task that starts
+/// (ends) exactly on its zone's edge — [zoneBackgroundOffset] less 25%
+/// (`ZoneInsetTokens.scale`), per the zone-padding reduction. The band's own
+/// geometry keeps [zoneBackgroundOffset].
+final zoneTaskVerticalInset = zoneBackgroundOffset * ZoneInsetTokens.scale;
+
 /// Visual gap kept between two zone blocks whose times are exactly
 /// back-to-back (one's `endMinutes` equals the next's `startMinutes`) —
 /// requested directly: "there should always be a gap between zones even if

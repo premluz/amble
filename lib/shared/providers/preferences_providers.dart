@@ -6,6 +6,7 @@ import '../models/app_theme_mode.dart';
 import '../models/pill_shape.dart';
 import '../models/tag_color_style.dart';
 import '../models/task_size.dart';
+import '../models/time_format.dart';
 import '../models/tracked_behavior_view_mode.dart';
 import '../repositories/hive_preferences_repository.dart';
 import '../repositories/preferences_repository.dart';
@@ -46,6 +47,28 @@ class ThemeModeSetting extends _$ThemeModeSetting {
         .read(preferencesRepositoryProvider)
         .setValue(PreferenceKeys.themeMode, mode);
     state = mode;
+  }
+}
+
+/// 12-hour ("9:00 PM") or 24-hour ("21:00") time across the app, or the
+/// device's own choice (the default). `main.dart` applies it once, at the
+/// root, as `MediaQuery.alwaysUse24HourFormat`, which every
+/// `TimeOfDay.format` reads. `keepAlive` for the same reason as
+/// [ThemeModeSetting]: the root widget is its reader.
+@Riverpod(keepAlive: true)
+class TimeFormatSetting extends _$TimeFormatSetting {
+  @override
+  TimeFormatPreference build() => TimeFormatPreference.fromName(
+    ref
+        .read(preferencesRepositoryProvider)
+        .getValue<String>(PreferenceKeys.timeFormat),
+  );
+
+  Future<void> set(TimeFormatPreference value) async {
+    await ref
+        .read(preferencesRepositoryProvider)
+        .setValue(PreferenceKeys.timeFormat, value.name);
+    state = value;
   }
 }
 

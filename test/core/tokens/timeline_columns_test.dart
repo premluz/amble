@@ -1,3 +1,4 @@
+import 'package:amble/core/tokens/component_tokens.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -18,12 +19,13 @@ void main() {
   // of the contract is that the gaps do NOT vary with viewport.
   const widths = [320.0, 360.0, 390.0, 400.0, 430.0, 600.0, 834.0];
 
-  test('every horizontal gap equals spacingTimelineGutter, at any width', () {
+  test('every horizontal gap equals spacingTimelineGutter, at any width — '
+      'except time->zone, which lends the time column a little', () {
     for (final width in widths) {
       final gutter = theme.spacingTimelineGutter;
 
       final timeLeft = theme.timelineTimeLeft;
-      final timeRight = timeLeft + theme.spacingTimeColumnWidth;
+      final timeRight = timeLeft + theme.timelineTimeColumnFixedWidth;
       final zoneLeft = theme.timelineZoneLeft;
       final zoneRight = zoneLeft + theme.timelineZoneWidth(width);
       final contentLeft = theme.timelineContentLeft(width);
@@ -34,9 +36,14 @@ void main() {
         moreOrLessEquals(gutter, epsilon: 0.01),
         reason: 'edge->time gap at width $width',
       );
+      // The one exception: the time column borrows a little of this gap
+      // (TimeColumnTokens.borrowedFromZoneGap) for its labels.
       expect(
         zoneLeft - timeRight,
-        moreOrLessEquals(gutter, epsilon: 0.01),
+        moreOrLessEquals(
+          gutter - TimeColumnTokens.borrowedFromZoneGap,
+          epsilon: 0.01,
+        ),
         reason: 'time->zone gap at width $width',
       );
       expect(
@@ -82,9 +89,10 @@ void main() {
   // so the slack is reclaimed on 24-hour devices without clipping
   // 12-hour ones.
   group('time column width follows the clock format actually in use', () {
-    Future<
-      ({double timeColumnWidth, double zoneLeft})
-    > measure(WidgetTester tester, {required bool use24Hour}) async {
+    Future<({double timeColumnWidth, double zoneLeft})> measure(
+      WidgetTester tester, {
+      required bool use24Hour,
+    }) async {
       late BuildContext context;
       await tester.pumpWidget(
         MediaQuery(
@@ -103,13 +111,27 @@ void main() {
       );
     }
 
-    testWidgets('a 12-hour locale keeps the full width, so nothing clips', (
+    testWidgets('12- and 24-hour get the SAME fixed width — switching format '
+        'never pushes the timeline — and every compact label fits', (
       tester,
     ) async {
-      final result = await measure(tester, use24Hour: false);
+      final twelve = await measure(tester, use24Hour: false);
+      final twentyFour = await measure(tester, use24Hour: true);
 
-      expect(result.timeColumnWidth, theme.spacingTimeColumnWidth);
-      expect(result.zoneLeft, theme.timelineZoneLeft);
+      expect(twelve.timeColumnWidth, twentyFour.timeColumnWidth);
+      expect(twelve.zoneLeft, twentyFour.zoneLeft);
+      for (final label in ['12:45p', '12 PM', '13:41']) {
+        final painter = TextPainter(
+          text: TextSpan(text: label, style: theme.textCaptionMono),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        expect(
+          painter.width,
+          lessThanOrEqualTo(twelve.timeColumnWidth),
+          reason: '"$label" fits the column',
+        );
+        painter.dispose();
+      }
     });
 
     testWidgets('a 24-hour locale reclaims the slack its labels never use', (
@@ -120,8 +142,10 @@ void main() {
       expect(result.timeColumnWidth, lessThan(theme.spacingTimeColumnWidth));
       expect(
         result.zoneLeft,
-        lessThan(theme.timelineZoneLeft),
-        reason: 'zones must start earlier once the dead stripe is gone',
+        lessThan(
+          theme.spacingTimelineGutter * 2 + theme.spacingTimeColumnWidth,
+        ),
+        reason: 'zones start earlier than the old full-width column put them',
       );
 
       // Still wide enough for the label it has to render — the whole
@@ -136,10 +160,11 @@ void main() {
         reason: 'a 24-hour label must still fit its own column',
       );
 
-      // The gap after the time text stays on the shared rhythm.
+      // The gap after the time column: the gutter, less what the column
+      // borrowed for its labels.
       expect(
         result.zoneLeft - (theme.timelineTimeLeft + result.timeColumnWidth),
-        moreOrLessEquals(theme.spacingTimelineGutter, epsilon: 0.01),
+        moreOrLessEquals(theme.timelineTimeToZoneGap, epsilon: 0.01),
       );
     });
   });

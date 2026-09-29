@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/tokens/component_tokens.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_press_feedback.dart';
 import '../../shared/models/tracked_behavior_view_mode.dart';
@@ -122,58 +123,63 @@ class _TrackedPeriodHeading extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: SizedBox(
-                  width: double.infinity,
-                  child: AnimatedSwitcher(
-                    duration: theme.motionFast,
-                    switchInCurve: theme.curveStandard,
-                    switchOutCurve: theme.curveStandard,
-                    transitionBuilder: (child, animation) =>
-                        FadeTransition(opacity: animation, child: child),
-                    layoutBuilder: (currentChild, previousChildren) => Stack(
-                      alignment: AlignmentDirectional.centerStart,
-                      children: [...previousChildren, ?currentChild],
-                    ),
-                    child: Text(
-                      label,
-                      key: ValueKey(label),
-                      style: theme.textBody,
-                      textAlign: TextAlign.start,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+          // The shared page-heading line (see PageHeadingTokens.rowHeight).
+          SizedBox(
+            height: PageHeadingTokens.rowHeight(theme),
+            child: Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: AnimatedSwitcher(
+                      duration: theme.motionFast,
+                      switchInCurve: theme.curveStandard,
+                      switchOutCurve: theme.curveStandard,
+                      transitionBuilder: (child, animation) =>
+                          FadeTransition(opacity: animation, child: child),
+                      layoutBuilder: (currentChild, previousChildren) => Stack(
+                        alignment: AlignmentDirectional.centerStart,
+                        children: [...previousChildren, ?currentChild],
+                      ),
+                      child: Text(
+                        label,
+                        key: ValueKey(label),
+                        // The page-heading type, shared with the Day date.
+                        style: PageHeadingTokens.text(theme),
+                        textAlign: TextAlign.start,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              IgnorePointer(
-                ignoring: !showToday,
-                child: AnimatedOpacity(
-                  opacity: showToday ? 1 : 0,
-                  duration: theme.motionNormal,
-                  curve: theme.curveStandard,
-                  child: AppPressFeedback(
-                    onTap: onToday,
-                    borderRadius: BorderRadius.circular(theme.radiusSm),
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: theme.spacingXs,
-                        vertical: theme.spacingXs / 2,
-                      ),
-                      child: Text(
-                        'Today',
-                        style: theme.textCaption.copyWith(
-                          color: theme.colorTextSecondary,
-                          fontWeight: FontWeight.w400,
+                IgnorePointer(
+                  ignoring: !showToday,
+                  child: AnimatedOpacity(
+                    opacity: showToday ? 1 : 0,
+                    duration: theme.motionNormal,
+                    curve: theme.curveStandard,
+                    child: AppPressFeedback(
+                      onTap: onToday,
+                      borderRadius: BorderRadius.circular(theme.radiusSm),
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: theme.spacingXs,
+                          vertical: theme.spacingXs / 2,
+                        ),
+                        child: Text(
+                          'Today',
+                          style: theme.textCaption.copyWith(
+                            color: theme.colorTextSecondary,
+                            fontWeight: FontWeight.w400,
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           // Day's collapsed accordion reserves spacingXs plus its 4px grip.
           // Keep that footprint while omitting a misleading expansion affordance.

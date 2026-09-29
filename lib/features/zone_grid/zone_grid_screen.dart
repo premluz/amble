@@ -14,7 +14,7 @@ import '../../core/widgets/app_floating_create_button.dart';
 import '../../core/widgets/app_layout_reveal.dart';
 import '../../core/widgets/app_view_transition.dart';
 import '../../core/widgets/app_option_switch_option.dart';
-import '../../core/widgets/app_tab_switch.dart';
+import '../../core/widgets/app_floating_tab_switch.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
 import '../../core/widgets/app_undo_toast.dart';
 import '../../core/widgets/selected_pill_border.dart';
@@ -79,11 +79,11 @@ class _RouteEditMode extends EditModeEnabled {
   bool build() => initialValue;
 }
 
-/// Options for both `AppTabSwitch<ZoneGridTab>` call sites below — a
+/// Options for the `AppFloatingTabSwitch<ZoneGridTab>` call sites below — a
 /// module-level const rather than rebuilt per build(), since neither the
 /// values nor labels ever change.
 const _zoneGridTabOptions = [
-  AppOptionSwitchOption(value: ZoneGridTab.tasks, label: 'Tasks'),
+  AppOptionSwitchOption(value: ZoneGridTab.tasks, label: 'Things'),
   AppOptionSwitchOption(value: ZoneGridTab.zones, label: 'Zones'),
 ];
 
@@ -170,6 +170,16 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   static const bool _editing = true;
   late ZoneGridTab _tab = widget.initialTab;
   ZonePaintSelection? _paint;
+
+  /// Two or more fingers down on the grid — a pinch (fed by the
+  /// [TimelinePinchZoom] below). The single-finger paint marquee never
+  /// starts during one, and is abandoned if one begins mid-paint.
+  final _multiTouch = ValueNotifier(false);
+
+  void _onMultiTouchChanged() {
+    if (_multiTouch.value && _paintOrigin != null) _cancelPaint();
+  }
+
   Offset? _paintOrigin;
   // Captured in `build` (below) rather than read via `ref` inside
   // `dispose` — confirmed the hard way: `ConsumerState.ref.read` throws
@@ -251,6 +261,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   @override
   void initState() {
     super.initState();
+    _multiTouch.addListener(_onMultiTouchChanged);
     // `EditModeEnabled` is the Timeline's own toggle — this screen forces
     // it to match whichever tab is showing rather than requiring the
     // Timeline tab body to know it's being hosted here. `addPostFrameCallback`
@@ -583,6 +594,9 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   @override
   void dispose() {
     _edgeScroll?.cancel();
+    _multiTouch
+      ..removeListener(_onMultiTouchChanged)
+      ..dispose();
     _scroll.dispose();
     // `EditModeEnabled` is shared with the underlying nav-tab Timeline —
     // `main.dart`'s `IndexedStack` keeps that tab mounted (and watching
@@ -669,6 +683,8 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   }
 
   void _startPaint(Offset global) {
+    // A pinch, not a paint (two fingers held still reads as a long-press).
+    if (_multiTouch.value) return;
     if (_saving || _pending != null) return;
     final box = _grid;
     if (box == null) return;
@@ -1214,9 +1230,10 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
+    // Just the track: the shell header grows the pane around it.
     _shellChromeController?.updateHeader(
       _tab.name,
-      AppTabSwitch<ZoneGridTab>(
+      AppFloatingTabTrack<ZoneGridTab>(
         options: _zoneGridTabOptions,
         value: _tab,
         onChanged: _switchTab,
@@ -1274,7 +1291,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                     if (_shellChromeController == null)
                       Padding(
                         padding: EdgeInsets.all(theme.spacingMd),
-                        child: AppTabSwitch<ZoneGridTab>(
+                        child: AppFloatingTabSwitch<ZoneGridTab>(
                           options: _zoneGridTabOptions,
                           value: _tab,
                           onChanged: _switchTab,
@@ -1362,7 +1379,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                   if (_shellChromeController == null)
                     Padding(
                       padding: EdgeInsets.all(theme.spacingMd),
-                      child: AppTabSwitch<ZoneGridTab>(
+                      child: AppFloatingTabSwitch<ZoneGridTab>(
                         options: _zoneGridTabOptions,
                         value: _tab,
                         onChanged: _switchTab,
@@ -1412,6 +1429,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                     // passively rather than claiming the gesture arena —
                     // see that widget's own doc comment.
                     child: TimelinePinchZoom(
+                      multiTouch: _multiTouch,
                       child: Stack(
                         key: _viewportKey,
                         children: [

@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
-import '../../core/widgets/app_pane.dart';
+import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_sheet.dart';
+import '../../core/widgets/app_sheet_flow.dart';
 import '../../shared/providers/category_providers.dart';
 import 'add_category_modal.dart';
 import 'category_chip.dart';
@@ -22,11 +23,11 @@ import 'category_chip.dart';
 ///
 /// Iterates live [visibleCategoryListProvider] data (General excluded —
 /// see that provider's own doc comment) rather than the old fixed
-/// `TaskCategory` enum, and adds a right-aligned "+ Add new" link on the
-/// title row that opens [showAddCategoryModal] — the newly created category
-/// becomes this sheet's own selection, per the same "resolves to the
-/// chosen category" `show()` contract.
-class TaskCategoryModal extends ConsumerWidget {
+/// `TaskCategory` enum. The header's + pushes [AddCategoryPage] as the
+/// next page of this sheet ([AppSheetFlow]); the new label becomes this
+/// sheet's selection, per the same "resolves to the chosen category"
+/// `show()` contract.
+class TaskCategoryModal extends ConsumerStatefulWidget {
   const TaskCategoryModal({super.key, required this.categoryId});
 
   final String? categoryId;
@@ -39,13 +40,28 @@ class TaskCategoryModal extends ConsumerWidget {
   }) {
     return AppSheet.show<String>(
       context: context,
-      size: AppSheetSize.half,
-      builder: (context) => TaskCategoryModal(categoryId: categoryId),
+      builder: (context) => AppSheetFlow(
+        theme: Theme.of(context).extension<AmbleTheme>()!,
+        root: TaskCategoryModal(categoryId: categoryId),
+      ),
     );
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<TaskCategoryModal> createState() => _TaskCategoryModalState();
+}
+
+class _TaskCategoryModalState extends ConsumerState<TaskCategoryModal> {
+  /// New label is the next page of this sheet, not a sheet on top; saving
+  /// it picks it and closes.
+  void _addNewCategory() => AppSheetFlow.of(context).push(
+    AddCategoryPage(
+      onSaved: (created) => Navigator.of(context).pop(created.id),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     final categories = ref.watch(visibleCategoryListProvider);
 
@@ -53,60 +69,31 @@ class TaskCategoryModal extends ConsumerWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // AppSheet's own outer padding no longer provides a top inset
-        // (2026-09-23 — "top padding should be in header").
-        SizedBox(height: theme.spacingLg),
-        Row(
-          children: [
-            // Left-aligned, not centered — corrected directly: a centered
-            // title with a fixed-width balancing spacer left too little
-            // room for "+ Add new" and wrapped it onto two lines. A plain
-            // Expanded title plus a trailing, intrinsically-sized button
-            // (no artificial symmetry) gives the link all the width it
-            // needs.
-            Expanded(
-              child: Text(
-                'Label',
-                style: theme.textTitle.copyWith(
-                  color: theme.colorTextPrimary,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            TextButton(
-              onPressed: () async {
-                final created = await showAddCategoryModal(context);
-                if (created != null && context.mounted) {
-                  Navigator.of(context).pop(created.id);
-                }
-              },
-              child: Text(
-                '+ Add new',
-                style: theme.textBody.copyWith(
-                  color: theme.colorAccent,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-        SizedBox(height: theme.spacingLg),
-        AppPane(
-          child: Wrap(
-            spacing: theme.spacingSm,
-            runSpacing: theme.spacingSm,
-            children: [
-              for (final option in categories)
-                CategoryChip(
-                  category: option,
-                  selected: option.id == categoryId,
-                  onSelected: () => Navigator.of(context).pop(option.id),
-                ),
-            ],
+        AppSheetFlowHeader(
+          theme: theme,
+          title: 'Label',
+          trailing: AppButton(
+            icon: Icons.add_rounded,
+            variant: AppButtonVariant.ghost,
+            shape: AppButtonShape.circle,
+            tooltip: 'Add new label',
+            onPressed: _addNewCategory,
           ),
+        ),
+        SizedBox(height: theme.spacingMd),
+        Wrap(
+          spacing: theme.spacingSm,
+          runSpacing: theme.spacingSm,
+          children: [
+            for (final option in categories)
+              CategoryChip(
+                category: option,
+                selected: option.id == widget.categoryId,
+                onSelected: () => Navigator.of(context).pop(option.id),
+              ),
+          ],
         ),
       ],
     );
   }
 }
-

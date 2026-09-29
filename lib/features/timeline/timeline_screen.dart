@@ -2286,7 +2286,7 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
     // Pill origin includes inner padding; the band extends back to the
     // shared zone edge without consuming the time-to-zone gutter.
     final hourGutterWidth = widget.showHourLabels
-        ? theme.timelineZoneLeftFor(context) + theme.spacingLg
+        ? theme.timelineZoneLeftFor(context) + ZoneInsetTokens.side(theme)
         : theme.spacingScreenPadding;
 
     /// The matching inset on the RIGHT, for children that previously
@@ -2530,8 +2530,8 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
                                       // Full-width mode gets the SAME left
                                       // padding before the first task lane
                                       // as the non-spatial Zone view's own
-                                      // card (`spacingLg`) — requested
-                                      // directly. The old dynamic-width mode
+                                      // card (`ZoneInsetTokens.side`) —
+                                      // requested directly. The old dynamic-width mode
                                       // keeps its original, narrower
                                       // zoneBackgroundOffset (4px) inset,
                                       // unchanged. See
@@ -2539,7 +2539,7 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
                                       // own doc comment.
                                       leftInset: dynamicWidth
                                           ? zoneBackgroundOffset
-                                          : theme.spacingLg,
+                                          : ZoneInsetTokens.side(theme),
                                       // Zones are purely decorative on the
                                       // Task Edit tab now — requested
                                       // directly: "turn off edit zones (tap
@@ -3231,30 +3231,11 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
                     ),
                   ),
                 ),
-                // The small quick-create panel — a sibling of the scrollable
-                // day, so it stays pinned at the viewport's bottom edge
-                // instead of scrolling away with the day's content. See
-                // QuickCreateOverlay's own doc comment for why this can't be
-                // a pushed Navigator route.
-                //
-                // Gated on `quickAddSheetVisible` too, not just a live draft
-                // — while the "quick task add" long-press hold is still in
-                // progress, the placeholder pill (rendered elsewhere, keyed
-                // off `pendingDraft` alone) is the only visible thing;
-                // requested directly: "long press and when task is shown (no
-                // sheet yet coming)... on release we show sheet quick add."
-                if (widget.showHourLabels &&
-                    widget.pendingDraft != null &&
-                    widget.quickAddSheetVisible)
-                  QuickCreateOverlay(
-                    key: ValueKey('quick-create-${widget.pendingDraft!.id}'),
-                    draft: widget.pendingDraft!,
-                  ),
                 // Top scroll-fade — requested directly: "give gradient of
                 // the color of bg to create that effect of content smoothly
                 // fading... so there is not a hard line when content scrolls
                 // underneath." A sibling of the scroll view (same reasoning
-                // as QuickCreateOverlay above), so it
+                // as QuickCreateOverlay below), so it
                 // stays fixed at the viewport's own top edge rather than
                 // scrolling away with the content it's meant to fade against.
                 // Extracted into AppTopScrollFade (2026-09-08) once the same
@@ -3285,6 +3266,28 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
                     ),
                   ),
                 ),
+                // Last, above the page's own scroll fades: those belong to the
+                // page, and painted over the sheet they darkened its bottom.
+                //
+                // The small quick-create panel — a sibling of the scrollable
+                // day, so it stays pinned at the viewport's bottom edge
+                // instead of scrolling away with the day's content. See
+                // QuickCreateOverlay's own doc comment for why this can't be
+                // a pushed Navigator route.
+                //
+                // Gated on `quickAddSheetVisible` too, not just a live draft
+                // — while the "quick task add" long-press hold is still in
+                // progress, the placeholder pill (rendered elsewhere, keyed
+                // off `pendingDraft` alone) is the only visible thing;
+                // requested directly: "long press and when task is shown (no
+                // sheet yet coming)... on release we show sheet quick add."
+                if (widget.showHourLabels &&
+                    widget.pendingDraft != null &&
+                    widget.quickAddSheetVisible)
+                  QuickCreateOverlay(
+                    key: ValueKey('quick-create-${widget.pendingDraft!.id}'),
+                    draft: widget.pendingDraft!,
+                  ),
               ],
             ),
           ),
@@ -3386,7 +3389,7 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
     // The same inset the band already uses on its left edge, so the gap
     // above the task reads as the same size as the gap beside it — which
     // is exactly what "same as from side of the zone" asks for.
-    return startsAZone ? zoneBackgroundOffset : 0;
+    return startsAZone ? zoneTaskVerticalInset : 0;
   }
 
   /// The bottom-edge counterpart to [_zoneTaskTopInset] — how much shorter
@@ -3418,7 +3421,7 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
     final endMinutes =
         scheduledAt.hour * 60 + scheduledAt.minute + durationMinutes;
     final endsAZone = widget.zones.any((zone) => zone.endMinutes == endMinutes);
-    return endsAZone ? zoneBackgroundOffset + zoneBackgroundGap : 0;
+    return endsAZone ? zoneTaskVerticalInset + zoneBackgroundGap : 0;
   }
 
   /// Caps [task]'s pill height so it never runs into the top of the next
@@ -4946,7 +4949,36 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
   @override
   void dispose() {
     _revealTimer?.cancel();
+    _multiTouch?.removeListener(_onMultiTouchChanged);
     super.dispose();
+  }
+
+  /// Two or more fingers down on the timeline — a pinch (see
+  /// [TimelineMultiTouch]). A single-finger sweep must never be mistaken for
+  /// one, nor survive one landing mid-sweep.
+  ValueNotifier<bool>? _multiTouch;
+
+  /// This drag began as part of a pinch: nothing about it is a sweep or a
+  /// move, so every later drag callback ignores it.
+  bool _pinchSuppressed = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final multiTouch = TimelineMultiTouch.of(context);
+    if (identical(multiTouch, _multiTouch)) return;
+    _multiTouch?.removeListener(_onMultiTouchChanged);
+    _multiTouch = multiTouch?..addListener(_onMultiTouchChanged);
+  }
+
+  /// A second finger landing mid-gesture turns it into a pinch: a sweep's
+  /// marquee is abandoned and the selection restored; a move is dropped
+  /// unsaved, the task back where it was.
+  void _onMultiTouchChanged() {
+    if (_multiTouch?.value != true) return;
+    if (!_sweepingSelection && !_isDragging) return;
+    _pinchSuppressed = true;
+    _cancelMove();
   }
 
   @override
@@ -5459,6 +5491,11 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
           onDragStart: !widget.isDraggable
               ? null
               : (details) {
+                  // Two fingers already down: a pinch, not a sweep or move.
+                  if (_multiTouch?.value == true) {
+                    _pinchSuppressed = true;
+                    return;
+                  }
                   // A drag beginning on an UNSELECTED task in multi-task
                   // mode is a selection sweep, not a move — decided here,
                   // ONCE, and latched (see `_sweepingSelection`). Every
@@ -5502,6 +5539,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
           onDragUpdate: !widget.isDraggable
               ? null
               : (details) {
+                  if (_pinchSuppressed) return;
                   // Latched at drag-start — see `_sweepingSelection`.
                   if (_sweepingSelection) {
                     widget.onSweepSelect?.call(ref, details.globalPosition);
@@ -5539,6 +5577,10 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
           onDragEnd: !widget.isDraggable
               ? null
               : (_) async {
+                  if (_pinchSuppressed) {
+                    _pinchSuppressed = false;
+                    return;
+                  }
                   // A sweep has nothing to commit — it only ever wrote to
                   // the selection, which is already up to date, and none
                   // of the move-specific teardown below applies (it never
@@ -5779,7 +5821,12 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
 
                   await commitOverlap();
                 },
-          onDragCancel: widget.isDraggable ? _cancelMove : null,
+          onDragCancel: widget.isDraggable
+              ? () {
+                  _pinchSuppressed = false;
+                  _cancelMove();
+                }
+              : null,
           editModeEnabled: _editActive,
           // TOP-edge resize — moves the task's START, end stays anchored,
           // so it commits BOTH scheduledAt and durationMinutes. Mirrors

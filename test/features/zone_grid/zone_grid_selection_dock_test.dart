@@ -6,7 +6,7 @@ import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_bottom_dock.dart';
 import 'package:amble/core/widgets/app_shell_chrome.dart';
 import 'package:amble/core/widgets/app_switch.dart';
-import 'package:amble/core/widgets/app_tab_switch.dart';
+import 'package:amble/core/widgets/app_floating_tab_switch.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/timeline/edit_selection_provider.dart';
 import 'package:amble/features/zone_grid/zone_grid_screen.dart';
@@ -336,8 +336,8 @@ void main() {
     final container = await pumpEditScreen(tester);
     void switchTo(ZoneGridTab tab) {
       tester
-          .widget<AppTabSwitch<ZoneGridTab>>(
-            find.byType(AppTabSwitch<ZoneGridTab>).first,
+          .widget<AppFloatingTabSwitch<ZoneGridTab>>(
+            find.byType(AppFloatingTabSwitch<ZoneGridTab>).first,
           )
           .onChanged(tab);
     }

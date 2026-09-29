@@ -19,6 +19,7 @@ class AppFloatingSurface extends StatelessWidget {
     this.material = FloatingMaterial.glass,
     this.elevation = FloatingElevation.menu,
     this.strength = 1,
+    this.openBottom = false,
   }) : assert(strength >= 0 && strength <= 1);
 
   final AmbleTheme theme;
@@ -28,6 +29,10 @@ class AppFloatingSurface extends StatelessWidget {
   final FloatingMaterial material;
   final FloatingElevation elevation;
   final double strength;
+
+  /// Leaves the edge off the bottom side, for a surface that runs off the
+  /// bottom of the screen (a sheet): a line there would read as a seam.
+  final bool openBottom;
 
   BoxShadow _shadow() {
     final shadow = FloatingSurfaceTokens.shadow(theme, elevation);
@@ -63,7 +68,8 @@ class AppFloatingSurface extends StatelessWidget {
           foregroundPainter: _GlassEdge(
             theme,
             borderRadius,
-            glass ? strength : 0,
+            strength,
+            openBottom,
           ),
           child: ColoredBox(
             color: surface.withValues(
@@ -81,15 +87,21 @@ class AppFloatingSurface extends StatelessWidget {
 }
 
 class _GlassEdge extends CustomPainter {
-  const _GlassEdge(this.theme, this.radius, this.strength);
+  const _GlassEdge(this.theme, this.radius, this.strength, this.openBottom);
   final AmbleTheme theme;
   final BorderRadius radius;
   final double strength;
+  final bool openBottom;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (strength == 0 || size.isEmpty) return;
-    final rect = Offset.zero & size;
+    // An open bottom pushes that side's stroke past the clip.
+    final rect =
+        Offset.zero &
+        (openBottom
+            ? Size(size.width, size.height + FloatingSurfaceTokens.borderWidth)
+            : size);
     final edge = FloatingSurfaceTokens.border(theme);
     final top = FloatingSurfaceTokens.highlight(theme);
     final paint = Paint()
@@ -113,5 +125,6 @@ class _GlassEdge extends CustomPainter {
   bool shouldRepaint(_GlassEdge oldDelegate) =>
       theme != oldDelegate.theme ||
       radius != oldDelegate.radius ||
-      strength != oldDelegate.strength;
+      strength != oldDelegate.strength ||
+      openBottom != oldDelegate.openBottom;
 }

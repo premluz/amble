@@ -216,6 +216,42 @@ void main() {
     expect(repository.getAll(), isEmpty);
     expect(find.byKey(const ValueKey('zone-paint-selection')), findsNothing);
   });
+  testWidgets('a second finger landing mid-paint makes it a pinch: the '
+      'marquee is abandoned, nothing is proposed', (tester) async {
+    await pump(tester);
+    final first = await tester.startGesture(point(tester, 2, 240));
+    await tester.pump(const Duration(milliseconds: 600));
+    await first.moveTo(point(tester, 3, 360));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('zone-paint-selection')), findsOneWidget);
+
+    final second = await tester.startGesture(point(tester, 5, 300));
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('zone-paint-selection')),
+      findsNothing,
+      reason: 'a pinch, not a paint',
+    );
+    await first.up();
+    await second.up();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.byType(NewZoneSheet), findsNothing);
+    expect(repository.getAll(), isEmpty);
+  });
+
+  testWidgets('two fingers held still past the long-press delay never start '
+      'painting', (tester) async {
+    await pump(tester);
+    final first = await tester.startGesture(point(tester, 2, 240));
+    final second = await tester.startGesture(point(tester, 5, 300));
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.byKey(const ValueKey('zone-paint-selection')), findsNothing);
+    await first.up();
+    await second.up();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.byType(NewZoneSheet), findsNothing);
+  });
+
   // Painting is entered by LONG PRESS, not an immediate drag. The Zones
   // tab is always in edit mode now, so a plain drag has to stay available
   // to the scroll view — see this screen's own `_editing` doc comment.
@@ -806,7 +842,7 @@ void main() {
       (tester) async {
         await pump(tester);
 
-        final tabSwitchTop = tester.getTopLeft(find.text('Tasks')).dy;
+        final tabSwitchTop = tester.getTopLeft(find.text('Things')).dy;
         final closeTop = tester.getTopLeft(find.byTooltip('Close zones')).dy;
 
         expect(

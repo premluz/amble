@@ -4,9 +4,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:amble/core/clock_provider.dart';
 import 'package:hive_ce/hive_ce.dart';
 import 'package:amble/core/tokens/component_tokens.dart';
+import 'package:amble/core/widgets/app_button.dart';
 import 'package:amble/core/widgets/app_wheel_time_picker.dart';
 import 'package:amble/core/widgets/app_press_feedback.dart';
+import 'package:amble/core/widgets/app_pane.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
+import 'package:amble/core/widgets/app_value_chip.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/core/widgets/app_text_field.dart';
 import 'package:amble/features/task_detail/quick_create_sheet_shell.dart';
@@ -15,12 +18,21 @@ import 'package:amble/core/widgets/glass_pill_surface.dart';
 import 'package:amble/features/timeline/edit_mode_wiggle.dart';
 import 'package:amble/features/timeline/pending_task_pill.dart';
 import 'package:amble/core/widgets/app_top_scroll_fade.dart';
+import 'package:amble/core/widgets/app_sheet_header.dart';
+import 'package:amble/core/widgets/app_switch.dart';
 import 'package:amble/features/timeline/quick_create_overlay.dart';
 import 'package:amble/features/timeline/resize_handle.dart';
 import 'package:amble/features/timeline/task_capsule_block.dart';
 import 'package:amble/features/timeline/template_chip_strip.dart';
 import 'package:amble/features/timeline/timeline_screen.dart';
+import 'package:amble/features/task_detail/task_behavior_modal.dart';
+import 'package:amble/features/task_detail/task_category_modal.dart';
+import 'package:amble/features/task_detail/task_duration_modal.dart';
+import 'package:amble/features/task_detail/task_preset_modal.dart';
+import 'package:amble/features/task_detail/task_repeat_modal.dart';
+import 'package:amble/features/task_detail/task_start_time_modal.dart';
 import 'package:amble/shared/models/category.dart';
+import 'package:amble/shared/models/behavior_target_type.dart';
 import 'package:amble/shared/models/task.dart';
 import 'package:amble/shared/models/task_template.dart';
 import 'package:amble/shared/models/tracked_behavior.dart';
@@ -245,11 +257,32 @@ void main() {
       );
       expect(find.byType(QuickCreateOverlay), findsOneWidget);
       // Not a pushed route — the small panel's own button, same
-      // shape/position as the big sheet's. Labelled "Schedule" because
-      // it commits the task outright rather than handing off to the full
-      // form (reported directly).
-      expect(find.widgetWithText(ElevatedButton, 'Schedule'), findsOneWidget);
+      // shape/position as the big sheet's. "Add" commits the task outright
+      // rather than handing off to the full form.
+      expect(find.widgetWithText(ElevatedButton, 'Add'), findsOneWidget);
       expect(find.byIcon(Icons.close_rounded), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(QuickCreateOverlay),
+          matching: find.byType(AppValueChip),
+        ),
+        findsNWidgets(9),
+      );
+      expect(find.text('Today'), findsOneWidget);
+      expect(find.text('15m'), findsOneWidget);
+      expect(
+        tester
+            .getRect(
+              find
+                  .descendant(
+                    of: find.byType(QuickCreateOverlay),
+                    matching: find.byType(AppValueChip),
+                  )
+                  .first,
+            )
+            .width,
+        lessThan(tester.getRect(find.byType(QuickCreateOverlay)).width),
+      );
 
       // No keyboard: the Name field must not be autofocused.
       final nameField = tester.widget<TextField>(find.byType(TextField).first);
@@ -300,34 +333,147 @@ void main() {
     },
   );
 
-  // Replaces an earlier test that asserted this button PROMOTED to the
-  // full sheet. The button's whole contract changed, reported directly:
-  // "Done let's change to Schedule and it already sets the task there."
-  // It now commits the task outright and never opens the full form.
-  // Reported directly: "cant see important in quick add in mini sheet."
-  // The full sheet, the edit flow, and templates all gained a real
-  // Important toggle in the previous round; the mini sheet's own
-  // direct-Schedule path had no way to set it at all.
-  testWidgets('the mini sheet shows an Important toggle, off by default, '
-      'and Schedule writes it to the created task', (tester) async {
+  testWidgets(
+    'the label chip opens the shared label sheet and keeps the selected label',
+    (tester) async {
+      final work = Category(
+        id: BuiltInCategoryIds.work,
+        name: 'Work',
+        colorToken: 2,
+        emoji: '',
+        iconCodePoint: Icons.work_outline_rounded.codePoint,
+        isBuiltIn: true,
+      );
+      await tester.runAsync(() => categoryBox.put(work.id, work));
+
+      await pumpTimeline(tester);
+      await longPressAndReleaseAt(tester, const Offset(220, 400));
+
+      final labelChip = find.ancestor(
+        of: find.text('#'),
+        matching: find.byType(AppValueChip),
+      );
+      expect(labelChip, findsOneWidget);
+
+      await tester.tap(labelChip);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.byType(TaskCategoryModal), findsOneWidget);
+      expect(find.byType(AppSheetHeader), findsOneWidget);
+      final addLabelButton = find.ancestor(
+        of: find.descendant(
+          of: find.byType(TaskCategoryModal),
+          matching: find.byIcon(Icons.add_rounded),
+        ),
+        matching: find.byType(AppButton),
+      );
+      expect(addLabelButton, findsOneWidget);
+      expect(
+        tester.widget<AppButton>(addLabelButton).variant,
+        AppButtonVariant.primary,
+      );
+      expect(find.text('+ Add new'), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byType(TaskCategoryModal),
+          matching: find.byType(AppPane),
+        ),
+        findsNothing,
+      );
+      expect(find.text('Work'), findsOneWidget);
+
+      await tester.tap(find.text('Work'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.byType(TaskCategoryModal), findsNothing);
+      expect(tester.widget<AppValueChip>(labelChip).hasValue, isTrue);
+    },
+  );
+
+  testWidgets('new label opens as one sheet with a header save action', (
+    tester,
+  ) async {
+    await pumpTimeline(tester);
+    await longPressAndReleaseAt(tester, const Offset(220, 400));
+
+    await tester.tap(
+      find.ancestor(
+        of: find.descendant(
+          of: find.byType(QuickCreateOverlay),
+          matching: find.text('#'),
+        ),
+        matching: find.byType(AppValueChip),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final addLabelButton = find.ancestor(
+      of: find.descendant(
+        of: find.byType(TaskCategoryModal),
+        matching: find.byIcon(Icons.add_rounded),
+      ),
+      matching: find.byType(AppButton),
+    );
+    await tester.tap(addLabelButton);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('New label'), findsOneWidget);
+    expect(find.byIcon(Icons.check_rounded), findsOneWidget);
+    expect(find.text('Done'), findsNothing);
+    expect(find.byType(AppPane), findsNothing);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is AppTextField &&
+            widget.label == 'Label name' &&
+            widget.variant == AppTextFieldVariant.bare,
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('the mini sheet shows an Important star chip, off by default, '
+      'and Add writes it to the created task', (tester) async {
     await pumpTimeline(tester);
 
     await longPressAndReleaseAt(tester, const Offset(220, 400));
 
-    expect(find.text('Important'), findsOneWidget);
-    final switchFinder = find.descendant(
+    final starIcon = find.descendant(
       of: find.byType(QuickCreateOverlay),
-      matching: find.byType(Switch),
+      matching: find.byIcon(Icons.star_rounded),
     );
-    expect(switchFinder, findsOneWidget);
-    expect(tester.widget<Switch>(switchFinder).value, isFalse);
+    final importantChip = find.ancestor(
+      of: starIcon,
+      matching: find.byType(AppValueChip),
+    );
+    expect(importantChip, findsOneWidget);
+    expect(tester.widget<AppValueChip>(importantChip).hasValue, isFalse);
 
-    await tester.tap(switchFinder);
+    final chipRows = tester
+        .widgetList<Wrap>(
+          find.descendant(
+            of: find.byType(QuickCreateOverlay),
+            matching: find.byType(Wrap),
+          ),
+        )
+        .toList();
+    expect(chipRows, hasLength(2));
+    final firstRow = chipRows.first.children.whereType<AppValueChip>().toList();
+    final secondRow = chipRows[1].children.whereType<AppValueChip>().toList();
+    expect(firstRow.first.label, 'Preset');
+    expect(firstRow, hasLength(4));
+    expect(secondRow.first.icon, Icons.star_rounded);
+
+    await tester.tap(importantChip);
     await tester.pump();
-    expect(tester.widget<Switch>(switchFinder).value, isTrue);
+    expect(tester.widget<AppValueChip>(importantChip).hasValue, isTrue);
 
     await tester.runAsync(() async {
-      await tester.tap(find.widgetWithText(ElevatedButton, 'Schedule'));
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Add'));
       await tester.pump();
       for (var i = 0; i < 20; i++) {
         if (taskBox.values.isNotEmpty) break;
@@ -342,36 +488,6 @@ void main() {
 
     expect(taskBox.values, hasLength(1));
     expect(taskBox.values.first.isImportant, isTrue);
-  });
-
-  testWidgets('applying a template that is important seeds the mini '
-      'sheet\'s own toggle, and it stays user-overridable afterward', (
-    tester,
-  ) async {
-    await seedTemplate(
-      tester,
-      'Meditation',
-      BuiltInCategoryIds.health,
-      isImportant: true,
-    );
-    await pumpTimeline(tester);
-
-    await longPressAndReleaseAt(tester, const Offset(220, 400));
-
-    await tester.tap(find.byType(TemplateChip));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
-
-    final switchFinder = find.descendant(
-      of: find.byType(QuickCreateOverlay),
-      matching: find.byType(Switch),
-    );
-    expect(tester.widget<Switch>(switchFinder).value, isTrue);
-
-    // Still overridable — applying a template doesn't lock the toggle.
-    await tester.tap(switchFinder);
-    await tester.pump();
-    expect(tester.widget<Switch>(switchFinder).value, isFalse);
   });
 
   // Requested directly: "on top of screen give gradient of the color of
@@ -444,7 +560,7 @@ void main() {
     );
   });
 
-  testWidgets('tapping Schedule creates the task directly, with no full '
+  testWidgets('tapping Add creates the task directly, with no full '
       'sheet in between, and clears the placeholder pill', (tester) async {
     await pumpTimeline(tester);
     expect(taskBox.values, isEmpty);
@@ -455,7 +571,7 @@ void main() {
     // createTask's disk write doesn't complete on any fixed frame
     // schedule, so pumping a fixed budget races it. See ERROR_LOG.md.
     await tester.runAsync(() async {
-      await tester.tap(find.widgetWithText(ElevatedButton, 'Schedule'));
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Add'));
       await tester.pump();
       for (var i = 0; i < 20; i++) {
         if (taskBox.values.isNotEmpty) break;
@@ -487,7 +603,7 @@ void main() {
 
   // Overlapping schedules are allowed in forms. The setting only constrains
   // whether a pending draft can be moved into an unresolvable slot.
-  testWidgets('Schedule creates an overlapping task when overlap checks are '
+  testWidgets('Add creates an overlapping task when overlap checks are '
       'enabled', (tester) async {
     await tester.runAsync(
       () => preferencesBox.put('preventOverlappingTasks', true),
@@ -519,7 +635,7 @@ void main() {
     await tester.pump();
 
     await tester.runAsync(() async {
-      await tester.tap(find.widgetWithText(ElevatedButton, 'Schedule'));
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Add'));
       await tester.pump();
       for (var i = 0; i < 20; i++) {
         if (taskBox.values.length > 1) break;
@@ -959,7 +1075,7 @@ void main() {
     // runAsync + poll, per ERROR_LOG.md: a Hive write started inside a
     // widget test's fake-async zone never completes there.
     await tester.runAsync(() async {
-      await tester.tap(find.widgetWithText(ElevatedButton, 'Schedule'));
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Add'));
       await tester.pump();
       for (var i = 0; i < 20; i++) {
         if (taskBox.values.isNotEmpty) break;
@@ -1290,123 +1406,178 @@ void main() {
     );
   });
 
-  // The mini template chips, specified from a layout mockup: "as soon as
-  // they click a template, that applies the name and the category, but
-  // not the duration. The duration is not overridden. It remains the one
-  // set by the user."
-  group('mini template chips', () {
-    // Seeds SYNCHRONOUSLY, and must be called BEFORE pumpTimeline.
-    // `taskTemplateListProvider` reads `getAll()` once at build time, so
-    // a template written after the pump would never appear; and awaiting
-    // a Hive write from inside a widget-test body hangs against the fake
-    // async clock (`box.put`'s own disk flush never completes there).
-    // `box.put` returns a Future but the in-memory map is updated
-    // synchronously, which is all `getAll()` reads — so this deliberately
-    // does not await it.
+  testWidgets('saved presets stay hidden until the Preset sheet is built', (
+    tester,
+  ) async {
+    await seedTemplate(tester, 'Meditation', BuiltInCategoryIds.health);
+    await pumpTimeline(tester);
 
-    testWidgets(
-      'tapping a chip applies its title, leaving the draft duration the '
-      'user already dragged out completely untouched',
-      (tester) async {
-        // A template carrying a duration deliberately UNLIKE the draft's
-        // own, so "did the duration change" is unambiguous.
-        await seedTemplate(
-          tester,
-          'Meditation',
-          BuiltInCategoryIds.health,
-          durationMinutes: 120,
-        );
-        await pumpTimeline(tester);
+    await longPressAndReleaseAt(tester, const Offset(220, 400));
 
-        await longPressAndReleaseAt(tester, const Offset(220, 400));
+    expect(find.byType(QuickCreateOverlay), findsOneWidget);
+    expect(find.byType(TemplateChip), findsNothing);
+    expect(find.text('Preset'), findsOneWidget);
+  });
 
-        final beforeHeight = tester
-            .getRect(find.byType(PendingTaskPill))
-            .height;
+  testWidgets('Preset opens its sheet and applies the selected task values', (
+    tester,
+  ) async {
+    await seedTemplate(
+      tester,
+      'Meditation',
+      BuiltInCategoryIds.health,
+      isImportant: true,
+    );
+    await pumpTimeline(tester);
 
-        await tester.tap(find.byType(TemplateChip));
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 250));
+    await longPressAndReleaseAt(tester, const Offset(220, 400));
 
-        // The name came across...
-        expect(find.text('Meditation'), findsWidgets);
-        expect(
-          find.descendant(
-            of: find.byType(QuickCreateOverlay),
-            matching: find.text('New thing'),
-          ),
-          findsNothing,
-        );
+    final presetChip = find.ancestor(
+      of: find.text('Preset'),
+      matching: find.byType(AppValueChip),
+    );
+    await tester.tap(presetChip);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
 
-        // ...and the pill's own geometry — the user's expressed duration
-        // — did NOT move, despite the template's own 120-minute default.
-        expect(
-          tester.getRect(find.byType(PendingTaskPill)).height,
-          closeTo(beforeHeight, 0.5),
-          reason: 'the template must not override the dragged duration',
-        );
-      },
+    expect(find.byType(TaskPresetModal), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(TaskPresetModal),
+        matching: find.byType(AppPane),
+      ),
+      findsNothing,
+    );
+    expect(find.text('Meditation'), findsOneWidget);
+
+    await tester.tap(find.text('Meditation'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byType(TaskPresetModal), findsNothing);
+    expect(find.text('Meditation'), findsOneWidget);
+    final starChip = find.ancestor(
+      of: find.byIcon(Icons.star_rounded),
+      matching: find.byType(AppValueChip),
+    );
+    expect(tester.widget<AppValueChip>(starChip).hasValue, isTrue);
+  });
+
+  testWidgets('notification and repeat chips use focused sheets and state', (
+    tester,
+  ) async {
+    await pumpTimeline(tester);
+    await longPressAndReleaseAt(tester, const Offset(220, 400));
+
+    final notificationChip = find.ancestor(
+      of: find.byIcon(Icons.notifications_rounded),
+      matching: find.byType(AppValueChip),
+    );
+    expect(tester.widget<AppValueChip>(notificationChip).hasValue, isTrue);
+
+    await tester.tap(notificationChip);
+    await tester.pump();
+    expect(find.byIcon(Icons.notifications_off_rounded), findsOneWidget);
+    final disabledNotificationChip = find.ancestor(
+      of: find.byIcon(Icons.notifications_off_rounded),
+      matching: find.byType(AppValueChip),
+    );
+    expect(
+      tester.widget<AppValueChip>(disabledNotificationChip).hasValue,
+      isFalse,
     );
 
-    testWidgets(
-      'tapping a chip does NOT promote to the full sheet — the user stays '
-      'in the mini sheet, free to keep adjusting the pill',
-      (tester) async {
-        await seedTemplate(tester, 'Meditation', BuiltInCategoryIds.health);
-        await pumpTimeline(tester);
+    final repeatChip = find.ancestor(
+      of: find.byIcon(Icons.repeat_rounded),
+      matching: find.byType(AppValueChip),
+    );
+    await tester.tap(repeatChip);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
 
-        await longPressAndReleaseAt(tester, const Offset(220, 400));
-
-        await tester.tap(find.byType(TemplateChip));
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 250));
-
-        expect(find.byType(QuickCreateOverlay), findsOneWidget);
-        expect(find.byType(PendingTaskPill), findsOneWidget);
-      },
+    expect(find.byType(TaskRepeatModal), findsOneWidget);
+    final repeatSwitch = find.descendant(
+      of: find.byType(TaskRepeatModal),
+      matching: find.byType(AppSwitch),
+    );
+    expect(tester.widget<AppSwitch>(repeatSwitch).value, isFalse);
+    await tester.tap(repeatSwitch);
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: find.byType(TaskRepeatModal),
+        matching: find.text('M'),
+      ),
+      findsOneWidget,
     );
 
-    testWidgets(
-      'a second chip tap replaces the first template rather than stacking '
-      'onto it',
-      (tester) async {
-        await seedTemplate(tester, 'Meditation', BuiltInCategoryIds.health);
-        await seedTemplate(tester, 'Audiobook', BuiltInCategoryIds.personal);
-        await pumpTimeline(tester);
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Done'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
 
-        await longPressAndReleaseAt(tester, const Offset(220, 400));
+    expect(find.byType(TaskRepeatModal), findsNothing);
+    expect(tester.widget<AppValueChip>(repeatChip).hasValue, isTrue);
+  });
 
-        expect(find.byType(TemplateChip), findsNWidgets(2));
-
-        await tester.tap(find.byType(TemplateChip).first);
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 250));
-        final firstTitle = tester
-            .widget<TextField>(find.byType(TextField).first)
-            .controller!
-            .text;
-
-        await tester.tap(find.byType(TemplateChip).last);
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 250));
-        final secondTitle = tester
-            .widget<TextField>(find.byType(TextField).first)
-            .controller!
-            .text;
-
-        expect(secondTitle, isNot(firstTitle));
-      },
+  testWidgets('tracked, time, and duration chips open their own sheets', (
+    tester,
+  ) async {
+    final behavior = TrackedBehavior.create(
+      title: 'Exercise',
+      targetType: BehaviorTargetType.binary,
+      timesPerWeek: 3,
     );
+    await tester.runAsync(() => trackedBehaviorBox.put(behavior.id, behavior));
+    await pumpTimeline(tester);
+    await longPressAndReleaseAt(tester, const Offset(220, 400));
 
-    testWidgets('with no templates saved, the strip renders nothing at all '
-        'rather than an empty-state inside a 25%-height sheet', (tester) async {
-      await pumpTimeline(tester);
+    final behaviorChip = find.ancestor(
+      of: find.byIcon(Icons.fingerprint_rounded),
+      matching: find.byType(AppValueChip),
+    );
+    await tester.tap(behaviorChip);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(TaskBehaviorModal), findsOneWidget);
+    final addBehaviorButton = find.ancestor(
+      of: find.descendant(
+        of: find.byType(TaskBehaviorModal),
+        matching: find.byIcon(Icons.add_rounded),
+      ),
+      matching: find.byType(AppButton),
+    );
+    expect(addBehaviorButton, findsOneWidget);
+    expect(
+      tester.widget<AppButton>(addBehaviorButton).variant,
+      AppButtonVariant.primary,
+    );
+    expect(find.widgetWithText(ElevatedButton, 'Done'), findsNothing);
+    expect(find.text('Exercise'), findsOneWidget);
+    await tester.tap(find.text('Exercise'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(tester.widget<AppValueChip>(behaviorChip).hasValue, isTrue);
 
-      await longPressAndReleaseAt(tester, const Offset(220, 400));
+    final chips = find.descendant(
+      of: find.byType(QuickCreateOverlay),
+      matching: find.byType(AppValueChip),
+    );
+    await tester.tap(chips.at(2));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(TaskStartTimeModal), findsOneWidget);
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Done'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
 
-      expect(find.byType(QuickCreateOverlay), findsOneWidget);
-      expect(find.byType(TemplateChip), findsNothing);
-    });
+    await tester.tap(chips.at(3));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(TaskDurationModal), findsOneWidget);
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Done'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(TaskDurationModal), findsNothing);
   });
 
   // The third sheet state, requested directly against a reference
@@ -1449,7 +1620,7 @@ void main() {
       );
     });
 
-    testWidgets('minimised shows ONLY the title — no Schedule, no template '
+    testWidgets('minimised shows ONLY the title — no Add, no template '
         'strip, no editable field', (tester) async {
       await pumpTimeline(tester);
       await openThenMinimise(tester);
@@ -1465,7 +1636,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.byType(AppTextField), findsNothing);
-      expect(find.text('Schedule'), findsNothing);
+      expect(find.text('Add'), findsNothing);
       expect(find.byType(TemplateChipStrip), findsNothing);
     });
 
@@ -1478,12 +1649,12 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 250));
 
-      // Back to the small sheet: its own field and Schedule button are
+      // Back to the small sheet: its own field and Add button are
       // there again, and it did NOT skip ahead to the full pushed sheet
       // (which would have replaced this overlay entirely).
       expect(find.byType(QuickCreateOverlay), findsOneWidget);
       expect(find.byType(AppTextField), findsOneWidget);
-      expect(find.text('Schedule'), findsOneWidget);
+      expect(find.text('Add'), findsOneWidget);
     });
   });
 }

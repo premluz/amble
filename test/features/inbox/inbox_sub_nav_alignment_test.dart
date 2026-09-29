@@ -1,3 +1,4 @@
+import 'package:amble/core/tokens/component_tokens.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_sub_nav.dart';
 import 'package:amble/core/widgets/app_top_nav.dart';
@@ -53,7 +54,9 @@ void main() {
       tester.getTopLeft(text) - tester.getTopLeft(heading);
 
   testWidgets('the Inbox tabs sit exactly where the Day date and the Habits '
-      'period heading sit, in the main nav\'s own label style', (tester) async {
+      'period heading sit, and all three share one heading type', (
+    tester,
+  ) async {
     await tester.pumpWidget(host(const AppCalendarHeader()));
     final day = find.byType(AppCalendarHeader);
     final dayText = find.descendant(of: day, matching: find.byType(Text)).first;
@@ -73,6 +76,7 @@ void main() {
         .descendant(of: habits, matching: find.byType(Text))
         .first;
     expect(offsetIn(tester, habits, habitsText), dayOffset);
+    final habitsStyle = tester.widget<Text>(habitsText).style!;
 
     await tester.pumpWidget(
       host(
@@ -93,12 +97,31 @@ void main() {
       reason: 'the heading line does not budge between pages',
     );
     final allStyle = tester.widget<Text>(all).style!;
-    expect(allStyle, AppNavLabel.styleFor(_theme, selected: true));
-    expect(allStyle.fontSize, dayStyle.fontSize, reason: 'same type size');
+    expect(
+      allStyle,
+      AppNavLabel.styleFor(
+        _theme,
+        selected: true,
+        variant: AppNavLabelVariant.sub,
+      ),
+    );
     expect(
       tester.widget<Text>(find.text('Unfiled')).style,
-      AppNavLabel.styleFor(_theme, selected: false),
+      AppNavLabel.styleFor(
+        _theme,
+        selected: false,
+        variant: AppNavLabelVariant.sub,
+      ),
     );
+    // One type across the three headings: the page-heading token, one
+    // step below body, and the calendar's own (regular) weight.
+    final heading = PageHeadingTokens.text(_theme);
+    for (final style in [dayStyle, habitsStyle, allStyle]) {
+      expect(style.fontSize, heading.fontSize);
+      expect(style.fontWeight, heading.fontWeight);
+      expect(style.fontFamily, heading.fontFamily);
+    }
+    expect(heading.fontSize, lessThan(_theme.textBody.fontSize!));
   });
 
   testWidgets('a tab being dragged over shows a wash behind it, without '

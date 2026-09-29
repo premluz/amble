@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/tokens/component_tokens.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_badge_chip.dart';
 import '../../core/widgets/app_button.dart';
@@ -51,8 +52,7 @@ class _MultiTaskEditForm extends ConsumerStatefulWidget {
   final List<String> taskIds;
 
   @override
-  ConsumerState<_MultiTaskEditForm> createState() =>
-      _MultiTaskEditFormState();
+  ConsumerState<_MultiTaskEditForm> createState() => _MultiTaskEditFormState();
 }
 
 class _MultiTaskEditFormState extends ConsumerState<_MultiTaskEditForm> {
@@ -174,10 +174,7 @@ class _MultiTaskEditFormState extends ConsumerState<_MultiTaskEditForm> {
         // AppSheet's own outer padding no longer provides a top inset
         // (2026-09-23 — "top padding should be in header").
         SizedBox(height: theme.spacingLg),
-        Text(
-          '${widget.taskIds.length} tasks selected',
-          style: theme.textTitle,
-        ),
+        Text('${widget.taskIds.length} tasks selected', style: theme.textTitle),
         SizedBox(height: theme.spacingMd),
         AppPane(
           child: Row(
@@ -185,9 +182,7 @@ class _MultiTaskEditFormState extends ConsumerState<_MultiTaskEditForm> {
               Expanded(
                 child: Text(
                   'Label',
-                  style: theme.textBody.copyWith(
-                    color: theme.colorTextPrimary,
-                  ),
+                  style: theme.textBody.copyWith(color: theme.colorTextPrimary),
                 ),
               ),
               GestureDetector(
@@ -222,13 +217,12 @@ class _MultiTaskEditFormState extends ConsumerState<_MultiTaskEditForm> {
               Expanded(
                 child: Text(
                   'Track',
-                  style: theme.textBody.copyWith(
-                    color: theme.colorTextPrimary,
-                  ),
+                  style: theme.textBody.copyWith(color: theme.colorTextPrimary),
                 ),
               ),
               GestureDetector(
-                onTap: () => _showBehaviorPicker(behaviors, effectiveBehaviorId),
+                onTap: () =>
+                    _showBehaviorPicker(behaviors, effectiveBehaviorId),
                 child: AppBadgeChip(
                   theme: theme,
                   leading: Icon(
@@ -236,7 +230,8 @@ class _MultiTaskEditFormState extends ConsumerState<_MultiTaskEditForm> {
                     size: theme.spacingLg,
                     color: theme.colorTextSecondary,
                   ),
-                  label: behavior?.title ?? (_behaviorTouched ? 'None' : 'Mixed'),
+                  label:
+                      behavior?.title ?? (_behaviorTouched ? 'None' : 'Mixed'),
                 ),
               ),
             ],
@@ -249,9 +244,7 @@ class _MultiTaskEditFormState extends ConsumerState<_MultiTaskEditForm> {
               Expanded(
                 child: Text(
                   'Duration',
-                  style: theme.textBody.copyWith(
-                    color: theme.colorTextPrimary,
-                  ),
+                  style: theme.textBody.copyWith(color: theme.colorTextPrimary),
                 ),
               ),
               GestureDetector(
@@ -272,7 +265,7 @@ class _MultiTaskEditFormState extends ConsumerState<_MultiTaskEditForm> {
                     vertical: theme.spacingSm,
                   ),
                   decoration: BoxDecoration(
-                    color: theme.colorSurfaceSecondary,
+                    color: SheetTokens.inset(theme),
                     borderRadius: BorderRadius.circular(theme.radiusXl),
                   ),
                   child: Text(
@@ -378,18 +371,16 @@ class _MultiTaskEditFormState extends ConsumerState<_MultiTaskEditForm> {
                 theme: theme,
                 label: 'None',
                 selected: currentId == null,
-                onTap: () => Navigator.of(
-                  context,
-                ).pop(const _BehaviorPick(null)),
+                onTap: () =>
+                    Navigator.of(context).pop(const _BehaviorPick(null)),
               ),
               for (final behavior in behaviors)
                 _BehaviorOption(
                   theme: theme,
                   label: behavior.title,
                   selected: currentId == behavior.id,
-                  onTap: () => Navigator.of(
-                    context,
-                  ).pop(_BehaviorPick(behavior.id)),
+                  onTap: () =>
+                      Navigator.of(context).pop(_BehaviorPick(behavior.id)),
                 ),
             ],
           ),
@@ -435,13 +426,15 @@ class _BehaviorOption extends StatelessWidget {
           vertical: theme.spacingSm,
         ),
         decoration: BoxDecoration(
-          color: selected ? theme.colorAccent : theme.colorSurfaceSecondary,
+          color: selected ? theme.colorAccent : SheetTokens.inset(theme),
           borderRadius: BorderRadius.circular(theme.radiusMd),
         ),
         child: Text(
           label,
           style: theme.textBody.copyWith(
-            color: selected ? theme.colorSurfacePrimary : theme.colorTextPrimary,
+            color: selected
+                ? theme.colorSurfacePrimary
+                : theme.colorTextPrimary,
             fontWeight: FontWeight.w600,
           ),
         ),

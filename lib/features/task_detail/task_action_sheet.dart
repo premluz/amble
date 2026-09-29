@@ -27,7 +27,10 @@ Future<void> showTaskActionSheet(BuildContext context, {required Task task}) {
 }
 
 class _TaskActionSheetContent extends ConsumerWidget {
-  const _TaskActionSheetContent({required this.rootContext, required this.task});
+  const _TaskActionSheetContent({
+    required this.rootContext,
+    required this.task,
+  });
 
   /// See [showTaskActionSheet]'s own doc comment.
   final BuildContext rootContext;

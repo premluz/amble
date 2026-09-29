@@ -4843,3 +4843,208 @@ A drag is just the pill everywhere, and `_liftedDrag`/`_liftScale` are
 gone. `TaskCapsuleBlock` still has its `isLifted`/`liftedTextInline`
 options (with their own widget tests), but no screen uses them any more.
 Whether to delete them is an open question for the user.
+
+## 2026-09-29 — Time format preference (12-hour / 24-hour / System)
+
+Settings → Appearance → Time format: System (default, follows the device),
+12-hour, 24-hour. It is stored by enum name under
+`PreferenceKeys.timeFormat` (no Hive adapter) and read by
+`TimeFormatSetting`. It is applied once at the app root (`MaterialApp.builder`
+→ `AppTimeFormat`) as `MediaQuery.alwaysUse24HourFormat`, which every
+`TimeOfDay.format` in the UI reads. The task detail sheet's own formatter
+(previously always 24-hour) now uses it too.
+Not covered (no BuildContext, outside the UI): notification bodies
+(`notification_service.dart`), the Slack summary (`slack_summary_service.dart`)
+and app-intent speech (`intent_task_queries.dart`). They keep their current
+formats.
+
+## 2026-09-29 — One size for every time on the left of the Day screen
+
+`textTaskEdgeTime` (a task's start/end times on the timeline, and in Edit
+and resize) goes from 11 (`size0`) to 12 (`size1`), the same as
+`textCaptionMono` (the timeline's hour ticks and the list view's row
+times). The user reported twice that the two views' hours differed, and
+each time the comparison was between those two tokens. It stays its own
+token. Pinned by test/core/tokens/day_time_label_size_test.dart.
+
+## 2026-09-29 — Fixed time column; compact 12-hour clock on the Day screen's left
+
+Reported: in 12-hour mode "PM" pushed both Day views right, because the
+time column was sized per format. The user chose "narrow + compact 12h":
+- The column is one FIXED width in both formats
+  (`TimelineColumns.timelineTimeColumnFixedWidth`). It is measured once
+  per theme from the widest label either format writes
+  (`timelineClockWidestSamples`: "13:41", "12:45p") and is never wider
+  than the old `spacingTimeColumnWidth`.
+- `timelineZoneLeft` (context-free) and `timelineZoneLeftFor(context)` now
+  agree; they had diverged.
+- The left-column labels (hour ticks, task start/end, the "now" label, the
+  list view's row times) are written by `timelineClock`:
+  - 24-hour: unchanged ("13:41").
+  - 12-hour: whole hours "9 AM"/"12 PM", other times "9:15a"/"12:45p".
+- Other times in the app (zone header ranges, detail sheet, capture) keep
+  the full format.
+
+## 2026-09-29 — Tasks 25% closer to their zone's edges; the saving goes to the time column
+
+`ZoneInsetTokens` (`component_tokens.dart`), with scale .75:
+- **Side** (`side`, 18, was `spacingLg` 24): in the timeline, the band's
+  inset before the first pill lane (`leftInset`) and the pill origin; in
+  the list view, the zone card's left padding and the matching unzoned-row
+  padding and time-label escape.
+- **List view top/bottom** (`vertical`, 12, was `spacingMd` 16).
+- **Timeline task top/bottom** (`zoneTaskVerticalInset`, 3, was
+  `zoneBackgroundOffset` 4); the band's own geometry is unchanged.
+- **Time column**: the side's 6px saving (`freedForTimeColumn`) is added to
+  `timelineTimeColumnFixedWidth`, so zones start 6px later and every pill
+  starts at the same x as before. Pinned by zone_inset_tokens_test.dart.
+
+## 2026-09-29 — Lower-case am/pm everywhere
+
+`AmbleMaterialLocalizations` (English defaults with `am`/`pm`) is
+registered first in `MaterialApp.localizationsDelegates`, so every
+`TimeOfDay.format` in the app writes "9:00 pm". The Day screen's compact
+clock writes "9 pm" (other times were already "9:15p"). Notifications and
+the Slack summary are 24-hour only, and app-intent speech was already
+lower case. There are no system time pickers to cover.
+
+## 2026-09-29 — Time column borrows 4px from the time→zone gap
+
+`TimeColumnTokens.borrowedFromZoneGap` (8 = `space3`; first 4, raised to
+8 on a second "still slightly wider"): the time column is 8px wider and
+the gap before the zones 8px narrower
+(`TimelineColumns.timelineTimeToZoneGap` = gutter − 8 = 8). The labels
+have no internal right padding to reclaim. The screen's right padding
+bounds the zones and content, not the time column, so it was left alone. Zones and
+tasks don't move. This is the one deliberate exception to "every
+horizontal gap equals `spacingTimelineGutter`" (timeline_columns_test).
+
+## 2026-09-29 — Time column measured over every label, regular AND bold, plus 4px slack
+
+`timelineTimeColumnFixedWidth` measures every label `timelineClockSamples()`
+can produce (both formats, all hours, a spread of minutes) in
+`textCaptionMono` regular and w700. The bold weight is included because the
+"now" label is bold. It then adds `TimeColumnTokens.labelSlack` (4 = `space2`)
+so glyph overhang and rounding can't clip the last letter. The old 96px cap
+is gone: the measurement is the bound. Font assumptions were checked by
+measuring, not guessed: in DM Sans "12 pm" (32.2) is narrower than
+"12:45p" (35.4), so length is no proxy for width.
+`test/core/tokens/time_column_fit_test.dart` loads the real fonts and checks
+every weight and font mode.
+
+## 2026-09-29 — Sheets: Settings-group fill + the toolbar's floating edge (`AppSheetSurface`)
+
+Every bottom sheet (`AppSheet`'s route, `StepScaffold`, `NewZoneSheet`, the
+quick-create sheet) paints through one widget, `AppSheetSurface`. That is
+`AppFloatingSurface`, the same edge and shadow as the dock panes, using solid
+material. Its fill is `SheetTokens.surface` = `colorSurfaceSecondary`, the
+Settings-group surface. The old `colorSurfaceOverlay` read one level too
+strong, and now the edge separates the sheet instead of a brighter fill.
+Keyboard backgrounds and scroll fades use the same token.
+- `AppFloatingSurface` now draws its edge for solid material too (it had no
+  solid callers). The new `openBottom` leaves out the bottom stroke where a
+  sheet meets the screen edge.
+- Controls inside sheets that were filled `colorSurfaceSecondary` (multi-edit
+  date/duration chips, the add-category icon tile, "affect future
+  instances") move to `colorSurfaceField`, so they don't vanish into the sheet.
+- The quick-create sheet's earlier "no shadow/glow" look is replaced by this
+  request.
+
+## 2026-09-29 — Segmented groups don't ripple; Things/Zones uses the dock's segmented style
+
+- Buttons in a dock group with the shared sliding highlight get no tap ripple
+  (`AppButton.ripple`, off when `AppDockIconButton.showsSelectedFill` is
+  false). The moving highlight and the press scale are the feedback. Lone
+  dock buttons keep their ripple.
+- The Edit screen's Things | Zones switch is `AppFloatingTabSwitch`. It has
+  the dock's glass pane (`AppDockSurface`), the dock group's
+  `FloatingSurfaceTokens.selected` sliding highlight, accent label when
+  selected, and no ripple. Its outer height stays `sizeButtonMd`, like the
+  main nav, so swapping between the header slots never jumps. The highlight
+  sits inside the pane's `spacingXs` inset. `AppTabSwitch` is unchanged for
+  its other callers.
+
+## 2026-09-29 — Floating edge ~40% subtler
+
+`FloatingSurfaceTokens` edge alphas lowered: border .06→.035 (light) and
+.10→.06 (dark); top highlight .18→.11 (light) and .16→.10 (dark). This covers
+everything drawn by `AppFloatingSurface`: dock panes, menus, sheets and the
+Things/Zones switch. The top-brighter gradient is kept.
+
+## 2026-09-29 — Sheets are the page background in light, one step up in dark
+
+Supersedes the fill in "Sheets: Settings-group fill + the toolbar's floating
+edge". The floating edge and the scrim now separate a sheet, so:
+- `SheetTokens.surface` is `colorSurfaceBase` in light mode. A sheet reads as
+  a page, and its content layers the way a page's does.
+- In dark mode it stays `colorSurfaceSecondary`: a shadow barely reads on
+  dark, and iOS lightens its "elevated" dark backgrounds for the same reason.
+- `SheetTokens.inset` fills controls inside a sheet: `colorSurfaceSecondary`
+  in light, `colorSurfaceField` in dark. It is always one step off the sheet.
+- Dark mode is detected by `FloatingSurfaceTokens.isDark`, made public for
+  this, because `AmbleTheme` has no brightness flag.
+
+## 2026-09-29 — Edit mode header: nav stagger-out + pane reveal (mic → toolbar morph)
+
+`AppShellHeader` no longer crossfades. When a route claims the header (Edit
+mode's Things | Zones):
+- The main nav's items fade out left to right, settings gear last
+  (`AppStaggerExit` inside an `AppStaggerExitScope`).
+- Once the first item is gone, a glass pane grows from the header's leading
+  edge into the full header with `AppPaneMorph` / `LiquidMorphSpec.dockPane`,
+  the Inbox mic → voice toolbar reveal.
+- Exiting plays the same timeline backwards.
+- Timing lives in `HeaderRevealSpec`: 140ms per item, 35ms stagger, the morph
+  starting at 140ms, total ≈ 690ms.
+- The header draws the pane, so a route passes only its content.
+  `AppFloatingTabSwitch` split into pane + `AppFloatingTabTrack`; Edit mode
+  sends the track.
+- The pane grows from the leading edge (where "Days" leaves first), not from
+  the Edit button, which is in the bottom dock.
+- The faded nav stays laid out but is ignored for pointer, focus and
+  semantics.
+
+## 2026-09-29 — Every sheet drags down to close (no left-edge close)
+
+A left-edge swipe means "back a page" on both platforms, and Android's system
+back already closes sheets, so it doesn't close sheets. Instead
+`AppSheetDragDismiss` wraps the `AppSheet` route's panel and `StepScaffold`'s
+panel:
+- Drag the body down anywhere and the sheet follows the finger. Past
+  `SheetTokens.dragCloseDistance` (96) or on a fling, it closes.
+- It closes through `Navigator.maybePop`, so a `PopScope` guarding unsaved
+  work still decides. A refused close eases back
+  (`AppDragToCloseController.cancelClose`).
+- It reuses `AppDragToCloseHandle`'s logic via its new `child` parameter.
+- Scrollable content keeps vertical drags only while it overflows.
+- Quick-create and NewZoneSheet keep their own handles.
+
+## 2026-09-29 — Sheet system: one sheet with pages; whole-sheet drag; header titles
+
+Reconciled against iOS and Material 3; the full rules are in
+DESIGN_SYSTEM.md "Sheets — components and interaction pattern".
+- **No sheet on top of a sheet.** Going deeper pushes a page inside the
+  same sheet (`AppSheetFlow`): Label → New label → Color / Icon. The
+  colour and icon pickers are pages now (`CategoryColorPage`,
+  `CategoryIconPage`), and `AddCategoryPage` is the label form as a page.
+  `showAddCategoryModal` opens it as its own one-page flow.
+- **Dragging moves the whole sheet**, from anywhere, including pulling
+  scrolled content at its top. The handle bar is decoration. The 10
+  per-sheet drag controllers that moved only the content are removed. A
+  drag from a deeper page closes the whole sheet; back and the ‹ button
+  step one page.
+- **The header carries the title** (`AppSheetHeader.title`). Big body
+  titles are removed from the Label, Color, Icon, Duration, Start time,
+  Repeat, Tracked and Preset sheets.
+- The Label sheet's "+" stays primary: with pages, only one primary is on
+  screen at a time.
+- Fitted sheets get no scroll fades (an 80px fade would wash out their
+  last row). The Day page's fades now paint under the quick-create sheet.
+
+## 2026-09-29 — Name and category sheet on the sheet pattern
+
+`TaskNameCategoryModal` is now the root of an `AppSheetFlow`. The header row
+carries × · "Name and category" · Done (a pill, moved from the bottom). A
+"New label" chip after the labels pushes `AddCategoryPage` as a page.
+Saving selects the new label and returns to this page, because this sheet
+has its own Done. There are no stacked sheets left in the label flows.

@@ -12,10 +12,12 @@ abstract final class FloatingSurfaceTokens {
   static const fillAlpha = .92;
   static const borderWidth = 1.0;
   static const blurSigma = 12.0;
-  static const borderAlphaLight = .06;
-  static const borderAlphaDark = .10;
-  static const topHighlightAlphaLight = .18;
-  static const topHighlightAlphaDark = .16;
+  // ~40% down from .06/.10/.18/.16 — requested directly: "make the border
+  // in elevated class styling subtler".
+  static const borderAlphaLight = .035;
+  static const borderAlphaDark = .06;
+  static const topHighlightAlphaLight = .11;
+  static const topHighlightAlphaDark = .10;
   static const selectedAlpha = .10;
   static const menuAlphaLight = .10;
   static const menuAlphaDark = .28;
@@ -28,17 +30,19 @@ abstract final class FloatingSurfaceTokens {
   static const dragBlur = 32.0;
   static const dragSpread = -6.0;
 
-  static bool _isDark(AmbleTheme theme) =>
+  /// The theme carries no brightness flag; dark is text lighter than the
+  /// overlay.
+  static bool isDark(AmbleTheme theme) =>
       theme.colorTextPrimary.computeLuminance() >
       theme.colorSurfaceOverlay.computeLuminance();
 
   static Color border(AmbleTheme theme) => theme.colorTextPrimary.withValues(
-    alpha: _isDark(theme) ? borderAlphaDark : borderAlphaLight,
+    alpha: isDark(theme) ? borderAlphaDark : borderAlphaLight,
   );
 
   static Color highlight(AmbleTheme theme) => Color.alphaBlend(
     ColorPrimitives.creamOverlay.withValues(
-      alpha: _isDark(theme) ? topHighlightAlphaDark : topHighlightAlphaLight,
+      alpha: isDark(theme) ? topHighlightAlphaDark : topHighlightAlphaLight,
     ),
     border(theme),
   );
@@ -49,7 +53,7 @@ abstract final class FloatingSurfaceTokens {
   );
 
   static BoxShadow shadow(AmbleTheme theme, FloatingElevation elevation) {
-    final dark = _isDark(theme);
+    final dark = isDark(theme);
     final drag = elevation == FloatingElevation.drag;
     final alpha = drag
         ? (dark ? dragAlphaDark : dragAlphaLight)

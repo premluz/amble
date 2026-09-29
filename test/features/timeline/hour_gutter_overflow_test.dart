@@ -113,16 +113,23 @@ void main() {
   // `horizontal_spacing_system_test.dart`/`timeline_columns_test.dart` own
   // the equivalent cross-view/cross-width checks.
 
-  testWidgets('the old 56px gutter genuinely overflowed — the reported bug', (
+  testWidgets('the compact 12-hour clock fits even the old 56px gutter that '
+      '"12:00 PM" used to overflow — the reported bug cannot recur', (
     tester,
   ) async {
     final measured = await measure(tester, columnWidth: 56.0);
 
-    // Pins the actual defect so the fix cannot be quietly reverted, and
-    // documents which labels were and were not affected.
-    expect(measured['11:00 AM']!.intrinsic, greaterThan(56.0));
-    expect(measured['12:00 PM']!.intrinsic, greaterThan(56.0));
-    expect(measured['1:00 PM']!.intrinsic, lessThan(56.0));
+    // Whole hours now read "11 am" / "12 pm" (`timelineClock`), so the
+    // labels that genuinely overflowed 56px ("11:00 AM", "12:00 PM") no
+    // longer exist; every label fits.
+    expect(measured.keys, containsAll(['11 am', '12 pm']));
+    for (final entry in measured.entries) {
+      expect(
+        entry.value.intrinsic,
+        lessThan(56.0),
+        reason: '"${entry.key}" fits',
+      );
+    }
   });
 
   /// Reported directly: "time on timeline still not left aligned ...

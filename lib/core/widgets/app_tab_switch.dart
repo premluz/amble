@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../tokens/semantic_theme.dart';
 import 'app_button.dart';
 import 'app_option_switch_option.dart';
+import 'app_liquid_slide.dart';
 import 'app_press_feedback.dart';
 
 /// A row of mutually-exclusive options sharing one recessed track, with the
@@ -110,6 +111,8 @@ class AppTabSwitch<T> extends StatelessWidget {
                           isDropTarget: option.isDropTarget,
                           variant: variant,
                           onTap: () => onChanged(option.value),
+                          // The shared liquid highlight below draws it.
+                          drawsHighlight: false,
                         ),
                       )
                     : _TabSwitchSegment(
@@ -139,7 +142,12 @@ class AppTabSwitch<T> extends StatelessWidget {
               borderRadius: BorderRadius.circular(theme.radiusPill),
             ),
             child: fits
-                ? row
+                ? _withLiquidHighlight(
+                    theme,
+                    row,
+                    width: constraints.maxWidth,
+                    height: height,
+                  )
                 : ClipRRect(
                     borderRadius: BorderRadius.circular(theme.radiusPill),
                     child: SingleChildScrollView(
@@ -154,6 +162,60 @@ class AppTabSwitch<T> extends StatelessWidget {
   }
 }
 
+extension<T> on AppTabSwitch<T> {
+  /// One highlight under equal-width segments that moves between them like
+  /// a liquid (stretching toward the new segment, then settling) rather
+  /// than jumping — see [AppLiquidSlide].
+  Widget _withLiquidHighlight(
+    AmbleTheme theme,
+    Widget row, {
+    required double width,
+    required double height,
+  }) {
+    final look = _tabHighlight(theme, variant);
+    final index = options.indexWhere((option) => option.value == value);
+    if (look == null || index < 0 || options.isEmpty) return row;
+    final segment = width / options.length;
+    return Stack(
+      children: [
+        AppLiquidSlide(
+          target: Rect.fromLTWH(segment * index, 0, segment, height),
+          child: look,
+        ),
+        row,
+      ],
+    );
+  }
+}
+
+/// The selected segment's fill for [variant]: the accent (primary), a
+/// frosted wash (secondary), or none (ghost).
+Widget? _tabHighlight(AmbleTheme theme, AppButtonVariant variant) =>
+    switch (variant) {
+      AppButtonVariant.primary => DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.colorAccent,
+          borderRadius: BorderRadius.circular(theme.radiusPill),
+        ),
+      ),
+      AppButtonVariant.secondary => ClipRRect(
+        borderRadius: BorderRadius.circular(theme.radiusPill),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(
+            sigmaX: theme.blurOverlaySigma,
+            sigmaY: theme.blurOverlaySigma,
+          ),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: theme.colorTextPrimary.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(theme.radiusPill),
+            ),
+          ),
+        ),
+      ),
+      _ => null,
+    };
+
 class _TabSwitchSegment extends StatelessWidget {
   const _TabSwitchSegment({
     super.key,
@@ -163,7 +225,11 @@ class _TabSwitchSegment extends StatelessWidget {
     required this.variant,
     required this.onTap,
     this.isDropTarget = false,
+    this.drawsHighlight = true,
   });
+
+  /// False when a shared [AppLiquidSlide] draws the selection instead.
+  final bool drawsHighlight;
 
   final AmbleTheme theme;
   final String label;
@@ -177,7 +243,6 @@ class _TabSwitchSegment extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isPrimary = variant == AppButtonVariant.primary;
-    final isSecondary = variant == AppButtonVariant.secondary;
     // Selected-segment highlight follows AppButton's own variant palette:
     // primary is the flat accent fill (the track itself is already a
     // secondary-toned surface, so primary's highlight stays a plain, un-
@@ -190,41 +255,9 @@ class _TabSwitchSegment extends StatelessWidget {
         ? theme.colorSurfacePrimary
         : theme.colorTextPrimary;
 
-    final highlight = !selected
-        ? const SizedBox.shrink()
-        : (isPrimary
-              ? DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: theme.colorAccent,
-                    borderRadius: BorderRadius.circular(theme.radiusPill),
-                  ),
-                )
-              : (isSecondary
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(theme.radiusPill),
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(
-                            sigmaX: theme.blurOverlaySigma,
-                            sigmaY: theme.blurOverlaySigma,
-                          ),
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              // 0.16, matching AppButton._secondaryTint's
-                              // own raised alpha (0.08 read as too subtle
-                              // in practice).
-                              color: theme.colorTextPrimary.withValues(
-                                alpha: 0.16,
-                              ),
-                              borderRadius: BorderRadius.circular(
-                                theme.radiusPill,
-                              ),
-                            ),
-                          ),
-                        ),
-                      )
-                    // Ghost: no visible highlight surface at all — only the
-                    // text weight/color below marks the selected segment.
-                    : const SizedBox.shrink()));
+    final highlight = selected && drawsHighlight
+        ? (_tabHighlight(theme, variant) ?? const SizedBox.shrink())
+        : const SizedBox.shrink();
 
     return AppPressFeedback(
       onTap: onTap,

@@ -19,6 +19,8 @@ import 'core/tokens/type_primitives.dart';
 import 'core/widgets/app_context_menu.dart';
 import 'core/widgets/app_bottom_dock.dart';
 import 'core/widgets/app_shell_chrome.dart';
+import 'core/amble_material_localizations.dart';
+import 'core/widgets/app_time_format.dart';
 import 'core/widgets/app_shell_header.dart';
 import 'core/widgets/app_top_nav.dart';
 import 'core/widgets/app_view_transition.dart';
@@ -356,6 +358,7 @@ class AmbleApp extends ConsumerWidget {
     // TEMPORARY diagnostic — see `_step`'s own doc comment above `main()`.
     debugPrint('[startup] AmbleApp.build entered');
     final themeMode = ref.watch(themeModeSettingProvider);
+    final use24Hour = ref.watch(timeFormatSettingProvider).use24Hour;
     final hasSeenSplash = ref.watch(hasSeenSplashProvider);
     // A separate step from the splash/carousel above, not folded into it
     // — confirmed directly: "we need to keep carousel and separately
@@ -424,6 +427,20 @@ class AmbleApp extends ConsumerWidget {
         theme: _themeDataFor(lightTheme, Brightness.light),
         darkTheme: _themeDataFor(darkTheme, Brightness.dark),
         themeMode: toFlutterThemeMode(themeMode),
+        // Lower-case am/pm everywhere a time is formatted (see
+        // AmbleMaterialLocalizations); the framework's own defaults are
+        // appended after it.
+        localizationsDelegates: const [AmbleMaterialLocalizations.delegate],
+        // 12/24-hour time (Settings → Appearance), imposed once at the root
+        // so every `TimeOfDay.format` in every screen, sheet and overlay
+        // follows it. Null leaves the device's own setting in place.
+        builder: (context, child) {
+          final app = child;
+          if (app == null) {
+            throw StateError('MaterialApp built without a navigator child');
+          }
+          return AppTimeFormat(use24Hour: use24Hour, child: app);
+        },
         // Gate, provider-watched so each CTA's write triggers an immediate
         // rebuild with no separate Navigator.push. The one-off SplashScreen
         // and the legacy carousel/quiz are independently dev-toggle-gated

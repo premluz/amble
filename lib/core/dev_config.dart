@@ -161,13 +161,12 @@ class DevZoneCardFlat extends _$DevZoneCardFlat {
 /// Task view and the Zone (grid) Authoring screen are unaffected — this
 /// only touches [ZoneDayTimeline]'s own row list.
 ///
-/// Defaults to false (current shipped behavior: every zone renders,
-/// empty or not) — this toggle only ever REMOVES rows, never adds a
-/// display mode that didn't exist.
+/// Defaults to true — empty zones are hidden in Zone view unless this
+/// developer toggle is turned off.
 @Riverpod(keepAlive: true)
 class DevHideEmptyZones extends _$DevHideEmptyZones {
   @override
-  bool build() => false;
+  bool build() => true;
 
   void set(bool value) => state = value;
 }

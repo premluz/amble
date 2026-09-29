@@ -54,7 +54,8 @@ bool _isPresetSelected(WidgetTester tester, String label) {
           matching: find.byType(BackdropFilter),
         ),
       )
-      .isNotEmpty;
+      // Enabled only: the sheet's own solid surface carries a disabled one.
+      .any((filter) => filter.enabled);
 }
 
 void main() {

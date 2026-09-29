@@ -12,6 +12,7 @@ import '../../core/tokens/liquid_pulse_spec.dart';
 import '../../core/tokens/task_state_tokens.dart';
 import '../../core/widgets/app_completion_feedback.dart';
 import '../../core/widgets/app_liquid_pulse.dart';
+import '../../core/timeline_clock.dart';
 import '../../shared/models/category.dart';
 import '../../shared/models/external_calendar_event.dart';
 import '../../shared/models/task.dart';
@@ -55,7 +56,7 @@ String zoneTaskTimeLabel(
   if (startTimeOnlyVisible) {
     return scheduledAt == null
         ? '--:--'
-        : TimeOfDay.fromDateTime(scheduledAt).format(context);
+        : timelineClock(context, TimeOfDay.fromDateTime(scheduledAt));
   }
   if (!timeRangeVisible) {
     return durationVisible && durationMinutes != null
@@ -64,16 +65,18 @@ String zoneTaskTimeLabel(
   }
   if (scheduledAt == null) return '--:--';
   if (durationMinutes == null) {
-    return TimeOfDay.fromDateTime(scheduledAt).format(context);
+    return timelineClock(context, TimeOfDay.fromDateTime(scheduledAt));
   }
   final startTime = TimeOfDay.fromDateTime(scheduledAt);
   final endTime = TimeOfDay.fromDateTime(
     scheduledAt.add(Duration(minutes: durationMinutes)),
   );
   return durationVisible
-      ? '${startTime.format(context)} - ${endTime.format(context)} '
+      ? '${timelineClock(context, startTime)} - '
+            '${timelineClock(context, endTime)} '
             '(${formatDurationLabel(durationMinutes)})'
-      : '${startTime.format(context)} - ${endTime.format(context)}';
+      : '${timelineClock(context, startTime)} - '
+            '${timelineClock(context, endTime)}';
 }
 
 /// The reserved on-screen distance a [ZoneRowTimeLabel]'s text sits from
@@ -551,7 +554,8 @@ class ZoneContainerBlock extends StatelessWidget {
             // view. The row itself supplies the breathing room its own
             // trailing edge needs.
             //
-            // LEFT is `spacingLg` (24), not `spacingMd` (16) — widened
+            // LEFT is the zone side inset (`ZoneInsetTokens.side`, 18; was
+            // `spacingLg` 24, before that `spacingMd` 16) — widened
             // one rung up the spacing scale, requested directly against a
             // two-view annotated screenshot: the gap between the card's
             // own outer edge and its first pill lane read as visibly
@@ -560,11 +564,13 @@ class ZoneContainerBlock extends StatelessWidget {
             // meant to match.
             padding: flatStyle
                 ? EdgeInsets.zero
+                // 25% less than the base spacing (ZoneInsetTokens); the
+                // side's saving went to the time column, so tasks stay put.
                 : EdgeInsets.fromLTRB(
-                    theme.spacingLg,
-                    theme.spacingMd,
+                    ZoneInsetTokens.side(theme),
+                    ZoneInsetTokens.vertical(theme),
                     0,
-                    theme.spacingMd,
+                    ZoneInsetTokens.vertical(theme),
                   ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1160,7 +1166,8 @@ class _ZoneTaskRow extends StatelessWidget {
                     theme: theme,
                     text: timeLabel,
                     leftPaddingToEscape:
-                        zoneContentLeftInset(theme, context) + theme.spacingLg,
+                        zoneContentLeftInset(theme, context) +
+                        ZoneInsetTokens.side(theme),
                     reservedWidth: zoneRowTimeLabelReservedWidth,
                   ),
                 if (hasCategory) ...[
@@ -1437,7 +1444,8 @@ class _ZoneExternalEventRow extends StatelessWidget {
                   theme: theme,
                   text: timeLabel,
                   leftPaddingToEscape:
-                      zoneContentLeftInset(theme, context) + theme.spacingLg,
+                      zoneContentLeftInset(theme, context) +
+                      ZoneInsetTokens.side(theme),
                   reservedWidth: zoneRowTimeLabelReservedWidth,
                 ),
               ),

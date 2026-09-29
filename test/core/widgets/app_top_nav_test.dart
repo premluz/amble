@@ -4,6 +4,8 @@ import 'package:amble/core/tokens/component_tokens.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_button.dart';
 import 'package:amble/core/widgets/app_press_feedback.dart';
+import 'package:amble/core/widgets/app_nav_press.dart';
+import 'package:amble/core/widgets/app_sub_nav.dart';
 import 'package:amble/core/widgets/app_top_nav.dart';
 
 /// Covers [AppTopNav]'s active-state contract — in particular the real
@@ -161,5 +163,80 @@ void main() {
         expect(labelHitArea, appButtonHeightFor(theme, AppButtonSize.md));
       },
     );
+  });
+
+  group('active (pressed) state is the lighter next surface', () {
+    AppNavWash washOf(WidgetTester tester, Finder target) =>
+        tester.widget<AppNavWash>(
+          find.ancestor(of: target, matching: find.byType(AppNavWash)).first,
+        );
+
+    testWidgets('holding a destination shows the Settings-group surface '
+        'behind its label — no dark ripple over it — and clears on release', (
+      tester,
+    ) async {
+      await pump(tester, selectedIndex: 0);
+      expect(washOf(tester, find.text('Things')).visible, isFalse);
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.text('Things')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(washOf(tester, find.text('Things')).visible, isTrue);
+      final fill = tester
+          .widgetList<DecoratedBox>(
+            find.descendant(
+              of: find.byType(AppNavWash),
+              matching: find.byType(DecoratedBox),
+            ),
+          )
+          .map((box) => box.decoration)
+          .whereType<BoxDecoration>()
+          .map((d) => d.color);
+      expect(fill, contains(theme.colorSurfaceSecondary));
+      expect(
+        find.descendant(
+          of: find.byType(AppTopNav),
+          matching: find.byType(ClipPath),
+        ),
+        findsNothing,
+        reason: 'no dark wash',
+      );
+
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(washOf(tester, find.text('Things')).visible, isFalse);
+    });
+
+    testWidgets('the settings gear too', (tester) async {
+      await pump(tester, selectedIndex: 0);
+      final gear = find.byIcon(Icons.settings_outlined);
+      final gesture = await tester.startGesture(tester.getCenter(gear));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(washOf(tester, gear).visible, isTrue);
+      await gesture.up();
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('a sub-nav tab hovered by a drag shows the same surface', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(useMaterial3: true, extensions: [theme]),
+          home: Scaffold(
+            body: AppSubNavLabel(
+              label: 'Work',
+              selected: false,
+              highlighted: true,
+              onTap: () {},
+            ),
+          ),
+        ),
+      );
+      expect(washOf(tester, find.text('Work')).visible, isTrue);
+    });
   });
 }

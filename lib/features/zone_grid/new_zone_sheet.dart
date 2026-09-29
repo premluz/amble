@@ -7,6 +7,7 @@ import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_chip_strip.dart';
 import '../../core/widgets/app_drag_to_close_handle.dart';
 import '../../core/widgets/app_sheet_header.dart';
+import '../../core/widgets/app_sheet_surface.dart';
 import '../../core/widgets/app_text_field.dart';
 import '../../core/widgets/app_segmented_time_field.dart';
 import '../../core/widgets/app_value_chip.dart' show AppValueChipSize;
@@ -69,7 +70,7 @@ class _NewZoneSheetState extends ConsumerState<NewZoneSheet>
   /// feedback at all until release; now [AppDragToCloseHandle] (default
   /// `responsive: true`) publishes the live drag distance here, and this
   /// sheet's own `build` translates its content by it — see
-  /// docs/DESIGN_SYSTEM.md's "Sheets > Drag handle" section.
+  /// docs/DESIGN_SYSTEM.md's "Sheets — components and interaction pattern" section.
   final _dragController = AppDragToCloseController();
 
   /// The same one-shot entrance/exit controller `QuickCreateOverlay`'s
@@ -224,8 +225,8 @@ class _NewZoneSheetState extends ConsumerState<NewZoneSheet>
             constraints: BoxConstraints(
               maxHeight: MediaQuery.sizeOf(context).height * .62,
             ),
-            // `colorSurfaceOverlay` — the top of the elevation ramp, matching
-            // every other sheet in the app (see `AppSheet`). Requested directly.
+            // `AppSheetSurface` — the same surface and floating edge as
+            // every other sheet in the app (see `AppSheet`).
             //
             // `radiusModal` (2026-09-23, was `radiusXl`) — the same rounding
             // unification pass that added `AppSheetHeader`: every other
@@ -234,174 +235,170 @@ class _NewZoneSheetState extends ConsumerState<NewZoneSheet>
             // `radiusModal` for its own top corner; this sheet's comment
             // already claimed to match "every other sheet in the app" but its
             // radius hadn't actually been updated to the shared token.
-            decoration: BoxDecoration(
-              color: theme.colorSurfaceOverlay,
-              borderRadius: BorderRadius.vertical(
-                top: Radius.circular(theme.radiusModal),
-              ),
-              boxShadow: theme.shadowPane,
-            ),
-            child: SafeArea(
-              top: false,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Close left, primary action right — at the TOP of the
-                  // sheet, per docs/DESIGN_SYSTEM.md's "Sheets > The header
-                  // row" rule ("Close — top-LEFT... Primary action —
-                  // top-RIGHT"), matching every other sheet's own header
-                  // placement (`quick_capture_sheet.dart`,
-                  // `new_section_sheet.dart`). Reversed back from a
-                  // 2026-09-24 bottom placement, requested directly.
-                  //
-                  // The drag-to-close handle is layered BEHIND this row
-                  // (`AppSheetHeader`'s own `handle` param) rather than
-                  // alone in its own strip above it, matching the shared
-                  // header shape exactly — its drag/tap target still spans
-                  // the whole row.
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      theme.spacingMd,
-                      theme.spacingSm,
-                      theme.spacingMd,
-                      0,
-                    ),
-                    child: AppSheetHeader(
-                      theme: theme,
-                      handle: AppDragToCloseHandle(
+            child: AppSheetSurface(
+              theme: theme,
+              child: SafeArea(
+                top: false,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Close left, primary action right — at the TOP of the
+                    // sheet, per docs/DESIGN_SYSTEM.md's "Sheets" header
+                    // rule ("Close — top-LEFT... Primary action —
+                    // top-RIGHT"), matching every other sheet's own header
+                    // placement (`quick_capture_sheet.dart`,
+                    // `new_section_sheet.dart`). Reversed back from a
+                    // 2026-09-24 bottom placement, requested directly.
+                    //
+                    // The drag-to-close handle is layered BEHIND this row
+                    // (`AppSheetHeader`'s own `handle` param) rather than
+                    // alone in its own strip above it, matching the shared
+                    // header shape exactly — its drag/tap target still spans
+                    // the whole row.
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        theme.spacingMd,
+                        theme.spacingSm,
+                        theme.spacingMd,
+                        0,
+                      ),
+                      child: AppSheetHeader(
                         theme: theme,
-                        controller: _dragController,
-                        // Matches the old accumulator's own `!_saving` guard
-                        // — a save already in flight must not also let a
-                        // drag tear the sheet down underneath it.
+                        handle: AppDragToCloseHandle(
+                          theme: theme,
+                          controller: _dragController,
+                          // Matches the old accumulator's own `!_saving` guard
+                          // — a save already in flight must not also let a
+                          // drag tear the sheet down underneath it.
+                          onClose: _saving ? () {} : _close,
+                        ),
                         onClose: _saving ? () {} : _close,
-                      ),
-                      onClose: _saving ? () {} : _close,
-                      trailing: AppButton(
-                        label: 'Add zone',
-                        size: AppButtonSize.md,
-                        shape: AppButtonShape.pill,
-                        isLoading: _saving,
-                        onPressed: _save,
+                        trailing: AppButton(
+                          label: 'Add zone',
+                          size: AppButtonSize.md,
+                          shape: AppButtonShape.pill,
+                          isLoading: _saving,
+                          onPressed: _save,
+                        ),
                       ),
                     ),
-                  ),
-                  SizedBox(height: theme.spacingSm),
-                  // Flexible (loose fit), NOT Expanded — this Column stays
-                  // `mainAxisSize.min` (matching every other Column in this
-                  // sheet) so the whole sheet still SHRINKS to fit short
-                  // content rather than always claiming the outer
-                  // Container's full `maxHeight` cap. Expanded is a
-                  // FlexFit.tight `Flexible` — it would have forced this
-                  // Column to `mainAxisSize.max` to make sense, which broke
-                  // exactly that shrink-to-content behavior (verified with a
-                  // throwaway size probe: a short-content sheet rendered at
-                  // the full 62%-of-screen cap instead of hugging its own
-                  // content). Flexible's default loose fit still caps at
-                  // the available space when content overflows it (the
-                  // scroll view absorbs the rest, no exception), while
-                  // shrinking freely below that cap when content is short.
-                  Flexible(
-                    child: SingleChildScrollView(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: theme.spacingMd,
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Bare — the shared style for every entity's name.
-                          AppTextField(
-                            controller: _title,
-                            label: 'Add title',
-                            variant: AppTextFieldVariant.bare,
-                          ),
-                          if (names.isNotEmpty) ...[
-                            SizedBox(height: theme.spacingSm),
-                            // AppChipStrip, not Wrap — requested directly
-                            // ("the pills should be scrollable
-                            // horizontally... we should make that scrolling
-                            // same across usages... reuse that class from
-                            // add task"): one scrollable line, the same
-                            // shared strip mechanics `TemplateChipStrip`
-                            // uses for the quick-create sheet's own template
-                            // cards, rather than a second hand-rolled
-                            // horizontal scroller. `edgeInset: 0` — unlike
-                            // `TemplateChipStrip`'s own full-bleed caller,
-                            // this strip already sits inside the sheet's own
-                            // `spacingMd` side padding, so it needs no
-                            // additional edge inset of its own.
-                            //
-                            // AppBadgeChip itself, not a hand-rolled
-                            // Container — unified directly ("use app badge
-                            // chip but we don't need icon now so this one
-                            // without icon and filled"). `leading: null`
-                            // (now supported — see that param's own doc
-                            // comment) renders a text-only chip; `sm` for
-                            // this dense multi-tag row, confirmed via
-                            // AskUserQuestion over the widget's own `md`
-                            // default.
-                            AppChipStrip<ZoneFacet>(
-                              items: names,
-                              height: appButtonHeightFor(
-                                theme,
-                                AppButtonSize.sm,
-                              ),
-                              itemSpacing: theme.spacingXs,
-                              keyOf: (name) => ValueKey(name.id),
-                              itemBuilder: (context, name) => AppBadgeChip(
-                                theme: theme,
-                                label: name.name,
-                                size: AppValueChipSize.sm,
-                                selected: _facetId == name.id,
-                                onTap: () => setState(() {
-                                  _title.text = name.name;
-                                  _facetId = name.id;
-                                }),
-                              ),
+                    SizedBox(height: theme.spacingSm),
+                    // Flexible (loose fit), NOT Expanded — this Column stays
+                    // `mainAxisSize.min` (matching every other Column in this
+                    // sheet) so the whole sheet still SHRINKS to fit short
+                    // content rather than always claiming the outer
+                    // Container's full `maxHeight` cap. Expanded is a
+                    // FlexFit.tight `Flexible` — it would have forced this
+                    // Column to `mainAxisSize.max` to make sense, which broke
+                    // exactly that shrink-to-content behavior (verified with a
+                    // throwaway size probe: a short-content sheet rendered at
+                    // the full 62%-of-screen cap instead of hugging its own
+                    // content). Flexible's default loose fit still caps at
+                    // the available space when content overflows it (the
+                    // scroll view absorbs the rest, no exception), while
+                    // shrinking freely below that cap when content is short.
+                    Flexible(
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: theme.spacingMd,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Bare — the shared style for every entity's name.
+                            AppTextField(
+                              controller: _title,
+                              label: 'Add title',
+                              variant: AppTextFieldVariant.bare,
                             ),
-                          ],
-                          SizedBox(height: theme.spacingMd),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: AppSegmentedTimeField(
-                                  label: 'Start',
-                                  first: _start ~/ 60,
-                                  second: _start % 60,
-                                  firstMax: 23,
-                                  onChanged: (h, m) =>
-                                      setState(() => _start = h * 60 + m),
+                            if (names.isNotEmpty) ...[
+                              SizedBox(height: theme.spacingSm),
+                              // AppChipStrip, not Wrap — requested directly
+                              // ("the pills should be scrollable
+                              // horizontally... we should make that scrolling
+                              // same across usages... reuse that class from
+                              // add task"): one scrollable line, the same
+                              // shared strip mechanics `TemplateChipStrip`
+                              // uses for the quick-create sheet's own template
+                              // cards, rather than a second hand-rolled
+                              // horizontal scroller. `edgeInset: 0` — unlike
+                              // `TemplateChipStrip`'s own full-bleed caller,
+                              // this strip already sits inside the sheet's own
+                              // `spacingMd` side padding, so it needs no
+                              // additional edge inset of its own.
+                              //
+                              // AppBadgeChip itself, not a hand-rolled
+                              // Container — unified directly ("use app badge
+                              // chip but we don't need icon now so this one
+                              // without icon and filled"). `leading: null`
+                              // (now supported — see that param's own doc
+                              // comment) renders a text-only chip; `sm` for
+                              // this dense multi-tag row, confirmed via
+                              // AskUserQuestion over the widget's own `md`
+                              // default.
+                              AppChipStrip<ZoneFacet>(
+                                items: names,
+                                height: appButtonHeightFor(
+                                  theme,
+                                  AppButtonSize.sm,
                                 ),
-                              ),
-                              SizedBox(width: theme.spacingSm),
-                              Expanded(
-                                child: AppSegmentedTimeField(
-                                  label: 'End',
-                                  first: _end ~/ 60,
-                                  second: _end % 60,
-                                  firstMax: 24,
-                                  onChanged: (h, m) =>
-                                      setState(() => _end = h * 60 + m),
+                                itemSpacing: theme.spacingXs,
+                                keyOf: (name) => ValueKey(name.id),
+                                itemBuilder: (context, name) => AppBadgeChip(
+                                  theme: theme,
+                                  label: name.name,
+                                  size: AppValueChipSize.sm,
+                                  selected: _facetId == name.id,
+                                  onTap: () => setState(() {
+                                    _title.text = name.name;
+                                    _facetId = name.id;
+                                  }),
                                 ),
                               ),
                             ],
-                          ),
-                          if (_error != null)
-                            Padding(
-                              padding: EdgeInsets.only(top: theme.spacingSm),
-                              child: Text(
-                                _error!,
-                                style: theme.textCaption.copyWith(
-                                  color: theme.colorTextSecondary,
+                            SizedBox(height: theme.spacingMd),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: AppSegmentedTimeField(
+                                    label: 'Start',
+                                    first: _start ~/ 60,
+                                    second: _start % 60,
+                                    firstMax: 23,
+                                    onChanged: (h, m) =>
+                                        setState(() => _start = h * 60 + m),
+                                  ),
+                                ),
+                                SizedBox(width: theme.spacingSm),
+                                Expanded(
+                                  child: AppSegmentedTimeField(
+                                    label: 'End',
+                                    first: _end ~/ 60,
+                                    second: _end % 60,
+                                    firstMax: 24,
+                                    onChanged: (h, m) =>
+                                        setState(() => _end = h * 60 + m),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (_error != null)
+                              Padding(
+                                padding: EdgeInsets.only(top: theme.spacingSm),
+                                child: Text(
+                                  _error!,
+                                  style: theme.textCaption.copyWith(
+                                    color: theme.colorTextSecondary,
+                                  ),
                                 ),
                               ),
-                            ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

@@ -1076,327 +1076,136 @@ shows up.
 
 ---
 
-## Sheets — container, handle, header row
+## Sheets — components and interaction pattern
 
-Created 2026-09-22, requested directly: "let's unify all drawer sheets...
-sheets should have handles on top center, the style and position should
-be defined (reference is new task (quick add))... let's unify interaction
-and animation... there might already be a section for sheets that should
-define position of CTA top right and top left close button... spacing
-should be defined." Consolidates what was one narrower section
-(`AppSheetHandle` alone) into the full shape every slide-up sheet in the
-app should share: the container (`AppSheet`), the drag handle, and the
-header row's button positions.
+Reconciled 2026-09-29 against iOS (sheets, navigation inside a sheet) and
+Material 3 (modal bottom sheets, which should not stack). Replaces the
+2026-09-22 section, which had every chip open its own sheet on top of the
+last and each sheet wire its own drag controller. The rules below are the
+contract; the components enforce most of them.
 
-**The reference is the Timeline's quick-create sheet**
-(`quick_create_sheet_shell.dart`/`quick_create_overlay.dart`) — the first
-sheet built with this exact header row shape (handle behind, primary
-action right, close left), now the pattern every other sheet should
-match rather than re-deriving its own header layout.
+### Interaction rules
 
-### The container — `AppSheet`
+1. **One sheet, pages inside it.** A control on a page (a chip, a row)
+   opens ONE picker sheet over the page. Going deeper from that sheet
+   (Label → New label → Color) pushes a **page inside the same sheet**
+   (`AppSheetFlow`) — never another sheet on top. Two stacked sheets with
+   two primary buttons is the bug this rule exists for.
+2. **At most two levels are visible**: the thing you came from (a page,
+   or the quick-create task sheet) under the scrim, and one sheet. The
+   level below is dimmed and inert (the route's scrim barrier); only the
+   top sheet's primary action is live.
+3. **Header: × or ‹ left · title centre · primary action right.** The
+   first page of a sheet closes (×); a deeper page goes back (‹). The
+   title lives in the header row, never as a big heading in the body.
+4. **Height fits the content** (`AppSheetSize.small`, capped at the
+   viewport). No fixed half-height sheets with empty space. Moving between
+   pages animates the height.
+5. **Drag down closes — the whole sheet, from anywhere.** The handle, the
+   header, the body; and on scrolled content, pulling down past its top.
+   The sheet follows the finger; past the threshold (or a fling) it closes,
+   otherwise it eases back. From a deeper page, the drag still closes the
+   whole sheet, as on iOS. A `PopScope` guarding unsaved work still
+   decides — a refused close eases back.
+6. **The handle bar is decoration.** It never moves on its own and is not
+   its own drag target: dragging it drags the sheet.
+7. **Back steps through pages first.** Android back (and an iOS edge swipe
+   inside a flow) goes back one page; on the first page it closes the
+   sheet. A left-edge swipe never closes a sheet — on both platforms it
+   means "back a page".
+8. **Primary action never silently closes** unless closing is its whole
+   outcome (a picker: pick one, done). Capture flows whose action is "add
+   another" stay open (Quick Capture).
+9. **Sheets sit above page chrome.** A page's own scroll fades belong to
+   the page and paint UNDER any sheet (the Day fade used to darken the
+   quick-create sheet's bottom). Sheets whose body scrolls (`StepScaffold`)
+   carry their own top/bottom fades in their own surface colour; fitted
+   sheets have none.
 
-**File**: `lib/core/widgets/app_sheet.dart`
+### Components
 
-**What it is**: the ONE entry point for a slide-up modal — a rounded
-Material bottom sheet everywhere except iOS/macOS, where it uses
-Cupertino's native modal-popup styling. Screens must never reach for
-`showModalBottomSheet`/`showCupertinoModalPopup` directly (per
-CONSTITUTION.md design principle 4).
+| Component | File | Role |
+| --- | --- | --- |
+| `AppSheet.show` | `core/widgets/app_sheet.dart` | The one entry point for a slide-up modal (never `showModalBottomSheet`). Sizes `small` (default) / `half` / `nearFull`. |
+| `AppSheetSurface` | `core/widgets/app_sheet_surface.dart` | The panel: `SheetTokens.surface` fill, the toolbar's floating edge and shadow (`AppFloatingSurface`, solid, open bottom), top corners `radiusModal`. |
+| `AppSheetDragDismiss` | `core/widgets/app_sheet_drag_dismiss.dart` | Rule 5: whole-sheet drag, scroll-at-top pull, `maybePop`, ease-back on refusal. Wraps every `AppSheet` panel and `StepScaffold`. |
+| `AppSheetFlow` / `AppSheetFlowHeader` | `core/widgets/app_sheet_flow.dart` | Rules 1, 3, 4, 7: pages inside one sheet (`push`, `pop`), pages below kept alive, one fixed handle, the header that picks × or ‹. |
+| `AppSheetHeader` | `core/widgets/app_sheet_header.dart` | The header row (72 high): × / ‹ left, `title` centred, `trailing` right, handle bar behind (off with `showHandle: false`). |
+| `AppSheetHandle` / `AppSheetTopHandle` | `core/widgets/app_sheet_handle.dart` | The bar (`spacingXl * 1.2` × 4, `radiusSm`, `AppButton.subtleTint`) and its place: top-centre, `spacingSm` down. |
+| `StepScaffold` | `core/widgets/app_step_scaffold.dart` | The near-full form sheet (task detail, zone/habit/template forms): own scroll fades, footer CTA. |
+| `SheetTokens` | `core/tokens/component_tokens.dart` | `surface` (light: page bg; dark: `colorSurfaceSecondary`), `inset` (controls inside a sheet, one step off it), `dragCloseDistance` (96), `pageBehindShift` (.3). |
 
-**Keyboard background:** `SheetKeyboardBackground` paints
-`colorSurfaceOverlay` across the keyboard inset behind the native keyboard.
-Both `StepScaffold` and `AppSheetMotion` use it so rounded keyboard corners
-reveal the sheet surface rather than the underlying page/scrim. This is paint
-only: content keeps its existing keyboard avoidance, without a second inset,
-extra animation, or a guessed keyboard corner radius. Compact sheets suppress
-the fill while their entrance is fully hidden. The fill disappears at zero inset.
-Regression: `flutter test test/core/widgets/sheet_keyboard_background_test.dart`.
+`AppDragToCloseHandle` remains the gesture engine under
+`AppSheetDragDismiss` (distance-or-velocity threshold, live follow,
+ease-back; `dragBy`/`release`/`cancelClose` on its controller). Sheets no
+longer create their own controller. Exceptions that move their own panel:
+the quick-create overlay (`QuickCreateSheetHandle`, three heights) and
+`new_zone_sheet.dart` (in-tree, not a route).
 
-**Inline creation sheets and toolbox:** Edit task drafts and new-zone naming
-sheets remain in-tree so the timeline/marquee stays interactive. Edit publishes
-`AppShellChromeController.setDockObscured(true)` for the whole draft lifetime,
-including keyboard movement and sheet dismissal animation. `AppBottomDock`
-suppresses its rendering and hit targets immediately: empty action groups alone
-are insufficient because exiting buttons keep painting above nested sheets.
-Clear suppression when the draft closes or the owning Edit route releases chrome.
-This is toolbar suppression, not promotion to a modal root overlay.
+### Building a sheet
 
-**Exact shape**:
-- Corners: `theme.radiusModal`, top corners only.
-- Fill: `theme.colorSurfaceOverlay` — the top of the elevation ramp, so a
-  sheet reads as a layer ABOVE the page behind it rather than the same
-  flat surface (a real, reported bug: "sheets across the app should have
-  next surface level to bg").
-- Barrier: `theme.colorScrim`.
-- Body padding: `theme.spacingLg` horizontally and
-  `theme.spacingBottomClearance` at the bottom (`padded: true`, the
-  default). The route's `SafeArea` supplies the platform bottom inset
-  separately — see "Vertical safe-area clearance" above.
-- Three sizes (`AppSheetSize`): `small` (sizes to content — the default,
-  and what every sheet in this section uses), `half` (fixed 50% of
-  viewport, scrollable), `nearFull` (matches `StepScaffold`'s near-full
-  inset). Picking a size larger than `small` is for a picker/list with
-  real content, not for a form that should just size to itself.
-- Entrance/exit: `motionSheetSlide` (180ms), `curveDecelerate` in and
-  `curveStandard` out. Only the sheet surface translates, not the viewport.
-- Plain mode slides immediately. `autofocusesKeyboard: true` mounts the
-  focused field immediately but holds the surface until the IME's final
-  `motionSheetSlide` window. Android 11+ supplies actual IME fraction,
-  duration and inset through `AndroidKeyboardAnimation`; the surface and
-  keyboard finish together even when the IME opens slowly or starts late.
-- An already-open keyboard uses the normal slide. Older Android/iOS use
-  `motionKeyboardSettle` as a grace period; hardware/suppressed keyboards
-  have a bounded request timeout. These are explicit unmeasured paths,
-  not a promise of native synchronization on those platforms.
-- Keyboard clearance belongs to `AppSheetMotion`, outside the translated
-  surface. No global remembered height, no `AnimatedPadding`, and no
-  additional caller-owned keyboard padding.
-- Full-screen route helpers retain their separate navigation behavior.
-
-**API**:
 ```dart
-AppSheet.show<T>({
-  required BuildContext context,
-  required WidgetBuilder builder,
-  bool padded = true,           // false only for content managing its own edge-to-edge layout
-  AppSheetSize size = AppSheetSize.small,
-  bool autofocusesKeyboard = false,
-})
-```
-
-### The drag handle — `AppSheetHandle`
-
-**File**: `lib/core/widgets/app_sheet_handle.dart`
-
-**What it is**: the small horizontal grip bar shown at the top-center of
-every sheet — the "this can be dragged/tapped, or swipe down to close"
-affordance. Purely visual (no gesture handling of its own): a real
-caller wraps its own `GestureDetector` around the WHOLE header row (not
-just the bar) and places this bar inside via `Align`/`Positioned`/
-`Center`, so the drag/tap target is the full row's width and height, not
-a precise hit on a 4px bar.
-
-**Exact shape**:
-- Size: `theme.spacingXl * 1.2` wide, `4` tall.
-- Corners: `theme.radiusSm`.
-- Fill: `AppButton.subtleTint(theme)` — the same low-alpha
-  `colorTextPrimary` wash `AppButtonVariant.secondary` uses, not a
-  text/icon-contrast token and not a bespoke alpha invented just for
-  this bar.
-- **Position: top-CENTER of the header row, `theme.spacingSm` top
-  inset.** (2026-09-22 — nudged down one rung from the original
-  `theme.spacingXs`, requested directly as the unification's own
-  reference value: "slightly lower than currently.") Never centered in
-  the whole (button-height) row — that puts it at the same vertical
-  mid-point as the row's own Close/CTA buttons, reading as one more
-  control rather than a separate "sheet can be dragged" affordance
-  sitting above the row's real content.
-- Interaction: dragging down past a distance-or-velocity threshold
-  closes the sheet — the SAME "handle to dismiss" gesture as tapping
-  Close, never a different outcome. A sheet with more than one height
-  state (only the quick-create overlay, so far) settles into its own
-  intermediate states first; a plain single-height sheet just closes.
-  See "The drag gesture" below for how that gesture is wired and
-  whether it's visually responsive during the drag.
-
-**API**:
-```dart
-AppSheetHandle({ required AmbleTheme theme })
-```
-
-**Never**: a bare `Container` re-declaring this bar's size/color/radius
-inline, and never `colorTextSecondary` (or any other text-contrast
-token) for a purely decorative grip — reach for `AppButton.subtleTint`
-instead, the app's one "subtle neutral tint on any surface" token,
-already shared with `AppButtonVariant.secondary`'s own fill.
-
-### The drag gesture — `AppDragToCloseHandle`, responsive by default
-
-**File**: `lib/core/widgets/app_drag_to_close_handle.dart`
-
-**Added 2026-09-26**, reported directly: "the handle pattern in sheets
-should be responsive when grabbed to drag, similar to quick create task
-on timeline... but sometimes when release earlier it stays with
-revealed button and not clickable" — actually two related reports about
-the SAME underlying gap: `new_zone_sheet.dart`'s handle didn't visually
-move at all while dragging (a bare `_dragDistance` accumulator with no
-live feedback, only a threshold check on release), unlike the Timeline
-quick-create task sheet's own handle, which visually follows the finger
-in real time via `QuickCreateSheetHeightController`.
-
-**Two sheets had independently hand-rolled the identical
-non-responsive gesture** before this: `quick_capture_sheet.dart` and
-`new_zone_sheet.dart`. Both now use this shared widget instead — this
-is the "third near-identical implementation" trigger the header-row
-section above says promotes a hand-rolled pattern into a real shared
-one (per CONSTITUTION.md design principle 5).
-
-**What it is**: wraps `AppSheetHandle`'s visual bar with the actual
-drag gesture — updates a small `AppDragToCloseController` as the finger
-moves, and on release decides close-vs-snap-back using the same
-distance-or-velocity threshold every handle already used.
-
-**Two modes, chosen per call site**:
-- **`responsive: true` (the default).** The sheet visually translates
-  with the finger DURING the drag — `controller.offset` updates on
-  every `onVerticalDragUpdate`, and the caller's own `build` reads it
-  (via `ListenableBuilder`) to apply `Transform.translate`. Releasing
-  short of the threshold animates the offset back to zero
-  (`theme.motionFast`/`curveStandard`, the same easing every other
-  sheet transition in this section uses); releasing past it calls
-  `onClose` and leaves the sheet at rest for whatever exit animation
-  the caller's own close path plays. This is the norm now — a sheet
-  that doesn't visibly respond to being grabbed reads as unresponsive
-  or broken, which is exactly what both reports above were describing.
-- **`responsive: false`.** The controller's `offset` never leaves
-  zero — the drag is still tracked and the same threshold still
-  decides close-vs-nothing on release, but nothing visually moves
-  until then. This is the EXACT previous behavior every existing
-  caller had before this widget existed; kept as an explicit opt-out
-  rather than removed, for a sheet where live translation would fight
-  its own layout (nothing currently needs this — it exists so a future
-  caller isn't forced into responsiveness if it genuinely can't
-  support it, not because two behaviors are equally recommended).
-
-**Threshold** (unchanged from what every caller already had): drag
-distance past `theme.spacingXl` (default; overridable per call site via
-`closeDistance`), OR release velocity past `800` px/s
-(`closeVelocity`) — whichever comes first.
-
-**API**:
-```dart
-final controller = AppDragToCloseController();   // create once, dispose in State.dispose
-
-AppDragToCloseHandle({
-  required AmbleTheme theme,
-  required AppDragToCloseController controller,
-  required VoidCallback onClose,
-  bool responsive = true,
-  double? closeDistance,     // defaults to theme.spacingXl
-  double closeVelocity = 800.0,
-})
-```
-
-The caller's own `build` composes the live offset in, typically as the
-OUTERMOST transform around the sheet's whole content (or, for a sheet
-that already has its own entrance/exit `Transform` — see `new_zone_sheet
-.dart` — as a SECOND, separate one nested inside it, so the two never
-fight over the same offset value):
-```dart
-ListenableBuilder(
-  listenable: controller,
-  builder: (context, child) => Transform.translate(
-    offset: Offset(0, controller.offset),
-    child: child,
+// A single-page picker.
+AppSheet.show<int>(
+  context: context,
+  builder: (context) => Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      AppSheetHeader(theme: theme, title: 'Duration', onClose: close, trailing: done),
+      SizedBox(height: theme.spacingMd),
+      /* body */
+    ],
   ),
-  child: /* the sheet's own content */,
-)
+);
+
+// A sheet that goes deeper: pages in one flow.
+AppSheet.show<String>(
+  context: context,
+  builder: (context) => AppSheetFlow(theme: theme, root: const LabelPage()),
+);
+// …inside LabelPage:
+AppSheetFlowHeader(theme: theme, title: 'Label', trailing: addButton);
+AppSheetFlow.of(context).push(AddCategoryPage(onSaved: …));
 ```
 
-**Current call sites**:
-- `lib/features/task_detail/quick_create_sheet_shell.dart`
-  (`QuickCreateSheetHandle`) — NOT built on this widget. It drives its
-  own richer 3-state (small/minimised/full) fraction system
-  (`QuickCreateSheetHeightController`), a genuinely different, larger
-  feature than "drag down enough and it closes." This remains the
-  reference for what a fully responsive handle should FEEL like; this
-  section's own widget generalizes that feel to the simpler one-size
-  case every other handle-bearing sheet actually has.
-- `lib/features/inbox/quick_capture_sheet.dart` — `responsive: true`
-  (the default). Previously a bare accumulator with no live feedback.
-- `lib/features/zone_grid/new_zone_sheet.dart` — `responsive: true`
-  (the default). The sheet this was reported against directly.
+A page that is also opened on its own (New label from Settings) is the
+root of its own `AppSheetFlow`; `AppSheetFlowHeader` shows × there and ‹
+when pushed. Results travel by callback (`onSelected`, `onSaved`), not by
+popping values between pages.
 
-**Never**: a THIRD hand-rolled `GestureDetector` reimplementing this
-same accumulate-then-threshold gesture at a new call site — every sheet
-with a drag-to-close handle uses this widget now.
+### Container details (`AppSheet`)
 
-### The header row — button positions
-
-**Not yet its own shared widget** — this is the settled LAYOUT rule every
-sheet's own header `Row`/`Stack` should follow by hand, until a third
-near-identical implementation appears (per CONSTITUTION.md design
-principle 5), at which point it should be promoted the same way
-`AppSheetHandle` was.
-
-**The rule**:
-- **Close — top-LEFT.** Always `HeaderCircleButton` (`app_step_scaffold
-  .dart`), never a bare `IconButton`/IconData without the circular fill.
-  Closes the sheet and ONLY closes it — never also submits/saves
-  whatever the sheet is for. The only three ways a sheet closes: tapping
-  Close, dragging the handle down past its threshold, or (Material only)
-  tapping the scrim outside it.
-- **Primary action — top-RIGHT.** A small circular `HeaderCircleButton`
-  for a single-glyph action sitting IN the header row itself (e.g. Quick
-  Capture's check-mark Done), or a pill `AppButton` for a labeled action
-  (e.g. quick-create's "Schedule"). Which shape depends on whether the
-  action has a short label worth showing — a glyph-only button for
-  something already obvious from context (a check mark after typing a
-  title), a labeled pill when the verb itself is the point.
-- **A secondary/supporting control** (e.g. Quick Capture's mic button)
-  sits between Close and the primary action, same size as the primary
-  action's own `HeaderCircleButton` so the row's icons read as one
-  family — confirmed directly ("voice record should be same size as
-  done").
-- **The handle sits BEHIND the whole row** (`Positioned.fill`, painted
-  first), not squeezed into its own separate strip above the buttons —
-  its drag/tap target is the entire row's width and height; Close and
-  the primary action paint ON TOP of it and win their own taps, but any
-  part of the row they don't cover still drags/dismisses.
-- **A sheet's primary action must not also silently close it** unless
-  closing genuinely IS the action's whole outcome (e.g. a picker whose
-  only job is "pick one, done"). A capture/create flow whose primary
-  action is "add another one of these" (Quick Capture's Done, matching
-  its own keyboard-submit) stays open on success — see Quick Capture's
-  own doc comment for the reasoning and docs/DECISIONS.md for the
-  2026-09-22 entry that aligned its top-right button to this rule (it
-  used to close on every save; now it only closes via Close/swipe-down,
-  exactly like the keyboard's own submit already did).
-
-**Reference implementation** — `quick_create_overlay.dart`'s header
-`Stack`:
-```dart
-Stack(
-  children: [
-    Positioned.fill(child: /* the handle's GestureDetector, AppSheetHandle centered inside */),
-    Positioned(top: 0, bottom: 0, right: 0, child: Center(child: /* primary action */)),
-    Positioned(top: 0, bottom: 0, left: 0, child: Center(child: /* Close */)),
-  ],
-)
-```
-
-**`new_zone_sheet.dart` briefly diverged from this rule (2026-09-24 –
-2026-09-28) — moved back into line, not a standing exception.** A direct
-request ("close and add at the bottom of the sheet") had put this one
-sheet's Close/"Add zone" row at the BOTTOM instead, with the drag handle
-left on its own at the top. Reversed back to the top per this rule,
-requested directly — `AppSheetHeader` (with `AppDragToCloseHandle` as its
-`handle`) is now this sheet's first `Column` child too, same as every
-other `AppSheetHeader` call site. **This section's own rule was never
-edited to describe a bottom exception during that window** — the
-divergence lived only in `new_zone_sheet.dart`'s own local comment, so
-there is nothing else here to revert; this note exists so a future
-"why does new_zone_sheet look different from the other two" question
-doesn't resurface without this history attached. See docs/DECISIONS.md's
-2026-09-28 entry for the full account.
+- Fill `SheetTokens.surface`; barrier `colorScrim`; body padding
+  `spacingLg` horizontally and `spacingBottomClearance` at the bottom
+  (`padded: true`); the route's `SafeArea` adds the device inset.
+- Entrance/exit: `motionSheetSlide`, `curveDecelerate` in, `curveStandard`
+  out; only the surface translates.
+- `autofocusesKeyboard: true` holds the surface until the IME's final
+  `motionSheetSlide` window (Android 11+ measured via
+  `AndroidKeyboardAnimation`; elsewhere `motionKeyboardSettle` grace).
+  Keyboard clearance belongs to `AppSheetMotion` — no caller padding.
+- `SheetKeyboardBackground` paints the sheet surface behind the keyboard's
+  rounded corners (`sheet_keyboard_background_test.dart`).
+- Inline, in-tree sheets (Edit task drafts, new-zone naming) stay in the
+  tree so the timeline stays interactive, and hide the bottom dock via
+  `AppShellChromeController.setDockObscured(true)` for their lifetime.
 
 ### Spacing
 
-Every value below is the same one the quick-create sheet already uses —
-nothing new invented for this unification, only named as the shared rule:
+| What | Token |
+| --- | --- |
+| Side inset for everything in a sheet (content left-aligned, never a centred shrink-wrapped column) | `spacingLg` |
+| Handle top inset | `spacingSm` |
+| Header row height | `spacingXl * 1.8` |
+| Header → body | `spacingMd` |
+| Title/name field → its settings chips | `spacingMd` |
+| Between chips (both axes) | `spacingSm` |
+| Header circle button | `spacingXl` |
 
-| What | Token | Value |
-| --- | --- | --- |
-| Sheet body padding (all sides) | `theme.spacingLg` | 24 |
-| Handle's own top inset | `theme.spacingSm` | 8 |
-| Header row height | `theme.spacingXl * 1.8` | 72 |
-| Gap between Close/mic/primary-action buttons in the header row | `theme.spacingSm` | 8 |
-| Header row → body content below it | `theme.spacingSm` | 8 |
-| A `HeaderCircleButton`'s own size | `theme.spacingXl` | 40 |
-
-**Never**: a bare numeric literal for any of the above at a new call
-site — every one of these is already a named token on `AmbleTheme`.
+**Never**: a sheet opened from inside another sheet; a big title in the
+body; a per-sheet drag controller or `Transform` on the content; a fixed
+`half` size for content that fits; a numeric literal for any spacing above.
 
 ---
 
@@ -2004,10 +1813,18 @@ once it lands.
 
 **File**: `lib/core/widgets/app_sub_nav.dart`. A page's own navigation
 under the main nav (first user: the Inbox sections).
-- **Same labels as the main nav**: `AppNavLabel` (extracted from
-  `AppTopNav`), i.e. `textBody`, w700 primary when selected, w500 tertiary
-  when not, with the main nav's `spacingLg` gap. The main nav keeps its
-  40px row; the sub nav uses the labels at text height.
+- **Labels**: `AppNavLabel` (extracted from `AppTopNav`) in its
+  `AppNavLabelVariant.sub`, i.e. the page-heading type
+  (`PageHeadingTokens.text`: body copy one step down the scale, 14 instead
+  of 16, regular weight, the Day date's own weight). Selection is shown by
+  colour only (primary vs tertiary). The gap is the main nav's `spacingLg`.
+  The main nav itself is unchanged (`textBody`, w700/w500, 40px row).
+- **One heading type and line across Day, Inbox and Habits**: the Day date
+  (`AppDateAccordion`), the Habits period (`_TrackedPeriodHeading`) and the
+  sub nav all use `PageHeadingTokens.text` on a fixed
+  `PageHeadingTokens.rowHeight` line (24 = `spacingLg`) with the text
+  centred. The small controls on that line (chevron, "Today", "+") can't
+  nudge the text, and the three line up by construction.
 - **The page-heading slot**: screen padding at the sides, no top padding,
   then `spacingXs × 2` and `spacingSm` below. This is exactly the Day date's
   (`AppDateAccordion` in `AppCalendarHeader`) and the Habits period
@@ -2030,3 +1847,52 @@ unchanged 40px tap box. The box is pulled right by (40 − 20) / 2, so the
 glyph, not the invisible box, ends on the screen-padding line, optically
 aligned with that edge. The tap box moves with it. Pinned in
 app_top_nav_test.dart.
+
+## Navigation active state — `AppNavPress` / `AppNavWash`
+
+Main nav destinations, the settings gear and sub-nav tabs don't use the
+shared dark press wash (`AppPressFeedback(ripple: false)`, keeping the
+squeeze and haptic). Their active state is the next surface up,
+`colorSurfaceSecondary` (the Settings group container surface), drawn
+behind the label/icon, a little past it, with no layout (`AppNavWash`).
+It shows while pressed, and on a sub-nav tab while a drag hovers it. That
+is the same subtle step as the week strip's selected day.
+`AppNavLabel` moved to `app_nav_label.dart` (re-exported by
+`app_top_nav.dart`).
+
+## Pinch vs. marquee — `TimelineMultiTouch`
+
+Two fingers down is a pinch, never a marquee. `TimelinePinchZoom` (already
+tracking pointers for zoom) publishes "two or more fingers down" as a
+`ValueNotifier<bool>`. Descendants read it via `TimelineMultiTouch.of`, and
+an owner above it can pass its own (`multiTouch:`).
+- **Edit Tasks** (the task-pill sweep, `_DraggableTaskBlockState`): a drag
+  that begins with two fingers down is ignored entirely. A second finger
+  landing mid-sweep cancels it through `_cancelMove()`, removing the
+  marquee and restoring the pre-sweep selection. A second finger landing
+  mid-MOVE cancels the move the same way: dropped unsaved, and the task
+  stays where it was.
+- **Edit Zones** (the long-press paint marquee in `ZoneGridScreen`): it
+  won't start while two fingers are down (two still fingers read as a
+  long-press), and a second finger landing mid-paint abandons it via
+  `_cancelPaint()`.
+
+## Connected buttons — liquid selection (`AppLiquidSlide`)
+
+A selection highlight moving between connected segments is gooey, not
+rigid. `AppLiquidSlide` (`LiquidSlideSpec.connected`) springs the edge that
+leads the travel to its new place quickly (.3s, bounce .25) and the
+trailing edge on a slower spring (.48s, bounce .15). The highlight
+stretches toward the target, thinning a touch (`squash` .12 per unit of
+stretch), then its tail catches up and it settles exactly on the new
+segment. Reduced motion jumps. Used by:
+- `AppTabSwitch` when its segments fit (e.g. the Edit screen's Things |
+  Zones): one shared highlight under equal segments. A scrolling, overflow
+  switch keeps its per-segment highlight.
+- `AppContextDock` groups of two or more buttons (e.g. the Day dock's
+  Timeline | List): one highlight per group, with the buttons'
+  own fill off (`AppDockIconButton.showsSelectedFill`). Single-button panes
+  keep their own fill.
+
+The Edit screen's first tab is labelled "Things" (was "Tasks"), matching
+the main nav.

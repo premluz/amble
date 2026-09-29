@@ -12,7 +12,11 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   final theme = AmbleTheme.light;
 
-  Future<void> pump(WidgetTester tester, {required bool selected}) {
+  Future<void> pump(
+    WidgetTester tester, {
+    required bool selected,
+    bool showsSelectedFill = true,
+  }) {
     return tester.pumpWidget(
       MaterialApp(
         theme: ThemeData(useMaterial3: true, extensions: [theme]),
@@ -23,6 +27,7 @@ void main() {
               icon: Icons.edit_outlined,
               tooltip: 'Edit',
               selected: selected,
+              showsSelectedFill: showsSelectedFill,
               onTap: () {},
             ),
           ),
@@ -53,5 +58,23 @@ void main() {
   testWidgets('unselected has no fill', (tester) async {
     await pump(tester, selected: false);
     expect(tester.widget<AppButton>(find.byType(AppButton)).fillColor, isNull);
+  });
+
+  testWidgets('a lone dock button keeps its tap ripple', (tester) async {
+    await pump(tester, selected: false);
+    expect(
+      tester.widget<AppPressFeedback>(find.byType(AppPressFeedback)).ripple,
+      isTrue,
+    );
+  });
+
+  testWidgets('a button in a segmented group has no tap ripple — the moving '
+      'highlight answers the tap', (tester) async {
+    await pump(tester, selected: true, showsSelectedFill: false);
+    expect(tester.widget<AppButton>(find.byType(AppButton)).ripple, isFalse);
+    expect(
+      tester.widget<AppPressFeedback>(find.byType(AppPressFeedback)).ripple,
+      isFalse,
+    );
   });
 }

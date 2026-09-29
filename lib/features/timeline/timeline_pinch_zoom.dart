@@ -41,9 +41,16 @@ import '../../shared/providers/preferences_providers.dart';
 /// Zone Grid's edit mode all get this same widget wrapping the same
 /// scrollable surface.
 class TimelinePinchZoom extends ConsumerStatefulWidget {
-  const TimelinePinchZoom({super.key, required this.child});
+  const TimelinePinchZoom({super.key, required this.child, this.multiTouch});
 
   final Widget child;
+
+  /// Set true while two or more fingers are down (a pinch), false once
+  /// fewer are — so a single-finger gesture (a marquee sweep) can stand
+  /// aside for a pinch. Pass one to watch it from ABOVE this widget (the
+  /// zone grid builds this one); descendants read it via
+  /// [TimelineMultiTouch]. Owned by the caller when given, else internal.
+  final ValueNotifier<bool>? multiTouch;
 
   @override
   ConsumerState<TimelinePinchZoom> createState() => _TimelinePinchZoomState();
@@ -51,6 +58,15 @@ class TimelinePinchZoom extends ConsumerStatefulWidget {
 
 class _TimelinePinchZoomState extends ConsumerState<TimelinePinchZoom> {
   final Map<int, Offset> _positions = {};
+
+  late final ValueNotifier<bool> _ownMultiTouch = ValueNotifier(false);
+  ValueNotifier<bool> get _multiTouch => widget.multiTouch ?? _ownMultiTouch;
+
+  @override
+  void dispose() {
+    _ownMultiTouch.dispose();
+    super.dispose();
+  }
 
   /// The distance between the two tracked pointers when the current pinch
   /// began (or was last re-based after a pointer count change) — null
@@ -74,7 +90,9 @@ class _TimelinePinchZoomState extends ConsumerState<TimelinePinchZoom> {
 
     final baselineDistance = _baselineDistance;
     final baselineScale = _baselineScale;
-    if (_positions.length != 2 || baselineDistance == null || baselineScale == null) {
+    if (_positions.length != 2 ||
+        baselineDistance == null ||
+        baselineScale == null) {
       return;
     }
     if (baselineDistance == 0) return;
@@ -101,6 +119,7 @@ class _TimelinePinchZoomState extends ConsumerState<TimelinePinchZoom> {
   /// 3rd finger joining, or dropping to 1/0, always ends the current pinch
   /// rather than letting it continue with a stale baseline.
   void _rebaseIfExactlyTwo() {
+    _multiTouch.value = _positions.length >= 2;
     if (_positions.length == 2) {
       setState(() {
         _baselineDistance = _distanceBetween();
@@ -128,7 +147,23 @@ class _TimelinePinchZoomState extends ConsumerState<TimelinePinchZoom> {
       onPointerMove: _handlePointerMove,
       onPointerUp: _handlePointerUp,
       onPointerCancel: _handlePointerCancel,
-      child: widget.child,
+      child: TimelineMultiTouch(notifier: _multiTouch, child: widget.child),
     );
   }
+}
+
+/// Whether two or more fingers are down on the surrounding
+/// [TimelinePinchZoom] — a pinch, which single-finger gestures (the marquee
+/// sweeps in Edit Tasks and Edit Zones) must not be mistaken for.
+class TimelineMultiTouch extends InheritedNotifier<ValueNotifier<bool>> {
+  const TimelineMultiTouch({
+    super.key,
+    required ValueNotifier<bool> super.notifier,
+    required super.child,
+  });
+
+  /// The live signal, without rebuilding on its changes (listen to it
+  /// instead). Null outside a [TimelinePinchZoom].
+  static ValueNotifier<bool>? of(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<TimelineMultiTouch>()?.notifier;
 }

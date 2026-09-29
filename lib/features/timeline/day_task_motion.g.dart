@@ -65,7 +65,7 @@ final class DayTaskMotionProvider
   }
 }
 
-String _$dayTaskMotionHash() => r'6880a12a8b8de4f1433ab1b57dd0e2ddb66ab2a3';
+String _$dayTaskMotionHash() => r'429fa86c514e5180d331df8eadf11b363ce73b7e';
 
 /// Tracks the Day's tasks ABOVE the widgets that show them. Switching
 /// between timeline and list view remounts every task, so "is this task

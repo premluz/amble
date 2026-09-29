@@ -4,21 +4,29 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/timeline_clock.dart';
 import '../../core/widgets/app_button.dart';
+import '../../core/widgets/app_sheet_surface.dart';
 import '../../core/widgets/app_step_scaffold.dart' show HeaderCircleButton;
-import '../../core/widgets/app_switch.dart';
 import '../../core/widgets/app_text_field.dart';
 import '../../core/widgets/app_trial_gate.dart';
+import '../../core/widgets/app_value_chip.dart';
 import '../../shared/models/category.dart';
+import '../../shared/models/recurrence_frequency.dart';
+import '../../shared/models/recurrence_rule.dart';
 import '../../shared/models/task.dart';
-import '../../shared/models/task_template.dart';
 import '../../shared/providers/task_providers.dart';
 import '../../shared/providers/trial_providers.dart';
 import 'recently_saved_task_provider.dart';
 import '../task_detail/quick_create_sheet_shell.dart';
+import '../task_detail/task_behavior_modal.dart';
+import '../task_detail/task_category_modal.dart';
 import '../task_detail/task_detail_sheet.dart';
+import '../task_detail/task_duration_modal.dart';
+import '../task_detail/task_preset_modal.dart';
+import '../task_detail/task_repeat_modal.dart';
+import '../task_detail/task_start_time_modal.dart';
 import 'pending_task_draft_provider.dart';
-import 'template_chip_strip.dart';
 
 /// The small quick-create panel dropped alongside the wiggly placeholder
 /// pill by tapping empty Timeline space — requested directly: "a small
@@ -91,22 +99,26 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
   /// (pushing the real sheet) must happen exactly once per draft.
   bool _promoted = false;
 
-  /// The template whose title/category the user applied, if any. Carried
-  /// into the real sheet on promotion so the category survives the
-  /// handoff — the mini sheet has no category field of its own to show
-  /// it in, so the chip's own selected state is the only visible
-  /// indication until the full form opens.
-  TaskTemplate? _appliedTemplate;
-
   /// See [Task.isImportant]. Reported directly as missing from this
   /// panel ("can't see important in quick add in mini sheet") — the
   /// full sheet, the edit flow, and templates all gained a real toggle
-  /// for this field, but the mini sheet's own direct-Schedule path
-  /// (`_schedule`) had no way to set it at all, and applying a template
-  /// carrying `isImportant: true` had nowhere to surface that either.
-  /// Seeded from an applied template (see [_applyTemplate]) but always
-  /// user-overridable afterward, same as the title field is.
+  /// for this field, but the mini sheet's own direct-Add path
+  /// (`_schedule`) had no way to set it at all.
+  /// It remains user-overridable, same as the title field is.
   bool _isImportant = false;
+
+  /// The label selected from the shared label picker. General is the
+  /// neutral fallback and is not shown as a selectable label in the modal.
+  String _categoryId = BuiltInCategoryIds.general;
+
+  String? _behaviorId;
+  String? _templateId;
+  TimeOfDay? _timeOverride;
+  DateTime? _dateOverride;
+  int? _durationOverride;
+  bool _notificationsEnabled = true;
+  bool _repeats = false;
+  late Set<int> _selectedDays;
 
   /// Re-entrancy guards for the direct save, mirroring the full sheet's
   /// own pair: [_isSaving] stops two taps overlapping, [_hasSaved] stops
@@ -121,10 +133,11 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
   void initState() {
     super.initState();
     // A real default name ("New thing") rather than starting empty —
-    // requested directly, so Schedule is always meaningful even if the
+    // requested directly, so Add is always meaningful even if the
     // user never types. Tapping the field clears it outright (see the
     // field's own onFocusChanged) so typing starts from scratch.
     _titleController = TextEditingController(text: 'New thing');
+    _selectedDays = {widget.draft.scheduledAt.weekday};
     _heightController = QuickCreateSheetHeightController(
       initialFraction: quickCreateSheetMinFraction,
     )..addListener(_onHeightChanged);
@@ -191,21 +204,22 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
 
     showTaskDetailSheet(
       context,
-      initialScheduledAt: widget.draft.scheduledAt,
-      initialTimeOfDay: TimeOfDay.fromDateTime(widget.draft.scheduledAt),
+      initialScheduledAt: _scheduledAt,
+      initialTimeOfDay: TimeOfDay.fromDateTime(_scheduledAt),
       draftId: widget.draft.id,
       initialTitle: _titleController.text,
-      initialDurationMinutes: widget.draft.durationMinutes,
-      initialCategoryId: _appliedTemplate?.categoryId,
+      initialDurationMinutes: _durationMinutes,
+      initialCategoryId: _categoryId,
       initialIsImportant: _isImportant,
-      templateId: _appliedTemplate?.id,
+      initialBehaviorId: _behaviorId,
+      templateId: _templateId,
       stayOnNameStage: stayOnNameStage,
     );
   }
 
   /// Creates the task directly from the mini sheet, without ever opening
-  /// the full form — reported directly: "Done let's change to Schedule
-  /// and it already sets the task there."
+  /// the full form — the compact action commits the task directly
+  /// and writes the settled draft values immediately.
   ///
   /// Everything needed is already settled by this point: the title (typed
   /// or from a chip or the "New thing" default), the category (from a chip,
@@ -225,8 +239,8 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
     // user has actively emptied a field that ships with a default.
     if (title.isEmpty) return;
 
-    final scheduledAt = widget.draft.scheduledAt;
-    final durationMinutes = widget.draft.durationMinutes;
+    final scheduledAt = _scheduledAt;
+    final durationMinutes = _durationMinutes;
 
     setState(() => _isSaving = true);
 
@@ -236,9 +250,12 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
         title: title,
         scheduledAt: scheduledAt,
         durationMinutes: durationMinutes,
-        categoryId: _appliedTemplate?.categoryId ?? BuiltInCategoryIds.general,
+        categoryId: _categoryId,
+        recurrenceRule: _repeats ? _recurrenceRule : null,
+        behaviorId: _behaviorId,
+        notificationsEnabled: _notificationsEnabled,
         isImportant: _isImportant,
-        templateId: _appliedTemplate?.id,
+        templateId: _templateId,
       );
       Task created;
       try {
@@ -270,24 +287,13 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
     }
   }
 
-  /// Applies a tapped template's title and category to the in-progress
-  /// task — and deliberately NOT its duration, specified directly: "as
-  /// soon as they click a template, that applies the name and the
-  /// category, but not the duration. The duration is not overridden, it
-  /// remains the one set by the user." By this point the user has
-  /// already sized the placeholder pill by dragging and resizing it, so
-  /// the draft's own `durationMinutes` is a real expressed intent that a
-  /// template's suggested default must not overwrite.
-  ///
-  /// Applying does not promote to the full sheet — the user stays in the
-  /// mini sheet, free to keep adjusting the pill or pick a different
-  /// template.
-  void _applyTemplate(TaskTemplate template) {
-    setState(() {
-      _appliedTemplate = template;
-      _titleController.text = template.title;
-      _isImportant = template.isImportant;
-    });
+  Future<void> _openLabelModal() async {
+    final result = await TaskCategoryModal.show(
+      context: context,
+      categoryId: _categoryId,
+    );
+    if (!mounted || result == null) return;
+    setState(() => _categoryId = result);
   }
 
   /// Guards [_onCloseRequested] against firing twice (e.g. a second drag
@@ -322,6 +328,112 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
       ref.read(pendingTaskDraftProvider.notifier).clear();
     });
   }
+
+  DateTime get _scheduledAt {
+    final draft = widget.draft.scheduledAt;
+    final date = _dateOverride ?? draft;
+    final time = _timeOverride ?? TimeOfDay.fromDateTime(draft);
+    return DateTime(date.year, date.month, date.day, time.hour, time.minute);
+  }
+
+  int get _durationMinutes => _durationOverride ?? widget.draft.durationMinutes;
+
+  RecurrenceRule get _recurrenceRule {
+    final days = _selectedDays.isEmpty ? {DateTime.monday} : _selectedDays;
+    return days.length == 7
+        ? RecurrenceRule(frequency: RecurrenceFrequency.daily)
+        : RecurrenceRule(
+            frequency: RecurrenceFrequency.weekly,
+            daysOfWeek: days.toList()..sort(),
+          );
+  }
+
+  Future<void> _openPresetModal() async {
+    final template = await TaskPresetModal.show(
+      context: context,
+      selectedTemplateId: _templateId,
+    );
+    if (!mounted || template == null) return;
+    setState(() {
+      _templateId = template.id;
+      _titleController.text = template.title;
+      _categoryId = template.categoryId;
+      _behaviorId = template.behaviorId;
+      _isImportant = template.isImportant;
+    });
+  }
+
+  Future<void> _openDatePicker() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _scheduledAt,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+    if (!mounted || picked == null) return;
+    setState(() {
+      _dateOverride = DateTime(picked.year, picked.month, picked.day);
+    });
+  }
+
+  Future<void> _openStartTimeModal() async {
+    final result = await TaskStartTimeModal.show(
+      context: context,
+      initialHour: _scheduledAt.hour,
+      initialMinute: _scheduledAt.minute,
+    );
+    if (!mounted || result == null) return;
+    setState(
+      () => _timeOverride = TimeOfDay(hour: result.$1, minute: result.$2),
+    );
+  }
+
+  Future<void> _openDurationModal() async {
+    final result = await TaskDurationModal.show(
+      context: context,
+      initialMinutes: _durationMinutes,
+    );
+    if (!mounted || result == null) return;
+    setState(() => _durationOverride = result);
+  }
+
+  Future<void> _openRepeatModal() async {
+    final result = await TaskRepeatModal.show(
+      context: context,
+      enabled: _repeats,
+      selectedDays: _selectedDays,
+    );
+    if (!mounted || result == null) return;
+    setState(() {
+      _repeats = result.enabled;
+      _selectedDays = {...result.selectedDays};
+    });
+  }
+
+  Future<void> _openBehaviorModal() async {
+    final result = await TaskBehaviorModal.show(
+      context: context,
+      behaviorId: _behaviorId,
+    );
+    if (!mounted || result == null) return;
+    setState(() => _behaviorId = result.behaviorId);
+  }
+
+  String _dateLabel(BuildContext context) {
+    final date = _scheduledAt;
+    final now = DateTime.now();
+    if (date.year == now.year &&
+        date.month == now.month &&
+        date.day == now.day) {
+      return 'Today';
+    }
+    return MaterialLocalizations.of(context).formatMediumDate(date);
+  }
+
+  String _startTimeLabel(BuildContext context) =>
+      timelineClock(context, TimeOfDay.fromDateTime(_scheduledAt));
+
+  String get _durationLabel => '${_durationMinutes}m';
 
   @override
   Widget build(BuildContext context) {
@@ -396,287 +508,318 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
                   duration: const Duration(milliseconds: 180),
                   curve: Curves.easeOut,
                   height: currentHeight,
-                  // Rounded top corners, no shadow/glow — the Android
-                  // non-modal bottom sheet shape, requested directly.
-                  //
-                  // `colorSurfaceOverlay` (the top of the elevation ramp,
-                  // whose own doc comment names a modal's surface as its
-                  // purpose) rather than the level-1 `colorSurfacePrimary`
-                  // this used to paint — requested directly, "sheets across
-                  // the app should have next surface level to bg." The nav
-                  // bar this was originally matched to paints the same
-                  // overlay token, so the two still agree.
-                  decoration: BoxDecoration(
-                    color: theme.colorSurfaceOverlay,
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(theme.radiusModal),
-                    ),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: SafeArea(
-                    top: false,
-                    // A scroll view, not a bare Column — a defensive floor
-                    // against a genuinely short viewport (a small/landscape
-                    // device, or a wide-but-short test surface) where
-                    // quickCreateSheetMinFraction's own height budget for
-                    // handle+field+Done doesn't quite fit; scrolling beats
-                    // a RenderFlex overflow, and on an ordinary phone
-                    // portrait viewport this content never actually needs
-                    // to scroll at all.
-                    child: SingleChildScrollView(
-                      // No horizontal padding here: the template strip
-                      // below runs full-bleed so it can scroll past both
-                      // edges rather than clipping inside an inset. Every
-                      // other child applies the side padding itself.
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // A small top gap before the header row —
-                          // requested directly: "in quick mode needs slight
-                          // larger" top space than it had (this row
-                          // previously sat flush against the sheet's own
-                          // rounded top corner, zero gap, while the Add note
-                          // sheet's own AppSheet wrapper gives it spacingLg —
-                          // kept larger there deliberately, per the same
-                          // request). `spacingSm`, not `spacingLg`: a
-                          // genuinely SLIGHT nudge, not matching the other
-                          // sheet's larger inset.
-                          SizedBox(height: theme.spacingSm),
-                          // Handle and X (close) share one header row. The
-                          // handle is `Positioned.fill`ed behind the X so
-                          // its drag target spans the WHOLE row width, not
-                          // just the visual bar — Android's own non-modal
-                          // bottom sheet drags from anywhere in its header,
-                          // and this was reported directly as "difficult
-                          // to do" when only the hairline bar was grabbable.
-                          // The X stays on top of it (and wins its own
-                          // taps) at the same top-right position the real
-                          // full-size sheet's StepScaffold header uses.
-                          Padding(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: theme.spacingLg,
-                            ),
-                            child: SizedBox(
-                              // Taller than the old bare-handle row: it now
-                              // has to fit real buttons, not just a hairline
-                              // drag bar.
-                              height: theme.spacingXl * 1.8,
-                              child: Stack(
-                                children: [
-                                  Positioned.fill(
-                                    child: QuickCreateSheetHandle(
-                                      theme: theme,
-                                      controller: _heightController,
-                                      viewportHeight: viewport,
-                                      onCloseRequested: _onCloseRequested,
-                                    ),
-                                  ),
-                                  // Schedule RIGHT, close LEFT — swapped
-                                  // directly against a reference screenshot:
-                                  // "let's switch the schedule: it should be
-                                  // on the right in this small sheet of task
-                                  // creation, and Close should be on the
-                                  // left." Matches the platform convention
-                                  // that screenshot shows (dismiss left,
-                                  // confirm right).
-                                  //
-                                  // Both buttons sit ON TOP of the
-                                  // `Positioned.fill` handle and win their own
-                                  // taps; the handle still drags from any part
-                                  // of the row they don't cover.
-                                  //
-                                  // "Schedule", not "Done": it commits the
-                                  // task outright rather than handing off to
-                                  // the full form — reported directly ("Done
-                                  // let's change to Schedule and it already
-                                  // sets the task there").
-                                  // Both buttons hide while MINIMISED —
-                                  // requested directly: "just the title is
-                                  // shown, and there is this little handle
-                                  // to expand or tap to expand." The handle
-                                  // behind them stays, and becomes the whole
-                                  // row's tap/drag target.
-                                  if (!_heightController.minimised)
-                                    Positioned(
-                                      top: 0,
-                                      bottom: 0,
-                                      right: 0,
-                                      child: Center(
-                                        child: AppButton(
-                                          label: 'Schedule',
-                                          size: AppButtonSize.md,
-                                          shape: AppButtonShape.pill,
-                                          onPressed: _isSaving
-                                              ? null
-                                              : _schedule,
-                                        ),
+                  // `AppSheetSurface`: the shared sheet surface and floating
+                  // edge — requested directly, "sheets should have that
+                  // elevated styling (border)", replacing this sheet's
+                  // earlier "no shadow/glow" Android non-modal look.
+                  child: AppSheetSurface(
+                    theme: theme,
+                    child: SafeArea(
+                      top: false,
+                      // A scroll view, not a bare Column — a defensive floor
+                      // against a genuinely short viewport (a small/landscape
+                      // device, or a wide-but-short test surface) where
+                      // quickCreateSheetMinFraction's own height budget for
+                      // handle+field+Done doesn't quite fit; scrolling beats
+                      // a RenderFlex overflow, and on an ordinary phone
+                      // portrait viewport this content never actually needs
+                      // to scroll at all.
+                      child: SingleChildScrollView(
+                        // No horizontal padding here: the template strip
+                        // below runs full-bleed so it can scroll past both
+                        // edges rather than clipping inside an inset. Every
+                        // other child applies the side padding itself.
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // A small top gap before the header row —
+                            // requested directly: "in quick mode needs slight
+                            // larger" top space than it had (this row
+                            // previously sat flush against the sheet's own
+                            // rounded top corner, zero gap, while the Add note
+                            // sheet's own AppSheet wrapper gives it spacingLg —
+                            // kept larger there deliberately, per the same
+                            // request). `spacingSm`, not `spacingLg`: a
+                            // genuinely SLIGHT nudge, not matching the other
+                            // sheet's larger inset.
+                            SizedBox(height: theme.spacingSm),
+                            // Handle and X (close) share one header row. The
+                            // handle is `Positioned.fill`ed behind the X so
+                            // its drag target spans the WHOLE row width, not
+                            // just the visual bar — Android's own non-modal
+                            // bottom sheet drags from anywhere in its header,
+                            // and this was reported directly as "difficult
+                            // to do" when only the hairline bar was grabbable.
+                            // The X stays on top of it (and wins its own
+                            // taps) at the same top-right position the real
+                            // full-size sheet's StepScaffold header uses.
+                            Padding(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: theme.spacingLg,
+                              ),
+                              child: SizedBox(
+                                // Keep the original breathing room around the
+                                // header controls; the chip row below owns its
+                                // own content-sized spacing.
+                                height: theme.spacingXl * 1.8,
+                                child: Stack(
+                                  children: [
+                                    Positioned.fill(
+                                      child: QuickCreateSheetHandle(
+                                        theme: theme,
+                                        controller: _heightController,
+                                        viewportHeight: viewport,
+                                        onCloseRequested: _onCloseRequested,
                                       ),
                                     ),
-                                  if (!_heightController.minimised)
-                                    Positioned(
-                                      top: 0,
-                                      bottom: 0,
-                                      left: 0,
-                                      child: Center(
-                                        // No `backgroundColor` override any
-                                        // more (2026-09-23). This used to pass
-                                        // `colorSurfaceSecondary` explicitly,
-                                        // because HeaderCircleButton's own
-                                        // default was then the flat, darker
-                                        // `colorSurfaceField` and read as too
-                                        // low-contrast against this panel's
-                                        // nav-matched ground — requested
-                                        // directly at the time ("the style of
-                                        // close button should be same as in big
-                                        // sheet"). That default is now the
-                                        // translucent secondary glass tint
-                                        // every other secondary control uses,
-                                        // so the override would make THIS the
-                                        // odd one out instead.
-                                        child: HeaderCircleButton(
-                                          theme: theme,
-                                          icon: Icons.close_rounded,
-                                          onTap: _onCloseRequested,
+                                    // Add RIGHT, close LEFT — matching the new
+                                    // quick-add mockup's action placement.
+                                    // Matches the platform convention
+                                    // that screenshot shows (dismiss left,
+                                    // confirm right).
+                                    //
+                                    // Both buttons sit ON TOP of the
+                                    // `Positioned.fill` handle and win their own
+                                    // taps; the handle still drags from any part
+                                    // of the row they don't cover.
+                                    //
+                                    // "Add", not "Done": it commits the task
+                                    // outright rather than handing off to the
+                                    // full form.
+                                    // Both buttons hide while MINIMISED —
+                                    // requested directly: "just the title is
+                                    // shown, and there is this little handle
+                                    // to expand or tap to expand." The handle
+                                    // behind them stays, and becomes the whole
+                                    // row's tap/drag target.
+                                    if (!_heightController.minimised)
+                                      Positioned(
+                                        top: 0,
+                                        bottom: 0,
+                                        right: 0,
+                                        child: Center(
+                                          child: AppButton(
+                                            label: 'Add',
+                                            size: AppButtonSize.md,
+                                            shape: AppButtonShape.pill,
+                                            onPressed: _isSaving
+                                                ? null
+                                                : _schedule,
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                ],
+                                    if (!_heightController.minimised)
+                                      Positioned(
+                                        top: 0,
+                                        bottom: 0,
+                                        left: 0,
+                                        child: Center(
+                                          // No `backgroundColor` override any
+                                          // more (2026-09-23). This used to pass
+                                          // `colorSurfaceSecondary` explicitly,
+                                          // because HeaderCircleButton's own
+                                          // default was then the flat, darker
+                                          // `colorSurfaceField` and read as too
+                                          // low-contrast against this panel's
+                                          // nav-matched ground — requested
+                                          // directly at the time ("the style of
+                                          // close button should be same as in big
+                                          // sheet"). That default is now the
+                                          // translucent secondary glass tint
+                                          // every other secondary control uses,
+                                          // so the override would make THIS the
+                                          // odd one out instead.
+                                          child: HeaderCircleButton(
+                                            theme: theme,
+                                            icon: Icons.close_rounded,
+                                            onTap: _onCloseRequested,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
-                          // MINIMISED: the title alone, read-only, with the
-                          // handle above it the only control — requested
-                          // directly: "just the title is shown, and there
-                          // is this little handle to expand or tap to
-                          // expand." Tapping anywhere here restores the
-                          // small sheet, matching the handle's own tap.
-                          if (_heightController.minimised)
-                            GestureDetector(
-                              onTap: _heightController.restoreToSmall,
-                              behavior: HitTestBehavior.opaque,
-                              child: Padding(
+                            // MINIMISED: the title alone, read-only, with the
+                            // handle above it the only control — requested
+                            // directly: "just the title is shown, and there
+                            // is this little handle to expand or tap to
+                            // expand." Tapping anywhere here restores the
+                            // small sheet, matching the handle's own tap.
+                            if (_heightController.minimised)
+                              GestureDetector(
+                                onTap: _heightController.restoreToSmall,
+                                behavior: HitTestBehavior.opaque,
+                                child: Padding(
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: theme.spacingLg,
+                                  ),
+                                  child: SizedBox(
+                                    width: double.infinity,
+                                    child: ListenableBuilder(
+                                      listenable: _titleController,
+                                      builder: (context, _) {
+                                        final title = _titleController.text
+                                            .trim();
+                                        return Text(
+                                          // "(No title)" confirmed directly,
+                                          // matching the reference screenshot's
+                                          // own wording for an unnamed draft.
+                                          title.isEmpty ? '(No title)' : title,
+                                          style: theme.textTitle.copyWith(
+                                            color: title.isEmpty
+                                                ? theme.colorTextSecondary
+                                                : theme.colorTextPrimary,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          textAlign: TextAlign.center,
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              )
+                            else ...[
+                              SizedBox(height: theme.spacingSm),
+                              Padding(
                                 padding: EdgeInsets.symmetric(
                                   horizontal: theme.spacingLg,
                                 ),
-                                child: SizedBox(
-                                  width: double.infinity,
-                                  child: ListenableBuilder(
-                                    listenable: _titleController,
-                                    builder: (context, _) {
-                                      final title = _titleController.text
-                                          .trim();
-                                      return Text(
-                                        // "(No title)" confirmed directly,
-                                        // matching the reference screenshot's
-                                        // own wording for an unnamed draft.
-                                        title.isEmpty ? '(No title)' : title,
-                                        style: theme.textTitle.copyWith(
-                                          color: title.isEmpty
-                                              ? theme.colorTextSecondary
-                                              : theme.colorTextPrimary,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        textAlign: TextAlign.center,
-                                      );
-                                    },
-                                  ),
+                                child: AppTextField(
+                                  controller: _titleController,
+                                  label: 'Add title',
+                                  // Bare text, no field chrome — requested
+                                  // directly against a reference screenshot:
+                                  // "we need a new style for the input field...
+                                  // just text and, on top, can be edited." The
+                                  // label doubles as the placeholder ("Add
+                                  // title", matching that screenshot) since
+                                  // there is no floating label in this variant.
+                                  variant: AppTextFieldVariant.bare,
+                                  // Not selectAllOnFocus: the field is CLEARED
+                                  // outright when tapped (see onFocusChanged
+                                  // below), so there is nothing left to select.
+                                  // Tapping the field is itself a request for
+                                  // the full form — requested directly ("when
+                                  // name input is tapped then it goes into
+                                  // near full screen mode"). Fires on the tap
+                                  // itself (before any typing), so this stays
+                                  // on the real sheet's own stage 1
+                                  // (autofocused Name field, keyboard already
+                                  // up) rather than skipping ahead — see
+                                  // _promote's own doc comment on
+                                  // stayOnNameStage.
+                                  onFocusChanged: (hasFocus) {
+                                    if (!hasFocus) return;
+                                    // Reported directly: "New task name input
+                                    // should be reset to nothing, clears, so
+                                    // user can type in from scratch." Clearing
+                                    // beats selectAllOnFocus here because the
+                                    // full sheet this promotes into is seeded
+                                    // from `initialTitle` — a selection would
+                                    // not survive that handoff, but an empty
+                                    // string does.
+                                    _titleController.clear();
+                                    _promote(stayOnNameStage: true);
+                                  },
                                 ),
                               ),
-                            )
-                          else ...[
-                            SizedBox(height: theme.spacingSm),
-                            Padding(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: theme.spacingLg,
-                              ),
-                              child: AppTextField(
-                                controller: _titleController,
-                                label: 'Add title',
-                                // Bare text, no field chrome — requested
-                                // directly against a reference screenshot:
-                                // "we need a new style for the input field...
-                                // just text and, on top, can be edited." The
-                                // label doubles as the placeholder ("Add
-                                // title", matching that screenshot) since
-                                // there is no floating label in this variant.
-                                variant: AppTextFieldVariant.bare,
-                                // Not selectAllOnFocus: the field is CLEARED
-                                // outright when tapped (see onFocusChanged
-                                // below), so there is nothing left to select.
-                                // Tapping the field is itself a request for
-                                // the full form — requested directly ("when
-                                // name input is tapped then it goes into
-                                // near full screen mode"). Fires on the tap
-                                // itself (before any typing), so this stays
-                                // on the real sheet's own stage 1
-                                // (autofocused Name field, keyboard already
-                                // up) rather than skipping ahead — see
-                                // _promote's own doc comment on
-                                // stayOnNameStage.
-                                onFocusChanged: (hasFocus) {
-                                  if (!hasFocus) return;
-                                  // Reported directly: "New task name input
-                                  // should be reset to nothing, clears, so
-                                  // user can type in from scratch." Clearing
-                                  // beats selectAllOnFocus here because the
-                                  // full sheet this promotes into is seeded
-                                  // from `initialTitle` — a selection would
-                                  // not survive that handoff, but an empty
-                                  // string does.
-                                  _titleController.clear();
-                                  _promote(stayOnNameStage: true);
-                                },
-                              ),
-                            ),
-                            // Important toggle — reported directly as
-                            // missing from this panel ("can't see important
-                            // in quick add in mini sheet"). Compact rather
-                            // than a full AppPane, matching this sheet's own
-                            // "small, no extra chrome" scale — the full
-                            // sheet's own bare-pane treatment would be
-                            // oversized here relative to the Name field
-                            // beside it.
-                            SizedBox(height: theme.spacingSm),
-                            Padding(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: theme.spacingLg,
-                              ),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    'Important',
-                                    style: theme.textBody.copyWith(
-                                      color: theme.colorTextPrimary,
+                              // A clear break between the name and its
+                              // settings: the chips are a separate group.
+                              SizedBox(height: theme.spacingMd),
+                              Padding(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: theme.spacingLg,
+                                ),
+                                // Full width, start-aligned: a shrink-wrapped
+                                // column was centred by the sheet's column,
+                                // insetting the chips from the name.
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    Wrap(
+                                      spacing: theme.spacingSm,
+                                      runSpacing: theme.spacingSm,
+                                      children: [
+                                        AppValueChip(
+                                          label: 'Preset',
+                                          hasValue: false,
+                                          onTap: _openPresetModal,
+                                        ),
+                                        AppValueChip(
+                                          label: _dateLabel(context),
+                                          hasValue: true,
+                                          onTap: _openDatePicker,
+                                        ),
+                                        AppValueChip(
+                                          label: _startTimeLabel(context),
+                                          hasValue: true,
+                                          onTap: _openStartTimeModal,
+                                        ),
+                                        AppValueChip(
+                                          label: _durationLabel,
+                                          hasValue: true,
+                                          onTap: _openDurationModal,
+                                        ),
+                                      ],
                                     ),
-                                  ),
-                                  AppSwitch(
-                                    value: _isImportant,
-                                    onChanged: (value) =>
-                                        setState(() => _isImportant = value),
-                                  ),
-                                ],
+                                    SizedBox(height: theme.spacingSm),
+                                    Wrap(
+                                      spacing: theme.spacingSm,
+                                      runSpacing: theme.spacingSm,
+                                      children: [
+                                        AppValueChip(
+                                          label: '',
+                                          icon: Icons.star_rounded,
+                                          iconOnly: true,
+                                          hasValue: _isImportant,
+                                          onTap: () => setState(
+                                            () => _isImportant = !_isImportant,
+                                          ),
+                                        ),
+                                        AppValueChip(
+                                          label: '#',
+                                          iconOnly: true,
+                                          hasValue:
+                                              _categoryId !=
+                                              BuiltInCategoryIds.general,
+                                          onTap: _openLabelModal,
+                                        ),
+                                        AppValueChip(
+                                          label: '',
+                                          icon: Icons.fingerprint_rounded,
+                                          iconOnly: true,
+                                          hasValue: _behaviorId != null,
+                                          onTap: _openBehaviorModal,
+                                        ),
+                                        AppValueChip(
+                                          label: '',
+                                          icon: _notificationsEnabled
+                                              ? Icons.notifications_rounded
+                                              : Icons.notifications_off_rounded,
+                                          iconOnly: true,
+                                          hasValue: _notificationsEnabled,
+                                          onTap: () => setState(
+                                            () => _notificationsEnabled =
+                                                !_notificationsEnabled,
+                                          ),
+                                        ),
+                                        AppValueChip(
+                                          label: '',
+                                          icon: Icons.repeat_rounded,
+                                          iconOnly: true,
+                                          hasValue: _repeats,
+                                          onTap: _openRepeatModal,
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            // Matches the sheet's own side padding, reported
-                            // directly: "larger gap from task name (same as
-                            // from side paddings)."
-                            SizedBox(height: theme.spacingLg),
-                            // Full-bleed: the strip is the one child with no
-                            // side padding of its own, so it can scroll past
-                            // both edges of the sheet instead of clipping
-                            // inside an inset. It applies `spacingLg` as its
-                            // own leading/trailing inset so the first and
-                            // last chip still line up with everything above.
-                            TemplateChipStrip(
-                              onTemplateSelected: _applyTemplate,
-                              selectedTemplateId: _appliedTemplate?.id,
-                            ),
-                            SizedBox(height: theme.spacingSm),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
                     ),
                   ),

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show OverflowBoxFit;
 
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/timeline_clock.dart';
 
 /// Horizontal marker at the current time, positioned on the same
 /// pixels-per-minute scale as the day view's task boundary labels and task
@@ -161,7 +162,7 @@ class _CurrentTimeIndicatorState extends State<CurrentTimeIndicator> {
                       bottom: theme.spacingXs / 2,
                     ),
                     child: Text(
-                      TimeOfDay.fromDateTime(_now).format(context),
+                      timelineClock(context, TimeOfDay.fromDateTime(_now)),
                       // textCaptionMono — a time label, not a name.
                       style: theme.textCaptionMono.copyWith(
                         color: theme.colorTextPrimary,

@@ -8476,3 +8476,279 @@ one heading component later.
 by its inner padding, so the glyph's right edge is the nav's right edge. The
 old 16px size test was updated, and an edge-alignment test added. Full
 suite: same 16 existing failures, none new.
+
+## 2026-09-29 — One heading type/line for Day date, Inbox sub nav, Habits period
+
+Requested: the sub nav should use the calendar text's weight (thinner, as
+a variant), and all three headings should be one type scale step lower.
+- `PageHeadingTokens.text` (`textBody` at 14) and `.rowHeight` (24).
+- `AppNavLabelVariant.sub` (regular weight, colour-only selection).
+- Applied to `AppDateAccordion`'s date, `_TrackedPeriodHeading` and
+  `AppSubNav`. Each heading row is now a fixed-height line, so the text
+  lines up by construction; before, the rows were sized by their controls.
+- Two tests that pinned the old 16px `textBody` were updated, and the
+  alignment test now also asserts one shared type.
+- Content below the Day and Habits headings moves down a few px (row 24
+  instead of ~20).
+- Full suite: same 16 existing failures, none new.
+
+## 2026-09-29 — Week strip selected day visible in light mode
+
+Wrong token (resting field on a near-identical page surface); now
+`colorSurfaceFieldActive`. Dark mode's pill is one step stronger too.
+Test added. Full suite: same 16 existing failures, none new.
+
+## 2026-09-29 — 12/24-hour time setting
+
+- New `TimeFormatPreference` model, `TimeFormatSetting` provider and
+  `AppTimeFormat` root widget, wired in `main.dart`.
+- Appearance panel with System / 12-hour / 24-hour chips.
+- `task_detail_sheet._formatTime` now uses `TimeOfDay.format(context)`.
+- Tests: persistence and relaunch, unknown values, the formatting override
+  (21:00 vs 9:00 PM), and the Appearance chips saving.
+- A first run of the Appearance widget test hung: the chip tap does a real
+  Hive write in fake time. Routing it through `runAsync` fixed it (the
+  known ERROR_LOG pattern).
+
+## 2026-09-29 — Left-side times: one size in both Day views
+
+Measured both views in a widget test: the hour ticks and the list rows
+were both `textCaptionMono` 12. The timeline's task start/end labels were
+`textTaskEdgeTime` 11. That token is now raised to 12 (both themes), with a
+token test pinning them equal. Full suite: same 16 existing failures, none
+new.
+
+## 2026-09-29 — Week strip selected day: subtler
+
+Too strong on `colorSurfaceFieldActive`; now `colorSurfaceSecondary`, the
+Settings group container surface. The test was updated to require a
+visible but subtler step. Full suite: same 16 existing failures, none new.
+
+## 2026-09-29 — Nav hover/active: the lighter surface
+
+Requested: hover/active on the main nav and the sub nav should use the
+lighter surface.
+- New `app_nav_press.dart` (`AppNavPress`, `AppNavWash`), used by
+  `AppNavLabel` (main and sub) and the settings gear.
+- The sub-nav drop highlight is the same wash (was `colorSurfaceField`).
+- `AppNavLabel` was split into `app_nav_label.dart` to keep
+  `app_top_nav.dart` under 200 lines.
+- Tests: press shows the wash with no ripple and clears on release; the
+  gear; the drag highlight.
+- Full suite: same 16 existing failures, none new.
+
+## 2026-09-29 — Time column fixed; compact 12-hour labels
+
+- New `lib/core/timeline_clock.dart`, used by `TaskBoundaryMarkers`,
+  `TaskEdgeTimeLabel`, `CurrentTimeIndicator` and `zoneTaskTimeLabel`.
+- The time column is one cached, measured width for both formats.
+- Tests: formatter unit tests, and "same width in both formats and every
+  compact label fits". Tests pinning the old full 12-hour text and the old
+  per-format width were updated (columns, gutter overflow, edge label,
+  pending pill, zone container/list).
+- Full suite: same 16 existing failures, none new.
+
+## 2026-09-29 — Zone task insets −25%, time column +6
+
+`ZoneInsetTokens` and `zoneTaskVerticalInset` are applied in
+timeline_screen (pill origin, band `leftInset`, top inset and bottom trim),
+zone_container_block (card padding, escapes) and zone_day_timeline
+(unzoned rows, escape). The time column width gains the freed side. Tests
+pinning the old 24/16 insets were updated, and a token test pins "pills
+don't move". Full suite: same 16 existing failures, none new.
+
+## 2026-09-29 — am/pm lower case
+
+- New `lib/core/amble_material_localizations.dart`, registered in main.
+- `timelineClock` whole hours are now "9 am".
+- Tests: formatting through the delegate, and main registering it.
+  Compact-label expectations were lower-cased in 6 test files.
+- Full suite: same 16 existing failures, none new.
+
+## 2026-09-29 — Time column +4, time→zone gap −4
+
+Token-level change only; the zone and pill positions are unchanged. Two
+token tests were updated for the new gap, and the "pills don't move" test
+still holds. Full suite: same 16 existing failures, none new.
+
+## 2026-09-29 — Time column borrow 4 → 8 (time→zone gap 8)
+
+Zones and tasks are unchanged. The token and timeline tests pass as they
+are (they read the token). Full suite: same 16 existing failures, none
+new.
+
+## 2026-09-29 — Pinch no longer triggers the marquee (Edit Tasks, Edit Zones)
+
+- `TimelinePinchZoom` publishes multi-touch (`TimelineMultiTouch`,
+  optional `multiTouch:` for owners).
+- The task sweep ignores two-finger starts and cancels (restoring the
+  selection) when a second finger lands mid-sweep.
+- The zone paint marquee won't start during a pinch and is abandoned if
+  one begins mid-paint.
+- Tests: the pinch signal; task sweep (mid-sweep and two-down start); zone
+  paint (mid-paint and held still). The zone tests failed with the guards
+  removed.
+- Follow-up (user: "yes"): a second finger landing mid-MOVE now cancels
+  the move too (unsaved; the task stays). Test added; it fails with the
+  old sweep-only condition.
+
+## 2026-09-29 — Liquid (gooey) selection on connected buttons; "Tasks" → "Things"
+
+- New `LiquidSlideSpec` and `AppLiquidSlide`, used in `AppTabSwitch` (when
+  its segments fit) and in dock groups (`AppDockIconButton.showsSelectedFill`).
+- The Edit screen's tab label is now "Things" (the internal id stays
+  `ZoneGridTab.tasks`); two zone-grid tests that found the tab by its label
+  were updated.
+- Tests: first build, stretch/thin/settle, left-leading, reduced motion,
+  and both integrations.
+- Full suite: same 16 existing failures, none new. `flutter analyze` and
+  Widgetbook are clean.
+- Open: app_tab_switch.dart is 323 lines (was 290, already over 200).
+
+## 2026-09-29 — "m" of am/pm no longer clipped in the time column
+
+- The column width now comes from measuring every generated label in regular
+  and bold (the "now" label is bold, so it's wider), plus a 4px
+  `TimeColumnTokens.labelSlack`. The 96 cap is removed.
+- New test: time_column_fit_test (real fonts, both font modes, both
+  weights). zone_inset_tokens_test updated for the slack.
+- Full suite: the same 16 existing failures, plus one flake that passes
+  alone 3/3 (multi_task_selection "holding empty space…").
+  `flutter analyze lib test` shows 19 issues, none in files touched here.
+
+## 2026-09-29 — Sheet surface = Settings group, with the floating edge
+
+- New `AppSheetSurface` (core) and `SheetTokens.surface`, used by AppSheet,
+  StepScaffold, NewZoneSheet and quick-create. `AppFloatingSurface` gained
+  `openBottom` and draws its edge for solid material.
+- In-sheet chips moved from `colorSurfaceSecondary` to `colorSurfaceField`.
+- Tests: new app_sheet_surface_test and an open-bottom paint test. Sheet
+  colour pins are retargeted. The duration-modal selection helper now counts
+  only enabled BackdropFilters.
+- Full suite: the same 16 existing failures. `analyze lib test`: 19
+  existing issues, none new.
+- Open:
+  - StepScaffold's title-header gradient now runs secondary→secondary, which
+    is flat.
+  - Core AppSlider's inactive track and AppDateAccordion (line 1039) still
+    use `colorSurfaceSecondary`, so they may be low-contrast inside sheets
+    (the slider is too inside Settings groups).
+
+## 2026-09-29 — Single-surface add-label sheet
+
+- Replaced the staged label form with a near-full `AppSheet` using the shared
+  header, centered title, header checkmark save action, and bare task-style
+  name input.
+- Removed the Name/Color/Icon pane sections; color swatches and icon options
+  now sit directly in the sheet body.
+- Added quick-add regression coverage for the single-sheet flow and confirmed
+  the targeted analyzer and quick-add suite pass.
+
+## 2026-09-29 — Segmented: no ripple; Things/Zones in toolbar style
+
+- `AppButton.ripple` added. Grouped dock buttons drop the ripple.
+- New `AppFloatingTabSwitch` (core) used by all three Things/Zones sites in
+  zone_grid_screen.
+- Tests: new app_floating_tab_switch_test, two ripple tests in
+  app_dock_icon_button_test, and the selection-dock test finder updated.
+- Full suite: the 16 existing failures, plus 6 in add_category_modal_test
+  and spatial_label_icon_alignment_test. Those come from a concurrent
+  session's add-label sheet rewrite (22:52), not this change. Analyze: 19
+  existing issues.
+
+## 2026-09-29 — Floating edge subtler
+
+- `FloatingSurfaceTokens` border and highlight alphas are ~40% lower. The
+  full suite's failures are unchanged from the previous entry. Analyze: 19
+  existing issues.
+
+## 2026-09-29 — Sheet fill per mode (light = page bg)
+
+- `SheetTokens.surface`: page background in light, `colorSurfaceSecondary` in
+  dark. New `SheetTokens.inset` for the five in-sheet controls.
+  `FloatingSurfaceTokens.isDark` is now public.
+- StepScaffold's header fade (secondary → sheet) shows again in light. It is
+  still flat in dark.
+- app_sheet_surface_test covers both modes. The full suite's failures are
+  unchanged (22: 16 existing plus 6 from the concurrent add-label rewrite).
+  Analyze: 19 existing issues.
+
+## 2026-09-29 — Label color and icon picker sheets
+
+- The new-label sheet now uses Color and Icon `AppValueChip`s, matching the
+  quick-add value-chip pattern.
+- Added focused color and icon picker sheets; selecting an option returns it
+  to the label sheet immediately.
+- Updated label-sheet coverage; the dedicated suite passes all 7 tests and
+  the quick-add integration suite passes all 33 tests.
+
+## 2026-09-29 — Edit mode header entrance/exit
+
+- New `HeaderRevealSpec`, `AppStaggerExit`/`AppStaggerExitScope`, and
+  `AppFloatingTabTrack`. AppShellHeader is now stateful: stagger-out, then an
+  AppPaneMorph reveal, reversed on exit. AppTopNav wraps its labels and gear.
+- app_shell_header_test rewritten: identity/anchor, stagger order with
+  settings last, pane growing from the leading edge, nav non-interactive,
+  exit reverses.
+- Full suite: 17 failures — the 16 existing plus
+  spatial_label_icon_alignment from the concurrent add-label work. None new
+  here. Analyze: 19 existing issues.
+
+## 2026-09-29 — Drag down to close on every sheet
+
+- New `AppSheetDragDismiss`. Added `AppDragToCloseHandle.child`,
+  `AppDragToCloseController.cancelClose` and `SheetTokens.dragCloseDistance`.
+  Used by AppSheetRoute and StepScaffold.
+- Tests: app_sheet_drag_dismiss_test (close, follow + settle, PopScope
+  veto) and a StepScaffold presence test. Full suite unchanged (17). Analyze:
+  19 existing issues.
+- Open:
+  - Dragging down on scrolled content that is at its top scrolls or bounces
+    rather than closing (iOS closes there).
+  - Sheets that also have their own handle now have two drag paths (the
+    handle area uses its own).
+
+## 2026-09-29 — Sheet system reconciled (steps 1–5)
+
+- **Step 1, quick-create:** chips aligned with the name (stretch), the name
+  → chips gap is `spacingMd`, and the overlay moved above the Day fades.
+- **Step 2, drag:**
+  - `AppSheetDragDismiss` pulls scrolled content at its top (clamping
+    physics in sheets) through the new
+    `AppDragToCloseController.dragBy`/`release`.
+  - `AppSheetHeader` draws a static `AppSheetTopHandle` by default.
+  - Per-sheet controllers were removed from 10 pickers
+    (category/color/icon/add-category/duration/start-time/repeat/behavior/preset,
+    quick capture).
+- **Step 3, pages:**
+  - New `AppSheetFlow`/`AppSheetFlowHeader` and `AppSheetPageSlot`.
+    `AppSheetHeader` gained `title`/`back`/`showHandle`.
+  - The label family is migrated.
+  - Titles moved into the header for the other pickers.
+- **Step 4:** no code needed. The route scrim already dims the parent and
+  blocks taps on it.
+- **Step 5:** the DESIGN_SYSTEM.md Sheets section was rewritten, plus
+  DECISIONS and ERROR_LOG entries.
+- **Tests:**
+  - New: app_sheet_flow_test (4), app_sheet_header_test, and 2 more
+    drag-dismiss tests for the scroll pull.
+  - add_category_modal_test was updated for the pages.
+  - Full suite: the same 17 failures as before. Analyze: 19 existing issues.
+- **Open:**
+  - `TaskNameCategoryModal` (the task detail's name + label) still opens New
+    label as a stacked sheet; it should become an `AppSheetFlow` root.
+  - `task_behavior_modal`'s "+" opens the habit form (a full `StepScaffold`)
+    over the picker. That is acceptable as a full form, but could be a page.
+  - Sheets now clamp instead of bouncing at their scroll edges on iOS.
+  - `dart format` on the folder also re-wrapped `task_action_sheet.dart` and
+    `task_name_category_modal.dart` (whitespace only).
+
+## 2026-09-29 — Name and category sheet migrated
+
+- `TaskNameCategoryModal` uses `AppSheetFlow` / `AppSheetFlowHeader`. Done
+  moved into the header. "+ Add new" became a "New label" chip that pushes
+  a page.
+- New test in add_category_modal_test: New label → Color → Icon → Save
+  returns to the same sheet with the label picked. Save runs inside
+  runAsync because it writes to Hive.
+- Full suite unchanged (17). Analyze: 19 existing issues.

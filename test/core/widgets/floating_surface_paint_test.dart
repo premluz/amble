@@ -35,8 +35,9 @@ Future<List<Color>> _paint(
   WidgetTester tester,
   AmbleTheme theme,
   FloatingMaterial material,
-  FloatingElevation elevation,
-) async {
+  FloatingElevation elevation, {
+  bool openBottom = false,
+}) async {
   await tester.pumpWidget(
     MaterialApp(
       home: Center(
@@ -48,6 +49,7 @@ Future<List<Color>> _paint(
               theme: theme,
               material: material,
               elevation: elevation,
+              openBottom: openBottom,
               borderRadius: BorderRadius.circular(theme.radiusMd),
               child: SizedBox.fromSize(size: _size),
             ),
@@ -76,7 +78,7 @@ Future<List<Color>> _paint(
 void main() {
   for (final theme in [AmbleTheme.light, AmbleTheme.dark]) {
     testWidgets(
-      'glass edge is brighter on top; solid has no edge ${theme.colorSurfaceOverlay}',
+      'edge is brighter on top, for glass and solid ${theme.colorSurfaceOverlay}',
       (tester) async {
         final menu = await _paint(
           tester,
@@ -104,7 +106,25 @@ void main() {
           FloatingMaterial.solid,
           FloatingElevation.menu,
         );
-        expect(solid, everyElement(theme.colorSurfaceOverlay));
+        expect(solid[1], theme.colorSurfaceOverlay);
+        expect(solid[0], isNot(theme.colorSurfaceOverlay));
+        expect(solid[2], isNot(theme.colorSurfaceOverlay));
+      },
+    );
+
+    testWidgets(
+      'an open bottom draws no bottom edge (a sheet meets the screen edge) '
+      '${theme.colorSurfaceOverlay}',
+      (tester) async {
+        final sheet = await _paint(
+          tester,
+          theme,
+          FloatingMaterial.solid,
+          FloatingElevation.menu,
+          openBottom: true,
+        );
+        expect(sheet[0], isNot(theme.colorSurfaceOverlay));
+        expect(sheet[2], theme.colorSurfaceOverlay);
       },
     );
   }

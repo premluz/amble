@@ -103,7 +103,7 @@ void main() {
 
       final theme = AmbleTheme.light;
       final timeText = tester.widget<Text>(
-        find.textContaining('9:00', findRichText: false),
+        find.textContaining('9 am', findRichText: false),
       );
 
       expect(timeText.style?.fontSize, theme.textCaptionMono.fontSize);
@@ -209,10 +209,7 @@ void main() {
     'shows "start - end (duration)", matching TaskCapsuleBlock\'s format',
     (tester) async {
       await pump(tester);
-      expect(
-        find.textContaining('9:00 AM - 12:50 PM (3h 50m)'),
-        findsOneWidget,
-      );
+      expect(find.textContaining('9 am - 12:50p (3h 50m)'), findsOneWidget);
     },
   );
 
@@ -222,7 +219,7 @@ void main() {
     'TaskCapsuleBlock contract',
     (tester) async {
       await pump(tester, durationVisible: false);
-      expect(find.textContaining('9:00 AM - 12:50 PM'), findsOneWidget);
+      expect(find.textContaining('9 am - 12:50p'), findsOneWidget);
       expect(find.textContaining('3h 50m'), findsNothing);
     },
   );
@@ -235,8 +232,8 @@ void main() {
     '"(duration)" suffix — independent of durationVisible',
     (tester) async {
       await pump(tester, timeRangeVisible: false);
-      expect(find.textContaining('9:00 AM'), findsNothing);
-      expect(find.textContaining('12:50 PM'), findsNothing);
+      expect(find.textContaining('9 am'), findsNothing);
+      expect(find.textContaining('12:50p'), findsNothing);
       expect(find.textContaining('(3h 50m)'), findsOneWidget);
     },
   );
@@ -246,7 +243,7 @@ void main() {
     'time line for the row',
     (tester) async {
       await pump(tester, timeRangeVisible: false, durationVisible: false);
-      expect(find.textContaining('9:00 AM'), findsNothing);
+      expect(find.textContaining('9 am'), findsNothing);
       expect(find.textContaining('3h 50m'), findsNothing);
       // The task's own title still renders — only the time/duration line
       // is empty.
@@ -263,18 +260,18 @@ void main() {
       await pump(tester, startTimeOnlyVisible: true);
 
       final timeText = tester.widget<Text>(
-        find.textContaining('9:00 AM', findRichText: false),
+        find.textContaining('9 am', findRichText: false),
       );
       expect(
         timeText.data,
-        '9:00 AM',
+        '9 am',
         reason:
             'exactly the start time, nothing appended — the zone '
             'HEADER above still legitimately shows its own "7:00 AM - '
             '12:00 PM" range, which is a different Text widget and '
             'unaffected by this per-row toggle',
       );
-      expect(find.textContaining('12:50 PM'), findsNothing);
+      expect(find.textContaining('12:50p'), findsNothing);
       expect(find.textContaining('3h 50m'), findsNothing);
     });
 
@@ -303,7 +300,7 @@ void main() {
       final theme = AmbleTheme.light;
       final cardLeft = tester.getTopLeft(find.byType(ZoneContainerBlock)).dx;
       final timeLeft = tester
-          .getTopLeft(find.textContaining('9:00 AM', findRichText: false))
+          .getTopLeft(find.textContaining('9 am', findRichText: false))
           .dx;
 
       expect(
@@ -329,16 +326,16 @@ void main() {
         durationVisible: true,
       );
 
-      expect(find.textContaining('9:00 AM'), findsOneWidget);
-      expect(find.textContaining('12:50 PM'), findsNothing);
+      expect(find.textContaining('9 am'), findsOneWidget);
+      expect(find.textContaining('12:50p'), findsNothing);
     });
 
     testWidgets('off (default): the row keeps its existing start-end '
         'range, unchanged', (tester) async {
       await pump(tester);
 
-      expect(find.textContaining('9:00 AM'), findsOneWidget);
-      expect(find.textContaining('12:50 PM'), findsOneWidget);
+      expect(find.textContaining('9 am'), findsOneWidget);
+      expect(find.textContaining('12:50p'), findsOneWidget);
     });
 
     // **2026-09-20 — superseded, deliberately.** Was `colorTextTertiary`,
@@ -352,7 +349,7 @@ void main() {
       await pump(tester, startTimeOnlyVisible: true);
 
       final timeText = tester.widget<Text>(
-        find.textContaining('9:00 AM', findRichText: false),
+        find.textContaining('9 am', findRichText: false),
       );
       expect(timeText.style?.color, AmbleTheme.light.colorTextSecondary);
     });
@@ -499,7 +496,7 @@ void main() {
       (tester) async {
         await pump(tester, externalEvents: [event], timeRangeVisible: false);
 
-        expect(find.textContaining('10:00'), findsNothing);
+        expect(find.textContaining('10 am'), findsNothing);
         expect(find.text('Team sync'), findsOneWidget);
       },
     );
@@ -523,7 +520,7 @@ void main() {
           startTimeOnlyVisible: true,
         );
 
-        expect(find.textContaining('10:00'), findsOneWidget);
+        expect(find.textContaining('10 am'), findsOneWidget);
       },
     );
   });
@@ -656,7 +653,8 @@ void main() {
       // with the one on a task row outside a zone (see "a nested checkbox
       // lines up with a standalone task row's" below).
       //
-      // LEFT is `spacingLg` (24) — requested directly against a two-view
+      // LEFT is the zone side inset (18, 25% under `spacingLg`; top and
+      // bottom likewise 25% under `spacingMd`) — requested directly against a two-view
       // annotated screenshot: the gap between the card's own outer edge
       // and its first pill lane read as too thin against the spatial
       // view's own zone-band-to-first-pill gap, which this card matches.
@@ -664,10 +662,10 @@ void main() {
       expect(
         padding.padding,
         EdgeInsets.fromLTRB(
-          AmbleTheme.light.spacingLg,
-          AmbleTheme.light.spacingMd,
+          ZoneInsetTokens.side(AmbleTheme.light),
+          ZoneInsetTokens.vertical(AmbleTheme.light),
           0,
-          AmbleTheme.light.spacingMd,
+          ZoneInsetTokens.vertical(AmbleTheme.light),
         ),
       );
     });
@@ -697,35 +695,31 @@ void main() {
     // Requested directly, same session: "tasks should be in 'card' like
     // they are in manage (but keep size of them as they are in zone view
     // atm)."
-    testWidgets(
-      'each task row gets its own Manage-style card (zone fill '
-      'fill, radiusXl corners), with the row\'s own height unchanged',
-      (tester) async {
-        await pump(tester, flatStyle: true);
+    testWidgets('each task row gets its own Manage-style card (zone fill '
+        'fill, radiusXl corners), with the row\'s own height unchanged', (
+      tester,
+    ) async {
+      await pump(tester, flatStyle: true);
 
-        // The task row's own DecoratedBox is the SECOND one in the tree —
-        // the container's own (now colorless) fill is the first.
-        final rowDecoratedBox = tester.widget<DecoratedBox>(
-          find.byType(DecoratedBox).at(1),
-        );
-        final decoration = rowDecoratedBox.decoration as BoxDecoration;
-        expect(decoration.color, ZoneSurfaceTokens.fill(AmbleTheme.light));
-        expect(
-          decoration.borderRadius,
-          BorderRadius.circular(AmbleTheme.light.radiusXl),
-        );
+      // The task row's own DecoratedBox is the SECOND one in the tree —
+      // the container's own (now colorless) fill is the first.
+      final rowDecoratedBox = tester.widget<DecoratedBox>(
+        find.byType(DecoratedBox).at(1),
+      );
+      final decoration = rowDecoratedBox.decoration as BoxDecoration;
+      expect(decoration.color, ZoneSurfaceTokens.fill(AmbleTheme.light));
+      expect(
+        decoration.borderRadius,
+        BorderRadius.circular(AmbleTheme.light.radiusXl),
+      );
 
-        // Row height is untouched — still the fixed zoneContainerRowHeight
-        // (44px), confirmed directly ("keep size of them as they are").
-        final rowBox = find
-            .ancestor(
-              of: find.text('Deep work'),
-              matching: find.byType(SizedBox),
-            )
-            .first;
-        expect(tester.widget<SizedBox>(rowBox).height, zoneContainerRowHeight);
-      },
-    );
+      // Row height is untouched — still the fixed zoneContainerRowHeight
+      // (44px), confirmed directly ("keep size of them as they are").
+      final rowBox = find
+          .ancestor(of: find.text('Deep work'), matching: find.byType(SizedBox))
+          .first;
+      expect(tester.widget<SizedBox>(rowBox).height, zoneContainerRowHeight);
+    });
 
     testWidgets('off (default), the task row has no card of its own — plain, '
         'colorless BoxDecoration, matching the pre-existing bare row', (

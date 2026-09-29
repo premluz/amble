@@ -621,9 +621,8 @@ abstract class _$DevZoneCardFlat extends $Notifier<bool> {
 /// Task view and the Zone (grid) Authoring screen are unaffected — this
 /// only touches [ZoneDayTimeline]'s own row list.
 ///
-/// Defaults to false (current shipped behavior: every zone renders,
-/// empty or not) — this toggle only ever REMOVES rows, never adds a
-/// display mode that didn't exist.
+/// Defaults to true — empty zones are hidden in Zone view unless this
+/// developer toggle is turned off.
 
 @ProviderFor(DevHideEmptyZones)
 final devHideEmptyZonesProvider = DevHideEmptyZonesProvider._();
@@ -643,9 +642,8 @@ final devHideEmptyZonesProvider = DevHideEmptyZonesProvider._();
 /// Task view and the Zone (grid) Authoring screen are unaffected — this
 /// only touches [ZoneDayTimeline]'s own row list.
 ///
-/// Defaults to false (current shipped behavior: every zone renders,
-/// empty or not) — this toggle only ever REMOVES rows, never adds a
-/// display mode that didn't exist.
+/// Defaults to true — empty zones are hidden in Zone view unless this
+/// developer toggle is turned off.
 final class DevHideEmptyZonesProvider
     extends $NotifierProvider<DevHideEmptyZones, bool> {
   /// Zone (list) view only — when on, hides every zone container that has
@@ -663,9 +661,8 @@ final class DevHideEmptyZonesProvider
   /// Task view and the Zone (grid) Authoring screen are unaffected — this
   /// only touches [ZoneDayTimeline]'s own row list.
   ///
-  /// Defaults to false (current shipped behavior: every zone renders,
-  /// empty or not) — this toggle only ever REMOVES rows, never adds a
-  /// display mode that didn't exist.
+  /// Defaults to true — empty zones are hidden in Zone view unless this
+  /// developer toggle is turned off.
   DevHideEmptyZonesProvider._()
     : super(
         from: null,
@@ -693,7 +690,7 @@ final class DevHideEmptyZonesProvider
   }
 }
 
-String _$devHideEmptyZonesHash() => r'cd86169a8ce0bf488ddb312a1e85c7965935454f';
+String _$devHideEmptyZonesHash() => r'9ae71932a959d42f4fe1d73225da4ac5e3cfff2b';
 
 /// Zone (list) view only — when on, hides every zone container that has
 /// no member [Task] AND no matched [ExternalCalendarEvent], leaving only
@@ -710,9 +707,8 @@ String _$devHideEmptyZonesHash() => r'cd86169a8ce0bf488ddb312a1e85c7965935454f';
 /// Task view and the Zone (grid) Authoring screen are unaffected — this
 /// only touches [ZoneDayTimeline]'s own row list.
 ///
-/// Defaults to false (current shipped behavior: every zone renders,
-/// empty or not) — this toggle only ever REMOVES rows, never adds a
-/// display mode that didn't exist.
+/// Defaults to true — empty zones are hidden in Zone view unless this
+/// developer toggle is turned off.
 
 abstract class _$DevHideEmptyZones extends $Notifier<bool> {
   bool build();

@@ -209,7 +209,7 @@ void main() {
     );
     expect(container.read(editModeEnabledProvider), isFalse);
 
-    await tester.tap(find.text('Tasks'));
+    await tester.tap(find.text('Things'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 

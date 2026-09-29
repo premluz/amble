@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../tokens/semantic_theme.dart';
+import 'app_sheet_handle.dart';
 import 'app_step_scaffold.dart' show HeaderCircleButton;
 
 /// The "close (left) + primary action (right), no title" sheet header —
@@ -50,7 +51,21 @@ class AppSheetHeader extends StatelessWidget {
     required this.onClose,
     this.trailing,
     this.handle,
+    this.title,
+    this.back = false,
+    this.showHandle = true,
   });
+
+  /// Centred in the row, between the leading and trailing buttons.
+  final String? title;
+
+  /// A page deeper in a sheet (`AppSheetFlow`): the leading button goes
+  /// back a page (‹) instead of closing (×).
+  final bool back;
+
+  /// False when something above draws the bar once for every page (an
+  /// `AppSheetFlow`, whose pages slide while the handle stays put).
+  final bool showHandle;
 
   final AmbleTheme theme;
   final VoidCallback onClose;
@@ -61,12 +76,10 @@ class AppSheetHeader extends StatelessWidget {
   /// `Row` of its own here rather than this widget growing an N-slot API.
   final Widget? trailing;
 
-  /// The drag-to-close affordance, layered behind the controls and filling
-  /// the whole row so it drags from anywhere the buttons don't cover — see
-  /// this class's own doc comment. Null for a sheet with no drag-to-close
-  /// gesture at all (`new_section_sheet.dart`, `new_zone_sheet.dart`),
-  /// which then renders just the controls at the same row height, so every
-  /// sheet's header still lines up whether or not it has a handle.
+  /// A sheet that is NOT dragged by `AppSheetDragDismiss` (`new_zone_sheet`,
+  /// which moves its own panel) passes its own drag handle here, layered
+  /// behind the controls. Null draws the plain handle bar: every sheet shows
+  /// one, and dragging anywhere on the sheet moves the whole sheet.
   final Widget? handle;
 
   /// Matches the reference implementation's own reserved header height
@@ -81,7 +94,27 @@ class AppSheetHeader extends StatelessWidget {
       height: heightFor(theme),
       child: Stack(
         children: [
-          if (handle != null) Positioned.fill(child: handle!),
+          if (handle case final handle?)
+            Positioned.fill(child: handle)
+          else if (showHandle)
+            Positioned.fill(
+              child: IgnorePointer(child: AppSheetTopHandle(theme: theme)),
+            ),
+          if (title case final title?)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Center(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTitle.copyWith(
+                      color: theme.colorTextPrimary,
+                    ),
+                  ),
+                ),
+              ),
+            ),
           Positioned(
             top: 0,
             bottom: 0,
@@ -89,7 +122,9 @@ class AppSheetHeader extends StatelessWidget {
             child: Center(
               child: HeaderCircleButton(
                 theme: theme,
-                icon: Icons.close_rounded,
+                icon: back
+                    ? Icons.arrow_back_ios_new_rounded
+                    : Icons.close_rounded,
                 onTap: onClose,
               ),
             ),

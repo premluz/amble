@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/timeline_clock.dart';
 
 /// Which end of the row [TaskEdgeTimeLabel]'s accent pill sits at. See
 /// docs/DESIGN_SYSTEM.md's "hour/time indicator" entry — [start] (the
@@ -75,7 +76,7 @@ class TaskEdgeTimeLabel extends StatelessWidget {
         borderRadius: BorderRadius.circular(theme.radiusMd),
       ),
       child: Text(
-        time.format(context),
+        timelineClock(context, time),
         // textTaskEdgeTime — compact task time shared by spatial and Edit
         // edge labels; the pill supplies the accent treatment.
         style: theme.textTaskEdgeTime.copyWith(

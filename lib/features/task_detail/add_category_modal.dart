@@ -2,60 +2,57 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
-import '../../core/widgets/app_modal_route.dart';
-import '../../core/widgets/app_pane.dart';
-import '../../core/widgets/app_staggered_entrance.dart';
-import '../../core/widgets/app_step_scaffold.dart';
+import '../../core/widgets/app_button.dart';
+import '../../core/widgets/app_sheet.dart';
+import '../../core/widgets/app_sheet_flow.dart';
 import '../../core/widgets/app_text_field.dart';
+import '../../core/widgets/app_value_chip.dart';
 import '../../shared/models/category.dart';
 import '../../shared/providers/category_providers.dart';
+import 'category_color_modal.dart';
+import 'category_icon_modal.dart';
 import 'category_visual.dart';
 
-/// Pushes the "Add new category" screen — the same near-full-screen
-/// slide-up route `task_detail_sheet.dart`'s own `_pushDetailRoute` and
-/// `zone_form_screen.dart`'s `showZoneFormScreen` both use, not
-/// [AppSheet]: requested directly, "add category sheet should be near full
-/// screen same as add task, and same pattern" — progressive disclosure
-/// (Name-only first, everything else fading in once Done is confirmed) is
-/// [StepScaffold]'s own pattern, and [AppSheet]'s fixed-content-height
-/// contract has no notion of a primary button pinned to the bottom or a
-/// two-stage body, both of which this now needs.
-///
-/// Reachable via the "+ Add new" link on both [TaskCategoryModal] and
-/// `TaskNameCategoryModal`'s title row (create-only there — [category] is
-/// always null) — resolves to the newly created [Category] so the calling
-/// picker sheet can select it immediately, unchanged from before this
-/// became a pushed route rather than a sheet.
+/// Opens the label create/edit sheet on its own (Settings' label list,
+/// `TaskNameCategoryModal`) and resolves to the saved [Category]. Inside a
+/// label picker the same form is a page of the picker's sheet instead —
+/// see [AddCategoryPage].
 ///
 /// [category] non-null opens in EDIT mode — rename + recolor + re-icon an
 /// existing category, per CONSTITUTION.md's "v2" section (reorder itself
-/// confirmed out of scope for now). Reached from [CategoryListScreen]'s
-/// own list. Mirrors `zone_form_screen.dart`'s `showZoneFormScreen(zone:)`
-/// shape exactly: editing skips straight to the full form (stage 2),
-/// there being nothing to stage for a category that already has every
-/// field filled in.
+/// confirmed out of scope for now).
 Future<Category?> showAddCategoryModal(
   BuildContext context, {
   Category? category,
 }) {
-  return pushAppSheetRoute<Category?>(
-    context,
-    (context) => _AddCategoryScreen(category: category),
+  return AppSheet.show<Category?>(
+    context: context,
+    size: AppSheetSize.small,
+    builder: (context) => AppSheetFlow(
+      theme: Theme.of(context).extension<AmbleTheme>()!,
+      root: AddCategoryPage(category: category),
+    ),
   );
 }
 
-class _AddCategoryScreen extends ConsumerStatefulWidget {
-  const _AddCategoryScreen({this.category});
+/// The label form, as a page of an [AppSheetFlow]: its Color and Icon chips
+/// open their pickers as further pages of the same sheet.
+class AddCategoryPage extends ConsumerStatefulWidget {
+  const AddCategoryPage({super.key, this.category, this.onSaved});
 
   /// Non-null for edit mode — see [showAddCategoryModal]'s own doc
   /// comment.
   final Category? category;
 
+  /// Where the saved label goes. Null closes the sheet with it (the label's
+  /// own sheet); a picker passes its own, to select it and close.
+  final ValueChanged<Category>? onSaved;
+
   @override
-  ConsumerState<_AddCategoryScreen> createState() => _AddCategoryScreenState();
+  ConsumerState<AddCategoryPage> createState() => _AddCategoryPageState();
 }
 
-class _AddCategoryScreenState extends ConsumerState<_AddCategoryScreen> {
+class _AddCategoryPageState extends ConsumerState<AddCategoryPage> {
   final _nameController = TextEditingController();
   int? _colorToken;
 
@@ -65,15 +62,6 @@ class _AddCategoryScreenState extends ConsumerState<_AddCategoryScreen> {
   /// (superseded, not repurposed — see that field's own doc comment).
   int? _iconCodePoint;
   bool _isSaving = false;
-
-  /// Stage 1 (Name only) vs. stage 2 (Color + Icon) — the same
-  /// progressive-disclosure pattern the task and zone creation flows use.
-  /// Requested directly: "this would be a pattern of progressive
-  /// disclosure that applies to task, zone, category." Editing an existing
-  /// category skips straight to stage 2, same as `zone_form_screen.dart`'s
-  /// own `_isEditing` skip — there is nothing to stage for a category that
-  /// already has every field filled in.
-  bool _isNameStage = true;
 
   bool get _isEditing => widget.category != null;
 
@@ -90,7 +78,6 @@ class _AddCategoryScreenState extends ConsumerState<_AddCategoryScreen> {
       // rather than leaving Save permanently disabled for that row.
       _iconCodePoint =
           category.iconCodePoint ?? curatedCategoryIcons.first.codePoint;
-      _isNameStage = false;
     }
     // Save's enabled state depends on the name being non-empty, so it has
     // to react on every keystroke — AppTextField's own onFocusChanged only
@@ -115,21 +102,6 @@ class _AddCategoryScreenState extends ConsumerState<_AddCategoryScreen> {
       _iconCodePoint != null &&
       !_isSaving;
 
-  /// Confirms stage 1 (Name) and advances to stage 2 — fired by stage 1's
-  /// own Done button or the Name field's keyboard-complete action. Mirrors
-  /// `task_detail_sheet.dart`'s own `_confirmNameStage` exactly: an empty
-  /// name at this point closes the whole screen instead of advancing to a
-  /// form with nothing named yet, rather than asking to confirm discarding
-  /// a draft the user never actually started.
-  void _confirmNameStage() {
-    FocusManager.instance.primaryFocus?.unfocus();
-    if (_nameController.text.trim().isEmpty) {
-      Navigator.of(context).pop();
-      return;
-    }
-    setState(() => _isNameStage = false);
-  }
-
   /// Removes the category being edited — requested directly: "Edit
   /// category also [remove icon button]." Never offered for a built-in
   /// category (see [_canDelete] and `CategoryList.deleteCategory`'s own
@@ -147,8 +119,76 @@ class _AddCategoryScreenState extends ConsumerState<_AddCategoryScreen> {
     await notifier.deleteCategory(category.id);
   }
 
-  bool get _canDelete =>
-      _isEditing && !_isNameStage && widget.category!.isBuiltIn == false;
+  bool get _canDelete => _isEditing && widget.category!.isBuiltIn == false;
+
+  void _openColorPage() {
+    final flow = AppSheetFlow.of(context);
+    flow.push(
+      CategoryColorPage(
+        selectedColorToken: _colorToken,
+        onSelected: (colorToken) {
+          setState(() => _colorToken = colorToken);
+          flow.pop();
+        },
+      ),
+    );
+  }
+
+  void _openIconPage() {
+    final flow = AppSheetFlow.of(context);
+    flow.push(
+      CategoryIconPage(
+        selectedIconCodePoint: _iconCodePoint,
+        onSelected: (iconCodePoint) {
+          setState(() => _iconCodePoint = iconCodePoint);
+          flow.pop();
+        },
+      ),
+    );
+  }
+
+  void _finish(Category saved) {
+    final onSaved = widget.onSaved;
+    if (onSaved != null) {
+      onSaved(saved);
+    } else {
+      Navigator.of(context).pop(saved);
+    }
+  }
+
+  IconData get _iconChipIcon {
+    for (final icon in curatedCategoryIcons) {
+      if (icon.codePoint == _iconCodePoint) return icon;
+    }
+    return Icons.category_outlined;
+  }
+
+  Widget _buildHeaderTrailing(AmbleTheme theme) {
+    final saveButton = AppButton(
+      icon: Icons.check_rounded,
+      shape: AppButtonShape.circle,
+      tooltip: 'Save label',
+      isLoading: _isSaving,
+      onPressed: _canSave ? _save : null,
+    );
+    if (!_canDelete) return saveButton;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AppButton(
+          icon: Icons.delete_outline_rounded,
+          variant: AppButtonVariant.ghost,
+          shape: AppButtonShape.circle,
+          tooltip: 'Delete label',
+          iconColor: theme.colorDestructive,
+          onPressed: _delete,
+        ),
+        SizedBox(width: theme.spacingSm),
+        saveButton,
+      ],
+    );
+  }
 
   Future<void> _save() async {
     if (!_canSave) return;
@@ -161,7 +201,7 @@ class _AddCategoryScreenState extends ConsumerState<_AddCategoryScreen> {
         existing.iconCodePoint = _iconCodePoint!;
         await ref.read(categoryListProvider.notifier).updateCategory(existing);
         if (!mounted) return;
-        Navigator.of(context).pop(existing);
+        _finish(existing);
         return;
       }
       final created = await ref
@@ -176,186 +216,61 @@ class _AddCategoryScreenState extends ConsumerState<_AddCategoryScreen> {
             iconCodePoint: _iconCodePoint!,
           );
       if (!mounted) return;
-      Navigator.of(context).pop(created);
+      _finish(created);
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context).extension<AmbleTheme>()!;
+  Widget _buildHeader(AmbleTheme theme) => AppSheetFlowHeader(
+    theme: theme,
+    title: _isEditing ? 'Edit label' : 'New label',
+    trailing: _buildHeaderTrailing(theme),
+  );
 
-    // Stage 2's panes, staggered in exactly like the task and zone
-    // creation flows' own `staggeredPanes` — built as a plain list so the
-    // entrance index is each pane's position in it, not hand-numbered at
-    // each call site.
-    final staggeredPanes = [
-      AppPane(
-        title: 'Color',
-        child: Wrap(
-          spacing: theme.spacingSm,
-          runSpacing: theme.spacingSm,
-          children: [
-            for (var index = 0; index < theme.categorySwatches.length; index++)
-              _ColorSwatch(
-                color: theme.categorySwatches[index],
-                selected: _colorToken == index,
-                onSelected: () => setState(() => _colorToken = index),
+  Widget _buildSheetBody(AmbleTheme theme) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: theme.spacingXl * 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHeader(theme),
+          SizedBox(height: theme.spacingMd),
+          AppTextField(
+            controller: _nameController,
+            label: 'Label name',
+            variant: AppTextFieldVariant.bare,
+            autofocus: !_isEditing,
+            textInputAction: TextInputAction.done,
+          ),
+          SizedBox(height: theme.spacingLg),
+          Wrap(
+            spacing: theme.spacingSm,
+            runSpacing: theme.spacingSm,
+            children: [
+              AppValueChip(
+                label: 'Color',
+                icon: Icons.palette_outlined,
+                hasValue: _colorToken != null,
+                onTap: _openColorPage,
               ),
-          ],
-        ),
-      ),
-      AppPane(
-        title: 'Icon',
-        child: Wrap(
-          spacing: theme.spacingSm,
-          runSpacing: theme.spacingSm,
-          children: [
-            for (final icon in curatedCategoryIcons)
-              _IconOption(
-                icon: icon,
-                selected: _iconCodePoint == icon.codePoint,
-                onSelected: () =>
-                    setState(() => _iconCodePoint = icon.codePoint),
+              AppValueChip(
+                label: 'Icon',
+                icon: _iconChipIcon,
+                hasValue: _iconCodePoint != null,
+                onTap: _openIconPage,
               ),
-          ],
-        ),
-      ),
-    ];
-
-    return StepScaffold(
-      theme: theme,
-      modalTitle: _isEditing ? 'Edit label' : 'New label',
-      titleAlignment: TextAlign.left,
-      headerColor: theme.colorAccent,
-      headerContent: null,
-      onClose: () => Navigator.of(context).pop(),
-      onBack: null,
-      // Same stage-1/stage-2 pattern as the task and zone creation flows —
-      // requested directly, applying it to category too.
-      primaryLabel: _isNameStage ? 'Done' : 'Save',
-      onPrimaryPressed: _isNameStage
-          ? _confirmNameStage
-          : (_canSave ? _save : null),
-      isPrimaryLoading: !_isNameStage && _isSaving,
-      // Edit only, and never for a built-in category — same "remove icon
-      // button" the task/zone/template edit flows already have.
-      onSecondaryAction: _canDelete ? _delete : null,
-      secondaryActionIcon: Icons.delete_outline_rounded,
-      body: SingleChildScrollView(
-        // Top reverted to a plain spacingLg — the fade now lives inside
-        // StepScaffold's own header container, clipped to it.
-        padding: EdgeInsets.fromLTRB(
-          theme.spacingLg,
-          theme.spacingLg,
-          theme.spacingLg,
-          theme.spacingXl * 3,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Always in the tree, never rebuilt as a different instance —
-            // same reasoning as the task/zone flows' own Name field: its
-            // Element (and any focus/keyboard state) must survive the
-            // stage 1 -> 2 transition untouched, not remount as a fresh
-            // field.
-            AppPane(
-              title: 'Name',
-              child: AppTextField(
-                controller: _nameController,
-                label: 'Label name',
-                autofocus: !_isEditing,
-                onSubmitted: (_) => _confirmNameStage(),
-              ),
-            ),
-            if (!_isNameStage) ...[
-              SizedBox(height: theme.spacingLg),
-              for (final (index, pane) in staggeredPanes.indexed) ...[
-                AppStaggeredEntrance(index: index, child: pane),
-                SizedBox(height: theme.spacingLg),
-              ],
             ],
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
-}
-
-/// One rounded color square in the 12-swatch palette grid — selection is a
-/// border ring, matching the existing category chips' selected-state
-/// affordance (`_CategoryChip` in `task_category_modal.dart`).
-class _ColorSwatch extends StatelessWidget {
-  const _ColorSwatch({
-    required this.color,
-    required this.selected,
-    required this.onSelected,
-  });
-
-  final Color color;
-  final bool selected;
-  final VoidCallback onSelected;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
 
-    return GestureDetector(
-      onTap: onSelected,
-      child: AnimatedContainer(
-        duration: theme.motionFast,
-        curve: theme.curveStandard,
-        width: theme.spacingXl,
-        height: theme.spacingXl,
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(theme.radiusSm),
-          border: Border.all(
-            color: selected ? theme.colorTextPrimary : Colors.transparent,
-            width: theme.borderWidthHairline * 1.5,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// One Tabler icon option in the curated grid — selection is a border
-/// ring, same affordance as [_ColorSwatch].
-class _IconOption extends StatelessWidget {
-  const _IconOption({
-    required this.icon,
-    required this.selected,
-    required this.onSelected,
-  });
-
-  final IconData icon;
-  final bool selected;
-  final VoidCallback onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context).extension<AmbleTheme>()!;
-
-    return GestureDetector(
-      onTap: onSelected,
-      child: AnimatedContainer(
-        duration: theme.motionFast,
-        curve: theme.curveStandard,
-        width: theme.spacingXl,
-        height: theme.spacingXl,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: theme.colorSurfaceSecondary,
-          borderRadius: BorderRadius.circular(theme.radiusSm),
-          border: Border.all(
-            color: selected ? theme.colorTextPrimary : Colors.transparent,
-            width: theme.borderWidthHairline * 1.5,
-          ),
-        ),
-        child: Icon(icon, size: theme.spacingLg, color: theme.colorTextPrimary),
-      ),
-    );
+    return _buildSheetBody(theme);
   }
 }
