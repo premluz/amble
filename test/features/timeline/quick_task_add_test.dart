@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:amble/core/widgets/app_step_scaffold.dart'
+    show HeaderCircleButton;
 import 'package:amble/features/task_detail/task_sheet_fields.dart';
 import 'package:amble/core/widgets/app_size_reporter.dart';
 import 'package:amble/core/widgets/app_sheet_surface.dart';
@@ -166,7 +168,12 @@ void main() {
     await templateBox.close();
   });
 
-  Future<void> pumpTimeline(WidgetTester tester) async {
+  /// [headerHeight]: room above the Timeline, as the app shell's header
+  /// takes — the Timeline (and its in-place sheet) starts below it.
+  Future<void> pumpTimeline(
+    WidgetTester tester, {
+    double headerHeight = 0,
+  }) async {
     tester.view.physicalSize = const Size(430, 932);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -198,8 +205,15 @@ void main() {
         ],
         child: MaterialApp(
           theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
-          home: const Scaffold(
-            body: TimelineScreen(mode: TimelineDisplayMode.spatial),
+          home: Scaffold(
+            body: Column(
+              children: [
+                SizedBox(height: headerHeight),
+                const Expanded(
+                  child: TimelineScreen(mode: TimelineDisplayMode.spatial),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -899,6 +913,62 @@ void main() {
     expect(find.byType(QuickCreateSheetHandle), findsOneWidget);
     expect(find.byType(TaskSheetFields), findsOneWidget);
     expect(find.byType(PendingTaskPill), findsOneWidget);
+  });
+
+  testWidgets('dragged all the way up, the sheet stays inside the Timeline '
+      'area — never under the header or status bar, so its × is reachable', (
+    tester,
+  ) async {
+    // A shell header's worth of room above the Timeline, as in the app.
+    await pumpTimeline(tester, headerHeight: 120);
+    await longPressAndReleaseAt(tester, const Offset(220, 400));
+
+    await dragHandleUp(tester, 900);
+
+    final area = tester.getRect(find.byType(QuickCreateOverlay));
+    final sheet = tester.getRect(
+      find.descendant(
+        of: find.byType(QuickCreateOverlay),
+        matching: find.byType(AppSheetSurface),
+      ),
+    );
+    expect(sheet.top, greaterThan(area.top));
+    final close = tester.getRect(
+      find.descendant(
+        of: find.byType(QuickCreateOverlay),
+        matching: find.byIcon(Icons.close_rounded),
+      ),
+    );
+    expect(close.top, greaterThan(area.top));
+  });
+
+  testWidgets('the sheet\'s × sits one inset from its top and side, the name '
+      'about that far below it, and the chips end that far above the bottom', (
+    tester,
+  ) async {
+    await pumpTimeline(tester);
+    await longPressAndReleaseAt(tester, const Offset(220, 400));
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+    Rect rectOf(Finder finder) => tester.getRect(
+      find
+          .descendant(of: find.byType(QuickCreateOverlay), matching: finder)
+          .last,
+    );
+    final sheet = rectOf(find.byType(AppSheetSurface));
+    final close = rectOf(find.byType(HeaderCircleButton));
+    final name = rectOf(find.byType(EditableText));
+    final chips = rectOf(find.byType(Wrap));
+    final inset = AmbleTheme.light.spacingLg;
+    expect(close.top - sheet.top, inset);
+    expect(close.left - sheet.left, inset);
+    // The name's text box, a little above its glyphs.
+    expect(name.top - close.bottom, inset - AmbleTheme.light.spacingXs);
+    expect(
+      sheet.bottom - chips.bottom,
+      SheetTokens.contentBottomInset(AmbleTheme.light),
+    );
   });
 
   testWidgets(

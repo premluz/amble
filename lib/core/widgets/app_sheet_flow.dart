@@ -77,6 +77,21 @@ class AppSheetFlowState extends State<AppSheetFlow> {
     );
   }
 
+  /// How many pages are showing or kept underneath.
+  int get depth => _live.length;
+
+  /// Back to page [depth] (1 = the first) in one step — a choice made
+  /// several pages deep returning to the form that asked for it.
+  void popTo(int depth) {
+    final live = _live;
+    if (depth < 1 || depth >= live.length) return;
+    setState(() {
+      for (final entry in live.skip(depth)) {
+        entry.leaving = true;
+      }
+    });
+  }
+
   /// Back one page; on the first page, closes the sheet.
   void pop() {
     final live = _live;

@@ -33,7 +33,8 @@ class TrackedBehaviorList extends _$TrackedBehaviorList {
     return ref.watch(trackedBehaviorRepositoryProvider).getBehaviors();
   }
 
-  Future<void> createBehavior({
+  /// Creates and returns the behavior (a picker selects the new one).
+  Future<TrackedBehavior> createBehavior({
     required String title,
     required BehaviorTargetType targetType,
     num? targetAmount,
@@ -53,6 +54,7 @@ class TrackedBehaviorList extends _$TrackedBehaviorList {
     );
     await ref.read(trackedBehaviorRepositoryProvider).saveBehavior(behavior);
     _refresh();
+    return behavior;
   }
 
   Future<void> updateBehavior(TrackedBehavior behavior) async {

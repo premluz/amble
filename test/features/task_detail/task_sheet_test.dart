@@ -153,7 +153,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('New task'), findsOneWidget);
+    expect(find.text('New task'), findsNothing);
+    expect(find.text('New thing'), findsOneWidget);
     expect(
       tester.widget<TextField>(find.byType(TextField).first).autofocus,
       isTrue,
@@ -178,7 +179,7 @@ void main() {
 
     await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
     expect(find.text('Edit task'), findsNothing);
-    expect(find.text('Discard this task?'), findsNothing);
+    expect(find.text('Discard'), findsNothing);
   });
 
   group('closing with unsaved edits asks first', () {
@@ -190,21 +191,21 @@ void main() {
       await tester.enterText(find.byType(TextField).first, 'Retro');
       await tester.pumpAndSettle();
       await _tapAndSettle(tester, find.byIcon(Icons.close_rounded));
-      expect(find.text('Discard this task?'), findsOneWidget);
+      expect(find.text('Discard'), findsOneWidget);
     }
 
-    testWidgets('"Save task" saves the edit', (tester) async {
+    testWidgets('"Save as thing" saves the edit', (tester) async {
       final task = standup();
       await editThenClose(tester, task);
-      await _tapAndSettle(tester, find.text('Save task'));
+      await _tapAndSettle(tester, find.text('Save as thing'));
       expect(box.get(task.id)!.title, 'Retro');
       expect(find.text('Edit task'), findsNothing);
     });
 
-    testWidgets('"Discard draft" closes and writes nothing', (tester) async {
+    testWidgets('"Discard" closes and writes nothing', (tester) async {
       final task = standup();
       await editThenClose(tester, task);
-      await _tapAndSettle(tester, find.text('Discard draft'));
+      await _tapAndSettle(tester, find.text('Discard'));
       expect(box.get(task.id)!.title, 'Standup');
       expect(find.text('Edit task'), findsNothing);
     });
@@ -213,7 +214,7 @@ void main() {
       final task = standup();
       await editThenClose(tester, task);
       await _tapAndSettle(tester, find.text('Keep editing'));
-      expect(find.text('Edit task'), findsOneWidget);
+      expect(find.text('Edit task'), findsNothing);
       expect(find.text('Retro'), findsOneWidget);
       expect(box.get(task.id)!.title, 'Standup');
     });
@@ -228,7 +229,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
-      expect(find.text('Discard this task?'), findsOneWidget);
+      expect(find.text('Discard'), findsOneWidget);
     });
   });
 

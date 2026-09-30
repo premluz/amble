@@ -236,9 +236,9 @@ class StepScaffold extends StatelessWidget {
                                     // last place a title still rendered at
                                     // `textHeadline`'s 32px, so opening a
                                     // sheet jumped the title size.
-                                    style: theme.textTitle.copyWith(
-                                      color: theme.colorTextPrimary,
-                                    ),
+                                    style: SheetTokens.titleStyle(
+                                      theme,
+                                    ).copyWith(color: theme.colorTextPrimary),
                                   ),
                                 ),
                               ),

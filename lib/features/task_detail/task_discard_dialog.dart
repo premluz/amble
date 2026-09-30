@@ -7,13 +7,9 @@ import '../../core/widgets/app_alert_dialog.dart';
 Future<AppAlertDialogChoice> confirmDiscardTask(BuildContext context) =>
     AppAlertDialog.showThreeWay(
       context: context,
-      title: 'Discard this task?',
-      message:
-          "You haven't saved this task yet. Save it with the current "
-          'time and duration, or discard the draft?',
-      primaryAction: const AppAlertDialogAction(label: 'Save task'),
+      primaryAction: const AppAlertDialogAction(label: 'Save as thing'),
       destructiveAction: const AppAlertDialogAction(
-        label: 'Discard draft',
+        label: 'Discard',
         isDestructive: true,
       ),
       cancelAction: const AppAlertDialogAction(label: 'Keep editing'),

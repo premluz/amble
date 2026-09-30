@@ -5216,3 +5216,33 @@ deleted, because it was the app's only way to edit a task.
   and the dev harnesses `exit_confirm_{modal,schedule,discard}_main.dart`
   and `edit_save_repro_main.dart`. `recurrence_verification_main` and
   `inbox_move_to_timeline_main` now open the new sheet.
+
+## 2026-09-30 — Habit form, Measured in and Custom unit are pages of one sheet
+
+These follow Sheets rule 1 (no sheet on a sheet):
+- The Tracked picker's + pushes `TrackedBehaviorPage` as a page. Saving a
+  new habit selects it and closes the picker; `createBehavior` now returns
+  the behavior.
+- Opened on its own (Habits), the form is the root of its own flow.
+- Its "Measured in" chip pushes `TrackedBehaviorUnitPage`, whose + pushes
+  `CustomUnitPage`. A choice returns straight to the form via the new
+  `AppSheetFlowState.popTo(depth)`.
+- The standalone `showCustomUnitSheet` / `showTrackedBehaviorUnitSheet` had
+  no callers left and were removed; `onChosen` / `onSaved` are now
+  required.
+- The Tracked picker fits its content (the fixed `half` height is gone),
+  and its habit chips scroll under the header (`AppSheetScrollBody`).
+
+## 2026-09-30 — Sheet titles and name fields one size smaller; even sheet insets
+
+- `SheetTokens.titleStyle` (`textTitle` at `size3`, 16, one step down) is
+  used by the `AppSheetHeader` title, the StepScaffold title and every
+  bare `AppTextField` (all sheet name fields). Requested: title and inputs
+  the same size, smaller.
+- `SheetTokens.contentBottomInset` (`spacingLg`) replaces
+  `spacingBottomClearance` under sheet content, in `AppSheet` and the
+  Timeline's in-place sheet. There is now a real buffer above the home
+  indicator and above the keyboard (was 8).
+- `SheetTokens.headerToFieldGap` (`spacingXs`) between the header row and
+  the name, in both task sheets. The name's text box starts 20 below ×,
+  with its glyphs about 24, matching ×'s 24 from the sheet's top and side.

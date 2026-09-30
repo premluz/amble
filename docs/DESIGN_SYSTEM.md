@@ -1228,6 +1228,9 @@ popping values between pages.
 | What | Token |
 | --- | --- |
 | Side inset for everything in a sheet (content left-aligned, never a centred shrink-wrapped column) | `spacingLg` |
+| Below the content — above the home indicator or the keyboard | `SheetTokens.contentBottomInset` (`spacingLg`) |
+| Header row → the first field (so the name's glyphs sit about one side inset below ×) | `SheetTokens.headerToFieldGap` (`spacingXs`) |
+| Title between × / ‹ and the action, and every name field (bare `AppTextField`) | `SheetTokens.titleStyle` (`textTitle` at `size3`) |
 | Handle top inset | `spacingSm` |
 | Header row height | `spacingXl * 1.8` |
 | Header → body | `spacingMd` |

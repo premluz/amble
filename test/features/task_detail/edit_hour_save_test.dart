@@ -244,11 +244,11 @@ void main() {
   // `Navigator.pop()` was intercepted by this screen's `PopScope(canPop:
   // false)`, which routed it into `_handleClose`; that still saw the
   // never-refreshed `_initial*` snapshot differing from the edited fields,
-  // so it raised the "Discard this task?" dialog AFTER a successful save —
-  // and its "Save task" action ran a SECOND `_save`. See `_hasSaved` in
+  // so it raised the "Discard" dialog AFTER a successful save —
+  // and its "Save as thing" action ran a SECOND `_save`. See `_hasSaved` in
   // task_detail_sheet.dart.
   testWidgets(
-    'saving closes the sheet outright — no post-save "Discard this task?" '
+    'saving closes the sheet outright — no post-save "Discard" '
     'prompt, which could run a second save and double-write the task',
     (tester) async {
       final task = Task.create(
@@ -275,8 +275,8 @@ void main() {
 
       // The confirmation dialog must NOT appear after an explicit save —
       // its presence is what let a second save through.
-      expect(find.text('Discard this task?'), findsNothing);
-      expect(find.text('Save task'), findsNothing);
+      expect(find.text('Discard'), findsNothing);
+      expect(find.text('Save as thing'), findsNothing);
       // And the sheet is genuinely gone, not sitting behind a dialog.
       expect(find.text('Edit task'), findsNothing);
 

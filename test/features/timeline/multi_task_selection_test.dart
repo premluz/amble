@@ -523,7 +523,7 @@ void main() {
       // running underneath).
       await tester.pump(const Duration(milliseconds: 400));
 
-      expect(find.text('Edit task'), findsOneWidget);
+      expect(find.text('Edit task'), findsNothing);
       expect(capturedContainer!.read(editSelectionProvider), isEmpty);
     },
   );

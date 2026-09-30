@@ -121,8 +121,8 @@ class AppAlertDialog {
   /// stray tap outside the dialog can never discard work.
   static Future<AppAlertDialogChoice> showThreeWay({
     required BuildContext context,
-    required String title,
-    required String message,
+    String? title,
+    String? message,
     required AppAlertDialogAction primaryAction,
     required AppAlertDialogAction destructiveAction,
     required AppAlertDialogAction cancelAction,
@@ -135,25 +135,21 @@ class AppAlertDialog {
         ? await showCupertinoDialog<AppAlertDialogChoice>(
             context: context,
             builder: (context) => CupertinoAlertDialog(
-              title: Text(title),
-              content: Text(message),
+              title: title == null ? null : Text(title),
+              content: message == null ? null : Text(message),
               actions: [
+                CupertinoDialogAction(
+                  isDestructiveAction: true,
+                  onPressed: () => Navigator.of(context)
+                      .pop(AppAlertDialogChoice.destructive),
+                  child: Text(destructiveAction.label),
+                ),
                 CupertinoDialogAction(
                   onPressed: () =>
                       Navigator.of(context).pop(AppAlertDialogChoice.primary),
                   child: Text(primaryAction.label),
                 ),
                 CupertinoDialogAction(
-                  isDestructiveAction: true,
-                  onPressed: () =>
-                      Navigator.of(context)
-                          .pop(AppAlertDialogChoice.destructive),
-                  child: Text(destructiveAction.label),
-                ),
-                CupertinoDialogAction(
-                  // Marked as the default so the platform gives it the
-                  // emphasis, matching it being the safe outcome.
-                  isDefaultAction: true,
                   onPressed: () =>
                       Navigator.of(context).pop(AppAlertDialogChoice.cancel),
                   child: Text(cancelAction.label),
@@ -166,14 +162,9 @@ class AppAlertDialog {
             builder: (context) {
               final theme = Theme.of(context).extension<AmbleTheme>()!;
               return AlertDialog(
-                title: Text(title),
-                content: Text(message),
+                title: title == null ? null : Text(title),
+                content: message == null ? null : Text(message),
                 actions: [
-                  TextButton(
-                    onPressed: () =>
-                        Navigator.of(context).pop(AppAlertDialogChoice.cancel),
-                    child: Text(cancelAction.label),
-                  ),
                   TextButton(
                     onPressed: () =>
                         Navigator.of(context)
@@ -187,6 +178,11 @@ class AppAlertDialog {
                     onPressed: () =>
                         Navigator.of(context).pop(AppAlertDialogChoice.primary),
                     child: Text(primaryAction.label),
+                  ),
+                  TextButton(
+                    onPressed: () =>
+                        Navigator.of(context).pop(AppAlertDialogChoice.cancel),
+                    child: Text(cancelAction.label),
                   ),
                 ],
               );

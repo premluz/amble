@@ -176,14 +176,21 @@ extension<T> on AppTabSwitch<T> {
     final index = options.indexWhere((option) => option.value == value);
     if (look == null || index < 0 || options.isEmpty) return row;
     final segment = width / options.length;
-    return Stack(
-      children: [
-        AppLiquidSlide(
-          target: Rect.fromLTWH(segment * index, 0, segment, height),
-          child: look,
-        ),
-        row,
-      ],
+    // The highlight stretches past the track as it slides: the track's own
+    // rounded shape bounds it, never a hard-edge Stack clip (which squared
+    // its ends — docs/ERROR_LOG.md, 2026-09-30).
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(theme.radiusPill),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          AppLiquidSlide(
+            target: Rect.fromLTWH(segment * index, 0, segment, height),
+            child: look,
+          ),
+          row,
+        ],
+      ),
     );
   }
 }

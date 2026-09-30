@@ -1,4 +1,5 @@
 import 'package:amble/core/widgets/app_top_scroll_fade.dart';
+import 'package:amble/core/tokens/component_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -47,12 +48,12 @@ void main() {
     final screenBottom = tester.getBottomLeft(find.byType(MaterialApp)).dy;
     expect(
       screenBottom - tester.getBottomLeft(find.byKey(bodyKey)).dy,
-      light.spacingBottomClearance,
+      SheetTokens.contentBottomInset(light),
     );
     final fade = tester.widget<AppTopScrollFade>(
       find.byWidgetPredicate((w) => w is AppTopScrollFade && w.fromBottom),
     );
-    expect(fade.height, light.spacingBottomClearance);
+    expect(fade.height, SheetTokens.contentBottomInset(light));
     expect(
       find.ancestor(
         of: find.byKey(bodyKey),

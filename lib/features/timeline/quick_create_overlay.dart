@@ -268,7 +268,8 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
     // main nav' with plus and view switch."
     final barsHeight = _backdropHeight(theme, viewport, bottomInset);
     final bottomSpace =
-        MediaQuery.paddingOf(context).bottom + theme.spacingBottomClearance;
+        MediaQuery.paddingOf(context).bottom +
+        SheetTokens.contentBottomInset(theme);
 
     // The one-shot entrance wrap — see `_entrance`'s own doc comment.
     // `curveDecelerate.transform`, matching exactly what `AppSheetMotion`'s
@@ -287,255 +288,277 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
           ),
         );
       },
-      child: Stack(
-        children: [
-          AnimatedBuilder(
-            animation: _heightController,
-            builder: (context, _) {
-              final fullHeight = viewport - theme.spacingXl;
-              // The floor is the MINIMISED state now, not the small one —
-              // the sheet has three states (see
-              // `quickCreateSheetMinimisedFraction`). `barsHeight` still
-              // applies: even minimised, the panel must cover the space the
-              // nav bar and day strip occupied rather than leaving a strip
-              // of bare Timeline where they were.
-              final minHeight = math.max(
-                viewport * quickCreateSheetMinimisedFraction,
-                barsHeight,
-              );
-              final currentHeight = _sheetHeight(minHeight, fullHeight);
+      child: LayoutBuilder(
+        builder: (context, constraints) => Stack(
+          children: [
+            AnimatedBuilder(
+              animation: _heightController,
+              builder: (context, _) {
+                // Full height is bounded by the space this sheet actually
+                // has — the Timeline area under the shell header (and above
+                // the keyboard) — not the whole screen, or dragged up it
+                // slid under the header and the status bar with its ×
+                // out of reach (reported directly).
+                final fullHeight = math.max(
+                  0.0,
+                  math.min(
+                        viewport,
+                        constraints.maxHeight -
+                            MediaQuery.viewInsetsOf(context).bottom,
+                      ) -
+                      theme.spacingXl,
+                );
+                // The floor is the MINIMISED state now, not the small one —
+                // the sheet has three states (see
+                // `quickCreateSheetMinimisedFraction`). `barsHeight` still
+                // applies: even minimised, the panel must cover the space the
+                // nav bar and day strip occupied rather than leaving a strip
+                // of bare Timeline where they were.
+                final minHeight = math.max(
+                  viewport * quickCreateSheetMinimisedFraction,
+                  barsHeight,
+                );
+                final currentHeight = _sheetHeight(minHeight, fullHeight);
 
-              return Positioned(
-                left: 0,
-                right: 0,
-                // Above the keyboard while the name is being typed.
-                bottom: MediaQuery.viewInsetsOf(context).bottom,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOut,
-                  height: currentHeight,
-                  // `AppSheetSurface`: the shared sheet surface and floating
-                  // edge — requested directly, "sheets should have that
-                  // elevated styling (border)", replacing this sheet's
-                  // earlier "no shadow/glow" Android non-modal look.
-                  child: AppSheetSurface(
-                    theme: theme,
-                    // The bottom space is the END of the scroll (safe area +
-                    // clearance), under a fade — content runs to the phone's
-                    // edge, like every sheet (DESIGN_SYSTEM.md "Sheets").
-                    child: Stack(
-                      children: [
-                        SafeArea(
-                          top: false,
-                          bottom: false,
-                          // A scroll view, not a bare Column — a defensive floor
-                          // against a genuinely short viewport (a small/landscape
-                          // device, or a wide-but-short test surface) where
-                          // quickCreateSheetMinFraction's own height budget for
-                          // handle+field+Done doesn't quite fit; scrolling beats
-                          // a RenderFlex overflow, and on an ordinary phone
-                          // portrait viewport this content never actually needs
-                          // to scroll at all.
-                          child: SingleChildScrollView(
-                            // No horizontal padding here: the template strip
-                            // below runs full-bleed so it can scroll past both
-                            // edges rather than clipping inside an inset. Every
-                            // other child applies the side padding itself.
-                            child: AppSizeReporter(
-                              onSize: (size) => _onContentHeight(size.height),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  // A small top gap before the header row —
-                                  // requested directly: "in quick mode needs slight
-                                  // larger" top space than it had (this row
-                                  // previously sat flush against the sheet's own
-                                  // rounded top corner, zero gap, while the Add note
-                                  // sheet's own AppSheet wrapper gives it spacingLg —
-                                  // kept larger there deliberately, per the same
-                                  // request). `spacingSm`, not `spacingLg`: a
-                                  // genuinely SLIGHT nudge, not matching the other
-                                  // sheet's larger inset.
-                                  SizedBox(height: theme.spacingSm),
-                                  // Handle and X (close) share one header row. The
-                                  // handle is `Positioned.fill`ed behind the X so
-                                  // its drag target spans the WHOLE row width, not
-                                  // just the visual bar — Android's own non-modal
-                                  // bottom sheet drags from anywhere in its header,
-                                  // and this was reported directly as "difficult
-                                  // to do" when only the hairline bar was grabbable.
-                                  // The X stays on top of it (and wins its own
-                                  // taps) at the same top-right position the real
-                                  // full-size sheet's StepScaffold header uses.
-                                  Padding(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: theme.spacingLg,
-                                    ),
-                                    child: SizedBox(
-                                      // Keep the original breathing room around the
-                                      // header controls; the chip row below owns its
-                                      // own content-sized spacing.
-                                      height: theme.spacingXl * 1.8,
-                                      child: Stack(
-                                        children: [
-                                          Positioned.fill(
-                                            child: QuickCreateSheetHandle(
-                                              theme: theme,
-                                              controller: _heightController,
-                                              viewportHeight: viewport,
-                                              onCloseRequested:
-                                                  _onCloseRequested,
-                                            ),
-                                          ),
-                                          // Add RIGHT, close LEFT — matching the new
-                                          // quick-add mockup's action placement.
-                                          // Matches the platform convention
-                                          // that screenshot shows (dismiss left,
-                                          // confirm right).
-                                          //
-                                          // Both buttons sit ON TOP of the
-                                          // `Positioned.fill` handle and win their own
-                                          // taps; the handle still drags from any part
-                                          // of the row they don't cover.
-                                          //
-                                          // "Add", not "Done": it commits the task
-                                          // outright.
-                                          // Both buttons hide while MINIMISED —
-                                          // requested directly: "just the title is
-                                          // shown, and there is this little handle
-                                          // to expand or tap to expand." The handle
-                                          // behind them stays, and becomes the whole
-                                          // row's tap/drag target.
-                                          if (!_heightController.minimised)
-                                            Positioned(
-                                              top: 0,
-                                              bottom: 0,
-                                              right: 0,
-                                              child: Center(
-                                                child: AppButton(
-                                                  label: 'Add',
-                                                  size: AppButtonSize.md,
-                                                  shape: AppButtonShape.pill,
-                                                  onPressed: _isSaving
-                                                      ? null
-                                                      : _save,
-                                                ),
-                                              ),
-                                            ),
-                                          if (!_heightController.minimised)
-                                            Positioned(
-                                              top: 0,
-                                              bottom: 0,
-                                              left: 0,
-                                              child: Center(
-                                                // No `backgroundColor` override any
-                                                // more (2026-09-23). This used to pass
-                                                // `colorSurfaceSecondary` explicitly,
-                                                // because HeaderCircleButton's own
-                                                // default was then the flat, darker
-                                                // `colorSurfaceField` and read as too
-                                                // low-contrast against this panel's
-                                                // nav-matched ground — requested
-                                                // directly at the time ("the style of
-                                                // close button should be same as in big
-                                                // sheet"). That default is now the
-                                                // translucent secondary glass tint
-                                                // every other secondary control uses,
-                                                // so the override would make THIS the
-                                                // odd one out instead.
-                                                child: HeaderCircleButton(
-                                                  theme: theme,
-                                                  icon: Icons.close_rounded,
-                                                  onTap: _onCloseRequested,
-                                                ),
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                  // MINIMISED: the title alone, read-only, with the
-                                  // handle above it the only control — requested
-                                  // directly: "just the title is shown, and there
-                                  // is this little handle to expand or tap to
-                                  // expand." Tapping anywhere here restores the
-                                  // small sheet, matching the handle's own tap.
-                                  if (_heightController.minimised)
-                                    GestureDetector(
-                                      onTap: _heightController.restoreToSmall,
-                                      behavior: HitTestBehavior.opaque,
-                                      child: Padding(
-                                        padding: EdgeInsets.symmetric(
-                                          horizontal: theme.spacingLg,
-                                        ),
-                                        child: SizedBox(
-                                          width: double.infinity,
-                                          child: ListenableBuilder(
-                                            listenable: _form.title,
-                                            builder: (context, _) {
-                                              final title = _form.title.text
-                                                  .trim();
-                                              return Text(
-                                                // "(No title)" confirmed directly,
-                                                // matching the reference screenshot's
-                                                // own wording for an unnamed draft.
-                                                title.isEmpty
-                                                    ? '(No title)'
-                                                    : title,
-                                                style: theme.textTitle.copyWith(
-                                                  color: title.isEmpty
-                                                      ? theme.colorTextSecondary
-                                                      : theme.colorTextPrimary,
-                                                ),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                textAlign: TextAlign.center,
-                                              );
-                                            },
-                                          ),
-                                        ),
-                                      ),
-                                    )
-                                  else ...[
+                return Positioned(
+                  left: 0,
+                  right: 0,
+                  // Above the keyboard while the name is being typed.
+                  bottom: MediaQuery.viewInsetsOf(context).bottom,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOut,
+                    height: currentHeight,
+                    // `AppSheetSurface`: the shared sheet surface and floating
+                    // edge — requested directly, "sheets should have that
+                    // elevated styling (border)", replacing this sheet's
+                    // earlier "no shadow/glow" Android non-modal look.
+                    child: AppSheetSurface(
+                      theme: theme,
+                      // The bottom space is the END of the scroll (safe area +
+                      // clearance), under a fade — content runs to the phone's
+                      // edge, like every sheet (DESIGN_SYSTEM.md "Sheets").
+                      child: Stack(
+                        children: [
+                          SafeArea(
+                            top: false,
+                            bottom: false,
+                            // A scroll view, not a bare Column — a defensive floor
+                            // against a genuinely short viewport (a small/landscape
+                            // device, or a wide-but-short test surface) where
+                            // quickCreateSheetMinFraction's own height budget for
+                            // handle+field+Done doesn't quite fit; scrolling beats
+                            // a RenderFlex overflow, and on an ordinary phone
+                            // portrait viewport this content never actually needs
+                            // to scroll at all.
+                            child: SingleChildScrollView(
+                              // No horizontal padding here: the template strip
+                              // below runs full-bleed so it can scroll past both
+                              // edges rather than clipping inside an inset. Every
+                              // other child applies the side padding itself.
+                              child: AppSizeReporter(
+                                onSize: (size) => _onContentHeight(size.height),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    // A small top gap before the header row —
+                                    // requested directly: "in quick mode needs slight
+                                    // larger" top space than it had (this row
+                                    // previously sat flush against the sheet's own
+                                    // rounded top corner, zero gap, while the Add note
+                                    // sheet's own AppSheet wrapper gives it spacingLg —
+                                    // kept larger there deliberately, per the same
+                                    // request). `spacingSm`, not `spacingLg`: a
+                                    // genuinely SLIGHT nudge, not matching the other
+                                    // sheet's larger inset.
                                     SizedBox(height: theme.spacingSm),
+                                    // Handle and X (close) share one header row. The
+                                    // handle is `Positioned.fill`ed behind the X so
+                                    // its drag target spans the WHOLE row width, not
+                                    // just the visual bar — Android's own non-modal
+                                    // bottom sheet drags from anywhere in its header,
+                                    // and this was reported directly as "difficult
+                                    // to do" when only the hairline bar was grabbable.
+                                    // The X stays on top of it (and wins its own
+                                    // taps) at the same top-right position the real
+                                    // full-size sheet's StepScaffold header uses.
                                     Padding(
                                       padding: EdgeInsets.symmetric(
                                         horizontal: theme.spacingLg,
                                       ),
-                                      // Typed in place: the sheet rises
-                                      // with the keyboard (see the
-                                      // Positioned's bottom).
-                                      child: TaskSheetFields(
-                                        form: _form,
-                                        showPreset: true,
-                                        onNameFocusChanged: _clearDefaultName,
+                                      child: SizedBox(
+                                        // Keep the original breathing room around the
+                                        // header controls; the chip row below owns its
+                                        // own content-sized spacing.
+                                        height: theme.spacingXl * 1.8,
+                                        child: Stack(
+                                          children: [
+                                            Positioned.fill(
+                                              child: QuickCreateSheetHandle(
+                                                theme: theme,
+                                                controller: _heightController,
+                                                viewportHeight: viewport,
+                                                onCloseRequested:
+                                                    _onCloseRequested,
+                                              ),
+                                            ),
+                                            // Add RIGHT, close LEFT — matching the new
+                                            // quick-add mockup's action placement.
+                                            // Matches the platform convention
+                                            // that screenshot shows (dismiss left,
+                                            // confirm right).
+                                            //
+                                            // Both buttons sit ON TOP of the
+                                            // `Positioned.fill` handle and win their own
+                                            // taps; the handle still drags from any part
+                                            // of the row they don't cover.
+                                            //
+                                            // "Add", not "Done": it commits the task
+                                            // outright.
+                                            // Both buttons hide while MINIMISED —
+                                            // requested directly: "just the title is
+                                            // shown, and there is this little handle
+                                            // to expand or tap to expand." The handle
+                                            // behind them stays, and becomes the whole
+                                            // row's tap/drag target.
+                                            if (!_heightController.minimised)
+                                              Positioned(
+                                                top: 0,
+                                                bottom: 0,
+                                                right: 0,
+                                                child: Center(
+                                                  child: AppButton(
+                                                    label: 'Add',
+                                                    size: AppButtonSize.md,
+                                                    shape: AppButtonShape.pill,
+                                                    onPressed: _isSaving
+                                                        ? null
+                                                        : _save,
+                                                  ),
+                                                ),
+                                              ),
+                                            if (!_heightController.minimised)
+                                              Positioned(
+                                                top: 0,
+                                                bottom: 0,
+                                                left: 0,
+                                                child: Center(
+                                                  // No `backgroundColor` override any
+                                                  // more (2026-09-23). This used to pass
+                                                  // `colorSurfaceSecondary` explicitly,
+                                                  // because HeaderCircleButton's own
+                                                  // default was then the flat, darker
+                                                  // `colorSurfaceField` and read as too
+                                                  // low-contrast against this panel's
+                                                  // nav-matched ground — requested
+                                                  // directly at the time ("the style of
+                                                  // close button should be same as in big
+                                                  // sheet"). That default is now the
+                                                  // translucent secondary glass tint
+                                                  // every other secondary control uses,
+                                                  // so the override would make THIS the
+                                                  // odd one out instead.
+                                                  child: HeaderCircleButton(
+                                                    theme: theme,
+                                                    icon: Icons.close_rounded,
+                                                    onTap: _onCloseRequested,
+                                                  ),
+                                                ),
+                                              ),
+                                          ],
+                                        ),
                                       ),
                                     ),
+                                    // MINIMISED: the title alone, read-only, with the
+                                    // handle above it the only control — requested
+                                    // directly: "just the title is shown, and there
+                                    // is this little handle to expand or tap to
+                                    // expand." Tapping anywhere here restores the
+                                    // small sheet, matching the handle's own tap.
+                                    if (_heightController.minimised)
+                                      GestureDetector(
+                                        onTap: _heightController.restoreToSmall,
+                                        behavior: HitTestBehavior.opaque,
+                                        child: Padding(
+                                          padding: EdgeInsets.symmetric(
+                                            horizontal: theme.spacingLg,
+                                          ),
+                                          child: SizedBox(
+                                            width: double.infinity,
+                                            child: ListenableBuilder(
+                                              listenable: _form.title,
+                                              builder: (context, _) {
+                                                final title = _form.title.text
+                                                    .trim();
+                                                return Text(
+                                                  // "(No title)" confirmed directly,
+                                                  // matching the reference screenshot's
+                                                  // own wording for an unnamed draft.
+                                                  title.isEmpty
+                                                      ? '(No title)'
+                                                      : title,
+                                                  style: theme.textTitle.copyWith(
+                                                    color: title.isEmpty
+                                                        ? theme
+                                                              .colorTextSecondary
+                                                        : theme
+                                                              .colorTextPrimary,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  textAlign: TextAlign.center,
+                                                );
+                                              },
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                    else ...[
+                                      SizedBox(
+                                        height: SheetTokens.headerToFieldGap(
+                                          theme,
+                                        ),
+                                      ),
+                                      Padding(
+                                        padding: EdgeInsets.symmetric(
+                                          horizontal: theme.spacingLg,
+                                        ),
+                                        // Typed in place: the sheet rises
+                                        // with the keyboard (see the
+                                        // Positioned's bottom).
+                                        child: TaskSheetFields(
+                                          form: _form,
+                                          showPreset: true,
+                                          onNameFocusChanged: _clearDefaultName,
+                                        ),
+                                      ),
+                                    ],
+                                    SizedBox(height: bottomSpace),
                                   ],
-                                  SizedBox(height: bottomSpace),
-                                ],
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
-                          child: AppTopScrollFade(
-                            color: SheetTokens.surface(theme),
-                            height: bottomSpace,
-                            fromBottom: true,
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            child: AppTopScrollFade(
+                              color: SheetTokens.surface(theme),
+                              height: bottomSpace,
+                              fromBottom: true,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              );
-            },
-          ),
-        ],
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }

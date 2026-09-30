@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/tokens/component_tokens.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_alert_dialog.dart';
 import '../../core/widgets/app_button.dart';
@@ -153,15 +154,16 @@ class _TaskSheetState extends ConsumerState<_TaskSheet> {
         children: [
           AppSheetHeader(
             theme: theme,
-            title: widget.task == null ? 'New task' : 'Edit task',
+            title: null,
             onClose: () => Navigator.of(context).maybePop(),
             trailing: _actions(theme),
           ),
-          SizedBox(height: theme.spacingMd),
+          SizedBox(height: SheetTokens.headerToFieldGap(theme)),
           TaskSheetFields(
             form: _form,
             showPreset: widget.task == null,
             autofocusName: _creating,
+            titlePlaceholder: _creating ? 'New thing' : 'Add title',
           ),
         ],
       ),

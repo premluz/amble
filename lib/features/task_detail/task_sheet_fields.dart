@@ -21,6 +21,7 @@ class TaskSheetFields extends StatelessWidget {
     required this.form,
     this.showPreset = false,
     this.autofocusName = false,
+    this.titlePlaceholder = 'Add title',
     this.onNameFocusChanged,
   });
 
@@ -29,6 +30,7 @@ class TaskSheetFields extends StatelessWidget {
   /// Presets fill a new task; editing one has no use for them.
   final bool showPreset;
   final bool autofocusName;
+  final String titlePlaceholder;
   final ValueChanged<bool>? onNameFocusChanged;
 
   @override
@@ -42,7 +44,7 @@ class TaskSheetFields extends StatelessWidget {
         children: [
           AppTextField(
             controller: form.title,
-            label: 'Add title',
+            label: titlePlaceholder,
             variant: AppTextFieldVariant.bare,
             autofocus: autofocusName,
             onFocusChanged: onNameFocusChanged,

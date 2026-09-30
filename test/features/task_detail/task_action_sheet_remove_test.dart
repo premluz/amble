@@ -348,7 +348,7 @@ void main() {
 
       // Pre-filled with the source task's title, as a new task (Add).
       expect(find.text('Standup'), findsWidgets);
-      expect(find.text('New task'), findsOneWidget);
+      expect(find.text('New task'), findsNothing);
       expect(find.text('Add'), findsOneWidget);
       // Still exactly ONE task — nothing persisted merely by opening
       // the screen.

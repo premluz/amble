@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_selectable_chip.dart';
-import '../../core/widgets/app_sheet.dart';
 import '../../core/widgets/app_sheet_flow.dart';
 import '../../shared/models/behavior_target_type.dart';
 import 'custom_unit_sheet.dart';
@@ -37,23 +36,18 @@ String trackedBehaviorTypeLabel(
   BehaviorTargetType.binary => 'Did it',
 };
 
-Future<TrackedBehaviorUnitChoice?> showTrackedBehaviorUnitSheet(
-  BuildContext context, {
-  required BehaviorTargetType initial,
-}) {
-  return AppSheet.show<TrackedBehaviorUnitChoice>(
-    context: context,
-    builder: (context) => AppSheetFlow(
-      theme: Theme.of(context).extension<AmbleTheme>()!,
-      root: _TrackedBehaviorUnitPage(initial: initial),
-    ),
-  );
-}
-
-class _TrackedBehaviorUnitPage extends StatelessWidget {
-  const _TrackedBehaviorUnitPage({required this.initial});
+/// "Measured in" as a page, pushed inside the habit form's sheet; a custom
+/// unit opens as the next page. [onChosen] takes the choice.
+class TrackedBehaviorUnitPage extends StatelessWidget {
+  const TrackedBehaviorUnitPage({
+    super.key,
+    required this.initial,
+    required this.onChosen,
+  });
 
   final BehaviorTargetType initial;
+
+  final ValueChanged<TrackedBehaviorUnitChoice> onChosen;
 
   @override
   Widget build(BuildContext context) {
@@ -84,8 +78,7 @@ class _TrackedBehaviorUnitPage extends StatelessWidget {
                 label: trackedBehaviorTypeLabel(type),
                 selected: type == initial,
                 size: AppSelectableChipSize.regular,
-                onTap: () =>
-                    Navigator.of(context).pop(TrackedBehaviorUnitChoice(type)),
+                onTap: () => onChosen(TrackedBehaviorUnitChoice(type)),
               ),
           ],
         ),
@@ -96,7 +89,7 @@ class _TrackedBehaviorUnitPage extends StatelessWidget {
   void _openCustomUnit(BuildContext context) {
     AppSheetFlow.of(context).push(
       CustomUnitPage(
-        onSaved: (customUnit) => Navigator.of(context).pop(
+        onSaved: (customUnit) => onChosen(
           TrackedBehaviorUnitChoice(
             BehaviorTargetType.custom,
             customUnit: customUnit,

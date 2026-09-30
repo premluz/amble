@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../tokens/component_tokens.dart';
 import '../tokens/semantic_theme.dart';
 import 'app_field_shell.dart';
 
@@ -136,11 +137,11 @@ class _AppTextFieldState extends State<AppTextField> {
             autofocus: widget.autofocus,
             textInputAction: widget.textInputAction,
             onSubmitted: widget.onSubmitted,
-            // `textTitle`, the one size every page and sheet title in the
-            // app already uses — this variant IS the title of whatever is
-            // being created, so it reads as that title rather than as a
-            // form control.
-            style: theme.textTitle.copyWith(color: theme.colorTextPrimary),
+            // The sheet title size ([SheetTokens.titleStyle]) — this variant
+            // IS the title of whatever is being created, so it reads as the
+            // sheet's title rather than as a form control.
+            style: SheetTokens.titleStyle(theme)
+                .copyWith(color: theme.colorTextPrimary),
             cursorColor: theme.colorTextPrimary,
             decoration: InputDecoration(
               isDense: true,
@@ -151,9 +152,8 @@ class _AppTextFieldState extends State<AppTextField> {
               // A real hint here, unlike the filled variant: with no
               // shell there is no floating label to double it up.
               hintText: widget.label,
-              hintStyle: theme.textTitle.copyWith(
-                color: theme.colorTextSecondary,
-              ),
+              hintStyle: SheetTokens.titleStyle(theme)
+                  .copyWith(color: theme.colorTextSecondary),
             ),
           );
         }

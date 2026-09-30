@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../tokens/component_tokens.dart';
 import '../tokens/semantic_theme.dart';
 import 'app_sheet_handle.dart';
 import 'app_step_scaffold.dart' show HeaderCircleButton;
@@ -108,9 +109,8 @@ class AppSheetHeader extends StatelessWidget {
                     title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: theme.textTitle.copyWith(
-                      color: theme.colorTextPrimary,
-                    ),
+                    style: SheetTokens.titleStyle(theme)
+                        .copyWith(color: theme.colorTextPrimary),
                   ),
                 ),
               ),

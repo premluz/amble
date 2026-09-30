@@ -2557,6 +2557,9 @@ header paints last.
 highlight's overshoot. **Fix:** `Clip.none`; the pane's rounded clip is the
 only edge, as in the dock. **Rule:** a liquid highlight's Stack never clips.
 Let a rounded container bound it.
+**Same fix, 2026-09-30:** `AppTabSwitch` (used by Move all) had the same
+hard-edge Stack. Its track had no rounded clip, so it now gets a
+`ClipRRect` in its own pill shape around a `Clip.none` Stack.
 
 ## 2026-09-30 — Test "hang" that ignored --timeout: a recursive helper
 
@@ -2578,3 +2581,16 @@ from. A test opening a sheet with `navigatorKey.currentContext` is above
 the Navigator's Overlay, so `Overlay.of` fails, although the delete
 itself worked. Open from `tester.element(find.byType(Scaffold).first)`,
 as the app does from inside a page.
+
+## 2026-09-30 — Quick-create sheet dragged up under the header and status bar
+
+**Symptom:** pulling the new-task sheet up took it under the shell header
+and the clock, with its × out of reach. **Cause:** its full height was
+`MediaQuery.sizeOf(context).height − spacingXl` (the whole screen), but
+the sheet lives inside the Timeline area, which starts below the header.
+**Fix:** the full height is bounded by the overlay's own constraints (a
+`LayoutBuilder` around its Stack), minus the keyboard and a gap.
+**Test gotcha:** the quick-add harness put the Timeline full-screen, so a
+"stays below the top" check passed even with the bug. `pumpTimeline` now
+takes `headerHeight`. The new test was run against the reverted code to
+confirm it fails there.

@@ -5,7 +5,7 @@ import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_selectable_chip.dart';
 import '../../core/widgets/app_sheet.dart';
-import '../../core/widgets/app_sheet_header.dart';
+import '../../core/widgets/app_sheet_flow.dart';
 import '../../shared/providers/tracked_behavior_providers.dart';
 import '../tracked_behavior/tracked_behavior_form.dart';
 
@@ -29,8 +29,10 @@ class TaskBehaviorModal extends ConsumerStatefulWidget {
   }) {
     return AppSheet.show<TaskBehaviorSelection>(
       context: context,
-      size: AppSheetSize.half,
-      builder: (context) => TaskBehaviorModal(behaviorId: behaviorId),
+      builder: (context) => AppSheetFlow(
+        theme: Theme.of(context).extension<AmbleTheme>()!,
+        root: TaskBehaviorModal(behaviorId: behaviorId),
+      ),
     );
   }
 
@@ -43,10 +45,10 @@ class _TaskBehaviorModalState extends ConsumerState<TaskBehaviorModal> {
     Navigator.of(context).pop(TaskBehaviorSelection(behaviorId));
   }
 
-  Future<void> _addNewBehavior() async {
-    await showTrackedBehaviorForm(context);
-    if (!mounted) return;
-  }
+  /// A new habit is the next page of this sheet, not a sheet on top;
+  /// saving it selects it and closes.
+  void _addNewBehavior() => AppSheetFlow.of(context)
+      .push(TrackedBehaviorPage(onSaved: (behavior) => _select(behavior.id)));
 
   @override
   Widget build(BuildContext context) {
@@ -57,10 +59,9 @@ class _TaskBehaviorModalState extends ConsumerState<TaskBehaviorModal> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        AppSheetHeader(
+        AppSheetFlowHeader(
           theme: theme,
           title: 'Tracked',
-          onClose: () => Navigator.of(context).pop(),
           trailing: AppButton(
             icon: Icons.add_rounded,
             variant: AppButtonVariant.primary,
@@ -70,24 +71,26 @@ class _TaskBehaviorModalState extends ConsumerState<TaskBehaviorModal> {
           ),
         ),
         SizedBox(height: theme.spacingMd),
-        Wrap(
-          spacing: theme.spacingSm,
-          runSpacing: theme.spacingSm,
-          children: [
-            AppSelectableChip(
-              label: 'None',
-              size: AppSelectableChipSize.regular,
-              selected: widget.behaviorId == null,
-              onTap: () => _select(null),
-            ),
-            for (final behavior in behaviors)
+        AppSheetScrollBody(
+          child: Wrap(
+            spacing: theme.spacingSm,
+            runSpacing: theme.spacingSm,
+            children: [
               AppSelectableChip(
-                label: behavior.title,
+                label: 'None',
                 size: AppSelectableChipSize.regular,
-                selected: behavior.id == widget.behaviorId,
-                onTap: () => _select(behavior.id),
+                selected: widget.behaviorId == null,
+                onTap: () => _select(null),
               ),
-          ],
+              for (final behavior in behaviors)
+                AppSelectableChip(
+                  label: behavior.title,
+                  size: AppSelectableChipSize.regular,
+                  selected: behavior.id == widget.behaviorId,
+                  onTap: () => _select(behavior.id),
+                ),
+            ],
+          ),
         ),
       ],
     );

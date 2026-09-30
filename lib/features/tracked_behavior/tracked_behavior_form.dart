@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_sheet.dart';
-import '../../core/widgets/app_sheet_header.dart';
+import '../../core/widgets/app_sheet_flow.dart';
 import '../../core/widgets/app_text_field.dart';
 import '../../core/widgets/app_value_chip.dart';
 import '../../shared/models/behavior_target_type.dart';
@@ -34,23 +34,31 @@ Future<void> showTrackedBehaviorForm(
 }) {
   return AppSheet.show<void>(
     context: context,
-    builder: (context) => _TrackedBehaviorForm(behavior: behavior),
+    builder: (context) => AppSheetFlow(
+      theme: Theme.of(context).extension<AmbleTheme>()!,
+      root: TrackedBehaviorPage(behavior: behavior),
+    ),
   );
 }
 
-class _TrackedBehaviorForm extends ConsumerStatefulWidget {
-  const _TrackedBehaviorForm({this.behavior});
+/// The habit form as a page: the root of its own sheet
+/// ([showTrackedBehaviorForm]), or pushed inside a task's Tracked picker,
+/// which passes [onSaved] to select the new habit. "Measured in" and a
+/// custom unit open as further pages of the same sheet.
+class TrackedBehaviorPage extends ConsumerStatefulWidget {
+  const TrackedBehaviorPage({super.key, this.behavior, this.onSaved});
 
-  /// The row being edited, or null for a create. Save writes back to this
-  /// same id when set, rather than creating a second behavior.
   final TrackedBehavior? behavior;
 
+  /// Where the saved habit goes; null closes the sheet.
+  final ValueChanged<TrackedBehavior>? onSaved;
+
   @override
-  ConsumerState<_TrackedBehaviorForm> createState() =>
-      _TrackedBehaviorFormState();
+  ConsumerState<TrackedBehaviorPage> createState() =>
+      _TrackedBehaviorPageState();
 }
 
-class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
+class _TrackedBehaviorPageState extends ConsumerState<TrackedBehaviorPage> {
   static const _defaultTitle = 'New habit';
 
   late final TextEditingController _titleController;
@@ -60,7 +68,7 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
   bool _isSaving = false;
 
   /// Set only when [_targetType] is [BehaviorTargetType.custom] — the
-  /// user-defined label/unit pair from [showCustomUnitSheet]. Null
+  /// user-defined label/unit pair from [CustomUnitPage]. Null
   /// whenever a non-custom type is selected, mirroring the model's own
   /// `customUnitLabel`/`customUnitName` nullability.
   CustomUnit? _customUnit;
@@ -111,14 +119,23 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
     return true;
   }
 
-  /// Opens [showCustomUnitSheet] and applies its result after the unit picker
-  /// has selected Custom. Selecting Custom without completing the sheet leaves
-  /// [_targetType] set but [_customUnit] null, which [_canSave] blocks on.
-  Future<void> _pickCustomUnit() async {
-    final result = await showCustomUnitSheet(context, initial: _customUnit);
-    if (result != null && mounted) {
-      setState(() => _customUnit = result);
-    }
+  /// A unit chosen one or two pages deep returns straight to this form.
+  void _applyUnit(AppSheetFlowState flow, int formDepth, VoidCallback apply) {
+    setState(apply);
+    flow.popTo(formDepth);
+  }
+
+  /// The custom unit as the next page. Leaving it unsaved keeps
+  /// [_customUnit] null, which [_canSave] blocks on for a Custom habit.
+  void _pickCustomUnit() {
+    final flow = AppSheetFlow.of(context);
+    final depth = flow.depth;
+    flow.push(
+      CustomUnitPage(
+        initial: _customUnit,
+        onSaved: (unit) => _applyUnit(flow, depth, () => _customUnit = unit),
+      ),
+    );
   }
 
   void _clearDefaultTitle(bool hasFocus) {
@@ -127,20 +144,22 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
     }
   }
 
-  Future<void> _pickMeasuredIn() async {
+  void _pickMeasuredIn() {
     if (_isCustom) {
-      await _pickCustomUnit();
+      _pickCustomUnit();
       return;
     }
-    final choice = await showTrackedBehaviorUnitSheet(
-      context,
-      initial: _targetType,
+    final flow = AppSheetFlow.of(context);
+    final depth = flow.depth;
+    flow.push(
+      TrackedBehaviorUnitPage(
+        initial: _targetType,
+        onChosen: (choice) => _applyUnit(flow, depth, () {
+          _targetType = choice.type;
+          _customUnit = choice.customUnit;
+        }),
+      ),
     );
-    if (choice == null || !mounted) return;
-    setState(() {
-      _targetType = choice.type;
-      _customUnit = choice.customUnit;
-    });
   }
 
   Future<void> _save() async {
@@ -163,8 +182,9 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
       final customUnitName = _isCustom ? _customUnit?.name : null;
       final existing = widget.behavior;
 
+      final TrackedBehavior saved;
       if (existing == null) {
-        await notifier.createBehavior(
+        saved = await notifier.createBehavior(
           title: title,
           targetType: _targetType,
           targetAmount: targetAmount,
@@ -182,8 +202,15 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
         existing.customUnitLabel = customUnitLabel;
         existing.customUnitName = customUnitName;
         await notifier.updateBehavior(existing);
+        saved = existing;
       }
-      if (mounted) Navigator.of(context).pop();
+      if (!mounted) return;
+      final onSaved = widget.onSaved;
+      if (onSaved != null) {
+        onSaved(saved);
+      } else {
+        Navigator.of(context).pop();
+      }
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -197,10 +224,9 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        AppSheetHeader(
+        AppSheetFlowHeader(
           theme: theme,
           title: _isEditing ? 'Edit habit' : null,
-          onClose: () => Navigator.of(context).pop(),
           trailing: AppButton(
             label: _isEditing ? 'Save' : 'Add',
             shape: AppButtonShape.pill,

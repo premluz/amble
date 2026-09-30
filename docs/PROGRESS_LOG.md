@@ -8916,3 +8916,39 @@ new.
     `task_detail_sheet.dart`" (provenance only; live API references were
     updated).
   - None of this has been checked on a device.
+
+## 2026-09-30 — AppTabSwitch pill no longer squared
+
+- AppTabSwitch's liquid highlight is now clipped by the track's pill shape
+  (ClipRRect around a Clip.none Stack) instead of a hard-edge Stack clip.
+  It's used by the Move all sheet.
+- New app_tab_switch_test case. Full suite unchanged (18). Analyze: 15
+  existing issues.
+
+## 2026-09-30 — Tracked "+" and habit unit pickers as pages
+
+- Changed: task_behavior_modal, tracked_behavior_form, and
+  tracked_behavior_unit_sheet / custom_unit_sheet (pages, required
+  callbacks, dead openers removed). Added `AppSheetFlowState.depth` /
+  `popTo`. `createBehavior` now returns the created behavior.
+- New tracked_behavior_page_flow_test (3). Tracked and quick-add suites
+  pass (80). Full suite unchanged (18). Analyze: 15 existing issues.
+
+## 2026-09-30 — Quick-create full height bounded to the Timeline area
+
+- QuickCreateOverlay's full height now comes from its LayoutBuilder
+  constraints (minus the keyboard and `spacingXl`), not the screen height.
+- quick_task_add_test: `pumpTimeline(headerHeight:)` and a new test that
+  the sheet and its × stay inside the Timeline area. It was verified to
+  fail on the old code. Full suite unchanged (18). Analyze: 15 existing
+  issues.
+
+## 2026-09-30 — Sheet title size, name gap, bottom buffer
+
+- Added `SheetTokens.titleStyle` / `headerToFieldGap` /
+  `contentBottomInset`, used in app_text_field (bare), app_sheet_header,
+  app_step_scaffold, app_sheet, quick_create_overlay and task_sheet.
+- Tests: bottom_clearance_system_test updated, one size test in
+  app_sheet_header_test, and a quick-create geometry test (× 24/24,
+  name box 20 below, 24 bottom). Full suite unchanged (18). Analyze: 15
+  existing issues.

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
-import '../../core/widgets/app_sheet.dart';
 import '../../core/widgets/app_sheet_flow.dart';
 import '../../core/widgets/app_text_field.dart';
 
@@ -18,36 +17,13 @@ class CustomUnit {
   final String name;
 }
 
-/// Opens the small "Custom unit" sheet — requested directly: "Custom >
-/// opens small sheet with entry field (Label, Unit (placeholder, times,
-/// km, hours, glasses)." Content-sized ([AppSheetSize.small]), not a full
-/// [StepScaffold] takeover — this is a two-field accessory to the tracked
-/// behavior form. The same page is also pushed from the Measured in picker,
-/// so both entry points use the shared flow header.
-///
-/// [initial] pre-fills both fields when re-opening an already-configured
-/// custom unit (e.g. editing an existing custom-type behavior). Returns
-/// null if dismissed without saving.
-Future<CustomUnit?> showCustomUnitSheet(
-  BuildContext context, {
-  CustomUnit? initial,
-}) {
-  return AppSheet.show<CustomUnit>(
-    context: context,
-    builder: (context) => AppSheetFlow(
-      theme: Theme.of(context).extension<AmbleTheme>()!,
-      root: CustomUnitPage(initial: initial),
-    ),
-  );
-}
-
-/// The reusable Custom unit page. It works as the root of its own sheet and
-/// as a pushed page in the Measured in picker flow.
+/// The Custom unit page, pushed inside the habit form's sheet (from the
+/// form itself, or from "Measured in"); [onSaved] takes the unit.
 class CustomUnitPage extends StatefulWidget {
-  const CustomUnitPage({super.key, this.initial, this.onSaved});
+  const CustomUnitPage({super.key, this.initial, required this.onSaved});
 
   final CustomUnit? initial;
-  final ValueChanged<CustomUnit>? onSaved;
+  final ValueChanged<CustomUnit> onSaved;
 
   @override
   State<CustomUnitPage> createState() => _CustomUnitPageState();
@@ -87,12 +63,7 @@ class _CustomUnitPageState extends State<CustomUnitPage> {
       label: _labelController.text.trim(),
       name: _unitController.text.trim(),
     );
-    final onSaved = widget.onSaved;
-    if (onSaved != null) {
-      onSaved(saved);
-    } else {
-      Navigator.of(context).pop(saved);
-    }
+    widget.onSaved(saved);
   }
 
   @override

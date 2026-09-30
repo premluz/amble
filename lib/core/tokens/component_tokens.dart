@@ -122,6 +122,20 @@ abstract final class SheetTokens {
         )
       : base;
 
+  /// A sheet's title (between × / ‹ and the action) and its name fields
+  /// share one size, one step below `textTitle`.
+  static TextStyle titleStyle(AmbleTheme theme) =>
+      theme.textTitle.copyWith(fontSize: TypePrimitives.size3);
+
+  /// Header row → the first field. The header row leaves the ×'s own
+  /// breathing room under it, so this small step puts the name's glyphs
+  /// about as far below × as × is from the sheet's top and side.
+  static double headerToFieldGap(AmbleTheme theme) => theme.spacingXs;
+
+  /// Below a sheet's content — above the home indicator, or the keyboard —
+  /// the same as its side inset, so content never ends on an edge.
+  static double contentBottomInset(AmbleTheme theme) => theme.spacingLg;
+
   /// How far a sheet is dragged down by its body before letting go closes
   /// it — longer than a handle's own, since a body drag starts anywhere.
   static const double dragCloseDistance = SpacingPrimitives.space12;

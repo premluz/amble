@@ -73,13 +73,14 @@ class AppSheet {
       // **2026-09-30 — the bottom space is INSIDE the scroll.** Requested
       // directly: content "should come from bottom phone edge but on top
       // would be that shadow" — no margin cutting it off. The device's
-      // bottom safe area plus `spacingBottomClearance` (padded sheets)
+      // bottom safe area plus `SheetTokens.contentBottomInset` (padded sheets)
       // end the scrolling content, and a fade exactly that tall lies over
       // it: fitted content looks as before; scrolling content runs to the
       // edge and fades there.
       final media = MediaQuery.of(sheetContext);
       final bottom =
-          media.padding.bottom + (padded ? theme.spacingBottomClearance : 0);
+          media.padding.bottom +
+          (padded ? SheetTokens.contentBottomInset(theme) : 0);
       final body = padded
           ? Padding(
               padding: EdgeInsets.symmetric(horizontal: theme.spacingLg),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_button.dart';
+import 'package:amble/core/widgets/app_liquid_slide.dart';
 import 'package:amble/core/widgets/app_option_switch_option.dart';
 import 'package:amble/core/widgets/app_tab_switch.dart';
 
@@ -199,5 +200,25 @@ void main() {
           .where((d) => d.border != null);
       expect(borders, isNotEmpty);
     });
+  });
+
+  testWidgets('the sliding highlight is bounded by the rounded track, not '
+      'squared by a hard-edge clip', (tester) async {
+    await pump(
+      tester,
+      AppTabSwitch<String>(options: options, value: 'all', onChanged: (_) {}),
+    );
+    final slide = find.byType(AppLiquidSlide);
+    final stack = tester.widget<Stack>(
+      find.ancestor(of: slide, matching: find.byType(Stack)).first,
+    );
+    expect(stack.clipBehavior, Clip.none);
+    final clip = tester.widget<ClipRRect>(
+      find.ancestor(of: slide, matching: find.byType(ClipRRect)).first,
+    );
+    expect(
+      clip.borderRadius,
+      BorderRadius.circular(AmbleTheme.light.radiusPill),
+    );
   });
 }
