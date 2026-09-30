@@ -94,18 +94,17 @@ void main() {
     expect(clip().outerRect, const Rect.fromLTWH(0, 0, 40, 40));
     expect(clip().tlRadiusX, 20);
 
-    // Bounded, not pumpAndSettle: the draft's wiggle never settles.
     for (var i = 0; i < 20; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
     expect(clip().outerRect, const Rect.fromLTWH(0, 0, 40, 80));
   });
 
-  testWidgets('wraps its body in EditModeWiggle, enabled', (tester) async {
+  testWidgets('keeps EditModeWiggle disabled', (tester) async {
     await pump(tester);
 
     final wiggle = tester.widget<EditModeWiggle>(find.byType(EditModeWiggle));
-    expect(wiggle.enabled, isTrue);
+    expect(wiggle.enabled, isFalse);
   });
 
   testWidgets('carries BOTH a top and a bottom ResizeHandle', (tester) async {
@@ -199,9 +198,8 @@ void main() {
     expect(moveUpdates, isEmpty);
   });
 
-  // Requested directly: "the task name should also be aligned as other
-  // text (grey) but not wiggly, as if it was normally a task (in edit
-  // mode the selected tasks to edit, name not wiggle)."
+  // The draft title stays aligned with ordinary task names while the whole
+  // provisional draft remains visually still.
   group('title placement (2026-09-08)', () {
     testWidgets('the title sits at the shared text column, measured the '
         'same way a real task measures its own', (tester) async {
@@ -222,13 +220,11 @@ void main() {
       expect(titleLeft, closeTo(56 + 120, 0.5));
     });
 
-    testWidgets('the title is OUTSIDE the wiggling subtree — only the rail '
-        'wiggles, exactly as a real task does', (tester) async {
+    testWidgets('the title stays outside the disabled wiggle subtree', (
+      tester,
+    ) async {
       await pump(tester);
 
-      // The property, stated structurally: no EditModeWiggle anywhere
-      // between the title and the pill's own root. A title nested inside
-      // one would rotate along with the rail.
       expect(
         find.ancestor(
           of: find.text('New thing'),
@@ -236,13 +232,14 @@ void main() {
         ),
         findsNothing,
       );
-      // ...while the rail's own wiggle is still present and enabled.
-      expect(find.byType(EditModeWiggle), findsOneWidget);
+      final wiggle = tester.widget<EditModeWiggle>(
+        find.byType(EditModeWiggle),
+      );
+      expect(wiggle.enabled, isFalse);
     });
   });
 
-  // Requested directly: "when quick new add task is dropped and wiggly
-  // showing start and end of task ... until it's scheduled or closed" —
+  // The draft shows its start and end times until it is scheduled or closed —
   // the same accent "time on the right" treatment the long-press
   // placement line already uses (`PlaceTaskLineLayer`).
   group('start/end time labels (2026-09-10)', () {

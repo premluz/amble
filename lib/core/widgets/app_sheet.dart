@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../tokens/component_tokens.dart';
 import '../tokens/semantic_theme.dart';
 import 'app_sheet_route.dart';
+import 'app_sheet_scroll_body.dart';
+import 'app_top_scroll_fade.dart';
 import 'app_modal_scope.dart';
 
 /// How tall an [AppSheet] should be. Three sizes, confirmed directly rather
@@ -64,54 +67,81 @@ class AppSheet {
       // **2026-09-23 — no TOP inset here any more.** Reported directly:
       // "top padding should be in header" — a sheet whose content starts
       // with an [AppSheetHeader] already gets its own top spacing from
-      // that header's own fixed-height row, so this padding's old
-      // `EdgeInsets.all` doubled it. Horizontal padding stays `spacingLg`;
-      // bottom clearance uses the compact shared `spacingBottomClearance`
-      // after the route's separate device safe-area inset. `AppSheetRoute`
-      // only adds additional clearance for an actual on-screen keyboard, and
-      // `SafeArea(top: false)` guards the bottom edge, not top). Every
-      // caller whose content does NOT start with [AppSheetHeader] (a plain
-      // title `Text`, an `ActionRow`/[AppContextMenu] column, etc.) now
-      // supplies its own top gap directly — see each one's own top-level
-      // widget for a `SizedBox(height: theme.spacingLg)` immediately
-      // preceding its first real child.
-      final inner = padded
+      // that header's own fixed-height row. Content that does NOT start
+      // with one supplies its own top gap.
+      //
+      // **2026-09-30 — the bottom space is INSIDE the scroll.** Requested
+      // directly: content "should come from bottom phone edge but on top
+      // would be that shadow" — no margin cutting it off. The device's
+      // bottom safe area plus `spacingBottomClearance` (padded sheets)
+      // end the scrolling content, and a fade exactly that tall lies over
+      // it: fitted content looks as before; scrolling content runs to the
+      // edge and fades there.
+      final media = MediaQuery.of(sheetContext);
+      final bottom =
+          media.padding.bottom + (padded ? theme.spacingBottomClearance : 0);
+      final body = padded
           ? Padding(
-              padding: EdgeInsets.only(
-                left: theme.spacingLg,
-                right: theme.spacingLg,
-                bottom: theme.spacingBottomClearance,
-              ),
+              padding: EdgeInsets.symmetric(horizontal: theme.spacingLg),
               child: builder(sheetContext),
             )
           : builder(sheetContext);
+      final scroll = SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            body,
+            SizedBox(height: bottom),
+          ],
+        ),
+      );
 
-      return switch (size) {
-        // Sizes to `inner`'s own height, same as the original (only)
-        // behavior — but now wrapped by the CALLER (see `AppSheetRoute`
-        // below) in a `ConstrainedBox` + `SingleChildScrollView` safety
-        // net, since this route no longer goes through
-        // `showModalBottomSheet`'s own `isScrollControlled: true` cap
-        // handling (that flag existed specifically to prevent the
-        // "bottom overflowed by N pixels" bug this route now has to guard
-        // against itself).
-        AppSheetSize.small => inner,
+      final sized = switch (size) {
+        // Sizes to its content, capped so it never reaches under the
+        // status bar: the top safe area plus a visible gap stay clear, so
+        // the header's × / ‹ is always reachable.
+        AppSheetSize.small => ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: media.size.height - media.padding.top - theme.spacingXl,
+          ),
+          child: scroll,
+        ),
         // A fixed fraction of the viewport, scrollable if content
         // overflows it — a picker/list with real content, not a full
         // flow.
         AppSheetSize.half => SizedBox(
-          height: MediaQuery.sizeOf(sheetContext).height * 0.5,
-          child: SingleChildScrollView(child: inner),
+          height: media.size.height * 0.5,
+          child: scroll,
         ),
         // Matches StepScaffold's own near-full-screen inset exactly, so a
         // sheet-based flow and a route-pushed flow (task creation, Zone
         // add/edit) read as the same "this is basically a whole screen"
         // scale rather than two different near-full heights.
         AppSheetSize.nearFull => SizedBox(
-          height: MediaQuery.sizeOf(sheetContext).height - theme.spacingXl,
-          child: SingleChildScrollView(child: inner),
+          height: media.size.height - theme.spacingXl,
+          child: scroll,
         ),
       };
+
+      return AppSheetBottomInset(
+        value: bottom,
+        child: Stack(
+          children: [
+            sized,
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: AppTopScrollFade(
+                color: SheetTokens.surface(theme),
+                height: bottom,
+                fromBottom: true,
+              ),
+            ),
+          ],
+        ),
+      );
     }
 
     return Navigator.of(context, rootNavigator: true).push<T>(
@@ -119,28 +149,7 @@ class AppSheet {
         isCupertino: isCupertino,
         autofocusesKeyboard: autofocusesKeyboard,
         theme: theme,
-        builder: rootModalBuilder(context, (sheetContext) {
-          final sheetContent = content(sheetContext);
-          // `AppSheetSize.small`-only safety net: `half`/`nearFull`
-          // already wrap `inner` in their own `SizedBox` +
-          // `SingleChildScrollView` above, but `small` sizes to its
-          // content unconstrained — a real overflow risk now that this
-          // route no longer goes through `showModalBottomSheet`'s own
-          // `isScrollControlled: true` cap handling. Capped at the
-          // viewport's own height (matching every other size's own
-          // ceiling) and made scrollable, so a short sheet still sizes to
-          // its content exactly as before (this constraint is a MAX, not
-          // a fixed height) while a genuinely tall one — or one pushed
-          // taller by a rising keyboard — scrolls instead of overflowing.
-          return size == AppSheetSize.small
-              ? ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: MediaQuery.sizeOf(sheetContext).height,
-                  ),
-                  child: SingleChildScrollView(child: sheetContent),
-                )
-              : sheetContent;
-        }),
+        builder: rootModalBuilder(context, content),
       ),
     );
   }

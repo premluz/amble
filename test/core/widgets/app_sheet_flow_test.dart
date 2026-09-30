@@ -116,4 +116,84 @@ void main() {
     expect(find.text('Picker body'), findsNothing);
     expect(find.text('Count 0'), findsNothing);
   });
+
+  testWidgets('a very tall page stays capped below the status bar: the back '
+      'button is reachable and the body scrolls under the header', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(top: 47, bottom: 34);
+    addTearDown(tester.view.reset);
+    await open(tester);
+    AppSheetFlow.of(tester.element(find.text('Open picker'))).push(
+      Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AppSheetFlowHeader(theme: _theme, title: 'Tall'),
+          AppSheetScrollBody(
+            child: Column(
+              children: [
+                for (var i = 0; i < 60; i++)
+                  SizedBox(height: 40, child: Text('Item $i')),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final back = tester.getRect(find.byIcon(Icons.arrow_back_ios_new_rounded));
+    expect(back.top, greaterThan(47));
+    expect(
+      find.byIcon(Icons.arrow_back_ios_new_rounded).hitTestable(),
+      findsOneWidget,
+    );
+    final sheetTop = tester.getTopLeft(find.byType(AppSheetFlow)).dy;
+    expect(844 - sheetTop, lessThan(844 * .6 + 120));
+
+    // The body scrolls on to the phone's bottom edge (under the fade),
+    // not to a margin above it.
+    final viewport = find.ancestor(
+      of: find.text('Item 3'),
+      matching: find.byType(SingleChildScrollView),
+    );
+    expect(tester.getBottomLeft(viewport.first).dy, closeTo(844, .5));
+
+    await tester.drag(find.text('Item 3'), const Offset(0, -300));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(find.byIcon(Icons.arrow_back_ios_new_rounded)), back);
+  });
+
+  testWidgets('keepHeight: a short page keeps the height of the page it '
+      'covers; without it, the sheet fits the short page', (tester) async {
+    Widget shortPage() => Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AppSheetFlowHeader(theme: _theme, title: 'Short'),
+        const Text('Short body'),
+      ],
+    );
+
+    await open(tester);
+    final formHeight = tester.getSize(find.byType(AppSheetFlow)).height;
+    final flow = AppSheetFlow.of(tester.element(find.text('Open picker')));
+
+    flow.push(shortPage(), keepHeight: true);
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(find.byType(AppSheetFlow)).height,
+      closeTo(formHeight, .5),
+    );
+
+    flow.pop();
+    await tester.pumpAndSettle();
+    flow.push(shortPage());
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(find.byType(AppSheetFlow)).height,
+      lessThan(formHeight),
+    );
+  });
 }

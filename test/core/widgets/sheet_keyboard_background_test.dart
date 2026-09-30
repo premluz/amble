@@ -46,15 +46,19 @@ Future<void> _expectCorners(
   final bytes = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
   for (final x in [0, image.width - 1]) {
     final offset = ((image.height - inset.toInt() + 1) * image.width + x) * 4;
-    expect(
-      Color.fromARGB(
-        bytes.getUint8(offset + 3),
-        bytes.getUint8(offset),
-        bytes.getUint8(offset + 1),
-        bytes.getUint8(offset + 2),
-      ),
-      color,
-    );
+    // Within one 8-bit step per channel: a blended fill (the dark sheet's
+    // lift) is not an exact 8-bit colour, so the rendered pixel rounds.
+    int channel(double value) => (value * 255).round();
+    final expected = [color.a, color.r, color.g, color.b].map(channel);
+    final actual = [
+      bytes.getUint8(offset + 3),
+      bytes.getUint8(offset),
+      bytes.getUint8(offset + 1),
+      bytes.getUint8(offset + 2),
+    ];
+    for (final (index, value) in expected.indexed) {
+      expect(actual[index], closeTo(value, 1), reason: 'channel $index');
+    }
   }
   image.dispose();
 }

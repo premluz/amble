@@ -35,17 +35,19 @@ class _CategoryIconPageState extends State<CategoryIconPage> {
       children: [
         AppSheetFlowHeader(theme: theme, title: 'Icon'),
         SizedBox(height: theme.spacingMd),
-        Wrap(
-          spacing: theme.spacingSm,
-          runSpacing: theme.spacingSm,
-          children: [
-            for (final icon in curatedCategoryIcons)
-              _CategoryIconOption(
-                icon: icon,
-                selected: widget.selectedIconCodePoint == icon.codePoint,
-                onSelected: () => widget.onSelected(icon.codePoint),
-              ),
-          ],
+        AppSheetScrollBody(
+          child: Wrap(
+            spacing: theme.spacingSm,
+            runSpacing: theme.spacingSm,
+            children: [
+              for (final icon in curatedCategoryIcons)
+                _CategoryIconOption(
+                  icon: icon,
+                  selected: widget.selectedIconCodePoint == icon.codePoint,
+                  onSelected: () => widget.onSelected(icon.codePoint),
+                ),
+            ],
+          ),
         ),
       ],
     );

@@ -1420,6 +1420,78 @@ abstract class _$DevTrackedTabInCycle extends $Notifier<bool> {
   }
 }
 
+/// Whether the Tracked/Habits calendar cells show their weekday initials,
+/// day numbers, and six-month month captions. Defaults off while the compact
+/// cell treatment is being evaluated; the developer setting can restore all
+/// labels live without changing the underlying completion grid.
+
+@ProviderFor(DevTrackedCalendarLabelsVisible)
+final devTrackedCalendarLabelsVisibleProvider =
+    DevTrackedCalendarLabelsVisibleProvider._();
+
+/// Whether the Tracked/Habits calendar cells show their weekday initials,
+/// day numbers, and six-month month captions. Defaults off while the compact
+/// cell treatment is being evaluated; the developer setting can restore all
+/// labels live without changing the underlying completion grid.
+final class DevTrackedCalendarLabelsVisibleProvider
+    extends $NotifierProvider<DevTrackedCalendarLabelsVisible, bool> {
+  /// Whether the Tracked/Habits calendar cells show their weekday initials,
+  /// day numbers, and six-month month captions. Defaults off while the compact
+  /// cell treatment is being evaluated; the developer setting can restore all
+  /// labels live without changing the underlying completion grid.
+  DevTrackedCalendarLabelsVisibleProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'devTrackedCalendarLabelsVisibleProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$devTrackedCalendarLabelsVisibleHash();
+
+  @$internal
+  @override
+  DevTrackedCalendarLabelsVisible create() => DevTrackedCalendarLabelsVisible();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(bool value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<bool>(value),
+    );
+  }
+}
+
+String _$devTrackedCalendarLabelsVisibleHash() =>
+    r'5fb69158f527e918d3fd5e5a76cdf93dba0e2935';
+
+/// Whether the Tracked/Habits calendar cells show their weekday initials,
+/// day numbers, and six-month month captions. Defaults off while the compact
+/// cell treatment is being evaluated; the developer setting can restore all
+/// labels live without changing the underlying completion grid.
+
+abstract class _$DevTrackedCalendarLabelsVisible extends $Notifier<bool> {
+  bool build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<bool, bool>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<bool, bool>,
+              bool,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
+
 /// Whether Edit Mode's multi-task selection route is active — requested
 /// directly as a "configurable" alternative to the single-task Edit Mode
 /// that already ships (see `edit_mode_provider.dart`/CONSTITUTION.md's

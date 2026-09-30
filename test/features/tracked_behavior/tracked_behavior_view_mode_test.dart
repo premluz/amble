@@ -1,4 +1,5 @@
 import 'package:amble/core/tokens/semantic_theme.dart';
+import 'package:amble/core/dev_config.dart';
 import 'package:amble/features/tracked_behavior/behavior_completion.dart';
 import 'package:amble/features/tracked_behavior/tracked_behavior_list_screen.dart';
 import 'package:amble/features/tracked_behavior/tracked_behavior_row.dart';
@@ -69,6 +70,7 @@ void main() {
     List<TrackedBehavior> behaviors = const [],
     List<Task> tasks = const [],
     AmbleTheme? theme,
+    bool showCalendarLabels = false,
   }) async {
     final resolvedTheme = theme ?? AmbleTheme.light;
     await tester.runAsync(() async {
@@ -82,6 +84,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          devTrackedCalendarLabelsVisibleProvider.overrideWithValue(
+            showCalendarLabels,
+          ),
           trackedBehaviorRepositoryProvider.overrideWithValue(
             HiveTrackedBehaviorRepository(box),
           ),
@@ -123,9 +128,9 @@ void main() {
       // the weekday-initials assertions below are what actually confirm
       // Weekly is the ACTIVE mode.
       expect(find.byTooltip('Weekly view'), findsOneWidget);
-      // The weekly row's own weekday initials.
-      expect(find.text('M'), findsOneWidget);
-      expect(find.text('S'), findsNWidgets(2));
+      // Calendar labels are hidden by the default dev configuration.
+      expect(find.text('M'), findsNothing);
+      expect(find.text('S'), findsNothing);
       expect(
         find.descendant(
           of: find.byType(TrackedBehaviorRow),
@@ -157,7 +162,11 @@ void main() {
     'tapping each of the three dock buttons switches directly to that '
     'view — Weekly, Monthly, Six-monthly all reachable in any order',
     (tester) async {
-      await pumpList(tester, behaviors: [makeBehavior()]);
+      await pumpList(
+        tester,
+        behaviors: [makeBehavior()],
+        showCalendarLabels: true,
+      );
 
       expect(find.byTooltip('Weekly view'), findsOneWidget);
 
@@ -227,7 +236,11 @@ void main() {
     'the switcher setting persists across a rebuild (real preferences '
     'write, not just in-memory widget state)',
     (tester) async {
-      await pumpList(tester, behaviors: [makeBehavior()]);
+      await pumpList(
+        tester,
+        behaviors: [makeBehavior()],
+        showCalendarLabels: true,
+      );
 
       // **2026-09-20** — all three tooltips are always present now
       // (`AppTrackedViewDock`), so `find.byTooltip('Monthly view')`
@@ -244,7 +257,11 @@ void main() {
       // read back as Monthly, proving it was actually persisted via
       // PreferencesRepository rather than held only in local widget
       // state.
-      await pumpList(tester, behaviors: [makeBehavior()]);
+      await pumpList(
+        tester,
+        behaviors: [makeBehavior()],
+        showCalendarLabels: true,
+      );
       expect(find.text('1'), findsWidgets);
     },
   );
@@ -269,7 +286,7 @@ void main() {
       // bottom bar's own "+" AppButton (circle shape), which fills with the SAME
       // colorAccent for an unrelated reason (its own press-feedback
       // circle), producing a false positive.
-      await pumpList(tester, behaviors: [behavior]);
+      await pumpList(tester, behaviors: [behavior], showCalendarLabels: true);
       final theme = AmbleTheme.light;
       bool anyCellFilled() => tester
           .widgetList<Container>(
@@ -314,7 +331,7 @@ void main() {
           .where((decoration) => decoration.shape == BoxShape.circle)
           .toList();
 
-      await pumpList(tester, behaviors: [behavior]);
+      await pumpList(tester, behaviors: [behavior], showCalendarLabels: true);
       final theme = AmbleTheme.light;
       final todayIndex = today.weekday - 1;
       final uncompletedToday = dayCellDecorations()[todayIndex];
@@ -353,7 +370,12 @@ void main() {
     (tester) async {
       final behavior = makeBehavior();
       final today = DateTime.now();
-      await pumpList(tester, behaviors: [behavior], theme: AmbleTheme.dark);
+      await pumpList(
+        tester,
+        behaviors: [behavior],
+        theme: AmbleTheme.dark,
+        showCalendarLabels: true,
+      );
 
       final cells = tester
           .widgetList<Container>(
@@ -450,7 +472,11 @@ void main() {
   testWidgets('six-month month labels use the subtle tertiary text tone', (
     tester,
   ) async {
-    await pumpList(tester, behaviors: [makeBehavior()]);
+    await pumpList(
+      tester,
+      behaviors: [makeBehavior()],
+      showCalendarLabels: true,
+    );
     await tapSwitcher(tester, find.byTooltip('Six-month view'));
 
     const monthNames = {

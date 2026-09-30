@@ -131,6 +131,9 @@ class _AddCategoryPageState extends ConsumerState<AddCategoryPage> {
           flow.pop();
         },
       ),
+      // Keeps the label form's size instead of dropping to fit the
+      // swatches — requested directly.
+      keepHeight: true,
     );
   }
 

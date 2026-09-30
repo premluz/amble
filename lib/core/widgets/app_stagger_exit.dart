@@ -24,7 +24,9 @@ class AppStaggerExitScope extends InheritedWidget {
 }
 
 /// One item of a staggered exit: item [index] fades out in its own window
-/// of [HeaderRevealSpec], after the items before it.
+/// of [HeaderRevealSpec], after the items before it. On the way back it
+/// fades in while the header pane is still shrinking
+/// ([HeaderRevealSpec.itemReturnWindow]).
 class AppStaggerExit extends StatelessWidget {
   const AppStaggerExit({super.key, required this.index, required this.child});
 
@@ -36,10 +38,14 @@ class AppStaggerExit extends StatelessWidget {
     final progress = AppStaggerExitScope.maybeOf(context);
     if (progress == null) return child;
     final (start, end) = HeaderRevealSpec.itemWindow(index);
-    final curve = Interval(start, end.clamp(start, 1.0));
+    final (backStart, backEnd) = HeaderRevealSpec.itemReturnWindow(index);
     return FadeTransition(
       opacity: ReverseAnimation(
-        CurvedAnimation(parent: progress, curve: curve),
+        CurvedAnimation(
+          parent: progress,
+          curve: Interval(start, end.clamp(start, 1.0)),
+          reverseCurve: Interval(backStart.clamp(0.0, backEnd), backEnd),
+        ),
       ),
       child: child,
     );

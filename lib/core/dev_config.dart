@@ -310,6 +310,19 @@ class DevTrackedTabInCycle extends _$DevTrackedTabInCycle {
   void set(bool value) => state = value;
 }
 
+/// Whether the Tracked/Habits calendar cells show their weekday initials,
+/// day numbers, and six-month month captions. Defaults off while the compact
+/// cell treatment is being evaluated; the developer setting can restore all
+/// labels live without changing the underlying completion grid.
+@Riverpod(keepAlive: true)
+class DevTrackedCalendarLabelsVisible
+    extends _$DevTrackedCalendarLabelsVisible {
+  @override
+  bool build() => false;
+
+  void set(bool value) => state = value;
+}
+
 /// Whether Edit Mode's multi-task selection route is active — requested
 /// directly as a "configurable" alternative to the single-task Edit Mode
 /// that already ships (see `edit_mode_provider.dart`/CONSTITUTION.md's

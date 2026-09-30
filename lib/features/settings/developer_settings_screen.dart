@@ -994,6 +994,42 @@ class _DeveloperSettingsScreenState
                 Row(
                   children: [
                     Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Habit calendar labels',
+                            style: theme.textBody.copyWith(
+                              color: theme.colorTextPrimary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          SizedBox(height: theme.spacingXs),
+                          Text(
+                            'When off (default), hides weekday initials, day '
+                            'numbers, and month captions in Habits views.',
+                            style: theme.textBody.copyWith(
+                              color: theme.colorTextSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(width: theme.spacingMd),
+                    AppSwitch(
+                      value: ref.watch(devTrackedCalendarLabelsVisibleProvider),
+                      onChanged: (value) => ref
+                          .read(
+                            devTrackedCalendarLabelsVisibleProvider.notifier,
+                          )
+                          .set(value),
+                    ),
+                  ],
+                ),
+                SizedBox(height: theme.spacingMd),
+                Row(
+                  children: [
+                    Expanded(
                       child: Text(
                         'Show duration',
                         style: theme.textBody.copyWith(

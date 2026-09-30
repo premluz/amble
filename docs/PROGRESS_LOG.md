@@ -8752,3 +8752,134 @@ new.
   returns to the same sheet with the label picked. Save runs inside
   runAsync because it writes to Hive.
 - Full suite unchanged (17). Analyze: 19 existing issues.
+
+## 2026-09-30 — Sheet height cap
+
+- Added the `AppSheet` status-bar clearance, `AppSheetFlow` page cap
+  (`SheetTokens.flowMaxHeightShare`) and `AppSheetScrollBody`. Icon, Color
+  and Label bodies scroll.
+- New app_sheet_flow_test: a tall page stays below the status bar, is capped,
+  and scrolls under a fixed header.
+- Full suite: 17 existing failures plus quick_task_add "label chip opens
+  the shared label sheet". That one comes from a concurrent 00:02 edit
+  setting the Label "+" to ghost, while the test expects primary. Analyze:
+  19 existing issues.
+
+## 2026-09-30 — Sheet bottom fade, no bottom margin
+
+- Changed `AppSheet.show` (bottom space inside the scroll, fade overlay,
+  status-bar cap moved into the size switch) and `AppSheetRoute` (the
+  SafeArea no longer applies at the bottom).
+- New `app_sheet_scroll_body.dart` (`AppSheetScrollBody`,
+  `AppSheetBottomInset`, `_BleedDown`). The flow's page Stack no longer
+  clips.
+- Tests: bottom_clearance_system_test now checks the new geometry and fade.
+  app_sheet_flow_test checks that the page scroll reaches the bottom edge
+  with a home-indicator inset.
+- Full suite: 18. The one new failure, zone_grid_screen "task draft
+  suppresses claimed Edit chrome immediately" (the floating "Add" button
+  stays visible), comes from a concurrent 00:09 edit to
+  app_floating_create_button.dart, not this change. Analyze: 19 existing
+  issues.
+
+## 2026-09-30 — Chip unification + quiet sheet ×
+
+- Added `ChipTokens`. Moved AppValueChip, AppSelectableChip, CategoryChip,
+  AppBadgeChip (radius only) and HeaderCircleButton onto it. `_BehaviorChip`
+  removed.
+- Tests: new chip_tokens_test. app_selectable_chip_size_test now expects
+  the compact token. tracked_behavior_unit_of_measure_test checks reading
+  order, because compact options may now wrap.
+- Full suite unchanged (18, including the concurrent zone_grid failure).
+  Analyze: 19 existing issues.
+- Open: whether preset badges should drop the accent ring for the neutral
+  one, to match label chips.
+
+## 2026-09-30 — Quick-create bottom margin removed
+
+- New core `AppSizeReporter`. QuickCreateOverlay's `_sheetHeight` maps
+  piecewise with the measured content height, the SafeArea no longer
+  applies at the bottom, and a bottom space plus fade were added.
+- New test in quick_task_add_test: the sheet equals its content height, is
+  below 35%, and ends in the fade.
+- Full suite unchanged (18). Analyze: 19 existing issues.
+- Note: while this was being built, a concurrent `dev_config.dart` edit
+  briefly broke compilation until its codegen ran (00:27).
+
+## 2026-09-30 — Sheet = page background (both modes)
+
+- Changed SheetTokens.surface/inset and ChipTokens.restFill (translucent).
+  isDark is private again. Removed the edit-pencil override.
+- app_sheet_surface_test updated. Full suite unchanged (18). Analyze: 19
+  existing issues.
+
+## 2026-09-30 — Reusable Timeline empty state
+
+- Added `AppEmptyState` with `sm`/`md`/`lg` accessory sizing and generic
+  accessory support for icons or future images.
+- Timeline empty-day placeholders now use the shared component with the
+  meditating accessory and subtle matching message styling.
+- Added focused widget coverage for rendering, size rungs, color matching,
+  and image-like accessories.
+
+## 2026-09-30 — Header pane shadow + segmented pill clipping
+
+- New core `AppHeaderOverContent`, used by the main shell. The
+  `AppFloatingTabTrack` Stack uses `Clip.none`.
+- Tests: app_header_over_content_test (layout + paint order) and a track
+  clip test. Full suite unchanged (18). Analyze: 19 existing issues.
+- Open: `AppTabSwitch`'s liquid Stack has the same default clip, but its
+  track has no rounded clip to fall back on, so it was left alone.
+
+## 2026-09-30 — Dark sheet lift + header pane width
+
+- Added `SheetTokens.darkLift` and `ShellHeaderTokens.paneSideInset`.
+  AppShellHeader now owns the nav padding and the pane inset; main.dart's
+  header padding is bottom only.
+- Tests: app_sheet_surface_test covers the lift, app_shell_header_test
+  covers the pane inset and the nav padding, and
+  sheet_keyboard_background_test allows ±1 per 8-bit channel. Full suite
+  unchanged (18). Analyze: 19 existing issues.
+
+## 2026-09-30 — Zone-view empty state visibility
+
+- Empty zone containers no longer suppress the centered “Nothing scheduled
+  today” overlay; zone view now shows it whenever there are no tasks or
+  visible external events.
+- Focused analysis and the reusable empty-state widget tests pass.
+
+## 2026-09-30 — Edit exit overlap
+
+- Added `HeaderRevealSpec.returnLeadMs` / `itemReturnWindow`. AppStaggerExit
+  gained `count` and a reverse curve; AppTopNav passes the count.
+- app_shell_header_test: mid-return, the gear is already visible and ahead
+  of "Days" while the pane is still wider than its origin. Full suite
+  unchanged (18). Analyze: 19 existing issues.
+
+## 2026-09-30 — Flow keepHeight; Color keeps the form height
+
+- Added `AppSheetFlow.push(keepHeight:)`, which uses per-page height
+  measurement and a min-height constraint. `AppSheetFlowHeader` and the
+  page scope moved to `app_sheet_flow_header.dart` (the flow file was at
+  206 lines) and are re-exported. The Color page opts in.
+- New app_sheet_flow_test case covering keepHeight on and off. Full suite
+  unchanged (18). Analyze: 19 existing issues.
+
+## 2026-09-30 — Header pane from the notch
+
+- Added `HeaderRevealSpec.notchSize` / `notchTop`. `itemReturnWindow` is
+  now index-based. Added `AppShellHeader._notchOrigin`. `AppPaneMorph`
+  uses `Clip.none`. AppStaggerExit/AppTopNav no longer take `count`.
+- app_shell_header_test: with a 47pt top inset, the pane starts centred and
+  above the header, and the return runs "Days" first. Full suite unchanged
+  (18). Analyze: 19 existing issues.
+- Note: the notch size is iPhone Dynamic Island geometry. On Android
+  punch-hole or notch-less phones the pill still starts at the top centre,
+  just not matched to a cutout.
+
+## 2026-09-30 — Preset badge fill
+
+- AppBadgeChip now uses the rest fill, with no blur. Removed the unused
+  AppButton import name.
+- chip_tokens_test gained a badge-fill case. Full suite unchanged (18).
+  Analyze: 19 existing issues.

@@ -74,24 +74,26 @@ class _TaskCategoryModalState extends ConsumerState<TaskCategoryModal> {
           title: 'Label',
           trailing: AppButton(
             icon: Icons.add_rounded,
-            variant: AppButtonVariant.ghost,
+            variant: AppButtonVariant.primary,
             shape: AppButtonShape.circle,
             tooltip: 'Add new label',
             onPressed: _addNewCategory,
           ),
         ),
         SizedBox(height: theme.spacingMd),
-        Wrap(
-          spacing: theme.spacingSm,
-          runSpacing: theme.spacingSm,
-          children: [
-            for (final option in categories)
-              CategoryChip(
-                category: option,
-                selected: option.id == widget.categoryId,
-                onSelected: () => Navigator.of(context).pop(option.id),
-              ),
-          ],
+        AppSheetScrollBody(
+          child: Wrap(
+            spacing: theme.spacingSm,
+            runSpacing: theme.spacingSm,
+            children: [
+              for (final option in categories)
+                CategoryChip(
+                  category: option,
+                  selected: option.id == widget.categoryId,
+                  onSelected: () => Navigator.of(context).pop(option.id),
+                ),
+            ],
+          ),
         ),
       ],
     );

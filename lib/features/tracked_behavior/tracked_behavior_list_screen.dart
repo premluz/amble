@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/dev_config.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_floating_create_button.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
@@ -44,6 +45,9 @@ class TrackedBehaviorListScreen extends ConsumerWidget {
     // would be an invented rule rather than a reflection of the data.
     final behaviors = ref.watch(trackedBehaviorListProvider);
     final viewMode = ref.watch(trackedBehaviorViewModeSettingProvider);
+    final showCalendarLabels =
+        isDevConfigAvailable &&
+        ref.watch(devTrackedCalendarLabelsVisibleProvider);
 
     return Container(
       // Matches the Timeline's own background — requested directly:
@@ -80,6 +84,7 @@ class TrackedBehaviorListScreen extends ConsumerWidget {
                                 behavior: behavior,
                                 viewMode: viewMode,
                                 periodDate: periodDate,
+                                showCalendarLabels: showCalendarLabels,
                                 onTap: () => showTrackedBehaviorForm(
                                   context,
                                   behavior: behavior,

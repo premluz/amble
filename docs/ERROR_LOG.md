@@ -2543,3 +2543,17 @@ centring parent, give a left-aligned group full width explicitly.
 `QuickCreateOverlay` in the Stack, so it painted over the sheet. **Fix:**
 the overlay is now last. **Rule:** page chrome (fades) goes below any
 in-tree sheet.
+
+## 2026-09-30 — Floating header pane: shadow cut off, liquid pill squared
+
+**Symptom 1:** the Edit-mode Things | Zones pane's shadow stopped abruptly
+under the header. **Cause:** `main.dart` laid out the header and page in a
+`Column`, so the opaque page painted AFTER the header and covered the
+shadow. **Fix:** `AppHeaderOverContent` gives the same layout, but the
+header paints last.
+
+**Symptom 2:** the sliding pill went square at its ends when it overshot.
+**Cause:** the track's `Stack` used the default hard-edge clip on the
+highlight's overshoot. **Fix:** `Clip.none`; the pane's rounded clip is the
+only edge, as in the dock. **Rule:** a liquid highlight's Stack never clips.
+Let a rounded container bound it.

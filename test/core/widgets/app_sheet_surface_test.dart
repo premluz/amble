@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   for (final theme in [AmbleTheme.light, AmbleTheme.dark]) {
-    testWidgets('a sheet is the per-mode sheet surface on the toolbar\'s '
+    testWidgets('a sheet is the page background on the toolbar\'s '
         'floating material, open at the bottom ${theme.colorSurfaceOverlay}', (
       tester,
     ) async {
@@ -19,17 +19,23 @@ void main() {
       final surface = tester.widget<AppFloatingSurface>(
         find.byType(AppFloatingSurface),
       );
+      // The page's own background; in dark mode lifted by a faint light
+      // layer (Apple's elevated dark background), not a whole palette step.
       final dark = theme == AmbleTheme.dark;
-      // Light: the page; dark: one step up, where a shadow barely reads.
-      expect(
-        SheetTokens.surface(theme),
-        dark ? theme.colorSurfaceSecondary : theme.colorSurfaceBase,
-      );
-      // Controls inside stay one step off the sheet in both modes.
-      expect(
-        SheetTokens.inset(theme),
-        dark ? theme.colorSurfaceField : theme.colorSurfaceSecondary,
-      );
+      Color lifted(Color base) => dark
+          ? Color.alphaBlend(
+              theme.colorTextPrimary.withValues(alpha: SheetTokens.darkLift),
+              base,
+            )
+          : base;
+      expect(SheetTokens.surface(theme), lifted(theme.colorSurfaceTimeline));
+      expect(SheetTokens.inset(theme), lifted(theme.colorSurfaceSecondary));
+      if (dark) {
+        expect(
+          SheetTokens.surface(theme).computeLuminance(),
+          greaterThan(theme.colorSurfaceTimeline.computeLuminance()),
+        );
+      }
       expect(SheetTokens.inset(theme), isNot(SheetTokens.surface(theme)));
       expect(surface.surfaceColor, SheetTokens.surface(theme));
       expect(surface.material, FloatingMaterial.solid);

@@ -14,8 +14,8 @@ const _uuid = Uuid();
 /// `quick_add_time_labels.dart` where it originally landed.
 const quickAddDefaultMinutes = 15;
 
-/// An in-progress, not-yet-persisted task created by tapping empty Timeline
-/// space — requested directly: a tap drops a "wiggly gray default task"
+/// An in-progress, not-yet-persisted task created by quick add in empty
+/// Timeline space — the interaction drops a gray default task
 /// and opens a small sheet, both of which must agree on one position/
 /// duration as the user drags the pill or edits the form's own Date/Time/
 /// Duration fields once expanded. [id] is a real client-generated UUID

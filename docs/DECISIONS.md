@@ -5048,3 +5048,137 @@ carries × · "Name and category" · Done (a pill, moved from the bottom). A
 "New label" chip after the labels pushes `AddCategoryPage` as a page.
 Saving selects the new label and returns to this page, because this sheet
 has its own Done. There are no stacked sheets left in the label flows.
+
+## 2026-09-30 — Sheet height: never under the status bar; flows capped at one size
+
+- `AppSheet` (small) caps at screen height − top safe area − `spacingXl`.
+  Before, a tall fitted sheet (the Icon grid) reached under the status bar
+  and hid its ‹.
+- `AppSheetFlow` caps every page at `SheetTokens.flowMaxHeightShare` (.6)
+  of the screen, or less when the keyboard and the safe area leave less.
+  The pages of one flow stay near one size instead of jumping from a short
+  form to full screen.
+- A longer page scrolls its body under a fixed header (`AppSheetScrollBody`,
+  used by Icon, Color and Label).
+
+## 2026-09-30 — Sheet content runs to the bottom edge under a fade
+
+Requested: no hard cut-off and no bottom margin. Content should come from
+the phone's bottom edge with the fade on top.
+- `AppSheet` moved the bottom safe area and the clearance from outside the
+  content (the route's `SafeArea` plus a `Padding`) to the end of its
+  scroll. A bottom `AppTopScrollFade` in `SheetTokens.surface`, exactly as
+  tall as that space, lies over it.
+- Fitted sheets look as before, and no content gets washed out. Scrolling
+  content runs to the edge and fades there.
+- In flows, `AppSheetScrollBody` runs through the same space: it lays its
+  scroll out that much taller and reports itself that much shorter
+  (`AppSheetBottomInset` carries the value down).
+
+## 2026-09-30 — Chips on one scale; sheet × as quiet as a chip
+
+- New `ChipTokens`: compact 32 / regular 40, pill, padding a third of the
+  height; rest `colorSurfaceTimeline` + `colorTextSecondary` at 500;
+  selected glass tint + `colorTextPrimary` at 700; ring for self-coloured
+  chips.
+- `AppValueChip` (same values, now named) and `AppSelectableChip` moved onto
+  it. Compact went from 40 to 32 high and 8 to ~10.7 padding; the text is
+  500 at rest, where it was always 700.
+- `CategoryChip`: `radiusMd` → pill, fixed regular height.
+- The task detail's private `_BehaviorChip` (accent fill, radiusMd) is now
+  `AppSelectableChip` regular.
+- `AppBadgeChip` keeps its user-confirmed accent ring, flagged as the one
+  exception. Label chips use a neutral ring, so the two differ.
+- `HeaderCircleButton`: rest fill + secondary glyph, no blur. This
+  supersedes the 2026-09-23 glass look, per "too strong ... subtle same
+  chips".
+
+## 2026-09-30 — Quick-create's small state hugs its content
+
+The new-task sheet's small state was a fixed 35% of the screen, which left
+an empty band under the chips on most phones, plus a safe-area margin
+outside its scroll.
+- The small state now takes the content's measured height
+  (`AppSizeReporter`), capped at that old 35% value. The Timeline's
+  draft-clearance maths still assumes 35%, so it only over-clears.
+- The fraction → height mapping is piecewise: minimised → small (measured)
+  → full. The drag states and thresholds are unchanged.
+- The bottom safe area + `spacingBottomClearance` now end the scroll, under
+  a bottom fade in the sheet colour, the same as `AppSheet`.
+
+## 2026-09-30 — Sheets are the page background in both modes; chip rest is translucent
+
+This supersedes "light = page bg, dark = one step up". The earlier version
+also used `colorSurfaceBase`, but the app's page (scaffold) colour is
+`colorSurfaceTimeline`, so light sheets didn't match the page either.
+- `SheetTokens.surface` = `colorSurfaceTimeline` in both modes.
+  `SheetTokens.inset` = `colorSurfaceSecondary` in both modes.
+- `ChipTokens.restFill` is now `colorTextPrimary` at 6% (was opaque
+  `colorSurfaceTimeline`, which would vanish on the sheet). It sits one step
+  off any surface. Selected stays the 16% glass tint.
+- `FloatingSurfaceTokens.isDark` is private again (its only outside user was
+  SheetTokens).
+- The task detail's edit pencil dropped its colour override, since the
+  default is now the same.
+
+## 2026-09-30 — Dark sheets: a slight lift; header padding on its elements
+
+- **Dark-mode sheets** get Apple's "elevated" treatment:
+  `SheetTokens.surface` / `inset` are the page / Settings-group colours
+  with `colorTextPrimary` at `SheetTokens.darkLift` (3%) layered over
+  them. It's a slight lift, not the next palette step. Light mode stays
+  the plain page colour. This covers sheets without a backdrop
+  (quick-create, new zone), which in dark mode otherwise merged with the
+  page. `FloatingSurfaceTokens.isDark` is public again (SheetTokens uses
+  it).
+- **Header side padding** moved from the header container (`main.dart`)
+  onto its elements. `AppShellHeader` pads the nav by
+  `spacingScreenPadding`. The route's floating pane (Edit's Things |
+  Zones) sits at `ShellHeaderTokens.paneSideInset` (`spacingSm`, 8), so
+  it's wider than the nav text line.
+
+## 2026-09-30 — Edit exit: the nav fades back in while the pane shrinks
+
+On exit the nav no longer waits for the Things | Zones pane to finish
+leaving. Its items fade in right to left, following the pane back to the
+leading edge: settings first, "Days" last.
+- They start `HeaderRevealSpec.returnLeadMs` (70ms) into the return, 35ms
+  apart, overlapping the pane's ~240ms shrink.
+- `AppStaggerExit` implements this with a `reverseCurve`
+  (`itemReturnWindow`), so the entrance is unchanged. It now takes `count`
+  so it can reverse the order.
+
+## 2026-09-30 — A label's Color page keeps the New label sheet's height
+
+Pages still fit their content by default. `AppSheetFlow.push(page,
+keepHeight: true)` makes a pushed page at least as tall as the page it
+covers; the flow measures every page with `AppSizeReporter`. The label
+form's Color picker uses it, so the sheet no longer drops to fit the
+swatches and rises again. Icon is taller than the form anyway and is
+unchanged.
+
+## 2026-09-30 — Edit header pane falls from the notch
+
+This supersedes "grows from the leading edge". The Things | Zones pane now
+starts as a pill the Dynamic Island's size (`HeaderRevealSpec.notchSize`
+126×37, `notchTop` 11), centred at the top of the screen. It falls into the
+header and widens evenly on both sides with the same `dockPane` springs.
+Exiting reverses it: the pane narrows on both sides and rises into the
+notch.
+- The island is drawn over the app, so it hides the join.
+- The origin is placed from the view's raw top padding, since the header's
+  SafeArea removes it from MediaQuery.
+- `AppPaneMorph`'s Stack no longer clips, because the origin lies above its
+  box.
+- The nav's return is now in reading order (left to right). The old
+  right-to-left order followed a pane retreating to the leading edge, which
+  no longer happens. `AppStaggerExit.count` was removed.
+
+## 2026-09-30 — Preset badges rest on the chip rest fill
+
+`AppBadgeChip`'s filled variant moves from the 16% glass tint
+(`AppButton.subtleTint` + blur) to `ChipTokens.restFill` (6%, no blur).
+Requested: presets were "too big step up from bg" next to the other chips.
+This supersedes the 2026-09-23 "badge matches the glass ×" rule, since the
+× itself already moved to the rest fill. The accent selection ring is
+unchanged.

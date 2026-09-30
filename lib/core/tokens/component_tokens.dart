@@ -33,6 +33,14 @@ abstract final class ZoneSurfaceTokens {
   );
 }
 
+/// The shell header row (main nav / a route's header pane).
+abstract final class ShellHeaderTokens {
+  /// The route header's floating pane (Edit's Things | Zones) sits this far
+  /// from the screen edges — tighter than the nav text's
+  /// `spacingScreenPadding`, which the nav applies to its own elements.
+  static double paneSideInset(AmbleTheme theme) => theme.spacingSm;
+}
+
 /// The main nav's settings gear.
 abstract final class TopNavTokens {
   /// One step up from `spacingMd` (16), so the gear holds its own beside
@@ -89,27 +97,81 @@ abstract final class TimeColumnTokens {
   static const double labelSlack = SpacingPrimitives.space2;
 }
 
-/// Every bottom sheet's fill. Light: the page background — the scrim and
-/// the floating edge separate the sheet, so it reads as a page and its
-/// content layers exactly like a page's (Settings-style groups and chips on
-/// [inset]). Dark: one step up (the Settings-group surface), because a
-/// shadow barely reads on dark and an edge alone gives little lift — the
-/// same reason iOS lightens its "elevated" dark backgrounds.
+/// Every bottom sheet's fill: the page's own background
+/// (`colorSurfaceTimeline`, the app's scaffold colour). The scrim and the
+/// floating edge separate the sheet, so it reads as a page and its content
+/// layers exactly like a page's: Settings-style groups and in-sheet controls
+/// on [inset], chips on their translucent rest tint. In dark mode the sheet
+/// is lifted by a faint light layer ([darkLift]) — Apple's elevated dark
+/// background — since a shadow barely reads on dark; [inset] lifts with it
+/// so the step between them holds.
 abstract final class SheetTokens {
-  static Color surface(AmbleTheme theme) => FloatingSurfaceTokens.isDark(theme)
-      ? theme.colorSurfaceSecondary
-      : theme.colorSurfaceBase;
+  static Color surface(AmbleTheme theme) =>
+      _lift(theme, theme.colorSurfaceTimeline);
+
+  /// The dark-mode elevation layer: `colorTextPrimary` at this alpha over
+  /// the sheet's colours. Slight on purpose — a lift, not the next palette
+  /// step.
+  static const darkLift = .03;
+
+  static Color _lift(AmbleTheme theme, Color base) =>
+      FloatingSurfaceTokens.isDark(theme)
+      ? Color.alphaBlend(
+          theme.colorTextPrimary.withValues(alpha: darkLift),
+          base,
+        )
+      : base;
 
   /// How far a sheet is dragged down by its body before letting go closes
   /// it — longer than a handle's own, since a body drag starts anywhere.
   static const double dragCloseDistance = SpacingPrimitives.space12;
 
+  /// The tallest an `AppSheetFlow` page gets, as a share of the screen:
+  /// every page of a flow stays near one size (no jump from a short form to
+  /// a full-screen grid); a longer page scrolls its body under its header.
+  static const double flowMaxHeightShare = .6;
+
   /// How far the page underneath shifts aside while the next page of an
   /// `AppSheetFlow` slides in over it (a share of the sheet's width).
   static const double pageBehindShift = .3;
 
-  /// A chip, toggle row or tile inside a sheet: one step off [surface].
-  static Color inset(AmbleTheme theme) => FloatingSurfaceTokens.isDark(theme)
-      ? theme.colorSurfaceField
-      : theme.colorSurfaceSecondary;
+  /// A toggle row, tile or group inside a sheet: one step off [surface],
+  /// as a Settings group is off the page.
+  static Color inset(AmbleTheme theme) =>
+      _lift(theme, theme.colorSurfaceSecondary);
+}
+
+/// Every chip — inline settings (`AppValueChip`), picker options
+/// (`AppSelectableChip`, `CategoryChip`), badges (`AppBadgeChip`) — draws
+/// from one scale. Two sizes, as chip systems conventionally have: compact
+/// for a row of settings under a field, regular for the options of a
+/// picker. Selected: the glass tint (`AppButton.subtleTint`) with primary
+/// text, or — on a chip that carries its own colour (a label, a preset) —
+/// a [ring]. The accent is kept for primary actions, not selection.
+abstract final class ChipTokens {
+  static double compactHeight(AmbleTheme theme) => theme.sizeButtonSm;
+  static double regularHeight(AmbleTheme theme) => theme.sizeButtonMd;
+
+  static double radius(AmbleTheme theme) => theme.radiusPill;
+
+  /// Side padding: a third of the chip's height, so both sizes keep the
+  /// same proportions.
+  static double horizontalPadding(double height) => height / 3;
+
+  /// A chip at rest — also the header's × / ‹ (`HeaderCircleButton`), so
+  /// sheet chrome is as quiet as the chips under it. Translucent, so it sits
+  /// one quiet step off ANY surface (page, sheet, Settings group) instead of
+  /// matching one of them and vanishing. Selected is the stronger
+  /// `AppButton.subtleTint` (.16) of the same colour.
+  static Color restFill(AmbleTheme theme) =>
+      theme.colorTextPrimary.withValues(alpha: restTintAlpha);
+  static const restTintAlpha = .06;
+  static Color restText(AmbleTheme theme) => theme.colorTextSecondary;
+  static Color selectedText(AmbleTheme theme) => theme.colorTextPrimary;
+
+  static const restWeight = FontWeight.w500;
+  static const selectedWeight = FontWeight.w700;
+
+  static Color ring(AmbleTheme theme) => theme.colorTextPrimary;
+  static double ringWidth(AmbleTheme theme) => theme.borderWidthHairline * 1.5;
 }

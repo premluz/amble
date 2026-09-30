@@ -38,6 +38,7 @@ class TrackedBehaviorRow extends ConsumerWidget {
     required this.behavior,
     required this.viewMode,
     required this.periodDate,
+    required this.showCalendarLabels,
     required this.onTap,
   });
 
@@ -45,6 +46,7 @@ class TrackedBehaviorRow extends ConsumerWidget {
   final TrackedBehavior behavior;
   final TrackedBehaviorViewMode viewMode;
   final DateTime periodDate;
+  final bool showCalendarLabels;
   final VoidCallback onTap;
 
   @override
@@ -72,7 +74,7 @@ class TrackedBehaviorRow extends ConsumerWidget {
               // comment for the line this replaces).
               Text(
                 behavior.title,
-                style: theme.textBody.copyWith(
+                style: theme.textTaskTitle.copyWith(
                   color: theme.colorTextPrimary,
                   fontWeight: FontWeight.w700,
                 ),
@@ -87,6 +89,7 @@ class TrackedBehaviorRow extends ConsumerWidget {
                   tasks: tasks,
                   today: today,
                   periodDate: periodDate,
+                  showCalendarLabels: showCalendarLabels,
                 ),
                 TrackedBehaviorViewMode.monthly => _MonthlyGrid(
                   theme: theme,
@@ -94,6 +97,7 @@ class TrackedBehaviorRow extends ConsumerWidget {
                   tasks: tasks,
                   today: today,
                   periodDate: periodDate,
+                  showCalendarLabels: showCalendarLabels,
                 ),
                 TrackedBehaviorViewMode.sixMonthly => _SixMonthlyHeatmap(
                   theme: theme,
@@ -101,6 +105,7 @@ class TrackedBehaviorRow extends ConsumerWidget {
                   tasks: tasks,
                   today: today,
                   periodDate: periodDate,
+                  showCalendarLabels: showCalendarLabels,
                 ),
               },
             ],
@@ -188,6 +193,7 @@ class _WeeklyRow extends StatelessWidget {
     required this.tasks,
     required this.today,
     required this.periodDate,
+    required this.showCalendarLabels,
   });
 
   final AmbleTheme theme;
@@ -195,6 +201,7 @@ class _WeeklyRow extends StatelessWidget {
   final List<Task> tasks;
   final DateTime today;
   final DateTime periodDate;
+  final bool showCalendarLabels;
 
   @override
   Widget build(BuildContext context) {
@@ -232,8 +239,8 @@ class _WeeklyRow extends StatelessWidget {
             ),
             isToday: isToday(monday.add(Duration(days: i)), todayDay),
             size: theme.spacingXl,
-            label: _weekdayInitials[i],
-            weekdayLabel: true,
+            label: showCalendarLabels ? _weekdayInitials[i] : null,
+            weekdayLabel: showCalendarLabels,
           ),
       ],
     );
@@ -251,6 +258,7 @@ class _MonthlyGrid extends StatelessWidget {
     required this.tasks,
     required this.today,
     required this.periodDate,
+    required this.showCalendarLabels,
   });
 
   final AmbleTheme theme;
@@ -258,6 +266,7 @@ class _MonthlyGrid extends StatelessWidget {
   final List<Task> tasks;
   final DateTime today;
   final DateTime periodDate;
+  final bool showCalendarLabels;
 
   @override
   Widget build(BuildContext context) {
@@ -296,7 +305,7 @@ class _MonthlyGrid extends StatelessWidget {
                   todayDay,
                 ),
                 size: theme.spacingXl,
-                label: '$d',
+                label: showCalendarLabels ? '$d' : null,
               ),
           ],
         );
@@ -320,6 +329,7 @@ class _SixMonthlyHeatmap extends StatelessWidget {
     required this.tasks,
     required this.today,
     required this.periodDate,
+    required this.showCalendarLabels,
   });
 
   final AmbleTheme theme;
@@ -327,6 +337,7 @@ class _SixMonthlyHeatmap extends StatelessWidget {
   final List<Task> tasks;
   final DateTime today;
   final DateTime periodDate;
+  final bool showCalendarLabels;
 
   static const _monthAbbreviations = [
     'Jan',
@@ -383,21 +394,23 @@ class _SixMonthlyHeatmap extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            for (final label in monthStarts) ...[
-              Expanded(
-                child: Text(
-                  label,
-                  style: theme.textCaption.copyWith(
-                    color: theme.colorTextTertiary,
+        if (showCalendarLabels) ...[
+          Row(
+            children: [
+              for (final label in monthStarts) ...[
+                Expanded(
+                  child: Text(
+                    label,
+                    style: theme.textCaption.copyWith(
+                      color: theme.colorTextTertiary,
+                    ),
                   ),
                 ),
-              ),
+              ],
             ],
-          ],
-        ),
-        SizedBox(height: theme.spacingXs),
+          ),
+          SizedBox(height: theme.spacingXs),
+        ],
         SizedBox(
           width: double.infinity,
           child: Wrap(

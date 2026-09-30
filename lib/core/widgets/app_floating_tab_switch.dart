@@ -65,6 +65,10 @@ class AppFloatingTabTrack<T> extends StatelessWidget {
       padding: EdgeInsets.all(theme.spacingXs),
       child: LayoutBuilder(
         builder: (context, constraints) => Stack(
+          // The liquid highlight stretches past the track as it slides; a
+          // hard-edge clip here squared its ends. The pane's own rounded
+          // clip is the only edge, as in the toolbar's dock.
+          clipBehavior: Clip.none,
           children: [
             _highlight(theme, constraints.maxWidth, constraints.maxHeight),
             Row(

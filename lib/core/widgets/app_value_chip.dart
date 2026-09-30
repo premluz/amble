@@ -2,6 +2,7 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 
+import '../tokens/component_tokens.dart';
 import '../tokens/semantic_theme.dart';
 import 'app_button.dart' show AppButton, AppButtonSize, appButtonHeightFor;
 import 'app_press_feedback.dart';
@@ -95,18 +96,14 @@ class AppValueChip extends StatelessWidget {
     // placeholder still has to be readable enough to tell you WHICH
     // picker the chip opens.
     final foreground = hasValue
-        ? theme.colorTextPrimary
-        : theme.colorTextSecondary;
+        ? ChipTokens.selectedText(theme)
+        : ChipTokens.restText(theme);
 
     final height = appButtonHeightFor(theme, _buttonSize);
     final radius = iconOnly
         ? BorderRadius.circular(height / 2)
-        : BorderRadius.circular(theme.radiusPill);
-    // Horizontal padding scales with the rung so a 28px chip doesn't carry
-    // a 40px chip's roomy inset — half the height reads as a balanced pill
-    // end-cap at every rung, and it keeps the value/placeholder swap from
-    // shifting the text's optical position.
-    final horizontalPadding = height / 3;
+        : BorderRadius.circular(ChipTokens.radius(theme));
+    final horizontalPadding = ChipTokens.horizontalPadding(height);
 
     final chipChild = switch ((iconOnly, icon)) {
       (true, final glyph?) => Icon(
@@ -118,7 +115,9 @@ class AppValueChip extends StatelessWidget {
         label,
         style: _textStyle(theme).copyWith(
           color: foreground,
-          fontWeight: hasValue ? FontWeight.w700 : FontWeight.w500,
+          fontWeight: hasValue
+              ? ChipTokens.selectedWeight
+              : ChipTokens.restWeight,
         ),
       ),
       (false, _) => Row(
@@ -138,7 +137,9 @@ class AppValueChip extends StatelessWidget {
                 // A set value is the content; a placeholder is a prompt.
                 // Weight, not just color, so the difference survives a
                 // glance at a dense row of these.
-                fontWeight: hasValue ? FontWeight.w700 : FontWeight.w500,
+                fontWeight: hasValue
+                    ? ChipTokens.selectedWeight
+                    : ChipTokens.restWeight,
               ),
             ),
           ),
@@ -158,7 +159,7 @@ class AppValueChip extends StatelessWidget {
         // below in BOTH variants, so this stays null there — an opaque
         // color painted here would sit on top of that blur and hide it
         // (the same trap `AppSelectableChip` documents).
-        color: hasValue || isOutlined ? null : theme.colorSurfaceTimeline,
+        color: hasValue || isOutlined ? null : ChipTokens.restFill(theme),
         borderRadius: radius,
         border: isOutlined
             ? Border.all(

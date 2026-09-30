@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:amble/core/widgets/app_size_reporter.dart';
+import 'package:amble/core/widgets/app_sheet_surface.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:amble/core/clock_provider.dart';
@@ -85,7 +87,7 @@ final _noon = () {
 
 /// End-to-end coverage, through the REAL `TimelineScreen`, for the "quick
 /// task add" long-press interaction — originally requested as a plain tap
-/// ("tap on an empty space in timeline view... puts a wiggly gray default
+/// ("tap on an empty space in timeline view... puts a gray default
 /// task and opens a small sheet with a task name input without the
 /// keyboard opened... a little handle in the middle that the user can
 /// extend to near full size add sheet"), then **2026-09-27** superseded by
@@ -240,7 +242,7 @@ void main() {
   }
 
   testWidgets(
-    'long-pressing empty Timeline space drops a wiggly placeholder pill '
+    'long-pressing empty Timeline space drops a still placeholder pill '
     'and, on release, opens the small quick-create overlay with no '
     'keyboard',
     (tester) async {
@@ -253,8 +255,12 @@ void main() {
       expect(
         find.byType(PendingTaskPill),
         findsOneWidget,
-        reason: 'the wiggly placeholder pill must appear immediately',
+        reason: 'the placeholder pill must appear immediately',
       );
+      final wiggle = tester.widget<EditModeWiggle>(
+        find.byType(EditModeWiggle),
+      );
+      expect(wiggle.enabled, isFalse);
       expect(find.byType(QuickCreateOverlay), findsOneWidget);
       // Not a pushed route — the small panel's own button, same
       // shape/position as the big sheet's. "Add" commits the task outright
@@ -1095,7 +1101,7 @@ void main() {
 
   // Reported directly AFTER an isolated-widget test wrongly confirmed
   // both properties: "still see the quick task name not in the same
-  // position as other names and is wiggling (but shouldn't)." Asserted
+  // position as other names and the draft is still (as it should be)." Asserted
   // here, in a real TimelineScreen, because the isolated test supplied
   // its own geometry and so could agree with a wrong formula.
   group('placeholder title, in a real Timeline (2026-09-08)', () {
@@ -1116,6 +1122,10 @@ void main() {
             'the placeholder name must not wiggle, same as a real '
             'task name in Edit Mode',
       );
+      final wiggle = tester.widget<EditModeWiggle>(
+        find.byType(EditModeWiggle),
+      );
+      expect(wiggle.enabled, isFalse);
     });
 
     testWidgets('the name starts at the same x as a real task\'s name', (
@@ -1403,6 +1413,43 @@ void main() {
       position.maxScrollExtent,
       0.0,
       reason: 'content must fit without scrolling',
+    );
+  });
+
+  testWidgets('the mini sheet hugs its content — no empty band under the '
+      'chips — and ends in the bottom fade', (tester) async {
+    await pumpTimeline(tester);
+    await longPressAndReleaseAt(tester, const Offset(220, 400));
+    // Bounded pumps (the Timeline animates perpetually): the measure lands
+    // a frame after layout, then the height eases in.
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+
+    final sheet = tester.getSize(
+      find.descendant(
+        of: find.byType(QuickCreateOverlay),
+        matching: find.byType(AppSheetSurface),
+      ),
+    );
+    final content = tester.getSize(
+      find.descendant(
+        of: find.byType(QuickCreateOverlay),
+        matching: find.byType(AppSizeReporter),
+      ),
+    );
+    final screen =
+        tester.view.physicalSize.height / tester.view.devicePixelRatio;
+    expect(sheet.height, closeTo(content.height, 1));
+    expect(sheet.height, lessThan(screen * quickCreateSheetMinFraction));
+    expect(
+      find.descendant(
+        of: find.byType(QuickCreateOverlay),
+        matching: find.byWidgetPredicate(
+          (w) => w is AppTopScrollFade && w.fromBottom,
+        ),
+      ),
+      findsOneWidget,
     );
   });
 

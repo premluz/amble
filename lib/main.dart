@@ -21,6 +21,7 @@ import 'core/widgets/app_bottom_dock.dart';
 import 'core/widgets/app_shell_chrome.dart';
 import 'core/amble_material_localizations.dart';
 import 'core/widgets/app_time_format.dart';
+import 'core/widgets/app_header_over_content.dart';
 import 'core/widgets/app_shell_header.dart';
 import 'core/widgets/app_top_nav.dart';
 import 'core/widgets/app_view_transition.dart';
@@ -881,169 +882,158 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
         resizeToAvoidBottomInset: false,
         body: SafeArea(
           bottom: false,
-          child: Column(
-            children: [
-              Padding(
-                padding: EdgeInsets.only(
-                  left: theme.spacingScreenPadding,
-                  right: theme.spacingScreenPadding,
-                  bottom: theme.spacingSm,
-                ),
-                child: AppShellHeader(
-                  controller: _chromeController,
-                  child: AppTopNav(
-                    destinations: _topNavLabels(trackedTabVisible),
-                    // **Real bug, fixed 2026-09-22**: this used to fall back
-                    // to `0` whenever `_selectedIndex` was Settings' own
-                    // index (out of range for `destinations`, which never
-                    // includes it) — which made "Days" light up as active
-                    // while Settings was actually open. `_TopNavLabel`'s own
-                    // `i == selectedIndex` comparison never matches `i`
-                    // against Settings' index anyway (`destinations` only
-                    // ever runs 0..settingsIndex-1), so passing the real
-                    // index through unclamped correctly leaves every label
-                    // unselected — `settingsSelected` below is what now
-                    // carries the "Settings is active" signal instead, onto
-                    // the gear icon.
-                    selectedIndex: _selectedIndex,
-                    settingsSelected: _selectedIndex == screens.length - 1,
-                    // Tapping the Day destination (index 0) again while it's
-                    // already selected toggles spatial/Zone view — the
-                    // nav-tap half of "1 nav item, but when tapped again it
-                    // switches view," mirrored by `AppCalendarHeader`'s own
-                    // switcher button reaching the same provider.
-                    onDestinationSelected: (index) {
-                      if (index == 0 && _selectedIndex == 0) {
-                        _clearTimelineSelections();
+          // Header painted after the page, so its floating pane's shadow falls
+          // over the page rather than under it.
+          child: AppHeaderOverContent(
+            // No side padding here: the header's elements inset themselves
+            // (the nav text, and the route pane with its own tighter inset).
+            header: Padding(
+              padding: EdgeInsets.only(bottom: theme.spacingSm),
+              child: AppShellHeader(
+                controller: _chromeController,
+                child: AppTopNav(
+                  destinations: _topNavLabels(trackedTabVisible),
+                  // **Real bug, fixed 2026-09-22**: this used to fall back
+                  // to `0` whenever `_selectedIndex` was Settings' own
+                  // index (out of range for `destinations`, which never
+                  // includes it) — which made "Days" light up as active
+                  // while Settings was actually open. `_TopNavLabel`'s own
+                  // `i == selectedIndex` comparison never matches `i`
+                  // against Settings' index anyway (`destinations` only
+                  // ever runs 0..settingsIndex-1), so passing the real
+                  // index through unclamped correctly leaves every label
+                  // unselected — `settingsSelected` below is what now
+                  // carries the "Settings is active" signal instead, onto
+                  // the gear icon.
+                  selectedIndex: _selectedIndex,
+                  settingsSelected: _selectedIndex == screens.length - 1,
+                  // Tapping the Day destination (index 0) again while it's
+                  // already selected toggles spatial/Zone view — the
+                  // nav-tap half of "1 nav item, but when tapped again it
+                  // switches view," mirrored by `AppCalendarHeader`'s own
+                  // switcher button reaching the same provider.
+                  onDestinationSelected: (index) {
+                    if (index == 0 && _selectedIndex == 0) {
+                      _clearTimelineSelections();
+                      ref
+                          .read(zoneViewEnabledSettingProvider.notifier)
+                          .set(!zoneViewEnabled);
+                      return;
+                    }
+                    if (index != _selectedIndex) {
+                      _clearTimelineSelections();
+                    }
+                    setState(() {
+                      _pageMotionForward = index > _selectedIndex;
+                      _selectedIndex = index;
+                    });
+                  },
+                  onSettingsTap: () {
+                    final settingsIndex = screens.length - 1;
+                    final wasAlreadyOnSettings =
+                        _selectedIndex == settingsIndex;
+                    if (!wasAlreadyOnSettings) {
+                      _clearTimelineSelections();
+                    }
+                    setState(() {
+                      _pageMotionForward = settingsIndex > _selectedIndex;
+                      _selectedIndex = settingsIndex;
+                    });
+                    // Only on an actual transition INTO Settings, not on a
+                    // repeated tap while already there — `onSettingsTap` fires
+                    // on every tap regardless of current tab, unlike
+                    // `onDestinationSelected`'s own already-selected check
+                    // above.
+                    if (!wasAlreadyOnSettings &&
+                        FeatureFlags.subscriptionEnabled &&
+                        RevenueCatConfig.isAvailable) {
+                      unawaited(
                         ref
-                            .read(zoneViewEnabledSettingProvider.notifier)
-                            .set(!zoneViewEnabled);
-                        return;
-                      }
-                      if (index != _selectedIndex) {
-                        _clearTimelineSelections();
-                      }
-                      setState(() {
-                        _pageMotionForward = index > _selectedIndex;
-                        _selectedIndex = index;
-                      });
-                    },
-                    onSettingsTap: () {
-                      final settingsIndex = screens.length - 1;
-                      final wasAlreadyOnSettings =
-                          _selectedIndex == settingsIndex;
-                      if (!wasAlreadyOnSettings) {
-                        _clearTimelineSelections();
-                      }
-                      setState(() {
-                        _pageMotionForward = settingsIndex > _selectedIndex;
-                        _selectedIndex = settingsIndex;
-                      });
-                      // Only on an actual transition INTO Settings, not on a
-                      // repeated tap while already there — `onSettingsTap` fires
-                      // on every tap regardless of current tab, unlike
-                      // `onDestinationSelected`'s own already-selected check
-                      // above.
-                      if (!wasAlreadyOnSettings &&
-                          FeatureFlags.subscriptionEnabled &&
-                          RevenueCatConfig.isAvailable) {
-                        unawaited(
-                          ref
-                              .read(purchasesRepositoryProvider)
-                              .presentPaywallIfNeeded(
-                                RevenueCatConfig.pantaProEntitlementId,
-                              ),
-                        );
-                      }
-                    },
-                  ),
+                            .read(purchasesRepositoryProvider)
+                            .presentPaywallIfNeeded(
+                              RevenueCatConfig.pantaProEntitlementId,
+                            ),
+                      );
+                    }
+                  },
                 ),
               ),
-              Expanded(
-                child: AppShellChromeScope(
-                  controller: _chromeController,
-                  child: Stack(
-                    children: [
-                      Navigator(
-                        key: _contentNavigatorKey,
-                        observers: [_contentContextMenuNavigatorObserver],
-                        onGenerateRoute: (_) => PageRouteBuilder<void>(
-                          pageBuilder:
-                              (context, animation, secondaryAnimation) =>
-                                  ValueListenableBuilder<_ShellScene?>(
-                                    valueListenable: _sceneNotifier,
-                                    builder: (context, scene, child) =>
-                                        scene == null
-                                        ? const SizedBox.shrink()
-                                        : AppViewTransition(
-                                            viewId: scene.viewId,
-                                            slide: true,
-                                            forward: scene.forward,
-                                            child: scene.child,
-                                          ),
+            ),
+            content: AppShellChromeScope(
+              controller: _chromeController,
+              child: Stack(
+                children: [
+                  Navigator(
+                    key: _contentNavigatorKey,
+                    observers: [_contentContextMenuNavigatorObserver],
+                    onGenerateRoute: (_) => PageRouteBuilder<void>(
+                      pageBuilder: (context, animation, secondaryAnimation) =>
+                          ValueListenableBuilder<_ShellScene?>(
+                            valueListenable: _sceneNotifier,
+                            builder: (context, scene, child) => scene == null
+                                ? const SizedBox.shrink()
+                                : AppViewTransition(
+                                    viewId: scene.viewId,
+                                    slide: true,
+                                    forward: scene.forward,
+                                    child: scene.child,
                                   ),
-                          transitionDuration: Duration.zero,
-                          reverseTransitionDuration: Duration.zero,
-                        ),
-                      ),
-                      SafeArea(
-                        top: false,
-                        child: Align(
-                          alignment: Alignment.bottomLeft,
-                          child: Padding(
-                            padding: EdgeInsets.only(
-                              left: theme.spacingMd,
-                              right: theme.spacingMd,
-                              bottom: theme.spacingBottomClearance,
-                            ),
-                            child: AppBottomDock(
-                              activeView: zoneViewEnabled
-                                  ? AppBottomDockView.list
-                                  : AppBottomDockView.timeline,
-                              onSelectView: (view) {
-                                _clearTimelineSelections();
-                                ref
-                                    .read(
-                                      zoneViewEnabledSettingProvider.notifier,
-                                    )
-                                    .set(view == AppBottomDockView.list);
-                              },
-                              onEditTap: () {
-                                _clearTimelineSelections();
-                                showEditScreen(
-                                  context,
-                                  navigator: _contentNavigatorKey.currentState,
-                                );
-                              },
-                              whatMattersEnabled: ref.watch(
-                                whatMattersEnabledSettingProvider,
-                              ),
-                              onWhatMattersTap: () {
-                                _clearTimelineSelections();
-                                ref
-                                    .read(
-                                      whatMattersEnabledSettingProvider
-                                          .notifier,
-                                    )
-                                    .set(
-                                      !ref.read(
-                                        whatMattersEnabledSettingProvider,
-                                      ),
-                                    );
-                              },
-                              visible:
-                                  activeIndex == 0 &&
-                                  ref.watch(pendingTaskDraftProvider) == null &&
-                                  !ref.watch(editModeEnabledProvider),
-                            ),
                           ),
+                      transitionDuration: Duration.zero,
+                      reverseTransitionDuration: Duration.zero,
+                    ),
+                  ),
+                  SafeArea(
+                    top: false,
+                    child: Align(
+                      alignment: Alignment.bottomLeft,
+                      child: Padding(
+                        padding: EdgeInsets.only(
+                          left: theme.spacingMd,
+                          right: theme.spacingMd,
+                          bottom: theme.spacingBottomClearance,
+                        ),
+                        child: AppBottomDock(
+                          activeView: zoneViewEnabled
+                              ? AppBottomDockView.list
+                              : AppBottomDockView.timeline,
+                          onSelectView: (view) {
+                            _clearTimelineSelections();
+                            ref
+                                .read(zoneViewEnabledSettingProvider.notifier)
+                                .set(view == AppBottomDockView.list);
+                          },
+                          onEditTap: () {
+                            _clearTimelineSelections();
+                            showEditScreen(
+                              context,
+                              navigator: _contentNavigatorKey.currentState,
+                            );
+                          },
+                          whatMattersEnabled: ref.watch(
+                            whatMattersEnabledSettingProvider,
+                          ),
+                          onWhatMattersTap: () {
+                            _clearTimelineSelections();
+                            ref
+                                .read(
+                                  whatMattersEnabledSettingProvider.notifier,
+                                )
+                                .set(
+                                  !ref.read(whatMattersEnabledSettingProvider),
+                                );
+                          },
+                          visible:
+                              activeIndex == 0 &&
+                              ref.watch(pendingTaskDraftProvider) == null &&
+                              !ref.watch(editModeEnabledProvider),
                         ),
                       ),
-                    ],
+                    ),
                   ),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),

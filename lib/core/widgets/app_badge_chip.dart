@@ -1,9 +1,8 @@
-import 'dart:ui' show ImageFilter;
-
 import 'package:flutter/material.dart';
 
+import '../tokens/component_tokens.dart';
 import '../tokens/semantic_theme.dart';
-import 'app_button.dart' show AppButton, AppButtonSize, appButtonHeightFor;
+import 'app_button.dart' show AppButtonSize, appButtonHeightFor;
 import 'app_press_feedback.dart';
 import 'app_value_chip.dart' show AppValueChipSize, AppValueChipVariant;
 
@@ -47,19 +46,14 @@ import 'app_value_chip.dart' show AppValueChipSize, AppValueChipVariant;
 /// ring and no gesture handling — the "just displayed" variant requested
 /// alongside the selectable one.
 ///
-/// **2026-09-23 — fill matches [AppButton.secondary]'s own translucent
-/// glass tint (`AppButton.subtleTint` under a `BackdropFilter`), not the
-/// old flat `colorSurfaceSecondary`.** Reported directly against a
-/// reference (the quick-create mini sheet's own preset chips — "Running" /
-/// "Laundry" / "Read for class"): the dark, opaque fill didn't match the
-/// lighter secondary-button surface used elsewhere. "Ensure that this same
-/// token is used for the secondary button and the badge background" —
-/// same fix, same token, as [HeaderCircleButton]/[AppMicButton] got
-/// alongside this. **Vertical padding also now equals the horizontal
-/// (`theme.spacingSm` on every side)**, per the same report: "the top
-/// padding should be the same as the left and right" — previously
-/// `spacingXs / 2` vertical vs. `spacingSm` horizontal, a real asymmetry,
-/// not merely visually tight.
+/// **2026-09-30 — fill is a chip's rest fill ([ChipTokens.restFill]).**
+/// Requested directly: preset chips were "too big step up from bg" next to
+/// the other chips. The 2026-09-23 glass tint (`AppButton.subtleTint`
+/// under a blur, matching the then-glass sheet ×) is now the SELECTED
+/// strength in the chip scale; the × itself moved to the rest fill, and
+/// the badge follows it. Padding stays `theme.spacingSm` on every side
+/// (2026-09-23: "the top padding should be the same as the left and
+/// right").
 ///
 /// **2026-09-26 — [variant] and [theme.radiusPill], not a fixed
 /// [AmbleTheme.radiusXl].** Unified against [AppValueChip] (the task
@@ -159,7 +153,7 @@ class AppBadgeChip extends StatelessWidget {
     // setting the same way AppValueChip/AppButton/AppSelectableChip
     // already do, so this chip's corners can never visibly drift from
     // its siblings again.
-    final radius = BorderRadius.circular(theme.radiusPill);
+    final radius = BorderRadius.circular(ChipTokens.radius(theme));
     final ringWidth = theme.borderWidthHairline;
     final isSelectable = selected != null;
     final isOutlined = variant == AppValueChipVariant.outlined;
@@ -248,28 +242,12 @@ class AppBadgeChip extends StatelessWidget {
         child: content,
       );
     } else {
-      final filled = DecoratedBox(
+      decorated = DecoratedBox(
         decoration: BoxDecoration(
-          color: AppButton.subtleTint(theme),
+          color: ChipTokens.restFill(theme),
           borderRadius: radius,
         ),
         child: content,
-      );
-
-      // ClipRRect + BackdropFilter — the same glass recipe AppButton's own
-      // secondary variant and HeaderCircleButton's default now share,
-      // rather than a flat translucent color painted with nothing
-      // blurred behind it (which reads as a dim, not glass — see
-      // GlassPillSurface's own doc comment on this exact distinction).
-      decorated = ClipRRect(
-        borderRadius: radius,
-        child: BackdropFilter(
-          filter: ImageFilter.blur(
-            sigmaX: theme.blurOverlaySigma,
-            sigmaY: theme.blurOverlaySigma,
-          ),
-          child: filled,
-        ),
       );
     }
 

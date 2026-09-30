@@ -42,7 +42,13 @@ class AppSheetRoute<T> extends PopupRoute<T> {
       theme: theme,
       child: Material(
         type: MaterialType.transparency,
-        child: SafeArea(top: false, child: Builder(builder: builder)),
+        // The bottom safe area is inside the sheet's own scroll (see
+        // `AppSheet.show`), so content can reach the phone's edge.
+        child: SafeArea(
+          top: false,
+          bottom: false,
+          child: Builder(builder: builder),
+        ),
       ),
     ),
   );

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../tokens/component_tokens.dart';
 import '../tokens/header_reveal_spec.dart';
 import '../tokens/semantic_theme.dart';
 import 'app_button.dart';
@@ -10,10 +11,9 @@ import 'app_stagger_exit.dart';
 /// One geometry contract for main navigation and contextual route tabs.
 ///
 /// A route's header (Edit mode's Things | Zones) arrives as the main nav's
-/// items stagger out and a glass pane grows from the header's leading edge
-/// into it — the Inbox mic's stretch into the voice toolbar
-/// ([HeaderRevealSpec]). The pane is drawn here, so a route passes only the
-/// pane's content. Leaving plays it backwards.
+/// items stagger out and a glass pane falls from the notch, widening on
+/// both sides into it ([HeaderRevealSpec]). The pane is drawn here, so a
+/// route passes only the pane's content. Leaving plays it backwards.
 class AppShellHeader extends StatefulWidget {
   const AppShellHeader({
     super.key,
@@ -85,10 +85,25 @@ class _AppShellHeaderState extends State<AppShellHeader>
     }
   }
 
+  /// The notch, in this header's coordinates. The header sits at the top of
+  /// the safe area, so the screen's own top padding (read from the view:
+  /// the SafeArea above has removed it from MediaQuery) is how far above.
+  Rect _notchOrigin(BuildContext context, double width) {
+    final safeTop = MediaQueryData.fromView(View.of(context)).padding.top;
+    const notch = HeaderRevealSpec.notchSize;
+    return Rect.fromLTWH(
+      (width - notch.width) / 2,
+      HeaderRevealSpec.notchTop - safeTop,
+      notch.width,
+      notch.height,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     final height = appButtonHeightFor(theme, AppButtonSize.md);
+    final inset = ShellHeaderTokens.paneSideInset(theme);
     // A tab change re-sends the header without a new state; read it live.
     final shown = widget.controller.header ?? _shown;
     return SizedBox(
@@ -98,9 +113,16 @@ class _AppShellHeaderState extends State<AppShellHeader>
           children: [
             AnimatedBuilder(
               animation: _reveal,
-              child: AppStaggerExitScope(
-                progress: _reveal,
-                child: widget.child,
+              // The header row has no side padding of its own: the nav
+              // insets its elements, the route pane uses its own inset.
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: theme.spacingScreenPadding,
+                ),
+                child: AppStaggerExitScope(
+                  progress: _reveal,
+                  child: widget.child,
+                ),
               ),
               builder: (context, nav) {
                 final away = _reveal.value > 0;
@@ -120,8 +142,13 @@ class _AppShellHeaderState extends State<AppShellHeader>
                   animation: _morph,
                   spec: HeaderRevealSpec.morph,
                   forwardSeconds: HeaderRevealSpec.morphSeconds,
-                  origin: Rect.fromLTWH(0, 0, height, height),
-                  target: Offset.zero & Size(constraints.maxWidth, height),
+                  origin: _notchOrigin(context, constraints.maxWidth),
+                  target: Rect.fromLTWH(
+                    inset,
+                    0,
+                    constraints.maxWidth - inset * 2,
+                    height,
+                  ),
                   from: const SizedBox.shrink(),
                   child: shown,
                 ),

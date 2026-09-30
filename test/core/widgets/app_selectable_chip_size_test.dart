@@ -1,3 +1,4 @@
+import 'package:amble/core/tokens/component_tokens.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_button.dart' show AppButtonVariant;
 import 'package:amble/core/widgets/app_selectable_chip.dart';
@@ -37,7 +38,7 @@ void main() {
     expect(text.style!.fontSize, theme.textCaption.fontSize);
     expect(
       tester.getSize(find.byType(AppSelectableChip)).height,
-      theme.spacingXl,
+      ChipTokens.compactHeight(theme),
     );
   });
 

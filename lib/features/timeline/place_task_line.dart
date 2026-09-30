@@ -24,7 +24,7 @@ const _snapMinutes = 5;
 /// release to a "Move all"/"New task" menu (`place_task_release_menu.dart`,
 /// left in the codebase unused per the same "archive, don't delete"
 /// instruction). It now starts a `PendingTaskDraft` directly the instant
-/// the long-press is recognized — so the wiggly placeholder PILL itself
+/// the long-press is recognized — so the provisional placeholder PILL itself
 /// appears immediately, before any drag — then reports the hold's
 /// vertical delta as a live duration change for the rest of the hold, and
 /// fires [onHoldReleased] on release so the caller can reveal the
@@ -382,7 +382,7 @@ class PlaceTaskLineOverlay extends StatelessWidget {
 /// The actual hairline+pill visual now lives in [TaskEdgeTimeLabel],
 /// promoted so it can be reused wherever else a task's own start/end
 /// needs this same treatment (the pending draft pill, Edit Mode's
-/// wiggling selected task) — this class only keeps this call site's own
+/// selected task) — this class only keeps this call site's own
 /// positioning (a `FractionalTranslation` centering the line on its
 /// dropped instant, unique to the placement-line use case).
 class _PlacementLine extends StatelessWidget {

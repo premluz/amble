@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_button.dart';
+import 'package:amble/core/widgets/app_dock_primitives.dart';
 import 'package:amble/core/widgets/app_floating_create_button.dart';
 
 /// Replaces `AppBottomExtensionBar`'s own "+" (2026-09-12, requested
@@ -61,5 +62,24 @@ void main() {
     );
 
     expect(find.byIcon(Icons.add_rounded), findsOneWidget);
+  });
+
+  testWidgets('uses the shared bottom-toolbar button treatment', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
+        home: Scaffold(
+          body: Stack(children: [AppFloatingCreateButton(onPressed: () {})]),
+        ),
+      ),
+    );
+
+    expect(find.byType(AppDockPane), findsOneWidget);
+    expect(find.byType(AppDockIconButton), findsOneWidget);
+    final button = tester.widget<AppButton>(find.byType(AppButton));
+    expect(button.variant, AppButtonVariant.ghost);
+    expect(button.iconColor, AmbleTheme.light.colorTextSecondary);
   });
 }

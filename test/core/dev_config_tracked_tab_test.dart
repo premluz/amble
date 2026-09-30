@@ -21,4 +21,22 @@ void main() {
     notifier.set(true);
     expect(container.read(devTrackedTabInCycleProvider), isTrue);
   });
+
+  test('DevTrackedCalendarLabelsVisible defaults to hidden', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    expect(container.read(devTrackedCalendarLabelsVisibleProvider), isFalse);
+  });
+
+  test('DevTrackedCalendarLabelsVisible can be enabled', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final notifier = container.read(
+      devTrackedCalendarLabelsVisibleProvider.notifier,
+    );
+    notifier.set(true);
+    expect(container.read(devTrackedCalendarLabelsVisibleProvider), isTrue);
+  });
 }

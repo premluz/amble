@@ -9,14 +9,12 @@ import 'edit_mode_wiggle.dart';
 import 'resize_handle.dart';
 import 'task_edge_time_label.dart';
 
-/// The "wiggly gray default task" dropped on Timeline by tapping empty
-/// space — requested directly. Not a real `Task`: no category, no status,
+/// The gray default task dropped on Timeline by starting quick add in empty
+/// space. Not a real `Task`: no category, no status,
 /// nothing persisted until the user actually saves the small/expanded
 /// sheet this pill appears alongside. Styled flat neutral gray (no
 /// category color exists yet) so it reads as clearly provisional, and
-/// wrapped in [EditModeWiggle] (unconditionally enabled — this pill only
-/// ever exists while it's actively being placed/adjusted, unlike Edit
-/// Mode's own toggleable wiggle) for the requested "wiggly" look.
+/// stays visually still while it is being placed or adjusted.
 ///
 /// Presentation-only, mirroring `ExternalEventCapsuleBlock`'s own
 /// precedent for "a capsule-shaped pill that isn't a real interactive
@@ -68,7 +66,7 @@ class PendingTaskPill extends StatelessWidget {
   final double height;
 
   /// The draft's own live start/end — requested directly: "when quick
-  /// new add task is dropped and wiggly showing start and end of task...
+  /// new add task is dropped and showing start and end of task...
   /// until it's scheduled or closed." Rendered as two accent-coloured
   /// [TaskEdgeTimeLabel]s, one hanging off each edge, matching the
   /// long-press placement line's own "time on the right, accent bg"
@@ -130,14 +128,8 @@ class PendingTaskPill extends StatelessWidget {
       left: left,
       right: 0,
       height: height,
-      // The title is a SIBLING of the wiggling rail, never inside it —
-      // requested directly: the name should sit in the shared text column
-      // "but not wiggly, as if it was normally a task (in edit mode the
-      // selected tasks to edit, name not wiggle)". This mirrors how a real
-      // task is built: `_buildSplit` positions its own text row as a
-      // sibling of the `EditModeWiggle`-wrapped pill, so only the pill
-      // moves. Wrapping both together would drag the name along with the
-      // rail's rotation, which no real task does.
+      // Keep the title as a sibling of the draft rail so it uses the shared
+      // task-name column without changing the rail's gesture geometry.
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -175,14 +167,9 @@ class PendingTaskPill extends StatelessWidget {
             ),
           ),
           EditModeWiggle(
-            enabled: true,
-            // The resize handle is a SIBLING of the move-drag GestureDetector
-            // below, never a descendant of it — matches TaskCapsuleBlock's
-            // own structure exactly, fixing a real, previously-caught bug
-            // there: nesting both vertical-drag recognizers in the same
-            // subtree puts them in one gesture arena, so a drag starting on
-            // the handle also fires the outer move detector's own handlers.
-            // Siblings never share an arena the same way.
+            enabled: false,
+            // Keep the existing subtree shape for the draft's move and
+            // resize gestures, but leave the edit-mode motion disabled.
             child: Stack(
               clipBehavior: Clip.none,
               children: [

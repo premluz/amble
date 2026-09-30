@@ -3017,12 +3017,6 @@ class _SchedulePreviewCard extends StatelessWidget {
               theme: theme,
               icon: Icons.edit_outlined,
               onTap: onEdit!,
-              // The other HeaderCircleButton uses always sit on a
-              // coloured banner (colorSurfacePrimary glyph on a tinted
-              // background); this one sits on the ordinary card
-              // background, so it needs the opposite contrast direction.
-              backgroundColor: theme.colorSurfaceTimeline,
-              iconColor: theme.colorTextSecondary,
             ),
         ],
       ),
@@ -3284,15 +3278,15 @@ class _BehaviorPickerPanel extends StatelessWidget {
               spacing: theme.spacingSm,
               runSpacing: theme.spacingSm,
               children: [
-                _BehaviorChip(
-                  theme: theme,
+                AppSelectableChip(
+                  size: AppSelectableChipSize.regular,
                   label: 'None',
                   selected: selectedId == null,
                   onTap: () => onChanged(null),
                 ),
                 for (final behavior in behaviors)
-                  _BehaviorChip(
-                    theme: theme,
+                  AppSelectableChip(
+                    size: AppSelectableChipSize.regular,
                     label: behavior.title,
                     selected: behavior.id == selectedId,
                     onTap: () => onChanged(behavior.id),
@@ -3300,47 +3294,6 @@ class _BehaviorPickerPanel extends StatelessWidget {
               ],
             ),
         ],
-      ),
-    );
-  }
-}
-
-class _BehaviorChip extends StatelessWidget {
-  const _BehaviorChip({
-    required this.theme,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final AmbleTheme theme;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: EdgeInsets.symmetric(
-          horizontal: theme.spacingMd,
-          vertical: theme.spacingSm,
-        ),
-        decoration: BoxDecoration(
-          color: selected ? theme.colorAccent : theme.colorSurfaceTimeline,
-          borderRadius: BorderRadius.circular(theme.radiusMd),
-        ),
-        child: Text(
-          label,
-          style: theme.textBody.copyWith(
-            color: selected
-                ? theme.colorSurfacePrimary
-                : theme.colorTextSecondary,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
       ),
     );
   }

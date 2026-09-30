@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../tokens/semantic_theme.dart';
-import 'app_button.dart';
+import 'app_dock_primitives.dart';
 import 'app_page_toolbar.dart';
 
 /// The "+" create button, floating independently above the bottom nav
@@ -55,24 +55,27 @@ class AppFloatingCreateButton extends StatelessWidget {
             opacity: opacity,
             duration: theme.motionFast,
             curve: theme.curveStandard,
-            // `lg` (48), not the default `md` (40) — this button sits on
-            // the same bottom row as [AppBottomDock]'s own panes, and each
-            // of those is 48 tall (a 40px ghost button inside `spacingXs`
-            // padding). At `md` the "+" read as visibly smaller than the
-            // circles beside it; reported directly, twice: "+ is smaller."
-            // Matching the PANE, not the button inside it, is what makes
-            // the row read as one set of equal circles.
+            // The same dock pane keeps this control aligned with the other
+            // controls in [AppBottomDock]'s bottom row. The
+            // shared pane and icon-button composition provide the same
+            // neutral surface and sizing.
             // Held in place while its page slides: it submerges as the
             // page leaves and springs back in as it arrives, like the Day
             // dock's buttons.
             child: AppPageToolbarItem(
               visible: visible,
               order: toolbarOrder,
-              child: AppButton(
-                icon: Icons.add_rounded,
-                shape: AppButtonShape.circle,
-                size: AppButtonSize.lg,
-                onPressed: onPressed ?? () {},
+              child: AppDockPane(
+                theme: theme,
+                children: [
+                  AppDockIconButton(
+                    theme: theme,
+                    icon: Icons.add_rounded,
+                    tooltip: 'Add',
+                    selected: false,
+                    onTap: onPressed,
+                  ),
+                ],
               ),
             ),
           ),

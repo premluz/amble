@@ -1,4 +1,5 @@
 import 'package:amble/core/widgets/what_matters_motion.dart';
+import 'package:amble/core/widgets/app_empty_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -215,6 +216,38 @@ void main() {
       expect(ancestorOpacity.opacity, 1.0);
     },
   );
+
+  testWidgets(
+    'whatMattersEnabled true: no important tasks shows the empty state',
+    (tester) async {
+      final task = makeTask('Not important', isImportant: false);
+      final container = await pumpTimeline(tester, tasks: [task]);
+
+      await tester.runAsync(
+        () => container
+            .read(whatMattersEnabledSettingProvider.notifier)
+            .set(true),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1000));
+
+      expect(find.byType(AppEmptyState), findsOneWidget);
+      expect(find.text('Nothing important today'), findsOneWidget);
+      final emptyStateRect = tester.getRect(find.byType(AppEmptyState));
+      final scaffoldRect = tester.getRect(find.byType(Scaffold));
+      expect(emptyStateRect.center.dy, closeTo(scaffoldRect.center.dy, 1));
+    },
+  );
+
+  testWidgets('an empty day uses the scheduled empty-state message', (
+    tester,
+  ) async {
+    await pumpTimeline(tester, tasks: const []);
+
+    expect(find.byType(AppEmptyState), findsOneWidget);
+    expect(find.text('Nothing scheduled today'), findsOneWidget);
+  });
+
   testWidgets('three lanes hold first, then close around the anchored task and return', (tester) async {
     final anchor = makeTask('Anchor', isImportant: true);
     final container = await pumpTimeline(tester, tasks: [

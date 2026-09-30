@@ -589,16 +589,36 @@ star it filters for. Widgetbook: **Feedback → Task pill → All states** shows
 all six rows. Verification:
 `flutter test test/features/timeline/task_state_style_test.dart`.
 
-## Chips — `AppSelectableChip` and `CategoryChip`
+## Chips — one scale (`ChipTokens`)
 
-`AppSelectableChip` has two sizes: `compact` (default; caption text, fixed
-height, for day and preset rows) and `regular` (body text, roomier padding,
-for option pickers such as a behavior's type or a developer setting). Both
-follow the "Pill shape" setting (`radiusPill`). `CategoryChip`
-(`lib/features/task_detail/category_chip.dart`) is the one category picker
-chip (label colour, glyph, name, hairline ring when selected), shared by the
-category modal, the name+category modal and the task detail sheet. Both use
-the shared press. **Never** hand-build a private chip. Extend one of these.
+Unified 2026-09-30. Every chip draws from `ChipTokens`
+(`lib/core/tokens/component_tokens.dart`).
+
+| Chip | Use | Size |
+| --- | --- | --- |
+| `AppValueChip` | A setting under a field (quick-create: preset, date, time, duration, ★, #, tracked, bell, repeat) | compact |
+| `AppSelectableChip` | An option (compact: days, presets; regular: picker options, e.g. tracked behaviors) | compact / regular |
+| `CategoryChip` | A label option, in its own colour | regular |
+| `AppBadgeChip` | A badge (preset with its category) | its own |
+
+**The scale:**
+- Heights: compact `sizeButtonSm` (32, caption), regular `sizeButtonMd` (40,
+  body). Shape: `radiusPill` (the "Pill shape" setting). Side padding: a
+  third of the height.
+- Rest: a translucent tint (`colorTextPrimary` at 6%), so it is one step off ANY surface (page, sheet, Settings group); text `colorTextSecondary`, weight 500.
+- Selected: the glass tint (`AppButton.subtleTint` under a blur), text
+  `colorTextPrimary`, weight 700. A chip that carries its own colour (a
+  label) shows selection as a ring (`colorTextPrimary`, 1.5 × hairline)
+  instead. The accent is for primary actions, not selection.
+- `AppBadgeChip` (presets) rests on the same rest fill as every chip.
+  **Exception, confirmed earlier:** it keeps its single *accent* selection
+  ring (see that section).
+- Sheet chrome matches chips at rest: the header's × / ‹
+  (`HeaderCircleButton`) uses the rest fill and a `colorTextSecondary` glyph.
+
+**Never** hand-build a private chip (the task detail's `_BehaviorChip` was
+the last one; it's now an `AppSelectableChip`). Extend one of these, and
+take any new value from `ChipTokens`.
 
 ## Depth: create and delete — `AppDepthPresence`, `AppDepthShape`, `AppDepthFade`
 
@@ -1100,7 +1120,10 @@ contract; the components enforce most of them.
    title lives in the header row, never as a big heading in the body.
 4. **Height fits the content** (`AppSheetSize.small`, capped at the
    viewport). No fixed half-height sheets with empty space. Moving between
-   pages animates the height.
+   pages animates the height. Exception by choice: a short picker opened
+   from a form can keep the form's height
+   (`AppSheetFlow.push(page, keepHeight: true)` — a label's Color), so the
+   sheet doesn't drop and rise around a quick pick.
 5. **Drag down closes — the whole sheet, from anywhere.** The handle, the
    header, the body; and on scrolled content, pulling down past its top.
    The sheet follows the finger; past the threshold (or a fling) it closes,
@@ -1118,9 +1141,14 @@ contract; the components enforce most of them.
    another" stay open (Quick Capture).
 9. **Sheets sit above page chrome.** A page's own scroll fades belong to
    the page and paint UNDER any sheet (the Day fade used to darken the
-   quick-create sheet's bottom). Sheets whose body scrolls (`StepScaffold`)
-   carry their own top/bottom fades in their own surface colour; fitted
-   sheets have none.
+   quick-create sheet's bottom).
+10. **Content runs to the phone's bottom edge, under a fade.** An `AppSheet`
+    keeps no margin below its content: the bottom safe area plus
+    `spacingBottomClearance` end the sheet's SCROLL, and a bottom fade in the
+    sheet colour, exactly that tall, lies over it. Fitted content looks
+    unchanged; scrolling content fades out at the edge instead of being cut.
+    A flow page's `AppSheetScrollBody` runs on through that space too.
+    `StepScaffold` keeps its own top/bottom fades.
 
 ### Components
 
@@ -1129,11 +1157,12 @@ contract; the components enforce most of them.
 | `AppSheet.show` | `core/widgets/app_sheet.dart` | The one entry point for a slide-up modal (never `showModalBottomSheet`). Sizes `small` (default) / `half` / `nearFull`. |
 | `AppSheetSurface` | `core/widgets/app_sheet_surface.dart` | The panel: `SheetTokens.surface` fill, the toolbar's floating edge and shadow (`AppFloatingSurface`, solid, open bottom), top corners `radiusModal`. |
 | `AppSheetDragDismiss` | `core/widgets/app_sheet_drag_dismiss.dart` | Rule 5: whole-sheet drag, scroll-at-top pull, `maybePop`, ease-back on refusal. Wraps every `AppSheet` panel and `StepScaffold`. |
-| `AppSheetFlow` / `AppSheetFlowHeader` | `core/widgets/app_sheet_flow.dart` | Rules 1, 3, 4, 7: pages inside one sheet (`push`, `pop`), pages below kept alive, one fixed handle, the header that picks × or ‹. |
+| `AppSheetScrollBody` / `AppSheetBottomInset` | `core/widgets/app_sheet_scroll_body.dart` | Rule 10: a page body that scrolls under a fixed header and on to the phone's edge; the inset `AppSheet` hands down. |
+| `AppSheetFlow` / `AppSheetFlowHeader` | `core/widgets/app_sheet_flow.dart`, `app_sheet_flow_header.dart` | Rules 1, 3, 4, 7: pages inside one sheet (`push`, `pop`), pages below kept alive, one fixed handle, the header that picks × or ‹. |
 | `AppSheetHeader` | `core/widgets/app_sheet_header.dart` | The header row (72 high): × / ‹ left, `title` centred, `trailing` right, handle bar behind (off with `showHandle: false`). |
 | `AppSheetHandle` / `AppSheetTopHandle` | `core/widgets/app_sheet_handle.dart` | The bar (`spacingXl * 1.2` × 4, `radiusSm`, `AppButton.subtleTint`) and its place: top-centre, `spacingSm` down. |
 | `StepScaffold` | `core/widgets/app_step_scaffold.dart` | The near-full form sheet (task detail, zone/habit/template forms): own scroll fades, footer CTA. |
-| `SheetTokens` | `core/tokens/component_tokens.dart` | `surface` (light: page bg; dark: `colorSurfaceSecondary`), `inset` (controls inside a sheet, one step off it), `dragCloseDistance` (96), `pageBehindShift` (.3). |
+| `SheetTokens` | `core/tokens/component_tokens.dart` | `surface` (the page background, `colorSurfaceTimeline`; in dark mode lifted by `darkLift`, a 3% light layer — Apple's elevated dark background), `inset` (`colorSurfaceSecondary`, lifted the same way: groups and controls inside a sheet, as a Settings group is off the page), `dragCloseDistance` (96), `pageBehindShift` (.3). |
 
 `AppDragToCloseHandle` remains the gesture engine under
 `AppSheetDragDismiss` (distance-or-velocity threshold, live follow,
@@ -1177,8 +1206,10 @@ popping values between pages.
 ### Container details (`AppSheet`)
 
 - Fill `SheetTokens.surface`; barrier `colorScrim`; body padding
-  `spacingLg` horizontally and `spacingBottomClearance` at the bottom
-  (`padded: true`); the route's `SafeArea` adds the device inset.
+  `spacingLg` horizontally (`padded: true`). Bottom: device safe area +
+  `spacingBottomClearance` (padded) inside the scroll, under a fade of the
+  same height (rule 10). Never taller than the screen minus the top safe
+  area and `spacingXl`.
 - Entrance/exit: `motionSheetSlide`, `curveDecelerate` in, `curveStandard`
   out; only the surface translates.
 - `autofocusesKeyboard: true` holds the surface until the IME's final
@@ -1593,6 +1624,40 @@ not just guard the eventual fire with a `mounted` check. A second,
 hand-rolled "brief message, optionally with an action" widget anywhere
 else in the app — extend this one's API if the shape doesn't quite fit
 yet.
+
+---
+
+## Empty-state accessory — `AppEmptyState`
+
+**File**: `lib/core/widgets/app_empty_state.dart`
+
+**What it is**: the reusable quiet placeholder for a view with no content —
+an accessory (currently the meditating `Icons.self_improvement_rounded`) above
+a short message. The accessory is a `Widget`, so a future illustration/image
+can use the same layout without creating another empty-state treatment.
+
+**API**:
+
+```dart
+AppEmptyState({
+  required String message,
+  required Widget accessory,
+  AppEmptyStateSize size = AppEmptyStateSize.md,
+})
+```
+
+`AppEmptyStateSize.sm`, `.md`, and `.lg` scale the accessory footprint,
+accessory-to-message gap, and outer padding together. The default `md` rung
+preserves the Timeline placeholder's existing accessory scale. The accessory
+and message both use `colorTextSecondary`; the message uses `textCaption` so
+the empty state stays subordinate to real content.
+
+**Current call sites**: `timeline_screen.dart`'s empty-day overlays in both
+spatial and non-spatial Timeline modes.
+
+**Never**: create another private `Center`/`Column` with a meditation icon and
+message for a new empty view — pass its accessory and message to
+`AppEmptyState` instead.
 
 ---
 

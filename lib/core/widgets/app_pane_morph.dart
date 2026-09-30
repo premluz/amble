@@ -115,6 +115,9 @@ class AppPaneMorph extends StatelessWidget {
     final toOpacity = ((pw - fade) / fade).clamp(0.0, 1.0);
     final scale = lerpDouble(spec.contentScaleFrom, 1, math.min(pw, 1))!;
     return Stack(
+      // The origin may lie outside this box (the header pane falls from the
+      // notch above the header): never clip the travelling pane.
+      clipBehavior: Clip.none,
       children: [
         Positioned.fromRect(
           rect: rect,

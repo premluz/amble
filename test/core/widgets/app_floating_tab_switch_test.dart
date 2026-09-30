@@ -81,4 +81,18 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     expect(taps, ['1']);
   });
+
+  testWidgets('the sliding highlight is not clipped square by the track — '
+      'only the pane\'s rounded edge bounds it', (tester) async {
+    await pump(tester);
+    final track = tester.widget<Stack>(
+      find
+          .ancestor(
+            of: find.byType(AppLiquidSlide),
+            matching: find.byType(Stack),
+          )
+          .first,
+    );
+    expect(track.clipBehavior, Clip.none);
+  });
 }

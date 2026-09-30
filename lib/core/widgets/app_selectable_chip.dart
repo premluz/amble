@@ -2,6 +2,7 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 
+import '../tokens/component_tokens.dart';
 import '../tokens/semantic_theme.dart';
 import 'app_button.dart' show AppButton, AppButtonVariant;
 import 'app_press_feedback.dart';
@@ -40,8 +41,8 @@ import 'app_press_feedback.dart';
 /// `colorTextPrimary`-derived, not `colorSurfaceBlurOverlay`. Primary
 /// (the old flat-accent look) stays available for any future caller that
 /// specifically wants it, but no current caller passes it.
-/// [AppSelectableChip]'s two sizes: `compact` (caption text, fixed height —
-/// day-of-week and preset rows) and `regular` (body text, roomier padding —
+/// [AppSelectableChip]'s two sizes, the [ChipTokens] pair: `compact`
+/// (caption text — day-of-week and preset rows) and `regular` (body text —
 /// option pickers such as a behavior's type or a developer setting).
 enum AppSelectableChipSize { compact, regular }
 
@@ -65,34 +66,36 @@ class AppSelectableChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     final isSecondary = variant == AppButtonVariant.secondary;
-    final radius = BorderRadius.circular(theme.radiusPill);
+    final radius = BorderRadius.circular(ChipTokens.radius(theme));
 
     // Secondary's foreground stays `colorTextPrimary` in BOTH states — a
     // translucent tint doesn't need (and wouldn't contrast well with) the
     // inverted light text primary's flat accent fill requires.
     final foreground = !selected
-        ? theme.colorTextSecondary
-        : (isSecondary ? theme.colorTextPrimary : theme.colorSurfacePrimary);
+        ? ChipTokens.restText(theme)
+        : (isSecondary
+              ? ChipTokens.selectedText(theme)
+              : theme.colorSurfacePrimary);
 
     final isCompact = size == AppSelectableChipSize.compact;
+    final height = isCompact
+        ? ChipTokens.compactHeight(theme)
+        : ChipTokens.regularHeight(theme);
     final content = Container(
-      height: isCompact ? theme.spacingXl : null,
-      alignment: isCompact ? Alignment.center : null,
-      padding: isCompact
-          ? EdgeInsets.symmetric(horizontal: theme.spacingSm)
-          : EdgeInsets.symmetric(
-              horizontal: theme.spacingMd,
-              vertical: theme.spacingSm,
-            ),
+      height: height,
+      alignment: Alignment.center,
+      padding: EdgeInsets.symmetric(
+        horizontal: ChipTokens.horizontalPadding(height),
+      ),
       decoration: BoxDecoration(
         // Primary's selected fill is the original flat `colorAccent`,
         // painted directly here (no blur needed). Secondary's selected
         // fill is applied by the `BackdropFilter` wrap below instead — this
-        // stays transparent in that case, or the opaque `colorSurfaceTimeline`
-        // painted here would sit on TOP of the blur tint and hide it.
+        // stays transparent in that case, or the rest fill painted here
+        // would sit on TOP of the blur tint and muddy it.
         color: selected
             ? (isSecondary ? null : theme.colorAccent)
-            : theme.colorSurfaceTimeline,
+            : ChipTokens.restFill(theme),
         borderRadius: radius,
       ),
       child: Text(
@@ -101,7 +104,9 @@ class AppSelectableChip extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
         style: (isCompact ? theme.textCaption : theme.textBody).copyWith(
           color: foreground,
-          fontWeight: FontWeight.w700,
+          fontWeight: selected
+              ? ChipTokens.selectedWeight
+              : ChipTokens.restWeight,
         ),
       ),
     );

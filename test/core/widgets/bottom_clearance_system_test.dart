@@ -1,3 +1,4 @@
+import 'package:amble/core/widgets/app_top_scroll_fade.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -41,19 +42,24 @@ void main() {
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
 
-    final sheetPadding = tester
-        .widgetList<Padding>(
-          find.ancestor(
-            of: find.byKey(bodyKey),
-            matching: find.byType(Padding),
-          ),
-        )
-        .any(
-          (padding) =>
-              padding.padding.resolve(TextDirection.ltr).bottom ==
-              light.spacingBottomClearance,
-        );
-    expect(sheetPadding, isTrue);
+    // The clearance ends the sheet's SCROLL (content can run to the phone's
+    // edge), under a bottom fade exactly that tall.
+    final screenBottom = tester.getBottomLeft(find.byType(MaterialApp)).dy;
+    expect(
+      screenBottom - tester.getBottomLeft(find.byKey(bodyKey)).dy,
+      light.spacingBottomClearance,
+    );
+    final fade = tester.widget<AppTopScrollFade>(
+      find.byWidgetPredicate((w) => w is AppTopScrollFade && w.fromBottom),
+    );
+    expect(fade.height, light.spacingBottomClearance);
+    expect(
+      find.ancestor(
+        of: find.byKey(bodyKey),
+        matching: find.byType(SingleChildScrollView),
+      ),
+      findsWidgets,
+    );
   });
 
   testWidgets('floating create button uses the shared safe-area clearance', (

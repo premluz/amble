@@ -10,21 +10,24 @@ abstract final class WhatMattersTokens {
   static const returnStart = 1 / 6;
   static const returnRevealEnd = 5 / 6;
   static const scaleLoss = .025;
-  static const washAlphaLight = .14;
+  // Light-mode wave sweep: 30% stronger than the dark/light baseline.
+  static const washAlphaLight = .182;
   static const washAlphaDark = .12;
   // Optional persistent surface tint ratios, kept in sync with
   // AmbleTheme.colorSurfaceWhatMatters. WhatMattersScene no longer paints
   // this flat tint over the page; its accent feedback is a transient ripple.
   static const tintAlphaLight = .20;
   static const tintAlphaDark = .09;
-  static const buttonAlphaLight = .12;
+  // Light-mode What Matters button: 30% stronger, dark mode unchanged.
+  static const buttonAlphaLight = .156;
   static const buttonAlphaDark = .16;
   static const rippleWidth = .35;
 
   /// The persistent "mode is on" glow: a soft radial bloom rising from the
   /// bottom centre (where the What Matters toolbar button sits), under all
   /// content. Low and quiet on purpose, unlike voice mode's large bloom.
-  static const glowAlphaLight = .22;
+  // Light-mode bottom glow: 30% stronger, dark mode unchanged.
+  static const glowAlphaLight = .286;
   static const glowAlphaDark = .26;
 
   /// Radius as a fraction of the page's shortest side (its width).

@@ -90,13 +90,22 @@ void main() {
       expect(find.text('Custom'), findsOneWidget);
       expect(find.text('Did it'), findsOneWidget);
 
-      final row = tester.getTopLeft(find.text('Time')).dx;
-      final distance = tester.getTopLeft(find.text('Distance')).dx;
-      final reps = tester.getTopLeft(find.text('Reps')).dx;
-      final count = tester.getTopLeft(find.text('Count')).dx;
-      expect(row, lessThan(distance));
-      expect(distance, lessThan(reps));
-      expect(reps, lessThan(count));
+      // Reading order — row by row, left to right — so the check holds
+      // however the chips wrap on a given width.
+      final order = [
+        for (final label in ['Time', 'Distance', 'Reps', 'Count'])
+          tester.getTopLeft(find.text(label)),
+      ];
+      for (var i = 1; i < order.length; i++) {
+        final before = order[i - 1];
+        final after = order[i];
+        expect(
+          after.dy > before.dy ||
+              (after.dy == before.dy && after.dx > before.dx),
+          isTrue,
+          reason: 'option $i reads after option ${i - 1}',
+        );
+      }
     },
   );
 

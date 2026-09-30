@@ -15,6 +15,7 @@ import '../../core/tokens/component_tokens.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/tokens/what_matters_tokens.dart';
 import '../../core/widgets/app_context_menu.dart';
+import '../../core/widgets/app_empty_state.dart';
 import '../../core/widgets/app_floating_create_button.dart';
 import '../../core/widgets/app_follow_through.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
@@ -345,6 +346,10 @@ class TimelineScreen extends ConsumerWidget {
     // dev scratch toggle) — see WhatMattersEnabledSetting's own doc
     // comment.
     final whatMattersEnabled = ref.watch(whatMattersEnabledSettingProvider);
+    // What Matters keeps non-important tasks mounted while they fade, so the
+    // raw task list stays non-empty even when nothing remains visible.
+    final whatMattersHasNoTasks =
+        whatMattersEnabled && !tasks.any((task) => task.isImportant);
     final selectedDate = ref.watch(selectedDateProvider);
     // Resolved once here (the ConsumerWidget root) and threaded down as a
     // plain field, same pattern as showHourLabels/disableClustering below
@@ -409,6 +414,14 @@ class TimelineScreen extends ConsumerWidget {
     final zoneViewExternalEvents = ref.watch(devHideImportedTasksProvider)
         ? const <ExternalCalendarEvent>[]
         : externalEvents;
+    final showTimelineEmptyState =
+        (tasks.isEmpty || whatMattersHasNoTasks) &&
+        (!zoneViewEnabled ||
+            whatMattersEnabled ||
+            zoneViewExternalEvents.isEmpty);
+    final emptyStateMessage = whatMattersHasNoTasks
+        ? 'Nothing important today'
+        : 'Nothing scheduled today';
     // Only used by the whole-screen swipe-to-change-day gesture, commented
     // out below per direct request — uncomment alongside it if that
     // gesture is reinstated.
@@ -674,12 +687,6 @@ class TimelineScreen extends ConsumerWidget {
                                                 zone: zone,
                                               ),
                                         ),
-                                        if (tasks.isEmpty &&
-                                            (!showZones || zones.isEmpty) &&
-                                            zoneViewExternalEvents.isEmpty)
-                                          IgnorePointer(
-                                            child: _EmptyDayState(theme: theme),
-                                          ),
                                       ],
                                     )
                                   // An empty day still renders the full scrollable
@@ -1069,13 +1076,6 @@ class TimelineScreen extends ConsumerWidget {
                                             );
                                           },
                                         ),
-                                        // IgnorePointer so the message never blocks a tap
-                                        // on the timeline underneath (creating a task by
-                                        // tapping a free window still works through it).
-                                        if (tasks.isEmpty)
-                                          IgnorePointer(
-                                            child: _EmptyDayState(theme: theme),
-                                          ),
                                       ],
                                     ),
                             ),
@@ -1091,6 +1091,17 @@ class TimelineScreen extends ConsumerWidget {
                   ),
                 ],
               ),
+              // Center against the whole safe-area viewport, not only the
+              // timeline below the calendar header.
+              if (showTimelineEmptyState)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: AppEmptyState(
+                      message: emptyStateMessage,
+                      accessory: const Icon(Icons.self_improvement_rounded),
+                    ),
+                  ),
+                ),
               // Floating independently above the bottom nav pill now
               // (2026-09-12, requested directly from a reference
               // screenshot: "nav is just 5 items + its outside") rather
@@ -6719,37 +6730,6 @@ class _TimelineConnectors extends StatelessWidget {
       width: theme.borderWidthConnector,
       height: height,
       child: ColoredBox(color: theme.colorBorder),
-    );
-  }
-}
-
-class _EmptyDayState extends StatelessWidget {
-  const _EmptyDayState({required this.theme});
-
-  final AmbleTheme theme;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.all(theme.spacingXl),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.self_improvement_rounded,
-              size: theme.spacingXl * 1.5,
-              color: theme.colorTextSecondary,
-            ),
-            SizedBox(height: theme.spacingMd),
-            Text(
-              'Nothing scheduled today',
-              style: theme.textBody.copyWith(color: theme.colorTextSecondary),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

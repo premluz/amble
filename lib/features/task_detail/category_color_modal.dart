@@ -33,17 +33,23 @@ class _CategoryColorPageState extends State<CategoryColorPage> {
       children: [
         AppSheetFlowHeader(theme: theme, title: 'Color'),
         SizedBox(height: theme.spacingMd),
-        Wrap(
-          spacing: theme.spacingSm,
-          runSpacing: theme.spacingSm,
-          children: [
-            for (var index = 0; index < theme.categorySwatches.length; index++)
-              _CategoryColorOption(
-                color: theme.categorySwatches[index],
-                selected: widget.selectedColorToken == index,
-                onSelected: () => widget.onSelected(index),
-              ),
-          ],
+        AppSheetScrollBody(
+          child: Wrap(
+            spacing: theme.spacingSm,
+            runSpacing: theme.spacingSm,
+            children: [
+              for (
+                var index = 0;
+                index < theme.categorySwatches.length;
+                index++
+              )
+                _CategoryColorOption(
+                  color: theme.categorySwatches[index],
+                  selected: widget.selectedColorToken == index,
+                  onSelected: () => widget.onSelected(index),
+                ),
+            ],
+          ),
         ),
       ],
     );

@@ -1,5 +1,3 @@
-import 'dart:ui' show ImageFilter;
-
 import 'package:flutter/material.dart';
 
 import '../tokens/component_tokens.dart';
@@ -450,18 +448,11 @@ class StepScaffold extends StatelessWidget {
 /// token, never a surface one (surface/text tokens invert in opposite
 /// directions between light/dark, so a surface-sourced glyph can
 /// disappear in one palette).
-/// **2026-09-23 — default background matches [AppButton]'s own
-/// secondary-circle treatment exactly, not a flat `colorSurfaceField`.**
-/// Reported directly against a reference: the sheet-header close button
-/// rendered a solid dark circle where the reference showed the same
-/// translucent "secondary button" glass look every [AppButton.secondary]
-/// circle already uses — this button had never been switched over when
-/// that token/treatment was established, so it was the one remaining
-/// place still painting the old flat surface with no blur. Uses
-/// [AppButton.subtleTint] UNDER a real `BackdropFilter` blur (not the tint
-/// alone painted flat) — see [AppButton]'s own `_buildCircle` for the
-/// identical recipe this mirrors. Same fix applied to [AppMicButton]'s own
-/// non-primary resting fill, which shared the identical wrong default.
+/// **2026-09-30 — quiet like a chip at rest** ([ChipTokens.restFill],
+/// [ChipTokens.restText] icon): requested directly, the × was "too strong
+/// ... should be subtle same chips". Supersedes the 2026-09-23 glass look
+/// (`AppButton.subtleTint` under a blur, with a primary-colour glyph), which
+/// read as the loudest thing in the header.
 class HeaderCircleButton extends StatelessWidget {
   const HeaderCircleButton({
     super.key,
@@ -485,37 +476,19 @@ class HeaderCircleButton extends StatelessWidget {
       height: theme.spacingXl,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: backgroundColor ?? AppButton.subtleTint(theme),
+        color: backgroundColor ?? ChipTokens.restFill(theme),
         shape: BoxShape.circle,
       ),
-      child: Icon(icon, color: iconColor ?? theme.colorTextPrimary),
+      child: Icon(icon, color: iconColor ?? ChipTokens.restText(theme)),
     );
-
-    // Only the default (no caller-supplied `backgroundColor`) gets the
-    // blur — a caller passing an opaque color (e.g. `theme.colorAccent`
-    // for the Done button) wants a flat, solid circle, not a translucent
-    // one, so blurring behind it would be pointless work with no visible
-    // effect.
-    final blurred = backgroundColor != null
-        ? filled
-        : ClipOval(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(
-                sigmaX: theme.blurOverlaySigma,
-                sigmaY: theme.blurOverlaySigma,
-              ),
-              child: filled,
-            ),
-          );
-
     return AppPressFeedback(
       onTap: onTap,
       shape: BoxShape.circle,
       // Rides on the icon's own color, so the wash stays visible whether
       // this button sits on the neutral field fill (its default) or on a
       // caller-supplied colored header banner.
-      rippleColor: iconColor ?? theme.colorTextPrimary,
-      child: blurred,
+      rippleColor: iconColor ?? ChipTokens.restText(theme),
+      child: filled,
     );
   }
 }
