@@ -5,7 +5,9 @@ import 'package:hive_ce/hive_ce.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_wheel_time_picker.dart';
 import 'package:amble/hive_registrar.g.dart';
-import 'package:amble/features/task_detail/task_detail_sheet.dart';
+import 'package:amble/core/widgets/app_value_chip.dart';
+import 'package:amble/features/task_detail/task_sheet.dart';
+import 'package:amble/features/task_detail/task_sheet_fields.dart';
 import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/models/task_template.dart';
 import 'package:amble/shared/models/tracked_behavior.dart';
@@ -103,6 +105,23 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
   return navigatorKey;
 }
 
+/// Moves the open task sheet's start to [hour]:00 — the time chip (Date,
+/// Time, Duration: the second) opens the Start time picker; Done applies.
+Future<void> _setStartHour(WidgetTester tester, int hour) async {
+  await _tapAndSettle(
+    tester,
+    find
+        .descendant(
+          of: find.byType(TaskSheetFields),
+          matching: find.byType(AppValueChip),
+        )
+        .at(1),
+  );
+  tester.widget<AppWheelPicker>(find.byType(AppWheelPicker)).onChanged(hour, 0);
+  await tester.pumpAndSettle();
+  await _tapAndSettle(tester, find.text('Done'));
+}
+
 void main() {
   late Box<Task> box;
   late Box<Category> categoryBox;
@@ -161,7 +180,7 @@ void main() {
         trackedBehaviorBox: trackedBehaviorBox,
         templateBox: templateBox,
       );
-      showTaskDetailSheet(navigatorKey.currentContext!, task: task);
+      showTaskSheet(navigatorKey.currentContext!, task: task);
       await tester.pumpAndSettle();
 
       // The wheel is collapsed by default — tap the "Time" summary row's
@@ -169,16 +188,7 @@ void main() {
       // all. See task_detail_sheet.dart's _ScheduleFieldsStage
       // (`timeExpanded`); the whole row (label + value) is one opaque
       // tap target, so tapping the label alone is enough.
-      await _tapAndSettle(tester, find.text('Time'));
-
-      // Drive the wheel's own onChanged directly rather than a scroll
-      // gesture — ListWheelScrollView drag simulation is fragile, and the
-      // widget already exposes a plain callback (see
-      // task_detail_sheet.dart's _ScheduleFieldsStage, which wires this
-      // straight to onTimeChanged).
-      final picker = tester.widget<AppWheelPicker>(find.byType(AppWheelPicker));
-      picker.onChanged(14, 0); // 9:00 -> 14:00, same day.
-      await tester.pumpAndSettle();
+      await _setStartHour(tester, 14);
 
       await _tapAndSettle(tester, find.text('Save'));
 
@@ -215,14 +225,10 @@ void main() {
         templateBox: templateBox,
         preventOverlappingTasks: true,
       );
-      showTaskDetailSheet(navigatorKey.currentContext!, task: task);
+      showTaskSheet(navigatorKey.currentContext!, task: task);
       await tester.pumpAndSettle();
 
-      await _tapAndSettle(tester, find.text('Time'));
-      tester
-          .widget<AppWheelPicker>(find.byType(AppWheelPicker))
-          .onChanged(14, 0);
-      await tester.pumpAndSettle();
+      await _setStartHour(tester, 14);
       await _tapAndSettle(tester, find.text('Save'));
 
       expect(box.values, hasLength(2));
@@ -260,14 +266,10 @@ void main() {
         trackedBehaviorBox: trackedBehaviorBox,
         templateBox: templateBox,
       );
-      showTaskDetailSheet(navigatorKey.currentContext!, task: task);
+      showTaskSheet(navigatorKey.currentContext!, task: task);
       await tester.pumpAndSettle();
 
-      await _tapAndSettle(tester, find.text('Time'));
-
-      final picker = tester.widget<AppWheelPicker>(find.byType(AppWheelPicker));
-      picker.onChanged(14, 0);
-      await tester.pumpAndSettle();
+      await _setStartHour(tester, 14);
 
       await _tapAndSettle(tester, find.text('Save'));
 
@@ -283,121 +285,4 @@ void main() {
       expect(box.get(task.id)!.scheduledAt, DateTime(2026, 9, 4, 14, 0));
     },
   );
-
-  // Requested directly: "in edit task time wheels should be collapsed,
-  // also duration." Confirmed via AskUserQuestion: collapsed by default
-  // (both Time and Duration), tapping the summary row expands the
-  // control INLINE below it.
-  group('Time/Duration collapsed by default (2026-09-19)', () {
-    testWidgets(
-      'the Time wheel and Duration presets are both absent until their '
-      'own summary row is tapped',
-      (tester) async {
-        final task = Task.create(
-          title: 'Standup',
-          scheduledAt: DateTime(2026, 9, 4, 9),
-          durationMinutes: 30,
-          categoryId: BuiltInCategoryIds.work,
-        );
-        await tester.runAsync(() => box.put(task.id, task));
-
-        final navigatorKey = await _pumpHost(
-          tester,
-          box: box,
-          categoryBox: categoryBox,
-          trackedBehaviorBox: trackedBehaviorBox,
-          templateBox: templateBox,
-        );
-        showTaskDetailSheet(navigatorKey.currentContext!, task: task);
-        await tester.pumpAndSettle();
-
-        expect(find.byType(AppWheelPicker), findsNothing);
-        expect(find.text('15m'), findsNothing);
-      },
-    );
-
-    testWidgets('tapping the Time row expands the wheel inline', (
-      tester,
-    ) async {
-      final task = Task.create(
-        title: 'Standup',
-        scheduledAt: DateTime(2026, 9, 4, 9),
-        durationMinutes: 30,
-        categoryId: BuiltInCategoryIds.work,
-      );
-      await tester.runAsync(() => box.put(task.id, task));
-
-      final navigatorKey = await _pumpHost(
-        tester,
-        box: box,
-        categoryBox: categoryBox,
-        trackedBehaviorBox: trackedBehaviorBox,
-        templateBox: templateBox,
-      );
-      showTaskDetailSheet(navigatorKey.currentContext!, task: task);
-      await tester.pumpAndSettle();
-
-      await _tapAndSettle(tester, find.text('Time'));
-
-      expect(find.byType(AppWheelPicker), findsOneWidget);
-      // Duration stays collapsed — the two are independent.
-      expect(find.text('15m'), findsNothing);
-    });
-
-    testWidgets('tapping the Duration row expands the preset chips inline', (
-      tester,
-    ) async {
-      final task = Task.create(
-        title: 'Standup',
-        scheduledAt: DateTime(2026, 9, 4, 9),
-        durationMinutes: 30,
-        categoryId: BuiltInCategoryIds.work,
-      );
-      await tester.runAsync(() => box.put(task.id, task));
-
-      final navigatorKey = await _pumpHost(
-        tester,
-        box: box,
-        categoryBox: categoryBox,
-        trackedBehaviorBox: trackedBehaviorBox,
-        templateBox: templateBox,
-      );
-      showTaskDetailSheet(navigatorKey.currentContext!, task: task);
-      await tester.pumpAndSettle();
-
-      await _tapAndSettle(tester, find.text('Duration'));
-
-      expect(find.text('15m'), findsOneWidget);
-      // Time stays collapsed — the two are independent.
-      expect(find.byType(AppWheelPicker), findsNothing);
-    });
-
-    testWidgets('tapping an expanded row again collapses it back', (
-      tester,
-    ) async {
-      final task = Task.create(
-        title: 'Standup',
-        scheduledAt: DateTime(2026, 9, 4, 9),
-        durationMinutes: 30,
-        categoryId: BuiltInCategoryIds.work,
-      );
-      await tester.runAsync(() => box.put(task.id, task));
-
-      final navigatorKey = await _pumpHost(
-        tester,
-        box: box,
-        categoryBox: categoryBox,
-        trackedBehaviorBox: trackedBehaviorBox,
-        templateBox: templateBox,
-      );
-      showTaskDetailSheet(navigatorKey.currentContext!, task: task);
-      await tester.pumpAndSettle();
-
-      await _tapAndSettle(tester, find.text('Time'));
-      expect(find.byType(AppWheelPicker), findsOneWidget);
-
-      await _tapAndSettle(tester, find.text('Time'));
-      expect(find.byType(AppWheelPicker), findsNothing);
-    });
-  });
 }

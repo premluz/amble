@@ -23,7 +23,7 @@ import 'task_duration_modal.dart';
 /// notification)," later widened to also include Important ("multi edit
 /// tasks should have also important"). Deliberately a NARROWER field set
 /// than the single-task
-/// detail sheet ([showTaskDetailSheet]) — no title, no schedule (each
+/// task sheet ([showTaskSheet]) — no title, no schedule (each
 /// selected task keeps its own time), no repeat — since those are either
 /// meaningless in bulk (a shared title) or already have their own group
 /// gesture on the Timeline itself (move/resize already apply to the whole

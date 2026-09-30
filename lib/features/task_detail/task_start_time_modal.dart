@@ -78,7 +78,7 @@ class _TaskStartTimeModalState extends State<TaskStartTimeModal> {
     // Scrollable rather than a bare Column: the typed field can summon
     // the keyboard, and a small device's remaining height plus the
     // wheel's fixed size can overflow — same class of bug found (and
-    // fixed the same way) in TaskNameCategoryModal.
+    // fixed the same way) in the old Name and category sheet.
     return SingleChildScrollView(
       child: Column(
         mainAxisSize: MainAxisSize.min,

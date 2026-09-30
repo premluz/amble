@@ -47,7 +47,7 @@ import '../../shared/services/move_resize_undo.dart';
 import '../../shared/services/trim_reschedule.dart';
 import '../tracked_behavior/behavior_outcome_prompt.dart';
 import '../task_detail/category_visual.dart' show resolveCategoryVisual;
-import '../task_detail/task_detail_sheet.dart';
+import '../task_detail/task_sheet.dart';
 import 'app_calendar_header.dart';
 import 'timeline_pinch_zoom.dart';
 import 'collapsed_stack_layout.dart';
@@ -667,11 +667,10 @@ class TimelineScreen extends ConsumerWidget {
                                           // sheet (Edit/Duplicate/Remove) — requested
                                           // directly. The sheet stays in the codebase,
                                           // unused for now, in case it's wanted again.
-                                          onTaskTap: (task) =>
-                                              showTaskDetailSheet(
-                                                context,
-                                                task: task,
-                                              ),
+                                          onTaskTap: (task) => showTaskSheet(
+                                            context,
+                                            task: task,
+                                          ),
                                           onToggleComplete: (task) =>
                                               _completeTask(context, ref, task),
                                           // Non-spatial list — requested directly
@@ -753,11 +752,10 @@ class TimelineScreen extends ConsumerWidget {
                                           // (Edit/Duplicate/Remove) — requested directly.
                                           // The sheet stays in the codebase, unused for
                                           // now, in case it's wanted again.
-                                          onTaskTap: (task) =>
-                                              showTaskDetailSheet(
-                                                context,
-                                                task: task,
-                                              ),
+                                          onTaskTap: (task) => showTaskSheet(
+                                            context,
+                                            task: task,
+                                          ),
                                           onToggleComplete: (task) =>
                                               _completeTask(context, ref, task),
                                           onReschedule:
@@ -767,7 +765,7 @@ class TimelineScreen extends ConsumerWidget {
                                                     newScheduledAt,
                                                   ),
                                           onCreateAt: (startAt) =>
-                                              showTaskDetailSheet(
+                                              showTaskSheet(
                                                 context,
                                                 initialScheduledAt: startAt,
                                                 initialTimeOfDay:
@@ -1137,7 +1135,7 @@ class TimelineScreen extends ConsumerWidget {
                     final viewedMinutes =
                         ref.read(viewedTimeProvider) ??
                         (clockNow.hour * 60 + clockNow.minute);
-                    showTaskDetailSheet(
+                    showTaskSheet(
                       context,
                       initialScheduledAt: DateTime(
                         selectedDate.year,

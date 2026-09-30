@@ -13,8 +13,8 @@ import 'category_color_modal.dart';
 import 'category_icon_modal.dart';
 import 'category_visual.dart';
 
-/// Opens the label create/edit sheet on its own (Settings' label list,
-/// `TaskNameCategoryModal`) and resolves to the saved [Category]. Inside a
+/// Opens the label create/edit sheet on its own (Settings' label list)
+/// and resolves to the saved [Category]. Inside a
 /// label picker the same form is a page of the picker's sheet instead —
 /// see [AddCategoryPage].
 ///

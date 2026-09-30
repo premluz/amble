@@ -12,10 +12,8 @@ import '../../core/widgets/app_wheel_time_picker.dart';
 /// modal's own default (requested directly), so it's deliberately first
 /// in this list even though the others read as ascending afterward.
 ///
-/// Not private: the create flow's schedule pane (task_detail_sheet.dart)
-/// renders these same presets inline rather than behind this modal, per
-/// direct request, so both share this one list rather than keeping two
-/// copies in sync by hand.
+/// Not private: the task sheet's default length for a new task
+/// (`task_sheet.dart`) is its first entry.
 const presetMinutes = [5, 15, 30, 45, 60, 120];
 
 String presetLabel(int minutes) =>

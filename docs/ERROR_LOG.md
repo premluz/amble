@@ -2557,3 +2557,24 @@ header paints last.
 highlight's overshoot. **Fix:** `Clip.none`; the pane's rounded clip is the
 only edge, as in the dock. **Rule:** a liquid highlight's Stack never clips.
 Let a rounded container bound it.
+
+## 2026-09-30 — Test "hang" that ignored --timeout: a recursive helper
+
+**Symptom:** a ported test file ran for more than 8 minutes, and
+`--timeout` never fired. **Cause:** a find-and-replace of
+`_tapAndSettle(tester, find.text('Save'))` → `_save(tester)` also rewrote
+the line inside `_save` itself, so it called itself forever. A tight async
+loop starves the timeout. **Found by:** a copy printing markers with
+`print`. `debugPrint` is throttled, so its queued markers were lost when
+the process was killed and pointed at the wrong step. **Rule:** when
+rewriting a call pattern into a helper, exclude the helper's own body;
+kill a hung test with `perl -e 'alarm N; exec @ARGV' flutter test …`
+(macOS has no `timeout`).
+
+## 2026-09-30 — Undo toast in tests: open sheets from a page, not the Navigator
+
+`removeTask` shows its undo toast on the context the sheet was opened
+from. A test opening a sheet with `navigatorKey.currentContext` is above
+the Navigator's Overlay, so `Overlay.of` fails, although the delete
+itself worked. Open from `tester.element(find.byType(Scaffold).first)`,
+as the app does from inside a page.

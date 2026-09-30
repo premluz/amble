@@ -3,9 +3,8 @@ import 'dart:async';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_button.dart';
 import 'package:amble/core/widgets/app_text_field.dart';
+import 'package:amble/core/widgets/app_value_chip.dart';
 import 'package:amble/features/tracked_behavior/tracked_behavior_form.dart';
-import 'package:amble/features/tracked_behavior/tracked_behavior_row.dart'
-    show unitLabelFor;
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/shared/models/behavior_target_type.dart';
 import 'package:amble/shared/models/tracked_behavior.dart';
@@ -20,11 +19,6 @@ import 'package:hive_ce/hive_ce.dart';
 /// Reps, Count[, Custom]." Custom opens a small sheet with a Label field
 /// and a Unit field (hint text showing example units) — see
 /// `custom_unit_sheet.dart`.
-Finder _nameField() => find.descendant(
-  of: find.widgetWithText(AppTextField, 'What are you tracking?'),
-  matching: find.byType(TextField),
-);
-
 Future<GlobalKey<NavigatorState>> _pumpHost(
   WidgetTester tester, {
   required Box<TrackedBehavior> box,
@@ -47,16 +41,13 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
   return navigatorKey;
 }
 
-Future<void> _openStage2(
+Future<void> _openForm(
   WidgetTester tester,
   GlobalKey<NavigatorState> nav,
 ) async {
   unawaited(showTrackedBehaviorForm(nav.currentContext!));
   await tester.pumpAndSettle();
-  await tester.enterText(_nameField(), 'Water');
-  await tester.pump();
-  await tester.tap(find.text('Done'));
-  await tester.pumpAndSettle();
+  expect(find.byType(AppValueChip), findsOneWidget);
 }
 
 void main() {
@@ -77,24 +68,28 @@ void main() {
   });
 
   testWidgets(
-    'Measured in shows Time, Distance, Reps, Count, Custom, Did it — in '
-    'that order',
+    'Measured in shows Time, Distance, Reps, Count, Did it — with Custom '
+    'as the top-right add action',
     (tester) async {
       final navigatorKey = await _pumpHost(tester, box: box);
-      await _openStage2(tester, navigatorKey);
+      await _openForm(tester, navigatorKey);
 
-      expect(find.text('Time'), findsOneWidget);
+      await tester.tap(find.byType(AppValueChip));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Measured in'), findsOneWidget);
+      expect(find.text('Time'), findsWidgets);
       expect(find.text('Distance'), findsOneWidget);
       expect(find.text('Reps'), findsOneWidget);
       expect(find.text('Count'), findsOneWidget);
-      expect(find.text('Custom'), findsOneWidget);
       expect(find.text('Did it'), findsOneWidget);
+      expect(find.byIcon(Icons.add_rounded), findsOneWidget);
 
       // Reading order — row by row, left to right — so the check holds
       // however the chips wrap on a given width.
       final order = [
         for (final label in ['Time', 'Distance', 'Reps', 'Count'])
-          tester.getTopLeft(find.text(label)),
+          tester.getTopLeft(find.text(label).last),
       ];
       for (var i = 1; i < order.length; i++) {
         final before = order[i - 1];
@@ -118,17 +113,19 @@ void main() {
     tester,
   ) async {
     final navigatorKey = await _pumpHost(tester, box: box);
-    await _openStage2(tester, navigatorKey);
+    await _openForm(tester, navigatorKey);
 
+    await tester.tap(find.byType(AppValueChip));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Distance'));
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     // Saving does real repository I/O — must run inside `runAsync`, per
     // this file's own note on the save below (and docs/ERROR_LOG.md), or
     // `pumpAndSettle` hangs on a Future the fake async zone can't
     // resolve.
     await tester.runAsync(() async {
-      await tester.tap(find.text('Save').last);
+      await tester.tap(find.widgetWithText(AppButton, 'Add'));
       await Future<void>.delayed(const Duration(milliseconds: 100));
     });
     await tester.pump();
@@ -145,15 +142,22 @@ void main() {
     'are filled in',
     (tester) async {
       final navigatorKey = await _pumpHost(tester, box: box);
-      await _openStage2(tester, navigatorKey);
+      await _openForm(tester, navigatorKey);
 
-      await tester.tap(find.text('Custom'));
+      await tester.tap(find.byType(AppValueChip));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithIcon(AppButton, Icons.add_rounded));
       await tester.pumpAndSettle();
 
       expect(find.text('Custom unit'), findsOneWidget);
       expect(find.text('Label'), findsOneWidget);
-      expect(find.text('Unit'), findsOneWidget);
-      expect(find.text('e.g. times, km, hours, glasses'), findsOneWidget);
+      expect(
+        find.widgetWithText(
+          AppTextField,
+          'Unit (e.g. times, km, hours, glasses)',
+        ),
+        findsOneWidget,
+      );
 
       // Scoped to the sheet's own content — the underlying form (still
       // mounted behind the sheet) has its own AppButton/TextField too.
@@ -192,9 +196,11 @@ void main() {
   testWidgets('completing the custom unit sheet with Label "Water" and Unit '
       '"glasses" saves a custom behavior with both fields set', (tester) async {
     final navigatorKey = await _pumpHost(tester, box: box);
-    await _openStage2(tester, navigatorKey);
+    await _openForm(tester, navigatorKey);
 
-    await tester.tap(find.text('Custom'));
+    await tester.tap(find.byType(AppValueChip));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithIcon(AppButton, Icons.add_rounded));
     await tester.pumpAndSettle();
 
     final labelField = find.descendant(
@@ -222,10 +228,10 @@ void main() {
     await tester.enterText(unitField, 'glasses');
     await tester.pump();
 
-    await tester.tap(find.text('Save').last);
+    await tester.tap(find.widgetWithIcon(AppButton, Icons.check_rounded));
     await tester.pumpAndSettle();
 
-    // Back on the tracked-behavior form — fill in the target and save.
+    // Back on the tracked-behavior form — add the completed behavior.
     // "Water" is now the chip's own label (the custom unit's Label),
     // confirming the sheet's result actually applied.
     expect(find.text('Water'), findsWidgets);
@@ -241,7 +247,7 @@ void main() {
     // `pumpAndSettle` hangs indefinitely waiting on a Future the fake
     // async zone can never resolve.
     await tester.runAsync(() async {
-      await tester.tap(find.text('Save').last);
+      await tester.tap(find.widgetWithText(AppButton, 'Add'));
       await Future<void>.delayed(const Duration(milliseconds: 100));
     });
     await tester.pump();
@@ -284,7 +290,7 @@ void main() {
       // place the saved custom unit shows.
       expect(find.text('Target (glasses)'), findsNothing);
 
-      await tester.tap(find.text('Water').last);
+      await tester.tap(find.byType(AppValueChip));
       await tester.pumpAndSettle();
 
       expect(find.text('Custom unit'), findsOneWidget);

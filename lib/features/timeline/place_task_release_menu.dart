@@ -7,8 +7,8 @@ import '../../core/widgets/app_sheet.dart';
 /// The menu opened by releasing a hold-and-drag placement (see
 /// `PlaceTaskLineLayer.onPlaced`) at [droppedAt] — requested directly:
 /// "on release we have context menu showing from position of release,"
-/// replacing the previous behavior of jumping straight into the full
-/// `showTaskDetailSheet` create form.
+/// replacing the previous behavior of jumping straight into a create
+/// form.
 ///
 /// Presented via [AppSheet], the same bottom-sheet primitive every other
 /// menu in the app already uses (`showTaskActionSheet`) — confirmed via

@@ -616,7 +616,7 @@ Unified 2026-09-30. Every chip draws from `ChipTokens`
 - Sheet chrome matches chips at rest: the header's × / ‹
   (`HeaderCircleButton`) uses the rest fill and a `colorTextSecondary` glyph.
 
-**Never** hand-build a private chip (the task detail's `_BehaviorChip` was
+**Never** hand-build a private chip (the old task detail's `_BehaviorChip` was
 the last one; it's now an `AppSelectableChip`). Extend one of these, and
 take any new value from `ChipTokens`.
 
@@ -1161,7 +1161,8 @@ contract; the components enforce most of them.
 | `AppSheetFlow` / `AppSheetFlowHeader` | `core/widgets/app_sheet_flow.dart`, `app_sheet_flow_header.dart` | Rules 1, 3, 4, 7: pages inside one sheet (`push`, `pop`), pages below kept alive, one fixed handle, the header that picks × or ‹. |
 | `AppSheetHeader` | `core/widgets/app_sheet_header.dart` | The header row (72 high): × / ‹ left, `title` centred, `trailing` right, handle bar behind (off with `showHandle: false`). |
 | `AppSheetHandle` / `AppSheetTopHandle` | `core/widgets/app_sheet_handle.dart` | The bar (`spacingXl * 1.2` × 4, `radiusSm`, `AppButton.subtleTint`) and its place: top-centre, `spacingSm` down. |
-| `StepScaffold` | `core/widgets/app_step_scaffold.dart` | The near-full form sheet (task detail, zone/habit/template forms): own scroll fades, footer CTA. |
+| `StepScaffold` | `core/widgets/app_step_scaffold.dart` | The near-full form sheet (zone/habit/template forms): own scroll fades, footer CTA. |
+| `showTaskSheet` / `TaskSheetFields` | `features/task_detail/task_sheet.dart`, `task_sheet_fields.dart` | THE task sheet — create, edit, duplicate: name, then chips that each open a picker; edit adds Save + trash; asks before discarding edits. The Timeline's in-place sheet (`QuickCreateOverlay`) uses the same fields, form (`TaskSheetForm`) and save (`saveTaskSheet`). |
 | `SheetTokens` | `core/tokens/component_tokens.dart` | `surface` (the page background, `colorSurfaceTimeline`; in dark mode lifted by `darkLift`, a 3% light layer — Apple's elevated dark background), `inset` (`colorSurfaceSecondary`, lifted the same way: groups and controls inside a sheet, as a Settings group is off the page), `dragCloseDistance` (96), `pageBehindShift` (.3). |
 
 `AppDragToCloseHandle` remains the gesture engine under
@@ -1569,7 +1570,7 @@ Every real call site instead passes an ordinary widget's own
 pop) a `rootContext` captured before the pop happens, the exact same
 "capture the caller's context before this sheet's own route exists"
 contract `showQuickCaptureSheet`/`showTaskActionSheet`/
-`showTaskDetailSheet`/`showZoneFormScreen` already establish for their
+`showTaskSheet`/`showZoneFormScreen` already establish for their
 own undo toasts.
 
 **Undo restores via snapshot-then-keyed-re-save, not a separate undo

@@ -5,7 +5,7 @@ import '../../core/widgets/app_context_menu.dart';
 import '../../core/widgets/app_sheet.dart';
 import '../../shared/models/task.dart';
 import '../../shared/providers/task_providers.dart';
-import 'task_detail_sheet.dart';
+import 'task_sheet.dart';
 import 'task_remove.dart';
 
 /// The mobile action-menu bottom sheet for a single scheduled task, opened
@@ -37,15 +37,11 @@ class _TaskActionSheetContent extends ConsumerWidget {
 
   final Task task;
 
-  /// Opens the same screen "Create task" uses, pre-populated — requested
-  /// directly, replacing the old two-entry "Edit details"/"Edit time and
-  /// duration" split with a single "Edit task" that shows every field at
-  /// once. `showTaskDetailSheet(task: ...)` already skips stage 1 (the
-  /// Name-only step) for any non-null task and lands directly on the full
-  /// form.
+  /// Opens the same task sheet "Create task" uses, pre-populated
+  /// ([showTaskSheet]) — a single "Edit task" with every field at once.
   Future<void> _editTask(BuildContext context) async {
     Navigator.of(context).pop();
-    await showTaskDetailSheet(context, task: task);
+    await showTaskSheet(context, task: task);
   }
 
   /// Opens the create screen pre-filled from [task], WITHOUT persisting
@@ -57,7 +53,7 @@ class _TaskActionSheetContent extends ConsumerWidget {
   /// every other create path in this app.
   Future<void> _duplicate(BuildContext context) async {
     Navigator.of(context).pop();
-    await showTaskDetailSheet(context, duplicateFrom: task);
+    await showTaskSheet(context, duplicateFrom: task);
   }
 
   /// Toggles the task's `isImportant` marker (see `Task.isImportant`).

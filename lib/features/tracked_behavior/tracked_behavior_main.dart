@@ -35,7 +35,7 @@ import '../../shared/providers/task_providers.dart';
 import '../../shared/providers/tracked_behavior_providers.dart';
 import '../settings/settings_screen.dart';
 import '../timeline/timeline_screen.dart';
-import '../task_detail/task_detail_sheet.dart';
+import '../task_detail/task_sheet.dart';
 import 'behavior_outcome_prompt.dart';
 import 'tracked_behavior_form.dart';
 import 'tracked_behavior_list_screen.dart';
@@ -191,7 +191,7 @@ class _LauncherState extends ConsumerState<_Launcher> {
         case 'link':
           // The picker appears inside the normal task detail form.
           if (!mounted) return;
-          await showTaskDetailSheet(
+          await showTaskSheet(
             context,
             initialScheduledAt: DateTime(
               now.year,
@@ -205,7 +205,7 @@ class _LauncherState extends ConsumerState<_Launcher> {
           // Same form, flag ON, but nothing linked — evidence that an
           // ordinary task is unchanged apart from an opt-in "None" row.
           if (!mounted) return;
-          await showTaskDetailSheet(
+          await showTaskSheet(
             context,
             initialScheduledAt: DateTime(
               now.year,

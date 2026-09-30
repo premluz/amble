@@ -51,10 +51,7 @@ const quickCreateSheetMinimisedFraction = 0.11;
 /// (and the draggable placeholder pill on it) interactive underneath it.
 /// The overlay that now owns this controller lives directly in
 /// `TimelineScreen`'s own widget tree instead, with no `Navigator`
-/// involved at all until the user actually expands past the threshold —
-/// see `quick_create_overlay.dart`'s own doc comment for the promotion
-/// step, which is what pushes the real, ordinary
-/// `showTaskDetailSheet` route once expansion completes.
+/// involved at all — expanded, it simply shows the same fields taller.
 class QuickCreateSheetHeightController extends ChangeNotifier {
   QuickCreateSheetHeightController({required double initialFraction})
     : _fraction = initialFraction;

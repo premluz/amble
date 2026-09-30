@@ -5182,3 +5182,37 @@ Requested: presets were "too big step up from bg" next to the other chips.
 This supersedes the 2026-09-23 "badge matches the glass ×" rule, since the
 × itself already moved to the rest fill. The accent selection ring is
 unchanged.
+
+## 2026-09-30 — The full task detail sheet is removed; one compact task sheet
+
+Requested: the big full detail sheet is legacy. It is replaced, not just
+deleted, because it was the app's only way to edit a task.
+- **One compact task sheet** for create, edit and duplicate:
+  - `showTaskSheet(context, {task, duplicateFrom, templateId,
+    initialScheduledAt, initialTimeOfDay})`.
+  - The Timeline's in-place `QuickCreateOverlay` shares its pieces:
+    `TaskSheetForm` (fields, seeding, change detection, recurrence case),
+    `saveTaskSheet` (create with paywall retry; update with the four
+    recurrence branches, the `originalScheduledAt` guard, series-wide
+    behaviour link, the Timeline save record, draft clear),
+    `TaskSheetFields` (name + chip rows + "Affect future instances") and
+    the `TaskSheetPickers` extension.
+- **Edit:**
+  - Header × · "Edit task" · trash + Save.
+  - Closing with edits asks Save task / Discard draft / Keep editing, from
+    ×, Android back or a drag down (via `PopScope`).
+  - Delete goes through the shared `removeTask`.
+  - A Things item without a time opens with Time and Duration unset, and
+    Save waits for both.
+  - A new task defaults to noon for 5 minutes.
+- **Description:** a Note chip opens `TaskDescriptionModal`, bound to the
+  form's description controller.
+- **Timeline in-place sheet:**
+  - The name is typed in place. The first tap clears the "New thing"
+    default, and the sheet sits above the keyboard.
+  - Dragging it up expands the same sheet instead of handing off to the
+    full sheet. Its time and length stay in sync with the draft pill.
+- **Removed:** `task_detail_sheet.dart`, `task_name_category_modal.dart`,
+  and the dev harnesses `exit_confirm_{modal,schedule,discard}_main.dart`
+  and `edit_save_repro_main.dart`. `recurrence_verification_main` and
+  `inbox_move_to_timeline_main` now open the new sheet.

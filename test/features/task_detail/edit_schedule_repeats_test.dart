@@ -5,7 +5,9 @@ import 'package:hive_ce/hive_ce.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_selectable_chip.dart';
 import 'package:amble/hive_registrar.g.dart';
-import 'package:amble/features/task_detail/task_detail_sheet.dart';
+import 'package:amble/core/widgets/app_value_chip.dart';
+import 'package:amble/features/task_detail/task_repeat_modal.dart';
+import 'package:amble/features/task_detail/task_sheet.dart';
 import 'package:amble/shared/models/recurrence_frequency.dart';
 import 'package:amble/shared/models/recurrence_rule.dart';
 import 'package:amble/shared/models/category.dart';
@@ -49,7 +51,7 @@ DateTime _daysFromToday(int days, {int hour = 9, int minute = 0}) {
 /// which excludes the day-of-week chips below it that also live in this
 /// same panel.
 Finder _repeatsSwitch() => find.descendant(
-  of: find.ancestor(of: find.text('Repeat'), matching: find.byType(Row)).first,
+  of: find.byType(TaskRepeatModal),
   matching: find.byType(Switch),
 );
 
@@ -63,8 +65,42 @@ Finder _repeatsSwitch() => find.descendant(
 /// lays the seven chips out in a fixed Monday-first `Row` (see its own
 /// `for (var day = DateTime.monday; day <= DateTime.sunday; day++)` loop),
 /// so position within that row is what identifies each one instead.
-Finder _dayChip(int weekday) =>
-    find.byType(AppSelectableChip).at(weekday - DateTime.monday);
+Finder _dayChip(int weekday) => find
+    .descendant(
+      of: find.byType(TaskRepeatModal),
+      matching: find.byType(AppSelectableChip),
+    )
+    .at(weekday - DateTime.monday);
+
+/// The task sheet's Repeat chip, which opens the repeat picker.
+Finder _repeatChip() => find.widgetWithIcon(AppValueChip, Icons.repeat_rounded);
+
+/// Closes the repeat picker (Done) if it is open, then saves the task.
+Future<void> _save(WidgetTester tester) async {
+  if (find.byType(TaskRepeatModal).evaluate().isNotEmpty) {
+    await _tapAndSettle(tester, find.text('Done'));
+  }
+  await _tapAndSettle(tester, find.text('Save'));
+}
+
+/// A new task named "Standup" at 9:00 today, with Repeat switched on in
+/// its picker — ready for Add.
+Future<void> _startNewRepeatingTask(
+  WidgetTester tester,
+  GlobalKey<NavigatorState> navigatorKey,
+) async {
+  showTaskSheet(
+    navigatorKey.currentContext!,
+    initialScheduledAt: _daysFromToday(0),
+    initialTimeOfDay: const TimeOfDay(hour: 9, minute: 0),
+  );
+  await tester.pumpAndSettle();
+  await tester.enterText(find.byType(TextField).first, 'Standup');
+  await tester.pumpAndSettle();
+  await _tapAndSettle(tester, _repeatChip());
+  await _tapAndSettle(tester, _repeatsSwitch());
+  await _tapAndSettle(tester, find.text('Done'));
+}
 
 // Same real-time-I/O-vs-pump-loop race as exit_confirmation_test.dart's own
 // helper — see its comment and docs/ERROR_LOG.md.
@@ -153,14 +189,10 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
   return navigatorKey;
 }
 
-/// Opens the REAL, live edit entry point — `showTaskDetailSheet(task:
-/// ...)`, the same call `task_action_sheet.dart`'s "Edit task" makes —
-/// not the retired `showEditScheduleSheet`/`_EditScheduleForm` this file
-/// used to exercise. That form is never called from any real UI (only
-/// from dev scaffolds), so a passing suite against it gave no real
-/// coverage: the live `_TaskDetailFlow`/`_TaskDetailFlowState` had its
-/// own, separate (and, until fixed, buggy) recurrence-editing logic that
-/// this suite never touched at all. See docs/ERROR_LOG.md.
+/// Opens the REAL, live edit entry point — `showTaskSheet(task: ...)`, the
+/// same call `task_action_sheet.dart`'s "Edit task" makes — then its
+/// repeat picker. (Earlier this suite exercised a form no real UI called,
+/// and missed real recurrence-editing bugs; see docs/ERROR_LOG.md.)
 Future<GlobalKey<NavigatorState>> _pumpEditScheduleForm(
   WidgetTester tester, {
   required Box<Task> box,
@@ -176,8 +208,10 @@ Future<GlobalKey<NavigatorState>> _pumpEditScheduleForm(
     trackedBehaviorBox: trackedBehaviorBox,
     templateBox: templateBox,
   );
-  showTaskDetailSheet(navigatorKey.currentContext!, task: task);
+  showTaskSheet(navigatorKey.currentContext!, task: task);
   await tester.pumpAndSettle();
+  // The repeat settings live in their own picker, opened from the chip.
+  await _tapAndSettle(tester, _repeatChip());
   return navigatorKey;
 }
 
@@ -238,7 +272,8 @@ void main() {
       task: task,
     );
 
-    expect(find.text('Repeat'), findsOneWidget);
+    // The picker's title and its switch's label.
+    expect(find.text('Repeat'), findsWidgets);
     final switchWidget = tester.widget<Switch>(_repeatsSwitch());
     expect(switchWidget.onChanged, isNotNull);
     expect(switchWidget.value, isFalse);
@@ -275,7 +310,7 @@ void main() {
       // — `_dayChip` locates it by its fixed Monday-first position instead.
       expect(_dayChip(scheduledAt.weekday), findsOneWidget);
 
-      await _tapAndSettle(tester, find.text('Save'));
+      await _save(tester);
 
       final saved = box.values.toList();
       final template = saved.firstWhere((t) => t.id == task.id);
@@ -408,7 +443,7 @@ void main() {
 
       // Add Monday alongside the existing Thursday.
       await _tapAndSettle(tester, _dayChip(DateTime.monday));
-      await _tapAndSettle(tester, find.text('Save'));
+      await _save(tester);
 
       final saved = box.values.toList();
       // The template's OWN weekday is still covered by the new rule
@@ -475,7 +510,7 @@ void main() {
         task: instance,
       );
       await _tapAndSettle(tester, _dayChip(DateTime.monday));
-      await _tapAndSettle(tester, find.text('Save'));
+      await _save(tester);
 
       // The template's own weekday is still covered by the new rule
       // (Monday was only added alongside it), so it stays the template.
@@ -531,7 +566,7 @@ void main() {
         task: template,
       );
       await _tapAndSettle(tester, _repeatsSwitch());
-      await _tapAndSettle(tester, find.text('Save'));
+      await _save(tester);
 
       final saved = box.values.toList();
       final savedTemplate = saved.firstWhere((t) => t.id == template.id);
@@ -578,7 +613,7 @@ void main() {
         templateBox: templateBox,
         task: template,
       );
-      await _tapAndSettle(tester, find.text('Save'));
+      await _save(tester);
 
       final saved = box.values.toList();
       expect(
@@ -618,21 +653,8 @@ void main() {
         trackedBehaviorBox: trackedBehaviorBox,
         templateBox: templateBox,
       );
-      showTaskDetailSheet(
-        navigatorKey.currentContext!,
-        initialScheduledAt: _daysFromToday(0),
-        initialTimeOfDay: const TimeOfDay(hour: 9, minute: 0),
-        debugStartWithRepeatsOn: true,
-      );
-      await tester.pumpAndSettle();
-
-      // Stage 1 (name only) — type a title, then confirm to reach the
-      // full form.
-      await tester.enterText(find.byType(TextField).first, 'Standup');
-      await tester.pumpAndSettle();
-      await _tapAndSettle(tester, find.text('Done'));
-
-      await _tapAndSettle(tester, find.text('Schedule'));
+      await _startNewRepeatingTask(tester, navigatorKey);
+      await _tapAndSettle(tester, find.text('Add'));
 
       final saved = box.values.toList();
       final seriesIds = saved
@@ -677,22 +699,12 @@ void main() {
       trackedBehaviorBox: trackedBehaviorBox,
       templateBox: templateBox,
     );
-    showTaskDetailSheet(
-      navigatorKey.currentContext!,
-      initialScheduledAt: _daysFromToday(0),
-      initialTimeOfDay: const TimeOfDay(hour: 9, minute: 0),
-      debugStartWithRepeatsOn: true,
-    );
-    await tester.pumpAndSettle();
-
-    await tester.enterText(find.byType(TextField).first, 'Standup');
-    await tester.pumpAndSettle();
-    await _tapAndSettle(tester, find.text('Done'));
+    await _startNewRepeatingTask(tester, navigatorKey);
 
     // Two Save taps in the SAME frame — the second lands before the
     // button can re-render as disabled, which is exactly the shape a
     // real double-tap takes.
-    final saveButton = find.text('Schedule');
+    final saveButton = find.text('Add');
     await tester.ensureVisible(saveButton);
     await tester.pumpAndSettle();
     await tester.runAsync(() async {

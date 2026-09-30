@@ -20,7 +20,7 @@ import '../../shared/models/task_category.dart';
 import '../../shared/providers/section_providers.dart';
 import '../../shared/providers/task_providers.dart';
 import '../../shared/services/day_label.dart';
-import '../task_detail/task_detail_sheet.dart';
+import '../task_detail/task_sheet.dart';
 import '../timeline/duration_label.dart';
 import '../timeline/task_category_token_mapping.dart';
 import 'inbox_section_filter_provider.dart';
@@ -73,7 +73,7 @@ List<_InboxRow> _groupByDay(List<Task> tasks, {required DateTime today}) {
 }
 
 /// "Manage" — unscheduled tasks awaiting prioritization. Tapping a task
-/// opens the existing task detail screen ([showTaskDetailSheet]) to give
+/// opens the task sheet ([showTaskSheet]) to give
 /// it a schedule, moving it onto the Timeline; no separate scheduling UI
 /// is built for this. Wired to [inboxTasksProvider], derived from
 /// [taskListProvider] (Phase 1).
@@ -330,7 +330,7 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
                                   }
                                   final task = (row as _InboxTaskRow).task;
                                   void onSchedule() =>
-                                      showTaskDetailSheet(context, task: task);
+                                      showTaskSheet(context, task: task);
                                   // Swipe right schedules, swipe left removes
                                   // — requested directly: "swipe right is
                                   // schedule ... swipe left is remove."

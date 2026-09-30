@@ -8883,3 +8883,36 @@ new.
   AppButton import name.
 - chip_tokens_test gained a badge-fill case. Full suite unchanged (18).
   Analyze: 19 existing issues.
+
+## 2026-09-30 — Full task detail sheet removed; compact task sheet for everything
+
+- **Step 1:** added `task_sheet_form.dart` (+ `task_recurrence_days.dart`),
+  `task_sheet_save.dart`, `task_sheet_pickers.dart`,
+  `task_sheet_fields.dart` and `task_description_modal.dart`.
+- **Step 2:**
+  - Added `task_sheet.dart` (`showTaskSheet`) and
+    `task_discard_dialog.dart`.
+  - `QuickCreateOverlay` moved onto the shared pieces (~930 → 571 lines):
+    in-place name, keyboard lift, pill ↔ form sync, no promotion.
+  - Every caller was switched: Timeline tap/create-at/+, Things, Zones,
+    Habits dev main, action-sheet Edit/Duplicate, recurrence dev main.
+- **Step 3:**
+  - Deleted the full sheet, the Name and category sheet, 4 dev harnesses
+    and 3 obsolete test files (stage 1, old close paths, inline template
+    browser).
+  - Ported affect_future_instances (5), edit_hour_save (3 of 7; the 4
+    dropped tested the removed inline wheel) and edit_schedule_repeats (9,
+    via the repeat picker).
+  - New tests: task_sheet_test (9: create defaults, silent close, the
+    three close choices, system back, Things item gaps, preset +
+    templateId, delete) and task_sheet_form_test (5).
+  - quick_task_add promotion tests were rewritten to expand in place and
+    type in place. The label-flow test moved to the Label sheet.
+- **Result:** full suite 18 failures, the same set as before. One run had
+  3 extra flakes that pass alone and didn't recur on a rerun. Analyze: 15
+  issues, down from 19 (all pre-existing).
+- **Open:**
+  - History notes in other files still say "promoted out of
+    `task_detail_sheet.dart`" (provenance only; live API references were
+    updated).
+  - None of this has been checked on a device.

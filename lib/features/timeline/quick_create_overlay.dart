@@ -5,44 +5,29 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/component_tokens.dart';
 import '../../core/tokens/semantic_theme.dart';
-import '../../core/timeline_clock.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_sheet_surface.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
 import '../../core/widgets/app_size_reporter.dart';
 import '../../core/widgets/app_step_scaffold.dart' show HeaderCircleButton;
-import '../../core/widgets/app_text_field.dart';
-import '../../core/widgets/app_trial_gate.dart';
-import '../../core/widgets/app_value_chip.dart';
-import '../../shared/models/category.dart';
-import '../../shared/models/recurrence_frequency.dart';
-import '../../shared/models/recurrence_rule.dart';
-import '../../shared/models/task.dart';
-import '../../shared/providers/task_providers.dart';
-import '../../shared/providers/trial_providers.dart';
-import 'recently_saved_task_provider.dart';
 import '../task_detail/quick_create_sheet_shell.dart';
-import '../task_detail/task_behavior_modal.dart';
-import '../task_detail/task_category_modal.dart';
-import '../task_detail/task_detail_sheet.dart';
-import '../task_detail/task_duration_modal.dart';
-import '../task_detail/task_preset_modal.dart';
-import '../task_detail/task_repeat_modal.dart';
-import '../task_detail/task_start_time_modal.dart';
+import '../task_detail/task_sheet_fields.dart';
+import '../task_detail/task_sheet_form.dart';
+import '../task_detail/task_sheet_save.dart';
 import 'pending_task_draft_provider.dart';
 
 /// The small quick-create panel dropped alongside the provisional placeholder
 /// pill by tapping empty Timeline space — requested directly: "a small
 /// sheet with a task name input without the keyboard opened... a little
 /// handle in the middle that the user can extend to near full size add
-/// sheet." Mirrors the real full-size sheet's own header/footer button
-/// positions (close top-right, primary action a bottom pill button — see
-/// `StepScaffold`) so the small and expanded states read as one
-/// continuous flow, not two different UIs.
+/// sheet." Its fields and save are the shared task sheet's
+/// (`TaskSheetFields` / `saveTaskSheet`), the same as editing a task
+/// (`showTaskSheet`); the name is typed in place, with the sheet riding
+/// above the keyboard.
 ///
 /// **Deliberately NOT a pushed `Navigator` route.** An earlier version
-/// pushed this panel as a route (reusing `showTaskDetailSheet`'s own
-/// `_pushDetailRoute`, wrapped to a small height) and it was confirmed
+/// pushed this panel as a route (wrapped to a small height) and it was
+/// confirmed
 /// broken by direct testing: Flutter's `Navigator` unconditionally wraps
 /// every route BELOW the topmost one in an `AbsorbPointer`, regardless of
 /// `barrierColor`/`opaque` — no route-level configuration can opt out of
@@ -55,13 +40,9 @@ import 'pending_task_draft_provider.dart';
 /// be possible."
 ///
 /// So this widget is a plain member of `_DayTimelineState`'s own Stack —
-/// no `Navigator`, no barrier, nothing absorbing pointers below it. Only
-/// once the user drags the handle past the expand threshold, taps the
-/// Name field, or taps the primary button does a REAL route get pushed
-/// (the ordinary, unmodified [showTaskDetailSheet] flow) — at that point
-/// `AbsorbPointer` making Timeline non-interactive underneath is correct
-/// and expected, exactly like every other entry point into that same
-/// sheet.
+/// no `Navigator`, no barrier, nothing absorbing pointers below it — for
+/// its whole life, expanded or not (the full-size task sheet it used to
+/// hand off to is gone, 2026-09-30).
 class QuickCreateOverlay extends ConsumerStatefulWidget {
   const QuickCreateOverlay({super.key, required this.draft});
 
@@ -73,7 +54,6 @@ class QuickCreateOverlay extends ConsumerStatefulWidget {
 
 class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
     with SingleTickerProviderStateMixin {
-  late final TextEditingController _titleController;
   late final QuickCreateSheetHeightController _heightController;
 
   /// A one-shot fade+slide-up on mount, requested directly: "still not see
@@ -96,37 +76,17 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
   /// rules out reusing `AppSheetMotion` wholesale.
   late final AnimationController _entrance;
 
-  /// Guards against promoting twice — [_onHeightChanged] fires on every
-  /// `notifyListeners()`, and [_promote] is also reachable directly from
-  /// the Name field's own focus and the Done button, but the promotion
-  /// (pushing the real sheet) must happen exactly once per draft.
-  bool _promoted = false;
+  /// The sheet's fields. Its date, time and length and the draft pill's
+  /// are one: dragging the pill updates them, picking them moves the pill.
+  late final TaskSheetForm _form;
 
-  /// See [Task.isImportant]. Reported directly as missing from this
-  /// panel ("can't see important in quick add in mini sheet") — the
-  /// full sheet, the edit flow, and templates all gained a real toggle
-  /// for this field, but the mini sheet's own direct-Add path
-  /// (`_schedule`) had no way to set it at all.
-  /// It remains user-overridable, same as the title field is.
-  bool _isImportant = false;
+  /// While the pill's own move is being copied into [_form], so that copy
+  /// isn't sent straight back to the pill.
+  bool _followingDraft = false;
 
-  /// The label selected from the shared label picker. General is the
-  /// neutral fallback and is not shown as a selectable label in the modal.
-  String _categoryId = BuiltInCategoryIds.general;
-
-  String? _behaviorId;
-  String? _templateId;
-  TimeOfDay? _timeOverride;
-  DateTime? _dateOverride;
-  int? _durationOverride;
-  bool _notificationsEnabled = true;
-  bool _repeats = false;
-  late Set<int> _selectedDays;
-
-  /// Re-entrancy guards for the direct save, mirroring the full sheet's
-  /// own pair: [_isSaving] stops two taps overlapping, [_hasSaved] stops
-  /// a second tap arriving after the first committed from creating a
-  /// duplicate task.
+  /// Re-entrancy guards for the save: [_isSaving] stops two taps
+  /// overlapping, [_hasSaved] stops a second tap arriving after the first
+  /// committed from creating a duplicate task.
   bool _isSaving = false;
   bool _hasSaved = false;
 
@@ -135,15 +95,18 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
   @override
   void initState() {
     super.initState();
-    // A real default name ("New thing") rather than starting empty —
-    // requested directly, so Add is always meaningful even if the
-    // user never types. Tapping the field clears it outright (see the
-    // field's own onFocusChanged) so typing starts from scratch.
-    _titleController = TextEditingController(text: 'New thing');
-    _selectedDays = {widget.draft.scheduledAt.weekday};
+    // A real default name ("New thing"), so Add is meaningful untouched;
+    // the first tap into the name clears it (see [_clearDefaultName]).
+    _form = TaskSheetForm(
+      allTasks: const [],
+      title: _defaultName,
+      date: widget.draft.scheduledAt,
+      time: TimeOfDay.fromDateTime(widget.draft.scheduledAt),
+      durationMinutes: widget.draft.durationMinutes,
+    )..addListener(_moveDraftToForm);
     _heightController = QuickCreateSheetHeightController(
       initialFraction: quickCreateSheetMinFraction,
-    )..addListener(_onHeightChanged);
+    );
     // Duration is set from `theme.motionSheetSlide` in
     // `didChangeDependencies` (the theme isn't reachable yet here) —
     // `vsync` is all `initState` can safely provide.
@@ -165,143 +128,67 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
 
   @override
   void dispose() {
-    _heightController.removeListener(_onHeightChanged);
     _heightController.dispose();
-    _titleController.dispose();
+    _form
+      ..removeListener(_moveDraftToForm)
+      ..dispose();
     _entrance.dispose();
     super.dispose();
   }
 
-  void _onHeightChanged() {
-    if (!_heightController.expanded) return;
-    _promote();
+  static const _defaultName = 'New thing';
+
+  @override
+  void didUpdateWidget(QuickCreateOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final draft = widget.draft;
+    if (draft.scheduledAt == oldWidget.draft.scheduledAt &&
+        draft.durationMinutes == oldWidget.draft.durationMinutes) {
+      return;
+    }
+    _followingDraft = true;
+    _form.setSchedule(draft.scheduledAt, draft.durationMinutes);
+    _followingDraft = false;
   }
 
-  /// The one and only handoff to the real flow: an ordinary, unmodified
-  /// showTaskDetailSheet push, seeded with whatever the user already
-  /// typed and linked to the same draft id so the placeholder pill stays
-  /// put and gets cleared/replaced the normal way once that flow saves
-  /// or is abandoned (see task_detail_sheet.dart's own draftId
-  /// handling, unchanged by this widget). Reachable three ways —
-  /// dragging the handle to full (via [_onHeightChanged]), tapping the
-  /// Name field, or tapping the Done button — all three are "the user
-  /// wants the full form" in one form or another, requested directly:
-  /// "when name input is tapped then it goes into near full screen
-  /// mode."
-  ///
-  /// [stayOnNameStage] is true ONLY for the Name-field-tap path: that
-  /// promotion fires on the TAP itself, before any typing happens, so
-  /// there is no confirmed name yet to skip stage 1 on — the real
-  /// sheet's own Name field takes over, autofocused, keyboard already
-  /// up, so typing continues uninterrupted in what reads as the same
-  /// field. The handle-drag and Done-button paths, by contrast, both
-  /// mean "I'm done with the name" (whatever it currently reads,
-  /// including the untouched "New thing" default), so they skip straight
-  /// to the schedule fields as usual.
-  void _promote({bool stayOnNameStage = false}) {
-    if (_promoted) return;
-    // Rebuilds this widget to render nothing (see build()'s own early
-    // return) — once promoted, the real pushed route is the only visible
-    // "sheet"; this overlay must not keep rendering alongside it.
-    setState(() => _promoted = true);
-
-    showTaskDetailSheet(
-      context,
-      initialScheduledAt: _scheduledAt,
-      initialTimeOfDay: TimeOfDay.fromDateTime(_scheduledAt),
-      draftId: widget.draft.id,
-      initialTitle: _titleController.text,
-      initialDurationMinutes: _durationMinutes,
-      initialCategoryId: _categoryId,
-      initialIsImportant: _isImportant,
-      initialBehaviorId: _behaviorId,
-      templateId: _templateId,
-      stayOnNameStage: stayOnNameStage,
-    );
+  /// A time or length picked in the sheet moves the draft pill with it.
+  void _moveDraftToForm() {
+    if (_followingDraft) return;
+    final at = _form.scheduledAt;
+    final minutes = _form.durationMinutes;
+    if (at == null || minutes == null) return;
+    final draft = widget.draft;
+    final notifier = ref.read(pendingTaskDraftProvider.notifier);
+    if (at != draft.scheduledAt) notifier.updatePosition(at);
+    if (minutes != draft.durationMinutes) notifier.updateDuration(minutes);
   }
 
-  /// Creates the task directly from the mini sheet, without ever opening
-  /// the full form — the compact action commits the task directly
-  /// and writes the settled draft values immediately.
-  ///
-  /// Everything needed is already settled by this point: the title (typed
-  /// or from a chip or the "New thing" default), the category (from a chip,
-  /// else General), and the start/duration (from where the user dropped
-  /// and sized the placeholder pill). So this is a complete answer, not a
-  /// shortcut past unanswered questions — the full sheet stays reachable
-  /// for anything more (notes, repeats, notifications) by tapping the
-  /// Name field.
-  ///
-  /// Saves the chosen position and size as-is. Overlaps are valid task
-  /// layout; the timeline exposes explicit resolution actions afterward.
-  Future<void> _schedule() async {
-    if (_isSaving || _hasSaved) return;
+  /// The first tap into the name clears the default, so typing starts
+  /// fresh (reported directly); a name the user typed or a preset's stays.
+  void _clearDefaultName(bool hasFocus) {
+    if (hasFocus && _form.title.text == _defaultName) _form.title.clear();
+  }
 
-    final title = _titleController.text.trim();
-    // Nothing sensible to create, and no field is showing an error — the
-    // user has actively emptied a field that ships with a default.
-    if (title.isEmpty) return;
-
-    final scheduledAt = _scheduledAt;
-    final durationMinutes = _durationMinutes;
-
+  /// Add: the shared task save ([saveTaskSheet]), which also clears the
+  /// draft. [_isSaving] stops overlapping taps, [_hasSaved] a second save.
+  Future<void> _save() async {
+    if (_isSaving || _hasSaved || !_form.canSave) return;
     setState(() => _isSaving = true);
-
     try {
-      final notifier = ref.read(taskListProvider.notifier);
-      Future<Task> attempt() => notifier.createTask(
-        title: title,
-        scheduledAt: scheduledAt,
-        durationMinutes: durationMinutes,
-        categoryId: _categoryId,
-        recurrenceRule: _repeats ? _recurrenceRule : null,
-        behaviorId: _behaviorId,
-        notificationsEnabled: _notificationsEnabled,
-        isImportant: _isImportant,
-        templateId: _templateId,
+      _hasSaved = await saveTaskSheet(
+        context,
+        ref,
+        _form,
+        draftId: widget.draft.id,
       );
-      Task created;
-      try {
-        created = await attempt();
-      } on TrialExpiredException {
-        if (!mounted) return;
-        final unlocked = await presentPaywallForTrialExpired(context, ref);
-        if (!unlocked || !mounted) return;
-        try {
-          created = await attempt();
-        } on TrialExpiredException {
-          return;
-        }
-      }
-      _hasSaved = true;
-      // Lets the Timeline animate the new pill in rather than having it
-      // appear fully-formed — the same handoff the full sheet's own save
-      // performs.
-      ref
-          .read(recentlySavedTaskProvider.notifier)
-          .record(created.id, SavedTaskChange.created);
-      // Clearing the draft removes BOTH the placeholder pill and this
-      // overlay; the real task pill takes the placeholder's place.
-      ref.read(pendingTaskDraftProvider.notifier).clear();
     } finally {
-      // Guarded: clearing the draft above unmounts this widget, so by the
-      // time this runs there may be no State left to set.
       if (mounted) setState(() => _isSaving = false);
     }
   }
 
-  Future<void> _openLabelModal() async {
-    final result = await TaskCategoryModal.show(
-      context: context,
-      categoryId: _categoryId,
-    );
-    if (!mounted || result == null) return;
-    setState(() => _categoryId = result);
-  }
-
   /// Guards [_onCloseRequested] against firing twice (e.g. a second drag
   /// past the close threshold while the exit is already playing) — the
-  /// same "runs exactly once" shape [_promoted]/[_entranceStarted] already
+  /// same "runs exactly once" shape [_entranceStarted] already
   /// establish for this class's other one-shot transitions.
   bool _closing = false;
 
@@ -331,112 +218,6 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
       ref.read(pendingTaskDraftProvider.notifier).clear();
     });
   }
-
-  DateTime get _scheduledAt {
-    final draft = widget.draft.scheduledAt;
-    final date = _dateOverride ?? draft;
-    final time = _timeOverride ?? TimeOfDay.fromDateTime(draft);
-    return DateTime(date.year, date.month, date.day, time.hour, time.minute);
-  }
-
-  int get _durationMinutes => _durationOverride ?? widget.draft.durationMinutes;
-
-  RecurrenceRule get _recurrenceRule {
-    final days = _selectedDays.isEmpty ? {DateTime.monday} : _selectedDays;
-    return days.length == 7
-        ? RecurrenceRule(frequency: RecurrenceFrequency.daily)
-        : RecurrenceRule(
-            frequency: RecurrenceFrequency.weekly,
-            daysOfWeek: days.toList()..sort(),
-          );
-  }
-
-  Future<void> _openPresetModal() async {
-    final template = await TaskPresetModal.show(
-      context: context,
-      selectedTemplateId: _templateId,
-    );
-    if (!mounted || template == null) return;
-    setState(() {
-      _templateId = template.id;
-      _titleController.text = template.title;
-      _categoryId = template.categoryId;
-      _behaviorId = template.behaviorId;
-      _isImportant = template.isImportant;
-    });
-  }
-
-  Future<void> _openDatePicker() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _scheduledAt,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2100),
-    );
-    if (!mounted || picked == null) return;
-    setState(() {
-      _dateOverride = DateTime(picked.year, picked.month, picked.day);
-    });
-  }
-
-  Future<void> _openStartTimeModal() async {
-    final result = await TaskStartTimeModal.show(
-      context: context,
-      initialHour: _scheduledAt.hour,
-      initialMinute: _scheduledAt.minute,
-    );
-    if (!mounted || result == null) return;
-    setState(
-      () => _timeOverride = TimeOfDay(hour: result.$1, minute: result.$2),
-    );
-  }
-
-  Future<void> _openDurationModal() async {
-    final result = await TaskDurationModal.show(
-      context: context,
-      initialMinutes: _durationMinutes,
-    );
-    if (!mounted || result == null) return;
-    setState(() => _durationOverride = result);
-  }
-
-  Future<void> _openRepeatModal() async {
-    final result = await TaskRepeatModal.show(
-      context: context,
-      enabled: _repeats,
-      selectedDays: _selectedDays,
-    );
-    if (!mounted || result == null) return;
-    setState(() {
-      _repeats = result.enabled;
-      _selectedDays = {...result.selectedDays};
-    });
-  }
-
-  Future<void> _openBehaviorModal() async {
-    final result = await TaskBehaviorModal.show(
-      context: context,
-      behaviorId: _behaviorId,
-    );
-    if (!mounted || result == null) return;
-    setState(() => _behaviorId = result.behaviorId);
-  }
-
-  String _dateLabel(BuildContext context) {
-    final date = _scheduledAt;
-    final now = DateTime.now();
-    if (date.year == now.year &&
-        date.month == now.month &&
-        date.day == now.day) {
-      return 'Today';
-    }
-    return MaterialLocalizations.of(context).formatMediumDate(date);
-  }
-
-  String _startTimeLabel(BuildContext context) =>
-      timelineClock(context, TimeOfDay.fromDateTime(_scheduledAt));
-
-  String get _durationLabel => '${_durationMinutes}m';
 
   /// The content's natural height (fields, chips, bottom space), measured
   /// after layout. The small state hugs it — no empty band under the chips
@@ -476,10 +257,6 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
 
   @override
   Widget build(BuildContext context) {
-    // Once promoted, the real pushed route takes over entirely — this
-    // overlay's own job is done (see _promote).
-    if (_promoted) return const SizedBox.shrink();
-
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     final viewport = MediaQuery.sizeOf(context).height;
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
@@ -531,7 +308,8 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
               return Positioned(
                 left: 0,
                 right: 0,
-                bottom: 0,
+                // Above the keyboard while the name is being typed.
+                bottom: MediaQuery.viewInsetsOf(context).bottom,
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
                   curve: Curves.easeOut,
@@ -621,8 +399,7 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
                                           // of the row they don't cover.
                                           //
                                           // "Add", not "Done": it commits the task
-                                          // outright rather than handing off to the
-                                          // full form.
+                                          // outright.
                                           // Both buttons hide while MINIMISED —
                                           // requested directly: "just the title is
                                           // shown, and there is this little handle
@@ -641,7 +418,7 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
                                                   shape: AppButtonShape.pill,
                                                   onPressed: _isSaving
                                                       ? null
-                                                      : _schedule,
+                                                      : _save,
                                                 ),
                                               ),
                                             ),
@@ -694,10 +471,9 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
                                         child: SizedBox(
                                           width: double.infinity,
                                           child: ListenableBuilder(
-                                            listenable: _titleController,
+                                            listenable: _form.title,
                                             builder: (context, _) {
-                                              final title = _titleController
-                                                  .text
+                                              final title = _form.title.text
                                                   .trim();
                                               return Text(
                                                 // "(No title)" confirmed directly,
@@ -726,139 +502,13 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
                                       padding: EdgeInsets.symmetric(
                                         horizontal: theme.spacingLg,
                                       ),
-                                      child: AppTextField(
-                                        controller: _titleController,
-                                        label: 'Add title',
-                                        // Bare text, no field chrome — requested
-                                        // directly against a reference screenshot:
-                                        // "we need a new style for the input field...
-                                        // just text and, on top, can be edited." The
-                                        // label doubles as the placeholder ("Add
-                                        // title", matching that screenshot) since
-                                        // there is no floating label in this variant.
-                                        variant: AppTextFieldVariant.bare,
-                                        // Not selectAllOnFocus: the field is CLEARED
-                                        // outright when tapped (see onFocusChanged
-                                        // below), so there is nothing left to select.
-                                        // Tapping the field is itself a request for
-                                        // the full form — requested directly ("when
-                                        // name input is tapped then it goes into
-                                        // near full screen mode"). Fires on the tap
-                                        // itself (before any typing), so this stays
-                                        // on the real sheet's own stage 1
-                                        // (autofocused Name field, keyboard already
-                                        // up) rather than skipping ahead — see
-                                        // _promote's own doc comment on
-                                        // stayOnNameStage.
-                                        onFocusChanged: (hasFocus) {
-                                          if (!hasFocus) return;
-                                          // Reported directly: "New task name input
-                                          // should be reset to nothing, clears, so
-                                          // user can type in from scratch." Clearing
-                                          // beats selectAllOnFocus here because the
-                                          // full sheet this promotes into is seeded
-                                          // from `initialTitle` — a selection would
-                                          // not survive that handoff, but an empty
-                                          // string does.
-                                          _titleController.clear();
-                                          _promote(stayOnNameStage: true);
-                                        },
-                                      ),
-                                    ),
-                                    // A clear break between the name and its
-                                    // settings: the chips are a separate group.
-                                    SizedBox(height: theme.spacingMd),
-                                    Padding(
-                                      padding: EdgeInsets.symmetric(
-                                        horizontal: theme.spacingLg,
-                                      ),
-                                      // Full width, start-aligned: a shrink-wrapped
-                                      // column was centred by the sheet's column,
-                                      // insetting the chips from the name.
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.stretch,
-                                        children: [
-                                          Wrap(
-                                            spacing: theme.spacingSm,
-                                            runSpacing: theme.spacingSm,
-                                            children: [
-                                              AppValueChip(
-                                                label: 'Preset',
-                                                hasValue: false,
-                                                onTap: _openPresetModal,
-                                              ),
-                                              AppValueChip(
-                                                label: _dateLabel(context),
-                                                hasValue: true,
-                                                onTap: _openDatePicker,
-                                              ),
-                                              AppValueChip(
-                                                label: _startTimeLabel(context),
-                                                hasValue: true,
-                                                onTap: _openStartTimeModal,
-                                              ),
-                                              AppValueChip(
-                                                label: _durationLabel,
-                                                hasValue: true,
-                                                onTap: _openDurationModal,
-                                              ),
-                                            ],
-                                          ),
-                                          SizedBox(height: theme.spacingSm),
-                                          Wrap(
-                                            spacing: theme.spacingSm,
-                                            runSpacing: theme.spacingSm,
-                                            children: [
-                                              AppValueChip(
-                                                label: '',
-                                                icon: Icons.star_rounded,
-                                                iconOnly: true,
-                                                hasValue: _isImportant,
-                                                onTap: () => setState(
-                                                  () => _isImportant =
-                                                      !_isImportant,
-                                                ),
-                                              ),
-                                              AppValueChip(
-                                                label: '#',
-                                                iconOnly: true,
-                                                hasValue:
-                                                    _categoryId !=
-                                                    BuiltInCategoryIds.general,
-                                                onTap: _openLabelModal,
-                                              ),
-                                              AppValueChip(
-                                                label: '',
-                                                icon: Icons.fingerprint_rounded,
-                                                iconOnly: true,
-                                                hasValue: _behaviorId != null,
-                                                onTap: _openBehaviorModal,
-                                              ),
-                                              AppValueChip(
-                                                label: '',
-                                                icon: _notificationsEnabled
-                                                    ? Icons
-                                                          .notifications_rounded
-                                                    : Icons
-                                                          .notifications_off_rounded,
-                                                iconOnly: true,
-                                                hasValue: _notificationsEnabled,
-                                                onTap: () => setState(
-                                                  () => _notificationsEnabled =
-                                                      !_notificationsEnabled,
-                                                ),
-                                              ),
-                                              AppValueChip(
-                                                label: '',
-                                                icon: Icons.repeat_rounded,
-                                                iconOnly: true,
-                                                hasValue: _repeats,
-                                                onTap: _openRepeatModal,
-                                              ),
-                                            ],
-                                          ),
-                                        ],
+                                      // Typed in place: the sheet rises
+                                      // with the keyboard (see the
+                                      // Positioned's bottom).
+                                      child: TaskSheetFields(
+                                        form: _form,
+                                        showPreset: true,
+                                        onNameFocusChanged: _clearDefaultName,
                                       ),
                                     ),
                                   ],

@@ -346,11 +346,10 @@ void main() {
       );
       await _tapAndSettle(tester, find.text('Duplicate'));
 
-      // Pre-filled with the source task's title, on the full (stage 2)
-      // form directly — a duplicate already has a name, so it skips the
-      // Name-only first stage.
+      // Pre-filled with the source task's title, as a new task (Add).
       expect(find.text('Standup'), findsWidgets);
-      expect(find.text('Schedule'), findsOneWidget);
+      expect(find.text('New task'), findsOneWidget);
+      expect(find.text('Add'), findsOneWidget);
       // Still exactly ONE task — nothing persisted merely by opening
       // the screen.
       expect(box.values.length, 1);

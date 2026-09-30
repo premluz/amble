@@ -12,7 +12,7 @@ import '../../core/tokens/semantic_theme.dart';
 import '../../hive_registrar.g.dart';
 import '../../shared/models/task.dart';
 import '../../shared/providers/task_providers.dart';
-import '../task_detail/task_detail_sheet.dart';
+import '../task_detail/task_sheet.dart';
 import 'inbox_screen.dart';
 
 Future<void> main() async {
@@ -46,7 +46,7 @@ class _PreviewAppState extends State<_PreviewApp> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final context = _navigatorKey.currentContext;
       if (context != null) {
-        showTaskDetailSheet(context, task: widget.task);
+        showTaskSheet(context, task: widget.task);
       }
     });
   }

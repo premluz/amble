@@ -25,7 +25,7 @@ import '../../shared/models/tracked_behavior.dart';
 import '../../shared/providers/notification_providers.dart';
 import '../../shared/providers/task_providers.dart';
 import '../../shared/providers/tracked_behavior_providers.dart';
-import '../task_detail/task_detail_sheet.dart';
+import '../task_detail/task_sheet.dart';
 import 'timeline_screen.dart';
 
 const _mode = String.fromEnvironment('mode', defaultValue: 'series');
@@ -135,10 +135,9 @@ class _FormLauncherState extends State<_FormLauncher> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final now = DateTime.now();
-      showTaskDetailSheet(
+      showTaskSheet(
         context,
         initialScheduledAt: DateTime(now.year, now.month, now.day, 7, 0),
-        debugStartWithRepeatsOn: true,
       );
     });
   }

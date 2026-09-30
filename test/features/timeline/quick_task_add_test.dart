@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:amble/features/task_detail/task_sheet_fields.dart';
 import 'package:amble/core/widgets/app_size_reporter.dart';
 import 'package:amble/core/widgets/app_sheet_surface.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -75,9 +76,20 @@ Future<void> _moveTaskStart(
   await tester.ensureVisible(titleFinder);
   await tester.tap(titleFinder);
   await tester.pumpAndSettle();
-  await _tapAndSettle(tester, find.text('Time'));
+  // Editing: the chips run Date, Time, Duration — the time chip opens the
+  // Start time picker.
+  await _tapAndSettle(
+    tester,
+    find
+        .descendant(
+          of: find.byType(TaskSheetFields),
+          matching: find.byType(AppValueChip),
+        )
+        .at(1),
+  );
   tester.widget<AppWheelPicker>(find.byType(AppWheelPicker)).onChanged(hour, 0);
   await tester.pumpAndSettle();
+  await _tapAndSettle(tester, find.text('Done'));
 }
 
 final _noon = () {
@@ -257,9 +269,7 @@ void main() {
         findsOneWidget,
         reason: 'the placeholder pill must appear immediately',
       );
-      final wiggle = tester.widget<EditModeWiggle>(
-        find.byType(EditModeWiggle),
-      );
+      final wiggle = tester.widget<EditModeWiggle>(find.byType(EditModeWiggle));
       expect(wiggle.enabled, isFalse);
       expect(find.byType(QuickCreateOverlay), findsOneWidget);
       // Not a pushed route — the small panel's own button, same
@@ -272,7 +282,8 @@ void main() {
           of: find.byType(QuickCreateOverlay),
           matching: find.byType(AppValueChip),
         ),
-        findsNWidgets(9),
+        // Preset, date, time, duration; ★, #, tracked, bell, repeat, note.
+        findsNWidgets(10),
       );
       expect(find.text('Today'), findsOneWidget);
       expect(find.text('15m'), findsOneWidget);
@@ -847,16 +858,16 @@ void main() {
     },
   );
 
-  testWidgets('dragging the handle promotes to the real sheet, revealing the '
-      'schedule fields, while the placeholder pill stays on Timeline', (
-    tester,
-  ) async {
-    await pumpTimeline(tester);
+  double sheetHeight(WidgetTester tester) => tester
+      .getSize(
+        find.descendant(
+          of: find.byType(QuickCreateOverlay),
+          matching: find.byType(AppSheetSurface),
+        ),
+      )
+      .height;
 
-    await longPressAndReleaseAt(tester, const Offset(220, 400));
-
-    expect(find.byType(PendingTaskPill), findsOneWidget);
-
+  Future<void> dragHandleUp(WidgetTester tester, double by) async {
     // A `pump()` between EVERY gesture step — see the pill-drag test
     // above's own doc comment for why (onVerticalDragUpdate doesn't
     // register at all otherwise, in this full TimelineScreen tree).
@@ -864,28 +875,30 @@ void main() {
       tester.getCenter(find.byType(QuickCreateSheetHandle)),
     );
     await tester.pump();
-    await gesture.moveBy(const Offset(0, -200));
+    await gesture.moveBy(Offset(0, -by / 2));
     await tester.pump();
-    await gesture.moveBy(const Offset(0, -200));
+    await gesture.moveBy(Offset(0, -by / 2));
     await tester.pump();
     await gesture.up();
     await tester.pump();
-    // The pushed route's own slide-up transition takes real animation
-    // time to settle before its content (Category etc.) is queryable.
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pump(const Duration(milliseconds: 400));
+  }
 
-    // Confirming the name stage (whether via the handle reaching full,
-    // or Done) advances straight to stage 2 — Category is stage-2-only.
-    expect(find.text('Label'), findsOneWidget);
-    // The placeholder pill is unaffected by the promotion — it's a
-    // Timeline-side widget, entirely separate from the pushed route.
+  testWidgets('dragging the handle up expands the same sheet in place — '
+      'the fields stay, the placeholder pill stays on Timeline', (
+    tester,
+  ) async {
+    await pumpTimeline(tester);
+    await longPressAndReleaseAt(tester, const Offset(220, 400));
+    final small = sheetHeight(tester);
+
+    await dragHandleUp(tester, 400);
+
+    expect(sheetHeight(tester), greaterThan(small * 1.5));
+    expect(find.byType(QuickCreateSheetHandle), findsOneWidget);
+    expect(find.byType(TaskSheetFields), findsOneWidget);
     expect(find.byType(PendingTaskPill), findsOneWidget);
-    // The overlay itself renders nothing once promoted (it stays in the
-    // tree — still gated on the same still-live pendingDraft the real
-    // pushed route also reads via draftId — but its own handle/Name
-    // field are gone, replaced visually by the real pushed sheet).
-    expect(find.byType(QuickCreateSheetHandle), findsNothing);
   });
 
   testWidgets(
@@ -893,70 +906,34 @@ void main() {
     'directly as "difficult to do" when it demanded most of the screen',
     (tester) async {
       await pumpTimeline(tester);
-
       await longPressAndReleaseAt(tester, const Offset(220, 400));
-
-      expect(find.byType(QuickCreateSheetHandle), findsOneWidget);
+      final small = sheetHeight(tester);
 
       // ~70px total, nowhere near the ~380px the old midpoint rule
       // needed on this 932px-tall test viewport.
-      final gesture = await tester.startGesture(
-        tester.getCenter(find.byType(QuickCreateSheetHandle)),
-      );
-      await tester.pump();
-      await gesture.moveBy(const Offset(0, -35));
-      await tester.pump();
-      await gesture.moveBy(const Offset(0, -35));
-      await tester.pump();
-      await gesture.up();
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
-      await tester.pump(const Duration(milliseconds: 400));
+      await dragHandleUp(tester, 70);
 
-      expect(find.byType(QuickCreateSheetHandle), findsNothing);
-      expect(find.text('Label'), findsOneWidget);
+      expect(sheetHeight(tester), greaterThan(small * 1.5));
     },
   );
 
   testWidgets(
-    'tapping the Name field promotes to the real sheet\'s own stage 1, '
-    'autofocused, so typing continues in the same field — requested '
-    'directly ("when name input is tapped then it goes into near full '
-    'screen mode")',
+    'the name is typed in place: the first tap clears "New thing", the '
+    'sheet stays, and Add saves what was typed',
     (tester) async {
       await pumpTimeline(tester);
-
       await longPressAndReleaseAt(tester, const Offset(220, 400));
 
-      expect(find.byType(QuickCreateSheetHandle), findsOneWidget);
-
-      // The tap alone (before any typing) is what triggers promotion —
-      // fires on onFocusChanged, so a plain tap is enough; the small
-      // overlay's own field is gone by the time this returns, replaced
-      // by the real pushed sheet's OWN separate Name field/controller.
       await tester.tap(find.byType(TextField).first);
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
-      await tester.pump(const Duration(milliseconds: 400));
 
-      // Promoted to the real sheet's stage 1 — "Done", not "Schedule"/
-      // "Category" (that's stage 2), and the Name field autofocused so
-      // the keyboard stays up and typing continues uninterrupted.
-      expect(find.byType(QuickCreateSheetHandle), findsNothing);
-      expect(find.widgetWithText(ElevatedButton, 'Done'), findsOneWidget);
-      final promotedField = tester.widget<TextField>(
-        find.byType(TextField).first,
-      );
-      expect(promotedField.autofocus, isTrue);
-
-      // The "New thing" default does NOT come across — reported directly:
-      // "New task name input should be reset to nothing, clears, so user
-      // can type in from scratch." The mini sheet clears its own field on
-      // the tap, and the empty string is what seeds the full sheet.
-      expect(promotedField.controller!.text, isEmpty);
-      // Scoped to the sheet: the PILL still shows its own "New thing"
-      // label (it has no other name to show), so an unscoped
-      // findsNothing would fail for the wrong reason.
+      // Still the same small sheet, now with an empty name — reported
+      // directly: "New task name input should be reset to nothing, clears,
+      // so user can type in from scratch." Scoped to the sheet: the PILL
+      // still shows its own "New thing" label.
+      expect(find.byType(QuickCreateSheetHandle), findsOneWidget);
+      final field = tester.widget<TextField>(find.byType(TextField).first);
+      expect(field.controller!.text, isEmpty);
       expect(
         find.descendant(
           of: find.byType(QuickCreateOverlay),
@@ -966,34 +943,19 @@ void main() {
       );
 
       await tester.enterText(find.byType(TextField).first, 'Quick task');
-      await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 250));
 
-      // Confirming the name (Done/keyboard-complete) advances to stage 2.
-      expect(find.text('Quick task'), findsOneWidget);
-      expect(find.byType(PendingTaskPill), findsOneWidget);
-
-      final saveButton = find.widgetWithText(ElevatedButton, 'Schedule');
       await tester.runAsync(() async {
-        await tester.tap(saveButton);
+        await tester.tap(find.widgetWithText(ElevatedButton, 'Add'));
         await tester.pump();
-        // The real Hive write inside _save() doesn't complete on any
-        // fixed frame schedule (see docs/ERROR_LOG.md's "flutter test
-        // hangs indefinitely on real Hive disk I/O" entry) — poll with
-        // real wall-clock delays (inside runAsync, so this is a genuine
-        // async wait, not a frame-only pump) until the real sheet's own
-        // route has actually closed, rather than guessing a fixed pump
-        // budget.
+        // The real Hive write doesn't complete on any fixed frame schedule
+        // (docs/ERROR_LOG.md) — poll with real delays until the sheet's
+        // draft (and with it the overlay) is gone.
         for (var i = 0; i < 20; i++) {
-          if (find.byType(ElevatedButton).evaluate().isEmpty) break;
+          if (find.byType(QuickCreateOverlay).evaluate().isEmpty) break;
           await Future<void>.delayed(const Duration(milliseconds: 50));
           await tester.pump();
         }
-        // Drains any continuation still queued behind the real Hive
-        // write (e.g. TaskList's post-save _refresh()) before this
-        // runAsync block — and the test — returns, or it can resolve
-        // later, after tearDown has already closed the Hive box.
         await Future<void>.delayed(Duration.zero);
       });
 
@@ -1122,9 +1084,7 @@ void main() {
             'the placeholder name must not wiggle, same as a real '
             'task name in Edit Mode',
       );
-      final wiggle = tester.widget<EditModeWiggle>(
-        find.byType(EditModeWiggle),
-      );
+      final wiggle = tester.widget<EditModeWiggle>(find.byType(EditModeWiggle));
       expect(wiggle.enabled, isFalse);
     });
 

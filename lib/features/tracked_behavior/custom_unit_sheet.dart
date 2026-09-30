@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_sheet.dart';
+import '../../core/widgets/app_sheet_flow.dart';
 import '../../core/widgets/app_text_field.dart';
 
 /// A user-defined unit for a tracked behavior — [label] is the unit's own
@@ -21,8 +22,8 @@ class CustomUnit {
 /// opens small sheet with entry field (Label, Unit (placeholder, times,
 /// km, hours, glasses)." Content-sized ([AppSheetSize.small]), not a full
 /// [StepScaffold] takeover — this is a two-field accessory to the tracked
-/// behavior form, not a flow of its own, matching `showQuickCaptureSheet`'s
-/// own "stays small" precedent for a short form.
+/// behavior form. The same page is also pushed from the Measured in picker,
+/// so both entry points use the shared flow header.
 ///
 /// [initial] pre-fills both fields when re-opening an already-configured
 /// custom unit (e.g. editing an existing custom-type behavior). Returns
@@ -33,20 +34,26 @@ Future<CustomUnit?> showCustomUnitSheet(
 }) {
   return AppSheet.show<CustomUnit>(
     context: context,
-    builder: (context) => _CustomUnitForm(initial: initial),
+    builder: (context) => AppSheetFlow(
+      theme: Theme.of(context).extension<AmbleTheme>()!,
+      root: CustomUnitPage(initial: initial),
+    ),
   );
 }
 
-class _CustomUnitForm extends StatefulWidget {
-  const _CustomUnitForm({this.initial});
+/// The reusable Custom unit page. It works as the root of its own sheet and
+/// as a pushed page in the Measured in picker flow.
+class CustomUnitPage extends StatefulWidget {
+  const CustomUnitPage({super.key, this.initial, this.onSaved});
 
   final CustomUnit? initial;
+  final ValueChanged<CustomUnit>? onSaved;
 
   @override
-  State<_CustomUnitForm> createState() => _CustomUnitFormState();
+  State<CustomUnitPage> createState() => _CustomUnitPageState();
 }
 
-class _CustomUnitFormState extends State<_CustomUnitForm> {
+class _CustomUnitPageState extends State<CustomUnitPage> {
   late final TextEditingController _labelController;
   late final TextEditingController _unitController;
 
@@ -76,12 +83,16 @@ class _CustomUnitFormState extends State<_CustomUnitForm> {
 
   void _save() {
     if (!_canSave) return;
-    Navigator.of(context).pop(
-      CustomUnit(
-        label: _labelController.text.trim(),
-        name: _unitController.text.trim(),
-      ),
+    final saved = CustomUnit(
+      label: _labelController.text.trim(),
+      name: _unitController.text.trim(),
     );
+    final onSaved = widget.onSaved;
+    if (onSaved != null) {
+      onSaved(saved);
+    } else {
+      Navigator.of(context).pop(saved);
+    }
   }
 
   @override
@@ -90,37 +101,33 @@ class _CustomUnitFormState extends State<_CustomUnitForm> {
 
     return Column(
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // AppSheet's own outer padding no longer provides a top inset
-        // (2026-09-23 — "top padding should be in header").
-        SizedBox(height: theme.spacingLg),
-        Text('Custom unit', style: theme.textTitle),
-        SizedBox(height: theme.spacingLg),
+        AppSheetFlowHeader(
+          theme: theme,
+          title: 'Custom unit',
+          trailing: AppButton(
+            icon: Icons.check_rounded,
+            shape: AppButtonShape.circle,
+            tooltip: 'Save custom unit',
+            onPressed: _canSave ? _save : null,
+          ),
+        ),
+        SizedBox(height: theme.spacingMd),
         AppTextField(
           controller: _labelController,
           label: 'Label',
+          variant: AppTextFieldVariant.bare,
           autofocus: true,
         ),
         SizedBox(height: theme.spacingMd),
-        // A raw TextField, not AppTextField — this field needs real hint
-        // text alongside its own label (AppTextField's resting label
-        // doubles as its only placeholder, with no separate hint slot),
-        // same reasoning `tracked_behavior_form.dart`'s own `_AmountField`
-        // already uses for the identical gap.
-        Text('Unit', style: theme.textCaption),
-        SizedBox(height: theme.spacingXs),
-        TextField(
+        AppTextField(
           controller: _unitController,
-          style: theme.textBody.copyWith(color: theme.colorTextPrimary),
-          decoration: const InputDecoration(
-            isDense: true,
-            hintText: 'e.g. times, km, hours, glasses',
-          ),
+          label: 'Unit (e.g. times, km, hours, glasses)',
+          variant: AppTextFieldVariant.bare,
+          textInputAction: TextInputAction.done,
           onSubmitted: (_) => _save(),
         ),
-        SizedBox(height: theme.spacingLg),
-        AppButton(label: 'Save', onPressed: _canSave ? _save : null),
       ],
     );
   }

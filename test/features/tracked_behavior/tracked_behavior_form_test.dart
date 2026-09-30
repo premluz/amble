@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_text_field.dart';
+import 'package:amble/core/widgets/app_value_chip.dart';
 import 'package:amble/features/tracked_behavior/tracked_behavior_form.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/shared/models/behavior_target_type.dart';
@@ -13,16 +14,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive_ce.dart';
 
-/// Covers the near-full-screen, Name-first-then-reveal interaction model
-/// requested directly: "add template and add tracked should follow same
-/// modal UI and interaction model as add task and add zone. Near full
-/// screen and disclosure first name and them reveal rest." Mirrors
-/// `zone_form_screen_test.dart`'s/`task_template_form_test.dart`'s own
-/// equivalent tests. The edit-skips-stage-1 path is already covered by
-/// `tracked_behavior_form_edit_test.dart`, so this file focuses on the
-/// create/stage-1-specific reveal behavior not covered there.
+/// Covers the compact create flow and its shared quick-task-sheet controls.
+/// The edit path is also covered by `tracked_behavior_form_edit_test.dart`;
+/// this file keeps the create/default-name assertions separate from it.
 Finder _nameField() => find.descendant(
-  of: find.widgetWithText(AppTextField, 'What are you tracking?'),
+  of: find.widgetWithText(AppTextField, 'Add title'),
   matching: find.byType(TextField),
 );
 
@@ -65,53 +61,42 @@ void main() {
     await box.close();
   });
 
-  testWidgets(
-    'a fresh create opens on the Name-only stage 1 — Measured in is not in '
-    'the tree yet, then reveals once Done is tapped',
-    (tester) async {
-      final navigatorKey = await _pumpHost(tester, box: box);
-      unawaited(showTrackedBehaviorForm(navigatorKey.currentContext!));
-      await tester.pumpAndSettle();
+  testWidgets('a fresh create opens as a compact New habit sheet with the '
+      'default name and a compact measured-in value chip', (tester) async {
+    final navigatorKey = await _pumpHost(tester, box: box);
+    unawaited(showTrackedBehaviorForm(navigatorKey.currentContext!));
+    await tester.pumpAndSettle();
 
-      expect(find.text('Track a behavior'), findsOneWidget);
-      expect(find.text('Done'), findsOneWidget);
-      expect(find.text('Save'), findsNothing);
-      expect(find.text('Measured in'), findsNothing);
+    expect(find.text('New habit'), findsOneWidget);
+    expect(find.text('Add'), findsOneWidget);
+    expect(find.text('Done'), findsNothing);
+    expect(find.text('Save'), findsNothing);
+    expect(find.text('Measured in'), findsNothing);
+    expect(find.text('Time'), findsOneWidget);
 
-      await tester.enterText(_nameField(), 'Exercise');
-      await tester.pump();
-      await tester.tap(find.text('Done'));
-      await tester.pumpAndSettle();
+    final measuredIn = tester.widget<AppValueChip>(find.byType(AppValueChip));
+    expect(measuredIn.label, 'Time');
+    expect(measuredIn.size, AppValueChipSize.sm);
+    expect(measuredIn.hasValue, isTrue);
+    expect(find.text('Times per week'), findsNothing);
+    expect(find.text('Target'), findsNothing);
+  });
 
-      expect(find.text('Measured in'), findsOneWidget);
-      expect(find.text('Save'), findsOneWidget);
-      // Requested directly: "hide target and times per week." Neither
-      // appears at any stage of the form now.
-      expect(find.text('Times per week'), findsNothing);
-      expect(find.text('Target'), findsNothing);
-    },
-  );
+  testWidgets('the default name can be replaced before adding', (tester) async {
+    final navigatorKey = await _pumpHost(tester, box: box);
+    unawaited(showTrackedBehaviorForm(navigatorKey.currentContext!));
+    await tester.pumpAndSettle();
 
-  testWidgets(
-    'tapping Done with no name typed closes the whole screen, matching the '
-    'task/zone creation flow\'s own abandon behavior',
-    (tester) async {
-      final navigatorKey = await _pumpHost(tester, box: box);
-      unawaited(showTrackedBehaviorForm(navigatorKey.currentContext!));
-      await tester.pumpAndSettle();
+    await tester.enterText(_nameField(), 'Exercise');
+    await tester.pump();
 
-      await tester.testTextInput.receiveAction(TextInputAction.done);
-      await tester.pumpAndSettle();
-
-      expect(find.text('Track a behavior'), findsNothing);
-      expect(find.text('Measured in'), findsNothing);
-    },
-  );
+    expect(find.text('Exercise'), findsOneWidget);
+    expect(find.text('New habit'), findsNothing);
+  });
 
   testWidgets(
-    'editing an existing behavior skips straight to stage 2 — Measured in '
-    'is already visible, and the hidden Target/Times per week stay hidden '
-    'even for a behavior that HAS saved values for them',
+    'editing an existing behavior uses the compact Edit habit sheet and '
+    'keeps Target/Times per week hidden',
     (tester) async {
       final behavior = TrackedBehavior.create(
         title: 'Exercise',
@@ -127,9 +112,9 @@ void main() {
       showTrackedBehaviorForm(navigatorKey.currentContext!, behavior: behavior);
       await tester.pumpAndSettle();
 
-      expect(find.text('Edit behavior'), findsOneWidget);
+      expect(find.text('Edit habit'), findsOneWidget);
       expect(find.text('Save'), findsOneWidget);
-      expect(find.text('Measured in'), findsOneWidget);
+      expect(find.byType(AppValueChip), findsOneWidget);
       expect(find.text('Times per week'), findsNothing);
       expect(find.text('Target'), findsNothing);
       // This behavior was saved WITH a 60-minute target and a 3x

@@ -2,31 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
-import '../../core/widgets/app_modal_route.dart';
-import '../../core/widgets/app_pane.dart';
-import '../../core/widgets/app_staggered_entrance.dart';
-import '../../core/widgets/app_step_scaffold.dart';
+import '../../core/widgets/app_button.dart';
+import '../../core/widgets/app_sheet.dart';
+import '../../core/widgets/app_sheet_header.dart';
 import '../../core/widgets/app_text_field.dart';
+import '../../core/widgets/app_value_chip.dart';
 import '../../shared/models/behavior_target_type.dart';
 import '../../shared/models/tracked_behavior.dart';
 import '../../shared/providers/tracked_behavior_providers.dart';
 import 'custom_unit_sheet.dart';
-import '../../core/widgets/app_selectable_chip.dart';
-import '../../core/widgets/app_button.dart' show AppButtonVariant;
+import 'tracked_behavior_unit_sheet.dart';
 
 /// Opens the create/edit screen for a [TrackedBehavior] — [behavior] null
 /// to create, non-null to edit that row.
 ///
-/// Near-full-screen, built on [StepScaffold] — the exact same chrome (and,
-/// on create, the exact same Name-only stage 1 that reveals everything
-/// else on "Done") the real task-creation flow and Zone's own add/edit
-/// screen already use. Requested directly: "add template and add tracked
-/// should follow same modal UI and interaction model as add task and add
-/// zone." Reverses this feature's own earlier choice of [AppSheet] (a
-/// half-height sheet, reasoned at the time as "five short fields don't
-/// justify a full-screen takeover") — that reasoning no longer holds once
-/// consistency with every other create flow in the app is the actual
-/// requirement.
+/// Compact, single-page sheet matching the quick task add pattern. The
+/// measured unit is a value chip that opens its own small picker.
 ///
 /// All writes go through `trackedBehaviorListProvider`; this UI never
 /// touches the repository or Hive directly.
@@ -41,9 +32,9 @@ Future<void> showTrackedBehaviorForm(
   BuildContext context, {
   TrackedBehavior? behavior,
 }) {
-  return pushAppSheetRoute<void>(
-    context,
-    (context) => _TrackedBehaviorForm(behavior: behavior),
+  return AppSheet.show<void>(
+    context: context,
+    builder: (context) => _TrackedBehaviorForm(behavior: behavior),
   );
 }
 
@@ -60,6 +51,8 @@ class _TrackedBehaviorForm extends ConsumerStatefulWidget {
 }
 
 class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
+  static const _defaultTitle = 'New habit';
+
   late final TextEditingController _titleController;
 
   late BehaviorTargetType _targetType;
@@ -72,28 +65,17 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
   /// `customUnitLabel`/`customUnitName` nullability.
   CustomUnit? _customUnit;
 
-  /// Stage 1 (Name only) vs. stage 2 (everything else) — matches
-  /// `task_detail_sheet.dart`/`zone_form_screen.dart`'s own create-flow
-  /// pattern exactly. Editing an existing behavior skips straight to
-  /// stage 2, same as "Edit task"/"Edit zone" do.
-  bool _isNameStage = false;
-
   bool get _isEditing => widget.behavior != null;
 
   @override
   void initState() {
     super.initState();
     final behavior = widget.behavior;
-    _titleController = TextEditingController(text: behavior?.title ?? '')
-      // Same fix `zone_form_screen.dart`'s own Name field needed: nothing
-      // here otherwise rebuilds on the controller's own text changing, so
-      // the stage-1 Done button stayed disabled while typing. AppTextField
-      // has no onChanged of its own, so this listens to the controller
-      // directly instead.
-      ..addListener(() => setState(() {}));
+    _titleController = TextEditingController(
+      text: behavior?.title ?? _defaultTitle,
+    )..addListener(() => setState(() {}));
     _targetType = behavior?.targetType ?? BehaviorTargetType.duration;
     _timesPerWeek = behavior?.timesPerWeek ?? 3;
-    _isNameStage = behavior == null;
     if (behavior?.customUnitLabel != null && behavior?.customUnitName != null) {
       _customUnit = CustomUnit(
         label: behavior!.customUnitLabel!,
@@ -129,10 +111,8 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
     return true;
   }
 
-  /// Opens [showCustomUnitSheet] and applies its result — fired by tapping
-  /// the "Custom" chip itself (not just once, at selection time: reopening
-  /// it lets an already-custom behavior's unit be edited without switching
-  /// away and back). Selecting Custom without completing the sheet leaves
+  /// Opens [showCustomUnitSheet] and applies its result after the unit picker
+  /// has selected Custom. Selecting Custom without completing the sheet leaves
   /// [_targetType] set but [_customUnit] null, which [_canSave] blocks on.
   Future<void> _pickCustomUnit() async {
     final result = await showCustomUnitSheet(context, initial: _customUnit);
@@ -141,18 +121,26 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
     }
   }
 
-  /// Confirms stage 1 (Name) and advances to stage 2 — fired by stage 1's
-  /// own Done button or the Name field's keyboard-complete action. Mirrors
-  /// `zone_form_screen.dart`'s own `_confirmNameStage` exactly: an empty
-  /// name at this point closes the whole screen instead of advancing to a
-  /// form with nothing in it.
-  void _confirmNameStage() {
-    FocusManager.instance.primaryFocus?.unfocus();
-    if (_titleController.text.trim().isEmpty) {
-      Navigator.of(context).pop();
+  void _clearDefaultTitle(bool hasFocus) {
+    if (hasFocus && _titleController.text == _defaultTitle) {
+      _titleController.clear();
+    }
+  }
+
+  Future<void> _pickMeasuredIn() async {
+    if (_isCustom) {
+      await _pickCustomUnit();
       return;
     }
-    setState(() => _isNameStage = false);
+    final choice = await showTrackedBehaviorUnitSheet(
+      context,
+      initial: _targetType,
+    );
+    if (choice == null || !mounted) return;
+    setState(() {
+      _targetType = choice.type;
+      _customUnit = choice.customUnit;
+    });
   }
 
   Future<void> _save() async {
@@ -162,11 +150,10 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
       final notifier = ref.read(trackedBehaviorListProvider.notifier);
       final title = _titleController.text.trim();
       // Carried through from whatever this behavior was already saved
-      // with, NOT read from a field — the Target/Minimum inputs are gone
-      // (see the form body's own comment). A create leaves both null; an
-      // edit preserves the existing row's values rather than silently
-      // clearing amounts the form no longer shows and the user therefore
-      // has no way to re-enter.
+      // with, not read from a field — the compact sheet does not expose
+      // Target/Minimum inputs. A create leaves both null; an edit preserves
+      // the existing row's values rather than silently clearing amounts the
+      // user has no way to re-enter here.
       final targetAmount = _isBinary ? null : widget.behavior?.targetAmount;
       final minimumAmount = widget.behavior?.minimumAmount;
       // Only ever set for a custom target type — matching the model's own
@@ -206,130 +193,49 @@ class _TrackedBehaviorFormState extends ConsumerState<_TrackedBehaviorForm> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
 
-    // Stage 2's panes, staggered in exactly like task_detail_sheet.dart/
-    // zone_form_screen.dart's own `staggeredPanes` — a plain list so the
-    // entrance index is each pane's position in it, not hand-numbered at
-    // each call site.
-    final staggeredPanes = [
-      AppPane(
-        title: 'Measured in',
-        child: Wrap(
-          spacing: theme.spacingSm,
-          runSpacing: theme.spacingSm,
-          children: [
-            // Explicit display order — requested directly: "Time,
-            // Distance, Reps, Count[, Custom]" plus "Did it" (binary)
-            // kept as a 6th option (confirmed via AskUserQuestion), NOT
-            // BehaviorTargetType.values' own declaration order (which has
-            // binary third, for backward-compatible Hive field indices —
-            // see that enum's own doc comment).
-            for (final type in _measuredInOrder)
-              AppSelectableChip(
-                variant: AppButtonVariant.primary,
-                size: AppSelectableChipSize.regular,
-                label: _labelFor(type),
-                selected: type == _targetType,
-                onTap: () {
-                  setState(() => _targetType = type);
-                  if (type == BehaviorTargetType.custom) _pickCustomUnit();
-                },
-              ),
-          ],
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AppSheetHeader(
+          theme: theme,
+          title: _isEditing ? 'Edit habit' : null,
+          onClose: () => Navigator.of(context).pop(),
+          trailing: AppButton(
+            label: _isEditing ? 'Save' : 'Add',
+            shape: AppButtonShape.pill,
+            isLoading: _isSaving,
+            onPressed: _canSave ? _save : null,
+          ),
         ),
-      ),
-      // The "Target"/"Minimum" pane and the "Times per week" stepper both
-      // used to sit here — removed directly: "from settings track hide
-      // target and times per week and its dependency to be filled in
-      // order to save."
-      //
-      // Both fields are still on the model and still written on save
-      // (`timesPerWeek` from its own default, `targetAmount` as null);
-      // the model's "targetAmount is required unless binary" assert is
-      // gone, and `_canSave` no longer waits on an amount. Existing
-      // behaviors keep whatever they were saved with — nothing rewrites
-      // them.
-    ];
-
-    return StepScaffold(
-      theme: theme,
-      modalTitle: _isEditing ? 'Edit behavior' : 'Track a behavior',
-      titleAlignment: TextAlign.left,
-      headerColor: theme.colorAccent,
-      headerContent: null,
-      onClose: () => Navigator.of(context).pop(),
-      onBack: null,
-      primaryLabel: _isNameStage ? 'Done' : 'Save',
-      onPrimaryPressed: _isNameStage
-          ? _confirmNameStage
-          : (_canSave ? _save : null),
-      isPrimaryLoading: !_isNameStage && _isSaving,
-      body: SingleChildScrollView(
-        // Top reverted to a plain spacingLg — the fade this used to
-        // clear now lives INSIDE StepScaffold's own header container,
-        // clipped to it, so the body needs no extra top clearance.
-        padding: EdgeInsets.fromLTRB(
-          theme.spacingLg,
-          theme.spacingLg,
-          theme.spacingLg,
-          theme.spacingXl * 3,
+        SizedBox(height: theme.spacingMd),
+        AppTextField(
+          controller: _titleController,
+          label: 'Add title',
+          variant: AppTextFieldVariant.bare,
+          autofocus: false,
+          onFocusChanged: _clearDefaultTitle,
+          onSubmitted: (_) {
+            if (_canSave) _save();
+          },
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Always in the tree, never rebuilt as a different instance —
-            // same reasoning as task_detail_sheet.dart/zone_form_screen.
-            // dart's own Name field: its Element (and any keyboard/focus
-            // state) must survive the stage 1 -> 2 transition untouched.
-            AppPane(
-              title: 'Name',
-              child: AppTextField(
-                controller: _titleController,
-                label: 'What are you tracking?',
-                // Bare — the shared style for every entity's name. The
-                // placeholder wording stays this form's own question
-                // rather than a generic "Add title".
-                variant: AppTextFieldVariant.bare,
-                autofocus: !_isEditing,
-                onSubmitted: (_) => _confirmNameStage(),
-              ),
+        SizedBox(height: theme.spacingMd),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: AppValueChip(
+            label: trackedBehaviorTypeLabel(
+              _targetType,
+              customLabel: _customUnit?.label,
             ),
-            if (!_isNameStage) ...[
-              SizedBox(height: theme.spacingLg),
-              for (final (index, pane) in staggeredPanes.indexed) ...[
-                AppStaggeredEntrance(index: index, child: pane),
-                SizedBox(height: theme.spacingLg),
-              ],
-            ],
-          ],
+            hasValue: true,
+            size: AppValueChipSize.sm,
+            onTap: _pickMeasuredIn,
+          ),
         ),
-      ),
+      ],
     );
   }
-
-  String _labelFor(BehaviorTargetType type) => switch (type) {
-    BehaviorTargetType.duration => 'Time',
-    BehaviorTargetType.distance => 'Distance',
-    BehaviorTargetType.reps => 'Reps',
-    BehaviorTargetType.count => 'Count',
-    BehaviorTargetType.custom => _customUnit?.label ?? 'Custom',
-    BehaviorTargetType.binary => 'Did it',
-  };
 }
-
-/// Explicit "Measured in" chip order — requested directly: "Unit of
-/// measure: Time, Distance, Reps, Count[, Custom]", with "Did it" kept as
-/// a 6th option (confirmed via AskUserQuestion) rather than
-/// [BehaviorTargetType.values]' own declaration order, which exists only
-/// to keep old Hive field indices stable. Reps and Count are two distinct
-/// options (confirmed via AskUserQuestion), not one relabeled variant.
-const _measuredInOrder = [
-  BehaviorTargetType.duration,
-  BehaviorTargetType.distance,
-  BehaviorTargetType.reps,
-  BehaviorTargetType.count,
-  BehaviorTargetType.custom,
-  BehaviorTargetType.binary,
-];
 
 /// The unit a target amount is expressed in, for labels and prompts.
 /// [customUnitName] is required only for [BehaviorTargetType.custom] — a

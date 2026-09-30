@@ -29,7 +29,7 @@ import '../../shared/services/zone_cascade_reschedule.dart';
 import '../../shared/services/zone_group_move.dart';
 import '../../shared/services/zone_selection_order.dart';
 import '../task_detail/multi_task_edit_sheet.dart';
-import '../task_detail/task_detail_sheet.dart';
+import '../task_detail/task_sheet.dart';
 import '../timeline/edit_mode_provider.dart';
 import '../timeline/edit_selection_provider.dart';
 import '../timeline/armed_edit_task_provider.dart';
@@ -492,8 +492,8 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
   }
 
   /// The selection dock's own Edit action — a single task opens the
-  /// ordinary detail sheet unchanged ([showTaskDetailSheet], the app's one
-  /// edit entry point); 2+ opens the bulk [showMultiTaskEditSheet]
+  /// ordinary task sheet unchanged ([showTaskSheet], the app's one edit
+  /// entry point); 2+ opens the bulk [showMultiTaskEditSheet]
   /// (tag/track/duration/notification only), confirmed directly. Both
   /// paths clear the selection before opening the sheet so returning to
   /// the editor starts with the task selection dismissed.
@@ -506,7 +506,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
     if (selectedIds.length == 1) {
       final task = ref.read(taskByIdProvider(selectedIds.single));
       if (task == null) return;
-      showTaskDetailSheet(context, task: task);
+      showTaskSheet(context, task: task);
       return;
     }
     showMultiTaskEditSheet(context, taskIds: selectedIds.toList());

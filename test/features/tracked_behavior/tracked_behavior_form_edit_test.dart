@@ -1,4 +1,5 @@
 import 'package:amble/core/tokens/semantic_theme.dart';
+import 'package:amble/core/widgets/app_button.dart';
 import 'package:amble/features/tracked_behavior/tracked_behavior_form.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/shared/models/behavior_target_type.dart';
@@ -49,9 +50,7 @@ void main() {
   }
 
   testWidgets('opening the form for an existing behavior prefills its '
-      'title and reads "Edit behavior", not "Track a behavior"', (
-    tester,
-  ) async {
+      'title and reads "Edit habit", not "New habit"', (tester) async {
     final behavior = TrackedBehavior.create(
       title: 'Exercise',
       targetType: BehaviorTargetType.duration,
@@ -66,8 +65,8 @@ void main() {
     showTrackedBehaviorForm(navigatorKey.currentContext!, behavior: behavior);
     await tester.pumpAndSettle();
 
-    expect(find.text('Edit behavior'), findsOneWidget);
-    expect(find.text('Track a behavior'), findsNothing);
+    expect(find.text('Edit habit'), findsOneWidget);
+    expect(find.text('New habit'), findsNothing);
     expect(find.text('Exercise'), findsOneWidget);
     // The saved 60-minute target does NOT read back into the form: the
     // Target field was removed directly ("hide target and times per week
@@ -102,7 +101,7 @@ void main() {
     await tester.pump();
 
     await tester.runAsync(() async {
-      await tester.tap(find.text('Save').last);
+      await tester.tap(find.widgetWithText(AppButton, 'Save'));
       await Future<void>.delayed(const Duration(milliseconds: 100));
     });
     await tester.pump();
@@ -115,13 +114,14 @@ void main() {
     expect(saved.timesPerWeek, 3);
   });
 
-  testWidgets('opening the form with no behavior reads "Track a behavior" '
-      'and starts blank', (tester) async {
+  testWidgets('opening the form with no behavior reads "New habit"', (
+    tester,
+  ) async {
     final navigatorKey = await pumpHost(tester);
     showTrackedBehaviorForm(navigatorKey.currentContext!);
     await tester.pumpAndSettle();
 
-    expect(find.text('Track a behavior'), findsOneWidget);
-    expect(find.text('Edit behavior'), findsNothing);
+    expect(find.text('New habit'), findsOneWidget);
+    expect(find.text('Edit habit'), findsNothing);
   });
 }

@@ -2,6 +2,7 @@ import 'package:amble/core/tokens/component_tokens.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_badge_chip.dart';
 import 'package:amble/core/widgets/app_button.dart';
+import 'package:amble/core/widgets/app_mic_button.dart';
 import 'package:amble/core/widgets/app_selectable_chip.dart';
 import 'package:amble/core/widgets/app_step_scaffold.dart';
 import 'package:amble/core/widgets/app_value_chip.dart';
@@ -83,6 +84,24 @@ void main() {
     );
     expect(
       tester.widget<Icon>(find.byIcon(Icons.close_rounded)).color,
+      ChipTokens.restText(theme),
+    );
+  });
+
+  testWidgets('a secondary mic uses the same rest fill and text as close', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      AppMicButton(isListening: false, onPressed: () {}, isPrimary: false),
+    );
+
+    expect(
+      fillOf(tester, find.byType(AppMicButton)),
+      ChipTokens.restFill(theme),
+    );
+    expect(
+      tester.widget<Icon>(find.byIcon(Icons.mic_none_rounded)).color,
       ChipTokens.restText(theme),
     );
   });

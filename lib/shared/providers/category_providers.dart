@@ -432,10 +432,10 @@ class CategoryList extends _$CategoryList {
 /// task's `categoryId` can resolve to it, [CategoryList.deleteCategory]
 /// reassigns orphaned tasks to it, and [CategoryBadge]'s own null-category
 /// fallback renders its look directly — none of that changes. This
-/// provider exists ONLY for the three UI sites that render "a list of
+/// provider exists ONLY for the UI sites that render "a list of
 /// tags to pick/manage" (`task_category_modal.dart`,
-/// `task_name_category_modal.dart`, `category_list_screen.dart`), so
-/// General is invisible there without needing three separate `.where(...)`
+/// `category_list_screen.dart`), so
+/// General is invisible there without needing separate `.where(...)`
 /// calls (and the risk of a future 4th site forgetting the filter).
 @riverpod
 List<Category> visibleCategoryList(Ref ref) => ref

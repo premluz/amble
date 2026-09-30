@@ -6,7 +6,9 @@ import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_switch.dart';
 import 'package:amble/core/widgets/app_wheel_time_picker.dart';
 import 'package:amble/hive_registrar.g.dart';
-import 'package:amble/features/task_detail/task_detail_sheet.dart';
+import 'package:amble/core/widgets/app_value_chip.dart';
+import 'package:amble/features/task_detail/task_sheet.dart';
+import 'package:amble/features/task_detail/task_sheet_fields.dart';
 import 'package:amble/shared/models/recurrence_frequency.dart';
 import 'package:amble/shared/models/recurrence_rule.dart';
 import 'package:amble/shared/models/category.dart';
@@ -95,6 +97,23 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
   return navigatorKey;
 }
 
+/// Moves the open task sheet's start to [hour]:00 — the time chip (Date,
+/// Time, Duration: the second) opens the Start time picker; Done applies.
+Future<void> _setStartHour(WidgetTester tester, int hour) async {
+  await _tapAndSettle(
+    tester,
+    find
+        .descendant(
+          of: find.byType(TaskSheetFields),
+          matching: find.byType(AppValueChip),
+        )
+        .at(1),
+  );
+  tester.widget<AppWheelPicker>(find.byType(AppWheelPicker)).onChanged(hour, 0);
+  await tester.pumpAndSettle();
+  await _tapAndSettle(tester, find.text('Done'));
+}
+
 DateTime _daysFromToday(int days, {int hour = 9, int minute = 0}) {
   final now = DateTime.now();
   return DateTime(now.year, now.month, now.day + days, hour, minute);
@@ -149,16 +168,12 @@ void main() {
       trackedBehaviorBox: trackedBehaviorBox,
       templateBox: templateBox,
     );
-    showTaskDetailSheet(navigatorKey.currentContext!, task: task);
+    showTaskSheet(navigatorKey.currentContext!, task: task);
     await tester.pumpAndSettle();
 
     expect(find.text('Affect future instances'), findsNothing);
 
-    await _tapAndSettle(tester, find.text('Time'));
-
-    final picker = tester.widget<AppWheelPicker>(find.byType(AppWheelPicker));
-    picker.onChanged(14, 0);
-    await tester.pumpAndSettle();
+    await _setStartHour(tester, 14);
 
     expect(find.text('Affect future instances'), findsNothing);
   });
@@ -184,7 +199,7 @@ void main() {
         trackedBehaviorBox: trackedBehaviorBox,
         templateBox: templateBox,
       );
-      showTaskDetailSheet(navigatorKey.currentContext!, task: template);
+      showTaskSheet(navigatorKey.currentContext!, task: template);
       await tester.pumpAndSettle();
 
       expect(find.text('Affect future instances'), findsNothing);
@@ -212,14 +227,10 @@ void main() {
         trackedBehaviorBox: trackedBehaviorBox,
         templateBox: templateBox,
       );
-      showTaskDetailSheet(navigatorKey.currentContext!, task: template);
+      showTaskSheet(navigatorKey.currentContext!, task: template);
       await tester.pumpAndSettle();
 
-      await _tapAndSettle(tester, find.text('Time'));
-
-      final picker = tester.widget<AppWheelPicker>(find.byType(AppWheelPicker));
-      picker.onChanged(14, 0);
-      await tester.pumpAndSettle();
+      await _setStartHour(tester, 14);
 
       expect(find.text('Affect future instances'), findsOneWidget);
       final switchWidget = tester.widget<AppSwitch>(
@@ -255,14 +266,10 @@ void main() {
           .map((t) => t.id)
           .toSet();
 
-      showTaskDetailSheet(navigatorKey.currentContext!, task: template);
+      showTaskSheet(navigatorKey.currentContext!, task: template);
       await tester.pumpAndSettle();
 
-      await _tapAndSettle(tester, find.text('Time'));
-
-      final picker = tester.widget<AppWheelPicker>(find.byType(AppWheelPicker));
-      picker.onChanged(14, 0);
-      await tester.pumpAndSettle();
+      await _setStartHour(tester, 14);
 
       // Toggle left off (default) — "just this occurrence".
       await _tapAndSettle(tester, find.text('Save'));
@@ -302,14 +309,10 @@ void main() {
         trackedBehaviorBox: trackedBehaviorBox,
         templateBox: templateBox,
       );
-      showTaskDetailSheet(navigatorKey.currentContext!, task: template);
+      showTaskSheet(navigatorKey.currentContext!, task: template);
       await tester.pumpAndSettle();
 
-      await _tapAndSettle(tester, find.text('Time'));
-
-      final picker = tester.widget<AppWheelPicker>(find.byType(AppWheelPicker));
-      picker.onChanged(14, 0);
-      await tester.pumpAndSettle();
+      await _setStartHour(tester, 14);
 
       await _tapAndSettle(tester, find.byType(AppSwitch).last);
       await _tapAndSettle(tester, find.text('Save'));

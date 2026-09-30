@@ -13,7 +13,7 @@ import 'package:amble/features/task_detail/add_category_modal.dart';
 import 'package:amble/features/task_detail/category_color_modal.dart';
 import 'package:amble/features/task_detail/category_icon_modal.dart';
 import 'package:amble/features/task_detail/category_visual.dart';
-import 'package:amble/features/task_detail/task_name_category_modal.dart';
+import 'package:amble/features/task_detail/task_category_modal.dart';
 import 'package:amble/core/widgets/app_sheet_flow.dart';
 import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/models/task.dart';
@@ -325,27 +325,20 @@ void main() {
     });
   });
 
-  testWidgets('from Name and category, New label is a page of the SAME sheet '
-      'and saving comes back with it selected', (tester) async {
+  testWidgets('from the Label sheet, New label is a page of the SAME sheet, '
+      'and saving picks it and closes', (tester) async {
     final navigatorKey = await _pumpHost(tester, box: box, taskBox: taskBox);
-    final title = TextEditingController();
-    final notes = TextEditingController();
-    addTearDown(title.dispose);
-    addTearDown(notes.dispose);
-    final picked = <String>[];
+    String? picked;
     unawaited(
-      TaskNameCategoryModal.show(
+      TaskCategoryModal.show(
         context: navigatorKey.currentContext!,
-        titleController: title,
-        notesController: notes,
         categoryId: null,
-        onCategoryChanged: picked.add,
-      ),
+      ).then((id) => picked = id),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Name and category'), findsOneWidget);
+    expect(find.text('Label'), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(AppValueChip, 'New label'));
+    await tester.tap(find.byTooltip('Add new label'));
     await tester.pumpAndSettle();
     expect(find.byType(AppSheetFlow), findsOneWidget);
     expect(find.byIcon(Icons.arrow_back_ios_new_rounded), findsOneWidget);
@@ -379,15 +372,11 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 100));
       await tester.pumpAndSettle();
     });
-    // The page slide back runs on the test clock.
     await tester.pumpAndSettle();
 
-    // Back on the first page of the same sheet (× again, not ‹).
-    expect(find.byType(AddCategoryPage), findsNothing);
-    expect(find.text('Name and category'), findsOneWidget);
-    expect(find.byIcon(Icons.close_rounded), findsOneWidget);
-    expect(picked, hasLength(1));
-    expect(find.text('Garden'), findsOneWidget);
+    final garden = box.values.singleWhere((c) => c.name == 'Garden');
+    expect(picked, garden.id);
+    expect(find.byType(TaskCategoryModal), findsNothing);
   });
 }
 

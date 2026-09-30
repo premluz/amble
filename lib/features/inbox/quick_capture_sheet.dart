@@ -113,7 +113,7 @@ class _QuickCaptureFormState extends ConsumerState<_QuickCaptureForm> {
   bool get _isEditing => widget.task != null;
 
   /// True for the duration of an in-flight [_doSubmit] — the re-entrancy
-  /// guard, same reasoning as `_TaskDetailFlowState._isSaving`: without
+  /// guard, same reasoning as the task sheet's own `_isSaving`: without
   /// this, a second tap/keyboard-submit before the previous one finishes
   /// could create the same task twice (or capture the same title twice on
   /// the fallback path). The header Done button has no loading spinner to
@@ -224,8 +224,7 @@ class _QuickCaptureFormState extends ConsumerState<_QuickCaptureForm> {
     if (_isSubmitting) return;
 
     final rawInput = _titleController.text.trim();
-    // Matches Task creation's own stage-1 "Done" exactly (see
-    // _TaskDetailFlowState._confirmNameStage): nothing typed abandons the
+    // Matches the old task form's name-stage "Done": nothing typed abandons the
     // sheet instead of no-opping — requested directly, alongside renaming
     // this button from "Add" to "Done" to match that same semantic. Always
     // closes, even from the keyboard-submit path — there is nothing to
