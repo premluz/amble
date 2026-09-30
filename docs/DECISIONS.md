@@ -5246,3 +5246,33 @@ These follow Sheets rule 1 (no sheet on a sheet):
 - `SheetTokens.headerToFieldGap` (`spacingXs`) between the header row and
   the name, in both task sheets. The name's text box starts 20 below ×,
   with its glyphs about 24, matching ×'s 24 from the sheet's top and side.
+
+## 2026-09-30 — Timeline new-task sheet: no expanding; minimised title in the header row
+
+- Requested: "we should not have expand sheet to fill". The in-place sheet
+  has two sizes, small (hugging its content) and minimised, plus closed.
+  - `QuickCreateSheetHeightController` lost `expand`/`expanded`.
+    `updateFraction` clamps at `quickCreateSheetMinFraction`, and an upward
+    flick or release settles at small.
+  - The overlay's height mapping runs only from minimised to small.
+- Minimised, the title sits in the header row where × and Add are in the
+  open sheet, at `SheetTokens.titleStyle`, not on a line below it. It
+  ignores taps, so the handle behind it still restores the sheet on tap.
+
+## 2026-09-30 — Numeric font: IBM Plex Sans Condensed replaces JetBrains Mono
+
+Requested: "instead of that mono JetBrains let's use IBM Plex condensed".
+It is a new bundled font asset, not a package: IBM Plex Sans Condensed,
+SIL OFL 1.1, the official files from google/fonts
+(`ofl/ibmplexsanscondensed`). Weights Thin–Bold (100–700) plus the regular
+Italic, matching what JetBrains shipped; nothing used its 800.
+- `TypePrimitives.fontFamily` = 'IBM Plex Sans Condensed', so every
+  mono-role token follows (times, durations, counts, zone names when the
+  dual-font setting is on).
+- It is proportional, not monospace. The time column already measures its
+  labels, and time_column_fit_test / hour_gutter_overflow_test pass with
+  the real font loaded.
+- Not done: tabular figures (`FontFeature.tabularFigures()`). If times
+  shift width as they tick, turn it on for the numeric styles.
+- The JetBrains Mono files (and their `OFL.txt`) are no longer bundled but
+  are still in assets/fonts, pending a decision to delete them.

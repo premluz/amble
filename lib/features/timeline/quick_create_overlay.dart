@@ -230,10 +230,11 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
     setState(() => _contentHeight = height);
   }
 
-  /// The panel's height for the controller's fraction: minimised → small →
-  /// full, piecewise, with small = the content's height (see
-  /// [_contentHeight]). Clamped at 0 — the fraction may go negative
-  /// mid-drag (drag down to close), a height can't.
+  /// The panel's height for the controller's fraction, from minimised up to
+  /// small — small being the content's height (see [_contentHeight]),
+  /// capped at the old fixed share of [fullHeight]. The sheet never goes
+  /// above small. Clamped at 0 — the fraction may go below the minimised
+  /// floor mid-drag (drag down to close), a height can't.
   double _sheetHeight(double minHeight, double fullHeight) {
     const minimised = quickCreateSheetMinimisedFraction;
     const small = quickCreateSheetMinFraction;
@@ -245,15 +246,33 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
       math.min(_contentHeight ?? fixedSmall, fixedSmall),
     );
     final fraction = _heightController.fraction;
-    final height = fraction <= small
-        ? minHeight +
-              (smallHeight - minHeight) *
-                  (fraction - minimised) /
-                  (small - minimised)
-        : smallHeight +
-              (fullHeight - smallHeight) * (fraction - small) / (1 - small);
+    final height =
+        minHeight +
+        (smallHeight - minHeight) *
+            (fraction - minimised) /
+            (small - minimised);
     return math.max(0, height);
   }
+
+  Widget _minimisedTitle(AmbleTheme theme) => ListenableBuilder(
+    listenable: _form.title,
+    builder: (context, _) {
+      final title = _form.title.text.trim();
+      return Text(
+        // "(No title)" confirmed directly, matching the reference
+        // screenshot's own wording for an unnamed draft.
+        title.isEmpty ? '(No title)' : title,
+        style: SheetTokens.titleStyle(theme).copyWith(
+          color: title.isEmpty
+              ? theme.colorTextSecondary
+              : theme.colorTextPrimary,
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.center,
+      );
+    },
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -465,56 +484,27 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
                                                   ),
                                                 ),
                                               ),
+                                            // MINIMISED: the title alone, where the
+                                            // header row sits in the open sheet —
+                                            // requested directly ("just the title is
+                                            // shown", and "in the same position as
+                                            // header"). Taps fall through to the
+                                            // handle behind it, which restores.
+                                            if (_heightController.minimised)
+                                              Positioned.fill(
+                                                child: IgnorePointer(
+                                                  child: Center(
+                                                    child: _minimisedTitle(
+                                                      theme,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
                                           ],
                                         ),
                                       ),
                                     ),
-                                    // MINIMISED: the title alone, read-only, with the
-                                    // handle above it the only control — requested
-                                    // directly: "just the title is shown, and there
-                                    // is this little handle to expand or tap to
-                                    // expand." Tapping anywhere here restores the
-                                    // small sheet, matching the handle's own tap.
-                                    if (_heightController.minimised)
-                                      GestureDetector(
-                                        onTap: _heightController.restoreToSmall,
-                                        behavior: HitTestBehavior.opaque,
-                                        child: Padding(
-                                          padding: EdgeInsets.symmetric(
-                                            horizontal: theme.spacingLg,
-                                          ),
-                                          child: SizedBox(
-                                            width: double.infinity,
-                                            child: ListenableBuilder(
-                                              listenable: _form.title,
-                                              builder: (context, _) {
-                                                final title = _form.title.text
-                                                    .trim();
-                                                return Text(
-                                                  // "(No title)" confirmed directly,
-                                                  // matching the reference screenshot's
-                                                  // own wording for an unnamed draft.
-                                                  title.isEmpty
-                                                      ? '(No title)'
-                                                      : title,
-                                                  style: theme.textTitle.copyWith(
-                                                    color: title.isEmpty
-                                                        ? theme
-                                                              .colorTextSecondary
-                                                        : theme
-                                                              .colorTextPrimary,
-                                                  ),
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  textAlign: TextAlign.center,
-                                                );
-                                              },
-                                            ),
-                                          ),
-                                        ),
-                                      )
-                                    else ...[
+                                    if (!_heightController.minimised) ...[
                                       SizedBox(
                                         height: SheetTokens.headerToFieldGap(
                                           theme,

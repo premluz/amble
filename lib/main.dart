@@ -789,7 +789,7 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
   List<String> _topNavLabels(bool trackedTabVisible) => [
     'Days',
     'Things',
-    if (trackedTabVisible) 'Habits',
+    if (trackedTabVisible) 'Patterns',
   ];
 
   @override

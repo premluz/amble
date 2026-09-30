@@ -20,6 +20,7 @@ void main() {
     WidgetTester tester, {
     String? modalTitle,
     Widget? headerContent,
+    VoidCallback? onClose,
   }) {
     return tester.pumpWidget(
       MaterialApp(
@@ -30,7 +31,7 @@ void main() {
           modalTitle: modalTitle,
           headerContent: headerContent,
           onBack: null,
-          onClose: () {},
+          onClose: onClose ?? () {},
           primaryLabel: 'Done',
           onPrimaryPressed: () {},
           body: const SizedBox(
@@ -187,5 +188,15 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('tapping the scrim strip above the sheet closes it, as × does', (
+    tester,
+  ) async {
+    var closes = 0;
+    await pump(tester, modalTitle: 'New zone', onClose: () => closes++);
+    await tester.tapAt(Offset(200, theme.spacingXl / 2));
+    await tester.pump();
+    expect(closes, 1);
   });
 }

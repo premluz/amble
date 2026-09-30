@@ -139,40 +139,39 @@ flutter:
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
   #
-  # App-wide font — JetBrains Mono (OFL-1.1, bundled locally in
-  # assets/fonts/, see assets/fonts/OFL.txt). Referenced by name via
+  # The numeric/temporal font — IBM Plex Sans Condensed (OFL-1.1, bundled
+  # locally in assets/fonts/, see assets/fonts/IBMPlexSansCondensed-OFL.txt;
+  # replaced JetBrains Mono 2026-09-30). Referenced by name via
   # TypePrimitives.fontFamily (lib/core/tokens/type_primitives.dart) rather
-  # than hardcoded at call sites, so a future font swap is one constant.
+  # than hardcoded at call sites, so a font swap is one constant.
   fonts:
-    - family: JetBrains Mono
+    - family: IBM Plex Sans Condensed
       fonts:
-        - asset: assets/fonts/JetBrainsMono-Thin.ttf
+        - asset: assets/fonts/IBMPlexSansCondensed-Thin.ttf
           weight: 100
-        - asset: assets/fonts/JetBrainsMono-ExtraLight.ttf
+        - asset: assets/fonts/IBMPlexSansCondensed-ExtraLight.ttf
           weight: 200
-        - asset: assets/fonts/JetBrainsMono-Light.ttf
+        - asset: assets/fonts/IBMPlexSansCondensed-Light.ttf
           weight: 300
-        - asset: assets/fonts/JetBrainsMono-Regular.ttf
+        - asset: assets/fonts/IBMPlexSansCondensed-Regular.ttf
           weight: 400
-        - asset: assets/fonts/JetBrainsMono-Italic.ttf
+        - asset: assets/fonts/IBMPlexSansCondensed-Italic.ttf
           weight: 400
           style: italic
-        - asset: assets/fonts/JetBrainsMono-Medium.ttf
+        - asset: assets/fonts/IBMPlexSansCondensed-Medium.ttf
           weight: 500
-        - asset: assets/fonts/JetBrainsMono-SemiBold.ttf
+        - asset: assets/fonts/IBMPlexSansCondensed-SemiBold.ttf
           weight: 600
-        - asset: assets/fonts/JetBrainsMono-Bold.ttf
+        - asset: assets/fonts/IBMPlexSansCondensed-Bold.ttf
           weight: 700
-        - asset: assets/fonts/JetBrainsMono-ExtraBold.ttf
-          weight: 800
     # DM Sans (OFL-1.1, bundled locally in assets/fonts/, see
     # assets/fonts/DMSans-OFL.txt) — the app's second font family, added
     # for the dual-font typography policy: DM Sans for headlines, names,
-    # labels, buttons and body copy; JetBrains Mono kept for timeline
+    # labels, buttons and body copy; IBM Plex Sans Condensed kept for timeline
     # times, durations, counts, stats, technical metadata, and zone
     # names specifically. Referenced by name via
     # TypePrimitives.fontFamilySans. A single VARIABLE font file (not
-    # per-weight static TTFs like JetBrains Mono above) — Google Fonts'
+    # per-weight static TTFs like IBM Plex Sans Condensed above) — Google Fonts'
     # own distribution of DM Sans ships only the variable instance;
     # Flutter resolves each `weight:` entry against the file's own wght
     # axis, so multiple entries pointing at the same asset is the

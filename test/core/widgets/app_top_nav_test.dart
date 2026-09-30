@@ -17,7 +17,7 @@ import 'package:amble/core/widgets/app_top_nav.dart';
 /// icon (settings)."
 void main() {
   final theme = AmbleTheme.light;
-  const destinations = ['Days', 'Things', 'Habits'];
+  const destinations = ['Days', 'Things', 'Patterns'];
 
   Future<void> pump(
     WidgetTester tester, {
@@ -52,7 +52,7 @@ void main() {
 
       expect(labelColor(tester, 'Days'), theme.colorTextPrimary);
       expect(labelColor(tester, 'Things'), theme.colorTextTertiary);
-      expect(labelColor(tester, 'Habits'), theme.colorTextTertiary);
+      expect(labelColor(tester, 'Patterns'), theme.colorTextTertiary);
       expect(gearColor(tester), theme.colorForegroundTertiary);
     },
   );
@@ -85,7 +85,7 @@ void main() {
 
       expect(labelColor(tester, 'Days'), theme.colorTextTertiary);
       expect(labelColor(tester, 'Things'), theme.colorTextTertiary);
-      expect(labelColor(tester, 'Habits'), theme.colorTextTertiary);
+      expect(labelColor(tester, 'Patterns'), theme.colorTextTertiary);
       expect(gearColor(tester), theme.colorTextPrimary);
     },
   );

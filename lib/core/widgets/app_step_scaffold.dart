@@ -115,329 +115,345 @@ class StepScaffold extends StatelessWidget {
       backgroundColor: Colors.transparent,
       // Edge to edge horizontally and offset only from the top, so the
       // sheet reads as a panel pulled up over the screen.
-      body: Padding(
-        padding: EdgeInsets.only(top: theme.spacingXl),
-        // `AppSheetSurface`: the Settings-group fill plus the floating
-        // edge every sheet shares. Requested directly: "sheets across the
-        // app should have next surface level to bg", then "the sheet bg
-        // should be same as that surface of settings sections" with "that
-        // elevated styling (border)" of the toolbar.
-        //
-        // The two `AppTopScrollFade`s below MUST keep matching this
-        // surface — they fade scrolling body content into it, so any
-        // divergence shows up as a visible band.
-        // Drag down anywhere to close, like every sheet.
-        child: AppSheetDragDismiss(
-          theme: theme,
-          child: AppSheetSurface(
-            theme: theme,
-            child: SafeArea(
-              // Top handled by the offset above; the sheet owns that edge.
-              top: false,
-              child: Column(
-                children: [
-                  Container(
-                    width: double.infinity,
-                    // Title-bearing case bumped from `spacingXl + spacingMd`
-                    // to `spacingXl + spacingLg` — requested directly,
-                    // alongside the Inbox/Tracked screen headings' own
-                    // identical bump: "same for sheets heading."
-                    height: headerContent == null
-                        ? theme.spacingXl +
-                              (modalTitle == null
-                                  ? theme.spacingLg
-                                  : theme.spacingXl + theme.spacingLg)
-                        : null,
-                    decoration: BoxDecoration(
-                      // Plain-title case: the header's OWN background IS
-                      // the gradient — colorSurfaceSecondary at the top,
-                      // blending down into the body's own colorSurfaceBase
-                      // at the header's bottom edge, so there's no hard
-                      // seam where the two meet. A flat colorSurfaceSecondary
-                      // FILL with a separate `AppTopScrollFade` painted on
-                      // top of it (the previous shape) never actually blended
-                      // anything — that fade goes colorSurfaceSecondary-to-
-                      // transparent, which is invisible against a layer
-                      // that's already solid colorSurfaceSecondary underneath
-                      // it, so it read as a flat block with an abrupt colour
-                      // change against the body, not a gradient. Reported
-                      // directly: "heading not have nice gradient... sheet
-                      // heading section different color than body."
-                      gradient: headerContent == null
-                          ? LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                theme.colorSurfaceSecondary,
-                                // The sheet body's own surface — see the
-                                // `AppSheetSurface` note above. This
-                                // gradient's job is to fade the header INTO
-                                // the body, so it has to end on whatever the
-                                // body actually paints; leaving it at level 0
-                                // would recreate the exact "sheet heading
-                                // section different color than body" report
-                                // the comment above records.
-                                SheetTokens.surface(theme),
-                              ],
-                            )
-                          : null,
-                      color: headerContent == null ? null : headerColor,
-                      // Rounded bottom corner is only right for the
-                      // colored `headerContent` banner, which reads as a
-                      // floating panel — the plain-title header sits flush
-                      // against the body below it, same as before this
-                      // case had a background at all.
-                      borderRadius: headerContent == null
-                          ? null
-                          : BorderRadius.vertical(
-                              bottom: Radius.circular(theme.radiusModal),
-                            ),
-                    ),
-                    // ClipRect confines the fade strictly to THIS
-                    // container's own bounds — moved here from the body
-                    // below, requested directly: "the shade on the
-                    // sheets' title should not expand beyond the title
-                    // container. This [fade] should be just within, so
-                    // it doesn't push the content too much down." A
-                    // fade in the body needed extra top padding on every
-                    // sheet's own content to clear it; living inside the
-                    // header instead needs none, since the header
-                    // already reserves its own height.
-                    child: ClipRect(
-                      child: Stack(
-                        children: [
-                          if (modalTitle != null)
-                            Positioned.fill(
-                              child: Padding(
-                                padding: EdgeInsets.only(
-                                  left:
-                                      onBack != null ||
-                                          titleAlignment == TextAlign.center
-                                      ? theme.spacingXl + theme.spacingLg
-                                      : theme.spacingLg,
-                                  right: theme.spacingXl + theme.spacingLg,
+      body: Column(
+        children: [
+          // The scrim strip above the sheet: a tap there closes, exactly
+          // as × does (so a form's unsaved-changes check still runs) —
+          // the transparent Scaffold's Material would otherwise swallow it.
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onClose,
+            child: SizedBox(height: theme.spacingXl, width: double.infinity),
+          ),
+          Expanded(
+            // `AppSheetSurface`: the Settings-group fill plus the floating
+            // edge every sheet shares. Requested directly: "sheets across the
+            // app should have next surface level to bg", then "the sheet bg
+            // should be same as that surface of settings sections" with "that
+            // elevated styling (border)" of the toolbar.
+            //
+            // The two `AppTopScrollFade`s below MUST keep matching this
+            // surface — they fade scrolling body content into it, so any
+            // divergence shows up as a visible band.
+            // Drag down anywhere to close, like every sheet.
+            child: AppSheetDragDismiss(
+              theme: theme,
+              child: AppSheetSurface(
+                theme: theme,
+                child: SafeArea(
+                  // Top handled by the offset above; the sheet owns that edge.
+                  top: false,
+                  child: Column(
+                    children: [
+                      Container(
+                        width: double.infinity,
+                        // Title-bearing case bumped from `spacingXl + spacingMd`
+                        // to `spacingXl + spacingLg` — requested directly,
+                        // alongside the Inbox/Tracked screen headings' own
+                        // identical bump: "same for sheets heading."
+                        height: headerContent == null
+                            ? theme.spacingXl +
+                                  (modalTitle == null
+                                      ? theme.spacingLg
+                                      : theme.spacingXl + theme.spacingLg)
+                            : null,
+                        decoration: BoxDecoration(
+                          // Plain-title case: the header's OWN background IS
+                          // the gradient — colorSurfaceSecondary at the top,
+                          // blending down into the body's own colorSurfaceBase
+                          // at the header's bottom edge, so there's no hard
+                          // seam where the two meet. A flat colorSurfaceSecondary
+                          // FILL with a separate `AppTopScrollFade` painted on
+                          // top of it (the previous shape) never actually blended
+                          // anything — that fade goes colorSurfaceSecondary-to-
+                          // transparent, which is invisible against a layer
+                          // that's already solid colorSurfaceSecondary underneath
+                          // it, so it read as a flat block with an abrupt colour
+                          // change against the body, not a gradient. Reported
+                          // directly: "heading not have nice gradient... sheet
+                          // heading section different color than body."
+                          gradient: headerContent == null
+                              ? LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    theme.colorSurfaceSecondary,
+                                    // The sheet body's own surface — see the
+                                    // `AppSheetSurface` note above. This
+                                    // gradient's job is to fade the header INTO
+                                    // the body, so it has to end on whatever the
+                                    // body actually paints; leaving it at level 0
+                                    // would recreate the exact "sheet heading
+                                    // section different color than body" report
+                                    // the comment above records.
+                                    SheetTokens.surface(theme),
+                                  ],
+                                )
+                              : null,
+                          color: headerContent == null ? null : headerColor,
+                          // Rounded bottom corner is only right for the
+                          // colored `headerContent` banner, which reads as a
+                          // floating panel — the plain-title header sits flush
+                          // against the body below it, same as before this
+                          // case had a background at all.
+                          borderRadius: headerContent == null
+                              ? null
+                              : BorderRadius.vertical(
+                                  bottom: Radius.circular(theme.radiusModal),
                                 ),
-                                child: Align(
-                                  alignment: titleAlignment == TextAlign.center
-                                      ? Alignment.center
-                                      : Alignment.centerLeft,
-                                  child: Text(
-                                    modalTitle!,
-                                    textAlign: titleAlignment,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    // textTitle, not textHeadline —
-                                    // requested directly: "titles of
-                                    // sheets should be same size as
-                                    // titles of pages." The page titles
-                                    // (Inbox/Tracked/Settings, and the
-                                    // Timeline's own month name) all moved
-                                    // to `textTitle` earlier; this was the
-                                    // last place a title still rendered at
-                                    // `textHeadline`'s 32px, so opening a
-                                    // sheet jumped the title size.
-                                    style: SheetTokens.titleStyle(
-                                      theme,
-                                    ).copyWith(color: theme.colorTextPrimary),
+                        ),
+                        // ClipRect confines the fade strictly to THIS
+                        // container's own bounds — moved here from the body
+                        // below, requested directly: "the shade on the
+                        // sheets' title should not expand beyond the title
+                        // container. This [fade] should be just within, so
+                        // it doesn't push the content too much down." A
+                        // fade in the body needed extra top padding on every
+                        // sheet's own content to clear it; living inside the
+                        // header instead needs none, since the header
+                        // already reserves its own height.
+                        child: ClipRect(
+                          child: Stack(
+                            children: [
+                              if (modalTitle != null)
+                                Positioned.fill(
+                                  child: Padding(
+                                    padding: EdgeInsets.only(
+                                      left:
+                                          onBack != null ||
+                                              titleAlignment == TextAlign.center
+                                          ? theme.spacingXl + theme.spacingLg
+                                          : theme.spacingLg,
+                                      right: theme.spacingXl + theme.spacingLg,
+                                    ),
+                                    child: Align(
+                                      alignment:
+                                          titleAlignment == TextAlign.center
+                                          ? Alignment.center
+                                          : Alignment.centerLeft,
+                                      child: Text(
+                                        modalTitle!,
+                                        textAlign: titleAlignment,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        // textTitle, not textHeadline —
+                                        // requested directly: "titles of
+                                        // sheets should be same size as
+                                        // titles of pages." The page titles
+                                        // (Inbox/Tracked/Settings, and the
+                                        // Timeline's own month name) all moved
+                                        // to `textTitle` earlier; this was the
+                                        // last place a title still rendered at
+                                        // `textHeadline`'s 32px, so opening a
+                                        // sheet jumped the title size.
+                                        style: SheetTokens.titleStyle(theme)
+                                            .copyWith(
+                                              color: theme.colorTextPrimary,
+                                            ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              if (headerContent != null)
+                                Padding(
+                                  padding: EdgeInsets.fromLTRB(
+                                    onBack != null
+                                        ? theme.spacingXl + theme.spacingLg
+                                        : theme.spacingLg,
+                                    theme.spacingXl + theme.spacingSm,
+                                    theme.spacingXl + theme.spacingLg,
+                                    theme.spacingLg,
+                                  ),
+                                  child: headerContent,
+                                ),
+                              if (onBack != null)
+                                Positioned(
+                                  top: 0,
+                                  bottom: 0,
+                                  left: theme.spacingLg,
+                                  child: Center(
+                                    child: HeaderCircleButton(
+                                      theme: theme,
+                                      icon: Icons.arrow_back_rounded,
+                                      onTap: onBack!,
+                                    ),
+                                  ),
+                                ),
+                              Positioned(
+                                top: 0,
+                                bottom: 0,
+                                right: theme.spacingLg,
+                                child: Center(
+                                  child: HeaderCircleButton(
+                                    theme: theme,
+                                    icon: Icons.close_rounded,
+                                    onTap: onClose,
                                   ),
                                 ),
                               ),
-                            ),
-                          if (headerContent != null)
-                            Padding(
-                              padding: EdgeInsets.fromLTRB(
-                                onBack != null
-                                    ? theme.spacingXl + theme.spacingLg
-                                    : theme.spacingLg,
-                                theme.spacingXl + theme.spacingSm,
-                                theme.spacingXl + theme.spacingLg,
-                                theme.spacingLg,
-                              ),
-                              child: headerContent,
-                            ),
-                          if (onBack != null)
-                            Positioned(
-                              top: 0,
-                              bottom: 0,
-                              left: theme.spacingLg,
-                              child: Center(
-                                child: HeaderCircleButton(
-                                  theme: theme,
-                                  icon: Icons.arrow_back_rounded,
-                                  onTap: onBack!,
-                                ),
-                              ),
-                            ),
-                          Positioned(
-                            top: 0,
-                            bottom: 0,
-                            right: theme.spacingLg,
-                            child: Center(
-                              child: HeaderCircleButton(
-                                theme: theme,
-                                icon: Icons.close_rounded,
-                                onTap: onClose,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    // No surface of its own: the header strip and the body
-                    // are one continuous level-0 ground.
-                    child: Stack(
-                      children: [
-                        body,
-                        // Top fade at the header/body seam — reported
-                        // directly: "the header on pages like Tasks...is
-                        // not a smooth gradient. The content slides
-                        // through underneath, and the header cuts the
-                        // content with a hard edge." The header's own
-                        // gradient (above) only ever blends ITS OWN fixed
-                        // background down to colorSurfaceBase — it says
-                        // nothing about the body's actual scrolling
-                        // content, which had no fade at all here and so
-                        // hit the Expanded's top edge with a hard cut, the
-                        // same bug already fixed on the Inbox/Tracked
-                        // pages (see docs/DECISIONS.md). Only for the
-                        // plain-title header (which blends into
-                        // colorSurfaceBase); the colored `headerContent`
-                        // banner case is a deliberately floating panel
-                        // with a rounded bottom corner, not something body
-                        // content should visually blend into.
-                        if (headerContent == null)
-                          Positioned(
-                            left: 0,
-                            right: 0,
-                            top: 0,
-                            child: AppTopScrollFade(
-                              // Matches the sheet surface above.
-                              color: SheetTokens.surface(theme),
-                            ),
-                          ),
-                        // Mirrored bottom fade — requested directly:
-                        // "use same at the bottom." Painted BEFORE the
-                        // primary-button footer below (so the footer
-                        // paints on top and stays crisp; only the
-                        // scrolling body content behind it fades).
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
-                          child: AppTopScrollFade(
-                            // Matches the sheet surface above.
-                            color: SheetTokens.surface(theme),
-                            fromBottom: true,
+                            ],
                           ),
                         ),
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: theme.spacingBottomClearance,
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: theme.spacingLg,
+                      ),
+                      Expanded(
+                        // No surface of its own: the header strip and the body
+                        // are one continuous level-0 ground.
+                        child: Stack(
+                          children: [
+                            body,
+                            // Top fade at the header/body seam — reported
+                            // directly: "the header on pages like Tasks...is
+                            // not a smooth gradient. The content slides
+                            // through underneath, and the header cuts the
+                            // content with a hard edge." The header's own
+                            // gradient (above) only ever blends ITS OWN fixed
+                            // background down to colorSurfaceBase — it says
+                            // nothing about the body's actual scrolling
+                            // content, which had no fade at all here and so
+                            // hit the Expanded's top edge with a hard cut, the
+                            // same bug already fixed on the Inbox/Tracked
+                            // pages (see docs/DECISIONS.md). Only for the
+                            // plain-title header (which blends into
+                            // colorSurfaceBase); the colored `headerContent`
+                            // banner case is a deliberately floating panel
+                            // with a rounded bottom corner, not something body
+                            // content should visually blend into.
+                            if (headerContent == null)
+                              Positioned(
+                                left: 0,
+                                right: 0,
+                                top: 0,
+                                child: AppTopScrollFade(
+                                  // Matches the sheet surface above.
+                                  color: SheetTokens.surface(theme),
+                                ),
+                              ),
+                            // Mirrored bottom fade — requested directly:
+                            // "use same at the bottom." Painted BEFORE the
+                            // primary-button footer below (so the footer
+                            // paints on top and stays crisp; only the
+                            // scrolling body content behind it fades).
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              bottom: 0,
+                              child: AppTopScrollFade(
+                                // Matches the sheet surface above.
+                                color: SheetTokens.surface(theme),
+                                fromBottom: true,
+                              ),
                             ),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (errorMessage != null) ...[
-                                  Text(
-                                    errorMessage!,
-                                    style: theme.textBody.copyWith(
-                                      color: theme.colorTaskAlert,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                  SizedBox(height: theme.spacingSm),
-                                ],
-                                if (footerContent != null) ...[
-                                  footerContent!,
-                                  SizedBox(height: theme.spacingSm),
-                                ],
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.center,
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              bottom: theme.spacingBottomClearance,
+                              child: Padding(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: theme.spacingLg,
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    // Fixed circle size (matching
-                                    // AppButton's own established
-                                    // circle-shape standalone-icon-button
-                                    // size) rather
-                                    // than trying to match AppButton's own
-                                    // padding-driven height via intrinsic
-                                    // sizing — that combination (
-                                    // IntrinsicHeight + AspectRatio inside
-                                    // a Row) let the circle's computed
-                                    // size run away past the sheet's own
-                                    // bounds (reported directly, from an
-                                    // on-device screenshot: the circle
-                                    // overflowed the left edge).
-                                    if (onSecondaryAction != null) ...[
-                                      GestureDetector(
-                                        onTap: onSecondaryAction,
-                                        child: Container(
-                                          width: theme.spacingXl * 1.5,
-                                          height: theme.spacingXl * 1.5,
-                                          decoration: BoxDecoration(
-                                            // The secondary action is
-                                            // always a delete (see
-                                            // task_detail_sheet.dart's own
-                                            // "Delete" onSecondaryAction) —
-                                            // colorDestructive, not
-                                            // colorTaskAlert.
-                                            color: theme.colorDestructive,
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: Icon(
-                                            secondaryActionIcon!,
-                                            color: theme.colorSurfacePrimary,
-                                          ),
+                                    if (errorMessage != null) ...[
+                                      Text(
+                                        errorMessage!,
+                                        style: theme.textBody.copyWith(
+                                          color: theme.colorTaskAlert,
                                         ),
+                                        textAlign: TextAlign.center,
                                       ),
-                                      SizedBox(width: theme.spacingSm),
+                                      SizedBox(height: theme.spacingSm),
                                     ],
-                                    Expanded(
-                                      child: DecoratedBox(
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(
-                                            theme.radiusTaskPill,
-                                          ),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: theme.colorTextPrimary
-                                                  .withValues(alpha: 0.18),
-                                              blurRadius: theme.spacingMd,
-                                              offset: Offset(
-                                                0,
-                                                theme.spacingXs,
+                                    if (footerContent != null) ...[
+                                      footerContent!,
+                                      SizedBox(height: theme.spacingSm),
+                                    ],
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.center,
+                                      children: [
+                                        // Fixed circle size (matching
+                                        // AppButton's own established
+                                        // circle-shape standalone-icon-button
+                                        // size) rather
+                                        // than trying to match AppButton's own
+                                        // padding-driven height via intrinsic
+                                        // sizing — that combination (
+                                        // IntrinsicHeight + AspectRatio inside
+                                        // a Row) let the circle's computed
+                                        // size run away past the sheet's own
+                                        // bounds (reported directly, from an
+                                        // on-device screenshot: the circle
+                                        // overflowed the left edge).
+                                        if (onSecondaryAction != null) ...[
+                                          GestureDetector(
+                                            onTap: onSecondaryAction,
+                                            child: Container(
+                                              width: theme.spacingXl * 1.5,
+                                              height: theme.spacingXl * 1.5,
+                                              decoration: BoxDecoration(
+                                                // The secondary action is
+                                                // always a delete (see
+                                                // task_detail_sheet.dart's own
+                                                // "Delete" onSecondaryAction) —
+                                                // colorDestructive, not
+                                                // colorTaskAlert.
+                                                color: theme.colorDestructive,
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: Icon(
+                                                secondaryActionIcon!,
+                                                color:
+                                                    theme.colorSurfacePrimary,
                                               ),
                                             ),
-                                          ],
+                                          ),
+                                          SizedBox(width: theme.spacingSm),
+                                        ],
+                                        Expanded(
+                                          child: DecoratedBox(
+                                            decoration: BoxDecoration(
+                                              borderRadius:
+                                                  BorderRadius.circular(
+                                                    theme.radiusTaskPill,
+                                                  ),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: theme.colorTextPrimary
+                                                      .withValues(alpha: 0.18),
+                                                  blurRadius: theme.spacingMd,
+                                                  offset: Offset(
+                                                    0,
+                                                    theme.spacingXs,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            child: AppButton(
+                                              label: primaryLabel,
+                                              size: AppButtonSize.lg,
+                                              shape: AppButtonShape.pill,
+                                              onPressed: onPrimaryPressed,
+                                              isLoading: isPrimaryLoading,
+                                            ),
+                                          ),
                                         ),
-                                        child: AppButton(
-                                          label: primaryLabel,
-                                          size: AppButtonSize.lg,
-                                          shape: AppButtonShape.pill,
-                                          onPressed: onPrimaryPressed,
-                                          isLoading: isPrimaryLoading,
-                                        ),
-                                      ),
+                                      ],
                                     ),
                                   ],
                                 ),
-                              ],
+                              ),
                             ),
-                          ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }

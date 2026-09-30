@@ -13,12 +13,16 @@ abstract final class TypePrimitives {
   /// genuinely numeric or temporal — AND zone names specifically, an
   /// explicit carve-out confirmed directly: zone names would otherwise
   /// read as ordinary titles/headlines (→ [fontFamilySans]), but must
-  /// stay monospace.
+  /// stay in this font.
+  ///
+  /// IBM Plex Sans Condensed since 2026-09-30 (was JetBrains Mono) —
+  /// requested directly. It is proportional, not monospace: widths that
+  /// matter (the time column) are measured, not assumed per glyph.
   ///
   /// Name unchanged from the single-font era (was simply "the app's
   /// font") to minimise the diff — every existing monospace-bound call
   /// site already reads this exact constant.
-  static const fontFamily = 'JetBrains Mono';
+  static const fontFamily = 'IBM Plex Sans Condensed';
 
   /// **2026-09-21 — the app's SANS font**, the DM-Sans-by-default half of
   /// the dual-font system. Headlines, section titles, task/event/routine

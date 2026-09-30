@@ -96,8 +96,9 @@ const _zoneGridTabOptions = [
 /// shave on the right. Both sides are now `theme.spacingSm` (8px).
 ///
 /// **Sized as 8 (left inset) + text + 16 (clearance before lane 1).**
-/// "00:00" is five glyphs of JetBrains Mono at `textCaption`'s 12px
-/// (~7.2px advance each, ~36px total), so 8 + 36 + 16 = 60.
+/// "00:00" measured ~36px at `textCaption`'s 12px in the earlier JetBrains
+/// Mono, so 8 + 36 + 16 = 60; the narrower IBM Plex Sans Condensed that
+/// replaced it (2026-09-30) fits with room to spare.
 ///
 /// The right-hand clearance is 16px, not 8, per a direct follow-up: "right
 /// gap smaller on zone edit and too big on task view make it 16px."

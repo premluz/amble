@@ -50,7 +50,7 @@ void main() {
   }
 
   testWidgets('opening the form for an existing behavior prefills its '
-      'title and reads "Edit habit", not "New habit"', (tester) async {
+      'title and reads "Edit pattern", not "Create pattern"', (tester) async {
     final behavior = TrackedBehavior.create(
       title: 'Exercise',
       targetType: BehaviorTargetType.duration,
@@ -65,8 +65,8 @@ void main() {
     showTrackedBehaviorForm(navigatorKey.currentContext!, behavior: behavior);
     await tester.pumpAndSettle();
 
-    expect(find.text('Edit habit'), findsOneWidget);
-    expect(find.text('New habit'), findsNothing);
+    expect(find.text('Edit pattern'), findsOneWidget);
+    expect(find.text('Create pattern'), findsNothing);
     expect(find.text('Exercise'), findsOneWidget);
     // The saved 60-minute target does NOT read back into the form: the
     // Target field was removed directly ("hide target and times per week
@@ -114,14 +114,14 @@ void main() {
     expect(saved.timesPerWeek, 3);
   });
 
-  testWidgets('opening the form with no behavior reads "New habit"', (
+  testWidgets('opening the form with no behavior reads "Create pattern"', (
     tester,
   ) async {
     final navigatorKey = await pumpHost(tester);
     showTrackedBehaviorForm(navigatorKey.currentContext!);
     await tester.pumpAndSettle();
 
-    expect(find.text('New habit'), findsOneWidget);
-    expect(find.text('Edit habit'), findsNothing);
+    expect(find.text('Create pattern'), findsOneWidget);
+    expect(find.text('Edit pattern'), findsNothing);
   });
 }

@@ -125,7 +125,8 @@ void main() {
       find.byKey(const ValueKey('zone-paint-surface')),
     );
     // Must track `_axisWidth` in `zone_grid_screen.dart` — 52, so "00:00"
-    // (~36px of JetBrains Mono at 12px) still fits between the two 8px
+    // (~36px in the earlier JetBrains Mono at 12px; narrower in IBM Plex
+    // Sans Condensed) still fits between the two 8px
     // insets without wrapping.
     const axisWidth = 60.0;
     // 1.5 px/minute — TimelinePixelsPerMinuteSetting's own default, now

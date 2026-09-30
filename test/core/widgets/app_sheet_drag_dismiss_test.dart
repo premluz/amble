@@ -130,4 +130,18 @@ void main() {
     expect(find.text('Row 6'), findsOneWidget);
     expect(offset(tester), 0);
   });
+
+  testWidgets('tapping the scrim closes the sheet', (tester) async {
+    await open(tester);
+    await tester.tapAt(const Offset(200, 40));
+    await tester.pumpAndSettle();
+    expect(find.text('Sheet body'), findsNothing);
+  });
+
+  testWidgets('a scrim tap still asks a refusing PopScope', (tester) async {
+    await open(tester, canPop: false);
+    await tester.tapAt(const Offset(200, 40));
+    await tester.pumpAndSettle();
+    expect(find.text('Sheet body'), findsOneWidget);
+  });
 }

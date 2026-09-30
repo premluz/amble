@@ -189,7 +189,7 @@ void main() {
 
         // Checked via the Align widget's own alignment property, not
         // measured pixel position — the test environment's fallback font
-        // (JetBrains Mono isn't loaded in `flutter test`) happens to
+        // (the app's fonts aren't loaded in `flutter test`) happens to
         // render "1:00 AM" wide enough to fill the whole 56px column
         // regardless of alignment, which would make a pixel-position
         // assertion pass even with the OLD (left-aligned) behavior. The

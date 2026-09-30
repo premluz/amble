@@ -1130,6 +1130,10 @@ contract; the components enforce most of them.
    otherwise it eases back. From a deeper page, the drag still closes the
    whole sheet, as on iOS. A `PopScope` guarding unsaved work still
    decides — a refused close eases back.
+5b. **A tap on the scrim closes**, like × — through the same unsaved-
+   changes check (`PopScope` for `AppSheet`; the form's own `onClose` for
+   `StepScaffold`'s scrim strip). Nothing painted over the page may claim
+   taps: a `CustomPainter` needs `hitTest` → false.
 6. **The handle bar is decoration.** It never moves on its own and is not
    its own drag target: dragging it drags the sheet.
 7. **Back steps through pages first.** Android back (and an iOS edge swipe

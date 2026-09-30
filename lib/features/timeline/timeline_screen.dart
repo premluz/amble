@@ -92,7 +92,7 @@ import '../zones/zone_form_screen.dart';
 /// The left hour-label column, from the screen padding to where task
 /// pills start. Widened from 56 after the labels were reported running
 /// under the pills: the widest label ("11:00 AM"/"12:00 PM") measures
-/// 57.6 at `textCaption` in JetBrains Mono, so at 56 it overflowed its
+/// 57.6 at `textCaption` in JetBrains Mono (the font then), so at 56 it overflowed its
 /// own right-aligned column and painted straight into the pill column,
 /// which begins at exactly this offset. Single-digit hours ("1:00 PM",
 /// 50.4) fit at either width, which is why only the 10-12 o'clock labels

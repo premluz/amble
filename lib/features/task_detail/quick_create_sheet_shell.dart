@@ -36,22 +36,17 @@ const quickCreateSheetMinFraction = 0.35;
 /// timeline scroll), and left by tapping it or dragging back up.
 const quickCreateSheetMinimisedFraction = 0.11;
 
-/// Drives the height of `QuickCreateOverlay`'s own small-to-near-full
-/// panel (`lib/features/timeline/quick_create_overlay.dart`) — requested
-/// directly: tap empty Timeline space opens "a small sheet with a task
-/// name input without the keyboard opened... a little handle in the
-/// middle that the user can extend to near full size add sheet."
+/// Drives the height of `QuickCreateOverlay`'s own panel
+/// (`lib/features/timeline/quick_create_overlay.dart`): small (where it
+/// opens), minimised (the title alone), or closed. It never expands past
+/// small — requested directly (2026-09-30): "we should not have expand
+/// sheet to fill"; a drag up just settles back.
 ///
 /// **Not** used to size a pushed `Navigator` route — an earlier version
-/// of this feature did exactly that (a `QuickCreateSheetShell` widget
-/// wrapping the pushed route's content), and it was confirmed broken by
-/// direct testing: Flutter's `Navigator` unconditionally wraps every
-/// route BELOW the topmost one in an `AbsorbPointer`, regardless of
-/// `barrierColor`/`opaque` — so a pushed route can never leave Timeline
-/// (and the draggable placeholder pill on it) interactive underneath it.
-/// The overlay that now owns this controller lives directly in
-/// `TimelineScreen`'s own widget tree instead, with no `Navigator`
-/// involved at all — expanded, it simply shows the same fields taller.
+/// of this feature did exactly that, and Flutter's `Navigator` wraps every
+/// route BELOW the topmost one in an `AbsorbPointer`, so the Timeline (and
+/// the draggable placeholder pill on it) could never stay interactive. The
+/// overlay lives directly in `TimelineScreen`'s own widget tree instead.
 class QuickCreateSheetHeightController extends ChangeNotifier {
   QuickCreateSheetHeightController({required double initialFraction})
     : _fraction = initialFraction;
@@ -59,90 +54,49 @@ class QuickCreateSheetHeightController extends ChangeNotifier {
   double _fraction;
   double get fraction => _fraction;
 
-  bool _expanded = false;
-  bool get expanded => _expanded;
-
-  /// Whether the sheet is in its MINIMISED state — the third state, where
-  /// only the title and the handle show. See
-  /// [quickCreateSheetMinimisedFraction].
+  /// Whether the sheet is in its MINIMISED state, where only the title and
+  /// the handle show. See [quickCreateSheetMinimisedFraction].
   bool _minimised = false;
   bool get minimised => _minimised;
 
   /// How far below [quickCreateSheetMinimisedFraction] a drag has to pull
   /// before it counts as "drag down to close" rather than settling into
   /// the minimised state — requested directly ("the sheet should also be
-  /// closing with this handle that expands it"). Expressed on the same
-  /// absolute-fraction scale as [fraction] itself; a drag that only dips
-  /// slightly below the floor (finger overshoot) still snaps back via
-  /// [settle], matching a real bottom sheet's own "small nudge doesn't
-  /// dismiss it" feel.
-  ///
-  /// Measured from the MINIMISED floor rather than the small one now that
-  /// there are three states: dragging down from small lands in minimised,
-  /// and only a further pull from there closes.
+  /// closing with this handle"). A drag that only dips slightly below the
+  /// floor (finger overshoot) still snaps back via [settle].
   static const _closeThreshold = 0.06;
 
   /// How far BELOW the small floor a drag has to reach before releasing
-  /// minimises rather than snapping back to small.
-  ///
-  /// A small absolute step, deliberately NOT the midpoint between the two
-  /// floors — the mirror of [_expandThreshold], and for the same reason
-  /// its own doc comment gives: a midpoint rule made the gesture require
-  /// dragging most of the way, which was reported as "difficult to do" on
-  /// the expand side. Measured directly here too: at the midpoint, a
-  /// 0.10-fraction downward drag from small snapped back to small instead
-  /// of minimising.
+  /// minimises rather than snapping back to small. A small absolute step,
+  /// NOT the midpoint between the two floors: a midpoint rule made the
+  /// gesture require dragging most of the way ("difficult to do").
   static const _minimiseThreshold = 0.06;
 
-  /// How far ABOVE the small floor a drag has to reach before releasing
-  /// expands rather than snapping back. Deliberately a small absolute
-  /// step, NOT the midpoint between small and full — reported directly
-  /// as "difficult to do": a midpoint rule made expansion require
-  /// dragging roughly half the screen, where Android's own non-modal
-  /// bottom sheet expands from a short pull or a flick. Paired with
-  /// [_expandVelocity] below so a quick upward flick expands regardless
-  /// of how far it actually travelled.
-  static const _expandThreshold = 0.06;
-
-  /// Pixels/second of upward drag velocity that expands (or downward
-  /// that closes) on release regardless of distance — the "flick"
-  /// half of Android's own bottom-sheet settle rule. Flutter's own
-  /// `kMinFlingVelocity` (50) is the floor for what counts as a fling at
-  /// all; this is deliberately a bit above it so a slow, deliberate
+  /// Pixels/second of drag velocity that decides on release regardless of
+  /// distance — the "flick" half of Android's own bottom-sheet settle rule,
+  /// a bit above Flutter's `kMinFlingVelocity` (50) so a slow, deliberate
   /// re-position doesn't read as a flick.
-  static const _expandVelocity = 300.0;
+  static const _flingVelocity = 300.0;
 
+  /// Follows the finger, but never above the small height (no expanding);
+  /// below the floor is allowed — [settle] reads it to decide on closing.
   void updateFraction(double fraction) {
-    // Allowed to go BELOW the small floor now (down to 0), unlike the
-    // expand side which stays clamped at 1.0 — the space below the floor
-    // is what [settle] reads to decide whether this drag meant "close."
-    _fraction = fraction.clamp(0.0, 1.0);
+    _fraction = fraction.clamp(0.0, quickCreateSheetMinFraction);
     notifyListeners();
   }
 
-  /// Snaps to whichever of the three outcomes the drag implies: close
-  /// (returns true — the caller, `QuickCreateOverlay`, is responsible
-  /// for actually tearing the draft down), expand, or settle back to the
-  /// small floor. Called on the handle's own drag-end.
-  ///
-  /// [velocity] is the release velocity in pixels/second on the vertical
-  /// axis (negative = upward, matching Flutter's own screen coordinates).
-  /// A fast enough flick decides the outcome on its own, ignoring how
-  /// far the drag actually moved — that velocity path is what makes a
-  /// short upward flick expand the sheet, per direct report that
-  /// expanding was "difficult to do."
+  /// Snaps to what the drag implies: close (returns true — the caller,
+  /// `QuickCreateOverlay`, tears the draft down), minimise, or back to
+  /// small. Called on the handle's own drag-end. [velocity] is the release
+  /// velocity in pixels/second (negative = upward).
   bool settle({double velocity = 0}) {
-    // Flick UP wins outright: one state larger than wherever it started.
-    if (velocity <= -_expandVelocity) {
-      if (_minimised) {
-        restoreToSmall();
-      } else {
-        expand();
-      }
+    // Flick UP: back to small, from anywhere.
+    if (velocity <= -_flingVelocity) {
+      restoreToSmall();
       return false;
     }
     // Flick DOWN: small collapses to minimised; minimised closes.
-    if (velocity >= _expandVelocity) {
+    if (velocity >= _flingVelocity) {
       if (_minimised) return true;
       minimise();
       return false;
@@ -152,13 +106,8 @@ class QuickCreateSheetHeightController extends ChangeNotifier {
     if (_fraction < quickCreateSheetMinimisedFraction - _closeThreshold) {
       return true;
     }
-
-    if (_fraction >= quickCreateSheetMinFraction + _expandThreshold) {
-      expand();
-      return false;
-    }
-    // Between the two floors: a real pull below the small floor
-    // minimises; anything shallower settles back to small.
+    // A real pull below the small floor minimises; anything shallower
+    // settles back to small.
     if (_fraction < quickCreateSheetMinFraction - _minimiseThreshold) {
       minimise();
     } else {
@@ -167,18 +116,8 @@ class QuickCreateSheetHeightController extends ChangeNotifier {
     return false;
   }
 
-  /// Expands straight to full — called when the handle's drag reaches the
-  /// full-height target.
-  void expand() {
-    _expanded = true;
-    _minimised = false;
-    _fraction = 1.0;
-    notifyListeners();
-  }
-
   /// Collapses to the MINIMISED state, where only the title shows.
   void minimise() {
-    _expanded = false;
     _minimised = true;
     _fraction = quickCreateSheetMinimisedFraction;
     notifyListeners();
@@ -189,7 +128,6 @@ class QuickCreateSheetHeightController extends ChangeNotifier {
   /// sheet, not a minimized sheet, but a small sheet as it is at the
   /// beginning") as well as by an upward drag from minimised.
   void restoreToSmall() {
-    _expanded = false;
     _minimised = false;
     _fraction = quickCreateSheetMinFraction;
     notifyListeners();

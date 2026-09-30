@@ -59,7 +59,7 @@ class TrackedBehaviorPage extends ConsumerStatefulWidget {
 }
 
 class _TrackedBehaviorPageState extends ConsumerState<TrackedBehaviorPage> {
-  static const _defaultTitle = 'New habit';
+  static const _defaultTitle = 'Create pattern';
 
   late final TextEditingController _titleController;
 
@@ -226,7 +226,7 @@ class _TrackedBehaviorPageState extends ConsumerState<TrackedBehaviorPage> {
       children: [
         AppSheetFlowHeader(
           theme: theme,
-          title: _isEditing ? 'Edit habit' : null,
+          title: _isEditing ? 'Edit pattern' : null,
           trailing: AppButton(
             label: _isEditing ? 'Save' : 'Add',
             shape: AppButtonShape.pill,

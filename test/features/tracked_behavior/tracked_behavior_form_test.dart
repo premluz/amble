@@ -61,13 +61,13 @@ void main() {
     await box.close();
   });
 
-  testWidgets('a fresh create opens as a compact New habit sheet with the '
+  testWidgets('a fresh create opens as a compact Create pattern sheet with the '
       'default name and a compact measured-in value chip', (tester) async {
     final navigatorKey = await _pumpHost(tester, box: box);
     unawaited(showTrackedBehaviorForm(navigatorKey.currentContext!));
     await tester.pumpAndSettle();
 
-    expect(find.text('New habit'), findsOneWidget);
+    expect(find.text('Create pattern'), findsOneWidget);
     expect(find.text('Add'), findsOneWidget);
     expect(find.text('Done'), findsNothing);
     expect(find.text('Save'), findsNothing);
@@ -91,11 +91,11 @@ void main() {
     await tester.pump();
 
     expect(find.text('Exercise'), findsOneWidget);
-    expect(find.text('New habit'), findsNothing);
+    expect(find.text('Create pattern'), findsNothing);
   });
 
   testWidgets(
-    'editing an existing behavior uses the compact Edit habit sheet and '
+    'editing an existing behavior uses the compact Edit pattern sheet and '
     'keeps Target/Times per week hidden',
     (tester) async {
       final behavior = TrackedBehavior.create(
@@ -112,7 +112,7 @@ void main() {
       showTrackedBehaviorForm(navigatorKey.currentContext!, behavior: behavior);
       await tester.pumpAndSettle();
 
-      expect(find.text('Edit habit'), findsOneWidget);
+      expect(find.text('Edit pattern'), findsOneWidget);
       expect(find.text('Save'), findsOneWidget);
       expect(find.byType(AppValueChip), findsOneWidget);
       expect(find.text('Times per week'), findsNothing);

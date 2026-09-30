@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,6 +7,7 @@ import '../../core/tokens/component_tokens.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_alert_dialog.dart';
 import '../../core/widgets/app_button.dart';
+import '../../core/widgets/app_delete_puff.dart';
 import '../../core/widgets/app_sheet.dart';
 import '../../core/widgets/app_sheet_header.dart';
 import '../../shared/models/task.dart';
@@ -176,13 +179,18 @@ class _TaskSheetState extends ConsumerState<_TaskSheet> {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (widget.task != null) ...[
-          AppButton(
-            icon: Icons.delete_outline_rounded,
-            variant: AppButtonVariant.ghost,
-            shape: AppButtonShape.circle,
-            tooltip: 'Delete task',
-            iconColor: theme.colorDestructive,
-            onPressed: _delete,
+          Builder(
+            builder: (buttonContext) => AppButton(
+              icon: Icons.delete_outline_rounded,
+              variant: AppButtonVariant.ghost,
+              shape: AppButtonShape.circle,
+              tooltip: 'Delete task',
+              iconColor: theme.colorDestructive,
+              onPressed: () {
+                AppDeletePuff.show(context: buttonContext);
+                unawaited(_delete());
+              },
+            ),
           ),
           SizedBox(width: theme.spacingSm),
         ],

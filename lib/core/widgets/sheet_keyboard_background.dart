@@ -40,6 +40,12 @@ class _KeyboardBackgroundPainter extends CustomPainter {
     );
   }
 
+  /// Paint only. A painter without this claims every tap on the whole page
+  /// (Flutter treats an unanswered `hitTest` as a hit), which kept a tap on
+  /// the scrim from ever reaching the barrier that closes the sheet.
+  @override
+  bool hitTest(Offset position) => false;
+
   @override
   bool shouldRepaint(_KeyboardBackgroundPainter oldDelegate) =>
       inset != oldDelegate.inset || color != oldDelegate.color;

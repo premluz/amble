@@ -6,89 +6,54 @@ import 'package:amble/features/task_detail/quick_create_sheet_shell.dart';
 
 void main() {
   group('QuickCreateSheetHeightController', () {
-    test('starts at the given initial fraction, not expanded', () {
+    QuickCreateSheetHeightController small() {
       final controller = QuickCreateSheetHeightController(
         initialFraction: quickCreateSheetMinFraction,
       );
       addTearDown(controller.dispose);
+      return controller;
+    }
 
+    test('starts at the given initial fraction, not minimised', () {
+      final controller = small();
       expect(controller.fraction, quickCreateSheetMinFraction);
-      expect(controller.expanded, isFalse);
+      expect(controller.minimised, isFalse);
     });
 
-    test('updateFraction() clamps to [0.0, 1.0] — allowed to go BELOW '
-        'the small floor mid-drag, for the drag-down-to-close gesture', () {
-      final controller = QuickCreateSheetHeightController(
-        initialFraction: quickCreateSheetMinFraction,
-      );
-      addTearDown(controller.dispose);
+    test('updateFraction() never goes above small — the sheet does not '
+        'expand (2026-09-30) — but may go BELOW it mid-drag, for the '
+        'drag-down-to-close gesture', () {
+      final controller = small();
+
+      controller.updateFraction(5);
+      expect(controller.fraction, quickCreateSheetMinFraction);
 
       controller.updateFraction(-5);
       expect(controller.fraction, 0.0);
 
-      controller.updateFraction(5);
-      expect(controller.fraction, 1.0);
-
-      controller.updateFraction(0.6);
-      expect(controller.fraction, 0.6);
-
-      // Below the small floor, but not clamped there — this is the
-      // "still mid-drag toward closing" state settle() reads.
+      // Below the small floor, but not clamped there — the "still
+      // mid-drag toward closing" state settle() reads.
       controller.updateFraction(0.1);
       expect(controller.fraction, 0.1);
     });
 
-    test('settle() expands from only a SHORT pull above the floor — not '
-        'the old half-the-screen midpoint, reported directly as '
-        '"difficult to do"', () {
-      final controller = QuickCreateSheetHeightController(
-        initialFraction: quickCreateSheetMinFraction,
-      );
-      addTearDown(controller.dispose);
-
-      // A modest pull, nowhere near the small/full midpoint (0.61) that
-      // the previous rule demanded.
-      controller.updateFraction(quickCreateSheetMinFraction + 0.1);
-      expect(controller.settle(), isFalse);
-      expect(controller.fraction, 1.0);
-      expect(controller.expanded, isTrue);
-    });
-
-    test('settle() snaps back to the small floor when the pull was too '
-        'small to count', () {
-      final controller = QuickCreateSheetHeightController(
-        initialFraction: quickCreateSheetMinFraction,
-      );
-      addTearDown(controller.dispose);
-
-      controller.updateFraction(quickCreateSheetMinFraction + 0.01);
-      expect(controller.settle(), isFalse);
-      expect(controller.fraction, quickCreateSheetMinFraction);
-      expect(controller.expanded, isFalse);
-    });
-
-    test('a fast upward FLICK expands regardless of how far it moved', () {
-      final controller = QuickCreateSheetHeightController(
-        initialFraction: quickCreateSheetMinFraction,
-      );
-      addTearDown(controller.dispose);
-
-      // Barely moved at all — velocity alone decides.
+    test('a fast upward FLICK returns to small, from minimised too — never '
+        'larger', () {
+      final controller = small();
       expect(controller.settle(velocity: -1200), isFalse);
-      expect(controller.fraction, 1.0);
-      expect(controller.expanded, isTrue);
+      expect(controller.fraction, quickCreateSheetMinFraction);
+
+      controller.minimise();
+      expect(controller.settle(velocity: -1200), isFalse);
+      expect(controller.minimised, isFalse);
+      expect(controller.fraction, quickCreateSheetMinFraction);
     });
 
-    // Three states (2026-09-16): a downward flick no longer closes straight
-    // from small — it steps DOWN one state at a time, small -> minimised ->
-    // closed, so the minimised state can't be skipped past by a fast
-    // gesture. Only a flick from an already-minimised sheet closes.
+    // Three states (2026-09-16): a downward flick steps DOWN one state at a
+    // time, small -> minimised -> closed, so the minimised state can't be
+    // skipped past by a fast gesture.
     test('a fast downward FLICK steps down one state, it does not close', () {
-      final controller = QuickCreateSheetHeightController(
-        initialFraction: quickCreateSheetMinFraction,
-      );
-      addTearDown(controller.dispose);
-
+      final controller = small();
       expect(controller.settle(velocity: 1200), isFalse);
       expect(controller.minimised, isTrue);
       expect(controller.fraction, quickCreateSheetMinimisedFraction);
@@ -97,26 +62,15 @@ void main() {
     });
 
     test('a slow release is decided by distance, not velocity', () {
-      final controller = QuickCreateSheetHeightController(
-        initialFraction: quickCreateSheetMinFraction,
-      );
-      addTearDown(controller.dispose);
-
-      controller.updateFraction(quickCreateSheetMinFraction + 0.01);
-      // Below the flick threshold in both directions — distance wins.
+      final controller = small();
+      controller.updateFraction(quickCreateSheetMinFraction - 0.01);
       expect(controller.settle(velocity: -50), isFalse);
       expect(controller.fraction, quickCreateSheetMinFraction);
     });
 
-    // Same one-state-at-a-time rule as the flick case above: a long drag
-    // down from SMALL lands on minimised, however far it went. Close is
-    // reachable only by dragging down again from there.
     test('settle() reports true (close) once the fraction is dragged far '
         'enough below the MINIMISED floor', () {
-      final controller = QuickCreateSheetHeightController(
-        initialFraction: quickCreateSheetMinFraction,
-      );
-      addTearDown(controller.dispose);
+      final controller = small();
 
       // Well below the small floor — still only minimises.
       controller.updateFraction(0.05);
@@ -130,42 +84,20 @@ void main() {
 
     test('settle() does NOT report close for a small overshoot just below '
         'the floor — only a real drag-down counts', () {
-      final controller = QuickCreateSheetHeightController(
-        initialFraction: quickCreateSheetMinFraction,
-      );
-      addTearDown(controller.dispose);
-
-      // Just under the floor, within the threshold — a finger nudge, not
-      // a deliberate close.
+      final controller = small();
       controller.updateFraction(quickCreateSheetMinFraction - 0.01);
       expect(controller.settle(), isFalse);
       expect(controller.fraction, quickCreateSheetMinFraction);
     });
 
-    test('expand() jumps straight to full regardless of current fraction', () {
-      final controller = QuickCreateSheetHeightController(
-        initialFraction: quickCreateSheetMinFraction,
-      );
-      addTearDown(controller.dispose);
-
-      controller.expand();
-
-      expect(controller.fraction, 1.0);
-      expect(controller.expanded, isTrue);
-    });
-
     test('notifies listeners on every state-changing call', () {
-      final controller = QuickCreateSheetHeightController(
-        initialFraction: quickCreateSheetMinFraction,
-      );
-      addTearDown(controller.dispose);
-
+      final controller = small();
       var notifications = 0;
       controller.addListener(() => notifications++);
 
-      controller.updateFraction(0.5);
+      controller.updateFraction(0.2);
       controller.settle();
-      controller.expand();
+      controller.restoreToSmall();
 
       expect(notifications, 3);
     });
@@ -197,7 +129,7 @@ void main() {
       );
     }
 
-    testWidgets('dragging up increases the controller\'s fraction', (
+    testWidgets('dragging down lowers the controller\'s fraction', (
       tester,
     ) async {
       final controller = QuickCreateSheetHeightController(
@@ -213,10 +145,10 @@ void main() {
       final gesture = await tester.startGesture(
         tester.getCenter(find.byType(QuickCreateSheetHandle)),
       );
-      await gesture.moveBy(const Offset(0, -100));
+      await gesture.moveBy(const Offset(0, 60));
       await tester.pump();
 
-      expect(controller.fraction, greaterThan(quickCreateSheetMinFraction));
+      expect(controller.fraction, lessThan(quickCreateSheetMinFraction));
 
       await gesture.up();
       await tester.pump();
@@ -238,8 +170,8 @@ void main() {
 
       expect(
         controller.fraction,
-        anyOf(quickCreateSheetMinFraction, 1.0),
-        reason: 'settle() always lands on one of the two fixed heights',
+        quickCreateSheetMinFraction,
+        reason: 'an upward drag settles back at small — it never expands',
       );
     });
 

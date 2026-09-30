@@ -899,20 +899,42 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
   }
 
-  testWidgets('dragging the handle up expands the same sheet in place — '
-      'the fields stay, the placeholder pill stays on Timeline', (
+  testWidgets('dragging the handle up does NOT expand — the sheet keeps its '
+      'height (2026-09-30: "we should not have expand sheet to fill")', (
     tester,
   ) async {
     await pumpTimeline(tester);
     await longPressAndReleaseAt(tester, const Offset(220, 400));
+    // Let the content measure and the height ease in first.
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
     final small = sheetHeight(tester);
 
     await dragHandleUp(tester, 400);
 
-    expect(sheetHeight(tester), greaterThan(small * 1.5));
-    expect(find.byType(QuickCreateSheetHandle), findsOneWidget);
+    expect(sheetHeight(tester), closeTo(small, 1));
     expect(find.byType(TaskSheetFields), findsOneWidget);
     expect(find.byType(PendingTaskPill), findsOneWidget);
+  });
+
+  testWidgets('minimised, the title sits where the open sheet\'s header row '
+      'is — level with × — not below it', (tester) async {
+    await pumpTimeline(tester);
+    await longPressAndReleaseAt(tester, const Offset(220, 400));
+    Rect rectOf(Finder finder) => tester.getRect(
+      find
+          .descendant(of: find.byType(QuickCreateOverlay), matching: finder)
+          .last,
+    );
+    final open = rectOf(find.byType(AppSheetSurface));
+    final closeFromTop =
+        rectOf(find.byType(HeaderCircleButton)).center.dy - open.top;
+
+    await dragHandleUp(tester, -150);
+    final minimised = rectOf(find.byType(AppSheetSurface));
+    final title = rectOf(find.text('New thing'));
+    expect(title.center.dy - minimised.top, closeTo(closeFromTop, 1));
   });
 
   testWidgets('dragged all the way up, the sheet stays inside the Timeline '
@@ -970,22 +992,6 @@ void main() {
       SheetTokens.contentBottomInset(AmbleTheme.light),
     );
   });
-
-  testWidgets(
-    'a SHORT upward drag on the handle is enough to expand — reported '
-    'directly as "difficult to do" when it demanded most of the screen',
-    (tester) async {
-      await pumpTimeline(tester);
-      await longPressAndReleaseAt(tester, const Offset(220, 400));
-      final small = sheetHeight(tester);
-
-      // ~70px total, nowhere near the ~380px the old midpoint rule
-      // needed on this 932px-tall test viewport.
-      await dragHandleUp(tester, 70);
-
-      expect(sheetHeight(tester), greaterThan(small * 1.5));
-    },
-  );
 
   testWidgets(
     'the name is typed in place: the first tap clears "New thing", the '

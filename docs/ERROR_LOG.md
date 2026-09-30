@@ -2594,3 +2594,25 @@ the sheet lives inside the Timeline area, which starts below the header.
 "stays below the top" check passed even with the bug. `pumpTimeline` now
 takes `headerHeight`. The new test was run against the reverted code to
 confirm it fails there.
+
+## 2026-09-30 — Tapping the scrim didn't close sheets
+
+**Symptom:** a tap on the dimmed area above a sheet did nothing, although
+`AppSheetRoute` is `barrierDismissible`. **Cause:** `SheetKeyboardBackground`'s
+full-page `CustomPaint` sat above the barrier. A `CustomPainter` with no
+`hitTest` override counts EVERY position as a hit, so it swallowed the
+tap. **Fix:** `hitTest` returns false (it only paints). Step sheets had a
+second cause: their transparent `Scaffold`'s Material took the tap. Their
+40px scrim strip now calls the form's `onClose`, the same path as ×.
+**Rule:** any full-size painter over tappable content overrides `hitTest`.
+
+## 2026-09-30 — affect_future_instances flaked under full-suite load
+
+**Symptom:** "turning the toggle on … future instances regenerate" failed
+only in full runs (3 times) and passed alone. **Cause:** the series
+regeneration after Save is real Hive I/O, and the tap helper waits a fixed
+100ms of real time; under load the regeneration finished later. **Fix:**
+the test polls in real time (inside `runAsync`) until the regenerated rows
+exist. **Don't:** poll for the sheet closing with bare `pump()` calls
+inside `runAsync`. `pump()` doesn't advance time, so the close animation
+never finishes, and the follow-up `pumpAndSettle` times out.

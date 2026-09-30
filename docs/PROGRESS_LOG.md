@@ -8952,3 +8952,32 @@ new.
   app_sheet_header_test, and a quick-create geometry test (× 24/24,
   name box 20 below, 24 bottom). Full suite unchanged (18). Analyze: 15
   existing issues.
+
+## 2026-09-30 — Scrim tap closes sheets
+
+- `SheetKeyboardBackground`'s painter no longer claims taps. The
+  StepScaffold scrim strip calls `onClose`. Added Sheets rule 5b.
+- Tests: an AppSheet scrim tap closes, and a refusing PopScope still holds
+  it (app_sheet_drag_dismiss_test); the StepScaffold strip calls onClose.
+  Full suite unchanged (18). Analyze: 15 existing issues.
+
+## 2026-09-30 — Quick-create: no expand, minimised title position
+
+- quick_create_sheet_shell (controller: no expand, clamp at small) and
+  quick_create_overlay (title in the header Stack when minimised; mapping
+  minimised → small only).
+- Tests: controller tests rewritten (12), the Timeline expand tests
+  replaced by "does not expand" and "minimised title level with ×". Full
+  suite unchanged (18). Analyze: 15 existing issues.
+
+## 2026-09-30 — IBM Plex Sans Condensed as the numeric font
+
+- Added 8 TTFs + `IBMPlexSansCondensed-OFL.txt` to assets/fonts. Swapped
+  the pubspec family, `TypePrimitives.fontFamily` and the test font
+  loader. Comments naming JetBrains were updated.
+- New font_assets_test (family matches, every declared asset exists). Full
+  suite unchanged (18). Analyze: 15 existing issues.
+- Open: delete the unbundled JetBrains Mono files? Tabular figures?
+- Also fixed the affect_future_instances flake (real-time wait for the
+  regenerated rows). Two consecutive full runs: the same 18 existing
+  failures, no flakes.

@@ -321,11 +321,18 @@ void main() {
       expect(saved.scheduledAt, _daysFromToday(0, hour: 14));
       expect(saved.isRecurrenceTemplate, isTrue);
 
-      // Regenerated future instances exist, sharing the same series.
-      final regenerated = box.values.where(
+      // Regenerated future instances exist, sharing the same series. The
+      // regeneration is real Hive I/O that can outlast the tap helper's
+      // short wait under the full suite's load — wait for it in real time.
+      Iterable<Task> regenerated() => box.values.where(
         (t) => t.recurrenceId == 'series-1' && t.id != template.id,
       );
-      expect(regenerated, isNotEmpty);
+      await tester.runAsync(() async {
+        for (var i = 0; i < 60 && regenerated().isEmpty; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        }
+      });
+      expect(regenerated(), isNotEmpty);
     },
   );
 }
