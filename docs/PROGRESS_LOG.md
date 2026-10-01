@@ -8981,3 +8981,141 @@ new.
 - Also fixed the affect_future_instances flake (real-time wait for the
   regenerated rows). Two consecutive full runs: the same 18 existing
   failures, no flakes.
+
+## 2026-09-30 — Edge-time pill fits the time column
+
+- Added `TimeColumnTokens.edgePillPaddingX`; the time column measurement
+  now includes the pill. time_column_fit_test gained a pill case (real
+  fonts, both font modes; fails without the fix). zone_inset_tokens_test
+  and timeline_columns_test were updated to the new rule. Full suite
+  unchanged (18). Analyze: 15 existing issues.
+
+## 2026-09-30 — Resize: on top, and the overlap menu
+
+- A resized task paints on top. A single-task resize onto another task
+  asks Overlap / Push all / Trim (see DECISIONS).
+- New: task_resize_overlap.dart (the menu actions moved there from
+  timeline_screen), `TaskList.trimTasks`, test/support/timeline_harness.dart,
+  resize_overlap_menu_test (6 tests). The four menu tests fail with the
+  fix disabled; the paint-order test fails on the pre-change code.
+- Full suite: the same 18 existing failures. Analyze: 17 issues, none in
+  touched files.
+- Open: group resize doesn't ask; JetBrains files; tabular figures.
+
+## 2026-09-30 — Resizing pill is raised
+
+- timeline_screen: the height caps are lifted while resizing
+  (`_isRaised`); the now-line is drawn below the task being dragged or
+  resized (`raisedAboveNow`).
+- New resize_raised_test (2 tests; both fail on the previous code). Full
+  suite: the same 18 existing failures. Analyze: 17, unchanged.
+- Follow-up: group-resize followers are raised as well (`raised` in the
+  block build). New test in resize_raised_test fails on the previous code.
+  Suite: the same 18 existing failures; analyze 17, unchanged.
+
+## 2026-09-30 — Spatial Timeline: swipe off
+
+- `TaskCapsuleBlock.swipeActionsEnabled`; timeline_screen passes false and
+  no longer imports the note sheet.
+- Tests: a flag test in task_capsule_swipe_test, and a new
+  timeline_no_swipe_test (fails without the change).
+- Full suite: the same 18 existing failures, plus one
+  affect_future_instances failure that passed 3 of 3 times in isolation.
+  It still flakes under full-suite load. Analyze: 17, unchanged.
+
+## 2026-09-30 — Fix: resized pill snapped back under the overlap menu
+
+- timeline_screen resize-end handlers and task_resize_overlap
+  (`onApplied`, awaits the chosen write). See ERROR_LOG.
+- New test in resize_overlap_menu_test (fails on the old code). Full
+  suite: the same 18 existing failures. Analyze: 17, unchanged.
+
+## 2026-09-30 — Add-zone sheet spacing aligned with add-task
+
+- new_zone_sheet: header gap, row gaps and side insets (see DECISIONS).
+- New new_zone_sheet_spacing_test (fails on the committed sheet). Full
+  suite: the same 18 existing failures. Analyze: 17, unchanged.
+
+## 2026-09-30 — Label suggestions, 16 colours, Demo profile
+
+- New: label_presets, label_suggestion_strip, onboarding_labels,
+  onboarding_section_entry, demo_profile_button. Changed:
+  category_visual (icons), color_primitives (+4 per ramp),
+  add_category_modal, onboarding_profile, onboarding_materializer,
+  developer_settings_screen, profiles.json (Demo appended, existing
+  profiles untouched), CONSTITUTION (onboarding schema, palette size).
+- Tests: label_presets_test, demo_profile_materializer_test; the catalog
+  and palette tests were extended. Full suite: the same 18 existing
+  failures. Analyze: 17, unchanged.
+- Also: I ran the formatter on all of lib/shared by mistake, then
+  restored the three files it had changed (formatting only) from HEAD.
+- Open: check the Demo day and the new colours on device. The picker's
+  colour order isn't grouped by hue for the new four.
+
+## 2026-09-30 — Compact preset chips
+
+- template_chip_strip (TemplateChip size/badge/glyph) and component_tokens
+  (`compactBadgeSize`, `compactBadgeGlyphRatio`).
+- New template_chip_size_test (fails on the old sizing, 40 vs 32). Full
+  suite: the same 18 existing failures. Analyze: 17, unchanged.
+- Open: `TemplateChipStrip` has no callers and may be dead code; the
+  label-suggestion chips still use a 24 px badge.
+
+## 2026-09-30 — Quick-create: keyboard corners, top fade
+
+- quick_create_overlay: `SheetKeyboardBackground`, pinned header,
+  `AppScrollRevealFade` (new, core/widgets).
+- Tests: app_scroll_reveal_fade_test (new); quick_task_add_test gained a
+  keyboard/fade test, and its hug test now counts the pinned header. The
+  harness Scaffold matches the app shell. Full suite: the same 18
+  existing failures. Analyze: 17, unchanged.
+- Open: the Zone sheet (also "Add title") has neither treatment.
+
+## 2026-09-30 — Compact label chips + Widgetbook chip-size page
+
+- category_chip, app_value_chip (shared icon-scale token),
+  component_tokens; widgetbook/lib/chip_sizes_demo.dart registered in
+  widgetbook main.
+- template_chip_size_test gained a label-chip case (fails at the old
+  40 px). Full suite: the same 18 existing failures. Analyze: 17,
+  unchanged. Widgetbook lib analyzes clean.
+- Follow-up: the label-suggestion chips in New label use the compact
+  badge too; label_presets_test checks the badge size (it fails at 24 px).
+  Its tap now lands near the chip's end, because after typing the name
+  field's cursor handle sits over the chip's middle.
+
+## 2026-09-30 — Accent strength: Patterns only
+
+- New pattern_accent_scope (+ test: changed inside, unchanged outside).
+  main.dart no longer applies the knob; tracked_behavior_list_screen wraps
+  its body; the dev_config doc and the Developer copy were updated.
+- Full suite: the same 18 existing failures, plus
+  affect_future_instances and edit_schedule_repeats failing once under
+  load. Both passed twice in isolation, so they're flaky, not caused by
+  this. Analyze: 17, unchanged.
+
+## 2026-10-01 — Voice mode polish
+
+- voice_capture_screen (switcher, card only when unavailable),
+  voice_capture_screen_parts (segment row presence, unavailable card),
+  task_list_row (ring painter), voice_mode_tokens.
+- Tests: task_list_row_test gained a grow/recede case; the voice screen
+  test checks the hint eases out (it fails on an instant cut); the
+  unavailable test targets the new card.
+- Full suite: the same 18 existing failures, plus the two
+  recurring-series tests that fail only under full-suite load (they pass
+  alone, again). Analyze: 17, unchanged. Widgetbook clean.
+- Housekeeping: `dart format` on the test folder reformatted two
+  untouched files; both were restored from HEAD (formatting-only diffs).
+- Files over 200 lines: voice_capture_screen (339, was 309) and
+  voice_capture_screen_parts (210, was 207).
+
+## 2026-10-01 — Developer "Show touches"
+
+- New app_touch_visualizer (+ test: off shows nothing; on puts a dot
+  under the finger and taps still land; the dot fades after release; one
+  dot per finger; toggling keeps app state). Also: dev_config
+  (`DevShowTouches`, regenerated `.g` only), component_tokens
+  (`TouchVisualizerTokens`), main.dart (builder), and a Developer
+  settings "Recording" section.
+- Full suite: the same 18 existing failures. Analyze: 17, unchanged.

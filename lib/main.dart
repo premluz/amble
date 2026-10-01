@@ -26,6 +26,7 @@ import 'core/widgets/app_shell_header.dart';
 import 'core/widgets/app_top_nav.dart';
 import 'core/widgets/app_view_transition.dart';
 import 'core/widgets/what_matters_motion.dart';
+import 'core/widgets/app_touch_visualizer.dart';
 import 'features/inbox/inbox_screen.dart';
 import 'features/onboarding/onboarding_quiz_screen.dart';
 import 'features/settings/settings_screen.dart';
@@ -396,6 +397,9 @@ class AmbleApp extends ConsumerWidget {
     // above — see PillShapeSetting's own doc comment. Requested directly:
     // "this should affect globally, in edit tasks etc."
     final pillShape = ref.watch(pillShapeSettingProvider);
+    // Developer → "Show touches": dots under each finger, for recordings.
+    final showTouches =
+        isDevConfigAvailable && ref.watch(devShowTouchesProvider);
     // Dev-settings knob: off collapses the dual-font split (mono tokens ->
     // DM Sans) app-wide — see `DualFontSetting`'s own doc comment.
     final dualFontEnabled = ref.watch(dualFontSettingProvider);
@@ -440,7 +444,10 @@ class AmbleApp extends ConsumerWidget {
           if (app == null) {
             throw StateError('MaterialApp built without a navigator child');
           }
-          return AppTimeFormat(use24Hour: use24Hour, child: app);
+          return AppTouchVisualizer(
+            enabled: showTouches,
+            child: AppTimeFormat(use24Hour: use24Hour, child: app),
+          );
         },
         // Gate, provider-watched so each CTA's write triggers an immediate
         // rebuild with no separate Navigator.push. The one-off SplashScreen

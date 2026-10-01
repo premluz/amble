@@ -2616,3 +2616,49 @@ the test polls in real time (inside `runAsync`) until the regenerated rows
 exist. **Don't:** poll for the sheet closing with bare `pump()` calls
 inside `runAsync`. `pump()` doesn't advance time, so the close animation
 never finishes, and the follow-up `pumpAndSettle` times out.
+
+## 2026-09-30 — "m" of am/pm still cut: the edge-time PILL, not the labels
+
+**Symptom:** with dual font on (IBM Plex Sans Condensed), a task's start
+and end times ("12:55a", "9:25a") lost their last letter. **Cause:** the
+column measured bare labels plus 4px of slack, but a task's edge-time pill
+(`TaskEdgeTimeLabel`) draws the same text BOLD inside 8px of side padding,
+starting at the column's edge with no width limit. The pill was about
+52px against 40px of room, and its end ran under the zones.
+**Fix:** `_measureTimeColumnWidth` takes the larger of the widest bare
+label plus slack and the widest pill (bold `textTaskEdgeTime` + 2 ×
+`TimeColumnTokens.edgePillPaddingX`), in whichever font is active. The pill
+padding is one token shared by the pill and the measurement.
+**Verified:** time_column_fit_test has a pill case, run against the real
+fonts; it failed with the pill removed from the measurement.
+
+## 2026-09-30 — A resized pill snapped back while the overlap menu was open
+
+**Symptom:** after a resize onto another task, the pill jumped back to
+its old size on release while the Overlap / Push all / Trim menu was
+open. It only showed the new size after a choice was made.
+**Cause:** the resize-end handler cleared the preview (offset, raised
+flag) before asking. The live task still had its old duration, so the
+pill drew at the old size, capped at its neighbour.
+**Fix:** a single-task release keeps its preview until
+`commitTaskResize` calls `onApplied`. That happens in the same
+synchronous step that puts the new span on the live task. Dropping the
+preview any later would stack the offset on the new duration. The
+helper now also awaits the chosen write. If nothing is written, the
+preview is cleared in a `finally`.
+**Verified:** a resize_overlap_menu_test case measures the rail while
+the menu is open and after Overlap. It failed on the old code (45px
+against 85px).
+
+## 2026-09-30 — Quick-create sheet: gap at the keyboard's rounded corners
+
+**Symptom:** with the name field focused, the Timeline showed through the
+iOS keyboard's rounded top corners under the in-place add-task sheet.
+**Cause:** that sheet sits above the keyboard (`bottom: viewInsets`) but,
+unlike every `AppSheet`, painted nothing behind the keyboard.
+**Fix:** it's wrapped in `SheetKeyboardBackground` (the sheet surface,
+keyboard-high).
+**Test gotcha:** quick_task_add_test's harness used a default `Scaffold`,
+which absorbs the keyboard inset. The app shell sets
+`resizeToAvoidBottomInset: false`, and the harness now does too.
+**Verified:** a new test fails with the background's inset forced to 0.

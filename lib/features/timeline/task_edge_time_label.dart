@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/tokens/component_tokens.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/timeline_clock.dart';
 
@@ -68,7 +69,7 @@ class TaskEdgeTimeLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     final pill = Container(
       padding: EdgeInsets.symmetric(
-        horizontal: theme.spacingSm,
+        horizontal: TimeColumnTokens.edgePillPaddingX(theme),
         vertical: theme.spacingXs,
       ),
       decoration: BoxDecoration(

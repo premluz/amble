@@ -95,6 +95,11 @@ abstract final class TimeColumnTokens {
   /// Breathing room after the widest label, so the last letter (the "m" of
   /// "pm") never sits against — or under — the column's edge.
   static const double labelSlack = SpacingPrimitives.space2;
+
+  /// A task's edge-time pill's side padding (`TaskEdgeTimeLabel`). The
+  /// column is sized to hold the widest pill too, not only bare labels —
+  /// a bold pill ran its "m" under the zones otherwise.
+  static double edgePillPaddingX(AmbleTheme theme) => theme.spacingSm;
 }
 
 /// Every bottom sheet's fill: the page's own background
@@ -166,6 +171,20 @@ abstract final class ChipTokens {
   static double compactHeight(AmbleTheme theme) => theme.sizeButtonSm;
   static double regularHeight(AmbleTheme theme) => theme.sizeButtonMd;
 
+  /// A category badge inside a compact chip: what's left of the compact
+  /// height after the badge chip's equal `spacingSm` padding (16 of 32), so
+  /// the chip lands exactly on a value chip's height.
+  static double compactBadgeSize(AmbleTheme theme) =>
+      compactHeight(theme) - theme.spacingSm * 2;
+
+  /// A compact chip's icon, relative to its caption text — the value
+  /// chip's own proportion (`AppValueChip`).
+  static const compactIconScale = 1.2;
+
+  /// The glyph's share of a compact badge — larger than the regular
+  /// badge's 0.65 so the icon stays near a value chip's own icon size.
+  static const compactBadgeGlyphRatio = .75;
+
   static double radius(AmbleTheme theme) => theme.radiusPill;
 
   /// Side padding: a third of the chip's height, so both sizes keep the
@@ -188,4 +207,28 @@ abstract final class ChipTokens {
 
   static Color ring(AmbleTheme theme) => theme.colorTextPrimary;
   static double ringWidth(AmbleTheme theme) => theme.borderWidthHairline * 1.5;
+}
+
+/// The developer touch visualizer (`AppTouchVisualizer`): a soft dot under
+/// each finger, quiet enough to sit over a screen recording.
+abstract final class TouchVisualizerTokens {
+  /// Apple's minimum touch target, so the dot reads as "a fingertip".
+  static double diameter(AmbleTheme theme) => theme.spacingXl + theme.spacingXs;
+
+  /// Tinted from the text colour rather than plain white, so it shows on
+  /// the light theme's paper as well as the dark one.
+  static Color fill(AmbleTheme theme) =>
+      theme.colorTextPrimary.withValues(alpha: fillAlpha);
+  static Color ring(AmbleTheme theme) =>
+      theme.colorTextPrimary.withValues(alpha: ringAlpha);
+  static const fillAlpha = .16;
+  static const ringAlpha = .5;
+  static double ringWidth(AmbleTheme theme) => theme.borderWidthHairline;
+
+  /// Arriving it settles up from slightly small; leaving it fades while
+  /// easing a little larger, like a ripple letting go.
+  static const appearScale = .8;
+  static const releaseScale = 1.25;
+  static Duration appear(AmbleTheme theme) => theme.motionFast;
+  static Duration release(AmbleTheme theme) => theme.motionNormal;
 }

@@ -209,7 +209,8 @@ class AppValueChip extends StatelessWidget {
     AppValueChipSize.md => theme.textLabel,
   };
 
-  double _iconSize(AmbleTheme theme) => _textStyle(theme).fontSize! * 1.2;
+  double _iconSize(AmbleTheme theme) =>
+      _textStyle(theme).fontSize! * ChipTokens.compactIconScale;
 }
 
 /// The rungs [AppValueChip] ships, a deliberate SUBSET of [AppButtonSize]'s

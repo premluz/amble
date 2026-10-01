@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive_ce.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
-import 'package:amble/core/widgets/app_wheel_time_picker.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/task_detail/task_sheet.dart';
 import 'package:amble/shared/models/category.dart';
@@ -144,7 +143,7 @@ void main() {
     categoryId: BuiltInCategoryIds.work,
   );
 
-  testWidgets('a new task opens with its name focused, noon for 5 minutes, '
+  testWidgets('a new task keeps its supplied start, defaults to 15 minutes, '
       'and Add writes it', (tester) async {
     final navigatorKey = await host(tester);
     showTaskSheet(
@@ -165,9 +164,29 @@ void main() {
 
     final saved = box.values.single;
     expect(saved.title, 'Walk');
-    expect(saved.scheduledAt, _daysFromToday(0, hour: 12));
-    expect(saved.durationMinutes, 5);
+    expect(saved.scheduledAt, _daysFromToday(0));
+    expect(saved.durationMinutes, 15);
     expect(find.text('New task'), findsNothing);
+  });
+
+  testWidgets('a new task defaults to now and enables Add after naming', (
+    tester,
+  ) async {
+    final openedAt = DateTime.now();
+    final navigatorKey = await host(tester);
+    showTaskSheet(navigatorKey.currentContext!);
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).first, 'Walk');
+    await tester.pumpAndSettle();
+    final add = find.widgetWithText(ElevatedButton, 'Add');
+    expect(tester.widget<ElevatedButton>(add).onPressed, isNotNull);
+    await _tapAndSettle(tester, add);
+
+    final saved = box.values.single;
+    final scheduledAt = saved.scheduledAt!;
+    expect(scheduledAt.difference(openedAt).inSeconds.abs(), lessThan(120));
+    expect(saved.durationMinutes, 15);
   });
 
   testWidgets('closing an untouched sheet closes silently', (tester) async {
@@ -233,8 +252,8 @@ void main() {
     });
   });
 
-  testWidgets('a Things item without a time waits for Time and Duration '
-      'before Save, then lands on the Timeline', (tester) async {
+  testWidgets('a Things item without a time defaults its schedule before Save '
+      'and lands on the Timeline', (tester) async {
     final item = Task(id: 'thing', title: 'Call mum');
     await tester.runAsync(() => box.put(item.id, item));
     final navigatorKey = await host(tester);
@@ -242,21 +261,15 @@ void main() {
     await tester.pumpAndSettle();
 
     Finder save() => find.widgetWithText(ElevatedButton, 'Save');
-    expect(tester.widget<ElevatedButton>(save()).onPressed, isNull);
-    expect(find.text('Time'), findsOneWidget);
-    expect(find.text('Duration'), findsOneWidget);
-
-    await _tapAndSettle(tester, find.text('Time'));
-    tester.widget<AppWheelPicker>(find.byType(AppWheelPicker)).onChanged(15, 0);
-    await tester.pumpAndSettle();
-    await _tapAndSettle(tester, find.text('Done'));
-    await _tapAndSettle(tester, find.text('Duration'));
-    await _tapAndSettle(tester, find.text('Done'));
+    expect(tester.widget<ElevatedButton>(save()).onPressed, isNotNull);
+    expect(find.text('Time'), findsNothing);
+    expect(find.text('Duration'), findsNothing);
+    expect(find.text('15m'), findsOneWidget);
 
     await _tapAndSettle(tester, save());
     final saved = box.get(item.id)!;
-    expect(saved.scheduledAt!.hour, 15);
-    expect(saved.durationMinutes, isNotNull);
+    expect(saved.scheduledAt, isNotNull);
+    expect(saved.durationMinutes, 15);
   });
 
   testWidgets('a preset fills a new task and is recorded on it', (

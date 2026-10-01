@@ -261,7 +261,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   /// everywhere else it's already used. Requested directly.
   final Color colorDestructive;
 
-  /// The 12-swatch palette every [Category] resolves its pill/icon color
+  /// The 16-swatch palette every [Category] resolves its pill/icon color
   /// from — built-in and custom alike, one swatch per color, no separate
   /// tint+icon pair. [Category.colorToken] is a plain index into this
   /// list. Same list in both [light] and [dark] — its lightness/chroma
@@ -1046,7 +1046,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     colorTaskSkipped: ColorPrimitives.slate500,
     colorTaskAlert: ColorPrimitives.coral300,
     colorDestructive: ColorPrimitives.crimson300,
-    // Same 12-swatch list as the light palette — deliberately not a
+    // Same 16-swatch list as the light palette — deliberately not a
     // separate dark-mode set, see the field's own doc comment above.
     categorySwatches: ColorPrimitives.categoryPalette12,
     spacingXs: SpacingPrimitives.space2,
@@ -1731,13 +1731,20 @@ extension TimelineColumns on AmbleTheme {
       textCaptionMono,
       textCaptionMono.copyWith(fontWeight: FontWeight.w700),
     ];
+    // A task's edge-time pill: bold edge-time text inside its own padding.
+    final pillStyle = textTaskEdgeTime.copyWith(fontWeight: FontWeight.w700);
+    var widestPill = 0.0;
     for (final sample in timelineClockSamples().toSet()) {
-      for (final style in styles) {
+      for (final style in [...styles, pillStyle]) {
         final painter = TextPainter(
           text: TextSpan(text: sample, style: style),
           textDirection: TextDirection.ltr,
         )..layout();
-        widest = math.max(widest, painter.width);
+        if (identical(style, pillStyle)) {
+          widestPill = math.max(widestPill, painter.width);
+        } else {
+          widest = math.max(widest, painter.width);
+        }
         painter.dispose();
       }
     }
@@ -1746,8 +1753,8 @@ extension TimelineColumns on AmbleTheme {
     // The widest real label (never clipped, whatever the font), a little
     // breathing room, plus what the zones' side inset and the time->zone
     // gap lend the column.
-    return widest +
-        TimeColumnTokens.labelSlack +
+    final pill = widestPill + TimeColumnTokens.edgePillPaddingX(this) * 2;
+    return math.max(widest + TimeColumnTokens.labelSlack, pill) +
         ZoneInsetTokens.freedForTimeColumn(this) +
         TimeColumnTokens.borrowedFromZoneGap;
   }

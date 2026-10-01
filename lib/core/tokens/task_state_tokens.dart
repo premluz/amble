@@ -22,6 +22,11 @@ abstract final class TaskStateTokens {
   static final glyphOnDark = ColorPrimitives.paper;
   static final glyphOnLight = ColorPrimitives.slate900;
 
+  /// Category names rendered directly on their colored label fill. This is
+  /// intentionally light in both themes so the label reads as one colored
+  /// object instead of switching its foreground with the app surface.
+  static final categoryLabelText = ColorPrimitives.paper;
+
   /// Opacity of a done task's glyph: barely there, so the icon recedes well
   /// past its pill's own pale tint.
   static const doneGlyphAlpha = .25;

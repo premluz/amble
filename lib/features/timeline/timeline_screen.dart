@@ -73,10 +73,10 @@ import 'timeline_drag_math.dart';
 import 'recently_saved_task_provider.dart';
 import 'selected_date_provider.dart';
 import 'viewed_time_provider.dart';
-import 'add_task_note_sheet.dart';
 import 'task_boundary_markers.dart';
 import 'task_capsule_block.dart';
 import 'task_edge_time_label.dart';
+import 'task_resize_overlap.dart';
 import 'task_overlap_layout.dart';
 import 'two_finger_long_press.dart';
 import 'tasks_for_selected_day_provider.dart';
@@ -1200,28 +1200,6 @@ typedef _RescheduleCallback = Future<void> Function(
   DateTime newScheduledAt,
 );
 
-List<AppContextMenuAction> _taskOverlapMenuActions({
-  required VoidCallback onOverlap,
-  required VoidCallback onPushAll,
-  required VoidCallback onTrim,
-}) => [
-  AppContextMenuAction(
-    icon: Icons.layers_outlined,
-    label: 'Overlap',
-    onTap: onOverlap,
-  ),
-  AppContextMenuAction(
-    icon: Icons.arrow_forward_rounded,
-    label: 'Push all',
-    onTap: onPushAll,
-  ),
-  AppContextMenuAction(
-    icon: Icons.content_cut_rounded,
-    label: 'Trim',
-    onTap: onTrim,
-  ),
-];
-
 class _DayTimeline extends ConsumerStatefulWidget {
   const _DayTimeline({
     required this.tasks,
@@ -1536,6 +1514,11 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
   /// gesture-arena artifact from every task block's oversized hit region
   /// stacking on top of its neighbours. See docs/DECISIONS.md.
   String? _draggingTaskId;
+
+  /// The task whose edge is being dragged (resized). Painted on top like a
+  /// moved task — requested directly: while a task is being edited, it is
+  /// on top — and pinned there through its settle via [_settlingTaskId].
+  String? _resizingTaskId;
 
   /// Lets a just-saved task be scrolled into view before the overlap menu
   /// is anchored to its rendered position.
@@ -1897,7 +1880,7 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
     await AppContextMenu.showAt(
       context,
       position: anchor,
-      actions: _taskOverlapMenuActions(
+      actions: taskOverlapMenuActions(
         onOverlap: () {},
         onPushAll: () {
           if (cascadeMoves != null) {
@@ -2117,6 +2100,30 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
         else
           slot,
     ]);
+    // The task being dragged or resized paints above the now-line too —
+    // requested directly: "should be on top of current hour indicator as
+    // well." Only when it is also the last slot, so the line never lands
+    // above a resting task that happens to be primary.
+    final raisedAboveNow =
+        widget.showHourLabels &&
+        slots.isNotEmpty &&
+        slots.last.block.id ==
+            (_draggingTaskId ?? _resizingTaskId ?? _settlingTaskId);
+    final nowLine = CurrentTimeIndicator(
+      key: const ValueKey('now-line'),
+      now: ref.read(nowProvider),
+      rangeStart: rangeStart,
+      rangeEnd: rangeEnd,
+      pixelsPerMinute: widget.pixelsPerMinute,
+      // `theme.timelineTimeLeft`, matching
+      // `TaskBoundaryMarkers`' own `leftInset` above —
+      // the two share a column, so "now" has to start
+      // where every other hour label starts. Reported
+      // directly, twice now, in both directions when
+      // these two call sites disagreed: "current hour
+      // not aligned with day hours on timeline."
+      leftInset: theme.timelineTimeLeft,
+    );
     // The RESTING lane layout — computed from `restingClusters`, i.e.
     // WITHOUT the drag exclusion above, so it is stable for the whole
     // duration of a drag.
@@ -2755,6 +2762,8 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
                         // (rendered separately, below) is what still shows title/time
                         // for a resting member.
                         for (final slot in slots) ...[
+                          if (raisedAboveNow && identical(slot, slots.last))
+                            nowLine,
                           // The dragged block's faded "ghost", left behind at its
                           // original slot for the duration of the drag — a direct
                           // sibling here (not nested inside _DraggableTaskBlock's own
@@ -2937,6 +2946,12 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
                                   // by onSettled below, deliberately outliving the
                                   // ghost.
                                   if (isDragging) _settlingTaskId = task.id;
+                                });
+                              },
+                              onResizingChanged: (isResizing) {
+                                setState(() {
+                                  _resizingTaskId = isResizing ? task.id : null;
+                                  if (isResizing) _settlingTaskId = task.id;
                                 });
                               },
                               onSettled: () {
@@ -3171,21 +3186,7 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
                         // without a time axis to place it against — in collapsed mode
                         // it would sit at an arbitrary point between two stacked
                         // blocks and imply a scale that isn't there.
-                        if (widget.showHourLabels)
-                          CurrentTimeIndicator(
-                            now: ref.read(nowProvider),
-                            rangeStart: rangeStart,
-                            rangeEnd: rangeEnd,
-                            pixelsPerMinute: widget.pixelsPerMinute,
-                            // `theme.timelineTimeLeft`, matching
-                            // `TaskBoundaryMarkers`' own `leftInset` above —
-                            // the two share a column, so "now" has to start
-                            // where every other hour label starts. Reported
-                            // directly, twice now, in both directions when
-                            // these two call sites disagreed: "current hour
-                            // not aligned with day hours on timeline."
-                            leftInset: theme.timelineTimeLeft,
-                          ),
+                        if (widget.showHourLabels && !raisedAboveNow) nowLine,
                         // Archived alongside the rest of the old hold-and-
                         // drag-a-line mechanism (see place_task_line.dart's
                         // own doc comment) — `_placeLineController` is never
@@ -3984,7 +3985,10 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
 
   List<TaskLayoutSlot> _dragLastOrder(List<TaskLayoutSlot> slots) {
     final draggingId =
-        _draggingTaskId ?? widget.primaryTaskId ?? _settlingTaskId;
+        _draggingTaskId ??
+        _resizingTaskId ??
+        widget.primaryTaskId ??
+        _settlingTaskId;
     if (draggingId == null) return slots;
 
     final index = slots.indexWhere((slot) => slot.block.id == draggingId);
@@ -4643,6 +4647,7 @@ class _DraggableTaskBlock extends ConsumerStatefulWidget {
     required this.onToggleComplete,
     required this.onReschedule,
     required this.onDraggingChanged,
+    required this.onResizingChanged,
     required this.onSettled,
     required this.pixelsPerMinute,
     required this.isDraggable,
@@ -4716,6 +4721,10 @@ class _DraggableTaskBlock extends ConsumerStatefulWidget {
   /// [_DayTimelineState._draggingTaskId] for why this lives one level up
   /// rather than inside this widget's own build().
   final ValueChanged<bool> onDraggingChanged;
+
+  /// Reports a resize (either edge) starting and ending, so the parent
+  /// paints this task on top while it changes size, as during a move.
+  final ValueChanged<bool> onResizingChanged;
 
   /// Fired once the drop's settle animation has finished, so the parent
   /// can stop pinning this block to the top of the Stack. Separate from
@@ -5066,6 +5075,9 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
   double _resizeTopOffset = 0;
   bool _isResizingTop = false;
 
+  /// Lifted off the resting layout: moving or resizing.
+  bool get _isRaised => _isDragging || _isResizing || _isResizingTop;
+
   /// The task's own snap granularity — matches `TaskDurationModal`'s wheel
   /// picker (`minuteStep: 5`), which is the existing duration-entry
   /// surface this resize handle needs to feel consistent with, and also
@@ -5177,9 +5189,9 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
   int get _previewTopDurationMinutes =>
       widget.task.durationMinutes! - _previewTopStartDelta;
 
-  /// The last global pointer position reported by the active move-drag —
-  /// used to anchor the overlap menu after drop (`DragEndDetails` carries
-  /// velocity only, no position). Null whenever no drag is in progress.
+  /// The last global pointer position reported by the active move-drag or
+  /// resize — used to anchor the overlap menu after release
+  /// (`DragEndDetails` carries velocity only, no position).
   Offset? _lastDragGlobalPosition;
 
   /// The start time this drag would commit to if released right now —
@@ -5225,6 +5237,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
   }
 
   void _cancelTopResize() {
+    widget.onResizingChanged(false);
     setState(() {
       _isResizingTop = false;
       _resizeTopOffset = 0;
@@ -5233,6 +5246,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
   }
 
   void _cancelBottomResize() {
+    widget.onResizingChanged(false);
     setState(() {
       _isResizing = false;
       _resizeOffset = 0;
@@ -5316,6 +5330,8 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
     final groupPreviewTopDurationMinutes = isGroupResizeTopFollower
         ? widget.task.durationMinutes! - groupTopStartDelta
         : null;
+    final raised =
+        _isRaised || isGroupResizeFollower || isGroupResizeTopFollower;
 
     // While dragging, follow the finger exactly (unsnapped) — confirmed
     // via AskUserQuestion over the alternative of snapping every 5 minutes
@@ -5442,12 +5458,9 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
           onHandleActivate: widget.onTap,
           onLongPress: _effectiveOnLongPress,
           onToggleComplete: widget.onToggleComplete,
-          // Swipe-right — requested directly ("slide right add note...
-          // on timeline spatial and non spatial only (not on edit)").
-          // TaskCapsuleBlock's own editModeEnabled gate (passed below)
-          // already suppresses this while `_editActive` is true, so no
-          // extra conditional is needed here.
-          onAddNote: () => showAddTaskNoteSheet(context, widget.task),
+          // No swipe here — Zone view keeps it. See
+          // `TaskCapsuleBlock.swipeActionsEnabled`.
+          swipeActionsEnabled: false,
           dragPreviewStartsAt: _isDragging ? _previewStartsAt : null,
           // LIVE (unsnapped) while this block is the one under a
           // finger, so the dragged edge follows continuously rather
@@ -5483,11 +5496,13 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
           splitLayout: widget.splitLayout,
           // Both caps are resting-layout fixes (a margin above a zone's
           // end, a gap before the next task in its lane), measured from
-          // where the task SITS. Mid-drag it is somewhere else, so they
-          // would wrongly shrink the pill — it shows its true duration
-          // instead, matching the start/end markers.
-          bottomTrim: _isDragging ? 0 : widget.bottomTrim,
-          maxPillHeight: _isDragging ? null : widget.maxPillHeight,
+          // where the task SITS. Mid-drag or mid-resize they would wrongly
+          // stop the pill at its neighbour while the end marker kept
+          // going — reported directly: "it doesn't stop resizing the pill
+          // when colliding". It shows its true duration instead.
+          // Group-resize followers are raised too — requested directly.
+          bottomTrim: raised ? 0 : widget.bottomTrim,
+          maxPillHeight: raised ? null : widget.maxPillHeight,
           // When a task shares its slot, its text has to stop
           // before the next column's pill starts, or titles run
           // under neighbours. Irrelevant in split layout — the text
@@ -5753,7 +5768,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                     await AppContextMenu.showAt(
                       context,
                       position: anchor,
-                      actions: _taskOverlapMenuActions(
+                      actions: taskOverlapMenuActions(
                         onOverlap: () {
                           resolved = true;
                           unawaited(commitOverlap());
@@ -5849,6 +5864,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
           onResizeTopStart: _editActive
               ? (_) {
                   _playHaptic(AmbleHaptic.lift);
+                  widget.onResizingChanged(true);
                   setState(() => _isResizingTop = true);
                 }
               : null,
@@ -5856,6 +5872,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
           onResizeTopUpdate: _editActive
               ? (details) {
                   setState(() => _resizeTopOffset += details.delta.dy);
+                  _lastDragGlobalPosition = details.globalPosition;
                   // Broadcast to every OTHER selected block — same
                   // mechanism as the bottom edge, but its own gesture
                   // kind so followers know to move their top edge too
@@ -5877,119 +5894,114 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                   _playHaptic(AmbleHaptic.drop);
                   final startDelta = _previewTopStartDelta;
                   final newDuration = _previewTopDurationMinutes;
-                  setState(() {
-                    _isResizingTop = false;
-                    _resizeTopOffset = 0;
-                  });
+                  // A single-task release keeps its stretched preview
+                  // (raised, uncapped) until `onApplied`, so the pill
+                  // doesn't snap back while the overlap menu is open.
+                  final isGroup = multiTaskEditMode && _isSelected;
+                  if (isGroup) _cancelTopResize();
+                  try {
+                    // Group top-resize — this drag was broadcasting to
+                    // selected siblings, so this release commits the WHOLE
+                    // selection: the same snapped delta moves every
+                    // member's start and compensates its duration, so each
+                    // task keeps its OWN end anchored (confirmed via
+                    // AskUserQuestion). Each is clamped independently at
+                    // its own floor so a short task stops rather than
+                    // inverting, matching the bottom edge's own rule.
+                    // Clears the broadcast on every exit path, including
+                    // the zero-delta one, so no block reads a stale
+                    // gesture.
+                    if (multiTaskEditMode && _isSelected) {
+                      ref
+                          .read(editGroupGestureStateProvider.notifier)
+                          .update(null);
+                      if (startDelta == 0) return;
 
-                  // Group top-resize — this drag was broadcasting to
-                  // selected siblings, so this release commits the WHOLE
-                  // selection: the same snapped delta moves every
-                  // member's start and compensates its duration, so each
-                  // task keeps its OWN end anchored (confirmed via
-                  // AskUserQuestion). Each is clamped independently at
-                  // its own floor so a short task stops rather than
-                  // inverting, matching the bottom edge's own rule.
-                  // Clears the broadcast on every exit path, including
-                  // the zero-delta one, so no block reads a stale
-                  // gesture.
-                  if (multiTaskEditMode && _isSelected) {
-                    ref
-                        .read(editGroupGestureStateProvider.notifier)
-                        .update(null);
+                      final selectedIds = ref.read(editSelectionProvider);
+                      final selectedTasks = ref
+                          .read(taskListProvider)
+                          .where((t) => selectedIds.contains(t.id))
+                          .toList();
+                      final changes =
+                          <
+                            String,
+                            ({DateTime scheduledAt, int durationMinutes})
+                          >{};
+                      for (final task in selectedTasks) {
+                        final clamped = math.min(
+                          startDelta,
+                          task.durationMinutes! - _minDurationMinutes,
+                        );
+                        if (clamped == 0) continue;
+                        final newStart = task.scheduledAt!.add(
+                          Duration(minutes: clamped),
+                        );
+                        // Same day-boundary guard the single-task path
+                        // applies, per task: a member that would leave its
+                        // own day is skipped rather than dragging the
+                        // whole group's write down with it.
+                        final dayStart = DateTime(
+                          newStart.year,
+                          newStart.month,
+                          newStart.day,
+                        );
+                        if (newStart.isBefore(dayStart)) continue;
+                        changes[task.id] = (
+                          scheduledAt: newStart,
+                          durationMinutes: task.durationMinutes! - clamped,
+                        );
+                      }
+                      if (changes.isEmpty) return;
+                      await commitTaskChangeWithUndo(
+                        context,
+                        ref,
+                        taskIds: changes.keys,
+                        message: 'Resized ${changes.length} task(s)',
+                        commit: () => ref
+                            .read(taskListProvider.notifier)
+                            .resizeTasksFromTopInBatch(changes),
+                      );
+                      return;
+                    }
+
+                    // Snapped back to where it started — nothing to write,
+                    // same short-circuit the bottom edge and move-drag both
+                    // already use.
                     if (startDelta == 0) return;
 
-                    final selectedIds = ref.read(editSelectionProvider);
-                    final selectedTasks = ref
-                        .read(taskListProvider)
-                        .where((t) => selectedIds.contains(t.id))
-                        .toList();
-                    final changes =
-                        <
-                          String,
-                          ({DateTime scheduledAt, int durationMinutes})
-                        >{};
-                    for (final task in selectedTasks) {
-                      final clamped = math.min(
-                        startDelta,
-                        task.durationMinutes! - _minDurationMinutes,
-                      );
-                      if (clamped == 0) continue;
-                      final newStart = task.scheduledAt!.add(
-                        Duration(minutes: clamped),
-                      );
-                      // Same day-boundary guard the single-task path
-                      // applies, per task: a member that would leave its
-                      // own day is skipped rather than dragging the
-                      // whole group's write down with it.
-                      final dayStart = DateTime(
-                        newStart.year,
-                        newStart.month,
-                        newStart.day,
-                      );
-                      if (newStart.isBefore(dayStart)) continue;
-                      changes[task.id] = (
-                        scheduledAt: newStart,
-                        durationMinutes: task.durationMinutes! - clamped,
-                      );
-                    }
-                    if (changes.isEmpty) return;
-                    await commitTaskChangeWithUndo(
+                    final newScheduledAt = widget.task.scheduledAt!.add(
+                      Duration(minutes: startDelta),
+                    );
+                    // Day-boundary guard, mirroring the zone top-resize's
+                    // own `newStart < 0` check: a task may not be dragged
+                    // out of the day it belongs to.
+                    final dayStart = DateTime(
+                      newScheduledAt.year,
+                      newScheduledAt.month,
+                      newScheduledAt.day,
+                    );
+                    if (newScheduledAt.isBefore(dayStart)) return;
+
+                    // A span landing on another task asks Overlap / Push
+                    // all / Trim, like a drop — see `commitTaskResize`.
+                    await commitTaskResize(
                       context,
                       ref,
-                      taskIds: changes.keys,
-                      message: 'Resized ${changes.length} task(s)',
-                      commit: () => ref
-                          .read(taskListProvider.notifier)
-                          .resizeTasksFromTopInBatch(changes),
+                      task: widget.task,
+                      newStart: newScheduledAt,
+                      newDuration: newDuration,
+                      anchor: _lastDragGlobalPosition ?? Offset.zero,
+                      onApplied: _cancelTopResize,
                     );
-                    return;
+                  } finally {
+                    if (!isGroup && mounted) _cancelTopResize();
                   }
-
-                  // Snapped back to where it started — nothing to write,
-                  // same short-circuit the bottom edge and move-drag both
-                  // already use.
-                  if (startDelta == 0) return;
-
-                  final newScheduledAt = widget.task.scheduledAt!.add(
-                    Duration(minutes: startDelta),
-                  );
-                  // Day-boundary guard, mirroring the zone top-resize's
-                  // own `newStart < 0` check: a task may not be dragged
-                  // out of the day it belongs to.
-                  final dayStart = DateTime(
-                    newScheduledAt.year,
-                    newScheduledAt.month,
-                    newScheduledAt.day,
-                  );
-                  if (newScheduledAt.isBefore(dayStart)) return;
-
-                  // No cascade/overlap check — confirmed, matching the
-                  // bottom edge's own rule (CONSTITUTION.md scopes the
-                  // cascade to move/create, not resize) even though this
-                  // edge does move the start time. The mutation happens
-                  // INSIDE `commit` — see the bottom edge's own matching
-                  // comment on why (widget.task is a live, mutable Hive
-                  // object; mutating it before the snapshot would
-                  // capture the already-changed value).
-                  await commitTaskChangeWithUndo(
-                    context,
-                    ref,
-                    taskIds: [widget.task.id],
-                    message: "Resized '${widget.task.title}'",
-                    commit: () {
-                      widget.task.scheduledAt = newScheduledAt;
-                      widget.task.durationMinutes = newDuration;
-                      return ref
-                          .read(taskListProvider.notifier)
-                          .updateTask(widget.task);
-                    },
-                  );
                 }
               : null,
           onResizeStart: _editActive
               ? (_) {
                   _playHaptic(AmbleHaptic.lift);
+                  widget.onResizingChanged(true);
                   setState(() => _isResizing = true);
                 }
               : null,
@@ -5997,6 +6009,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
           onResizeUpdate: _editActive
               ? (details) {
                   setState(() => _resizeOffset += details.delta.dy);
+                  _lastDragGlobalPosition = details.globalPosition;
                   // Broadcast to every OTHER selected block — see the
                   // move-drag broadcast just above for the same reasoning
                   // and the read side (`groupPreviewDurationMinutes`).
@@ -6017,84 +6030,70 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                   _playHaptic(AmbleHaptic.drop);
                   final newDuration = _previewDurationMinutes;
                   final resizeDelta = _snappedResizeDelta;
-                  setState(() {
-                    _isResizing = false;
-                    _resizeOffset = 0;
-                  });
+                  // A single-task release keeps its stretched preview
+                  // (raised, uncapped) until `onApplied`, so the pill
+                  // doesn't snap back while the overlap menu is open.
+                  final isGroup = multiTaskEditMode && _isSelected;
+                  if (isGroup) _cancelBottomResize();
+                  try {
+                    // Group resize — this drag was broadcasting to selected
+                    // siblings, so this release commits the WHOLE
+                    // selection: the SAME delta applied to every member's
+                    // own duration (confirmed via AskUserQuestion), each
+                    // floored independently at its own
+                    // [_minDurationMinutes] rather than one shared floor.
+                    if (multiTaskEditMode && _isSelected) {
+                      ref
+                          .read(editGroupGestureStateProvider.notifier)
+                          .update(null);
+                      if (resizeDelta == 0) return;
 
-                  // Group resize — this drag was broadcasting to selected
-                  // siblings, so this release commits the WHOLE
-                  // selection: the SAME delta applied to every member's
-                  // own duration (confirmed via AskUserQuestion), each
-                  // floored independently at its own
-                  // [_minDurationMinutes] rather than one shared floor.
-                  if (multiTaskEditMode && _isSelected) {
-                    ref
-                        .read(editGroupGestureStateProvider.notifier)
-                        .update(null);
-                    if (resizeDelta == 0) return;
+                      final selectedIds = ref.read(editSelectionProvider);
+                      final selectedTasks = ref
+                          .read(taskListProvider)
+                          .where((t) => selectedIds.contains(t.id))
+                          .toList();
+                      final newDurations = <String, int>{
+                        for (final task in selectedTasks)
+                          task.id: math.max(
+                            task.durationMinutes! + resizeDelta,
+                            _minDurationMinutes,
+                          ),
+                      };
+                      await commitTaskChangeWithUndo(
+                        context,
+                        ref,
+                        taskIds: newDurations.keys,
+                        message: 'Resized ${newDurations.length} task(s)',
+                        commit: () => ref
+                            .read(taskListProvider.notifier)
+                            .resizeTasksInBatch(newDurations),
+                      );
+                      return;
+                    }
 
-                    final selectedIds = ref.read(editSelectionProvider);
-                    final selectedTasks = ref
-                        .read(taskListProvider)
-                        .where((t) => selectedIds.contains(t.id))
-                        .toList();
-                    final newDurations = <String, int>{
-                      for (final task in selectedTasks)
-                        task.id: math.max(
-                          task.durationMinutes! + resizeDelta,
-                          _minDurationMinutes,
-                        ),
-                    };
-                    await commitTaskChangeWithUndo(
+                    // No-op resize (snapped back to the same duration it
+                    // started at) writes nothing — matches move-drag's own
+                    // "released within the snap threshold" short-circuit
+                    // just above.
+                    if (newDuration == widget.task.durationMinutes) return;
+                    // BOTTOM-edge resize changes ONLY durationMinutes —
+                    // scheduledAt is passed through unchanged. (The TOP edge,
+                    // added 2026-09-08, is the one that moves the start.) A
+                    // span landing on another task asks Overlap / Push all /
+                    // Trim, like a drop — see `commitTaskResize`.
+                    await commitTaskResize(
                       context,
                       ref,
-                      taskIds: newDurations.keys,
-                      message: 'Resized ${newDurations.length} task(s)',
-                      commit: () => ref
-                          .read(taskListProvider.notifier)
-                          .resizeTasksInBatch(newDurations),
+                      task: widget.task,
+                      newStart: widget.task.scheduledAt!,
+                      newDuration: newDuration,
+                      anchor: _lastDragGlobalPosition ?? Offset.zero,
+                      onApplied: _cancelBottomResize,
                     );
-                    return;
+                  } finally {
+                    if (!isGroup && mounted) _cancelBottomResize();
                   }
-
-                  // No-op resize (snapped back to the same duration it
-                  // started at) writes nothing — matches move-drag's own
-                  // "released within the snap threshold" short-circuit
-                  // just above.
-                  if (newDuration == widget.task.durationMinutes) return;
-                  // BOTTOM-edge resize changes ONLY durationMinutes —
-                  // scheduledAt is never touched here. (The TOP edge,
-                  // added 2026-09-08, is the one that moves the start;
-                  // see its own handler above and CONSTITUTION.md's
-                  // recorded reversal for why the two edges differ.)
-                  // Plain
-                  // updateTask, not a dedicated resize method: this is
-                  // exactly the same shape as any other single-field
-                  // edit-and-save (the task detail sheet's own duration
-                  // field), and no cascade/overlap check applies to
-                  // resize — that's scoped to move/create only, per the
-                  // work order.
-                  //
-                  // The mutation happens INSIDE `commit`, not before this
-                  // call — `commitTaskChangeWithUndo` snapshots from
-                  // `taskListProvider`'s own (still-unmutated) state
-                  // first, and `widget.task` is a live, mutable Hive
-                  // object shared with that same provider's list, so
-                  // mutating it before the snapshot would have captured
-                  // the ALREADY-CHANGED value.
-                  await commitTaskChangeWithUndo(
-                    context,
-                    ref,
-                    taskIds: [widget.task.id],
-                    message: "Resized '${widget.task.title}'",
-                    commit: () {
-                      widget.task.durationMinutes = newDuration;
-                      return ref
-                          .read(taskListProvider.notifier)
-                          .updateTask(widget.task);
-                    },
-                  );
                 }
               : null,
         );

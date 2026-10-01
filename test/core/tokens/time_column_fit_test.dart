@@ -11,8 +11,13 @@ void main() {
 
   // What main.dart does with the dual-font setting OFF (the default): time
   // labels switch to the proportional sans font, where "m" is wide.
+  // Dual font off: every numeric style falls back to DM Sans, as the app's
+  // own resolver does — the column labels and the edge-time pills alike.
   final sans = AmbleTheme.light.copyWith(
     textCaptionMono: AmbleTheme.light.textCaptionMono.copyWith(
+      fontFamily: TypePrimitives.fontFamilySans,
+    ),
+    textTaskEdgeTime: AmbleTheme.light.textTaskEdgeTime.copyWith(
       fontFamily: TypePrimitives.fontFamilySans,
     ),
   );
@@ -44,6 +49,31 @@ void main() {
           );
           painter.dispose();
         }
+      }
+    });
+
+    test('$name: a task\'s edge-time pill (bold, padded) fits the column — '
+        'its "m" never runs under the zones', () {
+      final labelRoom =
+          theme.timelineTimeColumnFixedWidth -
+          ZoneInsetTokens.freedForTimeColumn(theme) -
+          TimeColumnTokens.borrowedFromZoneGap;
+      final style = theme.textTaskEdgeTime.copyWith(
+        fontWeight: FontWeight.w700,
+      );
+      for (final label in ['12:55a', '12:48p', '10 am', '12 pm', '13:48']) {
+        final painter = TextPainter(
+          text: TextSpan(text: label, style: style),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        final pill =
+            painter.width + TimeColumnTokens.edgePillPaddingX(theme) * 2;
+        expect(
+          pill,
+          lessThanOrEqualTo(labelRoom + 0.01),
+          reason: 'pill "$label" ($pill px) fits $labelRoom',
+        );
+        painter.dispose();
       }
     });
   }

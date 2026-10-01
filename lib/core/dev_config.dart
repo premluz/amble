@@ -323,6 +323,44 @@ class DevTrackedCalendarLabelsVisible
   void set(bool value) => state = value;
 }
 
+/// Whether Patterns should render synthetic completion history for visual
+/// testing. The generated days never touch tasks or pattern data; they only
+/// make the calendar treatments easy to inspect with a populated screen.
+@Riverpod(keepAlive: true)
+class DevTrackedPatternDemoData extends _$DevTrackedPatternDemoData {
+  @override
+  bool build() => false;
+
+  void set(bool value) => state = value;
+}
+
+/// Draws a soft circle under every finger, for screen recordings — the
+/// app's take on iOS's "show touches", requested directly. Purely visual:
+/// touches still reach the app. In-memory only, off by default.
+@Riverpod(keepAlive: true)
+class DevShowTouches extends _$DevShowTouches {
+  @override
+  bool build() => false;
+
+  void set(bool value) => state = value;
+}
+
+/// How strongly the accent color is rendered on the Patterns screen in
+/// debug builds — scoped there, not global (requested directly). In-memory
+/// only; applied by `PatternAccentScope`, which pulls the accent toward the
+/// theme's base surface.
+@Riverpod(keepAlive: true)
+class DevAccentStrength extends _$DevAccentStrength {
+  static const min = 0.0;
+  static const max = 1.0;
+  static const defaultValue = max;
+
+  @override
+  double build() => defaultValue;
+
+  void set(double value) => state = value.clamp(min, max).toDouble();
+}
+
 /// Whether Edit Mode's multi-task selection route is active — requested
 /// directly as a "configurable" alternative to the single-task Edit Mode
 /// that already ships (see `edit_mode_provider.dart`/CONSTITUTION.md's

@@ -71,6 +71,7 @@ void main() {
     List<Task> tasks = const [],
     AmbleTheme? theme,
     bool showCalendarLabels = false,
+    bool showDemoData = false,
   }) async {
     final resolvedTheme = theme ?? AmbleTheme.light;
     await tester.runAsync(() async {
@@ -87,6 +88,7 @@ void main() {
           devTrackedCalendarLabelsVisibleProvider.overrideWithValue(
             showCalendarLabels,
           ),
+          devTrackedPatternDemoDataProvider.overrideWithValue(showDemoData),
           trackedBehaviorRepositoryProvider.overrideWithValue(
             HiveTrackedBehaviorRepository(box),
           ),
@@ -467,6 +469,81 @@ void main() {
     );
 
     expect(completedDays, {day});
+  });
+
+  test(
+    'demo pattern data alternates days and adds short random-looking gaps',
+    () {
+      final start = DateTime(2026, 6, 1);
+      final end = DateTime(2026, 6, 7);
+
+      final interval = demoCompletedDaysFor(
+        patternIndex: 0,
+        start: start,
+        end: end,
+      );
+      final full = demoCompletedDaysFor(
+        patternIndex: 1,
+        start: start,
+        end: end,
+      );
+
+      expect(interval.length >= 3 && interval.length <= 4, isTrue);
+      expect(full.length >= 4 && full.length <= 6, isTrue);
+
+      var longestGap = 0;
+      var currentGap = 0;
+      for (var i = 0; i <= end.difference(start).inDays; i++) {
+        final day = start.add(Duration(days: i));
+        if (full.contains(day)) {
+          currentGap = 0;
+        } else {
+          currentGap++;
+          longestGap = longestGap > currentGap ? longestGap : currentGap;
+        }
+      }
+      expect(longestGap >= 1 && longestGap <= 3, isTrue);
+    },
+  );
+
+  testWidgets('pattern demo data fills rows without linked tasks', (
+    tester,
+  ) async {
+    final first = makeBehavior();
+    final second = TrackedBehavior.create(
+      title: 'Read',
+      targetType: BehaviorTargetType.binary,
+      timesPerWeek: 7,
+    );
+
+    await pumpList(tester, behaviors: [first, second], showDemoData: true);
+
+    List<BoxDecoration> dayCellDecorations(String id) => tester
+        .widgetList<Container>(
+          find.descendant(
+            of: find.byKey(ValueKey<String>(id)),
+            matching: find.byType(Container),
+          ),
+        )
+        .map((cell) => cell.decoration)
+        .whereType<BoxDecoration>()
+        .where((decoration) => decoration.shape == BoxShape.circle)
+        .toList();
+
+    final firstCells = dayCellDecorations(first.id);
+    final secondCells = dayCellDecorations(second.id);
+    final accent = AmbleTheme.light.colorAccent;
+
+    final firstFilled = firstCells.where((cell) => cell.color == accent).length;
+    final secondFilled = secondCells
+        .where((cell) => cell.color == accent)
+        .length;
+
+    // Hive preserves values, not a domain ordering guarantee; both demo
+    // variants are intentionally non-full, so assert their populated shape
+    // without coupling the test to storage order.
+    expect(firstFilled >= 1 && firstFilled <= 6, isTrue);
+    expect(secondFilled >= 1 && secondFilled <= 6, isTrue);
   });
 
   testWidgets('six-month month labels use the subtle tertiary text tone', (

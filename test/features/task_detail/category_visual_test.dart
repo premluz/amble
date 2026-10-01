@@ -1,4 +1,6 @@
 import 'package:amble/core/tokens/semantic_theme.dart';
+import 'package:amble/core/tokens/task_state_tokens.dart';
+import 'package:amble/features/task_detail/category_chip.dart';
 import 'package:amble/features/task_detail/category_visual.dart';
 import 'package:amble/shared/models/category.dart';
 import 'package:flutter/material.dart';
@@ -80,5 +82,32 @@ void main() {
 
     expect(find.byType(Icon), findsNothing);
     expect(find.byType(Text), findsNothing);
+  });
+
+  testWidgets('category label text stays light in both themes', (tester) async {
+    final health = Category(
+      id: BuiltInCategoryIds.health,
+      name: 'Health',
+      colorToken: 1,
+      emoji: '',
+    );
+
+    for (final theme in [AmbleTheme.light, AmbleTheme.dark]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(useMaterial3: true, extensions: [theme]),
+          home: Scaffold(
+            body: CategoryChip(
+              category: health,
+              selected: false,
+              onSelected: () {},
+            ),
+          ),
+        ),
+      );
+
+      final label = tester.widget<Text>(find.text('Health'));
+      expect(label.style?.color, TaskStateTokens.categoryLabelText);
+    }
   });
 }

@@ -34,7 +34,7 @@ Future<void> showVoiceCaptureScreen(BuildContext context, {Rect? origin}) {
 /// system-theme screen like the rest of the app.
 ///
 /// Composes its content from `voice_capture_screen_parts.dart` (the hint,
-/// the segment list, the status card, the pause/resume button) — split
+/// the segment list, the can't-listen card, the pause/resume button) — split
 /// out purely to keep this file under CLAUDE.md's 200-line guidance.
 class VoiceCaptureScreen extends ConsumerStatefulWidget {
   const VoiceCaptureScreen({
@@ -260,9 +260,26 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
     );
   }
 
-  /// Everything above the toolbar panes: the transcript, and the status
-  /// card sitting one gap above them.
+  /// Everything above the toolbar panes: the transcript, and — only when
+  /// listening can't start — the reason, one gap above them.
   Widget _content(AmbleTheme theme, VoiceCaptureState state, double pane) {
+    final segments = _submitted != null
+        ? VoiceCaptureSegmentList(
+            key: const ValueKey('segments'),
+            theme: theme,
+            segments: _submitted!,
+            heroTagFor: _flightTagFor,
+          )
+        : VoiceCaptureSegmentList(
+            key: const ValueKey('segments'),
+            theme: theme,
+            segments: state.committedSegments,
+            partialText: state.partialText,
+          );
+    final quiet =
+        _submitted == null &&
+        state.committedSegments.isEmpty &&
+        state.partialText.isEmpty;
     return Column(
       children: [
         SizedBox(height: theme.spacingXl),
@@ -275,19 +292,30 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
             // rest of the screen; the flying ones leave as their flights.
             child: FadeTransition(
               opacity: _controls,
-              child: _submitted != null
-                  ? VoiceCaptureSegmentList(
-                      theme: theme,
-                      segments: _submitted!,
-                      heroTagFor: _flightTagFor,
-                    )
-                  : state.committedSegments.isEmpty && state.partialText.isEmpty
-                  ? VoiceCaptureHint(theme: theme)
-                  : VoiceCaptureSegmentList(
-                      theme: theme,
-                      segments: state.committedSegments,
-                      partialText: state.partialText,
-                    ),
+              // The hint eases out as the first words arrive — requested
+              // directly, "nicely animated out, not abruptly". Both lists
+              // share a key, so submitting doesn't cross-fade them.
+              child: AnimatedSwitcher(
+                duration: VoiceModeTokens.hintExitDuration,
+                switchInCurve: theme.curveDecelerate,
+                switchOutCurve: theme.curveStandard,
+                transitionBuilder: (child, animation) => FadeTransition(
+                  opacity: animation,
+                  child: ScaleTransition(
+                    scale: Tween(
+                      begin: VoiceModeTokens.hintExitScale,
+                      end: 1.0,
+                    ).animate(animation),
+                    child: child,
+                  ),
+                ),
+                child: quiet
+                    ? VoiceCaptureHint(
+                        key: const ValueKey('hint'),
+                        theme: theme,
+                      )
+                    : segments,
+              ),
             ),
           ),
         ),
@@ -300,7 +328,9 @@ class _VoiceCaptureScreenState extends ConsumerState<VoiceCaptureScreen> {
               theme.spacingXl,
               theme.spacingBottomClearance + pane + theme.spacingMd,
             ),
-            child: VoiceCaptureStatusCard(theme: theme, state: state),
+            child: state.status == VoiceCaptureStatus.unavailable
+                ? VoiceCaptureUnavailableCard(theme: theme)
+                : const SizedBox.shrink(),
           ),
         ),
       ],

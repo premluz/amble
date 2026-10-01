@@ -81,7 +81,7 @@ class VoiceCaptureState {
 
   /// Live, uncommitted words since the last committed segment (or since
   /// listening started) — updates word-by-word as speech is recognized,
-  /// shown directly in `VoiceCaptureStatusCard`'s subtitle so the user
+  /// shown as the in-progress row of `VoiceCaptureSegmentList` so the user
   /// sees text appear as they speak, not only once the 2s pause commits
   /// the segment.
   final String partialText;

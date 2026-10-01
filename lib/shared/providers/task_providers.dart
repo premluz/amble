@@ -893,7 +893,20 @@ class TaskList extends _$TaskList {
     draggedTask.status = TaskStatus.rescheduled;
     await repository.saveTask(draggedTask);
     _syncNotificationInBackground(draggedTask);
+    await _writeTrims(trims);
+    _refresh();
+  }
 
+  /// Trims neighbours alone, with a drop's reschedule bookkeeping — a
+  /// resize's "Trim" choice, where the resized task itself keeps plain
+  /// resize semantics and is written separately.
+  Future<void> trimTasks(List<TaskTrim> trims) async {
+    await _writeTrims(trims);
+    _refresh();
+  }
+
+  Future<void> _writeTrims(List<TaskTrim> trims) async {
+    final repository = ref.read(taskRepositoryProvider);
     for (final trim in trims) {
       final task = repository.getTaskById(trim.taskId);
       if (task == null) continue;
@@ -904,7 +917,6 @@ class TaskList extends _$TaskList {
       await repository.saveTask(task);
       _syncNotificationInBackground(task);
     }
-    _refresh();
   }
 
   /// Shifts every named task's `scheduledAt` by its own minutes delta —

@@ -1,4 +1,5 @@
 import 'bubble_burst_demo.dart';
+import 'chip_sizes_demo.dart';
 import 'delete_puff_demo.dart';
 import 'depth_demo.dart';
 import 'sub_nav_demo.dart';
@@ -60,6 +61,15 @@ class AmbleWidgetbookApp extends StatelessWidget {
         WidgetbookFolder(
           name: 'Selection primitives',
           children: [
+            WidgetbookComponent(
+              name: 'Chip sizes',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Value, preset and label chips',
+                  builder: chipSizesDemo,
+                ),
+              ],
+            ),
             WidgetbookComponent(
               name: 'AppButton',
               useCases: [

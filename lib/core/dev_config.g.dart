@@ -1492,6 +1492,209 @@ abstract class _$DevTrackedCalendarLabelsVisible extends $Notifier<bool> {
   }
 }
 
+/// Whether Patterns should render synthetic completion history for visual
+/// testing. The generated days never touch tasks or pattern data; they only
+/// make the calendar treatments easy to inspect with a populated screen.
+
+@ProviderFor(DevTrackedPatternDemoData)
+final devTrackedPatternDemoDataProvider = DevTrackedPatternDemoDataProvider._();
+
+/// Whether Patterns should render synthetic completion history for visual
+/// testing. The generated days never touch tasks or pattern data; they only
+/// make the calendar treatments easy to inspect with a populated screen.
+final class DevTrackedPatternDemoDataProvider
+    extends $NotifierProvider<DevTrackedPatternDemoData, bool> {
+  /// Whether Patterns should render synthetic completion history for visual
+  /// testing. The generated days never touch tasks or pattern data; they only
+  /// make the calendar treatments easy to inspect with a populated screen.
+  DevTrackedPatternDemoDataProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'devTrackedPatternDemoDataProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$devTrackedPatternDemoDataHash();
+
+  @$internal
+  @override
+  DevTrackedPatternDemoData create() => DevTrackedPatternDemoData();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(bool value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<bool>(value),
+    );
+  }
+}
+
+String _$devTrackedPatternDemoDataHash() =>
+    r'1a5e5222bfdd3460ace6e7c452e2301b356c9207';
+
+/// Whether Patterns should render synthetic completion history for visual
+/// testing. The generated days never touch tasks or pattern data; they only
+/// make the calendar treatments easy to inspect with a populated screen.
+
+abstract class _$DevTrackedPatternDemoData extends $Notifier<bool> {
+  bool build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<bool, bool>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<bool, bool>,
+              bool,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
+
+/// Draws a soft circle under every finger, for screen recordings — the
+/// app's take on iOS's "show touches", requested directly. Purely visual:
+/// touches still reach the app. In-memory only, off by default.
+
+@ProviderFor(DevShowTouches)
+final devShowTouchesProvider = DevShowTouchesProvider._();
+
+/// Draws a soft circle under every finger, for screen recordings — the
+/// app's take on iOS's "show touches", requested directly. Purely visual:
+/// touches still reach the app. In-memory only, off by default.
+final class DevShowTouchesProvider
+    extends $NotifierProvider<DevShowTouches, bool> {
+  /// Draws a soft circle under every finger, for screen recordings — the
+  /// app's take on iOS's "show touches", requested directly. Purely visual:
+  /// touches still reach the app. In-memory only, off by default.
+  DevShowTouchesProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'devShowTouchesProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$devShowTouchesHash();
+
+  @$internal
+  @override
+  DevShowTouches create() => DevShowTouches();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(bool value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<bool>(value),
+    );
+  }
+}
+
+String _$devShowTouchesHash() => r'4b94259c0c28426a582a6df2aaaee33dd293fb01';
+
+/// Draws a soft circle under every finger, for screen recordings — the
+/// app's take on iOS's "show touches", requested directly. Purely visual:
+/// touches still reach the app. In-memory only, off by default.
+
+abstract class _$DevShowTouches extends $Notifier<bool> {
+  bool build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<bool, bool>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<bool, bool>,
+              bool,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
+
+/// How strongly the accent color is rendered on the Patterns screen in
+/// debug builds — scoped there, not global (requested directly). In-memory
+/// only; applied by `PatternAccentScope`, which pulls the accent toward the
+/// theme's base surface.
+
+@ProviderFor(DevAccentStrength)
+final devAccentStrengthProvider = DevAccentStrengthProvider._();
+
+/// How strongly the accent color is rendered on the Patterns screen in
+/// debug builds — scoped there, not global (requested directly). In-memory
+/// only; applied by `PatternAccentScope`, which pulls the accent toward the
+/// theme's base surface.
+final class DevAccentStrengthProvider
+    extends $NotifierProvider<DevAccentStrength, double> {
+  /// How strongly the accent color is rendered on the Patterns screen in
+  /// debug builds — scoped there, not global (requested directly). In-memory
+  /// only; applied by `PatternAccentScope`, which pulls the accent toward the
+  /// theme's base surface.
+  DevAccentStrengthProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'devAccentStrengthProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$devAccentStrengthHash();
+
+  @$internal
+  @override
+  DevAccentStrength create() => DevAccentStrength();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(double value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<double>(value),
+    );
+  }
+}
+
+String _$devAccentStrengthHash() => r'6f087bf1a496f1e27f5e8d097b465b98224e5b56';
+
+/// How strongly the accent color is rendered on the Patterns screen in
+/// debug builds — scoped there, not global (requested directly). In-memory
+/// only; applied by `PatternAccentScope`, which pulls the accent toward the
+/// theme's base surface.
+
+abstract class _$DevAccentStrength extends $Notifier<double> {
+  double build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<double, double>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<double, double>,
+              double,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
+
 /// Whether Edit Mode's multi-task selection route is active — requested
 /// directly as a "configurable" alternative to the single-task Edit Mode
 /// that already ships (see `edit_mode_provider.dart`/CONSTITUTION.md's

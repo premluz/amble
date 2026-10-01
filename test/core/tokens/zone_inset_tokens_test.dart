@@ -14,33 +14,44 @@ void main() {
 
   test('the side inset\'s saving goes to the time column: zones start later '
       'by exactly that much, and a pill starts where it did before', () {
-    var widestLabel = 0.0;
-    for (final sample in timelineClockSamples().toSet()) {
-      final painter = TextPainter(
-        text: TextSpan(text: sample, style: theme.textCaptionMono),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      if (painter.width > widestLabel) widestLabel = painter.width;
-      painter.dispose();
+    double widestOf(TextStyle style) {
+      var widest = 0.0;
+      for (final sample in timelineClockSamples().toSet()) {
+        final painter = TextPainter(
+          text: TextSpan(text: sample, style: style),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        if (painter.width > widest) widest = painter.width;
+        painter.dispose();
+      }
+      return widest;
     }
+
+    // What the column holds: the widest bare label (regular or bold) with
+    // its slack, or the widest edge-time pill with its padding.
+    final bold = FontWeight.w700;
+    final label = [
+      widestOf(theme.textCaptionMono),
+      widestOf(theme.textCaptionMono.copyWith(fontWeight: bold)),
+    ].reduce((a, b) => a > b ? a : b);
+    final pill =
+        widestOf(theme.textTaskEdgeTime.copyWith(fontWeight: bold)) +
+        TimeColumnTokens.edgePillPaddingX(theme) * 2;
+    final room = [
+      label + TimeColumnTokens.labelSlack,
+      pill,
+    ].reduce((a, b) => a > b ? a : b);
     final freed = ZoneInsetTokens.freedForTimeColumn(theme);
     expect(freed, theme.spacingLg - ZoneInsetTokens.side(theme));
     expect(
       theme.timelineTimeColumnFixedWidth,
-      widestLabel +
-          TimeColumnTokens.labelSlack +
-          freed +
-          TimeColumnTokens.borrowedFromZoneGap,
+      room + freed + TimeColumnTokens.borrowedFromZoneGap,
     );
 
     // The side inset's saving and the gap's loan cancel out: a pill starts
-    // one screen gutter + the label (with its slack) + the old full side
-    // inset in.
+    // one screen gutter + the column's room + the old full side inset in.
     final pillStartBefore =
-        theme.spacingTimelineGutter * 2 +
-        widestLabel +
-        TimeColumnTokens.labelSlack +
-        theme.spacingLg;
+        theme.spacingTimelineGutter * 2 + room + theme.spacingLg;
     expect(
       theme.timelineZoneLeft + ZoneInsetTokens.side(theme),
       moreOrLessEquals(pillStartBefore, epsilon: 0.01),

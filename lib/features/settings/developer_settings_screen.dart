@@ -6,6 +6,7 @@ import '../../core/feature_flags.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_alert_dialog.dart';
 import '../../core/widgets/app_button.dart';
+import '../../core/widgets/app_slider.dart';
 import '../../core/widgets/app_switch.dart';
 import '../../shared/models/pill_shape.dart';
 import '../../shared/models/tag_color_style.dart';
@@ -18,6 +19,7 @@ import '../../shared/providers/zone_providers.dart';
 import 'settings_detail_scaffold.dart';
 import 'settings_panel.dart';
 import '../../core/widgets/app_selectable_chip.dart';
+import 'demo_profile_button.dart';
 
 /// One-line summary of how many behaviors exist, so the panel says
 /// something useful before any have been created.
@@ -186,6 +188,130 @@ class _DeveloperSettingsScreenState
                     style: theme.textBody.copyWith(
                       color: theme.colorTextSecondary,
                     ),
+                  ),
+                  SizedBox(height: theme.spacingMd),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Pattern demo data',
+                              style: theme.textBody.copyWith(
+                                color: theme.colorTextPrimary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            SizedBox(height: theme.spacingXs),
+                            Text(
+                              'Shows synthetic completion history without '
+                              'creating tasks or changing saved patterns.',
+                              style: theme.textBody.copyWith(
+                                color: theme.colorTextSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      SizedBox(width: theme.spacingMd),
+                      AppSwitch(
+                        value: ref.watch(devTrackedPatternDemoDataProvider),
+                        onChanged: (value) => ref
+                            .read(devTrackedPatternDemoDataProvider.notifier)
+                            .set(value),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: theme.spacingLg),
+          ],
+          if (isDevConfigAvailable) ...[
+            Text('Theme tuning', style: theme.textTitle),
+            SizedBox(height: theme.spacingSm),
+            SettingsPanel(
+              theme: theme,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Accent strength',
+                          style: theme.textBody.copyWith(
+                            color: theme.colorTextPrimary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        '${(ref.watch(devAccentStrengthProvider) * 100).round()}%',
+                        style: theme.textBody.copyWith(
+                          color: theme.colorTextSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: theme.spacingXs),
+                  Text(
+                    'Adjusts the strength of the accent color on the '
+                    'Patterns screen only. Debug build only; resets on '
+                    'restart.',
+                    style: theme.textBody.copyWith(
+                      color: theme.colorTextSecondary,
+                    ),
+                  ),
+                  SizedBox(height: theme.spacingSm),
+                  AppSlider(
+                    value: ref.watch(devAccentStrengthProvider),
+                    min: DevAccentStrength.min,
+                    max: DevAccentStrength.max,
+                    divisions: 10,
+                    onChanged: (value) =>
+                        ref.read(devAccentStrengthProvider.notifier).set(value),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: theme.spacingLg),
+          ],
+          if (isDevConfigAvailable) ...[
+            Text('Recording', style: theme.textTitle),
+            SizedBox(height: theme.spacingSm),
+            SettingsPanel(
+              theme: theme,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Show touches',
+                          style: theme.textBody.copyWith(
+                            color: theme.colorTextPrimary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        SizedBox(height: theme.spacingXs),
+                        Text(
+                          'A soft dot under each finger, for screen '
+                          'recordings. Taps still work as normal.',
+                          style: theme.textBody.copyWith(
+                            color: theme.colorTextSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(width: theme.spacingMd),
+                  AppSwitch(
+                    value: ref.watch(devShowTouchesProvider),
+                    onChanged: (value) =>
+                        ref.read(devShowTouchesProvider.notifier).set(value),
                   ),
                 ],
               ),
@@ -1275,6 +1401,11 @@ class _DeveloperSettingsScreenState
                 ),
               ],
             ),
+          ),
+          SizedBox(height: theme.spacingSm),
+          SettingsPanel(
+            theme: theme,
+            child: DemoProfileButton(theme: theme),
           ),
           SizedBox(height: theme.spacingSm),
           // Destructive bulk-delete tools — requested directly, as a way

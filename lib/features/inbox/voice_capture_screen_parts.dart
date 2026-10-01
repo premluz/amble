@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/tokens/task_state_tokens.dart';
+import '../../core/tokens/voice_mode_tokens.dart';
 import 'task_list_row.dart';
 import 'voice_capture_state.dart';
 
@@ -67,8 +68,7 @@ class VoiceCaptureSegmentList extends StatelessWidget {
 
   /// The segment currently being spoken, not yet committed — requested
   /// directly: as the user speaks, THIS card is what shows the words
-  /// appearing word-by-word (the status card above stays static; see
-  /// `VoiceCaptureStatusCard`). Rendered as one extra trailing row, one
+  /// appearing word-by-word. Rendered as one extra trailing row, one
   /// visual step behind a committed one (see `_VoiceCaptureSegmentRow
   /// .committed`) so it reads as still in progress. Empty (the default)
   /// renders nothing extra — no in-progress card until the user has
@@ -85,6 +85,9 @@ class VoiceCaptureSegmentList extends StatelessWidget {
       itemBuilder: (context, index) {
         final isPartialRow = index == segments.length;
         final row = _VoiceCaptureSegmentRow(
+          // By position: the line being spoken keeps its row as it commits,
+          // so its ring can recede instead of vanishing.
+          key: ValueKey(index),
           theme: theme,
           text: isPartialRow ? partialText : segments[index],
           committed: !isPartialRow,
@@ -102,10 +105,12 @@ class VoiceCaptureSegmentList extends StatelessWidget {
 /// One spoken line, drawn as the same card as an Inbox task ([TaskListRow])
 /// so it looks identical before, during and after its flight into the
 /// Inbox. It has no label yet, so its pill is the unassigned tone. While the
-/// line is still being spoken, a hairline traces round just outside the
-/// pill over the silence window: when it closes, the task is done.
+/// line is still being spoken, a ring grows out of the pill and the accent
+/// traces round it over the silence window; when the line is done the ring
+/// recedes back into the pill.
 class _VoiceCaptureSegmentRow extends StatelessWidget {
   const _VoiceCaptureSegmentRow({
+    super.key,
     required this.theme,
     required this.text,
     required this.committed,
@@ -120,62 +125,58 @@ class _VoiceCaptureSegmentRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pillColor = TaskStateTokens.unlabeledFill(theme);
-    if (committed) {
-      return TaskListRow(theme: theme, title: text, pillColor: pillColor);
-    }
-    // Restarts with every new word: the silence gap is measured from the
-    // last recognised speech (see `VoiceCapture._restartSilenceTimer`).
+    // Begins at 0: a line appearing mid-speech grows its ring in, and one
+    // that is already done when first built has none.
     return TweenAnimationBuilder<double>(
-      key: ValueKey(text),
-      tween: Tween(begin: 0, end: 1),
-      duration: voiceCaptureSilenceGap,
-      builder: (context, progress, _) => TaskListRow(
-        theme: theme,
-        title: text,
-        pillColor: pillColor,
-        titleColor: theme.colorTextSecondary,
-        pendingProgress: progress,
-      ),
+      tween: Tween(begin: 0, end: committed ? 0 : 1),
+      duration: committed
+          ? VoiceModeTokens.pendingRingRecedeDuration
+          : VoiceModeTokens.pendingRingGrowDuration,
+      curve: committed ? theme.curveStandard : theme.curveDecelerate,
+      builder: (context, presence, _) {
+        if (committed) {
+          return TaskListRow(
+            theme: theme,
+            title: text,
+            pillColor: pillColor,
+            pendingProgress: presence > 0 ? 1 : null,
+            pendingPresence: presence,
+          );
+        }
+        // Restarts with every new word: the silence gap is measured from
+        // the last recognised speech (see
+        // `VoiceCapture._restartSilenceTimer`).
+        return TweenAnimationBuilder<double>(
+          key: ValueKey(text),
+          tween: Tween(begin: 0, end: 1),
+          duration: voiceCaptureSilenceGap,
+          builder: (context, progress, _) => TaskListRow(
+            theme: theme,
+            title: text,
+            pillColor: pillColor,
+            titleColor: theme.colorTextSecondary,
+            pendingProgress: progress,
+            pendingPresence: presence,
+          ),
+        );
+      },
     );
   }
 }
 
-class VoiceCaptureStatusCard extends StatelessWidget {
-  const VoiceCaptureStatusCard({
-    super.key,
-    required this.theme,
-    required this.state,
-  });
+/// Shown only when listening can't start — requested directly: the
+/// Listening / Paused card is gone (the toolbar's own state says that), but
+/// a denied microphone still needs saying, with what to do about it.
+class VoiceCaptureUnavailableCard extends StatelessWidget {
+  const VoiceCaptureUnavailableCard({super.key, required this.theme});
 
   final AmbleTheme theme;
-  final VoiceCaptureState state;
 
   @override
   Widget build(BuildContext context) {
-    final unavailable = state.status == VoiceCaptureStatus.unavailable;
-    // Unavailable reads as stopped, not as a quiet "Listening".
-    final isPaused = unavailable || state.status == VoiceCaptureStatus.paused;
-    final title = unavailable
-        ? 'Can\'t listen'
-        : isPaused
-        ? 'Paused'
-        : 'Listening';
-    // Static — requested directly: this card's text never changes while
-    // listening. The live, word-by-word transcript is shown in its OWN
-    // task card instead, in `VoiceCaptureSegmentList` below, not echoed
-    // here.
-    final subtitle = unavailable
-        ? 'Allow microphone and speech recognition in Settings, then tap '
-              'Resume.'
-        : isPaused
-        ? 'Resume to keep adding tasks, or save what you\'ve got.'
-        : 'Say everything you need to get done';
-
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: isPaused
-            ? theme.colorSurfaceOverlay
-            : theme.colorAccent.withValues(alpha: 0.18),
+        color: theme.colorSurfaceOverlay,
         borderRadius: BorderRadius.circular(theme.radiusLg),
       ),
       child: Padding(
@@ -184,7 +185,7 @@ class VoiceCaptureStatusCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              title,
+              'Can\'t listen',
               style: theme.textBody.copyWith(
                 color: theme.colorTextPrimary,
                 fontWeight: FontWeight.w700,
@@ -192,7 +193,8 @@ class VoiceCaptureStatusCard extends StatelessWidget {
             ),
             SizedBox(height: theme.spacingXs / 2),
             Text(
-              subtitle,
+              'Allow microphone and speech recognition in Settings, then tap '
+              'Resume.',
               style: theme.textCaption.copyWith(
                 color: theme.colorTextSecondary,
               ),

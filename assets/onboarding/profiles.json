@@ -264,6 +264,389 @@
         "Request next month's schedule",
         "Renew parking permit"
       ]
+    },
+    {
+      "id": "demo",
+      "title": "Demo",
+      "description": "Alex: a hybrid job, two kids and a love of fishing. A full, realistic week to explore Amble with.",
+      "quizTags": [],
+      "zones": [
+        {
+          "title": "Morning routine",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "startTime": "06:30",
+          "endTime": "08:00"
+        },
+        {
+          "title": "Morning routine",
+          "weekdays": [
+            6,
+            7
+          ],
+          "startTime": "07:30",
+          "endTime": "09:00"
+        },
+        {
+          "title": "Commute",
+          "weekdays": [
+            1,
+            2,
+            4
+          ],
+          "startTime": "08:15",
+          "endTime": "09:15"
+        },
+        {
+          "title": "Office time",
+          "weekdays": [
+            1,
+            2,
+            4
+          ],
+          "startTime": "09:15",
+          "endTime": "17:30"
+        },
+        {
+          "title": "Commute",
+          "weekdays": [
+            1,
+            2,
+            4
+          ],
+          "startTime": "17:30",
+          "endTime": "18:30"
+        },
+        {
+          "title": "WFH",
+          "weekdays": [
+            3,
+            5
+          ],
+          "startTime": "09:00",
+          "endTime": "17:00"
+        },
+        {
+          "title": "Available",
+          "weekdays": [
+            6,
+            7
+          ],
+          "startTime": "10:00",
+          "endTime": "17:00"
+        }
+      ],
+      "templates": [
+        {
+          "title": "Morning meditation",
+          "categoryName": "Mindfulness",
+          "durationMinutes": 15
+        },
+        {
+          "title": "Breakfast",
+          "categoryName": "Meals",
+          "durationMinutes": 30
+        },
+        {
+          "title": "Pick up kids from school",
+          "categoryName": "Kids",
+          "durationMinutes": 30
+        },
+        {
+          "title": "Family time",
+          "categoryName": "Family",
+          "durationMinutes": 60
+        },
+        {
+          "title": "Family meal",
+          "categoryName": "Meals",
+          "durationMinutes": 45
+        },
+        {
+          "title": "Me time",
+          "categoryName": "Me time",
+          "durationMinutes": 45
+        },
+        {
+          "title": "Focus time",
+          "categoryName": "Focus",
+          "durationMinutes": 90
+        },
+        {
+          "title": "Study",
+          "categoryName": "Study",
+          "durationMinutes": 60
+        },
+        {
+          "title": "Socialising",
+          "categoryName": "Social",
+          "durationMinutes": 120
+        },
+        {
+          "title": "Call a friend",
+          "categoryName": "Social",
+          "durationMinutes": 20
+        },
+        {
+          "title": "Walk",
+          "categoryName": "Walking",
+          "durationMinutes": 60
+        },
+        {
+          "title": "Gym",
+          "categoryName": "Gym",
+          "durationMinutes": 60
+        },
+        {
+          "title": "Treadmill",
+          "categoryName": "Exercise",
+          "durationMinutes": 30
+        },
+        {
+          "title": "Audiobook",
+          "categoryName": "Audiobook",
+          "durationMinutes": 30
+        },
+        {
+          "title": "Fishing",
+          "categoryName": "Fishing",
+          "durationMinutes": 180
+        },
+        {
+          "title": "Out of office",
+          "categoryName": "Holiday",
+          "durationMinutes": 480
+        },
+        {
+          "title": "Plan tomorrow",
+          "categoryName": "Personal",
+          "durationMinutes": 15
+        },
+        {
+          "title": "No screens from here",
+          "categoryName": "Screen-free",
+          "durationMinutes": 60
+        },
+        {
+          "title": "Wind-down",
+          "categoryName": "Wind-down",
+          "durationMinutes": 30
+        }
+      ],
+      "tasks": [
+        {
+          "title": "Morning meditation",
+          "categoryName": "Mindfulness",
+          "time": "06:30",
+          "durationMinutes": 15
+        },
+        {
+          "title": "Breakfast",
+          "categoryName": "Meals",
+          "time": "06:45",
+          "durationMinutes": 30
+        },
+        {
+          "title": "Audiobook",
+          "categoryName": "Audiobook",
+          "time": "07:15",
+          "durationMinutes": 30
+        },
+        {
+          "title": "Walk",
+          "categoryName": "Walking",
+          "time": "07:45",
+          "durationMinutes": 60
+        },
+        {
+          "title": "Focus time",
+          "categoryName": "Focus",
+          "time": "09:00",
+          "durationMinutes": 90
+        },
+        {
+          "title": "Team meeting",
+          "categoryName": "Work",
+          "time": "10:30",
+          "durationMinutes": 60
+        },
+        {
+          "title": "Book holidays",
+          "categoryName": "Holiday",
+          "time": "11:30",
+          "durationMinutes": 30
+        },
+        {
+          "title": "Family lunch",
+          "categoryName": "Family",
+          "time": "12:00",
+          "durationMinutes": 60
+        },
+        {
+          "title": "Call Amy",
+          "categoryName": "Social",
+          "time": "13:00",
+          "durationMinutes": 20
+        },
+        {
+          "title": "Focus time",
+          "categoryName": "Focus",
+          "time": "13:30",
+          "durationMinutes": 90
+        },
+        {
+          "title": "Shopping",
+          "categoryName": "Shopping",
+          "time": "15:00",
+          "durationMinutes": 45
+        },
+        {
+          "title": "Pick up kids from school",
+          "categoryName": "Kids",
+          "time": "15:45",
+          "durationMinutes": 30
+        },
+        {
+          "title": "Family time",
+          "categoryName": "Family",
+          "time": "16:15",
+          "durationMinutes": 60
+        },
+        {
+          "title": "Family meal",
+          "categoryName": "Meals",
+          "time": "17:15",
+          "durationMinutes": 45
+        },
+        {
+          "title": "Gym",
+          "categoryName": "Gym",
+          "time": "18:00",
+          "durationMinutes": 60
+        },
+        {
+          "title": "Me time",
+          "categoryName": "Me time",
+          "time": "19:00",
+          "durationMinutes": 45
+        },
+        {
+          "title": "Plan tomorrow",
+          "categoryName": "Personal",
+          "time": "20:30",
+          "durationMinutes": 15
+        },
+        {
+          "title": "No screens from here",
+          "categoryName": "Screen-free",
+          "time": "21:00",
+          "durationMinutes": 30
+        },
+        {
+          "title": "Wind-down",
+          "categoryName": "Wind-down",
+          "time": "21:30",
+          "durationMinutes": 30
+        }
+      ],
+      "trackedBehaviors": [
+        {
+          "title": "Same bedtime and wake-up time",
+          "targetType": "binary",
+          "timesPerWeek": 7
+        },
+        {
+          "title": "Family time every day",
+          "targetType": "duration",
+          "timesPerWeek": 7,
+          "targetAmount": 60,
+          "customUnitLabel": "min"
+        },
+        {
+          "title": "No screens in the last hour before bed",
+          "targetType": "binary",
+          "timesPerWeek": 7
+        },
+        {
+          "title": "Walk for an hour",
+          "targetType": "duration",
+          "timesPerWeek": 7,
+          "targetAmount": 60,
+          "customUnitLabel": "min"
+        },
+        {
+          "title": "Go to the gym",
+          "targetType": "binary",
+          "timesPerWeek": 3
+        },
+        {
+          "title": "Last meal by 6 pm",
+          "targetType": "binary",
+          "timesPerWeek": 7
+        }
+      ],
+      "notes": [],
+      "sections": [
+        {
+          "name": "Work",
+          "things": [
+            "Draft the Q4 roadmap",
+            "Reply to Sam about the budget",
+            "Prepare slides for Thursday",
+            "Update my CV"
+          ]
+        },
+        {
+          "name": "Personal",
+          "things": [
+            "Renew passport",
+            "Book a dentist check-up",
+            "Cancel unused subscriptions",
+            "Buy a birthday card for Mum"
+          ]
+        },
+        {
+          "name": "Hobbies",
+          "things": [
+            "Re-spool the fishing reel",
+            "Try a new sourdough recipe",
+            "Print photos from the summer",
+            "Find fly-fishing spots nearby"
+          ]
+        },
+        {
+          "name": "Growth",
+          "things": [
+            "Finish reading Atomic Habits",
+            "Start a Spanish course",
+            "Sign up for a 10k",
+            "Journal for ten minutes"
+          ]
+        },
+        {
+          "name": "Family",
+          "things": [
+            "Plan a Saturday day out",
+            "Fix the kids' bikes",
+            "Order the school photos",
+            "Call Grandma on Sunday"
+          ]
+        },
+        {
+          "name": "Someday",
+          "things": [
+            "Learn to sail",
+            "Visit Japan",
+            "Build a garden shed",
+            "Write a short story"
+          ]
+        }
+      ]
     }
   ]
 }

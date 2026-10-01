@@ -188,6 +188,15 @@ abstract final class ColorPrimitives {
     oklch(0.615, 0.074, 291.6), // 9  violet       #857DAE
     oklch(0.613, 0.075, 322.4), // 10 magenta      #9A759F
     oklch(0.628, 0.078, 350.2), // 11 pink/rose    #AD758F
+    // **2026-09-30 — four more, appended** (requested directly: "4 more,
+    // yellowish, bluish"). Appended rather than slotted by hue so every
+    // stored `colorToken` keeps its colour. Dark: same lightness band as
+    // their neighbours; ocean carries more chroma to stay distinct from
+    // sky blue and blue.
+    oklch(0.675, 0.110, 92.0), // 12 golden yellow #AF943E
+    oklch(0.675, 0.075, 122.0), // 13 lime          #8F9E6A
+    oklch(0.620, 0.100, 250.0), // 14 ocean         #558AC0
+    oklch(0.620, 0.070, 275.0), // 15 periwinkle    #7A83B1
   ];
 
   /// The light-mode counterpart to [categoryPalette12] — same 12 hues, in
@@ -233,6 +242,12 @@ abstract final class ColorPrimitives {
     oklch(0.509, 0.077, 289.9), // 9  violet       #655E8F
     oklch(0.506, 0.063, 321.4), // 10 magenta      #76597B
     oklch(0.521, 0.068, 348.3), // 11 pink/rose    #875970
+    // Solved like the rest: lightness walked down until each cleared
+    // 4.56:1 against `paper` (the light base).
+    oklch(0.533, 0.085, 92.0), // 12 golden yellow #7E6B2C
+    oklch(0.529, 0.062, 122.0), // 13 lime          #657149
+    oklch(0.532, 0.095, 250.0), // 14 ocean         #3E70A1
+    oklch(0.537, 0.072, 275.0), // 15 periwinkle    #616A98
   ];
 
   // Ink — dark-mode surface ramp.

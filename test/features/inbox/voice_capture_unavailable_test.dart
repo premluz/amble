@@ -38,18 +38,11 @@ void main() {
     },
   );
 
-  testWidgets('the status card reads "Can\'t listen" with what to do', (
+  testWidgets('the unavailable card reads "Can\'t listen" with what to do', (
     tester,
   ) async {
     await tester.pumpWidget(
-      MaterialApp(
-        home: VoiceCaptureStatusCard(
-          theme: AmbleTheme.dark,
-          state: const VoiceCaptureState(
-            status: VoiceCaptureStatus.unavailable,
-          ),
-        ),
-      ),
+      MaterialApp(home: VoiceCaptureUnavailableCard(theme: AmbleTheme.dark)),
     );
     expect(find.text('Can\'t listen'), findsOneWidget);
     expect(find.textContaining('Settings'), findsOneWidget);

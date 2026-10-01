@@ -12,8 +12,8 @@ import '../../core/widgets/app_sheet.dart';
 import '../../core/widgets/app_sheet_header.dart';
 import '../../shared/models/task.dart';
 import '../../shared/providers/task_providers.dart';
+import '../timeline/pending_task_draft_provider.dart';
 import 'task_discard_dialog.dart';
-import 'task_duration_modal.dart';
 import 'task_remove.dart';
 import 'task_sheet_fields.dart';
 import 'task_sheet_form.dart';
@@ -22,8 +22,8 @@ import 'task_sheet_save.dart';
 /// The compact task sheet for a task opened from anywhere: edit [task]
 /// (Save, and a trash button), duplicate [duplicateFrom] or create — the
 /// same fields and save as the Timeline's in-place sheet. [templateId]
-/// records the preset a duplicate came from. A Things item without a time
-/// yet opens with Time and Duration unset; Save waits for both.
+/// records the preset a duplicate came from. An unscheduled Things item gets
+/// current-time and 15-minute defaults so it can be saved immediately.
 Future<void> showTaskSheet(
   BuildContext context, {
   Task? task,
@@ -80,18 +80,24 @@ class _TaskSheetState extends ConsumerState<_TaskSheet> {
   @override
   void initState() {
     super.initState();
+    final seed = widget.task ?? widget.duplicateFrom;
+    final now = DateTime.now();
     _form = TaskSheetForm(
       allTasks: ref.read(taskListProvider),
       task: widget.task,
       duplicateFrom: widget.duplicateFrom,
       templateId: widget.templateId,
       date: widget.initialScheduledAt,
-      // A brand-new task starts at noon for five minutes, as the old full
-      // sheet did once its name was in; a Things item keeps its gaps.
+      // Keep an explicitly supplied start, otherwise preserve a scheduled
+      // seed. Only a new or unscheduled item needs the current-time default.
       time:
           widget.initialTimeOfDay ??
-          (_creating ? const TimeOfDay(hour: 12, minute: 0) : null),
-      durationMinutes: _creating ? presetMinutes.first : null,
+          (seed?.scheduledAt == null
+              ? TimeOfDay.fromDateTime(widget.initialScheduledAt ?? now)
+              : null),
+      // Existing durations win; new and unscheduled items use the same
+      // 15-minute default as Timeline quick add.
+      durationMinutes: seed?.durationMinutes ?? quickAddDefaultMinutes,
     );
   }
 

@@ -103,6 +103,7 @@ class TaskCapsuleBlock extends StatelessWidget {
     this.onResizeTopCancel,
     this.tagColorStyle = TagColorStyle.pill,
     this.onAddNote,
+    this.swipeActionsEnabled = true,
     this.whatMattersFaded = false,
   });
 
@@ -169,6 +170,12 @@ class TaskCapsuleBlock extends StatelessWidget {
   /// callback — it's already the exact same action the trailing checkbox
   /// performs.
   final VoidCallback? onAddNote;
+
+  /// False turns off both swipe actions (note and done) while leaving
+  /// [onToggleComplete] live for the checkbox. The spatial Timeline sets
+  /// it; Zone view keeps swipe — requested directly: "disable slide left
+  /// right task pill for options on spatial view, only on zone view".
+  final bool swipeActionsEnabled;
 
   /// Releases a non-important pill without changing its scheduled time.
   /// The parent closes horizontal lanes after the release has finished.
@@ -1284,9 +1291,9 @@ class TaskCapsuleBlock extends StatelessWidget {
     // (not on edit)." Swipe-left reuses onToggleComplete unchanged (the
     // exact action the trailing checkbox already performs); swipe-right
     // is the new onAddNote callback.
-    final editActive = editModeEnabled;
+    final swipeOff = editModeEnabled || !swipeActionsEnabled;
     final swiped = AppSwipeActions(
-      startAction: (editActive || onAddNote == null)
+      startAction: (swipeOff || onAddNote == null)
           ? null
           : AppSwipeAction(
               icon: Icons.edit_note_rounded,
@@ -1294,7 +1301,7 @@ class TaskCapsuleBlock extends StatelessWidget {
               semanticLabel: 'Add note',
               onActivate: onAddNote!,
             ),
-      endAction: (editActive || onToggleComplete == null)
+      endAction: (swipeOff || onToggleComplete == null)
           ? null
           : AppSwipeAction(
               icon: isCompleted ? Icons.replay_rounded : Icons.check_rounded,

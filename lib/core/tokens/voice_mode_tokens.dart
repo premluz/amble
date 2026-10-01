@@ -1,3 +1,5 @@
+import 'semantic_theme.dart';
+
 /// Voice mode's choreography. Entering: the page dims, a layered glow rises
 /// from the bottom and the mic's pane morphs into the voice toolbar. Leaving:
 /// the toolbar morphs back into the mic, the glow sinks, and each task it
@@ -68,6 +70,26 @@ abstract final class VoiceModeTokens {
   static const keyStaggerSeconds = .018;
   static const keySpringSeconds = .38;
   static const keyBounce = .55;
+
+  /// The pending ring round a line still being spoken: its width (it
+  /// reads as the pill's footprint growing, not a hairline).
+  static double pendingRingWidth(AmbleTheme theme) => theme.spacingXs;
+
+  /// The ring growing out of the pill as a line starts, and receding into
+  /// it once the line is done.
+  static const pendingRingGrowSeconds = .32;
+  static const pendingRingRecedeSeconds = .42;
+
+  /// The "Try saying" hint leaving as the first words arrive: a fade with
+  /// a slight settle back, never a cut.
+  static const hintExitSeconds = .36;
+  static const hintExitScale = .96;
+
+  static Duration get pendingRingGrowDuration =>
+      _seconds(pendingRingGrowSeconds);
+  static Duration get pendingRingRecedeDuration =>
+      _seconds(pendingRingRecedeSeconds);
+  static Duration get hintExitDuration => _seconds(hintExitSeconds);
 
   static Duration get keysDelay => _seconds(keysDelaySeconds);
 

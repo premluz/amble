@@ -144,6 +144,13 @@ void main() {
 
       expect(find.text('Call John'), findsOneWidget);
       expect(find.text('Book the flight'), findsOneWidget);
+      // The hint eases out rather than cutting: still there mid-exit…
+      expect(find.textContaining('Try saying'), findsOneWidget);
+      // Two exit lengths: the switcher's clock starts a frame after the
+      // change, so exactly one can land just short.
+      await tester.pump(VoiceModeTokens.hintExitDuration);
+      await tester.pump(VoiceModeTokens.hintExitDuration);
+      // …and gone once it has.
       expect(find.textContaining('Try saying'), findsNothing);
 
       final submit = tester.widget<AppButton>(
@@ -223,8 +230,8 @@ void main() {
   });
 
   testWidgets(
-    'the Pause/Resume button swaps to Resume and shows the Paused copy '
-    'once paused',
+    'while listening the toolbar shows Pause, with no Listening card above '
+    'it',
     (tester) async {
       final container = await pumpScreen(tester);
       // Directly drives the notifier's own status rather than routing
@@ -236,7 +243,9 @@ void main() {
       ]);
       await tester.pump();
 
-      expect(find.text('Listening'), findsOneWidget);
+      // No Listening / Paused card any more (requested directly); the
+      // toolbar's Pause is the state.
+      expect(find.text('Listening'), findsNothing);
       expect(find.byTooltip('Pause'), findsOneWidget);
     },
   );

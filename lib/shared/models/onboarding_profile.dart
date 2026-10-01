@@ -12,6 +12,10 @@
 /// (see `onboarding_profile_catalog.dart`), never written to Hive itself.
 library;
 
+import 'onboarding_section_entry.dart';
+
+export 'onboarding_section_entry.dart';
+
 /// One `HH:mm` time-of-day string parsed into minutes since midnight — the
 /// same representation `Zone.startMinutes`/`endMinutes` already use (see
 /// that model's own doc comment on why: no Hive adapter for `TimeOfDay`,
@@ -219,6 +223,7 @@ class OnboardingProfile {
     required this.tasks,
     required this.trackedBehaviors,
     required this.notes,
+    this.sections = const [],
   });
 
   factory OnboardingProfile.fromJson(Map<String, dynamic> json) {
@@ -262,6 +267,11 @@ class OnboardingProfile {
       notes: (json['notes'] as List? ?? const [])
           .map((n) => n as String)
           .toList(),
+      sections: (json['sections'] as List? ?? const [])
+          .map(
+            (s) => OnboardingSectionEntry.fromJson(s as Map<String, dynamic>),
+          )
+          .toList(),
     );
   }
 
@@ -281,4 +291,7 @@ class OnboardingProfile {
 
   /// Plain titles for `Task.captured`-shaped Inbox notes.
   final List<String> notes;
+
+  /// Things groups, each created as an Inbox section with its Things.
+  final List<OnboardingSectionEntry> sections;
 }

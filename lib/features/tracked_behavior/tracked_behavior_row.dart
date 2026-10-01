@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/dev_config.dart';
 import '../../core/widgets/app_follow_through.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_press_feedback.dart';
@@ -39,6 +40,7 @@ class TrackedBehaviorRow extends ConsumerWidget {
     required this.viewMode,
     required this.periodDate,
     required this.showCalendarLabels,
+    this.demoPatternIndex = 0,
     required this.onTap,
   });
 
@@ -47,12 +49,15 @@ class TrackedBehaviorRow extends ConsumerWidget {
   final TrackedBehaviorViewMode viewMode;
   final DateTime periodDate;
   final bool showCalendarLabels;
+  final int demoPatternIndex;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tasks = ref.watch(taskListProvider);
     final today = DateTime.now();
+    final showDemoData =
+        isDevConfigAvailable && ref.watch(devTrackedPatternDemoDataProvider);
 
     // The card trails the page as it slides in or out.
     return AppFollowThrough(
@@ -87,6 +92,8 @@ class TrackedBehaviorRow extends ConsumerWidget {
                   theme: theme,
                   behavior: behavior,
                   tasks: tasks,
+                  showDemoData: showDemoData,
+                  demoPatternIndex: demoPatternIndex,
                   today: today,
                   periodDate: periodDate,
                   showCalendarLabels: showCalendarLabels,
@@ -95,6 +102,8 @@ class TrackedBehaviorRow extends ConsumerWidget {
                   theme: theme,
                   behavior: behavior,
                   tasks: tasks,
+                  showDemoData: showDemoData,
+                  demoPatternIndex: demoPatternIndex,
                   today: today,
                   periodDate: periodDate,
                   showCalendarLabels: showCalendarLabels,
@@ -103,6 +112,8 @@ class TrackedBehaviorRow extends ConsumerWidget {
                   theme: theme,
                   behavior: behavior,
                   tasks: tasks,
+                  showDemoData: showDemoData,
+                  demoPatternIndex: demoPatternIndex,
                   today: today,
                   periodDate: periodDate,
                   showCalendarLabels: showCalendarLabels,
@@ -191,6 +202,8 @@ class _WeeklyRow extends StatelessWidget {
     required this.theme,
     required this.behavior,
     required this.tasks,
+    required this.showDemoData,
+    required this.demoPatternIndex,
     required this.today,
     required this.periodDate,
     required this.showCalendarLabels,
@@ -199,6 +212,8 @@ class _WeeklyRow extends StatelessWidget {
   final AmbleTheme theme;
   final TrackedBehavior behavior;
   final List<Task> tasks;
+  final bool showDemoData;
+  final int demoPatternIndex;
   final DateTime today;
   final DateTime periodDate;
   final bool showCalendarLabels;
@@ -212,15 +227,17 @@ class _WeeklyRow extends StatelessWidget {
       periodDate,
       TrackedBehaviorViewMode.weekly,
     );
-    final completedDays = completedDaysFor(
-      behavior,
-      tasks: tasks,
-      start: monday,
-      end: TrackedCalendarPeriod.end(
-        periodDate,
-        TrackedBehaviorViewMode.weekly,
-      ),
+    final end = TrackedCalendarPeriod.end(
+      periodDate,
+      TrackedBehaviorViewMode.weekly,
     );
+    final completedDays = showDemoData
+        ? demoCompletedDaysFor(
+            patternIndex: demoPatternIndex,
+            start: monday,
+            end: end,
+          )
+        : completedDaysFor(behavior, tasks: tasks, start: monday, end: end);
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -256,6 +273,8 @@ class _MonthlyGrid extends StatelessWidget {
     required this.theme,
     required this.behavior,
     required this.tasks,
+    required this.showDemoData,
+    required this.demoPatternIndex,
     required this.today,
     required this.periodDate,
     required this.showCalendarLabels,
@@ -264,6 +283,8 @@ class _MonthlyGrid extends StatelessWidget {
   final AmbleTheme theme;
   final TrackedBehavior behavior;
   final List<Task> tasks;
+  final bool showDemoData;
+  final int demoPatternIndex;
   final DateTime today;
   final DateTime periodDate;
   final bool showCalendarLabels;
@@ -279,12 +300,18 @@ class _MonthlyGrid extends StatelessWidget {
       periodDate,
       TrackedBehaviorViewMode.monthly,
     );
-    final completedDays = completedDaysFor(
-      behavior,
-      tasks: tasks,
-      start: firstOfMonth,
-      end: lastOfMonth,
-    );
+    final completedDays = showDemoData
+        ? demoCompletedDaysFor(
+            patternIndex: demoPatternIndex,
+            start: firstOfMonth,
+            end: lastOfMonth,
+          )
+        : completedDaysFor(
+            behavior,
+            tasks: tasks,
+            start: firstOfMonth,
+            end: lastOfMonth,
+          );
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -327,6 +354,8 @@ class _SixMonthlyHeatmap extends StatelessWidget {
     required this.theme,
     required this.behavior,
     required this.tasks,
+    required this.showDemoData,
+    required this.demoPatternIndex,
     required this.today,
     required this.periodDate,
     required this.showCalendarLabels,
@@ -335,6 +364,8 @@ class _SixMonthlyHeatmap extends StatelessWidget {
   final AmbleTheme theme;
   final TrackedBehavior behavior;
   final List<Task> tasks;
+  final bool showDemoData;
+  final int demoPatternIndex;
   final DateTime today;
   final DateTime periodDate;
   final bool showCalendarLabels;
@@ -366,12 +397,13 @@ class _SixMonthlyHeatmap extends StatelessWidget {
       TrackedBehaviorViewMode.sixMonthly,
     );
     final dayCount = end.difference(start).inDays + 1;
-    final completedDays = completedDaysFor(
-      behavior,
-      tasks: tasks,
-      start: start,
-      end: end,
-    );
+    final completedDays = showDemoData
+        ? demoCompletedDaysFor(
+            patternIndex: demoPatternIndex,
+            start: start,
+            end: end,
+          )
+        : completedDaysFor(behavior, tasks: tasks, start: start, end: end);
     final days = [
       for (var i = 0; i < dayCount; i++) start.add(Duration(days: i)),
     ];

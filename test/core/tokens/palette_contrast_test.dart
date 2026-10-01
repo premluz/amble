@@ -55,6 +55,10 @@ void main() {
     'violet',
     'magenta',
     'pink/rose',
+    'golden yellow',
+    'lime',
+    'ocean',
+    'periwinkle',
   ];
 
   group('category palette', () {
@@ -106,9 +110,11 @@ void main() {
       },
     );
 
-    test('both ramps carry all 12 hues, so a stored colorToken still maps', () {
-      expect(ColorPrimitives.categoryPalette12, hasLength(12));
-      expect(ColorPrimitives.categoryPalette12Light, hasLength(12));
+    // 16 since 2026-09-30 (four appended). The name keeps its old "12"
+    // so no CONSTITUTION/DECISIONS cross-reference goes stale.
+    test('both ramps carry all 16 hues, so a stored colorToken still maps', () {
+      expect(ColorPrimitives.categoryPalette12, hasLength(16));
+      expect(ColorPrimitives.categoryPalette12Light, hasLength(16));
     });
 
     /// Pins the specific case reported as illegible, so it cannot regress

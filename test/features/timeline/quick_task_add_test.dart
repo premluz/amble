@@ -14,6 +14,8 @@ import 'package:amble/core/widgets/app_wheel_time_picker.dart';
 import 'package:amble/core/widgets/app_press_feedback.dart';
 import 'package:amble/core/widgets/app_pane.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
+import 'package:amble/core/widgets/app_scroll_reveal_fade.dart';
+import 'package:amble/core/widgets/sheet_keyboard_background.dart';
 import 'package:amble/core/widgets/app_value_chip.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/core/widgets/app_text_field.dart';
@@ -205,7 +207,10 @@ void main() {
         ],
         child: MaterialApp(
           theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
+          // Like the app shell (main.dart): the keyboard reaches the
+          // Timeline as a view inset instead of shrinking it.
           home: Scaffold(
+            resizeToAvoidBottomInset: false,
             body: Column(
               children: [
                 SizedBox(height: headerHeight),
@@ -1476,7 +1481,11 @@ void main() {
     );
     final screen =
         tester.view.physicalSize.height / tester.view.devicePixelRatio;
-    expect(sheet.height, closeTo(content.height, 1));
+    // The header is pinned above the scrolling fields, so the sheet is
+    // the header block plus the measured fields.
+    final theme = AmbleTheme.light;
+    final header = theme.spacingSm + theme.spacingXl * 1.8;
+    expect(sheet.height, closeTo(header + content.height, 1));
     expect(sheet.height, lessThan(screen * quickCreateSheetMinFraction));
     expect(
       find.descendant(
@@ -1487,6 +1496,35 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('the sheet paints behind the keyboard\'s rounded corners, and '
+      'its fields get a top fade that starts hidden', (tester) async {
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    addTearDown(tester.view.resetViewInsets);
+    await pumpTimeline(tester);
+    await longPressAndReleaseAt(tester, const Offset(220, 200));
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+
+    final background = tester.widget<SheetKeyboardBackground>(
+      find.descendant(
+        of: find.byType(QuickCreateOverlay),
+        matching: find.byType(SheetKeyboardBackground),
+      ),
+    );
+    expect(background.inset, 300);
+
+    final fade = find.descendant(
+      of: find.byType(QuickCreateOverlay),
+      matching: find.byType(AppScrollRevealFade),
+    );
+    expect(fade, findsOneWidget);
+    final opacity = tester.widget<Opacity>(
+      find.descendant(of: fade, matching: find.byType(Opacity)).first,
+    );
+    expect(opacity.opacity, 0, reason: 'at rest the title must not fade');
   });
 
   testWidgets('saved presets stay hidden until the Preset sheet is built', (

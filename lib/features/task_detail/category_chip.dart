@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/tokens/component_tokens.dart';
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/tokens/task_state_tokens.dart';
 import '../../core/widgets/app_press_feedback.dart';
 import '../../shared/models/category.dart';
 import 'category_visual.dart';
@@ -27,9 +28,11 @@ class CategoryChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     final visual = resolveCategoryVisual(theme: theme, category: category);
-    // A regular chip like every picker option; its own colour is the fill,
-    // so selection is the ring, not the glass tint.
-    final height = ChipTokens.regularHeight(theme);
+    // Compact, the value chips' size — requested directly: "labels still
+    // see large." Its own colour is the fill, so selection is the ring,
+    // not the glass tint.
+    final height = ChipTokens.compactHeight(theme);
+    final textStyle = theme.textCaption;
     final radius = BorderRadius.circular(ChipTokens.radius(theme));
     return AppPressFeedback(
       onTap: onSelected,
@@ -55,13 +58,13 @@ class CategoryChip extends StatelessWidget {
             CategoryGlyph(
               category: category,
               color: glyphColorOn(visual.pillColor),
-              size: theme.textBody.fontSize!,
+              size: textStyle.fontSize! * ChipTokens.compactIconScale,
             ),
             SizedBox(width: theme.spacingSm),
             Text(
               category.name,
-              style: theme.textBody.copyWith(
-                color: theme.colorTextPrimary,
+              style: textStyle.copyWith(
+                color: TaskStateTokens.categoryLabelText,
                 fontWeight: selected
                     ? ChipTokens.selectedWeight
                     : ChipTokens.restWeight,

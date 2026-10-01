@@ -134,22 +134,16 @@ void main() {
       }
     });
 
-    testWidgets('a 24-hour locale reclaims the slack its labels never use', (
-      tester,
-    ) async {
+    // Superseded 2026-09-30: this used to assert a 24-hour column came in
+    // narrower than the old fixed 96. Both formats now share one fixed
+    // width, which must also hold a task's bold, padded edge-time pill (it
+    // ran its "m" under the zones otherwise) — see time_column_fit_test,
+    // which checks that against the real fonts.
+    testWidgets('a 24-hour label fits its column, and zones start one gap '
+        'after it', (tester) async {
       final result = await measure(tester, use24Hour: true);
 
-      expect(result.timeColumnWidth, lessThan(theme.spacingTimeColumnWidth));
-      expect(
-        result.zoneLeft,
-        lessThan(
-          theme.spacingTimelineGutter * 2 + theme.spacingTimeColumnWidth,
-        ),
-        reason: 'zones start earlier than the old full-width column put them',
-      );
-
-      // Still wide enough for the label it has to render — the whole
-      // point is to reclaim slack, never to clip.
+      // Wide enough for the label it has to render.
       final painter = TextPainter(
         text: TextSpan(text: '13:41', style: theme.textCaptionMono),
         textDirection: TextDirection.ltr,

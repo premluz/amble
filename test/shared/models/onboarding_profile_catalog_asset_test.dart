@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:amble/shared/models/label_presets.dart';
 import 'package:amble/shared/models/onboarding_profile.dart';
 
 /// Parses the REAL bundled catalog asset directly off disk (not a
@@ -62,30 +63,80 @@ void main() {
     }
   });
 
-  test('every template/task categoryName is one of the 5 built-in category '
-      'names', () {
-    const validNames = {'general', 'health', 'work', 'personal', 'admin'};
+  // What `OnboardingLabelResolver` can resolve on a fresh install: a
+  // built-in key, a seeded built-in label's display name, or a label preset.
+  test('every template/task categoryName resolves on a fresh install', () {
+    final validNames = {
+      'general',
+      'health',
+      'work',
+      'personal',
+      'admin',
+      'General',
+      'Health',
+      'Work',
+      'Home',
+      'Admin',
+      'Personal',
+      'Social',
+      'Reading',
+      'Learning',
+      for (final preset in labelPresets) preset.name,
+    };
     final profilesJson = decoded['profiles'] as List;
     final profiles = profilesJson
         .map((p) => OnboardingProfile.fromJson(p as Map<String, dynamic>))
         .toList();
     for (final profile in profiles) {
-      for (final template in profile.templates) {
+      for (final entry in [
+        ...profile.templates.map((t) => (t.title, t.categoryName)),
+        ...profile.tasks.map((t) => (t.title, t.categoryName)),
+      ]) {
         expect(
           validNames,
-          contains(template.categoryName),
-          reason:
-              '${profile.id}/"${template.title}" has an invalid '
-              'categoryName',
+          contains(entry.$2),
+          reason: '${profile.id}/"${entry.$1}" has an unresolvable label',
         );
       }
-      for (final task in profile.tasks) {
-        expect(
-          validNames,
-          contains(task.categoryName),
-          reason: '${profile.id}/"${task.title}" has an invalid categoryName',
-        );
-      }
+    }
+  });
+
+  test('the Demo profile carries every part of a starter set', () {
+    final demo = (decoded['profiles'] as List)
+        .map((p) => OnboardingProfile.fromJson(p as Map<String, dynamic>))
+        .singleWhere((p) => p.id == 'demo');
+    expect(demo.quizTags, isEmpty, reason: 'the quiz must never pick it');
+    expect(demo.trackedBehaviors, hasLength(6));
+    expect(demo.templates.length, greaterThanOrEqualTo(18));
+    expect(demo.zones.map((z) => z.title).toSet(), {
+      'Morning routine',
+      'Commute',
+      'Office time',
+      'WFH',
+      'Available',
+    });
+    expect(demo.sections.map((s) => s.name), [
+      'Work',
+      'Personal',
+      'Hobbies',
+      'Growth',
+      'Family',
+      'Someday',
+    ]);
+    expect(
+      demo.sections.expand((s) => s.things).length,
+      greaterThanOrEqualTo(20),
+    );
+    final tasks = [...demo.tasks]
+      ..sort((a, b) => a.startMinutes.compareTo(b.startMinutes));
+    for (var i = 1; i < tasks.length; i++) {
+      final previousEnd =
+          tasks[i - 1].startMinutes + tasks[i - 1].durationMinutes;
+      expect(
+        tasks[i].startMinutes,
+        greaterThanOrEqualTo(previousEnd),
+        reason: '"${tasks[i].title}" overlaps "${tasks[i - 1].title}"',
+      );
     }
   });
 

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/tokens/component_tokens.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_badge_chip.dart';
 import '../../core/widgets/app_chip_strip.dart';
+import '../../core/widgets/app_value_chip.dart' show AppValueChipSize;
 import '../../shared/models/category.dart';
 import '../../shared/models/task_template.dart';
 import '../../shared/providers/category_providers.dart';
@@ -74,7 +76,7 @@ class TemplateChipStrip extends ConsumerWidget {
       // Deliberately shorter than the badge+padding sum would give:
       // reported directly as "templates cards smaller height." The chip's
       // own vertical padding is trimmed to match (see TemplateChip).
-      height: theme.spacingXl + theme.spacingSm,
+      height: ChipTokens.compactHeight(theme) + theme.spacingSm,
       // The strip is rendered full-bleed by its caller so it can scroll
       // past both edges of the sheet; this inset keeps the first and
       // last chip aligned with the padded fields above it.
@@ -119,26 +121,24 @@ class TemplateChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Smaller than TemplateRow's own `spacingXl` badge — these chips sit
-    // in a much shorter row and carry no second line of text to balance
-    // a full-size badge against.
-    final badgeSize = theme.spacingLg;
+    // Compact, the same height as the value chips (Date, Time, Duration)
+    // beside it — requested directly: "badges one scale smaller, same for
+    // pills… essentially same size as these value data chips."
+    final badgeSize = ChipTokens.compactBadgeSize(theme);
 
     return AppBadgeChip(
       theme: theme,
+      size: AppValueChipSize.sm,
       selected: selected,
       onTap: onTap,
       leading: CategoryBadge(
         theme: theme,
         category: category,
         size: badgeSize,
-        // 0.65, not CategoryBadge's own 0.55 default — reported directly
-        // ("Badge on add task sheet icons too small"): a Tabler icon's
-        // thin stroke reads smaller than an emoji glyph did at the
-        // identical nominal size, on this app's smallest badge
-        // (`spacingLg`, vs. `sizeTaskBadge` everywhere else CategoryBadge's
-        // default ratio was tuned for).
-        glyphSizeRatio: 0.65,
+        // Above CategoryBadge's 0.55 default — reported directly ("Badge
+        // on add task sheet icons too small"): a thin Tabler stroke reads
+        // small on this app's smallest badge.
+        glyphSizeRatio: ChipTokens.compactBadgeGlyphRatio,
       ),
       // No duration line here, unlike TemplateRow — see
       // TemplateChipStrip's own doc comment on why duration is

@@ -269,6 +269,28 @@ const List<IconData> curatedCategoryIcons = [
   // silhouette reads more specifically as "network" than "family."
   TablerIcons.activityHeartbeat, // Wellness
   TablerIcons.gardenCart, // Garden
+  // **2026-09-30 — for the label suggestions** (`label_presets.dart`),
+  // requested directly: "pull icon swimming also, palm." Tabler has no palm
+  // tree; `beach` is the closest holiday glyph. Swimming was already above.
+  TablerIcons.beach,
+  TablerIcons.fishHook,
+  TablerIcons.fish,
+  TablerIcons.treadmill,
+  TablerIcons.stretching,
+  TablerIcons.ballTennis,
+  TablerIcons.sailboat,
+  TablerIcons.shoppingBag,
+  TablerIcons.luggage,
+  TablerIcons.train,
+  TablerIcons.bus,
+  TablerIcons.buildingSkyscraper,
+  TablerIcons.headphones,
+  TablerIcons.books,
+  TablerIcons.plant,
+  TablerIcons.deviceTvOff,
+  TablerIcons.candle,
+  TablerIcons.sparkles,
+  TablerIcons.moodHappy,
 ];
 
 /// The built-in categories' default Tabler glyph — requested directly:

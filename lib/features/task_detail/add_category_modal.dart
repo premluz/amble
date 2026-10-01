@@ -12,6 +12,7 @@ import '../../shared/providers/category_providers.dart';
 import 'category_color_modal.dart';
 import 'category_icon_modal.dart';
 import 'category_visual.dart';
+import 'label_suggestion_strip.dart';
 
 /// Opens the label create/edit sheet on its own (Settings' label list)
 /// and resolves to the saved [Category]. Inside a
@@ -246,6 +247,16 @@ class _AddCategoryPageState extends ConsumerState<AddCategoryPage> {
             autofocus: !_isEditing,
             textInputAction: TextInputAction.done,
           ),
+          if (!_isEditing)
+            LabelSuggestionStrip(
+              theme: theme,
+              query: _nameController.text,
+              onPicked: (preset) => setState(() {
+                _nameController.text = preset.name;
+                _colorToken = preset.colorToken;
+                _iconCodePoint = preset.icon.codePoint;
+              }),
+            ),
           SizedBox(height: theme.spacingLg),
           Wrap(
             spacing: theme.spacingSm,

@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/tokens/task_state_tokens.dart';
+import 'package:amble/core/tokens/voice_mode_tokens.dart';
 import 'package:amble/features/inbox/task_list_row.dart';
 import 'package:amble/features/inbox/voice_capture_screen_parts.dart';
 import 'package:flutter/material.dart';
@@ -122,5 +123,43 @@ void main() {
     // Just above the pill's top edge: the trace.
     final above = [for (var y = 0; y < margin; y++) alpha(bytes, centre, y)];
     expect(above.any((a) => a > 0), isTrue, reason: 'traced outside');
+  });
+
+  testWidgets('the ring grows out of the pill as a line starts, and recedes '
+      'into it once the line commits — the pill itself never scales', (
+    tester,
+  ) async {
+    Widget list(List<String> segments, String partial) => _host(
+      VoiceCaptureSegmentList(
+        theme: _theme,
+        segments: segments,
+        partialText: partial,
+      ),
+    );
+    TaskListRow row() =>
+        tester.widget<TaskListRow>(find.byType(TaskListRow).last);
+    Size pill() => tester.getSize(
+      find
+          .descendant(
+            of: find.byType(TaskListRow).last,
+            matching: find.byType(Container),
+          )
+          .first,
+    );
+
+    await tester.pumpWidget(list(const [], 'Book the'));
+    expect(row().pendingPresence, 0, reason: 'starts flush on the pill');
+    await tester.pump(VoiceModeTokens.pendingRingGrowDuration);
+    expect(row().pendingPresence, 1, reason: 'fully out');
+    expect(pill(), Size.square(_theme.sizeTaskBadge));
+
+    // The silence gap closes: the line commits in the same row.
+    await tester.pumpWidget(list(const ['Book the flight'], ''));
+    await tester.pump(VoiceModeTokens.pendingRingRecedeDuration ~/ 2);
+    expect(row().pendingProgress, 1, reason: 'the trace stays complete');
+    expect(row().pendingPresence, inExclusiveRange(0, 1));
+    expect(pill(), Size.square(_theme.sizeTaskBadge));
+    await tester.pump(VoiceModeTokens.pendingRingRecedeDuration);
+    expect(row().pendingProgress, isNull, reason: 'receded back in');
   });
 }

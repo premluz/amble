@@ -43,6 +43,7 @@ void main() {
     VoidCallback? onToggleComplete,
     VoidCallback? onAddNote,
     bool editModeEnabled = false,
+    bool swipeActionsEnabled = true,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -53,6 +54,7 @@ void main() {
             onToggleComplete: onToggleComplete,
             onAddNote: onAddNote,
             editModeEnabled: editModeEnabled,
+            swipeActionsEnabled: swipeActionsEnabled,
           ),
         ),
       ),
@@ -82,6 +84,22 @@ void main() {
       onToggleComplete: () {},
       onAddNote: () {},
       editModeEnabled: true,
+    );
+
+    final swipe = tester.widget<AppSwipeActions>(find.byType(AppSwipeActions));
+    expect(swipe.startAction, isNull);
+    expect(swipe.endAction, isNull);
+  });
+
+  testWidgets('swipeActionsEnabled: false turns both actions off', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      task: pendingTask,
+      onToggleComplete: () {},
+      onAddNote: () {},
+      swipeActionsEnabled: false,
     );
 
     final swipe = tester.widget<AppSwipeActions>(find.byType(AppSwipeActions));

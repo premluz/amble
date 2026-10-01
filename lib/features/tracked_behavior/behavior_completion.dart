@@ -45,3 +45,63 @@ bool isDayCompleted(Set<DateTime> completedDays, DateTime day) =>
     completedDays.contains(DateTime(day.year, day.month, day.day));
 
 bool isToday(DateTime day, DateTime today) => _isSameDay(day, today);
+
+/// Synthetic completion days for the debug-only Patterns demo switch. The
+/// row index alternates between an every-other-day pattern and a dense one
+/// with deterministic random-looking gaps of up to three days. The fixed
+/// anchor keeps both rhythms stable across periods.
+/// This intentionally has no [TrackedBehavior] or [Task] input: demo history
+/// is visual scaffolding, never persisted or linked to real data.
+Set<DateTime> demoCompletedDaysFor({
+  required int patternIndex,
+  required DateTime start,
+  required DateTime end,
+}) {
+  final completedDays = <DateTime>{};
+  final firstDay = DateTime(start.year, start.month, start.day);
+  final lastDay = DateTime(end.year, end.month, end.day);
+  final anchor = DateTime.utc(2020, 1, 6);
+
+  for (
+    var day = firstDay;
+    !day.isAfter(lastDay);
+    day = day.add(const Duration(days: 1))
+  ) {
+    final anchorDistance = DateTime.utc(
+      day.year,
+      day.month,
+      day.day,
+    ).difference(anchor).inDays;
+    if (patternIndex.isEven) {
+      if (anchorDistance.isEven) completedDays.add(day);
+      continue;
+    }
+
+    final weekIndex = _floorDiv(anchorDistance, _demoWeekLength);
+    final dayInWeek = anchorDistance - weekIndex * _demoWeekLength;
+    final random = _demoWeekHash(weekIndex, patternIndex);
+    final gapLength = random % _demoMaxGapDays + 1;
+    final gapStart =
+        (random ~/ _demoMaxGapDays) % (_demoWeekLength - gapLength + 1);
+    if (dayInWeek < gapStart || dayInWeek >= gapStart + gapLength) {
+      completedDays.add(day);
+    }
+  }
+  return completedDays;
+}
+
+const _demoWeekLength = 7;
+const _demoMaxGapDays = 3;
+const _demoHashMultiplier = 1103515245;
+const _demoHashOffset = 12345;
+
+int _floorDiv(int value, int divisor) {
+  final quotient = value ~/ divisor;
+  return value < 0 && value % divisor != 0 ? quotient - 1 : quotient;
+}
+
+int _demoWeekHash(int weekIndex, int patternIndex) {
+  final mixed =
+      weekIndex * _demoHashMultiplier + patternIndex * _demoHashOffset;
+  return (mixed ^ (mixed >> 16)).abs();
+}

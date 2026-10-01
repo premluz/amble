@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/tokens/component_tokens.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_badge_chip.dart';
 import '../../core/widgets/app_button.dart';
@@ -257,9 +258,9 @@ class _NewZoneSheetState extends ConsumerState<NewZoneSheet>
                     // the whole row.
                     Padding(
                       padding: EdgeInsets.fromLTRB(
-                        theme.spacingMd,
+                        theme.spacingLg,
                         theme.spacingSm,
-                        theme.spacingMd,
+                        theme.spacingLg,
                         0,
                       ),
                       child: AppSheetHeader(
@@ -282,7 +283,9 @@ class _NewZoneSheetState extends ConsumerState<NewZoneSheet>
                         ),
                       ),
                     ),
-                    SizedBox(height: theme.spacingSm),
+                    // Spacing matches the add-task sheet
+                    // (`TaskSheetFields`): header, name, chips, next row.
+                    SizedBox(height: SheetTokens.headerToFieldGap(theme)),
                     // Flexible (loose fit), NOT Expanded — this Column stays
                     // `mainAxisSize.min` (matching every other Column in this
                     // sheet) so the whole sheet still SHRINKS to fit short
@@ -300,7 +303,7 @@ class _NewZoneSheetState extends ConsumerState<NewZoneSheet>
                     Flexible(
                       child: SingleChildScrollView(
                         padding: EdgeInsets.symmetric(
-                          horizontal: theme.spacingMd,
+                          horizontal: theme.spacingLg,
                         ),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -312,8 +315,8 @@ class _NewZoneSheetState extends ConsumerState<NewZoneSheet>
                               label: 'Add title',
                               variant: AppTextFieldVariant.bare,
                             ),
+                            SizedBox(height: theme.spacingMd),
                             if (names.isNotEmpty) ...[
-                              SizedBox(height: theme.spacingSm),
                               // AppChipStrip, not Wrap — requested directly
                               // ("the pills should be scrollable
                               // horizontally... we should make that scrolling
@@ -356,8 +359,8 @@ class _NewZoneSheetState extends ConsumerState<NewZoneSheet>
                                   }),
                                 ),
                               ),
+                              SizedBox(height: theme.spacingSm),
                             ],
-                            SizedBox(height: theme.spacingMd),
                             Row(
                               children: [
                                 Expanded(

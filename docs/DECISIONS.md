@@ -5276,3 +5276,174 @@ Italic, matching what JetBrains shipped; nothing used its 800.
   shift width as they tick, turn it on for the numeric styles.
 - The JetBrains Mono files (and their `OFL.txt`) are no longer bundled but
   are still in assets/fonts, pending a decision to delete them.
+
+## 2026-09-30 — The time column holds the widest edge-time pill
+
+The fixed time column's width is now the larger of the widest label (+4
+slack) and the widest task edge-time pill (bold + padding), plus the
+existing extras. It's roughly 12px wider in Plex Sans Condensed, and the
+zones start that much later. The old goal of the 24-hour column being
+narrower than 96 is dropped, since both formats share one width.
+
+## 2026-09-30 — A resize onto another task asks, like a drop
+
+Requested directly: "as long as they are in edit mode they are on top /
+and resize when hits clash/overlap should also trigger that context menu".
+This reverses the old rule that the cascade was only for move and create;
+that rule was a work-order note in code comments, not something
+CONSTITUTION.md recorded.
+
+- A task being resized paints above the others (`_resizingTaskId`, ahead
+  of the primary task) and stays there until it settles, like a move.
+- A single-task resize (either edge) whose new span overlaps another task
+  opens the same Overlap / Push all / Trim menu, anchored at the finger.
+  If the menu is dismissed, the result is Overlap. If Push all or Trim
+  can't fit, nothing is written.
+- The resized task keeps plain resize semantics: no `rescheduled` status.
+  Tasks it pushes or trims get the same bookkeeping a drop gives them. One
+  undo covers every task that changed.
+- Group resize (multi-select) still does not ask.
+- Code: `commitTaskResize` / `taskOverlapMenuActions` in
+  `features/timeline/task_resize_overlap.dart`, plus `TaskList.trimTasks`.
+
+## 2026-09-30 — A resizing task is raised
+
+- While a task is being resized, its pill ignores the resting-layout caps
+  (the gap before the next task in its lane, the margin above a zone's
+  end). This is the rule dragging already followed. Before, the pill
+  stopped at its neighbour while the end-time marker kept moving.
+- A task being dragged or resized, and until it settles, paints above the
+  current-time line. The line is drawn just before that task, only when
+  that task is the last one painted, so resting tasks still sit under
+  the line.
+- Update, confirmed directly: the selected tasks that follow a group
+  resize (either edge) are raised too, so they also grow through their
+  neighbours. Tasks that follow a group move are not changed.
+
+## 2026-09-30 — No swipe on task pills in the spatial Timeline
+
+Requested directly: "disable slide left right task pill for options on
+spatial view, only on zone view we'll have it." `TaskCapsuleBlock` gains
+`swipeActionsEnabled` (default true), and the spatial Timeline passes
+false. Zone view keeps swipe on both its zoned rows
+(`ZoneContainerBlock`) and its loose rows (`TaskCapsuleBlock` via
+zone_day_timeline). The checkbox still toggles done in the spatial
+Timeline; adding a note there is through the task sheet.
+
+## 2026-09-30 — The add-zone sheet uses the add-task sheet's spacing
+
+Requested directly ("align with add task"; confirmed as spacing only):
+- The header-to-title gap is `SheetTokens.headerToFieldGap` (was
+  `spacingSm`).
+- Title to name chips is `spacingMd`; name chips to the Start/End row is
+  `spacingSm`.
+- Side insets are `spacingLg` (was `spacingMd`).
+The Start/End inputs themselves are unchanged.
+
+## 2026-09-30 — Label suggestions, 16 colours, and the Demo starter profile
+
+All confirmed directly; the three choices via AskUserQuestion.
+- **Label presets** (`shared/models/label_presets.dart`, 30 of them):
+  each has a name, a curated Tabler icon and a colour. They appear as
+  suggestions under the name field in New label; a tap fills in all
+  three. Labels already present and names that don't match what's typed
+  are hidden. Nothing is seeded.
+- **Icons:** 19 more curated glyphs (beach, fish hook, treadmill, luggage,
+  train, headphones, TV-off, candle, sparkles…). Tabler has no palm tree,
+  so `beach` stands in.
+- **Palette: 12 → 16 swatches.** The four new ones (golden yellow, lime,
+  ocean, periwinkle) are appended, so stored `colorToken`s keep their
+  colour. The light ramp is solved to ≥4.56:1 on `paper`. The constant
+  keeps the name `categoryPalette12` so no law-document reference goes
+  stale.
+- **Demo profile** (`assets/onboarding/profiles.json`, id `demo`), for
+  Alex, a made-up person: 19 presets, 6 patterns, 7 zone placements (5
+  zone names), 24 Things in 6 sections, and 19 back-to-back tasks for
+  the day it's loaded. It has no quiz tags, so the quiz never picks it.
+  It appears in Starter profiles and as Developer → "Load Demo profile",
+  which adds it on top of existing data.
+- The profile schema gains `sections`, and `categoryName` resolves via
+  `OnboardingLabelResolver` (built-in key → existing label name → label
+  preset). CONSTITUTION's onboarding schema is amended to match.
+
+## 2026-09-30 — Preset chips are compact, like value chips
+
+Requested directly: preset badges and pills one scale smaller, "same size
+as these value data chips." `TemplateChip` (the Preset sheet) is now
+`AppValueChipSize.sm`, so it's 32 px tall, the same as a value chip.
+- The badge is `ChipTokens.compactBadgeSize`: the compact height minus
+  the badge chip's equal padding, so 16 px (was 24).
+- The glyph ratio rises from 0.65 to `ChipTokens.compactBadgeGlyphRatio`
+  (0.75), keeping the icon near a value chip's own icon size.
+- `TemplateChipStrip`'s height follows. It currently has no callers.
+
+## 2026-09-30 — Quick-create sheet: pinned header, top fade on scroll
+
+Requested directly: "in the top part we should have that fade gradient as
+we have on bottom." The header row (×, handle, Add) is now pinned, and
+only the fields scroll. A new shared `AppScrollRevealFade` sits under the
+header: invisible at rest (the title sits 4 px under the header, and a
+permanent fade would wash it out), fully shown once the fields have
+scrolled `spacingXl`. The small state still hugs its content: header
+block plus the measured fields. An `OverflowBox` + `ClipRect` keep the
+pinned header intact while a drag-to-close shrinks the sheet below it.
+
+## 2026-09-30 — Label chips are compact too; a Widgetbook chip-size page
+
+Requested directly: "labels still see large, maybe they need comp in
+widget book?"
+- `CategoryChip` (the Label picker) is now `ChipTokens.compactHeight` with
+  caption text. Its glyph is caption × `ChipTokens.compactIconScale`
+  (1.2), the proportion `AppValueChip` already used and now reads from
+  the same token.
+- Widgetbook → Selection primitives → "Chip sizes" shows value, preset
+  and label chips together and one by one, so a size drift is visible at
+  a glance. template_chip_size_test enforces the same rule: every compact
+  chip is as tall as a value chip.
+
+## 2026-09-30 — Developer "Accent strength" is scoped to Patterns
+
+Requested directly: "it should be only for patterns, not global." The
+knob no longer re-resolves the app theme in `main.dart`.
+`PatternAccentScope` re-themes only the Patterns screen
+(`TrackedBehaviorListScreen` wraps its body in it), pulling
+`colorAccent` toward the base surface by the chosen strength. Sheets
+opened from Patterns (for example the habit form) are routes and keep the
+app's full accent. The Developer copy now says "Patterns screen only".
+
+## 2026-10-01 — Voice mode: no status card, an animated hint, a growing ring
+
+All requested directly.
+- **The Listening / Paused card is gone.** The toolbar's Pause/Resume
+  already says the state. It survives only as `VoiceCaptureUnavailableCard`
+  for "Can't listen", because a denied microphone still needs explaining.
+- **The "Try saying" hint eases out** as the first words arrive: an
+  `AnimatedSwitcher` fade plus a slight scale settle
+  (`VoiceModeTokens.hintExit*`). The live and submitted lists share a key,
+  so submitting never cross-fades them. That matters because the
+  submitted list is the flights' Hero source.
+- **The pending ring:** an unfilled `colorSurfaceOverlay` track,
+  `pendingRingWidth` (spacingXs) wide, with the accent traced over it
+  during the silence window. `TaskListRow.pendingPresence` scales the
+  ring's width and outset together: it grows out of the pill's edge as a
+  line starts (0.32 s) and recedes into it after the line commits
+  (0.42 s). The pill itself never scales. Rows are keyed by position, so
+  the line being spoken keeps its row, and its ring state, across the
+  commit.
+
+## 2026-10-01 — Developer "Show touches"
+
+Requested directly: an equivalent of a SwiftUI `TouchVisualizer` for
+screen recordings, behind a Developer toggle with a subtle animation.
+- `DevShowTouches` is in-memory, off by default, and debug builds only.
+  `AppTouchVisualizer` wraps the app in `MaterialApp.builder`, so dots
+  draw above every route, sheet and menu.
+- It uses a translucent `Listener`, not a gesture recognizer: touches are
+  only observed and always reach the app. The SwiftUI original's
+  `DragGesture` would have swallowed them. There's one dot per pointer,
+  so multi-touch shows each finger.
+- Look (`TouchVisualizerTokens`): a 44 px circle (Apple's minimum touch
+  target), filled and ringed in `colorTextPrimary` (alpha 0.16 / 0.5)
+  rather than the original's white, so it also shows on the light theme.
+  It settles in from 0.8× over `motionFast`; on release it fades while
+  easing to 1.25× over `motionNormal`.

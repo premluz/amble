@@ -39,4 +39,31 @@ void main() {
     notifier.set(true);
     expect(container.read(devTrackedCalendarLabelsVisibleProvider), isTrue);
   });
+
+  test('DevTrackedPatternDemoData defaults to off and can be enabled', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    expect(container.read(devTrackedPatternDemoDataProvider), isFalse);
+
+    container.read(devTrackedPatternDemoDataProvider.notifier).set(true);
+    expect(container.read(devTrackedPatternDemoDataProvider), isTrue);
+  });
+
+  test('DevAccentStrength defaults to full and clamps changes', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final notifier = container.read(devAccentStrengthProvider.notifier);
+    expect(container.read(devAccentStrengthProvider), 1.0);
+
+    notifier.set(.35);
+    expect(container.read(devAccentStrengthProvider), closeTo(.35, 0.0001));
+
+    notifier.set(2.0);
+    expect(container.read(devAccentStrengthProvider), 1.0);
+
+    notifier.set(-1.0);
+    expect(container.read(devAccentStrengthProvider), 0.0);
+  });
 }

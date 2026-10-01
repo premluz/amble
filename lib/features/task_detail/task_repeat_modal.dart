@@ -121,16 +121,22 @@ class _TaskRepeatModalState extends State<TaskRepeatModal> {
         ),
         if (_enabled) ...[
           SizedBox(height: theme.spacingSm),
-          Wrap(
-            spacing: theme.spacingSm,
-            runSpacing: theme.spacingSm,
+          Row(
             children: [
-              for (var day = DateTime.monday; day <= DateTime.sunday; day++)
-                AppSelectableChip(
-                  label: _weekdayAbbreviations[day - 1],
-                  selected: _selectedDays.contains(day),
-                  onTap: () => _toggleDay(day),
+              for (
+                var day = DateTime.monday;
+                day <= DateTime.sunday;
+                day++
+              ) ...[
+                if (day > DateTime.monday) SizedBox(width: theme.spacingXs),
+                Expanded(
+                  child: AppSelectableChip(
+                    label: _weekdayAbbreviations[day - 1],
+                    selected: _selectedDays.contains(day),
+                    onTap: () => _toggleDay(day),
+                  ),
                 ),
+              ],
             ],
           ),
         ],

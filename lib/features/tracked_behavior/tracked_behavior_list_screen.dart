@@ -14,6 +14,7 @@ import 'app_tracked_view_dock.dart';
 import 'tracked_behavior_form.dart';
 import 'tracked_behavior_row.dart';
 import 'tracked_period_calendar.dart';
+import 'pattern_accent_scope.dart';
 
 /// The "Tracked" bottom-nav destination — every saved [TrackedBehavior],
 /// tap to edit, "+" to add.
@@ -33,8 +34,16 @@ import 'tracked_period_calendar.dart';
 /// Reached only when [FeatureFlags.trackedBehaviorEnabled] is on — see
 /// `main.dart`, which omits the destination entirely (rather than
 /// disabling it) when the flag is off.
-class TrackedBehaviorListScreen extends ConsumerWidget {
+class TrackedBehaviorListScreen extends StatelessWidget {
   const TrackedBehaviorListScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) =>
+      const PatternAccentScope(child: _TrackedBehaviorListBody());
+}
+
+class _TrackedBehaviorListBody extends ConsumerWidget {
+  const _TrackedBehaviorListBody();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -85,6 +94,7 @@ class TrackedBehaviorListScreen extends ConsumerWidget {
                                 viewMode: viewMode,
                                 periodDate: periodDate,
                                 showCalendarLabels: showCalendarLabels,
+                                demoPatternIndex: index,
                                 onTap: () => showTrackedBehaviorForm(
                                   context,
                                   behavior: behavior,
