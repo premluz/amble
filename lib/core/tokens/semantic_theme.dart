@@ -569,11 +569,11 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   /// exception this token does NOT cover).
   final TextStyle textBody;
 
-  /// The MONOSPACE twin of [textBody] — identical size/weight/height,
+  /// The condensed numeric twin of [textBody] — identical size/weight/height,
   /// [TypePrimitives.fontFamily] instead of [TypePrimitives.fontFamilySans].
   /// Added because [textBody] itself is shared between two kinds of text
   /// that can't share one font: general body copy (→ DM Sans) and two
-  /// exception call sites that must stay monospace — the zone-list-row
+  /// exception call sites that must stay in the condensed numeric font — the zone-list-row
   /// zone name (`zone_form_screen.dart`) and the Settings app-version
   /// string (`about_settings_screen.dart`). Confirmed via AskUserQuestion:
   /// split into a dedicated token rather than a `.copyWith(fontFamily:)`
@@ -589,21 +589,21 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   /// exception call sites this token does NOT cover.
   final TextStyle textCaption;
 
-  /// The MONOSPACE twin of [textCaption] — same reasoning as
+  /// The condensed numeric twin of [textCaption] — same reasoning as
   /// [textBodyMono]. [textCaption] is shared between generic captions/
   /// chips (→ DM Sans) and genuinely numeric/temporal labels that must
-  /// stay monospace: hour-axis labels (`task_boundary_markers.dart`),
+  /// stay in the condensed numeric font: hour-axis labels (`task_boundary_markers.dart`),
   /// current-time text, and other 12px numeric annotations. Compact zone
   /// names and task start/end pills use the dedicated `textZoneName` and
   /// `textTaskEdgeTime` tokens below.
   final TextStyle textCaptionMono;
 
-  /// Compact monospace label used for rotated zone names in spatial/edit
+  /// Compact condensed numeric label used for rotated zone names in spatial/edit
   /// surfaces. It is one rung below [textCaptionMono] so dense vertical
   /// annotations do not compete with task content.
   final TextStyle textZoneName;
 
-  /// Monospace time used by [TaskEdgeTimeLabel] across spatial task and
+  /// Condensed numeric time used by [TaskEdgeTimeLabel] across spatial task and
   /// Edit/resize surfaces. Same size as [textCaptionMono] (12), so every
   /// time on the left of the Day screen — hour ticks, a task's start/end,
   /// the list view's row times — reads at one size (2026-09-29, reported
@@ -650,10 +650,10 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   /// `_resolveTaskSize`, the same mechanism [textTaskTitle] itself uses —
   /// every zone-view row/header reads this instead now.
   ///
-  /// **2026-09-21 — stays [TypePrimitives.fontFamily] (monospace)**, the
+  /// **2026-09-21 — stays [TypePrimitives.fontFamily] (condensed numeric font)**, the
   /// one explicit carve-out in the dual-font policy: this is the zone
   /// container's own header/name, which would otherwise read as an
-  /// ordinary title (→ DM Sans) but must stay monospace. Its only real
+  /// ordinary title (→ DM Sans) but must stay in the condensed numeric font. Its only real
   /// call site (`zone_container_block.dart`) renders nothing but a zone
   /// name, so this token is pinned wholesale rather than split.
   final TextStyle textTaskTitleZone;
@@ -869,7 +869,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       color: ColorPrimitives.slate900,
     ),
     // See textBodyMono's own doc comment — identical to textBody above,
-    // monospace instead of sans.
+    // condensed numeric font instead of sans.
     textBodyMono: TextStyle(
       fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size3,
@@ -892,7 +892,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       color: ColorPrimitives.slate500,
     ),
     // See textCaptionMono's own doc comment — identical to textCaption
-    // above, monospace instead of sans.
+    // above, condensed numeric font instead of sans.
     textCaptionMono: TextStyle(
       fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size1,
@@ -962,7 +962,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     ),
     // Default rung: one up from md (see textTaskTitle's own default
     // comment) — lg's own size, matching main.dart's _resolveTaskSize
-    // "one step up" mapping. fontFamily stays monospace — see this
+    // "one step up" mapping. fontFamily stays the condensed numeric font — see this
     // field's own doc comment on the dual-font policy's zone-name
     // carve-out.
     textTaskTitleZone: TextStyle(
@@ -1142,7 +1142,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       color: ColorPrimitives.sand200,
     ),
     // See textBodyMono's own doc comment — identical to textBody above,
-    // monospace instead of sans.
+    // condensed numeric font instead of sans.
     textBodyMono: TextStyle(
       fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size3,
@@ -1165,7 +1165,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       color: ColorPrimitives.sand400,
     ),
     // See textCaptionMono's own doc comment — identical to textCaption
-    // above, monospace instead of sans.
+    // above, condensed numeric font instead of sans.
     textCaptionMono: TextStyle(
       fontFamily: TypePrimitives.fontFamily,
       fontSize: TypePrimitives.size1,
@@ -1221,7 +1221,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       color: ColorPrimitives.sand200,
     ),
     // One up from md — see the light palette's identical comment above.
-    // fontFamily stays monospace — see this field's own doc comment on
+    // fontFamily stays the condensed numeric font — see this field's own doc comment on
     // the dual-font policy's zone-name carve-out.
     textTaskTitleZone: TextStyle(
       fontFamily: TypePrimitives.fontFamily,

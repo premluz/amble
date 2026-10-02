@@ -54,6 +54,7 @@ class AppSelectableChip extends StatelessWidget {
     required this.onTap,
     this.variant = AppButtonVariant.secondary,
     this.size = AppSelectableChipSize.compact,
+    this.inMutuallyExclusiveGroup = false,
   });
 
   final String label;
@@ -61,6 +62,9 @@ class AppSelectableChip extends StatelessWidget {
   final VoidCallback onTap;
   final AppButtonVariant variant;
   final AppSelectableChipSize size;
+  /// Set this for a single-choice chip group; most chip rows allow multiple
+  /// selections and should not be announced as mutually exclusive.
+  final bool inMutuallyExclusiveGroup;
 
   @override
   Widget build(BuildContext context) {
@@ -111,30 +115,37 @@ class AppSelectableChip extends StatelessWidget {
       ),
     );
 
-    return AppPressFeedback(
+    return Semantics(
+      button: true,
+      selected: selected,
+      inMutuallyExclusiveGroup: inMutuallyExclusiveGroup,
+      label: label,
       onTap: onTap,
-      borderRadius: radius,
-      // The wash rides on the chip's own foreground color — see
-      // AppButton's own identical reasoning on its `rippleColor`.
-      rippleColor: foreground,
-      child: selected && isSecondary
-          ? ClipRRect(
-              borderRadius: radius,
-              child: BackdropFilter(
-                filter: ImageFilter.blur(
-                  sigmaX: theme.blurOverlaySigma,
-                  sigmaY: theme.blurOverlaySigma,
-                ),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: AppButton.subtleTint(theme),
-                    borderRadius: radius,
+      child: AppPressFeedback(
+        onTap: onTap,
+        borderRadius: radius,
+        // The wash rides on the chip's own foreground color — see
+        // AppButton's own identical reasoning on its `rippleColor`.
+        rippleColor: foreground,
+        child: selected && isSecondary
+            ? ClipRRect(
+                borderRadius: radius,
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(
+                    sigmaX: theme.blurOverlaySigma,
+                    sigmaY: theme.blurOverlaySigma,
                   ),
-                  child: content,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: AppButton.subtleTint(theme),
+                      borderRadius: radius,
+                    ),
+                    child: content,
+                  ),
                 ),
-              ),
-            )
-          : content,
+              )
+            : content,
+      ),
     );
   }
 }

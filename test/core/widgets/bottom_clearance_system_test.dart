@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/core/widgets/app_floating_create_button.dart';
+import 'package:amble/core/widgets/app_page_toolbar.dart';
+import 'package:amble/features/inbox/voice_capture_toolbar.dart';
 import 'package:amble/core/widgets/app_sheet.dart';
 import 'package:amble/core/widgets/app_step_scaffold.dart';
 
@@ -63,9 +65,16 @@ void main() {
     );
   });
 
-  testWidgets('floating create button uses the shared safe-area clearance', (
-    tester,
-  ) async {
+  // Requested directly: "for toolbar make same side padding as from
+  // bottom." Measured with a home-indicator inset, where the two used to
+  // differ (16 at the side against 34 + 8 below).
+  testWidgets('floating create button sits as far from the side as from the '
+      'bottom', (tester) async {
+    tester.view.physicalSize = const Size(430, 932);
+    tester.view.devicePixelRatio = 1;
+    tester.view.viewPadding = const FakeViewPadding(bottom: 34);
+    tester.view.padding = const FakeViewPadding(bottom: 34);
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(
       MaterialApp(
         theme: ThemeData(useMaterial3: true, extensions: [light]),
@@ -75,15 +84,29 @@ void main() {
       ),
     );
 
-    expect(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is Positioned &&
-            widget.right == light.spacingMd &&
-            widget.bottom == light.spacingBottomClearance,
+    final button = tester.getRect(
+      find.descendant(
+        of: find.byType(AppFloatingCreateButton),
+        matching: find.byType(AppPageToolbarItem),
       ),
-      findsOneWidget,
     );
+    final side = 430 - button.right;
+    final bottom = 932 - button.bottom;
+    expect(bottom, 34 + light.spacingBottomClearance);
+    expect(side, bottom);
+    expect(
+      side,
+      DockTokens.edgeInset(light, const EdgeInsets.only(bottom: 34)),
+    );
+  });
+
+  test('the voice toolbar keeps the same edge on both sides and below', () {
+    const size = Size(430, 932);
+    const padding = EdgeInsets.only(bottom: 34);
+    final (:toolbar, :close) = voiceToolbarLayout(light, size, padding);
+    final edge = size.height - close.bottom;
+    expect(size.width - close.right, edge);
+    expect(toolbar.left, edge);
   });
 
   testWidgets('StepScaffold footer uses the shared safe-area clearance', (

@@ -7,6 +7,7 @@ import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/timeline/armed_edit_task_provider.dart';
 import 'package:amble/features/timeline/pending_task_draft_provider.dart';
 import 'package:amble/features/timeline/resize_handle.dart';
+import 'package:amble/features/timeline/task_capsule_block.dart';
 import 'package:amble/features/timeline/task_edge_time_label.dart';
 import 'package:amble/features/timeline/selected_date_provider.dart';
 import 'package:amble/features/timeline/timeline_screen.dart';
@@ -173,6 +174,10 @@ void main() {
     );
   }
 
+  Finder pillFor(String title) => find.byWidgetPredicate(
+    (widget) => widget is TaskCapsuleBlock && widget.task.title == title,
+  );
+
   testWidgets('long-pressing a task arms it — resize handles appear, with the '
       'global Edit Mode toggle OFF the whole time', (tester) async {
     final task = makeTask('Focus block');
@@ -200,6 +205,32 @@ void main() {
       // One armed task contributes its own top+bottom handle pair; a
       // second, unarmed task contributes none.
       expect(find.byType(ResizeHandle), findsNWidgets(2));
+    },
+  );
+
+  testWidgets(
+    'moving another task clears the previously armed task immediately',
+    (tester) async {
+      final a = makeTask('Focus block', minuteOffset: -40);
+      final b = makeTask('Standup', minuteOffset: 40);
+      await pumpTimeline(tester, tasks: [a, b]);
+
+      await tester.longPress(find.text('Focus block'));
+      await tester.pump();
+      expect(capturedContainer!.read(armedEditTaskProvider), a.id);
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(pillFor('Standup')),
+      );
+      await tester.pump();
+      await gesture.moveBy(const Offset(0, 20));
+      await tester.pump();
+
+      expect(capturedContainer!.read(armedEditTaskProvider), isNull);
+      await gesture.up();
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
     },
   );
 
@@ -235,20 +266,20 @@ void main() {
 
   testWidgets('long-pressing empty timeline space closes an armed task\'s edit '
       'state', (tester) async {
-      final task = makeTask('Focus block');
-      await pumpTimeline(tester, tasks: [task]);
+    final task = makeTask('Focus block');
+    await pumpTimeline(tester, tasks: [task]);
 
-      await tester.longPress(find.text('Focus block'));
-      await tester.pump();
-      expect(find.byType(ResizeHandle), findsWidgets);
-      expect(capturedContainer!.read(armedEditTaskProvider), task.id);
+    await tester.longPress(find.text('Focus block'));
+    await tester.pump();
+    expect(find.byType(ResizeHandle), findsWidgets);
+    expect(capturedContainer!.read(armedEditTaskProvider), task.id);
 
-      // A point on the timeline background, well clear of the 9:00 task's
-      // own pill — matches the empty-space harness other timeline tests
-      // already use for the same kind of background hold.
-      await longPressAndReleaseAt(tester, const Offset(220, 700));
+    // A point on the timeline background, well clear of the 9:00 task's
+    // own pill — matches the empty-space harness other timeline tests
+    // already use for the same kind of background hold.
+    await longPressAndReleaseAt(tester, const Offset(220, 700));
 
-      expect(capturedContainer!.read(armedEditTaskProvider), isNull);
+    expect(capturedContainer!.read(armedEditTaskProvider), isNull);
   });
 
   testWidgets(

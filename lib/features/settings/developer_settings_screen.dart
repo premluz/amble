@@ -299,7 +299,9 @@ class _DeveloperSettingsScreenState
                         SizedBox(height: theme.spacingXs),
                         Text(
                           'A soft dot under each finger, for screen '
-                          'recordings. Taps still work as normal.',
+                          'recordings. Hover over a spatial timeline and '
+                          'press 1 to zoom in, or 2 to zoom out. '
+                          'Two animated dots appear only during the pinch.',
                           style: theme.textBody.copyWith(
                             color: theme.colorTextSecondary,
                           ),

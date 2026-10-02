@@ -251,7 +251,7 @@ void main() {
       );
 
       expect(find.text('9 am'), findsOneWidget);
-      expect(find.text('10:30a'), findsOneWidget);
+      expect(find.text('10:30am'), findsOneWidget);
     });
 
     testWidgets('renders exactly two TaskEdgeTimeLabels — one per edge', (

@@ -33,7 +33,7 @@ void main() {
   testWidgets('renders the given time, formatted', (tester) async {
     await pump(tester, const TimeOfDay(hour: 9, minute: 30));
 
-    expect(find.text('9:30a'), findsOneWidget);
+    expect(find.text('9:30am'), findsOneWidget);
   });
 
   testWidgets('the time pill uses the accent background color', (tester) async {

@@ -32,8 +32,8 @@ void main() {
     await box.deleteFromDisk();
   });
 
-  test('defaults to false (dual-font off) when nothing is stored', () {
-    expect(container.read(dualFontSettingProvider), isFalse);
+  test('defaults to true (dual-font on) when nothing is stored', () {
+    expect(container.read(dualFontSettingProvider), isTrue);
   });
 
   test('set updates state and persists through the repository', () async {

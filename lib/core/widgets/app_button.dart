@@ -74,6 +74,7 @@ class AppButton extends StatelessWidget {
     this.shape = AppButtonShape.rounded,
     this.isLoading = false,
     this.tooltip,
+    this.semanticLabel,
     this.iconColor,
     this.borderColor,
     this.fillColor,
@@ -105,6 +106,10 @@ class AppButton extends StatelessWidget {
   /// Wraps the button in a [Tooltip] when set — the icon-only replacement
   /// for [AppSubtleIconButton]'s (previously required) `tooltip`.
   final String? tooltip;
+
+  /// Accessible name for icon-only or custom-content buttons. Falls back to
+  /// [tooltip], then [label], when omitted.
+  final String? semanticLabel;
 
   /// Per-instance overrides for [icon]'s color and, on the
   /// [AppButtonShape.circle] shape, the selected/secondary tint —
@@ -240,8 +245,8 @@ class AppButton extends StatelessWidget {
         : child ?? _buildLabelContent(theme, foreground, textStyle);
 
     // The platform button is kept for its shape, disabled palette,
-    // semantics and platform-adaptiveness (design principle 4) — but its
-    // OWN tap handling is switched off and the wrapper drives the action
+    // and platform-adaptiveness (design principle 4) — but its OWN tap
+    // handling is switched off and the wrapper drives the action
     // instead. Reported directly: "buttons became less responsive, as in
     // tap and nothing happens for some time (and action after a
     // moment)." Both `ElevatedButton` and `CupertinoButton` fire
@@ -254,8 +259,9 @@ class AppButton extends StatelessWidget {
     //
     // `onPressed` stays NON-NULL (a no-op) rather than null: null would
     // switch both platform buttons to their disabled rendering even for
-    // an enabled button. AbsorbPointer below is what actually stops them
-    // handling the tap.
+    // an enabled button. AbsorbPointer below is what stops pointer input;
+    // FocusableActionDetector below routes keyboard activation to the real
+    // callback.
     const noop = _noop;
     // Primary paints its own opaque fill through the platform button, so
     // its disabled/enabled palette logic (above) still applies unchanged.
@@ -325,7 +331,11 @@ class AppButton extends StatelessWidget {
       ),
     );
 
-    return tooltip == null ? result : Tooltip(message: tooltip!, child: result);
+    final accessibleResult = _withAccessibility(
+      child: result,
+      isDisabled: isDisabled,
+    );
+    return accessibleResult;
   }
 
   /// Applies the secondary variant's blurred glass fill BEHIND [child] —
@@ -425,15 +435,31 @@ class AppButton extends StatelessWidget {
     final iconSize = diameter * 0.5;
 
     final background = isPrimary
-        ? theme.colorAccent
+        ? (isDisabled && !isLoading
+              ? theme.colorSurfaceField
+              : theme.colorAccent)
         : (isSecondary ? (borderColor ?? subtleTint(theme)) : fillColor);
-    final foreground = isPrimary
-        ? theme.colorSurfacePrimary
-        : (iconColor ?? theme.colorTextPrimary);
+    final foreground = isDisabled && !isLoading
+        ? theme.colorTextSecondary
+        : (isPrimary
+              ? theme.colorSurfacePrimary
+              : (iconColor ?? theme.colorTextPrimary));
 
-    final content =
-        child ??
-        (icon != null ? Icon(icon, size: iconSize, color: foreground) : null);
+    final platform = Theme.of(context).platform;
+    final isCupertino =
+        platform == TargetPlatform.iOS || platform == TargetPlatform.macOS;
+    final content = isLoading
+        ? SizedBox(
+            width: iconSize,
+            height: iconSize,
+            child: isCupertino
+                ? CupertinoActivityIndicator(color: foreground)
+                : CircularProgressIndicator(strokeWidth: 2, color: foreground),
+          )
+        : child ??
+              (icon != null
+                  ? Icon(icon, size: iconSize, color: foreground)
+                  : _buildCircleLabel(theme, foreground));
 
     final filled = Container(
       width: diameter,
@@ -468,7 +494,58 @@ class AppButton extends StatelessWidget {
       child: blurred,
     );
 
-    return tooltip == null ? circle : Tooltip(message: tooltip!, child: circle);
+    final accessibleCircle = _withAccessibility(
+      child: circle,
+      isDisabled: isDisabled,
+    );
+    return accessibleCircle;
+  }
+
+  Widget _buildCircleLabel(AmbleTheme theme, Color foreground) {
+    final labelText = label;
+    if (labelText == null) return const SizedBox.shrink();
+    return Text(
+      labelText,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: theme.textLabel.copyWith(
+        color: foreground,
+        fontWeight: FontWeight.w500,
+      ),
+    );
+  }
+
+  Widget _withAccessibility({required Widget child, required bool isDisabled}) {
+    final activate = CallbackAction<Intent>(
+      onInvoke: (_) {
+        if (!isDisabled) {
+          onPressed?.call();
+        }
+        return null;
+      },
+    );
+    final semanticChild = Semantics(
+      excludeSemantics: true,
+      button: true,
+      enabled: !isDisabled,
+      label: semanticLabel ?? tooltip ?? label,
+      onTap: isDisabled ? null : onPressed,
+      child: child,
+    );
+    final focusableChild = FocusableActionDetector(
+      enabled: !isDisabled,
+      descendantsAreFocusable: false,
+      descendantsAreTraversable: false,
+      includeFocusSemantics: false,
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: activate,
+        ButtonActivateIntent: activate,
+      },
+      child: semanticChild,
+    );
+    return tooltip == null
+        ? focusableChild
+        : Tooltip(message: tooltip!, child: focusableChild);
   }
 }
 

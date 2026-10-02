@@ -35,7 +35,7 @@ void main() {
         'bold': theme.textCaptionMono.copyWith(fontWeight: FontWeight.w700),
       };
       for (final MapEntry(key: weight, value: style) in styles.entries) {
-        for (final label in ['12 pm', '12 am', '11 pm', '12:48p', '13:48']) {
+        for (final label in ['12 pm', '12 am', '11 pm', '12:48pm', '13:48']) {
           final painter = TextPainter(
             text: TextSpan(text: label, style: style),
             textDirection: TextDirection.ltr,
@@ -61,7 +61,7 @@ void main() {
       final style = theme.textTaskEdgeTime.copyWith(
         fontWeight: FontWeight.w700,
       );
-      for (final label in ['12:55a', '12:48p', '10 am', '12 pm', '13:48']) {
+      for (final label in ['12:55am', '12:48pm', '10 am', '12 pm', '13:48']) {
         final painter = TextPainter(
           text: TextSpan(text: label, style: style),
           textDirection: TextDirection.ltr,

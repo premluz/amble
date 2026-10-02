@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/dev_config.dart';
+import '../../core/tokens/component_tokens.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_floating_create_button.dart';
 import '../../core/widgets/app_top_scroll_fade.dart';
@@ -136,7 +137,7 @@ class _TrackedBehaviorListBody extends ConsumerWidget {
             // top-false `SafeArea`), so both screens' floating docks sit
             // at the identical spot.
             Positioned(
-              left: theme.spacingMd,
+              left: DockTokens.edgeInset(theme, MediaQuery.viewPaddingOf(context)),
               bottom: theme.spacingBottomClearance,
               child: SafeArea(
                 top: false,

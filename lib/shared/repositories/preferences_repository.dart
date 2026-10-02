@@ -71,7 +71,7 @@ abstract final class PreferenceKeys {
   /// IBM Plex Sans Condensed for numeric/temporal labels and zone names — see
   /// `TypePrimitives`) is active. When off, every mono-bound token resolves
   /// to DM Sans instead, so the whole app reads as one font. Absent (null)
-  /// defaults to false — dual-font is OFF by default. See [DualFontSetting].
+  /// defaults to true — dual-font is ON by default. See [DualFontSetting].
   static const String dualFontEnabled = 'dualFontEnabled';
 
   /// Whether the 5 built-in [Category] rows have been seeded into the

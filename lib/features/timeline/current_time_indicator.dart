@@ -1,10 +1,9 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show OverflowBoxFit;
 
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/timeline_clock.dart';
+import '../../core/wall_clock_watcher.dart';
 
 /// Horizontal marker at the current time, positioned on the same
 /// pixels-per-minute scale as the day view's task boundary labels and task
@@ -51,20 +50,26 @@ class CurrentTimeIndicator extends StatefulWidget {
 }
 
 class _CurrentTimeIndicatorState extends State<CurrentTimeIndicator> {
-  late Timer _timer;
   late DateTime _now = widget.now();
+
+  /// On each minute boundary, and at once when the system time changes —
+  /// see [WallClockWatcher].
+  late final _clock = WallClockWatcher(
+    now: () => widget.now(),
+    onChange: () {
+      if (mounted) setState(() => _now = widget.now());
+    },
+  );
 
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(minutes: 1), (_) {
-      setState(() => _now = widget.now());
-    });
+    _clock.start();
   }
 
   @override
   void dispose() {
-    _timer.cancel();
+    _clock.dispose();
     super.dispose();
   }
 

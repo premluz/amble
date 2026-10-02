@@ -59,6 +59,7 @@ class CategoryListScreen extends StatelessWidget {
                     icon: Icons.arrow_back_rounded,
                     onPressed: () => Navigator.of(context).pop(),
                     shape: AppButtonShape.circle,
+                    semanticLabel: 'Back',
                     // Ghost, not primary — app-wide button unification
                     // pass, requested directly.
                     variant: AppButtonVariant.ghost,
@@ -69,6 +70,7 @@ class CategoryListScreen extends StatelessWidget {
                     icon: Icons.add_rounded,
                     onPressed: () => showAddCategoryModal(context),
                     shape: AppButtonShape.circle,
+                    semanticLabel: 'Add label',
                   ),
                 ],
               ),

@@ -41,6 +41,7 @@ class ZoneListScreen extends StatelessWidget {
                     icon: Icons.arrow_back_rounded,
                     onPressed: () => Navigator.of(context).pop(),
                     shape: AppButtonShape.circle,
+                    semanticLabel: 'Back',
                     // Ghost, not primary — app-wide button unification
                     // pass, requested directly.
                     variant: AppButtonVariant.ghost,
@@ -51,6 +52,7 @@ class ZoneListScreen extends StatelessWidget {
                     icon: Icons.add_rounded,
                     onPressed: () => showZoneNameSheet(context),
                     shape: AppButtonShape.circle,
+                    semanticLabel: 'Add zone name',
                   ),
                 ],
               ),

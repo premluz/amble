@@ -2,7 +2,7 @@ import 'dart:ui';
 
 /// Tier 1 — raw type scale, no semantic meaning.
 abstract final class TypePrimitives {
-  /// **2026-09-21 — the app's MONOSPACE font**, one half of a dual-font
+  /// **2026-09-21 — the app's condensed numeric font**, one half of a dual-font
   /// system (see [fontFamilySans] for the other). Every `TextStyle` built
   /// in `semantic_theme.dart` reads one of these two rather than
   /// hardcoding a family name.
@@ -20,7 +20,7 @@ abstract final class TypePrimitives {
   /// matter (the time column) are measured, not assumed per glyph.
   ///
   /// Name unchanged from the single-font era (was simply "the app's
-  /// font") to minimise the diff — every existing monospace-bound call
+  /// font") to minimise the diff — every existing numeric-font call
   /// site already reads this exact constant.
   static const fontFamily = 'IBM Plex Sans Condensed';
 

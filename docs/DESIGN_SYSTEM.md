@@ -26,21 +26,26 @@ one level up to whole visual treatments, not just individual values.
 
 ---
 
-## Horizontal spacing — two values, no third
+## Horizontal spacing — shared geometry, no drift
 
-The app has exactly **two** horizontal measurements. Every screen derives
-from them; nothing re-states them, and nothing invents a third.
+Page insets use the shared spacing token. Timeline columns use the
+`TimelineColumns` geometry helpers, so both Timeline views derive the same
+measured time column, adjusted time-to-zone gap, zone column, and content
+column.
 
 | Token | Value | What it measures |
 | --- | --- | --- |
-| `theme.spacingScreenPadding` | 16 | Screen edge → page content. The top nav's "Days", the settings gear opposite it, page titles, list rows, sheet bodies, **and the Timeline's hour labels in both the spatial and non-spatial views.** |
-| `theme.spacingHourGutter` | 90 | Screen edge → Timeline *content* (a task pill, a zone card). The hour labels occupy the space between this and `spacingScreenPadding`. |
+| `theme.spacingScreenPadding` | 16 | Screen edge → page content, including the top nav, page titles, list rows, sheet bodies, and the non-spatial Timeline's hour labels. |
+| `theme.spacingTimeColumnWidth` | 96 | Design envelope for the Timeline time column; the live width is measured by `timelineTimeColumnFixedWidth`. |
+| `theme.spacingTimelineGutter` | 16 | Outer Timeline rhythm and the starting input for the inter-column gap. `timelineTimeToZoneGap` accounts for any width borrowed by time labels. |
 
-**The rule:** any horizontal distance from a screen edge is one of these
-two tokens. If you are about to write a number, an arithmetic expression
-combining a token with a literal (`66 + spacingScreenPadding`), or a new
-top-level `const` for a side inset — stop; that is the drift this section
-exists to prevent.
+**The rule:** use `spacingScreenPadding` for page edges and use
+`TimelineColumns` for Timeline positions. In order, the relevant helpers
+are `timelineTimeLeft`, `timelineTimeColumnWidth(context)`,
+`timelineTimeToZoneGap`, `timelineZoneLeft`, `timelineZoneWidth(width)`,
+and `timelineContentLeft(width)`. If you are about to write a number, an
+arithmetic expression combining a token with a literal, or a new local
+Timeline inset, stop; that is the drift this section exists to prevent.
 
 ### Why it is written down
 
@@ -50,37 +55,32 @@ timeline's hour labels each landing somewhere different. Reported
 directly: *"we need a coherent system that can manage this spacing without
 drift."*
 
-The drift was structural, not careless. The same two distances were
-expressed three different ways:
+The drift was structural, not careless. The same column geometry was
+expressed through several independent calculations:
 
-- the spatial Timeline built its gutter as `66 + spacingScreenPadding`;
-- the non-spatial Zone view hardcoded the same distance as a top-level
-  `const zoneContentLeftInset = 90.0`;
-- the page inset was a separate token at 24, so the hour labels (16) and
-  the nav above them (24) disagreed by 8px.
+- the spatial Timeline derived its gutter from a local width and page inset;
+- the non-spatial Zone view hardcoded a separate content inset;
+- the time label, reserved time column, and content gap had no single
+  three-column contract.
 
-Because `90` and `66 + 24` were *equal by coincidence*, the two views
-looked aligned — right up until the page inset changed, at which point
-they silently came apart. The non-spatial view was named as the reference
-("the right size of it comes from the non-spatial view"), so
-`spacingScreenPadding` moved **out** to 16 to meet the hour label already
-sitting there, rather than the hour moving in.
+The old values happened to align at one width, then silently came apart
+when the page inset or time label changed. The shared `TimelineColumns`
+extension now owns the measurement and both Timeline views consume it.
 
 ### How it is enforced
 
 `test/core/tokens/horizontal_spacing_system_test.dart` pins the system:
 
-- both themes agree on both values (a per-theme side inset would move the
-  page's edge when the user switched theme);
-- `zoneRowTimeLabelEdgeInset == spacingScreenPadding` and
-  `zoneContentLeftInset == spacingHourGutter` — these two are top-level
-  `const`s in the non-spatial view, which **cannot read the theme**, so
-  nothing in the type system stops them from disagreeing. This is the
-  check that catches it;
+- both themes agree on the shared spacing values (a per-theme side inset
+  would move the page's edge when the user switched theme);
+- the non-spatial hour label and spatial hour labels paint at the same
+  `spacingTimelineGutter` position;
+- both views start zone content at the same `timelineZoneLeft`;
+- the measured time column fits the widest label with clearance;
 - the gutter still leaves ≥8px clearance beside the widest hour label
   ("12:00 AM", 57.6px), the overlap rule from a real reported bug;
-- `timeline_screen.dart` reads the token and has not reintroduced a local
-  `_hourGutterWidth` constant.
+- `timeline_screen.dart` reads the shared geometry and has not reintroduced
+  a local `_hourGutterWidth` constant.
 
 ### The one exception
 
@@ -153,11 +153,11 @@ the rendered time axis as clearance changes.
 
 ---
 
-## Two-font system — mono for values, DM Sans for prose
+## Two-font system — condensed numeric font for values, DM Sans for prose
 
 The app uses exactly two fonts, and every `TextStyle` in `semantic_theme
 .dart` is built from one or the other via `TypePrimitives.fontFamily`
-(the mono family) or an explicit DM Sans override — there is no third
+(the condensed numeric family) or an explicit DM Sans override — there is no third
 family and no per-call-site font choice.
 
 **The rule**: a token whose name ends in `Mono` (`textBodyMono`,
@@ -169,7 +169,7 @@ value. The two are NOT interchangeable "same size, different mood"
 options; picking the wrong one is a real bug, not a style preference —
 see the incident below.
 
-**Known correct call sites** for the mono twin: `TaskBoundaryMarkers`
+**Known correct call sites** for the numeric twin: `TaskBoundaryMarkers`
 (the spatial Task view's own hour-gutter labels), `ZoneContainerBlock`'s
 own header time-range text, `CurrentTimeIndicator`, and any other place a
 clock time or duration renders as its own short, self-contained label.
@@ -178,14 +178,9 @@ through `ZoneRowTimeLabel` and `TaskEdgeTimeLabel`.
 
 **Incident, 2026-09-22**: `ZoneRowTimeLabel` and `ZoneContainerBlock`'s
 own header time-range text both read `theme.textCaption` (DM Sans)
-instead of `theme.textCaptionMono` — reported directly, comparing the two
-Timeline views side by side: "between views hours on spatial zone are
-not mono font, but spatial ther are mono... there is a rule in design MD
-about it?" There WASN'T one written down anywhere (the rule only lived as
-scattered doc comments on the token fields themselves in `semantic_theme
-.dart`) — this section is that missing rule, added alongside the fix so
-the next divergence is caught by a person reading this file rather than
-rediscovered from a screenshot.
+instead of `theme.textCaptionMono` — the spatial zone time labels used the
+condensed numeric font while the other view did not. The rule now lives here
+alongside the shared Timeline geometry contract.
 
 **Never**: reach for `textCaption`/`textBody` at a call site rendering a
 clock time, a duration, or any other value a user reads as a number —
@@ -1314,7 +1309,7 @@ but was a coordinate hack rather than shared structure).
   `Positioned.left` above, so nothing needs to reserve space for it).
 - Text style: `theme.textTaskEdgeTime` + `theme.colorTextSecondary` — the
   compact shared task-time style used by `TaskEdgeTimeLabel` in spatial and
-  Edit mode. It stays monospace, but is 11px so a leading task time does not
+  Edit mode. It stays in the condensed numeric font, but is 11px so a leading task time does not
   compete with the 12px `TaskBoundaryMarkers` hour axis. Not
   `textTaskTitleZone` (the row's own title scale) or `colorTextTertiary`.
 
@@ -1328,21 +1323,20 @@ ZoneRowTimeLabel({
 })
 ```
 
-**Current call sites** (as of 2026-09-22):
+**Current call sites** (as of 2026-10-02):
 - `_ZoneTaskRow` / `_ZoneExternalEventRow` (`zone_container_block.dart`)
   — a zoned row's own leading time column. `leftPaddingToEscape` =
-  `zoneContentLeftInset` (90, where a zone card itself starts — matches
-  the spatial view's own hour-gutter width, see "Horizontal spacing"
-  above) + `spacingMd` (16, `ZoneContainerBlock`'s own card padding) =
-  106. Wrapped in the row's existing `GestureDetector` (tap/drag-to-
+  `zoneContentLeftInset(theme)` (the shared `theme.timelineZoneLeft`, where
+  a zone card itself starts — see "Horizontal spacing" above) + `spacingMd`
+  (`ZoneContainerBlock`'s own card padding). Wrapped in the row's existing
+  `GestureDetector` (tap/drag-to-
   reschedule) — a `Positioned` child still hit-tests correctly wherever
   it actually paints, so escaping the label doesn't disturb its own
   gesture handling.
-- The unzoned task row (`ZoneDayTimeline`) — same 106px total, reached
-  via `zoneContentLeftInset + spacingMd` again (this row has no card of
-  its own, but is inset by the same total so its badge/title still lines
-  up under a zoned row's). Kept at the identical total specifically so
-  zoned and unzoned times stay lined up with each other, not just with
+- The unzoned task row (`ZoneDayTimeline`) — the same derived sum, reached
+  via `zoneContentLeftInset(theme, context) + spacingMd` again. This row
+  has no card of its own, but its badge/title still lines up under a zoned
+  row's; the shared calculation keeps zoned and unzoned times aligned with
   the spatial view.
 
 **Never**: a `Transform.translate` or negative `Container(margin:)` to
@@ -1488,7 +1482,7 @@ names. Now positioned inside `ZoneBackgroundBlock`'s own width, with
 
 **Zone name typography**: both the spatial Timeline's `ZoneNameLabel` and
 the Weekly Zone Authoring Grid's rotated title use `theme.textZoneName`
-(`TypePrimitives.size0`, 11px, monospace). This is deliberately smaller than
+(`TypePrimitives.size0`, 11px, the condensed numeric font). This is deliberately smaller than
 the 12px hour-axis `textCaptionMono` label and is the shared style for dense
 vertical zone annotations.
 

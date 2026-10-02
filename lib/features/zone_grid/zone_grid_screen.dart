@@ -1340,7 +1340,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                     builder: (context) {
                       final selectedIds = ref.watch(editSelectionProvider);
                       return Positioned(
-                        left: theme.spacingMd,
+                        left: DockTokens.edgeInset(theme, MediaQuery.viewPaddingOf(context)),
                         bottom: theme.spacingBottomClearance,
                         child: SafeArea(
                           top: false,
@@ -1431,6 +1431,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                     // see that widget's own doc comment.
                     child: TimelinePinchZoom(
                       multiTouch: _multiTouch,
+                      scrollController: _scroll,
                       child: Stack(
                         key: _viewportKey,
                         children: [
@@ -2165,7 +2166,7 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
             // split into its own pane rather than combined with Edit/Remove
             // (see the Tasks tab's own matching fix and its doc comment).
             Positioned(
-              left: theme.spacingMd,
+              left: DockTokens.edgeInset(theme, MediaQuery.viewPaddingOf(context)),
               bottom: theme.spacingBottomClearance,
               child: SafeArea(
                 top: false,

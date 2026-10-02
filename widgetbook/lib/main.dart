@@ -351,7 +351,7 @@ class AmbleWidgetbookApp extends StatelessWidget {
                   builder: (context) => Padding(
                     padding: const EdgeInsets.all(24),
                     child: AppVoiceWaveform(
-                      theme: AmbleTheme.light,
+                      theme: Theme.of(context).extension<AmbleTheme>()!,
                       level: 0,
                       isActive: false,
                     ),
@@ -362,7 +362,7 @@ class AmbleWidgetbookApp extends StatelessWidget {
                   builder: (context) => Padding(
                     padding: const EdgeInsets.all(24),
                     child: AppVoiceWaveform(
-                      theme: AmbleTheme.light,
+                      theme: Theme.of(context).extension<AmbleTheme>()!,
                       level: 0.5,
                     ),
                   ),
@@ -371,7 +371,10 @@ class AmbleWidgetbookApp extends StatelessWidget {
                   name: 'Listening (loud)',
                   builder: (context) => Padding(
                     padding: const EdgeInsets.all(24),
-                    child: AppVoiceWaveform(theme: AmbleTheme.light, level: 1),
+                    child: AppVoiceWaveform(
+                      theme: Theme.of(context).extension<AmbleTheme>()!,
+                      level: 1,
+                    ),
                   ),
                 ),
               ],
@@ -573,6 +576,7 @@ class AmbleWidgetbookApp extends StatelessWidget {
           themeBuilder: (context, theme, child) =>
               Theme(data: theme, child: child),
         ),
+        TextScaleAddon(min: 1, max: 2, initialScale: 1, divisions: 4),
       ],
     );
   }
@@ -769,7 +773,7 @@ class _SheetHeaderDemo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = AmbleTheme.light;
+    final theme = Theme.of(context).extension<AmbleTheme>()!;
     return AppSheetHeader(
       theme: theme,
       onClose: () {},
@@ -790,7 +794,7 @@ class _SheetHeaderWithGroupDemo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = AmbleTheme.light;
+    final theme = Theme.of(context).extension<AmbleTheme>()!;
     return AppSheetHeader(
       theme: theme,
       onClose: () {},
@@ -825,7 +829,7 @@ class _SheetHeaderWithHandleDemo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = AmbleTheme.light;
+    final theme = Theme.of(context).extension<AmbleTheme>()!;
     return AppSheetHeader(
       theme: theme,
       onClose: () {},
@@ -875,7 +879,7 @@ class _DragToCloseHandleDemoState extends State<_DragToCloseHandleDemo> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = AmbleTheme.light;
+    final theme = Theme.of(context).extension<AmbleTheme>()!;
     return Center(
       child: ListenableBuilder(
         listenable: _controller,

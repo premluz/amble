@@ -190,39 +190,46 @@ class _ConnectedSegment extends StatelessWidget {
       vertical: theme.spacingXs / 2,
     );
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: showLeadingDivider
-            ? Border(
-                left: BorderSide(
-                  color: theme.colorBorder,
-                  width: theme.borderWidthHairline,
-                ),
-              )
-            : null,
-      ),
-      child: AppPressFeedback(
-        onTap: onTap,
-        rippleColor: selected ? selectedTextColor : theme.colorTextPrimary,
-        child: Container(
-          alignment: Alignment.center,
-          padding: insetPadding,
-          decoration: selected && fillColor != null
-              ? BoxDecoration(
-                  color: fillColor,
-                  borderRadius: BorderRadius.circular(theme.radiusPill),
+    return Semantics(
+      button: true,
+      selected: selected,
+      inMutuallyExclusiveGroup: true,
+      label: label,
+      onTap: onTap,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: showLeadingDivider
+              ? Border(
+                  left: BorderSide(
+                    color: theme.colorBorder,
+                    width: theme.borderWidthHairline,
+                  ),
                 )
               : null,
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textBody.copyWith(
-              color: selected ? selectedTextColor : theme.colorTextSecondary,
-              // Not bold in either state — matches AppButton/AppTabSwitch's
-              // own text weight fix; selected/unselected are distinguished
-              // by the fill and color, not by boldness.
-              fontWeight: FontWeight.w500,
+        ),
+        child: AppPressFeedback(
+          onTap: onTap,
+          rippleColor: selected ? selectedTextColor : theme.colorTextPrimary,
+          child: Container(
+            alignment: Alignment.center,
+            padding: insetPadding,
+            decoration: selected && fillColor != null
+                ? BoxDecoration(
+                    color: fillColor,
+                    borderRadius: BorderRadius.circular(theme.radiusPill),
+                  )
+                : null,
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textBody.copyWith(
+                color: selected ? selectedTextColor : theme.colorTextSecondary,
+                // Not bold in either state — matches AppButton/AppTabSwitch's
+                // own text weight fix; selected/unselected are distinguished
+                // by the fill and color, not by boldness.
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ),

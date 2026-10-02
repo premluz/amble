@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 
 /// A time as written in the Day screen's LEFT time column (hour ticks, a
 /// task's start/end, the "now" label, the list view's row times). In
-/// 24-hour: "13:41", as ever. In 12-hour it is compact, so it fits the same
-/// fixed column as 24-hour and switching format never pushes the timeline:
-/// a whole hour reads "9 am" / "12 pm", any other time "9:15a" / "12:45p"
-/// (day-period in lower case, like the rest of the app).
-/// The column is sized for the widest of these (see
-/// `TimelineColumns.timelineTimeColumnWidth`).
+/// 24-hour: "13:41", as ever. In 12-hour a whole hour reads "9 am" /
+/// "12 pm" and any other time "9:15am" / "12:45pm" (day-period in lower
+/// case, like the rest of the app). It used to drop the "m" off non-whole
+/// times ("9:15a") to save width; reported directly: "still we missing m in
+/// some hours." The column is sized for the widest of these (see
+/// `TimelineColumns.timelineTimeColumnWidth`), so it widens to fit.
 String timelineClock(BuildContext context, TimeOfDay time) => timelineClockText(
   time,
   use24Hour: MediaQuery.alwaysUse24HourFormatOf(context),
@@ -21,7 +21,7 @@ String timelineClockText(TimeOfDay time, {required bool use24Hour}) {
   final hour = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
   final pm = time.period == DayPeriod.pm;
   if (time.minute == 0) return '$hour ${pm ? 'pm' : 'am'}';
-  return '$hour:$minute${pm ? 'p' : 'a'}';
+  return '$hour:$minute${pm ? 'pm' : 'am'}';
 }
 
 /// Every label the column must fit, for measuring its width: each hour in

@@ -209,7 +209,7 @@ void main() {
     'shows "start - end (duration)", matching TaskCapsuleBlock\'s format',
     (tester) async {
       await pump(tester);
-      expect(find.textContaining('9 am - 12:50p (3h 50m)'), findsOneWidget);
+      expect(find.textContaining('9 am - 12:50pm (3h 50m)'), findsOneWidget);
     },
   );
 
@@ -219,7 +219,7 @@ void main() {
     'TaskCapsuleBlock contract',
     (tester) async {
       await pump(tester, durationVisible: false);
-      expect(find.textContaining('9 am - 12:50p'), findsOneWidget);
+      expect(find.textContaining('9 am - 12:50pm'), findsOneWidget);
       expect(find.textContaining('3h 50m'), findsNothing);
     },
   );
@@ -233,7 +233,7 @@ void main() {
     (tester) async {
       await pump(tester, timeRangeVisible: false);
       expect(find.textContaining('9 am'), findsNothing);
-      expect(find.textContaining('12:50p'), findsNothing);
+      expect(find.textContaining('12:50pm'), findsNothing);
       expect(find.textContaining('(3h 50m)'), findsOneWidget);
     },
   );
@@ -271,7 +271,7 @@ void main() {
             '12:00 PM" range, which is a different Text widget and '
             'unaffected by this per-row toggle',
       );
-      expect(find.textContaining('12:50p'), findsNothing);
+      expect(find.textContaining('12:50pm'), findsNothing);
       expect(find.textContaining('3h 50m'), findsNothing);
     });
 
@@ -327,7 +327,7 @@ void main() {
       );
 
       expect(find.textContaining('9 am'), findsOneWidget);
-      expect(find.textContaining('12:50p'), findsNothing);
+      expect(find.textContaining('12:50pm'), findsNothing);
     });
 
     testWidgets('off (default): the row keeps its existing start-end '
@@ -335,7 +335,7 @@ void main() {
       await pump(tester);
 
       expect(find.textContaining('9 am'), findsOneWidget);
-      expect(find.textContaining('12:50p'), findsOneWidget);
+      expect(find.textContaining('12:50pm'), findsOneWidget);
     });
 
     // **2026-09-20 — superseded, deliberately.** Was `colorTextTertiary`,

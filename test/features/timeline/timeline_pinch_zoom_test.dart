@@ -1,4 +1,5 @@
 import 'package:amble/features/timeline/timeline_pinch_zoom.dart';
+import 'package:amble/core/dev_config.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -26,6 +27,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          devShowTouchesProvider.overrideWithValue(false),
           preferencesRepositoryProvider.overrideWithValue(
             HivePreferencesRepository(box),
           ),

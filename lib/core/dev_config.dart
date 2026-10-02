@@ -336,11 +336,11 @@ class DevTrackedPatternDemoData extends _$DevTrackedPatternDemoData {
 
 /// Draws a soft circle under every finger, for screen recordings — the
 /// app's take on iOS's "show touches", requested directly. Purely visual:
-/// touches still reach the app. In-memory only, off by default.
+/// touches still reach the app. In-memory only, on by default.
 @Riverpod(keepAlive: true)
 class DevShowTouches extends _$DevShowTouches {
   @override
-  bool build() => false;
+  bool build() => true;
 
   void set(bool value) => state = value;
 }

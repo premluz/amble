@@ -5447,3 +5447,148 @@ screen recordings, behind a Developer toggle with a subtle animation.
   rather than the original's white, so it also shows on the light theme.
   It settles in from 0.8× over `motionFast`; on release it fades while
   easing to 1.25× over `motionNormal`.
+
+## 2026-10-01 — The undo toast is see-through glass
+
+Requested directly: "make the toast glass and semitransparent." It was a
+solid inverted slab (`colorTextPrimary` fill, surface-coloured text). It
+now uses `AppFloatingSurface` with the glass material: backdrop blur,
+glass edge and menu shadow, the same as the dock and menus. Its fill is
+`ToastTokens.fill`, `colorSurfaceOverlay` at 0.7, which the glass
+material then multiplies by its own 0.92. So it's about 64% opaque, where
+menus are near-opaque. The message text is `colorTextPrimary`; Undo stays
+in the accent colour.
+
+## 2026-10-01 — 12-hour times always spell am/pm
+
+Reverses the compact "9:15a" / "12:45p" form (kept so 12-hour fit the
+24-hour column). Reported directly, twice: "still we missing m in some
+hours." Every 12-hour time is now "9:15am" / "12:45pm"; whole hours stay
+"9 am". The time column and edge pill measure the longer labels, so the
+timeline gutter is about one "m" wider.
+
+## 2026-10-01 — The Demo day comes from a real backup
+
+Source: `amble-backup-2026-10-01T12-02-24-734815.json` (an in-app export).
+It carries tasks, labels, zones and zone tags only. It has no presets,
+patterns or section names, so those stay as they were. The zones and the
+24 Things (six groups of four) already matched the Demo exactly. What it
+changed:
+- **The day:** the 19 back-to-back tasks now use the rearranged times and
+  lengths (Walk 75 min, Fishing 09:00–10:30, Family lunch 10:30, Team
+  meeting 11:30, Book holidays 12:30, "No screens" 20:00 for an hour…),
+  which end in a 10-minute gap before 20:00.
+- **Two preset tweaks, because the Demo makes its labels from presets:**
+  Fishing's colour is ocean (14, was 5), and Shopping is the cart icon in
+  teal (5, was the bag in pink). Both are labels the day uses.
+- **Not adopted:** a "Swimming" label with a bike icon (unused by the
+  day), and the zone tags left from the other onboarding profiles.
+
+## 2026-10-01 — Bottom toolbars: side inset = bottom gap
+
+Requested directly: "for toolbar make same side padding as from bottom."
+Every floating bottom toolbar used a 16 px side inset while sitting above
+the home-indicator area plus 8 px (about 42 px on a notched iPhone). New
+`DockTokens.edgeInset` = bottom safe area + `spacingBottomClearance`, used
+as the side inset for: the Day dock (left and right), the "+" button, the
+Inbox's controls left of "+", the Patterns view dock, both zone-grid docks,
+and voice mode's toolbar and close pane. On a phone without a home
+indicator, both gaps are 8 px. Sheet footers (`StepScaffold`) are not
+toolbars and keep their own inset.
+
+## 2026-10-01 — Calm quick-add scroll; zoom moves the whole canvas at once
+
+Both requested directly.
+- **Scrolling to a new quick-add draft** was 250 ms of `easeOut`: full
+  speed from the first frame. It now glides on `curveStandard`
+  (ease-in-out) for `TimelineScrollTokens.revealDuration`: 450 ms plus
+  0.6 ms per pixel, capped at 900 ms. If the draft is already visible
+  above the sheet, the page doesn't move at all.
+- **Pinch zoom:** hour labels re-laid out instantly at the new scale,
+  while task blocks eased into their new place (`AnimatedPositioned`,
+  `motionNormal`) and height (`AnimatedContainer`, `motionSlow`), so they
+  visibly trailed. A `pixelsPerMinute` change now snaps both for that
+  frame, using the same one-frame suppression the List/Task view switch
+  already used (`snapGeometry` on `TaskCapsuleBlock`). Cascade pushes and
+  duration edits still animate.
+- `TimelinePixelsPerMinuteSetting.set` now updates its state before
+  saving rather than after, so a pinch never waits on a disk write between
+  frames.
+
+## 2026-10-01 — Simulator zoom buttons follow Show touches
+
+Developer → Show touches also enables a top-right − / + pair on the
+shared `TimelinePinchZoom` viewport, in both spatial Tasks and Zones,
+including edit mode. The debug-only controls reuse `AppButton` and theme
+spacing, and multiply/divide the existing persisted timeline scale by
+1.25. The shared provider clamps the scale; each button disables at its
+limit. This is a mouse-accessible alternative to pinching in Device Hub,
+not synthetic touch injection. Turning Show touches off hides both
+controls; release/profile builds never show them.
+
+## 2026-10-01 — Keyboard pinch replaces the simulator zoom buttons
+
+The simulator shortcut remains gated by Developer → Show touches and
+debug builds. There are no persistent controls or hover dots: with the
+cursor over a spatial Tasks or Zones viewport, 1 animates two touch-style
+dots apart (zoom in), and 2 brings them together (zoom out), then they
+fade away. Number-pad 1/2 work too. Modified keys, text-field focus,
+inactive routes, and real pointer contact prevent starting a simulation.
+Each key press runs one animation; key repeat does not queue pinches.
+
+The preview uses the existing touch tokens and shared, clamped, persisted
+timeline scale. It does not inject taps into tasks or zone painting.
+The scroll offset follows the time beneath the cursor, accounting for
+the shared top clearance and clamping at scroll limits. Both spatial
+surfaces pass their existing scroll controller to the shared wrapper.
+
+## 2026-10-02 — Recurrence redesign: behavioral contract first; seven behaviors confirmed
+
+A proposal to replace materialized recurring instances with a `Series` +
+computed occurrences was reviewed and **not approved for implementation as
+written**. Approved direction: a dedicated `Series` entity owning its rule,
+separate from occurrences. Before any code, `docs/RECURRENCE_CONTRACT.md`
+specifies the behavior both candidate designs (series + materialized rows, or
+series + revisions + computed occurrences) must satisfy, with 26 acceptance
+scenarios. `CONSTITUTION.md`'s "materialized instances" section stays
+authoritative until an option is approved against that contract.
+
+Confirmed directly:
+- D1 Adding a note never freezes an occurrence's time/title/duration/category.
+- D2 Repeating times are "where I am" (floating local) by default.
+- D3 Cancelled occurrences never count against streaks.
+- D4 A series edit never changes past days (effective-dated revisions).
+- D5 Streak foundation, not streaks: data must distinguish omitted, skipped,
+  done, done with value — each with or without a note.
+- D6 Undo reverses the data and every pattern reflects it.
+- D7 Each occurrence stores its current state, written on change; no per-write
+  log. Undo restores the pre-write snapshot (existing `AppUndoToast` model).
+  Accepted limit: "done then undone" is not recoverable without a separate
+  event log.
+
+Migration must never infer "untouched" rows: `_deleteUntouchedFutureInstances`
+checks only pending + never moved, so edited fields and notes are invisible to
+it. Migration keeps every row and diffs fields against current defaults.
+
+## 2026-10-02 — Recurrence contract revision 2: credit, omission deadline, "all" edits
+
+Second review of `docs/RECURRENCE_CONTRACT.md` accepted. Confirmed directly
+via AskUserQuestion:
+- D8 Credit: store both the occurrence's original date and the date it was
+  completed; metrics choose later.
+- D9 Omitted at the later of midnight after its start date and its scheduled
+  end (23:00–01:00 is omitted at 01:00).
+- D10 "All occurrences" edits reach the future only; past keeps its title,
+  category and other context.
+
+D4 split into D4a (automatic series changes never change the past, including
+context), D4b (history changes only via an explicit correction action, none
+built), D4c (outcomes may be recorded after the fact). Occurrence key changed
+to series id + original date + same-day ordinal, so a series time change keeps
+identity. Migration policy now states its ambiguity: future rows equal to
+defaults become inherited, justified because today's "all future" and rule
+edits already regenerate those rows; past rows are kept as-is.
+
+Existing defect recorded (not fixed): `_deleteFutureInstancesForRealign` and
+`_deleteUntouchedFutureInstances` delete future pending rows including their
+notes when a series time/duration or rule changes.

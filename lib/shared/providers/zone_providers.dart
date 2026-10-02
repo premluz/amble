@@ -104,6 +104,7 @@ class ZoneList extends _$ZoneList {
     final today = DateTime.now();
     final current = zones.where(
       (z) =>
+          !z.archived &&
           z.effectiveUntil == null &&
           (z.anchorDate == null ||
               !z.anchorDate!.isBefore(

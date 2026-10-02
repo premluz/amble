@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../tokens/component_tokens.dart';
 import '../tokens/semantic_theme.dart';
 import 'app_dock_primitives.dart';
 import 'app_page_toolbar.dart';
@@ -45,7 +46,7 @@ class AppFloatingCreateButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     return Positioned(
-      right: theme.spacingMd,
+      right: DockTokens.edgeInset(theme, MediaQuery.viewPaddingOf(context)),
       bottom: theme.spacingBottomClearance,
       child: SafeArea(
         top: false,

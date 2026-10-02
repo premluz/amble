@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/tokens/depth_motion_spec.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/tokens/task_state_tokens.dart';
+import '../../core/tokens/component_tokens.dart';
 import '../../core/tokens/type_primitives.dart';
 import '../../core/widgets/app_floating_create_button.dart';
 import '../../core/widgets/app_sweep_fade.dart';
@@ -504,7 +505,7 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
             // it sat one rung smaller right next to the "+" it's meant to
             // match.
             Positioned(
-              right: theme.spacingMd + theme.sizeButtonLg + theme.spacingMd,
+              right: DockTokens.edgeInset(theme, MediaQuery.viewPaddingOf(context)) + theme.sizeButtonLg + theme.spacingMd,
               bottom: theme.spacingBottomClearance,
               child: SafeArea(
                 top: false,

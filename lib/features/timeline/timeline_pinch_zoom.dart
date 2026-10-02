@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../shared/providers/preferences_providers.dart';
+import 'timeline_debug_zoom_controls.dart';
 
 /// Detects a two-finger pinch anywhere within [child]'s bounds and adjusts
 /// [TimelinePixelsPerMinuteSetting] live — the Timeline's own vertical
@@ -41,9 +42,15 @@ import '../../shared/providers/preferences_providers.dart';
 /// Zone Grid's edit mode all get this same widget wrapping the same
 /// scrollable surface.
 class TimelinePinchZoom extends ConsumerStatefulWidget {
-  const TimelinePinchZoom({super.key, required this.child, this.multiTouch});
+  const TimelinePinchZoom({
+    super.key,
+    required this.child,
+    this.multiTouch,
+    this.scrollController,
+  });
 
   final Widget child;
+  final ScrollController? scrollController;
 
   /// Set true while two or more fingers are down (a pinch), false once
   /// fewer are — so a single-finger gesture (a marquee sweep) can stand
@@ -147,7 +154,14 @@ class _TimelinePinchZoomState extends ConsumerState<TimelinePinchZoom> {
       onPointerMove: _handlePointerMove,
       onPointerUp: _handlePointerUp,
       onPointerCancel: _handlePointerCancel,
-      child: TimelineMultiTouch(notifier: _multiTouch, child: widget.child),
+      child: TimelineMultiTouch(
+        notifier: _multiTouch,
+        child: TimelineDebugZoomControls(
+          multiTouch: _multiTouch,
+          scrollController: widget.scrollController,
+          child: widget.child,
+        ),
+      ),
     );
   }
 }

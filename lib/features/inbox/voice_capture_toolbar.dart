@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/tokens/component_tokens.dart';
 import '../../core/tokens/voice_mode_tokens.dart';
 import '../../core/widgets/app_bottom_dock.dart';
 import '../../core/widgets/app_button.dart';
@@ -19,15 +20,16 @@ import '../../core/widgets/app_voice_waveform.dart';
       appButtonHeightFor(theme, AppButtonSize.md) + theme.spacingXs * 2;
   final bottom =
       size.height - viewPadding.bottom - theme.spacingBottomClearance;
+  final edge = DockTokens.edgeInset(theme, viewPadding);
   final close = Rect.fromLTWH(
-    size.width - theme.spacingMd - height,
+    size.width - edge - height,
     bottom - height,
     height,
     height,
   );
   return (
     toolbar: Rect.fromLTRB(
-      theme.spacingXl,
+      edge,
       bottom - height,
       close.left - theme.spacingSm,
       bottom,

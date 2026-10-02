@@ -46,6 +46,7 @@ class SettingsDetailScaffold extends StatelessWidget {
                     icon: Icons.arrow_back_rounded,
                     onPressed: () => Navigator.of(context).pop(),
                     shape: AppButtonShape.circle,
+                    semanticLabel: 'Back',
                     // Ghost, not primary (its old default) — a back/nav
                     // control is chrome, not the screen's action, and
                     // should never compete visually with a real CTA.

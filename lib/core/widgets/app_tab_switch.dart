@@ -266,48 +266,60 @@ class _TabSwitchSegment extends StatelessWidget {
         ? (_tabHighlight(theme, variant) ?? const SizedBox.shrink())
         : const SizedBox.shrink();
 
-    return AppPressFeedback(
+    return Semantics(
+      button: true,
+      selected: selected,
+      inMutuallyExclusiveGroup: true,
+      label: label,
       onTap: onTap,
-      borderRadius: BorderRadius.circular(theme.radiusPill),
-      rippleColor: selected ? selectedTextColor : theme.colorTextPrimary,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Positioned.fill(child: highlight),
-          Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: theme.spacingSm,
-              vertical: theme.spacingSm,
-            ),
-            child: Text(
-              label,
-              textAlign: TextAlign.center,
-              style: theme.textBody.copyWith(
-                color: selected ? selectedTextColor : theme.colorTextSecondary,
-                // Not bold — matches AppButton's own text weight fix;
-                // selected/unselected are distinguished by the highlight
-                // surface and color, not by boldness.
-                fontWeight: FontWeight.w500,
+      child: AppPressFeedback(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(theme.radiusPill),
+        rippleColor: selected ? selectedTextColor : theme.colorTextPrimary,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Positioned.fill(child: highlight),
+            Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: theme.spacingSm,
+                vertical: theme.spacingSm,
               ),
-            ),
-          ),
-          // A 2px border over the resting fill, not a fill-color change —
-          // the same `ZoneContainerBlock.isDropTarget` idiom, sized for
-          // this much smaller tab target. Drawn last so it always shows
-          // over the selection highlight, since a tab a drag is hovering
-          // may or may not already be the selected one.
-          if (isDropTarget)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: theme.colorTextPrimary, width: 2),
-                    borderRadius: BorderRadius.circular(theme.radiusPill),
-                  ),
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                style: theme.textBody.copyWith(
+                  color: selected
+                      ? selectedTextColor
+                      : theme.colorTextSecondary,
+                  // Not bold — matches AppButton's own text weight fix;
+                  // selected/unselected are distinguished by the highlight
+                  // surface and color, not by boldness.
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ),
-        ],
+            // A 2px border over the resting fill, not a fill-color change —
+            // the same `ZoneContainerBlock.isDropTarget` idiom, sized for
+            // this much smaller tab target. Drawn last so it always shows
+            // over the selection highlight, since a tab a drag is hovering
+            // may or may not already be the selected one.
+            if (isDropTarget)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: theme.colorTextPrimary,
+                        width: 2,
+                      ),
+                      borderRadius: BorderRadius.circular(theme.radiusPill),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

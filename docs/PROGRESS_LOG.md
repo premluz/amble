@@ -9119,3 +9119,229 @@ new.
   (`TouchVisualizerTokens`), main.dart (builder), and a Developer
   settings "Recording" section.
 - Full suite: the same 18 existing failures. Analyze: 17, unchanged.
+
+## 2026-10-01 — Glass undo toast
+
+- app_undo_toast (AppFloatingSurface glass), component_tokens
+  (`ToastTokens`). New toast test: glass material, thinned fill, normal
+  text colour. Full suite: the same 18 existing failures. Analyze: 17,
+  unchanged.
+
+## 2026-10-01 — am/pm always spelled
+
+- timeline_clock (formatter); expectations updated in timeline_clock,
+  pending_task_pill, task_edge_time_label, zone_container_block,
+  timeline_columns and time_column_fit tests. Full suite: the same 18
+  existing failures. Analyze: 17, unchanged.
+
+## 2026-10-01 — Demo day from the backup
+
+- profiles.json (Demo `tasks` only; other profiles byte-identical),
+  label_presets (Fishing colour, Shopping icon and colour). The catalog
+  test's back-to-back check and the Demo materializer test pass. Full
+  suite: the same 18 existing failures. Analyze: 17, unchanged.
+
+## 2026-10-01 — Toolbar side inset matches the bottom gap
+
+- component_tokens (`DockTokens`); main.dart, app_floating_create_button,
+  inbox_screen, tracked_behavior_list_screen, zone_grid_screen (×2),
+  voice_capture_toolbar.
+- Tests: bottom_clearance_system_test now measures side == bottom with a
+  34 px home-indicator inset (fails at the old 16) and checks the voice
+  layout; the voice close-pane test asserts the same rule. Full suite:
+  the same 18 existing failures. Analyze: 17, unchanged.
+
+## 2026-10-01 — Calm draft scroll; canvas-wide zoom
+
+- timeline_screen (`_scrollToPendingDraft`, block suppression on a scale
+  change), task_capsule_block (`snapGeometry`), component_tokens (reveal
+  timing), preferences_providers (state before save).
+- Tests: quick_task_add gained "stays put when visible" and a gentle-start
+  check (both fail on the old scroll: an 82 px needless scroll and a
+  15.7 px first-frame jump). New pinch_zoom_canvas_test drives a real
+  pinch (fails without the fix: the pill is still at its old height in
+  the first frame). Full suite: the same 18 existing failures. Analyze:
+  17, unchanged.
+
+## 2026-10-01 — Spatial task move clears prior selection; sheets cover toasts
+
+- timeline_screen clears a different armed task when a spatial move begins.
+- app_undo_toast/app_sheet keep active undo toasts below newly pushed sheets.
+- Added focused armed-task and sheet-over-toast widget coverage.
+
+## 2026-10-01 — Simulator zoom controls follow Show touches
+
+- Added `timeline_debug_zoom_controls.dart` and integrated it in the shared
+  pinch viewport: top-right − / + controls appear with Developer → Show
+  touches on spatial Tasks and Zones, including edit mode, debug builds only.
+- Reuses the persisted pinch scale, existing limits, AppButton and theme
+  spacing. Added toggle, scale-change and disabled-at-limit widget coverage.
+- Focused zoom tests: 5 passed. Full suite: 2006 passed, 22 failed;
+  `/tmp/amble-debug-zoom-tests.log`. Analyze: 17 existing issues outside
+  the changed files, including missing `package:widgetbook/main.dart`;
+  `/tmp/amble-debug-zoom-analyze.log`. No Simulator visual check performed.
+
+## 2026-10-01 — Keyboard pinch at the cursor
+
+- Replaced the − / + controls with 1/2 keyboard pinch previews in
+  `timeline_debug_zoom_controls.dart`; `timeline_simulated_pinch.dart`
+  supplies geometry and the existing touch-dot styling. The shared wrapper
+  receives scroll controllers from the spatial Tasks and Zones screens.
+- Developer → Show touches gates the shortcut and documents it. Idle hover
+  shows no dots; 1 spreads them and zooms in, 2 converges them and zooms out.
+  Dots fade after the animation. Zoom anchors the time beneath the cursor
+  within scroll limits; focused text fields keep their normal number keys.
+- Replaced obsolete button tests with keyboard animation, cursor anchoring,
+  gate/cancellation and text-focus coverage. Seven focused tests passed.
+  Full suite: 2008 passed, 22 failed (`/tmp/amble-keyboard-pinch-tests.log`).
+  Analyzer: the existing 17 issues (`/tmp/amble-keyboard-pinch-analyze.log`).
+  Actual Device Hub keyboard/hover forwarding and appearance not verified.
+
+## 2026-10-01 — Promo film plan and opening shot (no app code changed)
+
+- Read BRAND/SCOPE/CONSTITUTION/DESIGN_SYSTEM and the live app (Simulator,
+  Days / Things / Patterns) to extract film direction. Full film plan and
+  the opening shot sheet live in `~/Rios Motion/dist/docs/FILM.md`.
+- Built 0:00–0:10 "First light" as studio scene `opening`
+  (`~/Rios Motion/dist/scenes/opening/`), reusing the studio exporter,
+  OKLab colour math and the phone-reveal day-view toolbar. Rendered
+  `~/Movies/Rios/rios-opening-1920x1080.mp4` (10.0 s, 30 fps, silent).
+- Film-relevant gap noted: the trailing-checkbox emoji celebration conflicts
+  with BRAND §19, so the film shows swipe completion only.
+
+## 2026-10-01 — Promo film chapter 1 "Plan" (no app code changed)
+
+- Built 0:10–0:17 as studio scene `plan` (`~/Rios Motion/dist/scenes/plan/`):
+  zones paint in, the frog tosses "Read the brief" into Work. Reuses the
+  opening modules and the add-task frog sheets. Rendered
+  `~/Movies/Rios/rios-plan-1920x1080.mp4` (7.0 s, silent).
+- Opening re-rendered: Fishing moved 10:30 → 10:45 so the new 15-minute
+  dot fits in Work. Armchair scene moved to the Evening chapter.
+
+## 2026-10-01 — Promo film chapter 2 "Disruption" (no app code changed)
+
+- Built 0:17–0:24 as studio scene `disruption`: Build an app overruns
+  10:10 → 10:50 behind the presenting frog, a push and whip into its blue,
+  match cut into the existing calendar-chaos scene. Rendered
+  `~/Movies/Rios/rios-disruption-1920x1080.mp4` (7.0 s, silent).
+- Shared hooks added to the opening pills (`T.stretch`, `T.hook`); opening
+  and plan frames verified byte-identical after the refactor.
+
+## 2026-10-01 — Standalone 30 s promo "Plans change." (no app code changed)
+
+- New studio scene `promo` (`~/Rios Motion/dist/scenes/promo/`), own script
+  rather than the chapter film: life happens to three tasks, the usual
+  calendar jams, then Drag / Push / Focus / Done in the light Days view and
+  the logo. Script and beat sheet in `dist/docs/PROMO-30.md`.
+- Rendered `~/Movies/Rios/rios-promo-30s.mp4` (30.0 s, 1920×1080, with a
+  synthesised scratch score cut to the 120 BPM grid). Render/score/mux
+  scripts saved at the studio root.
+- Same day: replaced the 8.5–11 s text beat with a new drawn metaphor
+  (`promo-metaphor.js`): a stone breaks a concrete stack ("Most planners"),
+  then lands in three flowing lanes that part around it ("Rios"). Score and
+  `~/Movies/Rios/rios-promo-30s.mp4` regenerated.
+- Same day: removed the reused calendar-chaos frog gag from the promo.
+  6–7 s is now a fourth life line ("Something comes up."); the concrete /
+  river metaphor runs 7–11 s. The promo loads no raster assets. Score and
+  `~/Movies/Rios/rios-promo-30s.mp4` regenerated.
+
+## 2026-10-01 — Second 30 s promo "Tuesday has a tune" (no app code changed)
+
+- New studio scene `song` (`~/Rios Motion/dist/scenes/song/`), outside the
+  brand system on purpose: the day as a risograph piano roll that plays,
+  falls out of tune (plates misregister), and is rearranged back in tune.
+  Beat sheet in `dist/docs/TUESDAY-30.md`.
+- Soundtrack generated from the scene's own event list
+  (`song-events.cjs` → `song-score.py`), muxed with `mux.swift`.
+  Rendered `~/Movies/Rios/rios-tuesday-30s.mp4` (30.0 s, 1920×1080).
+
+## 2026-10-02 — Design-system accessibility and token audit follow-up
+
+- Shared `AppButton` semantics now expose the real `onPressed` callback,
+  including icon-only labels, loading/disabled state, and circle content.
+- `AppSelectableChip`, `AppTabSwitch`, and `AppConnectedButtons` now expose
+  selected-state semantics, with mutual exclusivity opt-in where appropriate.
+- Repaired the Widgetbook smoke test to launch `AmbleWidgetbookApp` and
+  reconciled the design-system spacing documentation with the current
+  three-column Timeline token contract.
+
+## 2026-10-02 — Product reel "Built for 9:42" (no app code changed)
+
+- New standalone toolchain `~/Rios Reel/` (nothing from Rios Motion): HTML/CSS
+  scenes rendered by Playwright, compiled Swift encoder with 3-subframe
+  motion blur, stdlib-synth score from the reel's own cue sheet. Fonts and
+  Tabler icons link to the app's own assets/package.
+- Story built from app code: Push all cascade, Quick Capture highlights,
+  What Matters timing, swipe-complete → Patterns grid. Output
+  `~/Movies/Rios/rios-built-for-942.mp4` (30.0 s, 1920×1080, with audio).
+- App copy finding: the cascade undo toast reads "Moved 3 task(s)"
+  (`timeline_screen.dart`, `move_all_sheet.dart`); the reel shows "Moved 3
+  tasks". Worth a proper plural in the app.
+
+## 2026-10-02 — Video system documented; dot boards made reusable (no app code changed)
+
+- `~/Rios Reel/SYSTEM.md`: one map of all four Rios videos (toolchain,
+  source, what to edit for timing/copy/content/sound) and the shared
+  visual elements with where each is implemented.
+- Dot boards extracted to `~/Rios Reel/js/board.js` (5×7 station font A–Z,
+  digits, punctuation; shapes dot/pill/star/heart/check/arrow/wave/grid;
+  flow pairing; HTML + SVG renderers) with a gallery `boards.html?seq=`.
+  The 9:42 reel now uses it; its rendered output is byte-identical
+  (fingerprint check, `tools/fingerprint.cjs`).
+
+## 2026-10-02 — Design-system follow-up verified
+
+- AppButton keyboard activation now routes through its real callback, with
+  focused accessibility coverage for labelled semantics and keyboard input.
+- AppSelectableChip defaults to non-exclusive semantics so weekday-style
+  multi-select controls are not announced as radio-like choices.
+- Widgetbook demos now inherit the active light/dark theme and expose a
+  supported text-scale control; typography and Timeline geometry notes were
+  aligned with the live token implementation.
+
+## 2026-10-02 — Zone painting ignores archived placements
+
+- Fixed new weekly zone saves cascading around archived placements that are
+  hidden from the grid. Added a provider regression test with two live zones
+  behind an archived row; it reproduced the unexpected shifts before the fix.
+
+## [2026-10-02] Recurrence data model: contract instead of code
+
+Drafted a Series + computed-occurrence redesign, then took an external review
+of it. Accepted most findings: field-level override meaning, historical
+meaning after series edits, occurrence identity across moves, cancel vs skip,
+and migration data-loss risk. Wrote `docs/RECURRENCE_CONTRACT.md` — terms,
+seven confirmed behaviors (incl. streak-foundation outcomes and undo), open
+questions, and 26 acceptance scenarios — and recorded the decisions in
+DECISIONS.md. No code changed. Next: answer the contract's open questions
+(§8 edit scopes), then compare the two storage options against it.
+
+## [2026-10-02] Promo film "Same day. More life." (video only, no app code changed)
+
+Rebuilt the fifth 30 s film after review rejected v1 (planner beat drawn in Rios pills, off-product UI,
+pointless twelve-week grid). New arc: the same Thursday in a generic calendar (2 pm pile-up squeezed into
+truncating quarter columns) -> each rectangle folds into its Rios line -> two drags onto the real
+Overlap / Push all / Trim menu (Podcast beside Treadmill, Meet Joe beside Lunch) -> 75 freed minutes
+become Call Mum and a walk -> board +1:15 -> +LIFE. Pills, chrome, zones and menu reuse the 9:42 reel's
+renderers; clusters follow task_overlap_layout.dart / overlap_cluster_block.dart. Output
+`~/Movies/Rios/rios-more-life.mp4` (v1 kept as `-v1`). Source `~/Rios Reel/` (`life.html`, `js/life/`),
+documented in its SYSTEM.md. 9:42 reel render fingerprint and score unchanged.
+
+## [2026-10-02] Recurrence contract revision 2
+
+Took a second review of the contract; fixed two wrong guarantees (identity
+keyed on start time contradicted keeping identity across time changes; S26
+claimed migration loses nothing) and added credit attribution, omission
+deadline, travel, resolver merging, data on dropped dates, conflict-safe undo,
+target versioning by occurrence date, and completion separated from streak
+success. Three product decisions confirmed (D8–D10). Found while checking the
+migration policy: today's series edits silently delete notes on future
+occurrences — logged in DECISIONS.md, not fixed. No code changed.
+
+## 2026-10-02 — Agent-facing component usage guide
+
+Added `docs/COMPONENT_GUIDE.md` as a selection index linking common UI jobs to
+shared widgets, canonical design rules, focused accessibility coverage, and
+Widgetbook stories. Linked it from `CLAUDE.md` for UI work and replaced the
+Widgetbook starter README with project-specific run and catalog guidance. No
+app code changed.

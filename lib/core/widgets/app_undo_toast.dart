@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../tokens/component_tokens.dart';
 import '../tokens/semantic_theme.dart';
+import 'app_floating_surface.dart';
 
 /// A brief, self-dismissing toast, optionally with an "Undo" action — the
 /// app's only entry point for this kind of transient confirmation, per
@@ -32,6 +34,29 @@ import '../tokens/semantic_theme.dart';
 class AppUndoToast {
   AppUndoToast._();
 
+  static final Map<OverlayState, Set<OverlayEntry>> _entriesByOverlay = {};
+
+  /// Keeps active toasts above the page that created them but below a newly
+  /// pushed modal route. Navigator's own overlay rearrangement puts manually
+  /// inserted entries back on top whenever a route is pushed, so the modal
+  /// route must explicitly reclaim the top of the stack.
+  static void placeBelowRoute(OverlayState overlay, Route<dynamic> route) {
+    final toastEntries = _entriesByOverlay[overlay];
+    final routeEntries = route.overlayEntries;
+    if (toastEntries == null || toastEntries.isEmpty || routeEntries.isEmpty) {
+      return;
+    }
+
+    // Remove and reinsert the entries below the route's barrier. `rearrange`
+    // cannot express this with a subset of entries because its unspecified
+    // entries are kept as a group at the top; inserting below the known route
+    // entry gives the overlay the exact order we need.
+    for (final entry in toastEntries) {
+      entry.remove();
+      overlay.insert(entry, below: routeEntries.first);
+    }
+  }
+
   static void show({
     required BuildContext context,
     required String message,
@@ -51,6 +76,11 @@ class AppUndoToast {
     void dismiss() {
       if (dismissed) return;
       dismissed = true;
+      final entries = _entriesByOverlay[overlay];
+      entries?.remove(entry);
+      if (entries != null && entries.isEmpty) {
+        _entriesByOverlay.remove(overlay);
+      }
       entry.remove();
     }
 
@@ -69,6 +99,7 @@ class AppUndoToast {
       ),
     );
 
+    _entriesByOverlay.putIfAbsent(overlay, () => <OverlayEntry>{}).add(entry);
     overlay.insert(entry);
   }
 }
@@ -160,46 +191,50 @@ class _ToastOverlayState extends State<_ToastOverlay>
             begin: const Offset(0, 0.15),
             end: Offset.zero,
           ).animate(_fade),
+          // Glass, and see-through enough to show what's behind it —
+          // requested directly: "make the toast glass and semitransparent."
+          // The shared floating material (blur, edge, shadow), with its
+          // fill thinned to `ToastTokens.fillAlpha`.
           child: Material(
             color: Colors.transparent,
-            child: Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: theme.spacingMd,
-                vertical: theme.spacingSm,
-              ),
-              decoration: BoxDecoration(
-                color: theme.colorTextPrimary,
-                borderRadius: BorderRadius.circular(theme.radiusMd),
-                boxShadow: theme.shadowPane,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(
-                    child: Text(
-                      widget.message,
-                      style: theme.textBody.copyWith(
-                        color: theme.colorSurfacePrimary,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  if (widget.onUndo case final onUndo?) ...[
-                    SizedBox(width: theme.spacingSm),
-                    GestureDetector(
-                      onTap: onUndo,
-                      behavior: HitTestBehavior.opaque,
+            child: AppFloatingSurface(
+              theme: theme,
+              borderRadius: BorderRadius.circular(theme.radiusMd),
+              surfaceColor: ToastTokens.fill(theme),
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: theme.spacingMd,
+                  vertical: theme.spacingSm,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
                       child: Text(
-                        'Undo',
+                        widget.message,
                         style: theme.textBody.copyWith(
-                          color: theme.colorAccent,
-                          fontWeight: FontWeight.w700,
+                          color: theme.colorTextPrimary,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (widget.onUndo case final onUndo?) ...[
+                      SizedBox(width: theme.spacingSm),
+                      GestureDetector(
+                        onTap: onUndo,
+                        behavior: HitTestBehavior.opaque,
+                        child: Text(
+                          'Undo',
+                          style: theme.textBody.copyWith(
+                            color: theme.colorAccent,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
-                    ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),

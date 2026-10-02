@@ -50,6 +50,17 @@ void main() {
     expect(container.read(devTrackedPatternDemoDataProvider), isTrue);
   });
 
+  test('DevShowTouches defaults to on and can be disabled', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final notifier = container.read(devShowTouchesProvider.notifier);
+    expect(container.read(devShowTouchesProvider), isTrue);
+
+    notifier.set(false);
+    expect(container.read(devShowTouchesProvider), isFalse);
+  });
+
   test('DevAccentStrength defaults to full and clamps changes', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);

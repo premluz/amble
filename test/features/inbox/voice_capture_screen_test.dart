@@ -286,7 +286,8 @@ void main() {
     final toolbar = tester.getRect(paneOf('Submit'));
     final theme = AmbleTheme.dark;
     final screen = tester.getSize(find.byType(VoiceCaptureScreen));
-    expect(close.right, screen.width - theme.spacingMd);
+    // As far from the side as from the bottom (requested directly).
+    expect(screen.width - close.right, screen.height - close.bottom);
     expect(close.width, close.height, reason: 'a single-item pane');
     expect(close.top, toolbar.top, reason: 'on the same row');
     expect(toolbar.right, close.left - theme.spacingSm);

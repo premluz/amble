@@ -2662,3 +2662,29 @@ keyboard-high).
 which absorbs the keyboard inset. The app shell sets
 `resizeToAvoidBottomInset: false`, and the harness now does too.
 **Verified:** a new test fails with the background's inset forced to 0.
+
+## 2026-10-01 — "m" missing from some times: by design, not clipping
+
+**Symptom (reported twice):** "still we missing m in some hours" — "12:02p",
+"9:25a", while whole hours read "7 am".
+**Misdiagnosis:** the first pass treated it as clipping and widened the time
+column and the edge-time pill (see the "m of am/pm still cut" entry above).
+Those fixes were real but beside the point: `timelineClockText` deliberately
+wrote non-whole 12-hour times with a single letter ("12:45p") to save width.
+The "m" was never drawn.
+**Fix:** it now always spells "am"/"pm" ("12:45pm"). The column is measured
+from `timelineClockSamples()`, so it widens to fit by itself.
+**Lesson:** when a glyph is "missing", check the string before the layout.
+**Verified:** timeline_clock_test pins the text; the column- and pill-fit
+tests now measure the longer labels, with real fonts.
+
+## 2026-10-02 — Painting a zone cascaded around archived placements
+
+**Symptom:** saving a new weekly zone unexpectedly moved visible zones on
+the same weekday. **Cause:** `paintWeeklyZones` passed archived rows into
+the overlap cascade. Those rows are hidden from the grid, but still looked
+like occupied time to the save path, so the cascade pushed live neighbors
+to make room for an invisible placement. **Fix:** archived rows are
+excluded from the paint candidate set. **Verified:** a regression test
+reproduces two live zones shifting behind one archived row; it passes once
+archived placements are ignored.

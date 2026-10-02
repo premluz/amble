@@ -22,6 +22,7 @@ import '../../core/widgets/app_top_scroll_fade.dart';
 import '../../core/widgets/app_undo_toast.dart';
 import '../../core/widgets/app_view_transition.dart';
 import '../../core/widgets/selected_pill_border.dart';
+import '../../core/wall_clock_watcher.dart';
 import '../../shared/models/category.dart';
 import '../../shared/models/external_calendar_event.dart';
 import '../../shared/models/scheduled_block.dart';
@@ -1498,7 +1499,8 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
   /// [CurrentTimeIndicator]'s bold "now" label would sit on top of. The
   /// indicator keeps its own timer for its own position — this one exists
   /// solely for the label-collision rule, which changes at most hourly.
-  Timer? _minuteTimer;
+  /// Keeps [_now] current: minute boundaries and system time changes.
+  WallClockWatcher? _clock;
   late DateTime _now = ref.read(nowProvider)();
 
   /// Which task (if any) is currently being dragged. Lifted up from
@@ -1613,9 +1615,12 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
   @override
   void initState() {
     super.initState();
-    _minuteTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-      if (mounted) setState(() => _now = ref.read(nowProvider)());
-    });
+    _clock = WallClockWatcher(
+      now: () => ref.read(nowProvider)(),
+      onChange: () {
+        if (mounted) setState(() => _now = ref.read(nowProvider)());
+      },
+    )..start();
     _scrollController.addListener(_reportViewedMinutes);
     // The day's FIRST task doesn't reach didUpdateWidget: the screen was
     // showing _EmptyDayState until a moment ago, so this widget mounts
@@ -1971,20 +1976,35 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
         MediaQuery.sizeOf(context).height * quickCreateSheetMinFraction;
     final visibleHeight =
         _scrollController.position.viewportDimension - sheetHeight;
-    final target =
+    final position = _scrollController.position;
+    final pillTop =
         (minutesSinceStart * widget.pixelsPerMinute) +
-        TimelineScrollTokens.topClearance -
-        (visibleHeight / 2);
+        TimelineScrollTokens.topClearance;
+    // Already in view above the sheet: leave the page where it is — moving
+    // it anyway was half of what read as abrupt.
+    final onScreen = pillTop - position.pixels;
+    if (onScreen >= TimelineScrollTokens.topClearance &&
+        onScreen <= visibleHeight - TimelineScrollTokens.topClearance) {
+      return;
+    }
+    final target = (pillTop - visibleHeight / 2).clamp(
+      0.0,
+      position.maxScrollExtent,
+    );
+    // Eases in and out (the app's standard curve) over a time that grows
+    // with the distance, rather than starting at full speed.
     _scrollController.animateTo(
-      target.clamp(0.0, _scrollController.position.maxScrollExtent),
-      duration: widget.theme.motionNormal,
-      curve: Curves.easeOut,
+      target,
+      duration: TimelineScrollTokens.revealDuration(
+        (target - position.pixels).abs(),
+      ),
+      curve: widget.theme.curveStandard,
     );
   }
 
   @override
   void dispose() {
-    _minuteTimer?.cancel();
+    _clock?.dispose();
     _scrollController.dispose();
     _placeLineController.dispose();
     super.dispose();
@@ -2343,6 +2363,7 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
         // pointers passively rather than claiming the gesture arena — see
         // that widget's own doc comment.
         return TimelinePinchZoom(
+          scrollController: _scrollController,
           // Layout must establish the viewport before restoring its offset.
           // Reveal only the positioned frame, never the initial midnight frame.
           child: _positionedContent(
@@ -5012,7 +5033,13 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
     // the new layout instead of tweening from the old one. Cleared again
     // one frame later so a genuine reposition WITHIN the same mode (drag,
     // cascade push) still eases normally.
-    if (widget.isDraggable != oldWidget.isDraggable) {
+    // A zoom (pinch, or the scale setting) likewise: the whole day is one
+    // canvas, so blocks take their new place in the same frame as the hour
+    // labels instead of easing after them — requested directly ("zoom
+    // should treat the whole canvas at once; atm timeline zooms in and
+    // tasks follow"). Re-armed on every frame of a pinch.
+    if (widget.isDraggable != oldWidget.isDraggable ||
+        widget.pixelsPerMinute != oldWidget.pixelsPerMinute) {
       _suppressPositionAnimation = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) setState(() => _suppressPositionAnimation = false);
@@ -5484,6 +5511,8 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
           // `top` moves as well, handled separately by the
           // AnimatedPositioned above).
           isResizing: _isResizing || _isResizingTop,
+          // Height snaps with the zoom too, not just the position.
+          snapGeometry: _suppressPositionAnimation,
           // A dragged cluster member always shows full content — only
           // the resting state stays blanked.
           contentHidden: widget.contentHidden && !_isDragging,
@@ -5553,6 +5582,16 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                     ref
                         .read(editSelectionProvider.notifier)
                         .promote(widget.task.id);
+                  }
+                  // A single-task long-press selection belongs to the task
+                  // being manipulated. Starting a move on a different task
+                  // ends that selection immediately, instead of leaving the
+                  // first task selected while the second one is in flight.
+                  if (!multiTaskEditMode) {
+                    final armedId = ref.read(armedEditTaskProvider);
+                    if (armedId != null && armedId != widget.task.id) {
+                      ref.read(armedEditTaskProvider.notifier).clear();
+                    }
                   }
                   _playHaptic(AmbleHaptic.lift);
                   _lastSnapTickDelta = 0;

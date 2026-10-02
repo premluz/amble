@@ -49,16 +49,16 @@ void main() {
     );
   });
 
-  testWidgets('12-hour is compact: whole hours "9 am"/"12 pm", other times '
-      '"9:15a"/"12:45p"', (tester) async {
+  testWidgets('12-hour always spells am/pm: whole hours "9 am"/"12 pm", '
+      'other times "9:15am"/"12:45pm"', (tester) async {
     Future<String> twelve(int h, int m) =>
         _clock(tester, TimeOfDay(hour: h, minute: m), use24Hour: false);
     expect(await twelve(9, 0), '9 am');
     expect(await twelve(12, 0), '12 pm');
     expect(await twelve(0, 0), '12 am');
-    expect(await twelve(9, 15), '9:15a');
-    expect(await twelve(12, 45), '12:45p');
-    expect(await twelve(23, 5), '11:05p');
+    expect(await twelve(9, 15), '9:15am');
+    expect(await twelve(12, 45), '12:45pm');
+    expect(await twelve(23, 5), '11:05pm');
   });
 
   test('the column is measured against every label either format writes — '
@@ -66,7 +66,7 @@ void main() {
     final samples = timelineClockSamples();
     expect(
       samples,
-      containsAll(['12 pm', '12 am', '12:45p', '13:44', '09:08']),
+      containsAll(['12 pm', '12 am', '12:45pm', '13:44', '09:08']),
     );
     expect(samples.every((label) => label.isNotEmpty), isTrue);
   });

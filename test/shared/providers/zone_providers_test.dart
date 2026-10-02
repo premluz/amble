@@ -111,6 +111,54 @@ void main() {
       expect(zone.weekday, DateTime.wednesday);
       expect(zone.recurrenceRule, isNull);
     });
+
+    test(
+      'painting ignores archived zones when resolving live overlaps',
+      () async {
+        final repository = container.read(zoneRepositoryProvider);
+        final archived = Zone(
+          id: 'archived-tuesday',
+          title: 'Removed',
+          startMinutes: 600,
+          endMinutes: 660,
+          weekday: DateTime.tuesday,
+          archived: true,
+        );
+        final firstLive = Zone(
+          id: 'live-tuesday-one',
+          title: 'First live',
+          startMinutes: 660,
+          endMinutes: 720,
+          weekday: DateTime.tuesday,
+        );
+        final secondLive = Zone(
+          id: 'live-tuesday-two',
+          title: 'Second live',
+          startMinutes: 720,
+          endMinutes: 780,
+          weekday: DateTime.tuesday,
+        );
+        await repository.save(archived);
+        await repository.save(firstLive);
+        await repository.save(secondLive);
+
+        await container
+            .read(zoneListProvider.notifier)
+            .paintWeeklyZones(
+              title: 'New live',
+              weekdays: {DateTime.tuesday},
+              startMinutes: 600,
+              endMinutes: 660,
+            );
+
+        expect(repository.getById(firstLive.id)?.startMinutes, 660);
+        expect(repository.getById(firstLive.id)?.endMinutes, 720);
+        expect(repository.getById(secondLive.id)?.startMinutes, 720);
+        expect(repository.getById(secondLive.id)?.endMinutes, 780);
+        expect(repository.getById(archived.id)?.startMinutes, 600);
+        expect(repository.getById(archived.id)?.endMinutes, 660);
+      },
+    );
   });
 
   group('deleteZone', () {

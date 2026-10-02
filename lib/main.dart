@@ -15,6 +15,7 @@ import 'core/feature_flags.dart';
 import 'core/revenue_cat_config.dart';
 import 'core/tokens/color_primitives.dart';
 import 'core/tokens/semantic_theme.dart';
+import 'core/tokens/component_tokens.dart';
 import 'core/tokens/type_primitives.dart';
 import 'core/widgets/app_context_menu.dart';
 import 'core/widgets/app_bottom_dock.dart';
@@ -995,9 +996,10 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
                     child: Align(
                       alignment: Alignment.bottomLeft,
                       child: Padding(
+                        // Sides match the bottom gap (safe area + clearance).
                         padding: EdgeInsets.only(
-                          left: theme.spacingMd,
-                          right: theme.spacingMd,
+                          left: DockTokens.edgeInset(theme, MediaQuery.viewPaddingOf(context)),
+                          right: DockTokens.edgeInset(theme, MediaQuery.viewPaddingOf(context)),
                           bottom: theme.spacingBottomClearance,
                         ),
                         child: AppBottomDock(

@@ -20,6 +20,19 @@ abstract final class DragPreviewTokens {
 abstract final class TimelineScrollTokens {
   static const double topClearance = 60.0;
   static const double bottomClearance = 200.0;
+
+  /// Bringing a new quick-add draft into view: a calm glide, not a jump —
+  /// requested directly ("needs to be smoother, calmer, at the moment too
+  /// abrupt"). Longer the further it goes, within these bounds.
+  static const revealMinMs = 450;
+  static const revealMaxMs = 900;
+  static const revealMsPerPixel = .6;
+
+  static Duration revealDuration(double distance) => Duration(
+    milliseconds: (revealMinMs + distance * revealMsPerPixel)
+        .clamp(revealMinMs, revealMaxMs)
+        .round(),
+  );
 }
 
 /// A zone's card fill (Timeline and Zone view): the plain secondary surface,
@@ -231,4 +244,22 @@ abstract final class TouchVisualizerTokens {
   static const releaseScale = 1.25;
   static Duration appear(AmbleTheme theme) => theme.motionFast;
   static Duration release(AmbleTheme theme) => theme.motionNormal;
+}
+
+/// The undo toast: glass, thinner than the menus' near-opaque glass, so the
+/// screen behind it shows through.
+abstract final class ToastTokens {
+  /// Multiplied by the glass material's own fill alpha.
+  static const fillAlpha = .7;
+  static Color fill(AmbleTheme theme) =>
+      theme.colorSurfaceOverlay.withValues(alpha: fillAlpha);
+}
+
+/// Where the floating bottom toolbars sit: as far from the screen's side
+/// as from its bottom — requested directly, "for toolbar make same side
+/// padding as from bottom". The bottom gap is the device's bottom safe area
+/// plus [AmbleTheme.spacingBottomClearance]; the sides match it.
+abstract final class DockTokens {
+  static double edgeInset(AmbleTheme theme, EdgeInsets viewPadding) =>
+      viewPadding.bottom + theme.spacingBottomClearance;
 }

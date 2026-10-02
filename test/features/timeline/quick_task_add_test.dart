@@ -1327,7 +1327,18 @@ void main() {
       // measured from one frame too early.
       await tester.pump();
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
+      // The calm glide: an ease-in-out start, so after one frame it has
+      // barely moved — no jump (requested directly: "smoother, calmer").
+      final before = position.pixels;
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(
+        (position.pixels - before).abs(),
+        lessThan(4),
+        reason: 'starts gently, not at full speed',
+      );
+      await tester.pump(
+        const Duration(milliseconds: TimelineScrollTokens.revealMaxMs),
+      );
 
       final pillTop = tester.getTopLeft(find.byType(PendingTaskPill)).dy;
       final screenHeight =
@@ -1343,6 +1354,31 @@ void main() {
       );
     },
   );
+
+  testWidgets('a draft already in view above the sheet leaves the page '
+      'where it is', (tester) async {
+    await pumpTimeline(tester);
+    final vertical = tester
+        .widgetList<Scrollable>(
+          find.descendant(
+            of: find.byType(TimelineScreen),
+            matching: find.byType(Scrollable),
+          ),
+        )
+        .where((s) => s.axisDirection == AxisDirection.down)
+        .first;
+    final position = tester
+        .state<ScrollableState>(find.byWidget(vertical))
+        .position;
+    final before = position.pixels;
+    // Near the top of the screen: well clear of the mini sheet.
+    await longPressAndReleaseAt(tester, const Offset(220, 260));
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+    expect(find.byType(PendingTaskPill), findsOneWidget);
+    expect(position.pixels, before);
+  });
 
   // The substantive change, after the original "positioned absolutely
   // over everything" design was questioned directly. The draft now

@@ -72,6 +72,7 @@ class TaskCapsuleBlock extends StatelessWidget {
     this.durationMinutesOverride,
     this.isLifted = false,
     this.isResizing = false,
+    this.snapGeometry = false,
     this.onDragStart,
     this.onDragUpdate,
     this.onDragEnd,
@@ -253,6 +254,11 @@ class TaskCapsuleBlock extends StatelessWidget {
   /// A gesture should track 1:1, so this flag opts that one case out
   /// rather than removing the animation everyone else depends on.
   final bool isResizing;
+
+  /// True for a frame in which the layout itself changed (a zoom, a view
+  /// switch): the pill takes its new height at once, with the rest of the
+  /// day, instead of growing into it.
+  final bool snapGeometry;
 
   /// Renders the PILL at this duration instead of the task's own, without
   /// touching the time/duration text (which keeps showing the real,
@@ -755,7 +761,7 @@ class TaskCapsuleBlock extends StatelessWidget {
                               // [isResizing]. Under a finger the pill has to track the
                               // gesture exactly; the "watch this happen" pacing above is
                               // for duration changes the user did NOT drag out.
-                              duration: isResizing
+                              duration: isResizing || snapGeometry
                                   ? Duration.zero
                                   : theme.motionSlow,
                               curve: theme.curveStandard,

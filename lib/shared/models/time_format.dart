@@ -4,7 +4,7 @@
 /// Stored by [name] (a plain string), not as its own Hive type: nothing
 /// about it needs an adapter, and a name survives reordering this enum.
 enum TimeFormatPreference {
-  /// Whatever the device is set to — the default on a fresh install.
+  /// Whatever the device is set to when explicitly selected.
   system,
   twelveHour,
   twentyFourHour;
@@ -18,7 +18,7 @@ enum TimeFormatPreference {
   };
 
   /// The stored value back to a preference; anything unknown (or absent)
-  /// is [system].
+  /// defaults to [twelveHour].
   static TimeFormatPreference fromName(String? name) =>
-      values.where((value) => value.name == name).firstOrNull ?? system;
+      values.where((value) => value.name == name).firstOrNull ?? twelveHour;
 }

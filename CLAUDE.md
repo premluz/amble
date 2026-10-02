@@ -12,6 +12,10 @@ Always read these, in this order, before starting any task in this repo:
 4. `docs/ERROR_LOG.md` — known gotchas. Check before debugging something that may have already been solved.
 5. `docs/DECISIONS.md` — smaller settled choices, so they don't get silently re-opened.
 
+For UI work, also start with `docs/COMPONENT_GUIDE.md`. It routes component
+selection to the canonical usage rules in `docs/DESIGN_SYSTEM.md`, the actual
+widget APIs, focused tests, and Widgetbook examples.
+
 After finishing a task, before ending the session:
 
 6. Append a short entry to `docs/PROGRESS_LOG.md` — what happened, what shipped, what's still open. Don't skip this even for small sessions.

@@ -42,6 +42,7 @@ class TemplateListScreen extends StatelessWidget {
                     icon: Icons.arrow_back_rounded,
                     onPressed: () => Navigator.of(context).pop(),
                     shape: AppButtonShape.circle,
+                    semanticLabel: 'Back',
                     // Ghost, not primary — app-wide button unification
                     // pass, requested directly ("only one primary [per
                     // screen]"); the add button below stays primary as
@@ -54,6 +55,7 @@ class TemplateListScreen extends StatelessWidget {
                     icon: Icons.add_rounded,
                     onPressed: () => showTaskTemplateForm(context),
                     shape: AppButtonShape.circle,
+                    semanticLabel: 'Add template',
                   ),
                 ],
               ),

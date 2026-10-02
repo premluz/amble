@@ -36,10 +36,13 @@ void main() {
     return c;
   }
 
-  test('follows the device until chosen; the choice persists by name and '
+  test('defaults to 12-hour; the choice persists by name and '
       'survives a relaunch', () async {
     final first = container();
-    expect(first.read(timeFormatSettingProvider), TimeFormatPreference.system);
+    expect(
+      first.read(timeFormatSettingProvider),
+      TimeFormatPreference.twelveHour,
+    );
     await first
         .read(timeFormatSettingProvider.notifier)
         .set(TimeFormatPreference.twentyFourHour);
@@ -55,9 +58,15 @@ void main() {
     );
   });
 
-  test('an unknown stored value falls back to following the device', () {
-    expect(TimeFormatPreference.fromName('nope'), TimeFormatPreference.system);
-    expect(TimeFormatPreference.fromName(null), TimeFormatPreference.system);
+  test('an unknown or absent stored value falls back to 12-hour', () {
+    expect(
+      TimeFormatPreference.fromName('nope'),
+      TimeFormatPreference.twelveHour,
+    );
+    expect(
+      TimeFormatPreference.fromName(null),
+      TimeFormatPreference.twelveHour,
+    );
   });
 
   group('AppTimeFormat', () {

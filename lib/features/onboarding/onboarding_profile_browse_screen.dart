@@ -72,6 +72,7 @@ class _OnboardingProfileBrowseScreenState
                     icon: Icons.arrow_back_rounded,
                     onPressed: () => Navigator.of(context).pop(),
                     shape: AppButtonShape.circle,
+                    semanticLabel: 'Back',
                     // Ghost, not primary — app-wide button unification
                     // pass, requested directly.
                     variant: AppButtonVariant.ghost,

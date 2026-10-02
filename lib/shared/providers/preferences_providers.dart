@@ -51,8 +51,8 @@ class ThemeModeSetting extends _$ThemeModeSetting {
 }
 
 /// 12-hour ("9:00 PM") or 24-hour ("21:00") time across the app, or the
-/// device's own choice (the default). `main.dart` applies it once, at the
-/// root, as `MediaQuery.alwaysUse24HourFormat`, which every
+/// device's own choice. 12-hour is the default. `main.dart` applies it once,
+/// at the root, as `MediaQuery.alwaysUse24HourFormat`, which every
 /// `TimeOfDay.format` reads. `keepAlive` for the same reason as
 /// [ThemeModeSetting]: the root widget is its reader.
 @Riverpod(keepAlive: true)
@@ -176,8 +176,8 @@ class PreventOverlappingTasksSetting extends _$PreventOverlappingTasksSetting {
 /// `PreferenceKeys.dualFontEnabled`'s own doc comment. `keepAlive: true` for
 /// the same reason as the other settings here: read once per app start (via
 /// `main.dart`'s own "resolve once, before MaterialApp" pass), not
-/// screen-scoped state. Defaults to **false** so a fresh install uses the
-/// app's unified DM Sans typography; turning it on opts into the mono split.
+/// screen-scoped state. Defaults to **true** so a fresh install uses the
+/// app's dual-font typography; turning it off opts into DM Sans only.
 @Riverpod(keepAlive: true)
 class DualFontSetting extends _$DualFontSetting {
   @override
@@ -185,7 +185,7 @@ class DualFontSetting extends _$DualFontSetting {
     return ref
             .read(preferencesRepositoryProvider)
             .getValue<bool>(PreferenceKeys.dualFontEnabled) ??
-        false;
+        true;
   }
 
   Future<void> set(bool value) async {
@@ -281,12 +281,15 @@ class TimelinePixelsPerMinuteSetting extends _$TimelinePixelsPerMinuteSetting {
     return stored?.clamp(minPixelsPerMinute, maxPixelsPerMinute) ?? 1.5;
   }
 
+  /// The new scale shows at once; saving it follows. A pinch calls this on
+  /// every pointer move, and waiting for each disk write before the screen
+  /// changed made zoom trail the fingers.
   Future<void> set(double value) async {
     final clamped = value.clamp(minPixelsPerMinute, maxPixelsPerMinute);
+    state = clamped;
     await ref
         .read(preferencesRepositoryProvider)
         .setValue(PreferenceKeys.timelinePixelsPerMinute, clamped);
-    state = clamped;
   }
 }
 

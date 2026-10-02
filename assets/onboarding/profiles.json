@@ -461,31 +461,31 @@
           "title": "Walk",
           "categoryName": "Walking",
           "time": "07:45",
-          "durationMinutes": 60
+          "durationMinutes": 75
         },
         {
-          "title": "Focus time",
-          "categoryName": "Focus",
+          "title": "Fishing",
+          "categoryName": "Fishing",
           "time": "09:00",
           "durationMinutes": 90
         },
         {
+          "title": "Family lunch",
+          "categoryName": "Family",
+          "time": "10:30",
+          "durationMinutes": 60
+        },
+        {
           "title": "Team meeting",
           "categoryName": "Work",
-          "time": "10:30",
+          "time": "11:30",
           "durationMinutes": 60
         },
         {
           "title": "Book holidays",
           "categoryName": "Holiday",
-          "time": "11:30",
+          "time": "12:30",
           "durationMinutes": 30
-        },
-        {
-          "title": "Family lunch",
-          "categoryName": "Family",
-          "time": "12:00",
-          "durationMinutes": 60
         },
         {
           "title": "Call Amy",
@@ -496,61 +496,61 @@
         {
           "title": "Focus time",
           "categoryName": "Focus",
-          "time": "13:30",
+          "time": "13:20",
           "durationMinutes": 90
         },
         {
           "title": "Shopping",
           "categoryName": "Shopping",
-          "time": "15:00",
+          "time": "14:50",
           "durationMinutes": 45
         },
         {
           "title": "Pick up kids from school",
           "categoryName": "Kids",
-          "time": "15:45",
+          "time": "15:35",
           "durationMinutes": 30
         },
         {
           "title": "Family time",
           "categoryName": "Family",
-          "time": "16:15",
+          "time": "16:05",
           "durationMinutes": 60
         },
         {
           "title": "Family meal",
           "categoryName": "Meals",
-          "time": "17:15",
+          "time": "17:05",
           "durationMinutes": 45
         },
         {
           "title": "Gym",
           "categoryName": "Gym",
-          "time": "18:00",
+          "time": "17:50",
           "durationMinutes": 60
         },
         {
           "title": "Me time",
           "categoryName": "Me time",
-          "time": "19:00",
+          "time": "18:50",
           "durationMinutes": 45
         },
         {
           "title": "Plan tomorrow",
           "categoryName": "Personal",
-          "time": "20:30",
+          "time": "19:35",
           "durationMinutes": 15
         },
         {
           "title": "No screens from here",
           "categoryName": "Screen-free",
-          "time": "21:00",
-          "durationMinutes": 30
+          "time": "20:00",
+          "durationMinutes": 60
         },
         {
           "title": "Wind-down",
           "categoryName": "Wind-down",
-          "time": "21:30",
+          "time": "21:00",
           "durationMinutes": 30
         }
       ],

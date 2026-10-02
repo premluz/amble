@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../tokens/component_tokens.dart';
 import '../tokens/semantic_theme.dart';
+import 'app_undo_toast.dart';
 import 'app_sheet_route.dart';
 import 'app_sheet_scroll_body.dart';
 import 'app_top_scroll_fade.dart';
@@ -145,13 +146,22 @@ class AppSheet {
       );
     }
 
-    return Navigator.of(context, rootNavigator: true).push<T>(
-      AppSheetRoute<T>(
-        isCupertino: isCupertino,
-        autofocusesKeyboard: autofocusesKeyboard,
-        theme: theme,
-        builder: rootModalBuilder(context, content),
-      ),
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final route = AppSheetRoute<T>(
+      isCupertino: isCupertino,
+      autofocusesKeyboard: autofocusesKeyboard,
+      theme: theme,
+      builder: rootModalBuilder(context, content),
     );
+    final result = navigator.push<T>(route);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final overlay = navigator.overlay;
+      if (overlay == null) return;
+      AppUndoToast.placeBelowRoute(overlay, route);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (route.isActive) AppUndoToast.placeBelowRoute(overlay, route);
+      });
+    });
+    return result;
   }
 }

@@ -120,7 +120,7 @@ void main() {
 
       expect(twelve.timeColumnWidth, twentyFour.timeColumnWidth);
       expect(twelve.zoneLeft, twentyFour.zoneLeft);
-      for (final label in ['12:45p', '12 PM', '13:41']) {
+      for (final label in ['12:45pm', '12 PM', '13:41']) {
         final painter = TextPainter(
           text: TextSpan(text: label, style: theme.textCaptionMono),
           textDirection: TextDirection.ltr,
