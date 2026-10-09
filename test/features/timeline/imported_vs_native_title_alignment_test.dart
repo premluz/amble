@@ -182,9 +182,9 @@ void main() {
 
     expect(
       span.style?.fontWeight,
-      FontWeight.w700,
+      FontWeight.w600,
       reason:
-          'the imported title must carry the same w700 a native task\'s '
+          'the imported title must carry the same w600 a native task\'s '
           'does — a lighter weight sits differently in the line box and '
           'reads as misaligned beside it',
     );

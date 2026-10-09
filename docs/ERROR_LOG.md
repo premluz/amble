@@ -2688,3 +2688,106 @@ to make room for an invisible placement. **Fix:** archived rows are
 excluded from the paint candidate set. **Verified:** a regression test
 reproduces two live zones shifting behind one archived row; it passes once
 archived placements are ignored.
+
+## [2026-10-02] `dart format lib/shared` reformatted three files outside the change
+
+While wiring the series model, `dart format` was run on the whole
+`lib/shared` directory instead of the files actually edited. It silently
+rewrapped `category.dart`, `section.dart` and `trim_reschedule.dart` —
+formatting-only diffs in files the task never touched. Caught by checking
+`git status` before continuing; each diff was confirmed formatting-only and
+the files had no other uncommitted changes, so restoring those three files
+from HEAD was lossless.
+
+**Lesson:** pass explicit file paths to `dart format`, never a directory —
+in a repo where another agent works in parallel, a directory-wide format is
+a drive-by edit of files outside scope.
+
+## 2026-10-03 — Closing quick-create could snap the Timeline
+
+The quick-create sheet reserves extra bottom scroll space so a late draft can
+sit above it. Clearing the draft removed that reserve in the same rebuild;
+an offset beyond the new scroll limit could be clamped at once. The scroll
+limit can change again after the sheet is removed, so a target calculated
+from the intermediate layout can stop short of the final center. The Timeline
+now retains clearance during an eased return and corrects the last offset
+after the new scroll extent is laid out. The late-day quick-add test checks
+movement frame by frame and the final position.
+
+## 2026-10-03 — Day navigation reused scroll and pill animation state
+
+The spatial day view kept the same element and `ScrollController` when the
+selected date changed. It restored the viewed time after layout and read the
+shared time at that later point, when scroll metrics from the destination
+day could already have reported an intermediate position. Reused task blocks
+could also interpolate between day layouts. The day view is now keyed by
+date, takes a snapshot of the viewed time before replacement, and does not
+report scroll position while the new day is being positioned. Task motion
+inside a day remains unchanged.
+
+## 2026-10-03 — Calendar week pages touched at the boundary
+
+The week strip places each incoming row exactly one strip width beyond the
+current row. Because the current row's seven cells use `spaceBetween`, this
+put Sunday flush against the next Monday during a swipe even though all
+other adjacent days had a positive gap. The page pitch now includes one
+calculated day-cell gap; adjacent-row placement, drag limit, commit midpoint,
+and settle distance use that same pitch. Forward and backward drag tests at
+different viewport widths assert the seam gap equals a within-week gap.
+
+## 2026-10-06 — Android release build fails with "cannot tree shake icons fonts" unless `--no-tree-shake-icons` is passed
+
+`flutter build appbundle` (and `apk`) fails outright in release mode with:
+```
+This application cannot tree shake icons fonts. It has non-constant instances of IconData at the following locations:
+  - file:///.../lib/features/task_detail/category_visual.dart:359:12
+Target aot_android_asset_bundle failed: Error: Avoid non-constant invocations of IconData or try to build again with --no-tree-shake-icons.
+```
+**Not a bug** — `category_visual.dart:359` reconstructs an `IconData` from a
+persisted `int` code point (a user-picked category icon, stored as a plain
+int since `Category` has no `IconData`-typed field) at runtime, which is
+exactly the shape `IconData`'s own constructor doc warns disables
+tree-shaking. This is a confirmed, accepted tradeoff (see that file's own
+doc comment at lines 340-358), not something to "fix" by hunting for a
+missing `const`.
+**Build command for a real release**: `flutter build appbundle
+--no-tree-shake-icons` (or `apk --no-tree-shake-icons`). Tree-shaking is on
+by default in release mode (`--tree-shake-icons` defaults to true), so it
+must be explicitly turned off, not left to default.
+
+## 2026-10-07 — Day screen stuck on yesterday after the date changed
+
+Reported directly: when the day changed, the "today" dot didn't move and
+the app reopened on the old day. Two causes. `AppDateAccordion` read
+`DateTime.now()` inside `build`, so the dot only moved when something else
+happened to rebuild it. And `selectedDateProvider` only reads the clock
+when it is first built, so an app kept in memory overnight stayed on
+yesterday, and the remembered scroll hour (`viewedTimeProvider`) stayed
+too. Fix: `currentDayProvider` holds today and the accordion takes `today`
+from it. `DayRolloverWatcher` (on the Day screen) re-checks on mount, every
+minute boundary, and app resume. On a new day it selects today and clears
+the remembered hour, so the view centers on "now". Lesson: anything
+date-relative that can outlive a midnight needs an explicit re-check
+trigger. A rebuild that happens to occur is not a trigger.
+
+## 2026-10-08 — macOS app opens to a blank window
+
+`NotificationService.initialize` gave `flutter_local_notifications` Android
+and iOS settings only. On macOS the plugin throws "macOS settings must be
+set when targeting macOS platform", and because this runs before `runApp`,
+the app never painted. Found from the `[startup]` step log. Fix: pass the
+same `DarwinInitializationSettings` as `macOS:`. Lesson: every pre-`runApp`
+plugin call must be valid on every platform the repo builds (iOS, Android,
+macOS, and web if enabled). A desktop run is the first place that gap
+shows. Also note that hot reload (`r`) never re-runs `main()`: after a
+startup crash use hot restart (`R`).
+
+## 2026-10-08 — Resizing across the wide breakpoint kept the old Days page
+
+**Symptom:** a test growing the window from phone to desktop width found no
+Day / Week / Month toolbar on Days. **Cause:** `AmbleHome` republishes the
+visible page only when its scene key changes, and the key
+(`index:viewId:mode:trackedVisible`) didn't include the layout, so the
+phone `TimelineScreen` stayed mounted after the window crossed 840.
+**Fix:** `wide` is part of the scene key. **Rule:** anything that changes
+which widget a destination shows must be in that key.

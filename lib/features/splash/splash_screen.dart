@@ -71,7 +71,7 @@ class SplashScreen extends ConsumerWidget {
                           textAlign: TextAlign.center,
                           style: theme.textTitle.copyWith(
                             color: theme.colorTextPrimary,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                         SizedBox(height: theme.spacingSm),

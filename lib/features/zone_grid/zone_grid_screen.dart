@@ -1013,8 +1013,10 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
       if ((target - _scroll.offset).abs() < 1) return;
       _scroll.animateTo(
         target,
-        duration: const Duration(milliseconds: 240),
-        curve: Curves.easeOut,
+        duration: TimelineScrollTokens.revealDuration(
+          (target - _scroll.offset).abs(),
+        ),
+        curve: Theme.of(context).extension<AmbleTheme>()!.curveStandard,
       );
     });
   }
@@ -1340,7 +1342,10 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
                     builder: (context) {
                       final selectedIds = ref.watch(editSelectionProvider);
                       return Positioned(
-                        left: DockTokens.edgeInset(theme, MediaQuery.viewPaddingOf(context)),
+                        left: DockTokens.edgeInset(
+                          theme,
+                          MediaQuery.viewPaddingOf(context),
+                        ),
                         bottom: theme.spacingBottomClearance,
                         child: SafeArea(
                           top: false,
@@ -2166,7 +2171,10 @@ class _ZoneGridScreenState extends ConsumerState<ZoneGridScreen> {
             // split into its own pane rather than combined with Edit/Remove
             // (see the Tasks tab's own matching fix and its doc comment).
             Positioned(
-              left: DockTokens.edgeInset(theme, MediaQuery.viewPaddingOf(context)),
+              left: DockTokens.edgeInset(
+                theme,
+                MediaQuery.viewPaddingOf(context),
+              ),
               bottom: theme.spacingBottomClearance,
               child: SafeArea(
                 top: false,

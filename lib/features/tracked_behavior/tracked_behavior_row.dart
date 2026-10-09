@@ -5,10 +5,13 @@ import '../../core/dev_config.dart';
 import '../../core/widgets/app_follow_through.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_press_feedback.dart';
+import '../../core/widgets/app_staggered_fill.dart';
 import '../../shared/models/task.dart';
 import '../../shared/models/tracked_behavior.dart';
 import '../../shared/models/tracked_behavior_view_mode.dart';
 import '../../shared/providers/task_providers.dart';
+import '../../shared/models/local_date.dart';
+import '../../shared/providers/occurrence_store.dart';
 import 'behavior_completion.dart';
 import 'tracked_behavior_form.dart' show unitLabelFor;
 import 'tracked_calendar_period.dart';
@@ -32,6 +35,10 @@ double _weeklyDaySpacing(double availableWidth, AmbleTheme theme) {
 /// view switcher for each of these here, weekly, monthly, and six monthly."
 ///
 /// Public so a widget test can target it directly.
+
+/// Days of history read for progress — the longest period a row shows.
+const _progressLookbackDays = 366;
+
 class TrackedBehaviorRow extends ConsumerWidget {
   const TrackedBehaviorRow({
     super.key,
@@ -54,8 +61,17 @@ class TrackedBehaviorRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tasks = ref.watch(taskListProvider);
     final today = DateTime.now();
+    // Repeating tracked tasks are series occurrences, not stored tasks; the
+    // look-back covers the longest progress period shown (a year).
+    ref.watch(occurrenceStoreProvider);
+    final todayDate = LocalDate.fromDateTime(today);
+    final tasks = [
+      ...ref.watch(taskListProvider),
+      ...ref
+          .read(occurrenceStoreProvider.notifier)
+          .tasksBetween(todayDate.addDays(-_progressLookbackDays), todayDate),
+    ];
     final showDemoData =
         isDevConfigAvailable && ref.watch(devTrackedPatternDemoDataProvider);
 
@@ -81,7 +97,7 @@ class TrackedBehaviorRow extends ConsumerWidget {
                 behavior.title,
                 style: theme.textTaskTitle.copyWith(
                   color: theme.colorTextPrimary,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w600,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -147,6 +163,7 @@ class _DayCell extends StatelessWidget {
     required this.size,
     this.label,
     this.weekdayLabel = false,
+    this.order = 0,
   });
 
   final AmbleTheme theme;
@@ -156,12 +173,18 @@ class _DayCell extends StatelessWidget {
   final String? label;
   final bool weekdayLabel;
 
+  /// This cell's place in its grid, 0 (first) to 1 (last): completed days
+  /// colour in one after another in this order (`AppStaggeredFill`).
+  final double order;
+
   bool get _isDark =>
       theme.colorTextPrimary.computeLuminance() >
       theme.colorSurfaceBase.computeLuminance();
 
-  Color get _fillColor {
-    if (completed) return theme.colorAccent;
+  Color get _fillColor => completed ? theme.colorAccent : _restFill;
+
+  /// The fill of a day not yet done — where a completed day colours in from.
+  Color get _restFill {
     if (!_isDark) return theme.colorSurfaceField;
     return isToday ? theme.colorSurfaceFieldActive : theme.colorSurfaceOverlay;
   }
@@ -181,14 +204,19 @@ class _DayCell extends StatelessWidget {
     // Each dot trails its own card as the page slides, so the card's dots
     // follow through one after another.
     return AppFollowThrough(
-      child: Container(
-        width: size,
-        height: size,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(color: _fillColor, shape: BoxShape.circle),
-        child: label == null
-            ? null
-            : Text(label!, style: _labelStyle.copyWith(color: _labelColor)),
+      child: AppStaggeredFill(
+        rest: _restFill,
+        color: _fillColor,
+        order: order,
+        builder: (context, fill) => Container(
+          width: size,
+          height: size,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(color: fill, shape: BoxShape.circle),
+          child: label == null
+              ? null
+              : Text(label!, style: _labelStyle.copyWith(color: _labelColor)),
+        ),
       ),
     );
   }
@@ -258,6 +286,7 @@ class _WeeklyRow extends StatelessWidget {
             size: theme.spacingXl,
             label: showCalendarLabels ? _weekdayInitials[i] : null,
             weekdayLabel: showCalendarLabels,
+            order: i / (DateTime.daysPerWeek - 1),
           ),
       ],
     );
@@ -333,6 +362,7 @@ class _MonthlyGrid extends StatelessWidget {
                 ),
                 size: theme.spacingXl,
                 label: showCalendarLabels ? '$d' : null,
+                order: (d - 1) / (lastOfMonth.day - 1),
               ),
           ],
         );
@@ -450,12 +480,13 @@ class _SixMonthlyHeatmap extends StatelessWidget {
             spacing: theme.spacingXs / 2,
             runSpacing: theme.spacingXs / 2,
             children: [
-              for (final day in days)
+              for (final (i, day) in days.indexed)
                 _DayCell(
                   theme: theme,
                   completed: isDayCompleted(completedDays, day),
                   isToday: isToday(day, todayDay),
                   size: _sixMonthlyCellSize,
+                  order: days.length < 2 ? 0 : i / (days.length - 1),
                 ),
             ],
           ),

@@ -15,6 +15,7 @@ import 'package:amble/shared/providers/tracked_behavior_providers.dart';
 import 'package:amble/shared/repositories/hive_preferences_repository.dart';
 import 'package:amble/shared/repositories/hive_task_repository.dart';
 import 'package:amble/shared/repositories/hive_tracked_behavior_repository.dart';
+import 'package:amble/core/tokens/motion_primitives.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -112,6 +113,14 @@ void main() {
       ),
     );
     await tester.pump();
+    // Let completed days finish colouring in (AppStaggeredFill).
+    await tester.pump(
+      const Duration(
+        milliseconds:
+            MotionPrimitives.durationFillStaggerMs +
+            MotionPrimitives.durationFastMs,
+      ),
+    );
   }
 
   TrackedBehavior makeBehavior() => TrackedBehavior.create(

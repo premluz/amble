@@ -8,13 +8,20 @@ import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/core/widgets/app_value_chip.dart';
 import 'package:amble/features/task_detail/task_repeat_modal.dart';
 import 'package:amble/features/task_detail/task_sheet.dart';
+import 'package:amble/shared/models/local_date.dart';
+import 'package:amble/shared/models/occurrence_record.dart';
+import 'package:amble/shared/models/recurrence_command.dart';
+import 'package:amble/shared/models/series.dart';
+import 'package:amble/shared/providers/occurrence_store.dart';
+import 'package:amble/shared/repositories/occurrence_record_repository.dart';
+import 'package:amble/shared/repositories/series_repository.dart';
+import 'package:amble/shared/services/occurrence_task_projection.dart';
 import 'package:amble/shared/models/recurrence_frequency.dart';
 import 'package:amble/shared/models/recurrence_rule.dart';
 import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/models/task_template.dart';
 import 'package:amble/shared/models/tracked_behavior.dart';
 import 'package:amble/shared/models/task.dart';
-import 'package:amble/shared/models/task_status.dart';
 import 'package:amble/shared/providers/category_providers.dart';
 import 'package:amble/shared/providers/notification_providers.dart';
 import 'package:amble/shared/providers/preferences_providers.dart';
@@ -132,6 +139,56 @@ Future<void> _tapAndSettle(WidgetTester tester, Finder finder) async {
     // spinner's own perpetual animation while the save was in flight.
     await tester.pumpAndSettle();
   });
+}
+
+/// Every series in the series box the test config opens for each test.
+List<Series> _allSeries() => HiveSeriesRepository.opened().getAll();
+
+OccurrenceStore _store(GlobalKey<NavigatorState> key) =>
+    ProviderScope.containerOf(key.currentContext!)
+        .read(occurrenceStoreProvider.notifier);
+
+/// A day of the week other than [day]'s, so tapping its chip ADDS a day.
+int _otherWeekday(DateTime day) =>
+    day.weekday == DateTime.monday ? DateTime.tuesday : DateTime.monday;
+
+/// Creates a weekly "Standup" series at 9:00 starting today, through the
+/// real `createTask`, and returns its first occurrence.
+Future<Task> _seedWeeklySeries(
+  WidgetTester tester,
+  GlobalKey<NavigatorState> key, {
+  required List<int> days,
+}) async {
+  final container = ProviderScope.containerOf(key.currentContext!);
+  final created = await tester.runAsync(
+    () => container
+        .read(taskListProvider.notifier)
+        .createTask(
+          title: 'Standup',
+          scheduledAt: _daysFromToday(0),
+          durationMinutes: 15,
+          categoryId: BuiltInCategoryIds.work,
+          recurrenceRule: RecurrenceRule(
+            frequency: RecurrenceFrequency.weekly,
+            daysOfWeek: days,
+          ),
+        ),
+  );
+  return created!;
+}
+
+Task _occurrenceOn(GlobalKey<NavigatorState> key, DateTime day) =>
+    _store(key).tasksOn(LocalDate.fromDateTime(day)).single;
+
+/// Opens the real edit sheet for [task], then its repeat picker.
+Future<void> _openSheetFor(
+  WidgetTester tester,
+  GlobalKey<NavigatorState> key,
+  Task task,
+) async {
+  showTaskSheet(key.currentContext!, task: task);
+  await tester.pumpAndSettle();
+  await _tapAndSettle(tester, _repeatChip());
 }
 
 class _NoopPreventOverlappingTasksSetting
@@ -280,8 +337,8 @@ void main() {
   });
 
   testWidgets(
-    'turning Repeats on and saving materializes a new series from this '
-    'task — the day it was already scheduled on is pre-selected',
+    'turning Repeats on and saving turns this task into a series starting '
+    'on its own day — the day it was already scheduled on is pre-selected',
     (tester) async {
       final scheduledAt = _daysFromToday(0);
       final task = Task.create(
@@ -302,33 +359,16 @@ void main() {
       );
 
       await _tapAndSettle(tester, _repeatsSwitch());
-      // The task's own weekday is pre-selected, so enabling Repeats with
-      // no further taps already produces a real weekly rule. Derived from
-      // the task's date rather than hardcoded, since the date is now
-      // relative to today. Chip labels are single letters (M T W T F S S,
-      // requested directly) so no longer identify a day uniquely by text
-      // — `_dayChip` locates it by its fixed Monday-first position instead.
       expect(_dayChip(scheduledAt.weekday), findsOneWidget);
-
       await _save(tester);
 
-      final saved = box.values.toList();
-      final template = saved.firstWhere((t) => t.id == task.id);
-      expect(template.isRecurring, isTrue);
-      expect(template.isRecurrenceTemplate, isTrue);
-      expect(template.recurrenceRule!.frequency, RecurrenceFrequency.weekly);
-      expect(template.recurrenceRule!.daysOfWeek, [scheduledAt.weekday]);
-
-      // A future instance should have been materialized in the same save,
-      // sharing the template's recurrenceId but carrying no rule of its
-      // own.
-      final generatedInstances = saved.where(
-        (t) => t.recurrenceId == template.recurrenceId && t.id != template.id,
-      );
-      expect(generatedInstances, isNotEmpty);
-      for (final instance in generatedInstances) {
-        expect(instance.recurrenceRule, isNull);
-      }
+      // The plain task is replaced by the series' first occurrence.
+      expect(box.get(task.id), isNull);
+      final series = _allSeries().single;
+      expect(series.anchor, LocalDate.fromDateTime(scheduledAt));
+      final rule = series.revisions.single.rule;
+      expect(rule.frequency, RecurrenceFrequency.weekly);
+      expect(rule.daysOfWeek, [scheduledAt.weekday]);
     },
   );
 
@@ -382,260 +422,123 @@ void main() {
   );
 
   testWidgets(
-    'changing an existing series\' days updates the TEMPLATE\'s rule and '
-    'regenerates untouched future instances under it — a touched one is '
-    'left alone',
+    'changing a series\' days from today\'s occurrence changes the rule '
+    'from today on',
     (tester) async {
-      // The rule's `daysOfWeek` must include the template's OWN anchor
-      // weekday — `_daysFromToday(0)` is today, whatever weekday that
-      // happens to be on a given test run, not a fixed Thursday (a stale
-      // hardcoded `DateTime.thursday` here silently drifted out of sync
-      // with `scheduledAt` and masked a real bug in
-      // `_reanchorTemplateIfExcludedByRule`, which correctly re-anchors a
-      // template whose own day the rule doesn't cover — see
-      // docs/ERROR_LOG.md's 2026-09-19 entry).
       final today = _daysFromToday(0);
-      final template = Task.create(
-        title: 'Standup',
-        scheduledAt: today,
-        durationMinutes: 15,
-        categoryId: BuiltInCategoryIds.work,
-        recurrenceId: 'series-1',
-        recurrenceRule: RecurrenceRule(
-          frequency: RecurrenceFrequency.weekly,
-          daysOfWeek: [today.weekday],
-        ),
-      );
-      // A future, untouched instance under the OLD rule — should be
-      // pruned once the rule changes.
-      final futureUntouched = Task.create(
-        title: 'Standup',
-        scheduledAt: _daysFromToday(7),
-        durationMinutes: 15,
-        categoryId: BuiltInCategoryIds.work,
-        recurrenceId: 'series-1',
-      );
-      // A future instance the user already rescheduled — must survive the
-      // prune even though it's still "future" and part of the same series.
-      final futureTouched = Task.create(
-        title: 'Standup (moved)',
-        scheduledAt: _daysFromToday(14, hour: 10),
-        durationMinutes: 15,
-        categoryId: BuiltInCategoryIds.work,
-        recurrenceId: 'series-1',
-      )..originalScheduledAt = _daysFromToday(14);
-      await tester.runAsync(() async {
-        await box.put(template.id, template);
-        await box.put(futureUntouched.id, futureUntouched);
-        await box.put(futureTouched.id, futureTouched);
-      });
-
-      // Edited from the TEMPLATE instance itself here — the other test
-      // below exercises editing from a non-template instance.
-      await _pumpEditScheduleForm(
+      final other = _otherWeekday(today);
+      final key = await _pumpHost(
         tester,
         box: box,
         categoryBox: categoryBox,
         trackedBehaviorBox: trackedBehaviorBox,
         templateBox: templateBox,
-        task: template,
       );
+      await _seedWeeklySeries(tester, key, days: [today.weekday]);
+      await _openSheetFor(tester, key, _occurrenceOn(key, today));
 
-      // Add Monday alongside the existing Thursday.
-      await _tapAndSettle(tester, _dayChip(DateTime.monday));
+      await _tapAndSettle(tester, _dayChip(other));
       await _save(tester);
 
-      final saved = box.values.toList();
-      // The template's OWN weekday is still covered by the new rule
-      // (Monday was only ADDED alongside it), so it stays the template —
-      // `_reanchorTemplateIfExcludedByRule` is a no-op here, unlike the
-      // narrowing case covered in task_providers_test.dart.
-      final savedTemplate = saved.firstWhere((t) => t.id == template.id);
+      final series = _allSeries().single;
       expect(
-        savedTemplate.recurrenceRule!.daysOfWeek,
-        containsAll([DateTime.monday, today.weekday]),
-      );
-
-      expect(saved.any((t) => t.id == futureUntouched.id), isFalse);
-      expect(saved.any((t) => t.id == futureTouched.id), isTrue);
-
-      // Fresh instances regenerated under the new rule.
-      final regenerated = saved.where(
-        (t) =>
-            t.recurrenceId == 'series-1' &&
-            t.id != template.id &&
-            t.id != futureTouched.id,
-      );
-      expect(regenerated, isNotEmpty);
-    },
-  );
-
-  testWidgets(
-    'editing days from a NON-template instance still updates the shared '
-    'template',
-    (tester) async {
-      // Same reasoning as the previous test: the rule must cover the
-      // template's OWN real anchor weekday, not a hardcoded day that
-      // silently drifts out of sync with `_daysFromToday(0)`.
-      final today = _daysFromToday(0);
-      final template = Task.create(
-        title: 'Standup',
-        scheduledAt: today,
-        durationMinutes: 15,
-        categoryId: BuiltInCategoryIds.work,
-        recurrenceId: 'series-1',
-        recurrenceRule: RecurrenceRule(
-          frequency: RecurrenceFrequency.weekly,
-          daysOfWeek: [today.weekday],
-        ),
-      );
-      final instance = Task.create(
-        title: 'Standup',
-        scheduledAt: _daysFromToday(7),
-        durationMinutes: 15,
-        categoryId: BuiltInCategoryIds.work,
-        recurrenceId: 'series-1',
-      );
-      await tester.runAsync(() async {
-        await box.put(template.id, template);
-        await box.put(instance.id, instance);
-      });
-
-      await _pumpEditScheduleForm(
-        tester,
-        box: box,
-        categoryBox: categoryBox,
-        trackedBehaviorBox: trackedBehaviorBox,
-        templateBox: templateBox,
-        task: instance,
-      );
-      await _tapAndSettle(tester, _dayChip(DateTime.monday));
-      await _save(tester);
-
-      // The template's own weekday is still covered by the new rule
-      // (Monday was only added alongside it), so it stays the template.
-      final savedTemplate = box.get(template.id)!;
-      expect(
-        savedTemplate.recurrenceRule!.daysOfWeek,
-        containsAll([DateTime.monday, today.weekday]),
+        series.revisionOn(LocalDate.fromDateTime(today))!.rule.daysOfWeek,
+        containsAll([other, today.weekday]),
       );
     },
   );
 
   testWidgets(
-    'turning Repeats off on an existing series detaches the template and '
-    'prunes untouched future instances — a completed one survives',
+    'changing days from a later occurrence applies from that date only — '
+    'earlier days keep the old rule',
     (tester) async {
-      final template = Task.create(
-        title: 'Standup',
-        scheduledAt: _daysFromToday(0),
-        durationMinutes: 15,
-        categoryId: BuiltInCategoryIds.work,
-        recurrenceId: 'series-1',
-        recurrenceRule: RecurrenceRule(
-          frequency: RecurrenceFrequency.weekly,
-          daysOfWeek: [DateTime.thursday],
-        ),
-      );
-      final futureUntouched = Task.create(
-        title: 'Standup',
-        scheduledAt: _daysFromToday(7),
-        durationMinutes: 15,
-        categoryId: BuiltInCategoryIds.work,
-        recurrenceId: 'series-1',
-      );
-      final futureCompleted = Task.create(
-        title: 'Standup',
-        scheduledAt: _daysFromToday(14),
-        durationMinutes: 15,
-        categoryId: BuiltInCategoryIds.work,
-        recurrenceId: 'series-1',
-      )..status = TaskStatus.completed;
-      await tester.runAsync(() async {
-        await box.put(template.id, template);
-        await box.put(futureUntouched.id, futureUntouched);
-        await box.put(futureCompleted.id, futureCompleted);
-      });
-
-      await _pumpEditScheduleForm(
+      final today = _daysFromToday(0);
+      final nextWeek = _daysFromToday(7);
+      final other = _otherWeekday(today);
+      final key = await _pumpHost(
         tester,
         box: box,
         categoryBox: categoryBox,
         trackedBehaviorBox: trackedBehaviorBox,
         templateBox: templateBox,
-        task: template,
       );
-      await _tapAndSettle(tester, _repeatsSwitch());
+      await _seedWeeklySeries(tester, key, days: [today.weekday]);
+      await _openSheetFor(tester, key, _occurrenceOn(key, nextWeek));
+
+      await _tapAndSettle(tester, _dayChip(other));
       await _save(tester);
 
-      final saved = box.values.toList();
-      final savedTemplate = saved.firstWhere((t) => t.id == template.id);
-      expect(savedTemplate.isRecurring, isFalse);
-      expect(savedTemplate.recurrenceRule, isNull);
-
-      expect(saved.any((t) => t.id == futureUntouched.id), isFalse);
-      final survivingCompleted = saved.firstWhere(
-        (t) => t.id == futureCompleted.id,
+      final series = _allSeries().single;
+      expect(
+        series.revisionOn(LocalDate.fromDateTime(today))!.rule.daysOfWeek,
+        [today.weekday],
       );
-      // The completed instance itself keeps ITS OWN recurrenceId — only
-      // the template detaches (confirmed via AskUserQuestion); a past
-      // action on one occurrence still shows it was part of a series.
-      expect(survivingCompleted.recurrenceId, 'series-1');
+      expect(
+        series.revisionOn(LocalDate.fromDateTime(nextWeek))!.rule.daysOfWeek,
+        containsAll([other, today.weekday]),
+      );
     },
   );
+
+  testWidgets('turning Repeats off ends the series from today — a completed '
+      'occurrence keeps its record', (tester) async {
+    final today = _daysFromToday(0);
+    final key = await _pumpHost(
+      tester,
+      box: box,
+      categoryBox: categoryBox,
+      trackedBehaviorBox: trackedBehaviorBox,
+      templateBox: templateBox,
+    );
+    final first = await _seedWeeklySeries(tester, key, days: [today.weekday]);
+    final occurrenceKey = occurrenceKeyOfTask(first);
+    await tester.runAsync(
+      () => _store(key).run(
+        SetOutcome(
+          'done-1',
+          key: occurrenceKey,
+          expectedVersion: null,
+          outcome: OccurrenceOutcome.done,
+          completionDate: LocalDate.fromDateTime(today),
+        ),
+      ),
+    );
+    await _openSheetFor(tester, key, _occurrenceOn(key, today));
+
+    await _tapAndSettle(tester, _repeatsSwitch());
+    await _save(tester);
+
+    final series = _allSeries().single;
+    expect(series.endsAfter, LocalDate.fromDateTime(today).addDays(-1));
+    expect(
+      HiveOccurrenceRecordRepository.opened().get(occurrenceKey)!.outcome,
+      OccurrenceOutcome.done,
+    );
+  });
 
   // Regression test for a real bug, reported directly: "had task that just
   // category time and it created double and both were repeated across all
   // days, saw 2 tasks everyday.. just by saving". Same time, no schedule
   // change, already recurring on every day — just opening and saving.
   testWidgets(
-    'saving an ALREADY all-days-recurring task without changing anything '
-    'does not mint a second parallel series — one row per day, not two',
+    'saving an occurrence without changing anything writes nothing — no '
+    'second series, no revision, no override',
     (tester) async {
-      final template = Task.create(
-        title: 'Standup',
-        scheduledAt: _daysFromToday(0),
-        durationMinutes: 15,
-        categoryId: BuiltInCategoryIds.work,
-        recurrenceId: 'series-1',
-        recurrenceRule: RecurrenceRule(
-          frequency: RecurrenceFrequency.weekly,
-          daysOfWeek: const [1, 2, 3, 4, 5, 6, 7],
-        ),
-      );
-      await tester.runAsync(() => box.put(template.id, template));
-
-      await _pumpEditScheduleForm(
+      final today = _daysFromToday(0);
+      final key = await _pumpHost(
         tester,
         box: box,
         categoryBox: categoryBox,
         trackedBehaviorBox: trackedBehaviorBox,
         templateBox: templateBox,
-        task: template,
       );
+      await _seedWeeklySeries(tester, key, days: const [1, 2, 3, 4, 5, 6, 7]);
+      await _openSheetFor(tester, key, _occurrenceOn(key, today));
       await _save(tester);
 
-      final saved = box.values.toList();
-      expect(
-        saved.map((t) => t.recurrenceId).toSet(),
-        {'series-1'},
-        reason:
-            'a second recurrenceId means a whole parallel series was '
-            'minted alongside the original',
-      );
-
-      final perDay = <String, int>{};
-      for (final t in saved) {
-        final d = t.scheduledAt!;
-        perDay['${d.year}-${d.month}-${d.day}'] =
-            (perDay['${d.year}-${d.month}-${d.day}'] ?? 0) + 1;
-      }
-      final doubled = perDay.entries.where((e) => e.value > 1).toList();
-      expect(
-        doubled,
-        isEmpty,
-        reason: 'these days ended up with more than one row: $doubled',
-      );
+      final series = _allSeries().single;
+      expect(series.version, Series.initialVersion);
+      expect(HiveOccurrenceRecordRepository.opened().getAll(), isEmpty);
     },
   );
 
@@ -656,31 +559,10 @@ void main() {
       await _startNewRepeatingTask(tester, navigatorKey);
       await _tapAndSettle(tester, find.text('Add'));
 
-      final saved = box.values.toList();
-      final seriesIds = saved
-          .map((t) => t.recurrenceId)
-          .whereType<String>()
-          .toSet();
-      expect(
-        seriesIds.length,
-        lessThanOrEqualTo(1),
-        reason:
-            'more than one recurrenceId means a second parallel series '
-            'was created by a single Save',
-      );
-
-      final perDay = <String, int>{};
-      for (final t in saved) {
-        final d = t.scheduledAt!;
-        perDay['${d.year}-${d.month}-${d.day}'] =
-            (perDay['${d.year}-${d.month}-${d.day}'] ?? 0) + 1;
-      }
-      final doubled = perDay.entries.where((e) => e.value > 1).toList();
-      expect(
-        doubled,
-        isEmpty,
-        reason: 'these days ended up with more than one row: $doubled',
-      );
+      // Repeating tasks are series now: nothing lands in the task box, and
+      // exactly one series exists.
+      expect(box.values, isEmpty);
+      expect(_allSeries(), hasLength(1));
     },
   );
 
@@ -715,22 +597,11 @@ void main() {
       await tester.pumpAndSettle();
     });
 
+    expect(box.values, isEmpty);
     expect(
-      box.values.map((t) => t.recurrenceId).whereType<String>().toSet().length,
-      lessThanOrEqualTo(1),
-      reason: 'a second committed save minted a second parallel series',
-    );
-    final perDay = <String, int>{};
-    for (final t in box.values) {
-      final d = t.scheduledAt!;
-      perDay['${d.year}-${d.month}-${d.day}'] =
-          (perDay['${d.year}-${d.month}-${d.day}'] ?? 0) + 1;
-    }
-    final doubled = perDay.entries.where((e) => e.value > 1).toList();
-    expect(
-      doubled,
-      isEmpty,
-      reason: 'these days ended up with more than one row: $doubled',
+      _allSeries(),
+      hasLength(1),
+      reason: 'a second committed save created a second series',
     );
   });
 }

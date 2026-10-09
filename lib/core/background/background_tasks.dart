@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';
+import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:workmanager/workmanager.dart';
 
 import '../../hive_registrar.g.dart';
@@ -11,6 +13,12 @@ import '../../shared/providers/preferences_providers.dart'
     show preferencesBoxName;
 import '../../shared/providers/task_providers.dart' show taskBoxName;
 import '../../shared/services/slack_summary_service.dart';
+import '../../shared/providers/series_providers.dart' show openSeriesModelBoxes;
+import '../../shared/repositories/occurrence_record_repository.dart';
+import '../../shared/repositories/series_repository.dart';
+import '../../shared/repositories/zone_history_repository.dart';
+import '../../shared/services/occurrence_task_projection.dart';
+import '../../shared/services/occurrence_timing.dart';
 
 /// Unique name for the periodic morning-summary work request — passed to
 /// both `Workmanager().registerPeriodicTask` and `cancelByUniqueName`, and
@@ -146,13 +154,16 @@ Future<void> _sendMorningSummary() async {
 
   final taskRepository = HiveTaskRepository(taskBox);
   final now = DateTime.now();
-  final todaysTasks = taskRepository.getTasks().where((task) {
-    final scheduledAt = task.scheduledAt;
-    if (scheduledAt == null) return false;
-    return scheduledAt.year == now.year &&
-        scheduledAt.month == now.month &&
-        scheduledAt.day == now.day;
-  }).toList();
+  final todaysTasks = [
+    ...taskRepository.getTasks().where((task) {
+      final scheduledAt = task.scheduledAt;
+      if (scheduledAt == null) return false;
+      return scheduledAt.year == now.year &&
+          scheduledAt.month == now.month &&
+          scheduledAt.day == now.day;
+    }),
+    ...await _todaysOccurrences(now),
+  ]..sort((a, b) => a.scheduledAt!.compareTo(b.scheduledAt!));
 
   final text = buildMorningSummaryText(todaysTasks);
   final payload = buildSlackPayload(
@@ -161,4 +172,24 @@ Future<void> _sendMorningSummary() async {
     iconEmoji: preferences.getValue<String>(PreferenceKeys.slackIconEmoji),
   );
   await postToSlackWebhook(webhookUrl: webhookUrl, payload: payload);
+}
+
+/// Today's repeating-task occurrences, resolved in this isolate the same way
+/// the app does (it has no providers here).
+Future<List<Task>> _todaysOccurrences(DateTime now) async {
+  tz_data.initializeTimeZones();
+  final zone = (await FlutterTimezone.getLocalTimezone()).identifier;
+  await openSeriesModelBoxes();
+  final clock = OccurrenceClock(
+    now: now,
+    currentZone: zone,
+    history: HiveZoneHistoryRepository.opened().load(),
+  );
+  return occurrenceTasksBetween(
+    series: HiveSeriesRepository.opened().getAll(),
+    records: HiveOccurrenceRecordRepository.opened().getAll(),
+    from: clock.today,
+    to: clock.today,
+    clock: clock,
+  );
 }

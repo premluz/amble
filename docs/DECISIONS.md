@@ -5592,3 +5592,496 @@ edits already regenerate those rows; past rows are kept as-is.
 Existing defect recorded (not fixed): `_deleteFutureInstancesForRealign` and
 `_deleteUntouchedFutureInstances` delete future pending rows including their
 notes when a series time/duration or rule changes.
+
+## 2026-10-02 — Recurrence data model (Option B) built inert: no migration, no wiring
+
+Built the data model from `docs/RECURRENCE_CONTRACT.md` as new, unused files —
+requested directly ("no migration, just data model", then "execute full
+plan"). Existing tasks, screens and the materialized generator are untouched;
+`CONSTITUTION.md` is not amended until something uses it.
+
+- **Option B shape chosen for the model** because it keeps both options open:
+  occurrences could still be stored as rows later. `Series` holds an
+  effective-dated revision list; per-occurrence `OccurrenceRecord`s hold
+  overrides, outcome, value and note; `resolveOccurrences` merges them.
+- **Field overrides are typed** (`Inherit` / `SetTo` / `Clear`, sealed), so
+  "cleared" is impossible on fields like title at compile time.
+- **Storage: JSON-map Hive boxes** (`series`, `occurrence_records`,
+  `behavior_target_history`, `zone_history`), same as `zone_facets` — no
+  adapter type IDs. Boxes are not opened at launch yet.
+- **Stale writes are rejected**, not merged: every save must be exactly one
+  version past what is stored (`StaleWriteException`).
+- **Reused** `RecurrenceRule` (daily/weekly) and
+  `recurrenceRuleIncludesWeekday`, so cadence matches the current generator.
+  No new dependency.
+- **Contract defaults applied** for open §8 questions: cadence anchored to the
+  series start; occurrence count transfer not supported (rule has no count).
+- **Two time rules changed by testing:** a spring-forward gap shifts by the
+  gap length (RFC 5545), and a repeated fall-back time resolves to the first
+  occurrence — the `timezone` package picks the second, so the model
+  corrects it. And a day keeps the zone it began in (a zone change applies
+  from the next day) — otherwise flying west revived an omitted day.
+
+Not built: command layer (persisted command ids, conflict-safe undo),
+migration, notifications, UI, backup format.
+
+## 2026-10-02 — Recurrence command layer (inert)
+
+Built on the inert data model, still unused by the app:
+- **Typed commands** (`recurrence_command.dart`): create/revise/end series;
+  set outcome, note, measured value; override or reset plan fields.
+- **Retry safety:** a command log (`recurrence_command_log` box) records each
+  applied command id; a retry returns the logged result without writing. A
+  created series takes the command id as its own id, so a crash between
+  saving and logging still cannot duplicate it; an occurrence command
+  replayed after such a crash fails its version check rather than applying
+  twice.
+- **Concurrency:** every command states the version it saw; a mismatch is a
+  `StaleWriteException`, never a silent overwrite.
+- **Undo is per aspect** (`RecordAspect`: each plan field, outcome, value,
+  note). It reverts only what its command wrote and is refused
+  (`UndoConflictException`) if any of that changed since; other changes
+  survive. Series undo is refused if a later series edit exists, or (for a
+  creation) if occurrence data was recorded on it. A record left with nothing
+  to say is deleted, so undo leaves no trace.
+- **Log retention: 7 days**, because entries hold before/after values
+  including note text.
+
+Not built: notification reconciliation after writes, UI wiring, migration.
+
+## 2026-10-02 — Occurrence alerts: planner + reconciler (inert)
+
+- **Count budget, not just a time window:** at most 48 occurrence alerts,
+  soonest first, within the existing 14-day horizon. iOS keeps only the 64
+  soonest pending local notifications per app; 48 leaves room for task and
+  zone alerts. Excludes cancelled, done, skipped and outside-plan
+  occurrences.
+- **Reconcile, never blanket-cancel:** only alerts that differ are cancelled
+  or scheduled; state is recorded per alert after the OS call succeeds, so a
+  failure is reported and retried next run. Failures are returned, not
+  swallowed.
+- **Payload = occurrence key** (`occurrence:<series>|<date>|<ordinal>`), so a
+  tap opens the exact occurrence even after a move (S3).
+- **Stable ids:** FNV-1a of the payload, not `String.hashCode` (not promised
+  stable across runs). Pinned by a test against an independently computed
+  value.
+- **Wiring note:** the launch-time `NotificationService.refreshScheduled`
+  calls `cancelAll()`, which also removes occurrence alerts — when wired, it
+  must be followed by `OccurrenceAlertStateRepository.clear()` and a
+  reconcile. The `AlertScheduler` adapter over `NotificationService` is part
+  of wiring, not built yet.
+
+## 2026-10-02 — Series model wired behind a developer toggle (no migration)
+
+Settings → Developer → "Series model for new repeating tasks" (persisted,
+off by default). With it on, a new repeating task becomes a `Series`; its
+occurrences appear on the Timeline and every existing interaction acts on
+them through series commands. Existing repeating tasks are untouched — no
+migration. Turning it off hides series occurrences and cancels their
+alerts; it never deletes them.
+
+- **Occurrences reuse the `Task` UI as unsaved tasks** whose id is the
+  occurrence payload (`occurrence:<series>|<date>|<ordinal>`). The
+  alternative — teaching the ~6,600-line Timeline a new block type — was the
+  bulk of the earlier 15–25 day estimate.
+- **Routing happens in one place: `SeriesRoutingTaskRepository`**, wrapping
+  the task repository. Saving an occurrence task becomes "this occurrence"
+  commands (only changed fields override; a note never freezes anything —
+  D1); deleting one cancels it; reading one by id resolves it. Every
+  `TaskList` path (complete, drag, cascade, trim, resize, batch delete)
+  therefore works without per-path changes, and an occurrence can never be
+  written as a plain task. `getTasks()` stays real-tasks-only, so Inbox,
+  materialization and task notifications never see occurrences.
+  `deleteTaskSeries` routes explicitly to "end series from today".
+- **Edit sheet:** repeat turned off → end series; repeat days, tracked
+  behavior or "affect future instances" changed → new revision from the
+  occurrence's date (never the past); otherwise "this occurrence"
+  overrides. The sheet reads the occurrence's own rule instead of looking up
+  a template row.
+- **Display uses the occurrence's own wall-clock time**, not `.toLocal()`, so
+  a past day keeps its times after travel (contract §7) and edits read back
+  in the same terms.
+- **Alerts:** task notifications skip occurrence ids; occurrence alerts come
+  from the reconciler after each command, on toggle change, and at launch
+  after the task refresh's `cancelAll()` (alert state is cleared first). A
+  tapped occurrence alert opens the day the occurrence is on now.
+- `NotificationService` gained `scheduleOccurrenceAlert` /
+  `cancelNotification`; `PreferenceKeys.seriesModelEnabled` added.
+
+Known gaps (dev toggle): undo toasts restore occurrences by re-saving the
+snapshot (field diff), not via command-level undo; no UI yet to un-cancel an
+occurrence; quick-add / voice capture still create materialized series.
+
+## 2026-10-02 — Series is the only repeating-task model; materialized code removed
+
+Confirmed directly via AskUserQuestion: no migration ("it's all staged
+data" — test devices are wiped by reinstalling; no code deletes data), series
+for everything, then remove the old code.
+
+- **`TaskList.createTask(recurrenceRule:)` creates a series** and returns its
+  first occurrence — so the task sheet, quick capture, voice capture, Siri
+  App Intents and dev entry points all switched at once. The developer
+  toggle, its preference key and its Settings switch are gone.
+- **Removed:** `generateRecurrenceInstances` and the rolling window for tasks
+  (zones keep `recurrenceWindowWeeks`), `materializeDueRecurrences`,
+  `findSeriesTemplate`, `findOrphanedRecurringTaskIds`, the three
+  recurrence-edit methods, prune/realign/re-anchor, template promotion,
+  `tasksInSeries`, `propagateBehaviorLinkToSeries`, `clearBadStateTasks` and
+  its Developer button. `task_providers.dart` went from ~1,385 to ~730 lines.
+- **Task sheet:** turning Repeat on for a plain task replaces it with a
+  series from its date. Day changes are compared as day sets — the form
+  writes "all seven days" as a daily rule, which must not read as a change
+  (found by a rewritten test).
+- **Undo:** "Remove this occurrence" / "Remove all occurrences" and quick
+  capture's undo of a repeating capture reverse the exact series command
+  (`TaskList.cancelOccurrence` / `deleteTaskSeries` / `undoSeriesChange`).
+- **Readers that listed stored tasks now include occurrences:** Timeline
+  same-day checks (overlap, push-aside, multi-select, resize) via the day
+  list; move/resize undo by id; Siri day summary / find / remove over its
+  14-day window; morning Slack summary (foreground preview and background
+  isolate); tracked-behavior progress over a year. Not yet: calendar sync
+  (pushes stored tasks only) and zone-resize task shifting by `zoneId`.
+- **Alert updates are queued**, one after another — found by a test where
+  two quick commands raced.
+- **Tests:** `test/flutter_test_config.dart` gives every test fresh, empty
+  series boxes in a per-process directory (parallel test files collided on
+  one directory). Old materialized-series tests removed
+  (`recurrence_generator_test.dart` and the series groups in
+  `task_providers_test.dart`); sheet, remove, Siri and notification tests
+  rewritten against series.
+
+## 2026-10-03 — Automatic shifts on visible spatial Timelines glide
+
+Confirmed directly: the Timeline's return after closing a long-press
+quick-create sheet should be as smooth as the reveal above that sheet. The
+shared rule is that app-initiated scrolling on an already visible spatial
+surface uses `TimelineScrollTokens.revealDuration` and `curveStandard`.
+Quick-create dismissal holds its extra scroll clearance while returning,
+then adjusts to the final scroll extent after the sheet's layout settles.
+Saved-task reveals and the weekly Zones grid's pending-zone reveal use the
+same motion. Finger-driven scrolling and pinch remain immediate; initial
+positioning before the surface is shown may jump without a visible shift.
+
+## 2026-10-03 — Day navigation preserves time without replaying task motion
+
+Moving to another date keeps the currently viewed clock hour. The spatial
+Timeline uses a fresh, date-keyed day view so task positions are calculated
+for the destination day before its first visible frame; this is not a task
+arrival or a scroll animation. A captured viewed time is passed into that
+view so layout and scroll notifications during the swap cannot replace the
+intended hour. Task entrance and position-settle motion remain for changes
+within one day.
+
+## 2026-10-03 — Week swipe preserves the day-cell rhythm across the seam
+
+The expanded calendar strip's page pitch is its measured width plus one
+ordinary inter-day gap, derived from the same equal-width cells and
+`spaceBetween` layout that positions Monday through Sunday. That pitch is
+used for adjacent-week placement, drag clamping, the halfway threshold, and
+the settle target. A bare strip-width pitch made Sunday and the adjacent
+week's Monday touch while every other pair of days had breathing room.
+
+## 2026-10-07 — List view shows the "now" marker between rows, never over a task
+
+Requested directly: "show the current time line as we do on the timeline
+view (spatial)... on Task view, but it will always be between the tasks.
+It will never overlap a task." "Task view" here is the dock's non-spatial
+**List** view (`ZoneDayTimeline`) — the spatial Timeline already had the
+line, and "between the tasks" only applies to the list.
+
+**Placement, confirmed via AskUserQuestion**: after every row that has
+started, so an in-progress task stays ABOVE the line; when the last started
+row is a zone still in progress, the line goes inside that zone between its
+own member tasks. One shared rule (`nowMarkerIndex`) serves both the
+top-level list and the in-zone rows, and the list's sort key (`_rowStart`)
+is now one function used by both sorting and placement, so they can't
+disagree about order.
+
+**One marker widget**: the `[pill] [dot] [line]` row was extracted from
+`CurrentTimeIndicator` into `CurrentTimeMarker` and reused, not copied —
+`pillSizesRow` is the only difference (spatial measures the dot so the line
+stays on the exact minute; the list lets the pill size its own row). See
+docs/DESIGN_SYSTEM.md's "Current-time indicator" section.
+
+## 2026-10-07 — Day rollover: new day jumps to today; same-day return keeps your place
+
+On a calendar-day change, detected on Day-screen mount, at a minute
+boundary while open, or on app resume, the Day screen selects today and
+forgets the remembered scroll hour, so it opens centered on "now".
+Requested directly: "open always at current day and current hour in the
+middle." A return on the SAME day changes nothing, so a user browsing
+another day keeps their place. Midnight passing while the app is open
+rolls over too, because the watcher can't tell "watching the clock" from
+"came back". `currentDayProvider` holds no timer: only
+`DayRolloverWatcher` (a widget) owns one, so tests and other screens never
+inherit a running clock.
+
+## 2026-10-08 — Wide layout, phase 1: left sidebar replaces the top nav
+
+Requested directly, against a desktop-calendar reference: a three-pane
+desktop layout (left nav, centre content, right create/edit panel), built
+in phases. Phase 1 is the shell only. At window width ≥ 840 (Material 3's
+"expanded" size class, `ShellLayoutTokens.sideNavMinWindowWidth`)
+`AmbleHome` shows `AppSideNav` (a 240-wide sidebar: Days / Things /
+Patterns, Settings gear at the foot) beside the existing content, and drops
+the top nav. Below 840 the phone layout is unchanged.
+
+- **Same nav, two directions.** Both navs use the same `AppNavLabel` and
+  the extracted `AppNavSettingsGear`. Their taps go through the same
+  `_selectDestination` / `_openSettings`, so they can't drift apart in look
+  or behaviour.
+- **No empty header band.** In the wide layout the shell header mounts only
+  while a screen claims it (today, only the Edit screen's Things | Zones
+  switch), so the content starts at the top.
+- **The right panel is deliberately not in phase 1.** It arrives in phase 2
+  with the real task editor (`TaskSheetForm` + fields + save, in a
+  side-panel shell). An empty placeholder pane now would be a half-built
+  feature.
+- **Not yet done:** the bottom dock and floating "+" still float over the
+  centre content; the week grid, the mini month and keyboard shortcuts are
+  later phases.
+
+## 2026-10-08 — Wide layout, phase 2: task editor in a right-hand panel
+
+Requested directly: "on the right, if the user clicks an item, this is how
+they would create it... if they click an existing one, this is how they
+would edit it."
+
+- **One editor, two hosts.** The sheet's body became `TaskEditor`
+  (`task_editor.dart`), which never closes itself: it calls `onFinished`,
+  and the host pops the sheet or empties the panel. Form, fields and save
+  are unchanged.
+- **One entry point decides.** `showTaskSheet` opens the panel whenever a
+  `TaskInspectorPanel` is on screen (it registers itself with
+  `taskInspectorProvider`) and a bottom sheet otherwise. Every caller
+  (timeline pills, Things, Patterns, the action sheet's Edit/Duplicate) gets
+  the panel in the wide layout without knowing about it.
+- **No silent loss.** Opening another task while the panel has unsaved
+  edits asks the same Save / Discard / Keep editing question that closing
+  does; Keep editing leaves everything as it was.
+- **The panel has no width while closed,** so the centre keeps the full
+  width until something is opened. No drag handle in the panel (that
+  gesture belongs to sheets).
+- **Not yet:** the timeline's in-place quick-create (long-press on empty
+  time, the "+" button) still uses its bottom quick-create sheet. Moving
+  it into the panel is the next step.
+
+## 2026-10-08 — Wide layout: Timeline quick-create opens in the right panel too
+
+Completes phase 2. In the wide layout, a Timeline draft (released
+long-press, or "+") opens in the right-hand panel instead of the phone's
+bottom quick-create sheet. The pill stays on the Timeline, linked both
+ways by `DraftFormLink`: dragging the pill updates the fields, and picking
+a time or length moves the pill. Opening waits until the draft's sheet
+would have shown, so holding and stretching the pill shows the pill only,
+as on phones.
+
+- **One question for every replacement.** A draft starting while the panel
+  holds unsaved edits asks the usual Save / Discard / Keep editing. Keep
+  editing cancels the new draft, so its pill doesn't linger with nowhere to
+  edit it.
+- **A draft asks before discarding only when a name was typed.** Its time
+  is just where the user pressed, so an untouched draft closes silently,
+  as the phone sheet does.
+- **`QuickCreateOverlay` is untouched.** It's simply not mounted while the
+  panel is present. It currently has another session's uncommitted edits,
+  and its form↔pill link duplicates `DraftFormLink`, so it could adopt that
+  later. That follow-up is noted here, not done.
+- The panel moved to `task_inspector_panel.dart`; `task_inspector.dart`
+  keeps the request and notifier. The editor was split to stay under 200
+  lines: `task_editor_body.dart` (layout and the sheet's back/drag guard)
+  and `task_editor_form.dart` (seeding defaults).
+
+## 2026-10-08 — Promo film: a code-built HTML film in `promo/`
+
+A 64-second launch film, written as code. It lives outside the app in
+`promo/` and touches nothing under `lib/`.
+
+- **Plain HTML/CSS/JS, no dependencies.** Every frame is a pure function of
+  time, so the film plays and scrubs in a browser and renders
+  frame-accurately. Remotion was the obvious alternative, but it needs new
+  npm packages (a stop-and-ask here). The engine/scene split mirrors
+  Remotion's model if that is wanted later.
+- **The UI is the built UI.** Screens are rebuilt from the real tokens and
+  were checked against renders of the real `AmbleHome` from a temporary
+  widget test (deleted afterwards). The film shows behaviour as built:
+  dropping onto a task opens Overlap / Push all / Trim, and the cascade
+  comes from "Push all" (it is not automatic); the toast reads "Moved 3
+  task(s)"; What Matters drops unstarred tasks 40 px as they fade; swipe
+  left completes, with bubbles and ripple. The checkbox's emoji
+  celebration is left out, since it conflicts with BRAND.md.
+- **Storytelling liberties stay outside the app's behaviour.** Zone bands
+  fade in when Zones are introduced, cuts between times of day dip to the
+  page colour, and the calendar in scene 2 is a generic one, not Amble.
+- **Name.** The film says "Amble", as requested and as in
+  `MaterialApp.title`, but `assets/branding/` has a "Rios" wordmark. The ≋
+  mark is reused as is. The name is one constant (`product` in
+  `promo/js/data.js`).
+- **Rendering uses tools already installed.** Capture uses an installed
+  `playwright-core` (path in `PLAYWRIGHT_CORE`) with Playwright's cached
+  Chromium, and encoding uses AVFoundation through `swift`. Output goes to
+  `promo/out/`, which is git-ignored.
+
+## 2026-10-08 — Wide layout: panel settings one per line; pickers as popovers
+
+Requested directly against Notion Calendar's event panel: "the task
+creation exposes the configuration one line at a time, not as in mobile, in
+a row... when they're clicked, there is a contextual pane next to it, not
+from the bottom sheet."
+
+- **Adaptive `AppSheet.show`, not per-picker changes.** An
+  `AppSheetPresentationScope` (set by `TaskInspectorPanel`) makes every
+  `AppSheet.show` below it open an `AppPopoverRoute` beside the control.
+  This is the "adaptive AppSheet" recommended in the handover: one entry
+  point switches the time, length, repeat, label, tracked, preset and note
+  pickers, and pickers opened from inside a popover stay popovers. Phones
+  are unchanged.
+- **Placed beside the panel, level with the row** — not beside the tapped
+  value, which put the popover over the panel itself (caught by a test).
+  Left first, then right, then below; always on screen.
+- **Sized to its content**, measured off stage for one frame, then grown
+  out of the row with `AppLiquidMorph` (the design system's rule for
+  surfaces that emerge from a touch). Content state survives the move on
+  stage via a `GlobalKey`; later growth resizes the panel in place.
+- **Date becomes a month calendar in the popover** (`showAppDatePicker`);
+  phones keep the platform date dialog.
+- **One setting per line** (`TaskPanelFields`): time row "start → end ·
+  length" (end and length open the length picker), date, repeat summary
+  ("Every day", "Weekdays", or the days), label name, tracked behavior
+  name, Important and Notify as switches, note's first line. Unset values
+  show their name in the quiet tone, as Notion does.
+- **Judgment calls, flagged**: icons per line (bookmark, schedule,
+  calendar, repeat, tag, fingerprint, star, bell, notes); "Notify at start"
+  wording; length stays in the "30m" form the chips use. Escape, hover and
+  focus order are not done; they belong with keyboard shortcuts (phase 4).
+
+## 2026-10-08 — Neutral surfaces with finer steps; quieter separators
+
+Requested directly against Notion Calendar, Linear, Devin and cmux, both
+themes: "very, very subtle color steps... very, very, very subtle separator
+lines." Measured there: neutral greys, steps of 2–8 RGB units, separators
+1.14–1.23× the surface. Ours were olive-tinted in dark (chroma up to .009)
+and our separators were 1.49× (dark) and 1.37× (light).
+
+- **Values, not roles, changed.** The ink and paper/cream/surface primitives
+  were re-solved in OKLCH at hue 90, chroma ≤ .003. Every semantic token
+  keeps its primitive, so no widget changed.
+- **Warmth kept as a trace.** The 2026-09-20 "warm paper" decision is not
+  reversed; its cream cast is reduced to a hint. Flagged as a judgment call.
+- **The light base stays below luminance 0.90** (`elevation_direction_test`):
+  the first attempt (`#F4F4F3`, 0.904) failed it, so the base is `#F3F2F1`.
+- **Not done: button shape.** The references use small rounded rectangles on
+  desktop; Amble uses pills. That's a shape decision for the user, not a
+  token tune (see PROGRESS_LOG).
+- **Update, same day: desktop buttons smaller, not reshaped.** Answered
+  directly: "size of buttons on desktop, not shape". `DesktopDensity`
+  steps every button rung down one size inside the wide shell only (md
+  40→32). Done as a theme override, not per-widget, so everything aligned
+  to the button scale shrinks together. Risk flagged: touch-first iPad
+  landscape also gets the smaller targets.
+- **Update, same day: desktop type one step smaller; panel inset 16.**
+  Requested directly ("study typography, weight, size and spacing... and
+  adapt"). Measured in the references: UI text ~13–14pt, titles ~22pt,
+  rows 26–32pt. `DesktopDensity` now also sets body 14, label 13 (new
+  `TypePrimitives.size1Point5`), title 18 (new `size3Point5`), headline 24;
+  the task panel's padding is `spacingMd`. Phones unchanged. Not changed:
+  font weights. The references use regular/medium; Amble's base styles do
+  too, but ~40 call sites override to bold (task pill titles, edge times,
+  date header, settings). Softening those is a design decision, flagged.
+- **Update, same day: no bold anywhere; semibold is the heaviest weight.**
+  Answered directly: "soften everything bold to semibold, on phone and
+  desktop". 79 bold uses in 37 files became w600, including the headline
+  style; the unused `TypePrimitives.weightBold` was removed so bold can't
+  return through the token. Tests that measure the painted weight
+  (time-column fit, title alignment, chip and calendar-day weight) moved
+  to w600 with it. This reverses earlier per-component choices of w700
+  (e.g. task pill titles for scannability) as one deliberate system change.
+
+## 2026-10-08 — Wide layout, phase 3: Day / Week / Month
+
+Requested directly: "on desktop view switcher for number of days shown Day /
+Week / Month (Month shows just tasks without zones and not spatiality)",
+against Notion Calendar's week and month.
+
+- **Week is spatial and shows zones**; month is neither, as asked. Week
+  starts Monday (as the app's day chips and Patterns week do).
+- **One date drives all three**: the views share `selectedDateProvider`;
+  only the span is new state (`calendarSpanProvider`, in memory). Previous /
+  next step by the shown span; a month step clamps to the shorter month.
+- **A task opens in the side panel; a day opens Day view.** Judgment calls,
+  flagged: no drag between days and no click-to-create in week/month yet
+  (the handover's later step), month shows 4 tasks before "+N more", the
+  span isn't persisted across launches.
+- **One day query.** `tasksScheduledOn` / `tasksOnDayProvider` now back the
+  Day screen's own `tasksForSelectedDay` too, so the views can't disagree.
+- `AppTabSwitch` for the span switch (the guide's control for view
+  switches), at a fixed `spanSwitchWidth` since it fills its width.
+- **Update, same day: Rios pills in the week; grid lines as an Appearance
+  toggle.** Requested directly: "keep this layout (traditional calendar),
+  but also week view should have Rios pills... very super subtle calendar
+  grid lines, splitting days and hours (let's add these lines as appearance
+  toggle)". The week reuses `TaskCapsuleBlock` read-only instead of tinted
+  blocks; overlaps follow the Day screen (pills side by side, text on the
+  last, `splitLayout` for the rest) because a half-width lane left the
+  title 12px (the pill reserves its checkbox slot). Grid lines: new
+  `PreferenceKeys.calendarGridLines`, default on, a plain `Notifier` (no
+  codegen run); applies to week and month. The Day view's own hour ticks
+  are unchanged.
+- **Update, same day: every week title shows.** Reported directly against
+  a screenshot: "not seeing label of others" — overlapped pills showed no
+  title. The week now splits pill and text like the Day screen: pills pack
+  side by side, every title sits in a shared column after them at its own
+  time (pushed down only to avoid covering the row above). Titles only: a
+  start-time column left ~48px for a title in a busy column ("Dee…").
+
+## 2026-10-08 — macOS: full-bleed window under a transparent title bar
+
+Requested directly: "in reference height is full bleed even covering that
+part where close/minimise... 3 Apple dots are on the left; it utilises that
+space also." `MainFlutterWindow.swift` sets `titlebarAppearsTransparent`,
+hides the title and adds `.fullSizeContentView`. The app treats the bar's
+height (28) as a top safe area on macOS (`AppWindowInsets`), and in the
+wide layout each pane applies it inside its own background.
+
+- **Controls stay below the bar** (judgment call, flagged): Notion puts its
+  toolbar inside the bar's row, but the transparent bar keeps dragging the
+  window, which would make the top of a button there unclickable. Moving
+  the toolbar up into that row needs a window-drag/hit-test arrangement;
+  not done.
+- Web, Windows and phones are unaffected (the inset is macOS-only).
+
+## 2026-10-08 — Shell lines: one physical pixel, softer
+
+Requested directly: "separator lines / interface shell lines too thick and
+too strong". New `AppHairline` (1 / device pixel ratio wide) for the
+sidebar and side-panel dividers (`colorBorder` × .7) and the week/month
+grid lines (× .55). On Retina these were 2 physical pixels. Scoped to the
+desktop shell and calendar; other borders unchanged. Also parked: the
+pen.dev floating-pane window ("not for now"), plan in DESKTOP_HANDOVER.md.
+- **Correction, 2026-10-09: 1 point, not one physical pixel.** Clarified
+  directly with a Notion Calendar reference. Measured: Notion's lines are
+  1 point (2 physical px on Retina); ours were 2 points because
+  `borderWidthHairline` is `space1` = 2 — the real "too thick". The
+  one-physical-pixel change overshot to half Notion's width. Now 1 point
+  (`ShellLayoutTokens.lineWidth`), strengths matched to Notion's measured
+  steps in dark: hour +6 (`hourLineAlpha` .4), day +9 (`dayLineAlpha` .6),
+  divider +13 (`dividerAlpha` .85). Light uses the same alphas (−8 / −12 /
+  −17 on the card). Not changed: the app-wide 2-point
+  `borderWidthHairline` used by cards, fields and selection rings — flagged
+  for a separate decision.
+
+## 2026-10-09 — Page slide behind a dev toggle; fade by default; Patterns fill stagger
+
+Requested directly: "this slide-in animation of content through screens
+with stagger, we need to gate it behind a dev toggle; if off, a simpler fade
+in... what then remains is only the stagger in Patterns colouring the
+'ticked off' days, fast... as default it's fade in, not slide in."
+
+- `DevPageSlideMotion` (Settings → Developer → Motion), default off; off,
+  `AppViewTransition` crossfades and `AppFollowThrough` is inert. A plain
+  `Notifier` (no codegen run).
+- **New, kept in both modes:** completed Patterns days colour in by grid
+  order within 240ms (+150ms each), via `AppStaggeredFill`. Nothing like it
+  existed before (days were instantly accent). It replays on each arrival
+  at Patterns through a new `AppViewArrival` signal from `AppViewTransition`
+  (judgment call: replay on every visit, not only first load).

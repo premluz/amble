@@ -50,8 +50,15 @@ abstract final class TypePrimitives {
   // one step is intentionally half the usual gap.
   static const size0 = 11.0;
   static const size1 = 12.0;
+
+  /// Between [size1] and [size2]: the desktop label size, matching the
+  /// ~13pt UI text measured in Notion Calendar, Linear and Devin.
+  static const size1Point5 = 13.0;
   static const size2 = 14.0;
   static const size3 = 16.0;
+
+  /// Between [size3] and [size4]: the desktop title (see `DesktopDensity`).
+  static const size3Point5 = 18.0;
   static const size4 = 20.0;
   static const size5 = 24.0;
   static const size6 = 32.0;
@@ -59,8 +66,10 @@ abstract final class TypePrimitives {
 
   static const weightRegular = FontWeight.w400;
   static const weightMedium = FontWeight.w500;
+  /// The heaviest weight in the app. Bold (w700) was retired 2026-10-08,
+  /// requested directly: "soften everything bold to semibold, on phone and
+  /// desktop", after the calmer weights of Notion Calendar and Linear.
   static const weightSemibold = FontWeight.w600;
-  static const weightBold = FontWeight.w700;
 
   static const lineHeightTight = 1.1;
   static const lineHeightNormal = 1.3;

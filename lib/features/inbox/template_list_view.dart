@@ -172,7 +172,7 @@ class TemplateRow extends StatelessWidget {
                     Text(
                       template.title,
                       style: theme.textBody.copyWith(
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w600,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,

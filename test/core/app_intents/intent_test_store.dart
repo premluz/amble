@@ -14,6 +14,8 @@ import 'package:amble/shared/models/task.dart';
 import 'package:amble/shared/models/zone.dart';
 import 'package:amble/shared/providers/category_providers.dart';
 import 'package:amble/shared/providers/notification_providers.dart';
+import 'package:amble/shared/providers/occurrence_store.dart';
+import 'package:amble/shared/providers/series_routing_task_repository.dart';
 import 'package:amble/shared/providers/task_providers.dart';
 import 'package:amble/shared/providers/zone_providers.dart';
 import 'package:amble/shared/repositories/hive_category_repository.dart';
@@ -58,7 +60,14 @@ class IntentTestStore {
         zoneFacetRepositoryProvider.overrideWithValue(
           MemoryZoneFacetRepository(),
         ),
-        taskRepositoryProvider.overrideWithValue(HiveTaskRepository(tasks)),
+        // Same routing as the app's own task repository, so series
+        // occurrences behave as they do in production.
+        taskRepositoryProvider.overrideWith(
+          (ref) => SeriesRoutingTaskRepository(
+            HiveTaskRepository(tasks),
+            () => ref.read(occurrenceStoreProvider.notifier),
+          ),
+        ),
         zoneRepositoryProvider.overrideWithValue(HiveZoneRepository(zones)),
         categoryRepositoryProvider.overrideWithValue(
           HiveCategoryRepository(categories),
@@ -75,6 +84,7 @@ class IntentTestStore {
   }
 
   Future<void> close() async {
+    await container.read(occurrenceStoreProvider.notifier).alertsSettled;
     container.dispose();
     await tasks.close();
     await zones.close();

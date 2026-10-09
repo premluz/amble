@@ -1,0 +1,129 @@
+/* In-app overlays: anchored glass menu, undo toast, completion bubbles and
+   ripple, the What Matters ring. Same glass recipe as the dock panes. */
+.ovl {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.menu {
+  position: absolute;
+  left: var(--mx);
+  top: var(--my);
+  width: var(--mw);
+  height: var(--mh);
+  overflow: hidden;
+  border-radius: var(--mr, 20px);
+  background: var(--a-glass);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 6px 20px -4px var(--a-shadow), inset 0 0 0 1px var(--a-glass-edge),
+    inset 0 1px 0 var(--a-glass-top);
+  opacity: var(--o, 1);
+}
+
+.menu[data-on='0'],
+.toast[data-on='0'],
+.bub[data-on='0'],
+.ring[data-on='0'],
+.wm-ring[data-on='0'] {
+  visibility: hidden;
+}
+
+.menu .rows {
+  position: absolute;
+  left: var(--rx, 0);
+  top: var(--ry, 0);
+  width: 196px;
+  padding-block: 4px;
+  opacity: var(--co, 1);
+  transform: scale(var(--cs, 1));
+  transform-origin: var(--ox, 50%) var(--oy, 0);
+}
+
+.menu .hl {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: var(--hy, 4px);
+  height: 48px;
+  border-radius: 24px;
+  background: var(--a-hover);
+  opacity: var(--ho, 0);
+}
+
+.menu .row {
+  position: relative;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-inline: 16px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.menu .row .ic {
+  font-size: 22px;
+}
+
+.toast {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 690px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-inline: 16px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--a-overlay) 86%, transparent);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 6px 20px -4px var(--a-shadow), inset 0 0 0 1px var(--a-glass-edge);
+  font-size: 16px;
+  opacity: var(--o, 1);
+  transform: translateY(var(--dy, 0));
+}
+
+.toast .undo {
+  margin-left: auto;
+  font-weight: 600;
+  color: var(--a-accent);
+}
+
+.bub {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--d);
+  height: var(--d);
+  margin: calc(var(--d) / -2) 0 0 calc(var(--d) / -2);
+  border-radius: 50%;
+  background: var(--a-accent);
+  transform: translate(var(--x), var(--y));
+  opacity: var(--o, 1);
+}
+
+.ring {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--w);
+  height: var(--h);
+  border: 1px solid var(--a-accent);
+  border-radius: var(--r);
+  opacity: var(--o, 1);
+}
+
+.wm-ring {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--d);
+  height: var(--d);
+  margin: calc(var(--d) / -2) 0 0 calc(var(--d) / -2);
+  border-radius: 50%;
+  border: var(--bw, 2px) solid color-mix(in srgb, var(--a-accent) 45%, transparent);
+  opacity: var(--o, 1);
+}

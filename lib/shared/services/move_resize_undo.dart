@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/widgets/app_undo_toast.dart';
+import '../models/occurrence_alert.dart';
 import '../models/task.dart';
 import '../models/zone.dart';
+import '../providers/occurrence_store.dart';
 import '../providers/task_providers.dart';
 import '../providers/zone_providers.dart';
 
@@ -53,10 +55,9 @@ Future<void> commitTaskChangeWithUndo(
   required Future<void> Function() commit,
 }) async {
   final notifier = ref.read(taskListProvider.notifier);
-  final byId = {for (final t in ref.read(taskListProvider)) t.id: t};
   final snapshots = [
     for (final id in taskIds)
-      if (byId[id] case final task?) task.toJson(),
+      if (_taskById(ref, id) case final task?) task.toJson(),
   ];
 
   await commit();
@@ -88,14 +89,13 @@ Future<void> commitZoneChangeWithUndo(
   final zoneNotifier = ref.read(zoneListProvider.notifier);
   final taskNotifier = ref.read(taskListProvider.notifier);
   final zonesById = {for (final z in ref.read(zoneListProvider)) z.id: z};
-  final tasksById = {for (final t in ref.read(taskListProvider)) t.id: t};
   final zoneSnapshots = [
     for (final id in zoneIds)
       if (zonesById[id] case final zone?) zone.toJson(),
   ];
   final taskSnapshots = [
     for (final id in taskIds)
-      if (tasksById[id] case final task?) task.toJson(),
+      if (_taskById(ref, id) case final task?) task.toJson(),
   ];
 
   await commit();
@@ -109,4 +109,14 @@ Future<void> commitZoneChangeWithUndo(
       await taskNotifier.restoreTasksInBatch(taskSnapshots.map(Task.fromJson));
     },
   );
+}
+
+/// A stored task, or a series occurrence shown as a task — Timeline commits
+/// can touch either.
+Task? _taskById(WidgetRef ref, String id) {
+  final key = occurrenceKeyFromPayload(id);
+  if (key != null) {
+    return ref.read(occurrenceStoreProvider.notifier).currentTask(key);
+  }
+  return ref.read(taskListProvider).where((t) => t.id == id).firstOrNull;
 }

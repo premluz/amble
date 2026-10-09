@@ -68,7 +68,7 @@ class AppBadge extends StatelessWidget {
         overflow: TextOverflow.clip,
         style: theme.textCaption.copyWith(
           color: filled ? theme.colorSurfacePrimary : theme.colorAccent,
-          fontWeight: FontWeight.w700,
+          fontWeight: FontWeight.w600,
           // The caption style's own line-height reads too tall for a
           // diameter this small and clips/pushes the digit off-center —
           // pinned to 1.0 so the glyph centers on the badge's own middle

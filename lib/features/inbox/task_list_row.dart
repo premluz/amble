@@ -106,7 +106,7 @@ class TaskListRow extends StatelessWidget {
               child: Text(
                 title,
                 style: theme.textTaskTitle.copyWith(
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w600,
                   color: titleColor,
                 ),
                 maxLines: 1,

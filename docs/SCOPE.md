@@ -12,13 +12,14 @@ This is the authoritative feature list. If a work order or a session's output do
 - **Day navigation** — swipe/tap between days, jump to today
 - **Local notifications** — basic alert at task start time
 - **Export / import** — JSON export via share sheet, import via file picker (doubles as backup)
-- **Recurring tasks** — daily/weekly repeat via materialized instances; see Constitution for the model shape. Editing/deleting for MVP affects a single instance only, never the whole series.
+- **Recurring tasks** — daily/weekly repeat as a series with computed occurrences (2026-10-02, replacing materialized instances); see docs/RECURRENCE_CONTRACT.md and the Constitution. Edits apply to this occurrence, or from an occurrence onward; past days never change.
 
 ## Nice-to-have (still v1 if time allows, not a separate phase)
 
 - **User-extensible categories (implemented, v2 this round)** — categories are a persisted `Category` row via `CategoryList.createCategory`, not a fixed enum. v1 was create + list only; **this round adds rename, recolor (constrained to the existing 12-swatch palette, no free picker), and reorder**, via Settings → Categories → list → edit, mirroring the existing Settings → Zones pattern. Delete remains deferred — orphaned-`categoryId` question still unresolved. See `docs/CONSTITUTION.md`'s "Category" section for the full model shape.
 - **Voice dictation for Quick Capture** — a tap-to-talk mic button using on-device speech-to-text (`speech_to_text` package, wrapping `SFSpeechRecognizer`/Android `SpeechRecognizer`). Not a new parsing path: dictated text lands in the same `_titleController` and goes through the exact same `parseQuickCapture` → `taskListProvider` pipeline as typed input. Highlighting is applied only once the full transcript lands (no progressive/partial-result highlighting for the first pass).
 - **Automatic morning summary to a user-configured Slack Incoming Webhook (implemented, 2026-09-03)** — a separate, opt-in delivery path for the "today's plan" summary above, distinct from the in-app view: once enabled in Settings, a background task (Android WorkManager / iOS BGTaskScheduler, via the `workmanager` package) posts a plain-text summary of the day's tasks directly from the device to a Slack Incoming Webhook URL the user pastes in themselves. Fully local-only in spirit even though it's the first feature where data leaves the device: no backend, no Amble-managed Slack connection/OAuth, and nothing is sent anywhere except the literal webhook URL the user provided. A "Send test message now" button triggers the same send path on demand, since background timing is best-effort (especially on iOS — a real, accepted platform constraint, not a bug). See `docs/CONSTITUTION.md`'s locked stack ("no cloud sync") for why this was confirmed as an explicit scope addition before building, and `docs/DECISIONS.md` for the background-task/isolate-Hive-initialization approach and observed iOS reliability.
+- **Wide (desktop / web / iPad landscape) layout — confirmed directly 2026-10-08, phased.** Three panes: left sidebar nav, centre content, right create/edit panel. Phase 1 (built): the sidebar replaces the top nav at ≥ 840 wide, and the phone layout is unchanged below that. Phase 2 (built): the right-panel task editor for editing, duplicating and Timeline quick-create. Later phases: a week grid of task pills, a mini month and keyboard shortcuts. Web additionally needs startup made web-safe, and shared data needs the deferred backend. See `docs/DECISIONS.md`.
 
 ## Scoped for later: splash/landing, carousel, and onboarding
 
@@ -50,7 +51,7 @@ A short, skippable quiz (`OnboardingQuizScreen`) shown once, after the existing 
 
 ## Deferred beyond MVP, explicitly
 
-- "Edit all future occurrences" for recurring tasks (MVP only supports editing a single materialized instance)
+- ~~"Edit all future occurrences" for recurring tasks~~ — built (2026-09-06), now as series revisions (2026-10-02)
 - Monthly/yearly recurrence, or complex recurrence patterns beyond daily/weekly + interval + days-of-week
 
 ## Zone — weekly placements and reusable names (2026-09-14)

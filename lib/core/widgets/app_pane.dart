@@ -62,7 +62,7 @@ class AppPane extends StatelessWidget {
             // size at bold weight.
             style: theme.textBody.copyWith(
               color: theme.colorTextPrimary,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ),

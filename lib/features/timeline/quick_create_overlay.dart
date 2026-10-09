@@ -100,7 +100,6 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
     // A real default name ("New thing"), so Add is meaningful untouched;
     // the first tap into the name clears it (see [_clearDefaultName]).
     _form = TaskSheetForm(
-      allTasks: const [],
       title: _defaultName,
       date: widget.draft.scheduledAt,
       time: TimeOfDay.fromDateTime(widget.draft.scheduledAt),

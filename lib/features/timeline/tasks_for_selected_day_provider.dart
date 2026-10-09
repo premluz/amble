@@ -1,8 +1,11 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../shared/models/local_date.dart';
 import '../../shared/models/task.dart';
+import '../../shared/providers/occurrence_store.dart';
 import '../../shared/providers/task_providers.dart';
 import 'selected_date_provider.dart';
+import 'tasks_on_day.dart';
 
 part 'tasks_for_selected_day_provider.g.dart';
 
@@ -14,14 +17,15 @@ List<Task> tasksForSelectedDay(Ref ref) {
   final selectedDate = ref.watch(selectedDateProvider);
   final allTasks = ref.watch(taskListProvider);
 
-  final tasksForDay = allTasks.where((task) {
-    final scheduledAt = task.scheduledAt;
-    if (scheduledAt == null) return false;
-    return scheduledAt.year == selectedDate.year &&
-        scheduledAt.month == selectedDate.month &&
-        scheduledAt.day == selectedDate.day;
-  }).toList();
-
-  tasksForDay.sort((a, b) => a.scheduledAt!.compareTo(b.scheduledAt!));
-  return tasksForDay;
+  // Series occurrences join the day as read-through tasks; their writes
+  // route back to the series model (see `SeriesRoutingTaskRepository`).
+  // Watching the store keeps the day fresh after each series command.
+  ref.watch(occurrenceStoreProvider);
+  return tasksScheduledOn(
+    allTasks,
+    ref
+        .read(occurrenceStoreProvider.notifier)
+        .tasksOn(LocalDate.fromDateTime(selectedDate)),
+    selectedDate,
+  );
 }

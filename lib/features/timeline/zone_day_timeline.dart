@@ -20,6 +20,7 @@ import 'external_event_capsule_block.dart' show DashedPillRail;
 import 'task_capsule_block.dart';
 import 'day_task_motion.dart';
 import 'day_view_reveal.dart';
+import 'list_current_time_marker.dart';
 import 'zone_container_block.dart'
     show
         WhatMattersRow,
@@ -27,6 +28,7 @@ import 'zone_container_block.dart'
         ZoneRowTimeLabel,
         zoneContainerRowHeight,
         zoneContentLeftInset,
+        zoneRowTimeLabelEdgeInset,
         zoneRowTimeLabelReservedWidth,
         zoneTaskTimeLabel;
 
@@ -80,10 +82,18 @@ class ZoneDayTimeline extends StatelessWidget {
     this.onZoneHeaderTap,
     this.tagColorStyle = TagColorStyle.pill,
     this.whatMattersEnabled = false,
+    this.now,
   });
 
   final List<Task> tasks;
   final List<Zone> zones;
+
+  /// Where "now" comes from. When set and [selectedDate] is today, the
+  /// list shows the "now" marker BETWEEN rows — requested directly: "show
+  /// the current time on Task view, but it will always be between the
+  /// tasks. It will never overlap a task." Null (scaffolds, most tests)
+  /// renders no marker.
+  final DateTime Function()? now;
 
   /// Read-only events fetched from whichever device calendars the user
   /// selected to display (Settings' Calendar section, Feature 1) — see
@@ -186,18 +196,6 @@ class ZoneDayTimeline extends StatelessWidget {
         .where((event) => !containedExternalEventIds.contains(event.id))
         .toList();
 
-    DateTime keyFor(Object row) => switch (row) {
-      ZoneContainment(:final zone) => day.add(
-        Duration(minutes: zone.startMinutes),
-      ),
-      Task(:final scheduledAt?) => scheduledAt,
-      ExternalCalendarEvent(:final start) => start,
-      // An unscheduled zone-only task — sorts after every real time,
-      // matching ZoneContainerBlock's own in-container convention for
-      // the same case.
-      _ => DateTime(9999),
-    };
-
     // `devHideEmptyZones` (`DevHideEmptyZones`) — an opt-in OVERRIDE of
     // `ZoneContainmentResult.containments`' own documented default
     // (every zone renders regardless of member count); see that
@@ -230,12 +228,43 @@ class ZoneDayTimeline extends StatelessWidget {
       ...zoneRows,
       ...result.unzonedTasks,
       ...outerExternalEvents,
-    ]..sort((a, b) => keyFor(a).compareTo(keyFor(b)));
+    ]..sort((a, b) => _rowStart(a, day).compareTo(_rowStart(b, day)));
     return rows;
+  }
+
+  /// Where the "now" marker goes: inside the zone that is still in
+  /// progress when it's the last row to have started (confirmed via
+  /// AskUserQuestion — "inside the zone, between its tasks"), otherwise as
+  /// its own row after every row that has started. Nothing off-today or on
+  /// an empty day.
+  ({int? listIndex, String? zoneId}) _placeNow(
+    List<Object> rows,
+    DateTime day,
+    DateTime? time,
+  ) {
+    const none = (listIndex: null, zoneId: null);
+    if (time == null || rows.isEmpty) return none;
+    if (DateTime(time.year, time.month, time.day) != day) return none;
+    final index = nowMarkerIndex(rows, (row) => _rowStart(row, day), time);
+    final previous = index > 0 ? rows[index - 1] : null;
+    // A zone collapsed away by What Matters can't hold the marker — it
+    // would vanish with it — so the marker stays a list row instead.
+    if (previous is ZoneContainment &&
+        day.add(Duration(minutes: previous.zone.endMinutes)).isAfter(time) &&
+        !(whatMattersEnabled && _recedes(previous))) {
+      return (listIndex: null, zoneId: previous.zone.id);
+    }
+    return (listIndex: index, zoneId: null);
   }
 
   @override
   Widget build(BuildContext context) {
+    final clock = now;
+    if (clock == null) return _buildList(context, null);
+    return CurrentMinuteBuilder(now: clock, builder: _buildList);
+  }
+
+  Widget _buildList(BuildContext context, DateTime? currentTime) {
     final day = DateTime(
       selectedDate.year,
       selectedDate.month,
@@ -248,6 +277,9 @@ class ZoneDayTimeline extends StatelessWidget {
       externalEvents: externalEvents,
     );
     final rows = _mergedRows(result, day);
+    final nowPlacement = _placeNow(rows, day, currentTime);
+    final nowListIndex = nowPlacement.listIndex;
+    if (nowListIndex != null) rows.insert(nowListIndex, const _NowMarkerRow());
     final rowIndexByKey = <Key, int>{
       for (var i = 0; i < rows.length; i++)
         if (rows[i] case final Task task) _taskRowKey(task.id): i,
@@ -347,6 +379,9 @@ class ZoneDayTimeline extends StatelessWidget {
                       showCompletionCheckbox: showCompletionCheckbox,
                       flatStyle: devZoneCardFlat,
                       whatMattersEnabled: whatMattersEnabled,
+                      currentTime: row.zone.id == nowPlacement.zoneId
+                          ? currentTime
+                          : null,
                       onHeaderTap: onZoneHeaderTap == null
                           ? null
                           : () => onZoneHeaderTap!(row.zone),
@@ -555,6 +590,16 @@ class ZoneDayTimeline extends StatelessWidget {
                       ),
                     ),
                   ),
+                  // Its own row between tasks — never overlapping one.
+                  // `currentTime` is non-null here: [_placeNow] only
+                  // inserts this row when there is a time to show.
+                  _NowMarkerRow() => ListCurrentTimeMarker(
+                    key: const ValueKey('now-marker'),
+                    time: currentTime!,
+                    labelShift:
+                        zoneRowTimeLabelEdgeInset -
+                        zoneContentLeftInset(theme, context),
+                  ),
                   _ => const SizedBox.shrink(),
                 };
               },
@@ -696,6 +741,23 @@ class _UnzonedEventRow extends StatelessWidget {
 }
 
 // Use task identity/importance rather than labels to classify occupied zones.
+/// The List view's own "now" row — a placeholder in the merged row list
+/// so the marker sits between two real rows.
+class _NowMarkerRow {
+  const _NowMarkerRow();
+}
+
+/// A row's start on [day], the one ordering key for the List view — both
+/// for sorting rows and for placing the "now" marker among them. An
+/// unscheduled zone-only task sorts after every real time, matching
+/// ZoneContainerBlock's own in-container convention for the same case.
+DateTime _rowStart(Object row, DateTime day) => switch (row) {
+  ZoneContainment(:final zone) => day.add(Duration(minutes: zone.startMinutes)),
+  Task(:final scheduledAt?) => scheduledAt,
+  ExternalCalendarEvent(:final start) => start,
+  _ => DateTime(9999),
+};
+
 bool _recedes(Object row) => switch (row) {
   ZoneContainment() => !row.tasks.any((task) => task.isImportant),
   Task() => !row.isImportant,

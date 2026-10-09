@@ -261,7 +261,7 @@ class _ClusterTaskRow extends StatelessWidget {
       theme: theme,
       task: task,
       labelColor: theme.colorTextSecondary,
-    ).title(titleTextStyle.copyWith(fontWeight: FontWeight.w700));
+    ).title(titleTextStyle.copyWith(fontWeight: FontWeight.w600));
     // `alwaysShowTime` (List mode only — see its own doc comment) is what
     // distinguishes this row's two real callers: Task view's own cluster
     // row (alwaysShowTime: false), where `durationVisible` alone still
@@ -323,10 +323,7 @@ class _ClusterTaskRow extends StatelessWidget {
                             color: theme.colorTextSecondary,
                           ),
                         ),
-                      TextSpan(
-                        text: task.title,
-                        style: titleStyle,
-                      ),
+                      TextSpan(text: task.title, style: titleStyle),
                     ],
                   ),
                   maxLines: 1,

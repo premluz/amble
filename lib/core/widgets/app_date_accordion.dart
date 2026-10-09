@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../tokens/component_tokens.dart';
@@ -94,7 +96,17 @@ class AppDateAccordion extends StatefulWidget {
     this.expanded,
     this.onExpandedChanged,
     this.showTodayLabel = true,
+    this.today,
   });
+
+  /// Today's date, for the dot under today's cell and the "Today" label.
+  /// Real callers pass the app's `currentDayProvider`, so the dot moves
+  /// the moment the day rolls over — reading the wall clock in `build`
+  /// only moved it whenever something else happened to rebuild this
+  /// widget (reported directly: "when day actually changed it doesn't
+  /// refresh (dot)"). Null reads the wall clock, for standalone use
+  /// (Widgetbook, tests).
+  final DateTime? today;
 
   /// The day currently shown as selected in the week strip — NOT
   /// necessarily today. Beyond the small accent dot under today's own
@@ -153,7 +165,7 @@ class _AppDateAccordionState extends State<AppDateAccordion> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
-    final today = _dateOnly(DateTime.now());
+    final today = _dateOnly(widget.today ?? DateTime.now());
     final weekStart = _startOfWeek(widget.selectedDate);
 
     return Column(
@@ -416,20 +428,18 @@ class _WeekStripState extends State<_WeekStrip>
   ///
   /// [_dragPixels] is the live horizontal offset while a finger is down —
   /// the CURRENT week's row is drawn shifted by this, and the previous/
-  /// next week's row is drawn one strip-width further out in the same
+  /// next week's row is drawn one page extent further out in the same
   /// direction, so dragging visibly "pulls" the adjacent week in from
   /// off-screen rather than the numbers just changing in place. Reset to
   /// 0 once a page settles.
   double _dragPixels = 0;
 
-  /// The strip's own measured width — needed to know how far "one week"
-  /// is in pixels (for clamping the drag and for where the adjacent
-  /// week's row sits at rest), captured via [LayoutBuilder] in [build]
-  /// since this widget has no fixed width of its own.
-  double _stripWidth = 0;
+  /// The strip width plus one ordinary gap between day cells. That gap
+  /// separates Sunday from the adjacent week's Monday during a swipe.
+  double _pageExtent = 0;
 
   /// Drives [_dragPixels] from wherever the finger released it to its
-  /// resting value (0, or a full ±[_stripWidth] before the week actually
+  /// resting value (0, or a full ±[_pageExtent] before the week actually
   /// steps) — the "magnetic lock" settle. `curveStandard`, not a bespoke
   /// spring/overshoot curve: this design system has no spring token yet
   /// (confirmed by survey — only `curveStandard`/`curveDecelerate`
@@ -512,15 +522,15 @@ class _WeekStripState extends State<_WeekStrip>
   }
 
   void _onPageDragUpdate(DragUpdateDetails details) {
-    if (_stripWidth <= 0) return;
+    if (_pageExtent <= 0) return;
     setState(() {
-      // Clamped to one strip-width either way — past that, dragging
+      // Clamped to one page extent either way — past that, dragging
       // further wouldn't reveal anything new (the week beyond the
       // adjacent one is never drawn), so the finger would otherwise
       // outrun the visible motion.
       _dragPixels = (_dragPixels + details.delta.dx).clamp(
-        -_stripWidth,
-        _stripWidth,
+        -_pageExtent,
+        _pageExtent,
       );
     });
   }
@@ -529,8 +539,8 @@ class _WeekStripState extends State<_WeekStrip>
   /// spring back to where this page started — then animates [_dragPixels]
   /// there. A fast flick commits regardless of how far the finger
   /// actually travelled (matches the pre-existing velocity-only jump this
-  /// replaces); otherwise it's purely distance: past half the strip's own
-  /// width counts as "far enough," short of that snaps back. Requested
+  /// replaces); otherwise it's purely distance: past half the page extent
+  /// counts as "far enough," short of that snaps back. Requested
   /// directly as "magnetic... calm but decisive."
   ///
   /// **2026-09-26 — commits to [_viewedWeekOffset], not [onDateSelected].**
@@ -546,7 +556,7 @@ class _WeekStripState extends State<_WeekStrip>
   void _onPageDragEnd(DragEndDetails details) {
     final velocity = details.primaryVelocity ?? 0;
     const flingVelocityThreshold = 400.0;
-    final pastHalfway = _dragPixels.abs() > _stripWidth / 2;
+    final pastHalfway = _dragPixels.abs() > _pageExtent / 2;
     final committing = velocity.abs() > flingVelocityThreshold || pastHalfway;
 
     // Sign of the COMMIT, not of the raw drag/velocity — dragging left
@@ -556,7 +566,7 @@ class _WeekStripState extends State<_WeekStrip>
         committing && (velocity != 0 ? velocity < 0 : _dragPixels < 0);
     final target = !committing
         ? 0.0
-        : (stepsForward ? -_stripWidth : _stripWidth);
+        : (stepsForward ? -_pageExtent : _pageExtent);
 
     _settleController
       ..stop()
@@ -640,7 +650,9 @@ class _WeekStripState extends State<_WeekStrip>
             // Captured every build (post-frame would lag one frame behind
             // a size change, e.g. the accordion's own first expand) —
             // cheap, just a field write, not a real layout cost.
-            _stripWidth = constraints.maxWidth;
+            _pageExtent =
+                constraints.maxWidth +
+                _interDayGap(constraints.maxWidth, theme);
 
             return GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -665,11 +677,11 @@ class _WeekStripState extends State<_WeekStrip>
                     children: [
                       // The week reached by continuing to drag LEFT
                       // (finger moving toward negative dx) — sits one
-                      // strip-width to the right at rest, only entering
+                      // page extent to the right at rest, only entering
                       // view as `_dragPixels` goes negative.
                       if (_dragPixels < 0)
                         Transform.translate(
-                          offset: Offset(_dragPixels + _stripWidth, 0),
+                          offset: Offset(_dragPixels + _pageExtent, 0),
                           child: _WeekDayRow(
                             theme: theme,
                             weekStart: _viewedWeekStart.add(
@@ -683,7 +695,7 @@ class _WeekStripState extends State<_WeekStrip>
                         ),
                       if (_dragPixels > 0)
                         Transform.translate(
-                          offset: Offset(_dragPixels - _stripWidth, 0),
+                          offset: Offset(_dragPixels - _pageExtent, 0),
                           child: _WeekDayRow(
                             theme: theme,
                             weekStart: _viewedWeekStart.subtract(
@@ -1158,7 +1170,7 @@ class _WeekDayCell extends StatelessWidget {
                 overflow: TextOverflow.visible,
                 style: theme.textCaption.copyWith(
                   color: theme.colorTextPrimary,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                 ),
               ),
             ),
@@ -1235,9 +1247,15 @@ double _dayNumberMinWidth(AmbleTheme theme) {
   final painter = TextPainter(
     text: TextSpan(
       text: '88',
-      style: theme.textCaption.copyWith(fontWeight: FontWeight.w700),
+      style: theme.textCaption.copyWith(fontWeight: FontWeight.w600),
     ),
     textDirection: TextDirection.ltr,
   )..layout();
   return painter.width;
+}
+
+double _interDayGap(double stripWidth, AmbleTheme theme) {
+  final dayCount = _weekdayAbbreviations.length;
+  final cellWidth = _dayNumberMinWidth(theme) + theme.spacingSm * 2;
+  return math.max(0, (stripWidth - cellWidth * dayCount) / (dayCount - 1));
 }

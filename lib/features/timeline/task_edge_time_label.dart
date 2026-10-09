@@ -82,7 +82,7 @@ class TaskEdgeTimeLabel extends StatelessWidget {
         // edge labels; the pill supplies the accent treatment.
         style: theme.textTaskEdgeTime.copyWith(
           color: theme.colorSurfacePrimary,
-          fontWeight: FontWeight.w700,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );

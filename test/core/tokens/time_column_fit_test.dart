@@ -32,7 +32,7 @@ void main() {
       // Bold too: the "now" label is bold.
       final styles = {
         'regular': theme.textCaptionMono,
-        'bold': theme.textCaptionMono.copyWith(fontWeight: FontWeight.w700),
+        'bold': theme.textCaptionMono.copyWith(fontWeight: FontWeight.w600),
       };
       for (final MapEntry(key: weight, value: style) in styles.entries) {
         for (final label in ['12 pm', '12 am', '11 pm', '12:48pm', '13:48']) {
@@ -59,7 +59,7 @@ void main() {
           ZoneInsetTokens.freedForTimeColumn(theme) -
           TimeColumnTokens.borrowedFromZoneGap;
       final style = theme.textTaskEdgeTime.copyWith(
-        fontWeight: FontWeight.w700,
+        fontWeight: FontWeight.w600,
       );
       for (final label in ['12:55am', '12:48pm', '10 am', '12 pm', '13:48']) {
         final painter = TextPainter(

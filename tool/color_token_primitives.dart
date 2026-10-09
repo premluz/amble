@@ -14,6 +14,10 @@ const _categoryNames = <String>[
   'violet',
   'magenta',
   'pinkRose',
+  'goldenYellow',
+  'lime',
+  'ocean',
+  'periwinkle',
 ];
 
 Map<String, Object?> buildPrimitiveColorTokens() => {

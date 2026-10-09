@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../tokens/component_tokens.dart';
 import '../tokens/semantic_theme.dart';
 import 'app_undo_toast.dart';
+import 'app_sheet_popover.dart';
+import 'app_sheet_presentation.dart';
 import 'app_sheet_route.dart';
 import 'app_sheet_scroll_body.dart';
 import 'app_top_scroll_fade.dart';
@@ -52,6 +54,14 @@ class AppSheet {
     AppSheetSize size = AppSheetSize.small,
     bool autofocusesKeyboard = false,
   }) {
+    // The wide layout's panel opens pickers beside the control instead.
+    if (AppSheetPresentationScope.of(context) == AppSheetPresentation.popover) {
+      return showSheetAsPopover<T>(
+        context: context,
+        builder: builder,
+        padded: padded,
+      );
+    }
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     final platform = Theme.of(context).platform;
     final isCupertino =

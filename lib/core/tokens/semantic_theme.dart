@@ -850,7 +850,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     textHeadline: TextStyle(
       fontFamily: TypePrimitives.fontFamilySans,
       fontSize: TypePrimitives.size6,
-      fontWeight: TypePrimitives.weightBold,
+      fontWeight: TypePrimitives.weightSemibold,
       height: TypePrimitives.lineHeightTight,
       color: ColorPrimitives.slate900,
     ),
@@ -1123,7 +1123,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     textHeadline: TextStyle(
       fontFamily: TypePrimitives.fontFamilySans,
       fontSize: TypePrimitives.size6,
-      fontWeight: TypePrimitives.weightBold,
+      fontWeight: TypePrimitives.weightSemibold,
       height: TypePrimitives.lineHeightTight,
       color: ColorPrimitives.sand200,
     ),
@@ -1729,10 +1729,10 @@ extension TimelineColumns on AmbleTheme {
     // which is wider — a bold "12 pm" ran its "m" under the zones.
     final styles = [
       textCaptionMono,
-      textCaptionMono.copyWith(fontWeight: FontWeight.w700),
+      textCaptionMono.copyWith(fontWeight: FontWeight.w600),
     ];
     // A task's edge-time pill: bold edge-time text inside its own padding.
-    final pillStyle = textTaskEdgeTime.copyWith(fontWeight: FontWeight.w700);
+    final pillStyle = textTaskEdgeTime.copyWith(fontWeight: FontWeight.w600);
     var widestPill = 0.0;
     for (final sample in timelineClockSamples().toSet()) {
       for (final style in [...styles, pillStyle]) {

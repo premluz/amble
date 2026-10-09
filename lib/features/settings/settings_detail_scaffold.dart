@@ -101,7 +101,7 @@ class SettingsLinkRow extends StatelessWidget {
               label,
               style: theme.textBody.copyWith(
                 color: theme.colorTextPrimary,
-                fontWeight: FontWeight.w700,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),

@@ -90,119 +90,118 @@ class _CurrentTimeIndicatorState extends State<CurrentTimeIndicator> {
       // screen edges while every task beside it stays inset.
       left: widget.leftInset,
       right: widget.rightInset,
-      // **The time text starts at the SAME x every other hour label
-      // does, dot AFTER it, then the line** — corrected directly:
-      // "currently is (note is not aligned with other hours and dot
-      // should be after time not in front)". The previous layout put
-      // the dot first and overlaid the time pill on top of the line
-      // starting past it — reading as "dot, then time", and starting to
-      // the right of where "09:00"/"10:00" themselves start, so "09:31"
-      // visually failed to line up with its own neighbours in the same
-      // gutter column. A plain `Row` now: [time pill, dot, line], so the
-      // text column reads flush with every hour tick above/below it,
-      // matching the reference layout exactly:
-      // "09:00 / 09:31 o-------- / 10:00".
-      //
-      // Anchored by `Center`, not `FractionalTranslation` — the pill is
-      // taller than the dot/line, so translating the WHOLE row up by
-      // half ITS OWN height (as the previous dot-first layout did, back
-      // when the dot was the row's only sizing child) would shift the
-      // line off the true current-minute y by half the pill's extra
-      // height. The dot/line instead sit inside a fixed
-      // `theme.spacingSm`-tall `SizedBox` — the same height the dot
-      // itself is — centered against the pill via the Row's own
-      // `crossAxisAlignment.center`, then the whole thing is shifted up
-      // by exactly HALF THAT FIXED HEIGHT so the dot/line's own center
-      // (not the row's, and not the pill's) lands on `top`.
+      // The marker's dot/line sit in a fixed `theme.spacingSm`-tall box
+      // (see [CurrentTimeMarker]); shifting up by exactly half THAT fixed
+      // height lands the dot/line's own center — not the row's, and not
+      // the taller pill's — on the true current minute at `top`.
       child: Transform.translate(
         offset: Offset(0, -theme.spacingSm / 2),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // Filled with the Timeline's OWN background so the pill masks
-            // whatever sits beneath it — requested directly: "that current
-            // time need to be in bg color pill so when over on top of
-            // another hour it doesnt clash legibility". A neutral mask,
-            // not an accent badge: the red dot/line stay the only accent
-            // here.
-            // **NON-SIZING, deliberately** — the pill is taller than the
-            // dot, and this whole row is shifted up by half the DOT's
-            // height (see the `Transform.translate` above). If the pill
-            // is allowed to size the row, the row's height becomes the
-            // pill's, the line no longer lands on the true current
-            // minute, and — because this widget shares a tree with the
-            // task pills — every measured task rect shifts too.
-            //
-            // That is not hypothetical: it broke two
-            // `resize_anchored_edge_test.dart` cases with 48px of bottom
-            // drift against a <2px tolerance, TWICE. The pre-rewrite
-            // version carried a comment warning about exactly this, and
-            // the rewrite (a genuinely wanted reorder — time first, then
-            // dot, then line) reintroduced it by making the pill an
-            // ordinary `Row` child.
-            //
-            // `OverflowBox` with a fixed `maxHeight` of the dot's own
-            // height is what keeps the row measuring the dot while the
-            // pill still paints at its natural size: the child lays out
-            // against its own unbounded constraints and simply overflows
-            // this box, which is exactly "paint big, measure small".
-            // `Clip.none` on the enclosing `Stack` (see `build`'s own
-            // `Positioned`) is what lets that overflow stay visible.
-            SizedBox(
-              height: theme.spacingSm,
-              child: OverflowBox(
-                minHeight: 0,
-                maxHeight: double.infinity,
-                alignment: Alignment.centerLeft,
-                fit: OverflowBoxFit.deferToChild,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: theme.colorSurfaceTimeline,
-                    borderRadius: BorderRadius.circular(theme.radiusSm),
-                  ),
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      right: theme.spacingXs,
-                      top: theme.spacingXs / 2,
-                      bottom: theme.spacingXs / 2,
-                    ),
-                    child: Text(
-                      timelineClock(context, TimeOfDay.fromDateTime(_now)),
-                      // textCaptionMono — a time label, not a name.
-                      style: theme.textCaptionMono.copyWith(
-                        color: theme.colorTextPrimary,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            SizedBox(width: theme.spacingXs),
-            SizedBox(
-              width: theme.spacingSm,
-              height: theme.spacingSm,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: theme.colorTaskAlert,
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-            Expanded(
-              child: SizedBox(
-                height: theme.spacingSm,
-                child: Center(
-                  child: Container(
-                    height: theme.borderWidthHairline,
-                    color: theme.colorTaskAlert,
-                  ),
-                ),
-              ),
-            ),
-          ],
+        child: CurrentTimeMarker(time: _now),
+      ),
+    );
+  }
+}
+
+/// The shared "now" marker row — `[time pill] [gap] [dot] [line]` — drawn
+/// by both the spatial view ([CurrentTimeIndicator], positioned at the
+/// exact minute) and the non-spatial List view (`ListCurrentTimeMarker`,
+/// sitting between rows). One widget, so the two views can never drift
+/// into two different "now" looks.
+///
+/// The time text comes first, the dot after it, then the line — corrected
+/// directly: "dot should be after time not in front", so the time reads
+/// flush with every hour label in the same column:
+/// "09:00 / 09:31 o-------- / 10:00".
+class CurrentTimeMarker extends StatelessWidget {
+  const CurrentTimeMarker({
+    super.key,
+    required this.time,
+    this.pillSizesRow = false,
+  });
+
+  final DateTime time;
+
+  /// False (spatial): the row measures only the dot, and the taller pill
+  /// overflows it. Letting the pill size the row there moves the line off
+  /// the true minute and — because the indicator shares a Stack with the
+  /// task pills — shifts every measured task rect; it broke two
+  /// `resize_anchored_edge_test.dart` cases with 48px of drift, twice.
+  ///
+  /// True (List view): there is no minute-exact y to protect — the marker
+  /// is its own row between tasks — so the pill sizes the row normally
+  /// and nothing overflows into neighbouring rows.
+  final bool pillSizesRow;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context).extension<AmbleTheme>()!;
+    // Filled with the Timeline's OWN background so the pill masks whatever
+    // sits beneath it — requested directly: "that current time need to be
+    // in bg color pill so when over on top of another hour it doesnt clash
+    // legibility". A neutral mask: the red dot/line stay the only accent.
+    final pill = DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorSurfaceTimeline,
+        borderRadius: BorderRadius.circular(theme.radiusSm),
+      ),
+      child: Padding(
+        padding: EdgeInsets.only(
+          right: theme.spacingXs,
+          top: theme.spacingXs / 2,
+          bottom: theme.spacingXs / 2,
+        ),
+        child: Text(
+          timelineClock(context, TimeOfDay.fromDateTime(time)),
+          // textCaptionMono — a time label, not a name.
+          style: theme.textCaptionMono.copyWith(
+            color: theme.colorTextPrimary,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
+    );
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        if (pillSizesRow)
+          pill
+        else
+          // "Paint big, measure small": the pill lays out against
+          // unbounded height and overflows this dot-tall box. The
+          // enclosing Stack's `Clip.none` keeps the overflow visible.
+          SizedBox(
+            height: theme.spacingSm,
+            child: OverflowBox(
+              minHeight: 0,
+              maxHeight: double.infinity,
+              alignment: Alignment.centerLeft,
+              fit: OverflowBoxFit.deferToChild,
+              child: pill,
+            ),
+          ),
+        SizedBox(width: theme.spacingXs),
+        SizedBox(
+          width: theme.spacingSm,
+          height: theme.spacingSm,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: theme.colorTaskAlert,
+              shape: BoxShape.circle,
+            ),
+          ),
+        ),
+        Expanded(
+          child: SizedBox(
+            height: theme.spacingSm,
+            child: Center(
+              child: Container(
+                height: theme.borderWidthHairline,
+                color: theme.colorTaskAlert,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

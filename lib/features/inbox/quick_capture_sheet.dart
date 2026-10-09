@@ -323,8 +323,11 @@ class _QuickCaptureFormState extends ConsumerState<_QuickCaptureForm> {
         // series (createTask does this immediately — see task_providers.dart),
         // so undoing it has to remove the whole series, not just the one
         // instance the toast is nominally "about".
+        // A repeating capture created a series whose id is its create
+        // command's id, so Undo reverses that command (removing the
+        // series) rather than deleting one occurrence.
         onUndo: () => created.isRecurring
-            ? notifier.deleteTaskSeries(created)
+            ? notifier.undoSeriesChange(created.recurrenceId!)
             : notifier.deleteTask(created.id),
       );
     } finally {
@@ -560,7 +563,7 @@ class _QuickCaptureTextEditingController extends TextEditingController {
           text: input.substring(token.start, token.end),
           style: TextStyle(
             color: _highlightColor(t, token.kind),
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w600,
           ),
         ),
       );

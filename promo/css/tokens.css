@@ -1,0 +1,116 @@
+/* Amble's Tier-1 primitives (lib/core/tokens/color_primitives.dart) mapped to
+   the Tier-2 roles in semantic_theme.dart. --dm blends light (0%) to dark
+   (100%) so the phone can change theme mid-shot without duplicate DOM. */
+@font-face {
+  font-family: 'Material Icons Amble';
+  src: url('../fonts/MaterialIcons-Regular.otf') format('opentype');
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'Tabler Icons Amble';
+  src: url('../fonts/tabler-icons.ttf') format('truetype');
+  font-display: block;
+}
+
+.app {
+  --dm: 0%;
+  --L-base: oklch(0.954 0.0045 85);
+  --D-base: oklch(0.185 0.003 145.5);
+  --L-timeline: oklch(0.974 0.006 84.6);
+  --D-timeline: oklch(0.212 0.004 128.7);
+  --L-secondary: oklch(0.946 0.007 88.6);
+  --D-secondary: oklch(0.246 0.004 128.6);
+  --L-overlay: oklch(1 0 0);
+  --D-overlay: oklch(0.279 0.006 121.8);
+  --L-field: oklch(0.97 0.005 95.1);
+  --D-field: oklch(0.322 0.009 116.1);
+  --L-border: oklch(0.872 0.005 106.5);
+  --D-border: oklch(0.338 0.007 118.2);
+  --L-text: oklch(0.217 0.002 247.9);
+  --D-text: oklch(0.955 0.005 95.1);
+  --L-text2: oklch(0.525 0.011 252.9);
+  --D-text2: oklch(0.76 0.013 91.6);
+  --L-text3: oklch(0.614 0.012 248);
+  --D-text3: oklch(0.559 0.013 89.8);
+  --L-accent: oklch(0.519 0.149 287.5);
+  --D-accent: oklch(0.821 0.098 292.6);
+  --L-alert: oklch(0.694 0.113 35.6);
+  --D-alert: oklch(0.851 0.059 35.3);
+  --L-mist: oklch(0.855 0.04 218);
+  --D-mist: oklch(0.42 0.04 218);
+  --L-shadow: oklch(0.217 0.002 247.9 / 0.1);
+  --D-shadow: oklch(0.185 0.003 145.5 / 0.28);
+  --L-zone: oklch(0.946 0.007 88.6 / 0.8);
+  --D-zone: oklch(0.246 0.004 128.6 / 0.8);
+  /* Label palette: categoryPalette12Light / categoryPalette12 */
+  --L-cat-health: oklch(0.526 0.095 47.6);
+  --D-cat-health: oklch(0.654 0.103 46.4);
+  --L-cat-work: oklch(0.522 0.078 70.9);
+  --D-cat-work: oklch(0.672 0.096 72.7);
+  --L-cat-home: oklch(0.517 0.07 104.5);
+  --D-cat-home: oklch(0.66 0.079 104.1);
+  --L-cat-social: oklch(0.513 0.046 203.7);
+  --D-cat-social: oklch(0.62 0.053 202.4);
+  --L-cat-reading: oklch(0.518 0.051 237);
+  --D-cat-reading: oklch(0.62 0.057 235.3);
+
+  --a-base: color-mix(in oklab, var(--D-base) var(--dm), var(--L-base));
+  --a-timeline: color-mix(in oklab, var(--D-timeline) var(--dm), var(--L-timeline));
+  --a-secondary: color-mix(in oklab, var(--D-secondary) var(--dm), var(--L-secondary));
+  --a-overlay: color-mix(in oklab, var(--D-overlay) var(--dm), var(--L-overlay));
+  --a-field: color-mix(in oklab, var(--D-field) var(--dm), var(--L-field));
+  --a-border: color-mix(in oklab, var(--D-border) var(--dm), var(--L-border));
+  --a-text: color-mix(in oklab, var(--D-text) var(--dm), var(--L-text));
+  --a-text2: color-mix(in oklab, var(--D-text2) var(--dm), var(--L-text2));
+  --a-text3: color-mix(in oklab, var(--D-text3) var(--dm), var(--L-text3));
+  --a-accent: color-mix(in oklab, var(--D-accent) var(--dm), var(--L-accent));
+  --a-alert: color-mix(in oklab, var(--D-alert) var(--dm), var(--L-alert));
+  --a-mist: color-mix(in oklab, var(--D-mist) var(--dm), var(--L-mist));
+  --a-shadow: color-mix(in oklab, var(--D-shadow) var(--dm), var(--L-shadow));
+  --a-zone: color-mix(in oklab, var(--D-zone) var(--dm), var(--L-zone));
+  --cat-health: color-mix(in oklab, var(--D-cat-health) var(--dm), var(--L-cat-health));
+  --cat-work: color-mix(in oklab, var(--D-cat-work) var(--dm), var(--L-cat-work));
+  --cat-home: color-mix(in oklab, var(--D-cat-home) var(--dm), var(--L-cat-home));
+  --cat-social: color-mix(in oklab, var(--D-cat-social) var(--dm), var(--L-cat-social));
+  --cat-reading: color-mix(in oklab, var(--D-cat-reading) var(--dm), var(--L-cat-reading));
+  --cat-general: var(--a-mist);
+
+  /* Fixed in both themes (TaskStateTokens.glyphOnDark / glyphOnLight). */
+  --glyph-on-dark: oklch(0.954 0.0045 85);
+  --glyph-on-light: oklch(0.217 0.002 247.9);
+  /* Derived roles (task_state_tokens.dart, floating_surface_tokens.dart). */
+  --a-important: color-mix(in srgb, var(--a-text) 65%, var(--a-accent));
+  --a-done-title: color-mix(in srgb, var(--a-text) 42%, transparent);
+  --a-selected: color-mix(in srgb, var(--a-accent) 10%, var(--a-overlay));
+  --a-glass: color-mix(in srgb, var(--a-overlay) 92%, transparent);
+  --a-glass-edge: color-mix(in srgb, var(--a-text) 5%, transparent);
+  --a-glass-top: color-mix(in srgb, white 14%, var(--a-glass-edge));
+  --a-hover: color-mix(in srgb, var(--a-text) 10%, transparent);
+  --a-touch: color-mix(in srgb, var(--a-text) 16%, transparent);
+  --a-touch-ring: color-mix(in srgb, var(--a-text) 50%, transparent);
+  --a-chrome-icon: color-mix(in srgb, var(--a-text) 72%, var(--a-text2));
+
+  --ui-sans: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+  --ui-num: 'IBM Plex Sans Condensed', 'Arial Narrow', sans-serif;
+  color: var(--a-text);
+  font-family: var(--ui-sans);
+  font-variation-settings: 'opsz' 14;
+}
+
+.ic {
+  display: inline-block;
+  line-height: 1;
+  font-style: normal;
+  font-weight: 400;
+  font-variation-settings: normal;
+  -webkit-font-smoothing: antialiased;
+}
+
+.ic.mi {
+  font-family: 'Material Icons Amble';
+}
+
+.ic.ti {
+  font-family: 'Tabler Icons Amble';
+}

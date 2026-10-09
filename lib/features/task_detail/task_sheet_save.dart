@@ -5,9 +5,11 @@ import '../../core/widgets/app_trial_gate.dart';
 import '../../shared/models/task.dart';
 import '../../shared/providers/task_providers.dart';
 import '../../shared/providers/trial_providers.dart';
+import '../../shared/services/occurrence_task_projection.dart';
 import '../timeline/pending_task_draft_provider.dart';
 import '../timeline/recently_saved_task_provider.dart';
 import 'task_sheet_form.dart';
+import 'task_sheet_series_save.dart';
 
 /// Writes [form]: creates a task (retrying once after the paywall if the
 /// trial has ended), or writes the task being edited back — taking the
@@ -32,7 +34,8 @@ Future<bool> saveTaskSheet(
   final existing = form.task;
 
   if (existing == null) {
-    Future<Task> attempt() => notifier.createTask(
+    // A repeating task becomes a series (see `TaskList.createTask`).
+    Future<String> attempt() async => (await notifier.createTask(
       title: title,
       description: description.isEmpty ? null : description,
       scheduledAt: scheduledAt,
@@ -43,21 +46,31 @@ Future<bool> saveTaskSheet(
       notificationsEnabled: form.notificationsEnabled,
       isImportant: form.isImportant,
       templateId: form.templateId,
-    );
-    Task created;
+    )).id;
+    String createdId;
     try {
-      created = await attempt();
+      createdId = await attempt();
     } on TrialExpiredException {
       if (!context.mounted) return false;
       final unlocked = await presentPaywallForTrialExpired(context, ref);
       if (!unlocked || !context.mounted) return false;
       try {
-        created = await attempt();
+        createdId = await attempt();
       } on TrialExpiredException {
         return false;
       }
     }
-    saved.record(created.id, SavedTaskChange.created);
+    saved.record(createdId, SavedTaskChange.created);
+  } else if (isOccurrenceTaskId(existing.id)) {
+    await saveOccurrenceFromSheet(
+      ref,
+      form,
+      existing,
+      title: title,
+      description: description,
+      scheduledAt: scheduledAt,
+      durationMinutes: durationMinutes,
+    );
   } else {
     await _update(notifier, form, existing, title, description, scheduledAt);
     final durationChanged =
@@ -87,42 +100,32 @@ Future<void> _update(
   String description,
   DateTime scheduledAt,
 ) async {
+  // Turning repeat on for a plain task makes it a series from this date; the
+  // plain task is replaced by the series' first occurrence.
+  if (form.repeats) {
+    await notifier.createTask(
+      title: title,
+      description: description.isEmpty ? null : description,
+      scheduledAt: scheduledAt,
+      durationMinutes: form.durationMinutes!,
+      categoryId: form.categoryId,
+      recurrenceRule: form.recurrenceRule,
+      behaviorId: form.behaviorId,
+      notificationsEnabled: form.notificationsEnabled,
+      isImportant: form.isImportant,
+      templateId: existing.templateId,
+    );
+    await notifier.deleteTask(existing.id);
+    return;
+  }
   existing.title = title;
   existing.description = description.isEmpty ? null : description;
-  // A recurring occurrence moved by editing must remember its slot, or the
-  // next materialization regenerates a duplicate at the old hour — as
-  // `TaskList.rescheduleTask` does for a drag.
-  if (existing.isRecurring && existing.scheduledAt != scheduledAt) {
-    existing.originalScheduledAt ??= existing.scheduledAt;
-  }
   existing.scheduledAt = scheduledAt;
   existing.durationMinutes = form.durationMinutes;
   existing.categoryId = form.categoryId;
   existing.notificationsEnabled = form.notificationsEnabled;
   existing.isImportant = form.isImportant;
-  final behaviorChanged = form.behaviorId != form.initialBehaviorId;
   if (form.behaviorId == null) existing.actualAmount = null;
   existing.behaviorId = form.behaviorId;
-
-  final was = form.wasRecurring ?? false;
-  if (!was && form.repeats) {
-    await notifier.updateTaskWithNewRecurrence(existing, form.recurrenceRule);
-  } else if (was && !form.repeats) {
-    await notifier.disableTaskRecurrence(existing);
-  } else if (was &&
-      form.showFutureInstancesChoice &&
-      !form.affectFutureInstances) {
-    await notifier.updateTaskThisInstanceOnly(existing);
-  } else if (was) {
-    await notifier.updateTaskWithChangedRecurrence(
-      existing,
-      form.recurrenceRule,
-    );
-  } else {
-    await notifier.updateTask(existing);
-  }
-  // A tracked-behaviour link belongs to the whole series.
-  if (behaviorChanged && existing.isRecurring) {
-    await notifier.propagateBehaviorLinkToSeries(existing);
-  }
+  await notifier.updateTask(existing);
 }

@@ -711,256 +711,257 @@ class TaskCapsuleBlock extends StatelessWidget {
               child: AppDepthShape(
                 alignment: pulseCenter,
                 child: AppLiquidPulse(
-                active: isCompleted,
-                spec: LiquidPulseSpec.complete,
-                suppressed: isLifted || isResizing,
-                alignment: pulseCenter,
-                child: AppLiquidPulse(
-                  active: isSelected,
+                  active: isCompleted,
+                  spec: LiquidPulseSpec.complete,
                   suppressed: isLifted || isResizing,
                   alignment: pulseCenter,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      TaskManipulationTargets(
-                        theme: theme,
-                        visualWidth: badgeSize,
-                        visualHeight: pillHeight,
-                        active: editModeEnabled && isSelected,
-                        interactionPrimary: interactionPrimary,
-                        onTap: onTap,
-                        onHandleActivate: onHandleActivate,
-                        onLongPress: onLongPress,
-                        onMoveStart: onDragStart,
-                        onMoveUpdate: onDragUpdate,
-                        onMoveEnd: onDragEnd,
-                        onMoveCancel: onDragCancel,
-                        onStartResize: onResizeTopStart,
-                        onStartResizeUpdate: onResizeTopUpdate,
-                        onStartResizeEnd: onResizeTopEnd,
-                        onStartResizeCancel: onResizeTopCancel,
-                        onEndResize: onResizeStart,
-                        onEndResizeUpdate: onResizeUpdate,
-                        onEndResizeEnd: onResizeEnd,
-                        onEndResizeCancel: onResizeCancel,
-                        visual:
-                            // Animated so a duration change GROWS or shrinks the pill
-                            // into its new height instead of snapping — requested
-                            // directly ("extends pill (change duration case) so user can
-                            // see it happening"). No state plumbing needed: the height
-                            // already derives from the task's own duration, so animating
-                            // this container covers every path that can change it (the
-                            // edit modal, a cascade reschedule, anything future).
-                            AnimatedContainer(
-                              // motionSlow, matching the entrance stagger's own pace:
-                              // both are "watch this happen" beats rather than responses
-                              // to a gesture, and at motionNormal the resize was over
-                              // almost as soon as it started (reported directly).
-                              //
-                              // Zero while a resize drag is live, though — see
-                              // [isResizing]. Under a finger the pill has to track the
-                              // gesture exactly; the "watch this happen" pacing above is
-                              // for duration changes the user did NOT drag out.
-                              duration: isResizing || snapGeometry
-                                  ? Duration.zero
-                                  : theme.motionSlow,
-                              curve: theme.curveStandard,
-                              width: badgeSize,
-                              height: pillHeight,
-                              alignment: Alignment.topCenter,
-                              // Flush with the pill's own top edge — nudged up a
-                              // further 2px per direct feedback (second alignment
-                              // pass): spacingXs/2 (2px) still read as slightly low
-                              // next to the title.
-                              padding: EdgeInsets.zero,
-                              // theme.radiusPill — the ACTIVE rung of the "Pill
-                              // shape" setting (small/rounded/full), not
-                              // radiusTaskPill (always fully round, used by
-                              // AppButton/the theme selector/the tracked-behavior
-                              // form, none of which this setting should touch —
-                              // confirmed via AskUserQuestion as the wrong scope for
-                              // those). Was hardcoded to radiusSm (4px) before this
-                              // setting existed; requested directly ("we have squary
-                              // rounded shape of pills but rounded on inbox ... this
-                              // should affect globally").
-                              //
-                              // Selection reads as a two-ring border on the rail —
-                              // requested directly, replacing the wiggle that used to
-                              // signal it, then refined again: a single accent ring
-                              // disappeared against a pill that happened to already be
-                              // blue, so a thin dark separator ring now sits between
-                              // the accent ring and the fill, regardless of the pill's
-                              // own color. See [SelectedPillBorder]'s own doc comment.
-                              // Unselected keeps the exact same box (color, radius, no
-                              // border) as before this feature existed at all.
-                              // Unselected paints the fill here and nothing else.
-                              // SELECTED paints nothing here at all — the whole
-                              // two-ring treatment (accent ring, dark separator,
-                              // fill) is delegated to `SelectedPillBorder` on the
-                              // child below, so there is exactly ONE implementation
-                              // of that shape in the codebase.
-                              //
-                              // This used to hand-nest its own copy of those rings,
-                              // and the copy had a real bug the shared widget does
-                              // not: it set `color:` AND `border:` in a SINGLE
-                              // `BoxDecoration`, and Flutter paints a decoration's
-                              // fill across the FULL box — including underneath the
-                              // border stroke. `colorScrim` is 40% alpha (measured),
-                              // so the pill fill showed THROUGH the separator ring
-                              // and blended it into a soft, half-lit extra ring.
-                              // Reported directly, twice: "we still have one more
-                              // inner dark softer/transparent something."
-                              decoration: isSelected
-                                  ? const BoxDecoration()
-                                  : BoxDecoration(
-                                      color: badgeColor,
-                                      borderRadius: BorderRadius.circular(
-                                        theme.radiusPill,
-                                      ),
-                                    ),
-                              // Deliberately NOT faded while lifted — corrected
-                              // directly after a first pass hid it: this glyph is the
-                              // pill's identity and stays visible the whole time,
-                              // including mid-drag. Also stays visible for
-                              // `contentHidden` (a resting cluster member) — reversing
-                              // an earlier decision that faded it there too, per direct
-                              // feedback: the cluster's own row list has no icon of its
-                              // own (see `OverlapClusterBlock`'s doc comment), so the
-                              // pill is the only place a clustered task's category
-                              // reads at all. Only the title/time text and checkbox
-                              // still fade for `contentHidden` (see the row further
-                              // down) — those genuinely duplicate the cluster's own row
-                              // list, but the emoji does not.
-                              //
-                              // Tabler icon (`categoryVisual.icon`) where one
-                              // resolves — matches the same glyph now shown on the
-                              // category picker's chips during create/edit (see
-                              // `CategoryGlyph`'s own doc comment). Falls back to the
-                              // legacy `.emoji` text only for a pre-migration task
-                              // with no live `Category` row to read an icon from.
-                              // Unlike the emoji this replaces, a monochrome Tabler
-                              // icon carries no color of its own, so it's tinted via
-                              // `glyphColorOn(categoryVisual.pillColor)` rather than
-                              // `categoryVisual.iconColor` directly — a CUSTOM
-                              // category's `iconColor` is the exact same swatch as
-                              // its `pillColor` (see `resolveCategoryVisual`'s own
-                              // doc comment), which would make the icon invisible
-                              // against its own background; `glyphColorOn` picks
-                              // white/black by contrast instead, for both the
-                              // built-in and custom case alike.
-                              // `glyphHidden` (the drag ghost) is the ONE case that also
-                              // drops the glyph — see its own doc comment.
-                              //
-                              // The glyph itself is wrapped in the dark separator
-                              // ring + fill (see [SelectedPillBorder]'s doc comment)
-                              // only while selected, inset by the accent border's own
-                              // width so the two rings stay concentric. Unselected,
-                              // `badgeColor` already lives on the outer decoration
-                              // above and this whole inner wrapper is skipped — the
-                              // child is the bare emoji, same three widgets
-                              // (`Opacity` -> `Text`) as before this feature existed,
-                              // not extra empty layers left in the tree for a case
-                              // that needs none of them.
-                              child: isSelected
-                                  ? SizedBox.expand(
-                                      // `AnimatedContainer`'s own `alignment:
-                                      // topCenter` wraps ITS child in an `Align`,
-                                      // which lets that child shrink-wrap to its
-                                      // natural size instead of filling the box —
-                                      // without forcing this layer to expand, the
-                                      // rings below would hug just the emoji's own
-                                      // tiny bounds rather than the full pill.
-                                      child: SelectedPillBorder(
-                                        theme: theme,
-                                        contentRadius: BorderRadius.circular(
+                  child: AppLiquidPulse(
+                    active: isSelected,
+                    suppressed: isLifted || isResizing,
+                    alignment: pulseCenter,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        TaskManipulationTargets(
+                          theme: theme,
+                          visualWidth: badgeSize,
+                          visualHeight: pillHeight,
+                          active: editModeEnabled && isSelected,
+                          interactionPrimary: interactionPrimary,
+                          onTap: onTap,
+                          onHandleActivate: onHandleActivate,
+                          onLongPress: onLongPress,
+                          onMoveStart: onDragStart,
+                          onMoveUpdate: onDragUpdate,
+                          onMoveEnd: onDragEnd,
+                          onMoveCancel: onDragCancel,
+                          onStartResize: onResizeTopStart,
+                          onStartResizeUpdate: onResizeTopUpdate,
+                          onStartResizeEnd: onResizeTopEnd,
+                          onStartResizeCancel: onResizeTopCancel,
+                          onEndResize: onResizeStart,
+                          onEndResizeUpdate: onResizeUpdate,
+                          onEndResizeEnd: onResizeEnd,
+                          onEndResizeCancel: onResizeCancel,
+                          visual:
+                              // Animated so a duration change GROWS or shrinks the pill
+                              // into its new height instead of snapping — requested
+                              // directly ("extends pill (change duration case) so user can
+                              // see it happening"). No state plumbing needed: the height
+                              // already derives from the task's own duration, so animating
+                              // this container covers every path that can change it (the
+                              // edit modal, a cascade reschedule, anything future).
+                              AnimatedContainer(
+                                // motionSlow, matching the entrance stagger's own pace:
+                                // both are "watch this happen" beats rather than responses
+                                // to a gesture, and at motionNormal the resize was over
+                                // almost as soon as it started (reported directly).
+                                //
+                                // Zero while a resize drag is live, though — see
+                                // [isResizing]. Under a finger the pill has to track the
+                                // gesture exactly; the "watch this happen" pacing above is
+                                // for duration changes the user did NOT drag out.
+                                duration: isResizing || snapGeometry
+                                    ? Duration.zero
+                                    : theme.motionSlow,
+                                curve: theme.curveStandard,
+                                width: badgeSize,
+                                height: pillHeight,
+                                alignment: Alignment.topCenter,
+                                // Flush with the pill's own top edge — nudged up a
+                                // further 2px per direct feedback (second alignment
+                                // pass): spacingXs/2 (2px) still read as slightly low
+                                // next to the title.
+                                padding: EdgeInsets.zero,
+                                // theme.radiusPill — the ACTIVE rung of the "Pill
+                                // shape" setting (small/rounded/full), not
+                                // radiusTaskPill (always fully round, used by
+                                // AppButton/the theme selector/the tracked-behavior
+                                // form, none of which this setting should touch —
+                                // confirmed via AskUserQuestion as the wrong scope for
+                                // those). Was hardcoded to radiusSm (4px) before this
+                                // setting existed; requested directly ("we have squary
+                                // rounded shape of pills but rounded on inbox ... this
+                                // should affect globally").
+                                //
+                                // Selection reads as a two-ring border on the rail —
+                                // requested directly, replacing the wiggle that used to
+                                // signal it, then refined again: a single accent ring
+                                // disappeared against a pill that happened to already be
+                                // blue, so a thin dark separator ring now sits between
+                                // the accent ring and the fill, regardless of the pill's
+                                // own color. See [SelectedPillBorder]'s own doc comment.
+                                // Unselected keeps the exact same box (color, radius, no
+                                // border) as before this feature existed at all.
+                                // Unselected paints the fill here and nothing else.
+                                // SELECTED paints nothing here at all — the whole
+                                // two-ring treatment (accent ring, dark separator,
+                                // fill) is delegated to `SelectedPillBorder` on the
+                                // child below, so there is exactly ONE implementation
+                                // of that shape in the codebase.
+                                //
+                                // This used to hand-nest its own copy of those rings,
+                                // and the copy had a real bug the shared widget does
+                                // not: it set `color:` AND `border:` in a SINGLE
+                                // `BoxDecoration`, and Flutter paints a decoration's
+                                // fill across the FULL box — including underneath the
+                                // border stroke. `colorScrim` is 40% alpha (measured),
+                                // so the pill fill showed THROUGH the separator ring
+                                // and blended it into a soft, half-lit extra ring.
+                                // Reported directly, twice: "we still have one more
+                                // inner dark softer/transparent something."
+                                decoration: isSelected
+                                    ? const BoxDecoration()
+                                    : BoxDecoration(
+                                        color: badgeColor,
+                                        borderRadius: BorderRadius.circular(
                                           theme.radiusPill,
                                         ),
-                                        fillColor: badgeColor,
-                                        child: Align(
-                                          alignment: Alignment.topCenter,
-                                          // Fixed badgeSize square, glyph CENTERED
-                                          // inside it — not just top-aligned in
-                                          // whatever space Align gives it. An emoji
-                                          // Text happened to read as centered here
-                                          // by coincidence (its own font
-                                          // ascent/leading roughly matched); a
-                                          // Tabler Icon's tight glyph bounds sat
-                                          // flush to the very top instead, reported
-                                          // directly as needing "new alignments...
-                                          // lacks padding."
-                                          //
-                                          // The SizedBox here is load-bearing, not
-                                          // decorative — real bug, reported directly:
-                                          // "when task selected on timeline (not in
-                                          // edit mode) the icon gets in the middle,
-                                          // should stay on top." `_PillGlyph` itself
-                                          // wraps its content in a bare `Center` with
-                                          // no size of its own (see its own build
-                                          // method), so without a tight box here it
-                                          // grew to fill `Align`'s full available
-                                          // height (this whole pill, via the
-                                          // `SizedBox.expand` above) and centered
-                                          // within THAT — not within a badgeSize
-                                          // square the way the unselected branch
-                                          // below already does correctly.
-                                          child: SizedBox(
-                                            width: badgeSize,
-                                            height: badgeSize,
-                                            child: _PillGlyph(
-                                              categoryVisual: categoryVisual,
-                                              badgeSize: badgeSize,
-                                              railColor: badgeColor,
-                                              iconOnlyBadgeColor:
-                                                  iconOnlyBadgeColor,
-                                              hidden: glyphHidden,
-                                              faded: state.isDone,
+                                      ),
+                                // Deliberately NOT faded while lifted — corrected
+                                // directly after a first pass hid it: this glyph is the
+                                // pill's identity and stays visible the whole time,
+                                // including mid-drag. Also stays visible for
+                                // `contentHidden` (a resting cluster member) — reversing
+                                // an earlier decision that faded it there too, per direct
+                                // feedback: the cluster's own row list has no icon of its
+                                // own (see `OverlapClusterBlock`'s doc comment), so the
+                                // pill is the only place a clustered task's category
+                                // reads at all. Only the title/time text and checkbox
+                                // still fade for `contentHidden` (see the row further
+                                // down) — those genuinely duplicate the cluster's own row
+                                // list, but the emoji does not.
+                                //
+                                // Tabler icon (`categoryVisual.icon`) where one
+                                // resolves — matches the same glyph now shown on the
+                                // category picker's chips during create/edit (see
+                                // `CategoryGlyph`'s own doc comment). Falls back to the
+                                // legacy `.emoji` text only for a pre-migration task
+                                // with no live `Category` row to read an icon from.
+                                // Unlike the emoji this replaces, a monochrome Tabler
+                                // icon carries no color of its own, so it's tinted via
+                                // `glyphColorOn(categoryVisual.pillColor)` rather than
+                                // `categoryVisual.iconColor` directly — a CUSTOM
+                                // category's `iconColor` is the exact same swatch as
+                                // its `pillColor` (see `resolveCategoryVisual`'s own
+                                // doc comment), which would make the icon invisible
+                                // against its own background; `glyphColorOn` picks
+                                // white/black by contrast instead, for both the
+                                // built-in and custom case alike.
+                                // `glyphHidden` (the drag ghost) is the ONE case that also
+                                // drops the glyph — see its own doc comment.
+                                //
+                                // The glyph itself is wrapped in the dark separator
+                                // ring + fill (see [SelectedPillBorder]'s doc comment)
+                                // only while selected, inset by the accent border's own
+                                // width so the two rings stay concentric. Unselected,
+                                // `badgeColor` already lives on the outer decoration
+                                // above and this whole inner wrapper is skipped — the
+                                // child is the bare emoji, same three widgets
+                                // (`Opacity` -> `Text`) as before this feature existed,
+                                // not extra empty layers left in the tree for a case
+                                // that needs none of them.
+                                child: isSelected
+                                    ? SizedBox.expand(
+                                        // `AnimatedContainer`'s own `alignment:
+                                        // topCenter` wraps ITS child in an `Align`,
+                                        // which lets that child shrink-wrap to its
+                                        // natural size instead of filling the box —
+                                        // without forcing this layer to expand, the
+                                        // rings below would hug just the emoji's own
+                                        // tiny bounds rather than the full pill.
+                                        child: SelectedPillBorder(
+                                          theme: theme,
+                                          contentRadius: BorderRadius.circular(
+                                            theme.radiusPill,
+                                          ),
+                                          fillColor: badgeColor,
+                                          child: Align(
+                                            alignment: Alignment.topCenter,
+                                            // Fixed badgeSize square, glyph CENTERED
+                                            // inside it — not just top-aligned in
+                                            // whatever space Align gives it. An emoji
+                                            // Text happened to read as centered here
+                                            // by coincidence (its own font
+                                            // ascent/leading roughly matched); a
+                                            // Tabler Icon's tight glyph bounds sat
+                                            // flush to the very top instead, reported
+                                            // directly as needing "new alignments...
+                                            // lacks padding."
+                                            //
+                                            // The SizedBox here is load-bearing, not
+                                            // decorative — real bug, reported directly:
+                                            // "when task selected on timeline (not in
+                                            // edit mode) the icon gets in the middle,
+                                            // should stay on top." `_PillGlyph` itself
+                                            // wraps its content in a bare `Center` with
+                                            // no size of its own (see its own build
+                                            // method), so without a tight box here it
+                                            // grew to fill `Align`'s full available
+                                            // height (this whole pill, via the
+                                            // `SizedBox.expand` above) and centered
+                                            // within THAT — not within a badgeSize
+                                            // square the way the unselected branch
+                                            // below already does correctly.
+                                            child: SizedBox(
+                                              width: badgeSize,
+                                              height: badgeSize,
+                                              child: _PillGlyph(
+                                                categoryVisual: categoryVisual,
+                                                badgeSize: badgeSize,
+                                                railColor: badgeColor,
+                                                iconOnlyBadgeColor:
+                                                    iconOnlyBadgeColor,
+                                                hidden: glyphHidden,
+                                                faded: state.isDone,
+                                              ),
                                             ),
                                           ),
                                         ),
+                                      )
+                                    // Same fixed badgeSize-square + Center fix as the
+                                    // selected branch above — this AnimatedContainer's
+                                    // own `alignment: topCenter` (set higher up) only
+                                    // pins the child to the top of the WHOLE pill
+                                    // height, not a centered badgeSize square, which
+                                    // is what left a Tabler Icon looking flush to the
+                                    // top edge instead of centered in its badge.
+                                    : SizedBox(
+                                        width: badgeSize,
+                                        height: badgeSize,
+                                        child: _PillGlyph(
+                                          categoryVisual: categoryVisual,
+                                          badgeSize: badgeSize,
+                                          railColor: badgeColor,
+                                          iconOnlyBadgeColor:
+                                              iconOnlyBadgeColor,
+                                          hidden: glyphHidden,
+                                          faded: state.isDone,
+                                        ),
                                       ),
-                                    )
-                                  // Same fixed badgeSize-square + Center fix as the
-                                  // selected branch above — this AnimatedContainer's
-                                  // own `alignment: topCenter` (set higher up) only
-                                  // pins the child to the top of the WHOLE pill
-                                  // height, not a centered badgeSize square, which
-                                  // is what left a Tabler Icon looking flush to the
-                                  // top edge instead of centered in its badge.
-                                  : SizedBox(
-                                      width: badgeSize,
-                                      height: badgeSize,
-                                      child: _PillGlyph(
-                                        categoryVisual: categoryVisual,
-                                        badgeSize: badgeSize,
-                                        railColor: badgeColor,
-                                        iconOnlyBadgeColor: iconOnlyBadgeColor,
-                                        hidden: glyphHidden,
-                                        faded: state.isDone,
-                                      ),
-                                    ),
-                            ),
-                      ),
-                      // The important star rides on the pill's top-right
-                      // corner, inside the pulses so it bounces with it.
-                      if (state.showStar)
-                        Builder(
-                          builder: (context) {
-                            final star = TaskImportantStar(
-                              theme: theme,
-                              pillWidth: badgeSize,
-                              faded: state.isDone,
-                            );
-                            return Positioned(
-                              left: star.cornerOffset.dx,
-                              top: star.cornerOffset.dy,
-                              child: star,
-                            );
-                          },
+                              ),
                         ),
-                    ],
+                        // The important star rides on the pill's top-right
+                        // corner, inside the pulses so it bounces with it.
+                        if (state.showStar)
+                          Builder(
+                            builder: (context) {
+                              final star = TaskImportantStar(
+                                theme: theme,
+                                pillWidth: badgeSize,
+                                faded: state.isDone,
+                              );
+                              return Positioned(
+                                left: star.cornerOffset.dx,
+                                top: star.cornerOffset.dy,
+                                child: star,
+                              );
+                            },
+                          ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
               ),
             ),
           ),
@@ -1061,7 +1062,7 @@ class TaskCapsuleBlock extends StatelessWidget {
                               task.title,
                               style: state.title(
                                 titleTextStyle.copyWith(
-                                  fontWeight: FontWeight.w700,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                               maxLines: 1,
@@ -1110,7 +1111,7 @@ class TaskCapsuleBlock extends StatelessWidget {
                                     text: task.title,
                                     style: state.title(
                                       titleTextStyle.copyWith(
-                                        fontWeight: FontWeight.w700,
+                                        fontWeight: FontWeight.w600,
                                       ),
                                     ),
                                   ),
@@ -1574,7 +1575,7 @@ class TaskCapsuleTextRow extends StatelessWidget {
       theme: theme,
       task: task,
       labelColor: labelColor ?? theme.colorTextSecondary,
-    ).title(theme.textTaskTitle.copyWith(fontWeight: FontWeight.w700));
+    ).title(theme.textTaskTitle.copyWith(fontWeight: FontWeight.w600));
     // One rendered line of the title, derived from the type tokens rather
     // than hardcoded — the trailing completion checkbox centres itself on
     // this so it lines up with the text instead of with the row.

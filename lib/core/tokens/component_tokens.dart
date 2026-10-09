@@ -54,6 +54,88 @@ abstract final class ShellHeaderTokens {
   static double paneSideInset(AmbleTheme theme) => theme.spacingSm;
 }
 
+/// The app shell's wide layout — a left sidebar replaces the top nav once
+/// the window is wide enough (desktop, web, iPad landscape). Requested
+/// directly, against a desktop-calendar reference: "two panes on the
+/// sides: one left navigation... the central area will display the
+/// content."
+abstract final class ShellLayoutTokens {
+  /// Material 3's "expanded" window size class starts at 840dp — the
+  /// standard width where a persistent navigation rail/drawer replaces
+  /// compact navigation. Below it, the phone layout is unchanged.
+  static const double sideNavMinWindowWidth = 840;
+
+  /// The sidebar's fixed width — room for the destination labels and, in
+  /// a later phase, a mini month calendar (7 day columns).
+  static const double sideNavWidth = 240;
+
+  /// The right-hand create/edit panel's width — room for the task form's
+  /// field rows without wrapping, while leaving the centre the most space.
+  static const double inspectorWidth = 360;
+
+  /// macOS draws the app under its (transparent) title bar, so the close /
+  /// minimise / zoom buttons float over the content. This is that bar's
+  /// height: the app treats it as a top safe area, so backgrounds run to
+  /// the window's edge while controls start below the buttons and stay
+  /// clickable (the bar itself keeps dragging the window).
+  static const double macTitleBarHeight = 28;
+
+  /// The shell's pane dividers (sidebar, side panel): [AmbleTheme.colorBorder]
+  /// at this alpha (Notion Calendar's panel divider: +13 of +15), 1 point
+  /// wide (`AppHairline`) — requested directly: "interface shell lines too
+  /// thick and too strong".
+  static const double dividerAlpha = .85;
+
+  /// The width of shell dividers and calendar grid lines: 1 point (2
+  /// physical pixels on Retina), as in Notion Calendar. Half the app's
+  /// general `borderWidthHairline` (2 points).
+  static const double lineWidth = 1;
+}
+
+/// The wide layout's week and month grids (`features/calendar/`).
+abstract final class CalendarGridTokens {
+  /// One hour's height in the week grid — a 1-hour task reads as a block
+  /// with room for its title and time, as in Notion Calendar's week.
+  static const double weekHourHeight = SpacingPrimitives.space9Point5;
+
+  /// The week grid's hour-label column.
+  static const double weekGutterWidth = SpacingPrimitives.space10;
+
+  /// The week opens scrolled to this hour, where most days begin.
+  static const int weekFirstVisibleHour = 7;
+
+  /// The colored rail on the left of a week block or month row.
+  static const double railWidth = 3;
+
+  /// The Day / Week / Month switch: three equal segments, each with room
+  /// for "Month" at the desktop body size. A fixed width because the
+  /// switch fills whatever width it is given and sits in a toolbar row.
+  static const double spanSwitchWidth = 216;
+
+  /// Grid line strength as [AmbleTheme.colorBorder] alphas, matched to
+  /// Notion Calendar (measured on its #191919 canvas, separator +15): hour
+  /// lines +6 (the quietest), day lines +9. Requested directly: the grid
+  /// lines were "too strong".
+  static const double hourLineAlpha = .4;
+  static const double dayLineAlpha = .6;
+
+  /// The least vertical room a week task's text row takes: two overlapping
+  /// tasks that start close together stack their rows at least this far
+  /// apart instead of printing over each other.
+  static const double weekTextRowHeight = SpacingPrimitives.space7;
+
+  /// Tasks listed in a month cell before "+N more".
+  static const int monthVisibleTasks = 4;
+}
+
+/// The contextual popover that stands in for a bottom sheet in the wide
+/// layout (`AppSheetPresentation.popover`).
+abstract final class PopoverTokens {
+  /// Room for the task pickers' wheels and a month calendar, a little
+  /// narrower than the panel it opens beside.
+  static const double width = 320;
+}
+
 /// The main nav's settings gear.
 abstract final class TopNavTokens {
   /// One step up from `spacingMd` (16), so the gear holds its own beside
@@ -216,7 +298,7 @@ abstract final class ChipTokens {
   static Color selectedText(AmbleTheme theme) => theme.colorTextPrimary;
 
   static const restWeight = FontWeight.w500;
-  static const selectedWeight = FontWeight.w700;
+  static const selectedWeight = FontWeight.w600;
 
   static Color ring(AmbleTheme theme) => theme.colorTextPrimary;
   static double ringWidth(AmbleTheme theme) => theme.borderWidthHairline * 1.5;

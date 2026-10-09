@@ -62,6 +62,7 @@ class AppSelectableChip extends StatelessWidget {
   final VoidCallback onTap;
   final AppButtonVariant variant;
   final AppSelectableChipSize size;
+
   /// Set this for a single-choice chip group; most chip rows allow multiple
   /// selections and should not be announced as mutually exclusive.
   final bool inMutuallyExclusiveGroup;

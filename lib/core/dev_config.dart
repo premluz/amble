@@ -1,4 +1,6 @@
 import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    show Notifier, NotifierProvider;
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'dev_config.g.dart';
@@ -453,3 +455,19 @@ class DevOnboardingQuizEnabled extends _$DevOnboardingQuizEnabled {
 /// must be wrapped in. A plain re-export of `kDebugMode` so call sites
 /// import one file for both the flag and the gate.
 const bool isDevConfigAvailable = kDebugMode;
+
+/// Whether top-level pages SLIDE when switching (with their items trailing
+/// one after another, `AppFollowThrough`). Off by default — requested
+/// directly: "gate it behind dev toggle... as default it's fade in not
+/// slide in"; off, pages crossfade. In-memory only. A plain provider (no
+/// code generation), so adding it needed no `build_runner` run.
+class DevPageSlideMotion extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void set(bool value) => state = value;
+}
+
+final devPageSlideMotionProvider = NotifierProvider<DevPageSlideMotion, bool>(
+  DevPageSlideMotion.new,
+);

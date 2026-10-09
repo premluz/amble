@@ -7,6 +7,7 @@ import 'app_context_menu.dart';
 import 'app_follow_through.dart';
 import 'app_view_transition_motion.dart';
 import 'app_view_transition_slot.dart';
+import 'app_staggered_fill.dart' show AppViewArrival;
 
 /// Readiness-aware transitions sample live slot positions on interruption.
 class AppViewTransition extends StatefulWidget {
@@ -232,7 +233,12 @@ class _AppViewTransitionState extends State<AppViewTransition>
                 participating:
                     entry.key == _activeViewId ||
                     weights.containsKey(entry.key),
-                child: widget.slide ? _followed(entry, width) : entry.value,
+                // Tells the page it just arrived (slide or fade), for
+                // entrance details such as Patterns' fill-in.
+                child: AppViewArrival(
+                  arrival: entry.key == _activeViewId ? _generation : -1,
+                  child: widget.slide ? _followed(entry, width) : entry.value,
+                ),
               ),
           ],
         );

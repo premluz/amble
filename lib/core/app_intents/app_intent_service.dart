@@ -1,12 +1,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../shared/models/category.dart';
+import '../../shared/models/local_date.dart';
 import '../../shared/models/recurrence_rule.dart';
 import '../../shared/models/task.dart';
 import '../../shared/models/zone.dart';
 import '../../shared/services/weekly_zone_schedule.dart';
 import '../../shared/providers/category_providers.dart';
 import '../../shared/providers/notification_providers.dart';
+import '../../shared/providers/occurrence_store.dart';
 import '../../shared/providers/task_providers.dart';
 import '../../shared/providers/zone_providers.dart';
 import '../../shared/providers/trial_providers.dart';
@@ -29,7 +31,6 @@ class AppIntentService {
   final DateTime Function() now;
 
   Future<Object> handle(String method, Map<Object?, Object?> args) async {
-    final repository = container.read(taskRepositoryProvider);
     switch (method) {
       case 'addTask':
         final input = _text(args, 'text');
@@ -77,9 +78,9 @@ class AppIntentService {
       case 'addZone':
         return _addZone(args);
       case 'daySummary':
-        return buildIntentDaySummary(repository.getTasks(), now());
+        return buildIntentDaySummary(_scheduledTasks(), now());
       case 'findTasks':
-        final candidates = intentScheduledTasks(repository.getTasks(), now());
+        final candidates = intentScheduledTasks(_scheduledTasks(), now());
         final query = args['query'];
         final ids = args['ids'];
         final matches = query is String
@@ -93,7 +94,7 @@ class AppIntentService {
         // Resolve again after Siri's disambiguation; never trust a cached entity
         // or delete an item that changed while the person was choosing.
         final task = intentScheduledTasks(
-          repository.getTasks(),
+          _scheduledTasks(),
           now(),
         ).where((t) => t.id == id).firstOrNull;
         if (task == null ||
@@ -108,6 +109,20 @@ class AppIntentService {
       default:
         throw const AppIntentFailure('This Amble action is not available.');
     }
+  }
+
+  /// Stored tasks plus repeating-task occurrences across the intent window —
+  /// occurrences are not stored tasks, so the task store alone misses them.
+  /// Removing one goes through `deleteTask`, which the task repository
+  /// routes to cancelling that occurrence.
+  List<Task> _scheduledTasks() {
+    final today = LocalDate.fromDateTime(now());
+    return [
+      ...container.read(taskRepositoryProvider).getTasks(),
+      ...container
+          .read(occurrenceStoreProvider.notifier)
+          .tasksBetween(today, today.addDays(intentTaskWindowDays)),
+    ];
   }
 
   Future<String> _addZone(Map<Object?, Object?> args) async {

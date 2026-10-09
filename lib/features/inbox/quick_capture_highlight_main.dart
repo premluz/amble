@@ -135,7 +135,7 @@ class _PreviewController extends TextEditingController {
           text: input.substring(token.start, token.end),
           style: TextStyle(
             color: _highlightColor(t, token.kind),
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w600,
           ),
         ),
       );

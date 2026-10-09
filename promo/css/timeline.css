@@ -1,0 +1,151 @@
+/* Day page: date row + the spatial Timeline (1.5 px per minute). Columns
+   match the reference renders: hours at 16, zones from 100, rails at 118,
+   titles at 166. */
+.page {
+  position: absolute;
+  inset: 0;
+  transform: translateX(var(--px, 0));
+}
+
+.page[data-on='0'],
+.task[data-on='0'],
+.zone-band[data-on='0'],
+.edge[data-on='0'] {
+  visibility: hidden;
+}
+
+.date-row {
+  position: absolute;
+  left: 16px;
+  top: 107px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 16px;
+}
+
+.date-row .ic {
+  font-size: 18px;
+}
+
+.grip {
+  position: absolute;
+  left: 171px;
+  top: 135px;
+  width: 48px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--a-border);
+}
+
+.tl {
+  position: absolute;
+  inset: 150px 0 0;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, transparent 0, black 28px);
+}
+
+.wm-glow {
+  position: absolute;
+  inset: -150px 0 0;
+  opacity: var(--wm, 0);
+  background: radial-gradient(429px 429px at 50% 100%,
+      color-mix(in srgb, var(--a-accent) 28.6%, transparent),
+      color-mix(in srgb, var(--a-accent) 14.3%, transparent) 45%, transparent 100%);
+}
+
+.tl-body,
+.tl-content {
+  position: absolute;
+  inset: 0;
+}
+
+.tl-body {
+  transform: translateX(var(--vx, 0));
+}
+
+.tl-content {
+  transform: translateY(var(--scroll, 0));
+}
+
+.hour {
+  position: absolute;
+  left: 16px;
+  top: var(--y);
+  transform: translateY(-50%);
+  font: 400 12px/1.3 var(--ui-num);
+  color: var(--a-text2);
+  opacity: var(--o, 1);
+}
+
+.zone-band {
+  position: absolute;
+  left: 100px;
+  width: 274px;
+  top: var(--y);
+  height: var(--h);
+  border-radius: 20px;
+  background: var(--a-zone);
+  opacity: var(--o, 1);
+}
+
+.zone-band .zlabel {
+  position: absolute;
+  right: 12px;
+  top: var(--ly, 40px);
+  transform: translate(50%, -50%) rotate(90deg);
+  font: 400 11px/1.3 var(--ui-num);
+  color: var(--a-text2);
+}
+
+.now {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: var(--y);
+  height: 0;
+  opacity: var(--o, 1);
+}
+
+.now b {
+  position: absolute;
+  left: 12px;
+  top: -10px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: var(--a-timeline);
+  font: 700 12px/16px var(--ui-num);
+}
+
+.now i {
+  position: absolute;
+  left: 71px;
+  top: -4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--a-alert);
+}
+
+.now s {
+  position: absolute;
+  left: 76px;
+  right: 0;
+  top: -1px;
+  height: 2px;
+  background: var(--a-alert);
+}
+
+.edge {
+  position: absolute;
+  left: 8px;
+  top: var(--y);
+  height: 24px;
+  padding-inline: 8px;
+  transform: translateY(-50%);
+  border-radius: 8px;
+  background: var(--a-accent);
+  color: var(--a-timeline);
+  font: 700 12px/24px var(--ui-num);
+  opacity: var(--o, 1);
+}

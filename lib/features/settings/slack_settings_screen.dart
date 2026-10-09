@@ -9,6 +9,8 @@ import '../../core/widgets/app_text_field.dart';
 import '../../shared/providers/preferences_providers.dart';
 import '../../shared/providers/task_providers.dart';
 import '../../shared/services/slack_summary_service.dart';
+import '../../shared/models/local_date.dart';
+import '../../shared/providers/occurrence_store.dart';
 import 'settings_detail_scaffold.dart';
 import 'settings_panel.dart';
 
@@ -97,13 +99,19 @@ class _SlackSettingsScreenState extends ConsumerState<SlackSettingsScreen> {
     try {
       final webhookUrl = _webhookController.text;
       final today = DateTime.now();
-      final todaysTasks = ref.read(taskListProvider).where((task) {
-        final scheduledAt = task.scheduledAt;
-        if (scheduledAt == null) return false;
-        return scheduledAt.year == today.year &&
-            scheduledAt.month == today.month &&
-            scheduledAt.day == today.day;
-      }).toList();
+      final todaysTasks = [
+        ...ref.read(taskListProvider).where((task) {
+          final scheduledAt = task.scheduledAt;
+          if (scheduledAt == null) return false;
+          return scheduledAt.year == today.year &&
+              scheduledAt.month == today.month &&
+              scheduledAt.day == today.day;
+        }),
+        // Repeating tasks are series occurrences, not stored tasks.
+        ...ref
+            .read(occurrenceStoreProvider.notifier)
+            .tasksOn(LocalDate.fromDateTime(today)),
+      ]..sort((a, b) => a.scheduledAt!.compareTo(b.scheduledAt!));
       final text = buildMorningSummaryText(todaysTasks);
       final payload = buildSlackPayload(
         text: text,
@@ -205,7 +213,7 @@ class _SlackSettingsScreenState extends ConsumerState<SlackSettingsScreen> {
                         'Send automatically each morning',
                         style: theme.textBody.copyWith(
                           color: theme.colorTextPrimary,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                       SizedBox(height: theme.spacingXs),

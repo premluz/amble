@@ -36,15 +36,18 @@ abstract final class ColorPrimitives {
   // off this ramp entirely rather than kept here.
   static final surface0 = oklch(0.933, 0.004, 106.5); // #E9E9E6
   static final surface1 = oklch(1.000, 0.000, 0); // #FFFFFF
-  static final surface2 = oklch(0.970, 0.005, 95.1); // #F6F5F1 — inset field
-  static final surface3 = oklch(0.872, 0.005, 106.5); // #D5D5D1 — border
+  static final surface2 = oklch(0.958, 0.002, 90.0); // #F1F1F0 — inset field
+  static final surface3 = oklch(0.924, 0.003, 90.0); // #E6E6E4 — border
 
   /// **2026-09-20 — the light-mode app background (`colorSurfaceBase`).**
   /// Confirmed directly: "the website's warm paper background... feels
   /// more like Panta" — a NEW anchor, not a repurposed existing ramp step
   /// (distinct from both `surface0` and `cream0`). Solved to exactly
   /// reproduce the given hex #F1F0EC.
-  static final paper = oklch(0.9540, 0.0045, 85.0); // #F1F0EC
+  ///
+  /// **2026-10-08 — near-neutral, finer steps** (see the Ink note below):
+  /// the warmth is kept as a trace (hue 90, chroma .002), not a cream cast.
+  static final paper = oklch(0.962, 0.002, 90.0); // #F3F2F1
 
   // Cream — nested-row/content-card surface. `cream2` is
   // `colorSurfacePrimary` (cards/content) as of 2026-09-20 — confirmed
@@ -54,8 +57,8 @@ abstract final class ColorPrimitives {
   // `paper`. cream0/cream1 keep their own steps in the ramp for whatever
   // future role needs them; only cream2 is wired to a live token today.
   static final cream0 = oklch(0.913, 0.009, 84.6); // #E5E2DC
-  static final cream1 = oklch(0.946, 0.007, 88.6); // #EFEDE8
-  static final cream2 = oklch(0.974, 0.006, 84.6); // #F8F6F2 — cards/content
+  static final cream1 = oklch(0.955, 0.002, 90.0); // #F0F0EF
+  static final cream2 = oklch(0.985, 0.002, 90.0); // #FAFAF9 — cards/content
 
   /// The light-mode floating overlay (nav + its adjacent day-strip pane).
   /// Pure white, the lightest step in the ramp — confirmed directly:
@@ -259,24 +262,32 @@ abstract final class ColorPrimitives {
   // fixed warm hue — a deliberate widening of this pass, not an
   // oversight; each step was solved independently rather than as one
   // fixed-hue ramp.
-  static final ink900 = oklch(0.185, 0.003, 145.5); // #121312 body/base
-  static final ink800 = oklch(0.212, 0.004, 128.7); // #181917 zone/card
-  static final ink700 = oklch(0.246, 0.004, 128.6); // #20211F raised panel
-  static final ink600 = oklch(0.338, 0.007, 118.2); // #373834 border/hairline
+  //
+  // **2026-10-08 — neutral greys, steps of a few RGB units, hairlines
+  // barely above the surface.** Requested directly against Notion
+  // Calendar, Linear, Devin and cmux: "very, very subtle color steps...
+  // very, very, very subtle separator lines." Measured there: surfaces
+  // #171717/#191919/#202020/#262626 (Notion Calendar), separators 1.14-1.23x
+  // the surface beneath them (ours were 1.49x). The olive cast (chroma
+  // up to .009) becomes a trace of warmth (hue 90, chroma .002).
+  static final ink900 = oklch(0.205, 0.002, 90.0); // #171716 body/base
+  static final ink800 = oklch(0.218, 0.002, 90.0); // #1A1A19 zone/card
+  static final ink700 = oklch(0.244, 0.002, 90.0); // #20201F raised panel
+  static final ink600 = oklch(0.281, 0.002, 90.0); // #292928 border/hairline
 
   /// The floating-overlay surface (nav + its adjacent day-strip pane) —
   /// the lightest step in the dark ramp, one above [ink700]. Its own rung
   /// rather than a reuse of [ink600]: that value is the hairline/border
   /// tone and is deliberately lighter than any surface should be.
-  static final ink650 = oklch(0.279, 0.006, 121.8); // #282926 nav/overlay
+  static final ink650 = oklch(0.269, 0.002, 90.0); // #262625 nav/overlay
 
   // Dark-mode form-field fills — the counterparts to surface2/surface3.
-  static final inkField = oklch(0.322, 0.009, 116.1); // #33342F field, rest
+  static final inkField = oklch(0.293, 0.002, 90.0); // #2C2C2B field, rest
   static final inkFieldActive = oklch(
-    0.391,
-    0.012,
-    113.5,
-  ); // #45463F field, active
+    0.333,
+    0.002,
+    90.0,
+  ); // #363635 field, active
 
   // Sand additions for dark-mode text.
   static final sand200 = oklch(0.955, 0.005, 95.1); // #F1F0EC dark primary

@@ -20,6 +20,7 @@ import 'settings_detail_scaffold.dart';
 import 'settings_panel.dart';
 import '../../core/widgets/app_selectable_chip.dart';
 import 'demo_profile_button.dart';
+import 'dev_page_motion_panel.dart';
 
 /// One-line summary of how many behaviors exist, so the panel says
 /// something useful before any have been created.
@@ -54,7 +55,7 @@ class DeveloperSettingsScreen extends ConsumerStatefulWidget {
 
 class _DeveloperSettingsScreenState
     extends ConsumerState<DeveloperSettingsScreen> {
-  // Dev-only data-clearing tools — see _clearAllTasks/_clearBadStateTasks/
+  // Dev-only data-clearing tools — see _clearAllTasks/
   // _clearAllZones/_clearEverything below.
   String? _devClearStatusMessage;
   bool _devClearBusy = false;
@@ -104,28 +105,6 @@ class _DeveloperSettingsScreenState
       final before = ref.read(taskListProvider).length;
       await ref.read(taskListProvider.notifier).clearAllTasks();
       return 'Cleared $before task(s).';
-    },
-  );
-
-  /// The recurring-series "bad state" bug: deleting a series' template as
-  /// a single occurrence could orphan every other instance (no row left
-  /// carrying the rule), which then throws `Bad state: No element` on
-  /// open — see `TaskList.deleteTask`'s own doc comment for the fix that
-  /// now prevents this going forward, and `findOrphanedRecurringTaskIds`
-  /// for what this button actually targets. Pre-existing data from before
-  /// that fix can still have rows in this state, permanently unopenable
-  /// until removed — this is the repair tool for that, requested directly.
-  Future<void> _clearBadStateTasks() => _confirmAndClear(
-    title: 'Clear bad-state tasks?',
-    message:
-        'Deletes recurring tasks whose series lost its template row — '
-        'the ones that throw "Bad state: No element" when opened. '
-        'Unaffected tasks are left untouched.',
-    action: () async {
-      final count = await ref
-          .read(taskListProvider.notifier)
-          .clearBadStateTasks();
-      return 'Cleared $count bad-state task(s).';
     },
   );
 
@@ -200,7 +179,7 @@ class _DeveloperSettingsScreenState
                               'Pattern demo data',
                               style: theme.textBody.copyWith(
                                 color: theme.colorTextPrimary,
-                                fontWeight: FontWeight.w700,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                             SizedBox(height: theme.spacingXs),
@@ -243,7 +222,7 @@ class _DeveloperSettingsScreenState
                           'Accent strength',
                           style: theme.textBody.copyWith(
                             color: theme.colorTextPrimary,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
@@ -293,7 +272,7 @@ class _DeveloperSettingsScreenState
                           'Show touches',
                           style: theme.textBody.copyWith(
                             color: theme.colorTextPrimary,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                         SizedBox(height: theme.spacingXs),
@@ -318,6 +297,8 @@ class _DeveloperSettingsScreenState
                 ],
               ),
             ),
+            SizedBox(height: theme.spacingLg),
+            const DevPageMotionPanel(),
             SizedBox(height: theme.spacingLg),
           ],
           Text('Onboarding', style: theme.textTitle),
@@ -386,7 +367,7 @@ class _DeveloperSettingsScreenState
                             'New splash screen',
                             style: theme.textBody.copyWith(
                               color: theme.colorTextPrimary,
-                              fontWeight: FontWeight.w700,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                           SizedBox(height: theme.spacingXs),
@@ -421,7 +402,7 @@ class _DeveloperSettingsScreenState
                             'Legacy splash carousel',
                             style: theme.textBody.copyWith(
                               color: theme.colorTextPrimary,
-                              fontWeight: FontWeight.w700,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                           SizedBox(height: theme.spacingXs),
@@ -459,7 +440,7 @@ class _DeveloperSettingsScreenState
                             'Onboarding quiz',
                             style: theme.textBody.copyWith(
                               color: theme.colorTextPrimary,
-                              fontWeight: FontWeight.w700,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                           SizedBox(height: theme.spacingXs),
@@ -502,7 +483,7 @@ class _DeveloperSettingsScreenState
                         'Check quick-create overlap feasibility',
                         style: theme.textBody.copyWith(
                           color: theme.colorTextPrimary,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                       SizedBox(height: theme.spacingXs),
@@ -545,7 +526,7 @@ class _DeveloperSettingsScreenState
                         'Dual font',
                         style: theme.textBody.copyWith(
                           color: theme.colorTextPrimary,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                       SizedBox(height: theme.spacingXs),
@@ -587,7 +568,7 @@ class _DeveloperSettingsScreenState
                         'Show hour labels',
                         style: theme.textBody.copyWith(
                           color: theme.colorTextPrimary,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                       SizedBox(height: theme.spacingXs),
@@ -628,7 +609,7 @@ class _DeveloperSettingsScreenState
                         'Show timeline connectors',
                         style: theme.textBody.copyWith(
                           color: theme.colorTextPrimary,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                       SizedBox(height: theme.spacingXs),
@@ -667,7 +648,7 @@ class _DeveloperSettingsScreenState
                         'Show completion checkbox',
                         style: theme.textBody.copyWith(
                           color: theme.colorTextPrimary,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                       SizedBox(height: theme.spacingXs),
@@ -712,7 +693,7 @@ class _DeveloperSettingsScreenState
                   'Pill shape',
                   style: theme.textBody.copyWith(
                     color: theme.colorTextPrimary,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 SizedBox(height: theme.spacingXs),
@@ -768,7 +749,7 @@ class _DeveloperSettingsScreenState
                   'Label color style',
                   style: theme.textBody.copyWith(
                     color: theme.colorTextPrimary,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 SizedBox(height: theme.spacingXs),
@@ -822,7 +803,7 @@ class _DeveloperSettingsScreenState
                         'Disable overlap clustering',
                         style: theme.textBody.copyWith(
                           color: theme.colorTextPrimary,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                       SizedBox(height: theme.spacingXs),
@@ -865,7 +846,7 @@ class _DeveloperSettingsScreenState
                           'Zone view',
                           style: theme.textBody.copyWith(
                             color: theme.colorTextPrimary,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                         SizedBox(height: theme.spacingXs),
@@ -905,7 +886,7 @@ class _DeveloperSettingsScreenState
                           'Zone card: flat style',
                           style: theme.textBody.copyWith(
                             color: theme.colorTextPrimary,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                         SizedBox(height: theme.spacingXs),
@@ -943,7 +924,7 @@ class _DeveloperSettingsScreenState
                           'Dynamic zone width (spatial view)',
                           style: theme.textBody.copyWith(
                             color: theme.colorTextPrimary,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                         SizedBox(height: theme.spacingXs),
@@ -983,7 +964,7 @@ class _DeveloperSettingsScreenState
                           'Hide empty zones',
                           style: theme.textBody.copyWith(
                             color: theme.colorTextPrimary,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                         SizedBox(height: theme.spacingXs),
@@ -1020,7 +1001,7 @@ class _DeveloperSettingsScreenState
                           'Show start time',
                           style: theme.textBody.copyWith(
                             color: theme.colorTextPrimary,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                         SizedBox(height: theme.spacingXs),
@@ -1071,7 +1052,7 @@ class _DeveloperSettingsScreenState
                   'Text layout',
                   style: theme.textBody.copyWith(
                     color: theme.colorTextPrimary,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 SizedBox(height: theme.spacingSm),
@@ -1105,7 +1086,7 @@ class _DeveloperSettingsScreenState
                         'Show status icons (bell/repeat/etc.)',
                         style: theme.textBody.copyWith(
                           color: theme.colorTextPrimary,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
@@ -1129,7 +1110,7 @@ class _DeveloperSettingsScreenState
                             'Habit calendar labels',
                             style: theme.textBody.copyWith(
                               color: theme.colorTextPrimary,
-                              fontWeight: FontWeight.w700,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                           SizedBox(height: theme.spacingXs),
@@ -1162,7 +1143,7 @@ class _DeveloperSettingsScreenState
                         'Show duration',
                         style: theme.textBody.copyWith(
                           color: theme.colorTextPrimary,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
@@ -1183,7 +1164,7 @@ class _DeveloperSettingsScreenState
                         'Show time (from-to)',
                         style: theme.textBody.copyWith(
                           color: theme.colorTextPrimary,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
@@ -1206,7 +1187,7 @@ class _DeveloperSettingsScreenState
                         'Hide imported tasks (List + Zone view)',
                         style: theme.textBody.copyWith(
                           color: theme.colorTextPrimary,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
@@ -1227,7 +1208,7 @@ class _DeveloperSettingsScreenState
                         'Only important (List view)',
                         style: theme.textBody.copyWith(
                           color: theme.colorTextPrimary,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
@@ -1248,7 +1229,7 @@ class _DeveloperSettingsScreenState
                         'Show free-window prompt',
                         style: theme.textBody.copyWith(
                           color: theme.colorTextPrimary,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
@@ -1272,7 +1253,7 @@ class _DeveloperSettingsScreenState
                             'List view',
                             style: theme.textBody.copyWith(
                               color: theme.colorTextPrimary,
-                              fontWeight: FontWeight.w700,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                           SizedBox(height: theme.spacingXs),
@@ -1307,7 +1288,7 @@ class _DeveloperSettingsScreenState
                             'Patterns tab',
                             style: theme.textBody.copyWith(
                               color: theme.colorTextPrimary,
-                              fontWeight: FontWeight.w700,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                           SizedBox(height: theme.spacingXs),
@@ -1343,7 +1324,7 @@ class _DeveloperSettingsScreenState
                             'Multi-task Edit Mode',
                             style: theme.textBody.copyWith(
                               color: theme.colorTextPrimary,
-                              fontWeight: FontWeight.w700,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                           SizedBox(height: theme.spacingXs),
@@ -1411,9 +1392,8 @@ class _DeveloperSettingsScreenState
           ),
           SizedBox(height: theme.spacingSm),
           // Destructive bulk-delete tools — requested directly, as a way
-          // to clear real local data (or repair the recurring-series "bad
-          // state" orphan bug — see TaskList.clearBadStateTasks' own doc
-          // comment) without a fresh install. Every button confirms first
+          // to clear real local data without a fresh install. Every
+          // button confirms first
           // (_confirmAndClear -> AppAlertDialog); debug-build-only, same
           // as every other control on this page.
           SettingsPanel(
@@ -1432,12 +1412,6 @@ class _DeveloperSettingsScreenState
                   label: 'Clear all tasks',
                   variant: AppButtonVariant.secondary,
                   onPressed: _devClearBusy ? null : _clearAllTasks,
-                ),
-                SizedBox(height: theme.spacingSm),
-                AppButton(
-                  label: 'Clear bad-state tasks',
-                  variant: AppButtonVariant.secondary,
-                  onPressed: _devClearBusy ? null : _clearBadStateTasks,
                 ),
                 SizedBox(height: theme.spacingSm),
                 AppButton(

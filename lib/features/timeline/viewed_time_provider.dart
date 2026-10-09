@@ -23,6 +23,11 @@ class ViewedTimeNotifier extends Notifier<int?> {
   int? build() => null;
 
   void set(int minutesSinceMidnight) => state = minutesSinceMidnight;
+
+  /// Forgets the remembered position, so the next day view opens centered
+  /// on "now" again — used when the calendar day rolls over, where an hour
+  /// remembered from yesterday is meaningless.
+  void clear() => state = null;
 }
 
 final viewedTimeProvider = NotifierProvider<ViewedTimeNotifier, int?>(

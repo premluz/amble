@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/widgets/app_date_picker.dart';
 import 'task_behavior_modal.dart';
 import 'task_category_modal.dart';
 import 'task_description_modal.dart';
@@ -21,7 +22,7 @@ extension TaskSheetPickers on TaskSheetForm {
   }
 
   Future<void> pickDate(BuildContext context) async {
-    final picked = await showDatePicker(
+    final picked = await showAppDatePicker(
       context: context,
       initialDate: date,
       firstDate: DateTime(2020),

@@ -57,7 +57,7 @@ class _TrialStatusPanelState extends ConsumerState<TrialStatusPanel> {
                   : 'Your free trial has ended',
               style: theme.textBody.copyWith(
                 color: theme.colorTextPrimary,
-                fontWeight: FontWeight.w700,
+                fontWeight: FontWeight.w600,
               ),
             ),
             SizedBox(height: theme.spacingSm),

@@ -46,8 +46,8 @@ void main() {
     await box.deleteFromDisk();
   });
 
-  test('creating a daily recurring series materializes many instances but '
-      'schedules an alarm only for the template itself', () async {
+  test('creating a daily repeating task stores no task rows and schedules no '
+      'task alarms — occurrence alerts are budgeted separately', () async {
     await container
         .read(taskListProvider.notifier)
         .createTask(
@@ -61,20 +61,10 @@ void main() {
           ),
         );
 
-    final materialized = container.read(taskListProvider);
-    // The 8-week rolling window really did produce a lot of rows...
-    expect(
-      materialized.length,
-      greaterThan(20),
-      reason: 'a daily series should materialize weeks of instances',
-    );
-    // ...but only the create call itself synced a notification. If this
-    // ever grows to one-per-instance again, the alarm cap comes back.
-    expect(
-      notifications.syncedTaskIds.length,
-      1,
-      reason: 'materialization must not schedule an alarm per instance',
-    );
+    // A series, not materialized rows — so nothing here can approach the
+    // OS alarm cap (see `occurrence_alert_planner.dart` for its budget).
+    expect(container.read(taskListProvider), isEmpty);
+    expect(notifications.syncedTaskIds, isEmpty);
   });
 
   test('refreshScheduledNotifications cancels everything first, then '

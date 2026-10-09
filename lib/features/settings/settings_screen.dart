@@ -17,6 +17,7 @@ import 'settings_detail_scaffold.dart';
 import 'settings_panel.dart';
 import 'slack_settings_screen.dart';
 import 'trial_status_panel.dart';
+
 // import 'subscription_settings_screen.dart'; // see the commented-out
 // Subscription row below
 
@@ -151,7 +152,6 @@ class SettingsScreen extends StatelessWidget {
               //     ),
               //   ),
               // ],
-
               SizedBox(height: theme.spacingMd),
               SettingsPanel(
                 theme: theme,

@@ -137,7 +137,10 @@ class _TrackedBehaviorListBody extends ConsumerWidget {
             // top-false `SafeArea`), so both screens' floating docks sit
             // at the identical spot.
             Positioned(
-              left: DockTokens.edgeInset(theme, MediaQuery.viewPaddingOf(context)),
+              left: DockTokens.edgeInset(
+                theme,
+                MediaQuery.viewPaddingOf(context),
+              ),
               bottom: theme.spacingBottomClearance,
               child: SafeArea(
                 top: false,

@@ -29,7 +29,7 @@ void main() {
 
     // What the column holds: the widest bare label (regular or bold) with
     // its slack, or the widest edge-time pill with its padding.
-    final bold = FontWeight.w700;
+    final bold = FontWeight.w600;
     final label = [
       widestOf(theme.textCaptionMono),
       widestOf(theme.textCaptionMono.copyWith(fontWeight: bold)),

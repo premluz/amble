@@ -1,7 +1,9 @@
 import 'package:amble/core/app_intents/app_intent_service.dart';
 import 'package:amble/core/app_intents/intent_task_queries.dart';
 import 'package:amble/shared/models/category.dart';
+import 'package:amble/shared/models/local_date.dart';
 import 'package:amble/shared/models/task.dart';
+import 'package:amble/shared/providers/occurrence_store.dart';
 import 'package:amble/shared/providers/task_providers.dart';
 import 'package:amble/shared/services/quick_capture_parser.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -33,17 +35,18 @@ void main() {
       const input = 'Study Read tomorrow at 9am for 45 mins daily';
       final parsed = parseQuickCapture(input, now: now, categories: [category]);
       await service.handle('addTask', {'text': input});
-      final tasks = store.container.read(taskListProvider);
-      final task = tasks.singleWhere((t) => t.isRecurrenceTemplate);
-      expect(task.title, parsed.title);
-      expect(task.scheduledAt, parsed.scheduledAt);
-      expect(task.durationMinutes, parsed.durationMinutes);
-      expect(task.categoryId, category.id);
-      expect(
-        tasks.length,
-        greaterThan(1),
-      ); // Real TaskList materialization ran.
-      expect(tasks.every((t) => t.recurrenceId == task.recurrenceId), isTrue);
+
+      // A repeating task is a series: nothing in the task store, and its
+      // first occurrence carries the parsed fields.
+      expect(store.tasks.values, isEmpty);
+      final first = store.container
+          .read(occurrenceStoreProvider.notifier)
+          .tasksOn(LocalDate.fromDateTime(parsed.scheduledAt!))
+          .single;
+      expect(first.title, parsed.title);
+      expect(first.scheduledAt, parsed.scheduledAt);
+      expect(first.durationMinutes, parsed.durationMinutes);
+      expect(first.categoryId, category.id);
     },
   );
 
@@ -94,18 +97,21 @@ void main() {
   );
 
   test(
-    'Remove Task removes one occurrence and promotes its successor',
+    'Remove Task cancels just that occurrence of a repeating task',
     () async {
       await service.handle('addTask', {'text': 'Walk tomorrow at 9am daily'});
-      final before = store.tasks.values.toList();
-      final template = before.singleWhere((t) => t.isRecurrenceTemplate);
-      await service.handle('removeTask', intentTaskData(template));
-      expect(store.tasks.get(template.id), isNull);
-      expect(store.tasks.length, before.length - 1);
-      final successor = store.tasks.values.singleWhere(
-        (t) => t.isRecurrenceTemplate,
+      final found = await service.handle('findTasks', {'query': 'Walk'});
+      final candidates = (found as List).cast<Map<String, Object>>();
+      expect(candidates, hasLength(intentTaskWindowDays - 1));
+
+      await service.handle('removeTask', candidates.first);
+
+      final again = await service.handle('findTasks', {'query': 'Walk'});
+      expect(again as List, hasLength(candidates.length - 1));
+      expect(
+        again.map((t) => (t as Map)['id']),
+        isNot(contains(candidates.first['id'])),
       );
-      expect(successor.recurrenceId, template.recurrenceId);
     },
   );
 
@@ -168,60 +174,45 @@ void main() {
       await expiredStore.open(
         installDate: DateTime.now().subtract(const Duration(days: 30)),
       );
-      expiredService = AppIntentService(
-        expiredStore.container,
-        now: () => now,
-      );
+      expiredService = AppIntentService(expiredStore.container, now: () => now);
     });
     tearDown(() => expiredStore.close());
 
-    test(
-      'addTask surfaces AppIntentFailure once the trial has ended, and '
-      'creates nothing',
-      () async {
-        await expectLater(
-          expiredService.handle('addTask', {
-            'text': 'Study tomorrow at 9am for 45 mins',
-          }),
-          throwsA(isA<AppIntentFailure>()),
-        );
-        expect(expiredStore.container.read(taskListProvider), isEmpty);
-      },
-    );
+    test('addTask surfaces AppIntentFailure once the trial has ended, and '
+        'creates nothing', () async {
+      await expectLater(
+        expiredService.handle('addTask', {
+          'text': 'Study tomorrow at 9am for 45 mins',
+        }),
+        throwsA(isA<AppIntentFailure>()),
+      );
+      expect(expiredStore.container.read(taskListProvider), isEmpty);
+    });
 
-    test(
-      'addNote surfaces AppIntentFailure once the trial has ended, and '
-      'creates nothing',
-      () async {
-        await expectLater(
-          expiredService.handle('addNote', {'text': 'A note'}),
-          throwsA(isA<AppIntentFailure>()),
-        );
-        expect(expiredStore.container.read(taskListProvider), isEmpty);
-      },
-    );
+    test('addNote surfaces AppIntentFailure once the trial has ended, and '
+        'creates nothing', () async {
+      await expectLater(
+        expiredService.handle('addNote', {'text': 'A note'}),
+        throwsA(isA<AppIntentFailure>()),
+      );
+      expect(expiredStore.container.read(taskListProvider), isEmpty);
+    });
 
-    test(
-      'addTask succeeds once panta_pro is active despite the trial being '
-      'over',
-      () async {
-        await expiredStore.close();
-        expiredStore = IntentTestStore();
-        await expiredStore.open(
-          installDate: DateTime.now().subtract(const Duration(days: 30)),
-          isPantaPro: true,
-        );
-        expiredService = AppIntentService(
-          expiredStore.container,
-          now: () => now,
-        );
+    test('addTask succeeds once panta_pro is active despite the trial being '
+        'over', () async {
+      await expiredStore.close();
+      expiredStore = IntentTestStore();
+      await expiredStore.open(
+        installDate: DateTime.now().subtract(const Duration(days: 30)),
+        isPantaPro: true,
+      );
+      expiredService = AppIntentService(expiredStore.container, now: () => now);
 
-        final message = await expiredService.handle('addTask', {
-          'text': 'Walk every morning',
-        });
-        expect(message, contains('as a note'));
-        expect(expiredStore.container.read(taskListProvider), hasLength(1));
-      },
-    );
+      final message = await expiredService.handle('addTask', {
+        'text': 'Walk every morning',
+      });
+      expect(message, contains('as a note'));
+      expect(expiredStore.container.read(taskListProvider), hasLength(1));
+    });
   });
 }

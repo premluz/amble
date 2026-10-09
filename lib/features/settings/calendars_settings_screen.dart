@@ -98,7 +98,7 @@ class _CalendarsSettingsScreenState
                   'Show on Timeline',
                   style: theme.textBody.copyWith(
                     color: theme.colorTextPrimary,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 SizedBox(height: theme.spacingXs),
@@ -165,7 +165,7 @@ class _CalendarsSettingsScreenState
                   'Sync to calendar',
                   style: theme.textBody.copyWith(
                     color: theme.colorTextPrimary,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 SizedBox(height: theme.spacingXs),

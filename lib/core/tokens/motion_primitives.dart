@@ -42,4 +42,9 @@ abstract final class MotionPrimitives {
   static const curveStandard = (0.4, 0.0, 0.2, 1.0);
   static const curveDecelerate = (0.0, 0.0, 0.2, 1.0);
   static const curveAccelerate = (0.4, 0.0, 1.0, 1.0);
+
+  /// A staggered fill-in (`AppStaggeredFill`): every item starts within
+  /// this window, by its order, so a 7-cell week and a 180-cell heatmap
+  /// both finish quickly. Each item's own fade is [durationFastMs].
+  static const durationFillStaggerMs = 240;
 }

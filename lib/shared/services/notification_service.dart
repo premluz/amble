@@ -5,6 +5,7 @@ import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 
+import '../models/occurrence_alert.dart';
 import '../models/task.dart';
 import '../models/task_status.dart';
 import '../models/zone.dart';
@@ -83,9 +84,12 @@ class NotificationService {
       requestSoundPermission: false,
     );
     await _plugin.initialize(
+      // macOS too: the plugin throws on macOS without its own settings,
+      // and this runs before `runApp`, so that left the macOS app blank.
       settings: const InitializationSettings(
         android: androidSettings,
         iOS: darwinSettings,
+        macOS: darwinSettings,
       ),
       onDidReceiveNotificationResponse: (response) {
         final taskId = response.payload;
@@ -186,6 +190,9 @@ class NotificationService {
   /// beyond [notificationHorizonDays], or notification permission is denied
   /// — the app must keep working without it either way.
   Future<void> scheduleForTask(Task task) async {
+    // Series occurrences shown as tasks get their alerts from the
+    // occurrence reconciler, never a task alarm (no duplicates).
+    if (occurrenceKeyFromPayload(task.id) != null) return;
     if (!task.notificationsEnabled) return;
     final scheduledAt = task.scheduledAt;
     if (scheduledAt == null) return;
@@ -230,6 +237,37 @@ class NotificationService {
 
   Future<void> cancelForTask(String taskId) =>
       _plugin.cancel(id: _notificationId(taskId));
+
+  /// Schedules one series-occurrence alert (see `OccurrenceAlertReconciler`,
+  /// which decides which ones should exist). Throws when permission is
+  /// denied, so the reconciler reports it and retries next time rather than
+  /// recording an alert that was never registered.
+  Future<void> scheduleOccurrenceAlert(OccurrenceAlert alert) async {
+    if (!await requestPermissionIfNeeded()) {
+      throw StateError('Notification permission denied');
+    }
+    await _plugin.zonedSchedule(
+      id: alert.notificationId,
+      title: alert.title,
+      body: _formatTime(alert.at.toLocal()),
+      scheduledDate: tz.TZDateTime.from(alert.at, tz.local),
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      payload: alert.payload,
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails(
+          _androidChannelId,
+          _androidChannelName,
+          channelDescription: _androidChannelDescription,
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+        iOS: DarwinNotificationDetails(),
+      ),
+    );
+  }
+
+  Future<void> cancelNotification(int notificationId) =>
+      _plugin.cancel(id: notificationId);
 
   /// Rebuilds the whole set of registered alarms from scratch: cancels
   /// every pending one, then schedules [tasks] (the caller passes only

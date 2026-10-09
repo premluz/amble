@@ -634,7 +634,7 @@ class _ExistingZonesBrowserPane extends ConsumerWidget {
             'Existing zones',
             style: theme.textBody.copyWith(
               color: theme.colorTextSecondary,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ),
@@ -694,7 +694,7 @@ class _ExistingZoneRow extends StatelessWidget {
                     // though the rest of this token's call sites moved
                     // to DM Sans.
                     style: theme.textBodyMono.copyWith(
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w600,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

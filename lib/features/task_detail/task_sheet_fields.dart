@@ -61,7 +61,7 @@ class TaskSheetFields extends StatelessWidget {
                   onTap: () => form.pickPreset(context),
                 ),
               AppValueChip(
-                label: _dateLabel(context),
+                label: taskDateLabel(context, form.date),
                 hasValue: true,
                 onTap: () => form.pickDate(context),
               ),
@@ -89,7 +89,7 @@ class TaskSheetFields extends StatelessWidget {
           ),
           if (form.showFutureInstancesChoice) ...[
             SizedBox(height: theme.spacingMd),
-            _FutureInstancesRow(theme: theme, form: form),
+            TaskFutureInstancesRow(theme: theme, form: form),
           ],
         ],
       ),
@@ -141,21 +141,26 @@ class TaskSheetFields extends StatelessWidget {
       onTap: () => form.editNote(context),
     ),
   ];
-
-  String _dateLabel(BuildContext context) {
-    final date = form.date;
-    final now = DateTime.now();
-    if (date.year == now.year &&
-        date.month == now.month &&
-        date.day == now.day) {
-      return 'Today';
-    }
-    return MaterialLocalizations.of(context).formatMediumDate(date);
-  }
 }
 
-class _FutureInstancesRow extends StatelessWidget {
-  const _FutureInstancesRow({required this.theme, required this.form});
+/// "Today", or the date in the locale's medium format. Shared by the
+/// sheet's chip and the panel's date line.
+String taskDateLabel(BuildContext context, DateTime date) {
+  final now = DateTime.now();
+  if (date.year == now.year && date.month == now.month && date.day == now.day) {
+    return 'Today';
+  }
+  return MaterialLocalizations.of(context).formatMediumDate(date);
+}
+
+/// Whether a repeating task's new start or length reaches the rest of the
+/// series. Shared by the sheet and the panel.
+class TaskFutureInstancesRow extends StatelessWidget {
+  const TaskFutureInstancesRow({
+    super.key,
+    required this.theme,
+    required this.form,
+  });
 
   final AmbleTheme theme;
   final TaskSheetForm form;

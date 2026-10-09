@@ -1,4 +1,5 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:amble/shared/models/occurrence_alert.dart';
 import 'package:amble/shared/models/task.dart';
 import 'package:amble/shared/models/zone.dart';
 import 'package:amble/shared/services/notification_service.dart';
@@ -27,6 +28,12 @@ class FakeNotificationService extends NotificationService {
 
   @override
   Future<void> cancelForZone(String zoneId) async {}
+
+  @override
+  Future<void> scheduleOccurrenceAlert(OccurrenceAlert alert) async {}
+
+  @override
+  Future<void> cancelNotification(int notificationId) async {}
 
   @override
   Future<bool> hasPermission() async => true;

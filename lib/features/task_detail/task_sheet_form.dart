@@ -5,7 +5,6 @@ import '../../shared/models/category.dart';
 import '../../shared/models/recurrence_rule.dart';
 import '../../shared/models/task.dart';
 import '../../shared/models/task_template.dart';
-import '../../shared/providers/task_providers.dart';
 import 'task_recurrence_days.dart';
 
 export 'task_recurrence_days.dart';
@@ -16,7 +15,6 @@ export 'task_recurrence_days.dart';
 /// and which recurrence case a save is ([wasRecurring] / [repeats]).
 class TaskSheetForm extends ChangeNotifier {
   TaskSheetForm({
-    required List<Task> allTasks,
     this.task,
     Task? duplicateFrom,
     this.templateId,
@@ -43,10 +41,10 @@ class TaskSheetForm extends ChangeNotifier {
     // Keyed off [task], not the seed: a duplicate is a plain task.
     _repeats = task?.isRecurring ?? false;
     final editing = task;
+    // A repeating task is a series occurrence, which carries its series'
+    // rule for that date.
     _selectedDays = editing != null && editing.isRecurring
-        ? daysFromRecurrenceRule(
-            findSeriesTemplate(editing, allTasks).recurrenceRule!,
-          )
+        ? daysFromRecurrenceRule(_ruleOf(editing))
         : {_date.weekday};
     _initial = _snapshot();
     _initialDays = {..._selectedDays};
@@ -55,6 +53,14 @@ class TaskSheetForm extends ChangeNotifier {
     initialDurationMinutes = _durationMinutes;
     this.title.addListener(notifyListeners);
     description.addListener(notifyListeners);
+  }
+
+  static RecurrenceRule _ruleOf(Task occurrence) {
+    final rule = occurrence.recurrenceRule;
+    if (rule == null) {
+      throw StateError('Repeating task ${occurrence.id} carries no rule');
+    }
+    return rule;
   }
 
   /// The task being edited; null for a create or a duplicate.

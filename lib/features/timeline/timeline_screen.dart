@@ -53,6 +53,7 @@ import 'app_calendar_header.dart';
 import 'timeline_pinch_zoom.dart';
 import 'collapsed_stack_layout.dart';
 import 'current_time_indicator.dart';
+import 'day_rollover_watcher.dart';
 import 'day_task_motion.dart';
 import 'armed_edit_task_provider.dart';
 import 'edit_mode_delete_target.dart';
@@ -64,6 +65,7 @@ import 'free_window_block.dart';
 import 'overlap_cluster_block.dart';
 import '../task_detail/quick_create_sheet_shell.dart';
 import 'pending_task_draft_provider.dart';
+import '../task_detail/task_inspector.dart';
 import 'quick_create_overlay.dart';
 import 'pending_task_pill.dart';
 import 'place_task_line.dart';
@@ -352,6 +354,7 @@ class TimelineScreen extends ConsumerWidget {
     final whatMattersHasNoTasks =
         whatMattersEnabled && !tasks.any((task) => task.isImportant);
     final selectedDate = ref.watch(selectedDateProvider);
+    final viewedMinutesAtBuild = ref.read(viewedTimeProvider);
     // Resolved once here (the ConsumerWidget root) and threaded down as a
     // plain field, same pattern as showHourLabels/disableClustering below
     // — TaskCapsuleBlock and its StatefulWidget ancestors aren't
@@ -500,653 +503,673 @@ class TimelineScreen extends ConsumerWidget {
       if (next != null) ref.read(armedEditTaskProvider.notifier).clear();
     });
 
-    return WhatMattersScene(
-      enabled: whatMattersEnabled,
-      // The page background itself carries the What Matters glow.
-      child: WhatMattersBackdrop(
-        color: theme.colorSurfaceTimeline,
-        child: SafeArea(
-          // The floating "+" (AppFloatingCreateButton, in the outer Stack
-          // below) owns the bottom edge itself via its own SafeArea, so this
-          // outer SafeArea only needs to guard the top/sides.
-          bottom: false,
-          child: Stack(
-            children: [
-              Column(
-                children: [
-                  // **2026-09-12 — the calendar moved to the top**, shared by
-                  // both this screen's modes (and Timeline's own "Task view"
-                  // tab — see main.dart), replacing the old bottom day-strip's
-                  // own day-navigation UI entirely. Requested directly, with a
-                  // reference screenshot.
-                  //
-                  // Hidden ENTIRELY only for the quick-create-draft case (see
-                  // the matching `if` further down for the "+" button's own
-                  // half of that same rule) — NOT for Edit Mode any more.
-                  // Reported directly as a real gap: hiding the whole header
-                  // while Edit Mode is on took its own close control down with
-                  // it, leaving no visible way back out. `AppCalendarHeader`
-                  // itself now collapses to just that close button when Edit
-                  // Mode is active, so it's never removed from the tree here.
-                  if (showHeader && ref.watch(pendingTaskDraftProvider) == null)
-                    AppCalendarHeader(
-                      showCloseButton: calendarHeaderShowsCloseButton,
-                    ),
-                  Expanded(
-                    // Whole-screen swipe-to-change-day REMOVED (requested
-                    // directly) — day navigation now happens only through the
-                    // strip below, either by tapping a chip or scrolling it.
-                    // Previously this Expanded's child was wrapped in a
-                    // GestureDetector(onHorizontalDragEnd: ...) calling
-                    // dayNotifier.goToNextDay()/goToPreviousDay(); kept as a
-                    // comment rather than deleted outright, since "comment out"
-                    // was the explicit instruction:
+    // Rolls the screen over to the new today when the date changes —
+    // see DayRolloverWatcher.
+    return DayRolloverWatcher(
+      child: WhatMattersScene(
+        enabled: whatMattersEnabled,
+        // The page background itself carries the What Matters glow.
+        child: WhatMattersBackdrop(
+          color: theme.colorSurfaceTimeline,
+          child: SafeArea(
+            // The floating "+" (AppFloatingCreateButton, in the outer Stack
+            // below) owns the bottom edge itself via its own SafeArea, so this
+            // outer SafeArea only needs to guard the top/sides.
+            bottom: false,
+            child: Stack(
+              children: [
+                Column(
+                  children: [
+                    // **2026-09-12 — the calendar moved to the top**, shared by
+                    // both this screen's modes (and Timeline's own "Task view"
+                    // tab — see main.dart), replacing the old bottom day-strip's
+                    // own day-navigation UI entirely. Requested directly, with a
+                    // reference screenshot.
                     //
-                    // GestureDetector(
-                    //   onHorizontalDragEnd: (details) {
-                    //     final velocity = details.primaryVelocity ?? 0;
-                    //     if (velocity < 0) {
-                    //       dayNotifier.goToNextDay();
-                    //     } else if (velocity > 0) {
-                    //       dayNotifier.goToPreviousDay();
-                    //     }
-                    //   },
-                    //   child: ...,
-                    // ),
-                    child: TwoFingerLongPress(
-                      onTwoFingerLongPress: () =>
-                          ref.read(editModeEnabledProvider.notifier).toggle(),
-                      child: Stack(
-                        children: [
-                          DayTaskMotionScope(
-                            motion: taskMotion,
-                            onSettled: ref
-                                .read(dayTaskMotionProvider.notifier)
-                                .settle,
-                            child: AppViewTransition(
-                              viewId: zoneViewEnabled
-                                  ? 'zone-view'
-                                  : 'task-view',
-                              child: zoneViewEnabled
-                                  // Same empty-day treatment as the Task view below: the
-                                  // timeline still renders and scrolls, with the message
-                                  // floating over it.
-                                  ? Stack(
-                                      key: const ValueKey('zone-view'),
-                                      children: [
-                                        ZoneDayTimeline(
-                                          tasks: shownTasks,
-                                          zones: zones,
-                                          showZones: showZones,
-                                          // "hide imported tasks" now also affects
-                                          // Zone view, not just List view —
-                                          // requested directly, replacing the old
-                                          // "Only Amble tasks" toggle. Mirrors the
-                                          // List-view `filteredExternalEvents`
-                                          // pattern below exactly.
-                                          // "hide imported tasks" now also affects
-                                          // Zone view, not just List view —
-                                          // requested directly, replacing the old
-                                          // "Only Amble tasks" toggle. Mirrors the
-                                          // List-view `filteredExternalEvents`
-                                          // pattern below exactly.
-                                          //
-                                          // **2026-09-20** — also hidden by What
-                                          // Matters. Reported directly: "The
-                                          // show important only should hide
-                                          // imported also." An imported
-                                          // calendar event has no
-                                          // `isImportant` flag at all (it's
-                                          // read-only, external data) — What
-                                          // Matters treats it the same way as
-                                          // a non-important Task: gone
-                                          // entirely while the lens is on.
-                                          externalEvents:
-                                              zoneViewExternalEvents,
-                                          theme: theme,
-                                          categoryById: categoryById,
-                                          selectedDate: selectedDate,
-                                          // Dev-only capsule display toggles (Settings'
-                                          // "Developer" section) — read once here, same
-                                          // as showHourLabels/disableClustering, and
-                                          // threaded down as plain fields since
-                                          // ZoneDayTimeline isn't Riverpod-aware.
-                                          devTextLayout: ref.watch(
-                                            devTimelineTaskTextLayoutProvider,
-                                          ),
-                                          // A real user setting (not a dev toggle) —
-                                          // one toggle across all three views.
-                                          showCompletionCheckbox: ref.watch(
-                                            showCompletionCheckboxSettingProvider,
-                                          ),
-                                          // A real user setting (not a dev
-                                          // toggle) — one global setting across
-                                          // every pill-shaped surface. See
-                                          // TagColorStyleSetting's own doc
-                                          // comment.
-                                          tagColorStyle: ref.watch(
-                                            tagColorStyleSettingProvider,
-                                          ),
-                                          whatMattersEnabled:
-                                              whatMattersEnabled,
-                                          devIconsVisible: ref.watch(
-                                            devTimelineTaskIconsVisibleProvider,
-                                          ),
-                                          devDurationVisible: ref.watch(
-                                            devTimelineTaskDurationVisibleProvider,
-                                          ),
-                                          // Same threading, same reason — List
-                                          // view's own "Show time (from-to)"
-                                          // toggle now also applies to Zone view,
-                                          // requested directly: "Hide/show start
-                                          // end should also affect zone view."
-                                          devTimeRangeVisible: ref.watch(
-                                            devTimelineTaskTimeRangeVisibleProvider,
-                                          ),
-                                          // Strips each zone's own card
-                                          // background/padding, leaving just its
-                                          // title/duration header above a bare row
-                                          // list — requested directly, Developer
-                                          // section only.
-                                          devZoneCardFlat: ref.watch(
-                                            devZoneCardFlatProvider,
-                                          ),
-                                          // Hides every zone with no member
-                                          // task/event from this list —
-                                          // requested directly, Developer
-                                          // section only.
-                                          devHideEmptyZones: ref.watch(
-                                            devHideEmptyZonesProvider,
-                                          ),
-                                          // Each zone's own member task rows show
-                                          // just their start time — requested
-                                          // directly, Developer section only.
-                                          devZoneTaskStartTimeVisible: ref.watch(
-                                            devZoneTaskStartTimeVisibleProvider,
-                                          ),
-                                          // Opens Edit directly, skipping the action
-                                          // sheet (Edit/Duplicate/Remove) — requested
-                                          // directly. The sheet stays in the codebase,
-                                          // unused for now, in case it's wanted again.
-                                          onTaskTap: (task) => showTaskSheet(
-                                            context,
-                                            task: task,
-                                          ),
-                                          onToggleComplete: (task) =>
-                                              _completeTask(context, ref, task),
-                                          // Non-spatial list — requested directly
-                                          // ("current zone view make non spatial..
-                                          // just list of zones one by one"). No more
-                                          // drag-to-move/resize or drag-and-drop task
-                                          // reassignment; a zone's own header now
-                                          // opens the same edit form Settings' plain
-                                          // Zones list already uses.
-                                          onZoneHeaderTap: (zone) =>
-                                              showZoneFormScreen(
-                                                context,
-                                                zone: zone,
-                                              ),
-                                        ),
-                                      ],
-                                    )
-                                  // An empty day still renders the full scrollable
-                                  // timeline — the "nothing scheduled" message floats
-                                  // OVER it rather than replacing it, confirmed directly.
-                                  // Previously an empty day short-circuited to a centered
-                                  // message with nothing to scroll at all.
-                                  : Stack(
-                                      key: const ValueKey('task-view'),
-                                      children: [
-                                        _DayTimeline(
-                                          tasks: shownTasks,
-                                          theme: theme,
-                                          categoryById: categoryById,
-                                          zones: visibleSpatialZones,
-                                          // What Matters also hides imported
-                                          // calendar events entirely on the
-                                          // Spatial view — reported directly:
-                                          // "the show important only should
-                                          // hide imported also." An imported
-                                          // event has no `isImportant` field
-                                          // (it's read-only, external data),
-                                          // so it's treated the same as a
-                                          // non-important Task: gone while
-                                          // the lens is on. Mirrors the
-                                          // ZoneDayTimeline call site's own
-                                          // identical `whatMattersEnabled`
-                                          // check above.
-                                          externalEvents: externalEvents,
-                                          selectedDate: selectedDate,
-                                          // **2026-09-12 — no longer read from the
-                                          // setting.** List view (this being
-                                          // `false`) is dropped from user reach
-                                          // entirely per direct request: Task view
-                                          // is now its own permanent nav tab, and
-                                          // always renders the spatial layout. The
-                                          // underlying `ShowHourLabelsSetting`
-                                          // Hive field is left in place rather
-                                          // than migrated away (a prior install's
-                                          // stored `false`, from when List view
-                                          // was still reachable, must not silently
-                                          // resurface it) — this call site simply
-                                          // stops reading it.
-                                          showHourLabels: true,
-                                          primaryTaskId:
-                                              ref.watch(
-                                                armedEditTaskProvider,
-                                              ) ??
-                                              ref
-                                                  .watch(editSelectionProvider)
-                                                  .lastOrNull,
-                                          showTimelineConnectors: ref.watch(
-                                            showTimelineConnectorsSettingProvider,
-                                          ),
-                                          // A real user setting (not a dev
-                                          // toggle) — one global setting across
-                                          // every pill-shaped surface. See
-                                          // TagColorStyleSetting's own doc
-                                          // comment.
-                                          tagColorStyle: ref.watch(
-                                            tagColorStyleSettingProvider,
-                                          ),
-                                          // Opens Edit directly, skipping the action sheet
-                                          // (Edit/Duplicate/Remove) — requested directly.
-                                          // The sheet stays in the codebase, unused for
-                                          // now, in case it's wanted again.
-                                          onTaskTap: (task) => showTaskSheet(
-                                            context,
-                                            task: task,
-                                          ),
-                                          onToggleComplete: (task) =>
-                                              _completeTask(context, ref, task),
-                                          onReschedule:
-                                              (task, newScheduledAt) =>
-                                                  taskNotifier.rescheduleTask(
-                                                    task,
-                                                    newScheduledAt,
-                                                  ),
-                                          onCreateAt: (startAt) =>
-                                              showTaskSheet(
-                                                context,
-                                                initialScheduledAt: startAt,
-                                                initialTimeOfDay:
-                                                    TimeOfDay.fromDateTime(
-                                                      startAt,
-                                                    ),
-                                              ),
-                                          // "Quick task add" — requested
-                                          // directly, replacing the previous
-                                          // hold-and-drag-a-line-then-release-menu
-                                          // flow archived in place_task_line.dart
-                                          // and place_task_release_menu.dart:
-                                          // "Instead of tap to create new task
-                                          // we'll have 'quick task add'... long
-                                          // press and when task is shown (no
-                                          // sheet yet coming) user can move down
-                                          // or up to set length... on release we
-                                          // show sheet quick add."
-                                          //
-                                          // The instant the long-press is
-                                          // recognized, the pending draft starts
-                                          // directly (so the placeholder pill
-                                          // appears before any drag) — same
-                                          // armed/selection-clearing guard the
-                                          // old plain-tap handler had, now
-                                          // gating the START of the hold instead
-                                          // of a tap. See that guard's own
-                                          // history below.
-                                          onHoldStarted: (startAt) {
-                                            // Long-pressing outside a
-                                            // long-press-armed task closes its
-                                            // armed/selected state — requested
-                                            // directly, the other half of "long
-                                            // press on task should enable its
-                                            // edit mode... tapping outside
-                                            // closes that mode." See
-                                            // _effectiveOnLongPress for the
-                                            // arming side.
+                    // Hidden ENTIRELY only for the quick-create-draft case (see
+                    // the matching `if` further down for the "+" button's own
+                    // half of that same rule) — NOT for Edit Mode any more.
+                    // Reported directly as a real gap: hiding the whole header
+                    // while Edit Mode is on took its own close control down with
+                    // it, leaving no visible way back out. `AppCalendarHeader`
+                    // itself now collapses to just that close button when Edit
+                    // Mode is active, so it's never removed from the tree here.
+                    if (showHeader &&
+                        ref.watch(pendingTaskDraftProvider) == null)
+                      AppCalendarHeader(
+                        showCloseButton: calendarHeaderShowsCloseButton,
+                      ),
+                    Expanded(
+                      // Whole-screen swipe-to-change-day REMOVED (requested
+                      // directly) — day navigation now happens only through the
+                      // strip below, either by tapping a chip or scrolling it.
+                      // Previously this Expanded's child was wrapped in a
+                      // GestureDetector(onHorizontalDragEnd: ...) calling
+                      // dayNotifier.goToNextDay()/goToPreviousDay(); kept as a
+                      // comment rather than deleted outright, since "comment out"
+                      // was the explicit instruction:
+                      //
+                      // GestureDetector(
+                      //   onHorizontalDragEnd: (details) {
+                      //     final velocity = details.primaryVelocity ?? 0;
+                      //     if (velocity < 0) {
+                      //       dayNotifier.goToNextDay();
+                      //     } else if (velocity > 0) {
+                      //       dayNotifier.goToPreviousDay();
+                      //     }
+                      //   },
+                      //   child: ...,
+                      // ),
+                      child: TwoFingerLongPress(
+                        onTwoFingerLongPress: () =>
+                            ref.read(editModeEnabledProvider.notifier).toggle(),
+                        child: Stack(
+                          children: [
+                            DayTaskMotionScope(
+                              motion: taskMotion,
+                              onSettled: ref
+                                  .read(dayTaskMotionProvider.notifier)
+                                  .settle,
+                              child: AppViewTransition(
+                                viewId: zoneViewEnabled
+                                    ? 'zone-view'
+                                    : 'task-view',
+                                child: zoneViewEnabled
+                                    // Same empty-day treatment as the Task view below: the
+                                    // timeline still renders and scrolls, with the message
+                                    // floating over it.
+                                    ? Stack(
+                                        key: const ValueKey('zone-view'),
+                                        children: [
+                                          ZoneDayTimeline(
+                                            tasks: shownTasks,
+                                            zones: zones,
+                                            showZones: showZones,
+                                            now: ref.read(nowProvider),
+                                            // "hide imported tasks" now also affects
+                                            // Zone view, not just List view —
+                                            // requested directly, replacing the old
+                                            // "Only Amble tasks" toggle. Mirrors the
+                                            // List-view `filteredExternalEvents`
+                                            // pattern below exactly.
+                                            // "hide imported tasks" now also affects
+                                            // Zone view, not just List view —
+                                            // requested directly, replacing the old
+                                            // "Only Amble tasks" toggle. Mirrors the
+                                            // List-view `filteredExternalEvents`
+                                            // pattern below exactly.
                                             //
-                                            // **2026-09-12 — closing an armed
-                                            // task now ONLY closes the arm.**
-                                            // Reported directly (of the prior
-                                            // plain-tap handler this replaces):
-                                            // "tap anywhere on the screen [while
-                                            // a task is armed]... its not
-                                            // triggering (task creation if
-                                            // tapped on timeline) but stopping
-                                            // [the selection]." The original
-                                            // behavior started a quick-create
-                                            // draft on the SAME tap that closed
-                                            // the arm — meant only to dismiss
-                                            // the selection, it was silently
-                                            // also creating a task.
-                                            //
-                                            // **2026-09-20 — the same rule
-                                            // covers multi-task selection too.**
-                                            // Requested directly: "on timeline
-                                            // view selected item through long
-                                            // press when tapped outside once it
-                                            // removes selection completely —
-                                            // let's adopt this for our
-                                            // multiselected in edit modes." A
-                                            // non-empty [editSelectionProvider]
-                                            // is the multi-task analogue of
-                                            // "something is armed" — same
-                                            // clear-and-swallow shape, so a hold
-                                            // meant only to deselect never also
-                                            // starts a quick-create draft.
-                                            final wasArmed =
-                                                ref.read(
-                                                      armedEditTaskProvider,
-                                                    ) !=
-                                                    null ||
+                                            // **2026-09-20** — also hidden by What
+                                            // Matters. Reported directly: "The
+                                            // show important only should hide
+                                            // imported also." An imported
+                                            // calendar event has no
+                                            // `isImportant` flag at all (it's
+                                            // read-only, external data) — What
+                                            // Matters treats it the same way as
+                                            // a non-important Task: gone
+                                            // entirely while the lens is on.
+                                            externalEvents:
+                                                zoneViewExternalEvents,
+                                            theme: theme,
+                                            categoryById: categoryById,
+                                            selectedDate: selectedDate,
+                                            // Dev-only capsule display toggles (Settings'
+                                            // "Developer" section) — read once here, same
+                                            // as showHourLabels/disableClustering, and
+                                            // threaded down as plain fields since
+                                            // ZoneDayTimeline isn't Riverpod-aware.
+                                            devTextLayout: ref.watch(
+                                              devTimelineTaskTextLayoutProvider,
+                                            ),
+                                            // A real user setting (not a dev toggle) —
+                                            // one toggle across all three views.
+                                            showCompletionCheckbox: ref.watch(
+                                              showCompletionCheckboxSettingProvider,
+                                            ),
+                                            // A real user setting (not a dev
+                                            // toggle) — one global setting across
+                                            // every pill-shaped surface. See
+                                            // TagColorStyleSetting's own doc
+                                            // comment.
+                                            tagColorStyle: ref.watch(
+                                              tagColorStyleSettingProvider,
+                                            ),
+                                            whatMattersEnabled:
+                                                whatMattersEnabled,
+                                            devIconsVisible: ref.watch(
+                                              devTimelineTaskIconsVisibleProvider,
+                                            ),
+                                            devDurationVisible: ref.watch(
+                                              devTimelineTaskDurationVisibleProvider,
+                                            ),
+                                            // Same threading, same reason — List
+                                            // view's own "Show time (from-to)"
+                                            // toggle now also applies to Zone view,
+                                            // requested directly: "Hide/show start
+                                            // end should also affect zone view."
+                                            devTimeRangeVisible: ref.watch(
+                                              devTimelineTaskTimeRangeVisibleProvider,
+                                            ),
+                                            // Strips each zone's own card
+                                            // background/padding, leaving just its
+                                            // title/duration header above a bare row
+                                            // list — requested directly, Developer
+                                            // section only.
+                                            devZoneCardFlat: ref.watch(
+                                              devZoneCardFlatProvider,
+                                            ),
+                                            // Hides every zone with no member
+                                            // task/event from this list —
+                                            // requested directly, Developer
+                                            // section only.
+                                            devHideEmptyZones: ref.watch(
+                                              devHideEmptyZonesProvider,
+                                            ),
+                                            // Each zone's own member task rows show
+                                            // just their start time — requested
+                                            // directly, Developer section only.
+                                            devZoneTaskStartTimeVisible: ref.watch(
+                                              devZoneTaskStartTimeVisibleProvider,
+                                            ),
+                                            // Opens Edit directly, skipping the action
+                                            // sheet (Edit/Duplicate/Remove) — requested
+                                            // directly. The sheet stays in the codebase,
+                                            // unused for now, in case it's wanted again.
+                                            onTaskTap: (task) => showTaskSheet(
+                                              context,
+                                              task: task,
+                                            ),
+                                            onToggleComplete: (task) =>
+                                                _completeTask(
+                                                  context,
+                                                  ref,
+                                                  task,
+                                                ),
+                                            // Non-spatial list — requested directly
+                                            // ("current zone view make non spatial..
+                                            // just list of zones one by one"). No more
+                                            // drag-to-move/resize or drag-and-drop task
+                                            // reassignment; a zone's own header now
+                                            // opens the same edit form Settings' plain
+                                            // Zones list already uses.
+                                            onZoneHeaderTap: (zone) =>
+                                                showZoneFormScreen(
+                                                  context,
+                                                  zone: zone,
+                                                ),
+                                          ),
+                                        ],
+                                      )
+                                    // An empty day still renders the full scrollable
+                                    // timeline — the "nothing scheduled" message floats
+                                    // OVER it rather than replacing it, confirmed directly.
+                                    // Previously an empty day short-circuited to a centered
+                                    // message with nothing to scroll at all.
+                                    : Stack(
+                                        key: const ValueKey('task-view'),
+                                        children: [
+                                          _DayTimeline(
+                                            key: ValueKey(selectedDate),
+                                            tasks: shownTasks,
+                                            theme: theme,
+                                            categoryById: categoryById,
+                                            zones: visibleSpatialZones,
+                                            // What Matters also hides imported
+                                            // calendar events entirely on the
+                                            // Spatial view — reported directly:
+                                            // "the show important only should
+                                            // hide imported also." An imported
+                                            // event has no `isImportant` field
+                                            // (it's read-only, external data),
+                                            // so it's treated the same as a
+                                            // non-important Task: gone while
+                                            // the lens is on. Mirrors the
+                                            // ZoneDayTimeline call site's own
+                                            // identical `whatMattersEnabled`
+                                            // check above.
+                                            externalEvents: externalEvents,
+                                            selectedDate: selectedDate,
+                                            // **2026-09-12 — no longer read from the
+                                            // setting.** List view (this being
+                                            // `false`) is dropped from user reach
+                                            // entirely per direct request: Task view
+                                            // is now its own permanent nav tab, and
+                                            // always renders the spatial layout. The
+                                            // underlying `ShowHourLabelsSetting`
+                                            // Hive field is left in place rather
+                                            // than migrated away (a prior install's
+                                            // stored `false`, from when List view
+                                            // was still reachable, must not silently
+                                            // resurface it) — this call site simply
+                                            // stops reading it.
+                                            showHourLabels: true,
+                                            primaryTaskId:
+                                                ref.watch(
+                                                  armedEditTaskProvider,
+                                                ) ??
                                                 ref
-                                                    .read(editSelectionProvider)
-                                                    .isNotEmpty;
-                                            ref
-                                                .read(
-                                                  armedEditTaskProvider
-                                                      .notifier,
-                                                )
-                                                .clear();
-                                            ref
-                                                .read(
-                                                  editSelectionProvider
-                                                      .notifier,
-                                                )
-                                                .clear();
-                                            if (wasArmed) return;
-                                            ref
-                                                .read(
-                                                  pendingTaskDraftProvider
-                                                      .notifier,
-                                                )
-                                                .start(
-                                                  scheduledAt: startAt,
-                                                  durationMinutes:
-                                                      quickAddDefaultMinutes,
-                                                );
-                                          },
-                                          // Live-resizes the same draft for the
-                                          // rest of the hold — reuses the
-                                          // pending draft's own updateDuration,
-                                          // same as its post-drop resize handle
-                                          // does.
-                                          onDurationDeltaChanged:
-                                              (deltaMinutes) {
-                                                final draft = ref.read(
-                                                  pendingTaskDraftProvider,
-                                                );
-                                                if (draft == null) return;
-                                                final newDuration = math.max(
-                                                  minTaskDurationMinutes,
-                                                  quickAddDefaultMinutes +
-                                                      deltaMinutes,
-                                                );
-                                                ref
-                                                    .read(
-                                                      pendingTaskDraftProvider
-                                                          .notifier,
+                                                    .watch(
+                                                      editSelectionProvider,
                                                     )
-                                                    .updateDuration(
-                                                      newDuration,
-                                                    );
-                                              },
-                                          // Release — reveal the quick-create
-                                          // sheet for the draft the hold already
-                                          // started. A hold that never actually
-                                          // started a draft (the armed/selection
-                                          // guard above returned early) has
-                                          // nothing to reveal for.
-                                          onHoldReleased: () {
-                                            if (ref.read(
-                                                  pendingTaskDraftProvider,
-                                                ) ==
-                                                null) {
-                                              return;
-                                            }
-                                            ref
-                                                .read(
-                                                  quickAddSheetVisibleProvider
-                                                      .notifier,
-                                                )
-                                                .show();
-                                          },
-                                          pendingDraft: ref.watch(
-                                            pendingTaskDraftProvider,
-                                          ),
-                                          quickAddSheetVisible: ref.watch(
-                                            quickAddSheetVisibleProvider,
-                                          ),
-                                          recentlySaved: ref.watch(
-                                            recentlySavedTaskProvider,
-                                          ),
-                                          onSavedTaskConsumed: () => ref
-                                              .read(
-                                                recentlySavedTaskProvider
-                                                    .notifier,
-                                              )
-                                              .clear(),
-                                          disableClustering: ref.watch(
-                                            disableOverlapClusteringSettingProvider,
-                                          ),
-                                          // Shared with the Zone Grid/Edit
-                                          // screen's own scale — one setting,
-                                          // adjustable here via pinch-to-zoom
-                                          // (TimelinePinchZoom, wrapping this
-                                          // whole scrollable) — see
-                                          // TimelinePixelsPerMinuteSetting's
-                                          // own doc comment.
-                                          pixelsPerMinute: ref.watch(
-                                            timelinePixelsPerMinuteSettingProvider,
-                                          ),
-                                          showFreeWindowPrompt: ref.watch(
-                                            devShowFreeWindowPromptProvider,
-                                          ),
-                                          // Read here (not just inside
-                                          // _DraggableTaskBlockState, which independently
-                                          // watches its own copy for TaskCapsuleBlock) so
-                                          // OverlapClusterBlock's cluster rows — built by
-                                          // this plain (non-Riverpod) _DayTimelineState —
-                                          // can respect the same setting. Real parity gap,
-                                          // fixed here: a clustered task's row previously
-                                          // never showed the duration suffix at all.
-                                          devDurationVisible: ref.watch(
-                                            devTimelineTaskDurationVisibleProvider,
-                                          ),
-                                          // Same threading, same reason — List
-                                          // view's own from-to time range,
-                                          // independent of duration. See
-                                          // DevTimelineTaskTimeRangeVisible's own
-                                          // doc comment.
-                                          devTimeRangeVisible: ref.watch(
-                                            devTimelineTaskTimeRangeVisibleProvider,
-                                          ),
-                                          // Same threading, same reason — List
-                                          // view here (Zone view has its own
-                                          // separate call site below), hides
-                                          // imported calendar events entirely.
-                                          // See DevHideImportedTasks's own doc
-                                          // comment.
-                                          devHideImportedTasks: ref.watch(
-                                            devHideImportedTasksProvider,
-                                          ),
-                                          // Same threading, same reason — List
-                                          // view only, hides non-important tasks.
-                                          // See DevTimelineListOnlyImportant's own
-                                          // doc comment.
-                                          devListOnlyImportant: ref.watch(
-                                            devTimelineListOnlyImportantProvider,
-                                          ),
-                                          // Same threading, same reason — see
-                                          // _DayTimeline.devTextLayout's own doc comment.
-                                          devTextLayout: ref.watch(
-                                            devTimelineTaskTextLayoutProvider,
-                                          ),
-                                          // A real user setting (not a dev toggle) —
-                                          // one toggle across all three views.
-                                          showCompletionCheckbox: ref.watch(
-                                            showCompletionCheckboxSettingProvider,
-                                          ),
-                                          // Shared with Zone view above via
-                                          // viewed_time_provider.dart. `read`, not `watch`
-                                          // — see the Zone view's own copy of this above
-                                          // for why watching it was a feedback loop.
-                                          readViewedMinutes: () =>
-                                              ref.read(viewedTimeProvider),
-                                          onViewedMinutesChanged: (minutes) =>
+                                                    .lastOrNull,
+                                            showTimelineConnectors: ref.watch(
+                                              showTimelineConnectorsSettingProvider,
+                                            ),
+                                            // A real user setting (not a dev
+                                            // toggle) — one global setting across
+                                            // every pill-shaped surface. See
+                                            // TagColorStyleSetting's own doc
+                                            // comment.
+                                            tagColorStyle: ref.watch(
+                                              tagColorStyleSettingProvider,
+                                            ),
+                                            // Opens Edit directly, skipping the action sheet
+                                            // (Edit/Duplicate/Remove) — requested directly.
+                                            // The sheet stays in the codebase, unused for
+                                            // now, in case it's wanted again.
+                                            onTaskTap: (task) => showTaskSheet(
+                                              context,
+                                              task: task,
+                                            ),
+                                            onToggleComplete: (task) =>
+                                                _completeTask(
+                                                  context,
+                                                  ref,
+                                                  task,
+                                                ),
+                                            onReschedule:
+                                                (task, newScheduledAt) =>
+                                                    taskNotifier.rescheduleTask(
+                                                      task,
+                                                      newScheduledAt,
+                                                    ),
+                                            onCreateAt: (startAt) =>
+                                                showTaskSheet(
+                                                  context,
+                                                  initialScheduledAt: startAt,
+                                                  initialTimeOfDay:
+                                                      TimeOfDay.fromDateTime(
+                                                        startAt,
+                                                      ),
+                                                ),
+                                            // "Quick task add" — requested
+                                            // directly, replacing the previous
+                                            // hold-and-drag-a-line-then-release-menu
+                                            // flow archived in place_task_line.dart
+                                            // and place_task_release_menu.dart:
+                                            // "Instead of tap to create new task
+                                            // we'll have 'quick task add'... long
+                                            // press and when task is shown (no
+                                            // sheet yet coming) user can move down
+                                            // or up to set length... on release we
+                                            // show sheet quick add."
+                                            //
+                                            // The instant the long-press is
+                                            // recognized, the pending draft starts
+                                            // directly (so the placeholder pill
+                                            // appears before any drag) — same
+                                            // armed/selection-clearing guard the
+                                            // old plain-tap handler had, now
+                                            // gating the START of the hold instead
+                                            // of a tap. See that guard's own
+                                            // history below.
+                                            onHoldStarted: (startAt) {
+                                              // Long-pressing outside a
+                                              // long-press-armed task closes its
+                                              // armed/selected state — requested
+                                              // directly, the other half of "long
+                                              // press on task should enable its
+                                              // edit mode... tapping outside
+                                              // closes that mode." See
+                                              // _effectiveOnLongPress for the
+                                              // arming side.
+                                              //
+                                              // **2026-09-12 — closing an armed
+                                              // task now ONLY closes the arm.**
+                                              // Reported directly (of the prior
+                                              // plain-tap handler this replaces):
+                                              // "tap anywhere on the screen [while
+                                              // a task is armed]... its not
+                                              // triggering (task creation if
+                                              // tapped on timeline) but stopping
+                                              // [the selection]." The original
+                                              // behavior started a quick-create
+                                              // draft on the SAME tap that closed
+                                              // the arm — meant only to dismiss
+                                              // the selection, it was silently
+                                              // also creating a task.
+                                              //
+                                              // **2026-09-20 — the same rule
+                                              // covers multi-task selection too.**
+                                              // Requested directly: "on timeline
+                                              // view selected item through long
+                                              // press when tapped outside once it
+                                              // removes selection completely —
+                                              // let's adopt this for our
+                                              // multiselected in edit modes." A
+                                              // non-empty [editSelectionProvider]
+                                              // is the multi-task analogue of
+                                              // "something is armed" — same
+                                              // clear-and-swallow shape, so a hold
+                                              // meant only to deselect never also
+                                              // starts a quick-create draft.
+                                              final wasArmed =
+                                                  ref.read(
+                                                        armedEditTaskProvider,
+                                                      ) !=
+                                                      null ||
+                                                  ref
+                                                      .read(
+                                                        editSelectionProvider,
+                                                      )
+                                                      .isNotEmpty;
                                               ref
                                                   .read(
-                                                    viewedTimeProvider.notifier,
+                                                    armedEditTaskProvider
+                                                        .notifier,
                                                   )
-                                                  .set(minutes),
-                                          editModeEnabled: editModeEnabled,
-                                          // Same shared commit path Zone view's own
-                                          // resize/move already use — see
-                                          // `_commitZoneCascade`'s own doc comment.
-                                          onZoneResize:
-                                              (
-                                                zoneId,
-                                                originalStartMinutes,
-                                                newStartMinutes,
-                                                newEndMinutes,
-                                              ) => _commitZoneCascade(
-                                                context,
-                                                ref,
-                                                zoneId: zoneId,
-                                                originalStartMinutes:
-                                                    originalStartMinutes,
-                                                newStartMinutes:
-                                                    newStartMinutes,
-                                                newEndMinutes: newEndMinutes,
-                                                day: selectedDate,
-                                              ),
-                                          onZoneMove:
-                                              (
-                                                zoneId,
-                                                originalStartMinutes,
-                                                newStartMinutes,
-                                                newEndMinutes,
-                                              ) => _commitZoneCascade(
-                                                context,
-                                                ref,
-                                                zoneId: zoneId,
-                                                originalStartMinutes:
-                                                    originalStartMinutes,
-                                                newStartMinutes:
-                                                    newStartMinutes,
-                                                newEndMinutes: newEndMinutes,
-                                                day: selectedDate,
-                                              ),
-                                          // Reported directly: "zones cant see
-                                          // remove... when in edt move dragging
-                                          // zone should remove zone appear like
-                                          // with tasks." No recurring-scope
-                                          // disambiguation — deleteZone has no series
-                                          // concept to ask about; a materialized
-                                          // recurring instance is deleted the same
-                                          // way a plain one is.
-                                          onDeleteZone: (zone) async {
-                                            final zoneNotifier = ref.read(
-                                              zoneListProvider.notifier,
-                                            );
-                                            final snapshot = zone.toJson();
-                                            await zoneNotifier.deleteZone(
-                                              zone.id,
-                                            );
-                                            // Undo (2026-09-22) — same
-                                            // snapshot-then-restore mechanism
-                                            // task form / `zone_form_screen.dart`'s
-                                            // own delete use.
-                                            // `context.mounted` — this is a
-                                            // ConsumerWidget's own `build`
-                                            // context, not a State's, so
-                                            // there's no `mounted` field to
-                                            // check instead.
-                                            if (!context.mounted) return;
-                                            AppUndoToast.show(
-                                              context: context,
-                                              message:
-                                                  "Removed '${zone.title}'",
-                                              onUndo: () =>
-                                                  zoneNotifier.updateZone(
-                                                    Zone.fromJson(snapshot),
-                                                  ),
-                                            );
-                                          },
-                                        ),
-                                      ],
-                                    ),
+                                                  .clear();
+                                              ref
+                                                  .read(
+                                                    editSelectionProvider
+                                                        .notifier,
+                                                  )
+                                                  .clear();
+                                              if (wasArmed) return;
+                                              ref
+                                                  .read(
+                                                    pendingTaskDraftProvider
+                                                        .notifier,
+                                                  )
+                                                  .start(
+                                                    scheduledAt: startAt,
+                                                    durationMinutes:
+                                                        quickAddDefaultMinutes,
+                                                  );
+                                            },
+                                            // Live-resizes the same draft for the
+                                            // rest of the hold — reuses the
+                                            // pending draft's own updateDuration,
+                                            // same as its post-drop resize handle
+                                            // does.
+                                            onDurationDeltaChanged:
+                                                (deltaMinutes) {
+                                                  final draft = ref.read(
+                                                    pendingTaskDraftProvider,
+                                                  );
+                                                  if (draft == null) return;
+                                                  final newDuration = math.max(
+                                                    minTaskDurationMinutes,
+                                                    quickAddDefaultMinutes +
+                                                        deltaMinutes,
+                                                  );
+                                                  ref
+                                                      .read(
+                                                        pendingTaskDraftProvider
+                                                            .notifier,
+                                                      )
+                                                      .updateDuration(
+                                                        newDuration,
+                                                      );
+                                                },
+                                            // Release — reveal the quick-create
+                                            // sheet for the draft the hold already
+                                            // started. A hold that never actually
+                                            // started a draft (the armed/selection
+                                            // guard above returned early) has
+                                            // nothing to reveal for.
+                                            onHoldReleased: () {
+                                              if (ref.read(
+                                                    pendingTaskDraftProvider,
+                                                  ) ==
+                                                  null) {
+                                                return;
+                                              }
+                                              ref
+                                                  .read(
+                                                    quickAddSheetVisibleProvider
+                                                        .notifier,
+                                                  )
+                                                  .show();
+                                            },
+                                            pendingDraft: ref.watch(
+                                              pendingTaskDraftProvider,
+                                            ),
+                                            quickAddSheetVisible: ref.watch(
+                                              quickAddSheetVisibleProvider,
+                                            ),
+                                            recentlySaved: ref.watch(
+                                              recentlySavedTaskProvider,
+                                            ),
+                                            onSavedTaskConsumed: () => ref
+                                                .read(
+                                                  recentlySavedTaskProvider
+                                                      .notifier,
+                                                )
+                                                .clear(),
+                                            disableClustering: ref.watch(
+                                              disableOverlapClusteringSettingProvider,
+                                            ),
+                                            // Shared with the Zone Grid/Edit
+                                            // screen's own scale — one setting,
+                                            // adjustable here via pinch-to-zoom
+                                            // (TimelinePinchZoom, wrapping this
+                                            // whole scrollable) — see
+                                            // TimelinePixelsPerMinuteSetting's
+                                            // own doc comment.
+                                            pixelsPerMinute: ref.watch(
+                                              timelinePixelsPerMinuteSettingProvider,
+                                            ),
+                                            showFreeWindowPrompt: ref.watch(
+                                              devShowFreeWindowPromptProvider,
+                                            ),
+                                            // Read here (not just inside
+                                            // _DraggableTaskBlockState, which independently
+                                            // watches its own copy for TaskCapsuleBlock) so
+                                            // OverlapClusterBlock's cluster rows — built by
+                                            // this plain (non-Riverpod) _DayTimelineState —
+                                            // can respect the same setting. Real parity gap,
+                                            // fixed here: a clustered task's row previously
+                                            // never showed the duration suffix at all.
+                                            devDurationVisible: ref.watch(
+                                              devTimelineTaskDurationVisibleProvider,
+                                            ),
+                                            // Same threading, same reason — List
+                                            // view's own from-to time range,
+                                            // independent of duration. See
+                                            // DevTimelineTaskTimeRangeVisible's own
+                                            // doc comment.
+                                            devTimeRangeVisible: ref.watch(
+                                              devTimelineTaskTimeRangeVisibleProvider,
+                                            ),
+                                            // Same threading, same reason — List
+                                            // view here (Zone view has its own
+                                            // separate call site below), hides
+                                            // imported calendar events entirely.
+                                            // See DevHideImportedTasks's own doc
+                                            // comment.
+                                            devHideImportedTasks: ref.watch(
+                                              devHideImportedTasksProvider,
+                                            ),
+                                            // Same threading, same reason — List
+                                            // view only, hides non-important tasks.
+                                            // See DevTimelineListOnlyImportant's own
+                                            // doc comment.
+                                            devListOnlyImportant: ref.watch(
+                                              devTimelineListOnlyImportantProvider,
+                                            ),
+                                            // Same threading, same reason — see
+                                            // _DayTimeline.devTextLayout's own doc comment.
+                                            devTextLayout: ref.watch(
+                                              devTimelineTaskTextLayoutProvider,
+                                            ),
+                                            // A real user setting (not a dev toggle) —
+                                            // one toggle across all three views.
+                                            showCompletionCheckbox: ref.watch(
+                                              showCompletionCheckboxSettingProvider,
+                                            ),
+                                            // Shared with Zone view above via
+                                            // viewed_time_provider.dart. `read`, not `watch`
+                                            // — see the Zone view's own copy of this above
+                                            // for why watching it was a feedback loop.
+                                            readViewedMinutes: () =>
+                                                viewedMinutesAtBuild,
+                                            onViewedMinutesChanged: (minutes) =>
+                                                ref
+                                                    .read(
+                                                      viewedTimeProvider
+                                                          .notifier,
+                                                    )
+                                                    .set(minutes),
+                                            editModeEnabled: editModeEnabled,
+                                            // Same shared commit path Zone view's own
+                                            // resize/move already use — see
+                                            // `_commitZoneCascade`'s own doc comment.
+                                            onZoneResize:
+                                                (
+                                                  zoneId,
+                                                  originalStartMinutes,
+                                                  newStartMinutes,
+                                                  newEndMinutes,
+                                                ) => _commitZoneCascade(
+                                                  context,
+                                                  ref,
+                                                  zoneId: zoneId,
+                                                  originalStartMinutes:
+                                                      originalStartMinutes,
+                                                  newStartMinutes:
+                                                      newStartMinutes,
+                                                  newEndMinutes: newEndMinutes,
+                                                  day: selectedDate,
+                                                ),
+                                            onZoneMove:
+                                                (
+                                                  zoneId,
+                                                  originalStartMinutes,
+                                                  newStartMinutes,
+                                                  newEndMinutes,
+                                                ) => _commitZoneCascade(
+                                                  context,
+                                                  ref,
+                                                  zoneId: zoneId,
+                                                  originalStartMinutes:
+                                                      originalStartMinutes,
+                                                  newStartMinutes:
+                                                      newStartMinutes,
+                                                  newEndMinutes: newEndMinutes,
+                                                  day: selectedDate,
+                                                ),
+                                            // Reported directly: "zones cant see
+                                            // remove... when in edt move dragging
+                                            // zone should remove zone appear like
+                                            // with tasks." No recurring-scope
+                                            // disambiguation — deleteZone has no series
+                                            // concept to ask about; a materialized
+                                            // recurring instance is deleted the same
+                                            // way a plain one is.
+                                            onDeleteZone: (zone) async {
+                                              final zoneNotifier = ref.read(
+                                                zoneListProvider.notifier,
+                                              );
+                                              final snapshot = zone.toJson();
+                                              await zoneNotifier.deleteZone(
+                                                zone.id,
+                                              );
+                                              // Undo (2026-09-22) — same
+                                              // snapshot-then-restore mechanism
+                                              // task form / `zone_form_screen.dart`'s
+                                              // own delete use.
+                                              // `context.mounted` — this is a
+                                              // ConsumerWidget's own `build`
+                                              // context, not a State's, so
+                                              // there's no `mounted` field to
+                                              // check instead.
+                                              if (!context.mounted) return;
+                                              AppUndoToast.show(
+                                                context: context,
+                                                message:
+                                                    "Removed '${zone.title}'",
+                                                onUndo: () =>
+                                                    zoneNotifier.updateZone(
+                                                      Zone.fromJson(snapshot),
+                                                    ),
+                                              );
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                              ),
                             ),
-                          ),
-                          // Edit Mode's second entry point moved OUT of this
-                          // Stack — 2026-09-12, it now lives in the new
-                          // `AppCalendarHeader` above (the pen icon), not
-                          // positioned over the scrollable day any more. See
-                          // that widget's own doc comment for the restyle.
-                        ],
+                            // Edit Mode's second entry point moved OUT of this
+                            // Stack — 2026-09-12, it now lives in the new
+                            // `AppCalendarHeader` above (the pen icon), not
+                            // positioned over the scrollable day any more. See
+                            // that widget's own doc comment for the restyle.
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                // Center against the whole safe-area viewport, not only the
+                // timeline below the calendar header.
+                if (showTimelineEmptyState)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: AppEmptyState(
+                        message: emptyStateMessage,
+                        accessory: const Icon(Icons.self_improvement_rounded),
                       ),
                     ),
                   ),
-                ],
-              ),
-              // Center against the whole safe-area viewport, not only the
-              // timeline below the calendar header.
-              if (showTimelineEmptyState)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: AppEmptyState(
-                      message: emptyStateMessage,
-                      accessory: const Icon(Icons.self_improvement_rounded),
-                    ),
+                // Floating independently above the bottom nav pill now
+                // (2026-09-12, requested directly from a reference
+                // screenshot: "nav is just 5 items + its outside") rather
+                // than welded into its own bar stacked on top of it — see
+                // `AppFloatingCreateButton`'s own doc comment.
+                //
+                // Hidden entirely while Edit Mode is active — requested
+                // directly: "in edit mode we don't see main menu and days and
+                // view switching... let's skip Plus." The day chips/view-cycle
+                // button are gone now (2026-09-12, see AppCalendarHeader and
+                // the mode split above), so only the "+" create button is left
+                // to suppress here.
+                //
+                // Hidden for the same reason while a quick-create draft is
+                // live (the tap-empty-space mini sheet) — requested directly:
+                // "we don't show main nav, we should not show also the days
+                // with view switch and + button section, only the minisheet
+                // is visible in this scenario." The bottom NavigationBar is
+                // already suppressed for this case in `main.dart`'s own
+                // `hideBottomNav`; this is the other half of that same
+                // "only the mini sheet" rule.
+                if (!editModeEnabled &&
+                    ref.watch(pendingTaskDraftProvider) == null)
+                  AppFloatingCreateButton(
+                    onPressed: () {
+                      // Defaults to whatever time is vertically centered in
+                      // the current scroll position, not real "now" —
+                      // requested directly. `viewedTimeProvider` already
+                      // tracks this (kept in sync by both spatial views as the
+                      // user scrolls); null only for a fresh, never-scrolled
+                      // session, where "now" is still the right fallback.
+                      final clockNow = ref.read(nowProvider)();
+                      final viewedMinutes =
+                          ref.read(viewedTimeProvider) ??
+                          (clockNow.hour * 60 + clockNow.minute);
+                      showTaskSheet(
+                        context,
+                        initialScheduledAt: DateTime(
+                          selectedDate.year,
+                          selectedDate.month,
+                          selectedDate.day,
+                        ).add(Duration(minutes: viewedMinutes)),
+                      );
+                    },
                   ),
-                ),
-              // Floating independently above the bottom nav pill now
-              // (2026-09-12, requested directly from a reference
-              // screenshot: "nav is just 5 items + its outside") rather
-              // than welded into its own bar stacked on top of it — see
-              // `AppFloatingCreateButton`'s own doc comment.
-              //
-              // Hidden entirely while Edit Mode is active — requested
-              // directly: "in edit mode we don't see main menu and days and
-              // view switching... let's skip Plus." The day chips/view-cycle
-              // button are gone now (2026-09-12, see AppCalendarHeader and
-              // the mode split above), so only the "+" create button is left
-              // to suppress here.
-              //
-              // Hidden for the same reason while a quick-create draft is
-              // live (the tap-empty-space mini sheet) — requested directly:
-              // "we don't show main nav, we should not show also the days
-              // with view switch and + button section, only the minisheet
-              // is visible in this scenario." The bottom NavigationBar is
-              // already suppressed for this case in `main.dart`'s own
-              // `hideBottomNav`; this is the other half of that same
-              // "only the mini sheet" rule.
-              if (!editModeEnabled &&
-                  ref.watch(pendingTaskDraftProvider) == null)
-                AppFloatingCreateButton(
-                  onPressed: () {
-                    // Defaults to whatever time is vertically centered in
-                    // the current scroll position, not real "now" —
-                    // requested directly. `viewedTimeProvider` already
-                    // tracks this (kept in sync by both spatial views as the
-                    // user scrolls); null only for a fresh, never-scrolled
-                    // session, where "now" is still the right fallback.
-                    final clockNow = ref.read(nowProvider)();
-                    final viewedMinutes =
-                        ref.read(viewedTimeProvider) ??
-                        (clockNow.hour * 60 + clockNow.minute);
-                    showTaskSheet(
-                      context,
-                      initialScheduledAt: DateTime(
-                        selectedDate.year,
-                        selectedDate.month,
-                        selectedDate.day,
-                      ).add(Duration(minutes: viewedMinutes)),
-                    );
-                  },
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1203,6 +1226,7 @@ typedef _RescheduleCallback = Future<void> Function(
 
 class _DayTimeline extends ConsumerStatefulWidget {
   const _DayTimeline({
+    super.key,
     required this.tasks,
     required this.theme,
     required this.categoryById,
@@ -1472,6 +1496,8 @@ class _DayTimeline extends ConsumerStatefulWidget {
 class _DayTimelineState extends ConsumerState<_DayTimeline> {
   final _scrollController = ScrollController();
   bool _scrollPositionReady = true;
+  bool _retainingQuickAddClearance = false;
+  bool _quickAddAutoShifted = false;
 
   /// Shared between the placement gesture's press surface (the Stack's
   /// FIRST child, so task pills win presses over it) and the line it
@@ -1643,6 +1669,7 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
   void _reportViewedMinutes() {
     if (widget.onViewedMinutesChanged == null) return;
     if (!widget.showHourLabels) return;
+    if (!_scrollPositionReady) return;
     if (!_scrollController.hasClients) return;
     final (rangeStart, _) = _visibleRange(widget.tasks);
     // Subtract the scroll view's own top clearance: at offset 0 the padding
@@ -1681,13 +1708,9 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
   /// (every day but today, for the "now" fallback, since the range is a
   /// full calendar day).
   ///
-  /// Re-run (not just on first mount) when the day being viewed changes —
-  /// requested directly ("should always lead to the current hour being in
-  /// the center" for a fresh day). Switching view mode (hour labels on/off,
-  /// or the separate Zone/Task widget swap) deliberately does NOT re-run
-  /// this any more — reversed per direct follow-up request: scroll
-  /// position should be REMEMBERED across view switches, not reset to
-  /// "now" every time.
+  /// A date change mounts a fresh keyed day view, restoring the previously
+  /// viewed hour before its content is revealed. Returning from List mode
+  /// also restores that shared hour, rather than resetting to "now".
   void _scrollToCurrentHourCentered() {
     _scrollPositionReady = !widget.showHourLabels;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1737,8 +1760,19 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
     final visibleTaskIds = widget.tasks.map((task) => task.id).toSet();
     _taskBlockKeys.removeWhere((taskId, _) => !visibleTaskIds.contains(taskId));
     final saved = widget.recentlySaved;
+    if (oldWidget.pendingDraft != null &&
+        oldWidget.quickAddSheetVisible &&
+        (widget.pendingDraft == null || !widget.quickAddSheetVisible)) {
+      // Keep the sheet's scroll extent until its return animation reaches a
+      // position that also fits the unobscured viewport.
+      _retainingQuickAddClearance = true;
+      _returnFromQuickAdd(oldWidget.pendingDraft!, saved);
+      return;
+    }
     if (saved != null && saved.taskId != oldWidget.recentlySaved?.taskId) {
-      _revealSavedTask(saved);
+      if (widget.pendingDraft == null || !widget.quickAddSheetVisible) {
+        _revealSavedTask(saved);
+      }
       return;
     }
     // A fresh quick-create draft needs the SAME "scroll it into view"
@@ -1751,6 +1785,7 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
     // one is being dragged/resized.
     final draft = widget.pendingDraft;
     if (draft != null && draft.id != oldWidget.pendingDraft?.id) {
+      _quickAddAutoShifted = false;
       _revealPendingDraft(draft);
     }
     // The mini sheet's own reserved bottom space (what
@@ -1765,9 +1800,8 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
         !oldWidget.quickAddSheetVisible) {
       _revealPendingDraft(draft);
     }
-    // Re-centers when the day being viewed changes (fresh day -> open on
-    // "now"), and when hour labels come back ON — i.e. a List -> Task
-    // switch.
+    // Date navigation mounts a fresh keyed day view. This branch only needs
+    // to restore the shared hour when labels return — a List -> Task switch.
     //
     // That second case is NOT the "reset to now on every view switch"
     // behavior that was previously reversed out: this widget is SHARED by
@@ -1781,8 +1815,7 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
     // "scroll level resets after list." Restoring from
     // the shared time here is what makes List view a genuine no-op
     // on the shared spatial position, rather than silently corrupting it.
-    if (widget.selectedDate != oldWidget.selectedDate ||
-        (widget.showHourLabels && !oldWidget.showHourLabels)) {
+    if (widget.showHourLabels && !oldWidget.showHourLabels) {
       _scrollToCurrentHourCentered();
     }
   }
@@ -1800,8 +1833,108 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
     });
   }
 
-  Future<void> _finishSavedTaskReveal(RecentlySavedTask saved) async {
-    final scroll = _scrollToSavedTask(saved.taskId);
+  void _returnFromQuickAdd(PendingTaskDraft draft, RecentlySavedTask? saved) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_finishQuickAddReturn(draft, saved));
+    });
+  }
+
+  Future<void> _finishQuickAddReturn(
+    PendingTaskDraft draft,
+    RecentlySavedTask? saved,
+  ) async {
+    final anchor = _quickAddReturnAnchor(draft, saved);
+    if (widget.showHourLabels && _scrollController.hasClients) {
+      await _animateTimelineTo(
+        _centeredTimelineTarget(
+          anchor,
+          _quickAddBaseMax(_scrollController.position),
+        ),
+      );
+    }
+    if (!mounted) return;
+    setState(() => _retainingQuickAddClearance = false);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_finishQuickAddReturnAfterLayout(anchor, saved));
+    });
+  }
+
+  Future<void> _finishQuickAddReturnAfterLayout(
+    DateTime? anchor,
+    RecentlySavedTask? saved,
+  ) async {
+    if (widget.showHourLabels && _scrollController.hasClients) {
+      await _animateTimelineTo(
+        _centeredTimelineTarget(
+          anchor,
+          _scrollController.position.maxScrollExtent,
+        ),
+      );
+    }
+    if (mounted && saved != null) {
+      await _finishSavedTaskReveal(saved, alreadyScrolled: true);
+    }
+  }
+
+  DateTime? _quickAddReturnAnchor(
+    PendingTaskDraft draft,
+    RecentlySavedTask? saved,
+  ) {
+    if (saved == null && !_quickAddAutoShifted) return null;
+    final savedTask = saved == null
+        ? null
+        : widget.tasks.where((task) => task.id == saved.taskId).firstOrNull;
+    final scheduledAt = savedTask?.scheduledAt ?? draft.scheduledAt;
+    return _isSameDay(scheduledAt, widget.selectedDate) ? scheduledAt : null;
+  }
+
+  double _quickAddBaseMax(ScrollPosition position) {
+    final dayBox = _dayStackKey.currentContext?.findRenderObject();
+    if (dayBox is RenderBox && dayBox.hasSize) {
+      return math.max(
+        0.0,
+        TimelineScrollTokens.topClearance +
+            dayBox.size.height +
+            TimelineScrollTokens.bottomClearance -
+            position.viewportDimension,
+      );
+    }
+    return (position.maxScrollExtent - _quickAddClearance()).clamp(
+      0.0,
+      position.maxScrollExtent,
+    );
+  }
+
+  double _centeredTimelineTarget(DateTime? anchor, double maxScrollExtent) {
+    final position = _scrollController.position;
+    if (anchor == null) return position.pixels.clamp(0.0, maxScrollExtent);
+    final (rangeStart, _) = _visibleRange(widget.tasks);
+    return (anchor.difference(rangeStart).inMinutes * widget.pixelsPerMinute +
+            TimelineScrollTokens.topClearance -
+            position.viewportDimension / 2)
+        .clamp(0.0, maxScrollExtent);
+  }
+
+  Future<void> _animateTimelineTo(double target) async {
+    final position = _scrollController.position;
+    if (target == position.pixels) return;
+    await _scrollController.animateTo(
+      target,
+      duration: TimelineScrollTokens.revealDuration(
+        (target - position.pixels).abs(),
+      ),
+      curve: widget.theme.curveStandard,
+    );
+  }
+
+  Future<void> _finishSavedTaskReveal(
+    RecentlySavedTask saved, {
+    bool alreadyScrolled = false,
+  }) async {
+    final scroll = alreadyScrolled
+        ? Future<void>.value()
+        : _scrollToSavedTask(saved.taskId);
     widget.onSavedTaskConsumed();
     await scroll;
     if (!mounted || !saved.checkForOverlapAfterSave || !widget.showHourLabels) {
@@ -1854,11 +1987,11 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
         (minutesSinceStart * widget.pixelsPerMinute) +
         TimelineScrollTokens.topClearance -
         (_scrollController.position.viewportDimension / 2);
-    await _scrollController.animateTo(
-      target.clamp(0.0, _scrollController.position.maxScrollExtent),
-      duration: widget.theme.motionNormal,
-      curve: Curves.easeOut,
+    final destination = target.clamp(
+      0.0,
+      _scrollController.position.maxScrollExtent,
     );
+    await _animateTimelineTo(destination);
   }
 
   Future<void> _showSavedTaskOverlapMenu(Task task, Offset anchor) async {
@@ -1972,8 +2105,7 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
     // which is exactly why an earlier version of this method left the
     // pill just a few pixels short of clearing the sheet instead of
     // clearly above it.
-    final sheetHeight =
-        MediaQuery.sizeOf(context).height * quickCreateSheetMinFraction;
+    final sheetHeight = _quickAddClearance();
     final visibleHeight =
         _scrollController.position.viewportDimension - sheetHeight;
     final position = _scrollController.position;
@@ -1991,6 +2123,8 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
       0.0,
       position.maxScrollExtent,
     );
+    if (target == position.pixels) return;
+    _quickAddAutoShifted = true;
     // Eases in and out (the app's standard curve) over a time that grows
     // with the distance, rather than starting at full speed.
     _scrollController.animateTo(
@@ -2001,6 +2135,9 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
       curve: widget.theme.curveStandard,
     );
   }
+
+  double _quickAddClearance() =>
+      MediaQuery.sizeOf(context).height * quickCreateSheetMinFraction;
 
   @override
   void dispose() {
@@ -2425,10 +2562,10 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
                     top: TimelineScrollTokens.topClearance,
                     bottom:
                         TimelineScrollTokens.bottomClearance +
-                        (widget.pendingDraft != null &&
-                                widget.quickAddSheetVisible
-                            ? MediaQuery.sizeOf(context).height *
-                                  quickCreateSheetMinFraction
+                        ((widget.pendingDraft != null &&
+                                    widget.quickAddSheetVisible) ||
+                                _retainingQuickAddClearance
+                            ? _quickAddClearance()
                             : 0),
                   ),
                   child: SizedBox(
@@ -3312,9 +3449,12 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
                 // off `pendingDraft` alone) is the only visible thing;
                 // requested directly: "long press and when task is shown (no
                 // sheet yet coming)... on release we show sheet quick add."
+                // Not in the wide layout: its right-hand panel edits the
+                // draft instead (see TaskInspectorPanel).
                 if (widget.showHourLabels &&
                     widget.pendingDraft != null &&
-                    widget.quickAddSheetVisible)
+                    widget.quickAddSheetVisible &&
+                    !ref.read(taskInspectorProvider.notifier).hasHost)
                   QuickCreateOverlay(
                     key: ValueKey('quick-create-${widget.pendingDraft!.id}'),
                     draft: widget.pendingDraft!,
@@ -4495,7 +4635,7 @@ class _DraggablePendingTaskPillState
     // signature — which needs a real Task's id/durationMinutes — can be
     // reused as-is rather than duplicating its logic for a second shape.
     if (ref.read(preventOverlappingTasksSettingProvider)) {
-      final tasks = ref.read(taskListProvider);
+      final tasks = ref.read(tasksForSelectedDayProvider);
       final overlaps = overlapsExistingTask(
         scheduledAt: newScheduledAt,
         durationMinutes: widget.draft.durationMinutes,
@@ -5686,7 +5826,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
 
                     final selectedIds = ref.read(editSelectionProvider);
                     final selectedTasks = ref
-                        .read(taskListProvider)
+                        .read(tasksForSelectedDayProvider)
                         .where((t) => selectedIds.contains(t.id))
                         .toList();
                     final moves = computeGroupMoves(
@@ -5769,11 +5909,11 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                   if (overlapsExistingTask(
                     scheduledAt: newScheduledAt,
                     durationMinutes: widget.task.durationMinutes!,
-                    existingTasks: ref.read(taskListProvider),
+                    existingTasks: ref.read(tasksForSelectedDayProvider),
                     excludeTaskId: widget.task.id,
                   )) {
                     final sameDayTasks = ref
-                        .read(taskListProvider)
+                        .read(tasksForSelectedDayProvider)
                         .where(
                           (other) =>
                               other.id != widget.task.id &&
@@ -5958,7 +6098,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
 
                       final selectedIds = ref.read(editSelectionProvider);
                       final selectedTasks = ref
-                          .read(taskListProvider)
+                          .read(tasksForSelectedDayProvider)
                           .where((t) => selectedIds.contains(t.id))
                           .toList();
                       final changes =
@@ -6089,7 +6229,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
 
                       final selectedIds = ref.read(editSelectionProvider);
                       final selectedTasks = ref
-                          .read(taskListProvider)
+                          .read(tasksForSelectedDayProvider)
                           .where((t) => selectedIds.contains(t.id))
                           .toList();
                       final newDurations = <String, int>{

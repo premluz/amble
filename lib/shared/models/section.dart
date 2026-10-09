@@ -23,8 +23,7 @@ class Section extends HiveObject {
   /// Creates a new Section with a client-generated UUID — same `uuid` call
   /// [Category.create]/[Task.create] use, per the Constitution's
   /// "IDs are client-generated UUIDs from day one" rule.
-  Section.create({required String name})
-    : this(id: _uuid.v4(), name: name);
+  Section.create({required String name}) : this(id: _uuid.v4(), name: name);
 
   @HiveField(0)
   final String id;

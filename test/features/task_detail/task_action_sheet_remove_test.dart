@@ -5,6 +5,11 @@ import 'package:hive_ce/hive_ce.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
 import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/features/task_detail/task_action_sheet.dart';
+import 'package:amble/shared/models/local_date.dart';
+import 'package:amble/shared/models/series.dart';
+import 'package:amble/shared/models/series_revision.dart';
+import 'package:amble/shared/providers/occurrence_store.dart';
+import 'package:amble/shared/repositories/series_repository.dart';
 import 'package:amble/shared/models/recurrence_frequency.dart';
 import 'package:amble/shared/models/recurrence_rule.dart';
 import 'package:amble/shared/models/category.dart';
@@ -90,6 +95,37 @@ Future<void> _pumpActionSheet(
   final scaffoldContext = tester.element(find.byType(Scaffold));
   showTaskActionSheet(scaffoldContext, task: task);
   await tester.pumpAndSettle();
+}
+
+/// A weekly "Standup" series at 9:00 starting [today] on [today]'s
+/// weekday, stored directly in the series box the test config opens.
+/// Returns its first occurrence shown as a task.
+Future<Task> _seedWeeklySeries(WidgetTester tester, LocalDate today) async {
+  final series = Series.create(
+    firstRevision: SeriesRevision(
+      effectiveFrom: today,
+      rule: RecurrenceRule(
+        frequency: RecurrenceFrequency.weekly,
+        daysOfWeek: [today.weekday],
+      ),
+      startMinutes: 9 * 60,
+      durationMinutes: 15,
+      defaults: const SeriesDefaults(
+        title: 'Standup',
+        categoryId: BuiltInCategoryIds.work,
+      ),
+    ),
+    now: DateTime.now(),
+  );
+  await tester.runAsync(() => HiveSeriesRepository.opened().save(series));
+  return _occurrencesOn(today).single;
+}
+
+/// Series occurrences on [day], read fresh from storage.
+List<Task> _occurrencesOn(LocalDate day) {
+  final container = ProviderContainer();
+  addTearDown(container.dispose);
+  return container.read(occurrenceStoreProvider.notifier).tasksOn(day);
 }
 
 void main() {
@@ -198,38 +234,17 @@ void main() {
     );
   });
 
-  testWidgets('"Remove this occurrence" deletes only the tapped instance', (
-    tester,
-  ) async {
-    final template = Task.create(
-      title: 'Standup',
-      scheduledAt: _daysFromToday(0),
-      durationMinutes: 15,
-      categoryId: BuiltInCategoryIds.work,
-      recurrenceId: 'series-1',
-      recurrenceRule: RecurrenceRule(
-        frequency: RecurrenceFrequency.weekly,
-        daysOfWeek: [DateTime.monday],
-      ),
-    );
-    final sibling = Task.create(
-      title: 'Standup',
-      scheduledAt: _daysFromToday(7),
-      durationMinutes: 15,
-      categoryId: BuiltInCategoryIds.work,
-      recurrenceId: 'series-1',
-    );
-    await tester.runAsync(() async {
-      await box.put(template.id, template);
-      await box.put(sibling.id, sibling);
-    });
+  testWidgets('"Remove this occurrence" cancels only that occurrence, and '
+      'Undo brings it back', (tester) async {
+    final today = LocalDate.fromDateTime(_daysFromToday(0));
+    final occurrence = await _seedWeeklySeries(tester, today);
 
     await _pumpActionSheet(
       tester,
       box: box,
       categoryBox: categoryBox,
       trackedBehaviorBox: trackedBehaviorBox,
-      task: template,
+      task: occurrence,
     );
     await _tapAndSettle(tester, find.text('Remove'));
     await _tapAndSettle(tester, find.text('Remove this occurrence'));
@@ -238,85 +253,46 @@ void main() {
     // await resolves, a moment after `pumpAndSettle()` already returned.
     await tester.pump();
 
-    expect(box.get(template.id), isNull);
+    expect(_occurrencesOn(today), isEmpty);
     expect(
-      box.get(sibling.id),
-      isNotNull,
+      _occurrencesOn(today.addDays(7)),
+      hasLength(1),
       reason: 'the rest of the series must survive',
     );
 
-    // Undo restores just the removed occurrence — the sibling was never
-    // touched, so it stays exactly as it already was either way.
     await _tapAndSettle(tester, find.text('Undo'));
-
-    expect(box.get(template.id), isNotNull);
-    expect(box.get(sibling.id), isNotNull);
+    expect(_occurrencesOn(today), hasLength(1));
   });
 
-  testWidgets('"Remove all occurrences" deletes this and future instances', (
-    tester,
-  ) async {
-    final template = Task.create(
-      title: 'Standup',
-      scheduledAt: _daysFromToday(0),
-      durationMinutes: 15,
-      categoryId: BuiltInCategoryIds.work,
-      recurrenceId: 'series-1',
-      recurrenceRule: RecurrenceRule(
-        frequency: RecurrenceFrequency.weekly,
-        daysOfWeek: [DateTime.monday],
-      ),
-    );
-    final future = Task.create(
-      title: 'Standup',
-      scheduledAt: _daysFromToday(7),
-      durationMinutes: 15,
-      categoryId: BuiltInCategoryIds.work,
-      recurrenceId: 'series-1',
-    );
-    final past = Task.create(
-      title: 'Standup',
-      scheduledAt: _daysFromToday(-7),
-      durationMinutes: 15,
-      categoryId: BuiltInCategoryIds.work,
-      recurrenceId: 'series-1',
-    );
-    await tester.runAsync(() async {
-      await box.put(template.id, template);
-      await box.put(future.id, future);
-      await box.put(past.id, past);
-    });
+  testWidgets('"Remove all occurrences" ends the series from today, and '
+      'Undo brings it back', (tester) async {
+    final today = LocalDate.fromDateTime(_daysFromToday(0));
+    final occurrence = await _seedWeeklySeries(tester, today);
 
     await _pumpActionSheet(
       tester,
       box: box,
       categoryBox: categoryBox,
       trackedBehaviorBox: trackedBehaviorBox,
-      task: template,
+      task: occurrence,
     );
     await _tapAndSettle(tester, find.text('Remove'));
     await _tapAndSettle(tester, find.text('Remove all occurrences'));
     // See the earlier "shows an Undo toast" test's own comment.
     await tester.pump();
 
-    expect(box.get(template.id), isNull);
-    expect(box.get(future.id), isNull, reason: 'future instances go');
+    expect(_occurrencesOn(today), isEmpty);
+    expect(_occurrencesOn(today.addDays(7)), isEmpty);
     expect(
-      box.get(past.id),
-      isNotNull,
-      reason: 'past instances are kept as history',
+      HiveSeriesRepository.opened().getAll().single.endsAfter,
+      today.addDays(-1),
     );
 
-    // Undo restores the WHOLE series (2026-09-22) — every row
-    // `deleteTaskSeries` touched, snapshotted before it ran, not just the
-    // tapped instance. `past` was never removed, so it's untouched by the
-    // restore either way; `template`/`future` come back.
     expect(find.text('Undo'), findsOneWidget);
     await _tapAndSettle(tester, find.text('Undo'));
 
-    expect(box.get(template.id), isNotNull);
-    expect(box.get(future.id), isNotNull);
-    expect(box.get(past.id), isNotNull);
+    expect(_occurrencesOn(today), hasLength(1));
+    expect(_occurrencesOn(today.addDays(7)), hasLength(1));
   });
 
   testWidgets(

@@ -9,6 +9,7 @@ import '../../shared/services/cascade_reschedule.dart';
 import '../../shared/services/move_resize_undo.dart';
 import '../../shared/services/overlap_checker.dart';
 import '../../shared/services/trim_reschedule.dart';
+import 'tasks_for_selected_day_provider.dart';
 
 /// The Overlap / Push all / Trim choice every conflicting drop — and now
 /// resize — offers.
@@ -57,7 +58,8 @@ Future<void> commitTaskResize(
   required Offset anchor,
   required VoidCallback onApplied,
 }) async {
-  final tasks = ref.read(taskListProvider);
+  // The day being shown, occurrences included.
+  final tasks = ref.read(tasksForSelectedDayProvider);
   final notifier = ref.read(taskListProvider.notifier);
   final message = "Resized '${task.title}'";
 

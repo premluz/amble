@@ -159,7 +159,7 @@ class PendingTaskPill extends StatelessWidget {
                 title,
                 style: theme.textBody.copyWith(
                   color: theme.colorTextSecondary,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w600,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,

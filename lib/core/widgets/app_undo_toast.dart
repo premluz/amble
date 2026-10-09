@@ -228,7 +228,7 @@ class _ToastOverlayState extends State<_ToastOverlay>
                           'Undo',
                           style: theme.textBody.copyWith(
                             color: theme.colorAccent,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),

@@ -309,7 +309,7 @@ class _MultiZoneEditFormState extends ConsumerState<_MultiZoneEditForm> {
                         : 'Mixed',
                     style: theme.textBody.copyWith(
                       color: theme.colorTextPrimary,
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),

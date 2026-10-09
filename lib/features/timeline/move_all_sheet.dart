@@ -25,7 +25,10 @@ import '../../shared/services/move_resize_undo.dart';
 /// write path — every affected task gets the SAME delta, which is exactly
 /// what that method already does. Wrapped in [commitTaskChangeWithUndo]
 /// so this gets the same undo toast every other move/resize commit does.
-Future<void> showMoveAllSheet(BuildContext context, {required DateTime around}) {
+Future<void> showMoveAllSheet(
+  BuildContext context, {
+  required DateTime around,
+}) {
   return AppSheet.show<void>(
     context: context,
     builder: (sheetContext) => _MoveAllForm(around: around),
@@ -81,9 +84,8 @@ class _MoveAllFormState extends ConsumerState<_MoveAllForm> {
         ref,
         taskIds: deltas.keys,
         message: 'Moved ${deltas.length} task(s)',
-        commit: () => ref
-            .read(taskListProvider.notifier)
-            .shiftTasksByMinutes(deltas),
+        commit: () =>
+            ref.read(taskListProvider.notifier).shiftTasksByMinutes(deltas),
       );
     }
     if (!mounted) return;

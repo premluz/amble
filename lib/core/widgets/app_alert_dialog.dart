@@ -140,8 +140,9 @@ class AppAlertDialog {
               actions: [
                 CupertinoDialogAction(
                   isDestructiveAction: true,
-                  onPressed: () => Navigator.of(context)
-                      .pop(AppAlertDialogChoice.destructive),
+                  onPressed: () =>
+                      Navigator.of(context)
+                          .pop(AppAlertDialogChoice.destructive),
                   child: Text(destructiveAction.label),
                 ),
                 CupertinoDialogAction(

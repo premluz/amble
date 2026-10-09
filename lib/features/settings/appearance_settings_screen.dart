@@ -9,6 +9,7 @@ import '../../shared/providers/preferences_providers.dart';
 import 'settings_detail_scaffold.dart';
 import 'settings_panel.dart';
 import 'theme_mode_selector.dart';
+import 'calendar_grid_lines_panel.dart';
 
 Future<void> showAppearanceSettingsScreen(BuildContext context) {
   return pushSettingsDetailRoute<void>(
@@ -55,7 +56,7 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                   'Time format',
                   style: theme.textBody.copyWith(
                     color: theme.colorTextPrimary,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 SizedBox(height: theme.spacingXs),
@@ -108,7 +109,7 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                   'Pill size',
                   style: theme.textBody.copyWith(
                     color: theme.colorTextPrimary,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 SizedBox(height: theme.spacingXs),
@@ -152,7 +153,7 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                   'Text size',
                   style: theme.textBody.copyWith(
                     color: theme.colorTextPrimary,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 SizedBox(height: theme.spacingXs),
@@ -187,6 +188,8 @@ class AppearanceSettingsScreen extends ConsumerWidget {
               ],
             ),
           ),
+          SizedBox(height: theme.spacingSm),
+          const CalendarGridLinesPanel(),
         ],
       ),
     );

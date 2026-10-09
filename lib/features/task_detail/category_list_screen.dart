@@ -219,7 +219,7 @@ class _CategoryRow extends StatelessWidget {
                   category.name,
                   style: theme.textBody.copyWith(
                     color: theme.colorTextPrimary,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w600,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

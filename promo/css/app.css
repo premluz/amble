@@ -1,0 +1,136 @@
+/* The device and the app shell: status bar, top nav, dock, touch dot.
+   Geometry is in the app's logical pixels (390 × 844 screen). */
+.rig {
+  --dev-rim: oklch(0.6 0.008 250);
+  --dev-body: oklch(0.3 0.006 250);
+  --dev-glass: oklch(0.1 0 0);
+  --dev-drop: oklch(0.22 0.02 265 / 0.34);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 414px;
+  height: 868px;
+  transform: translate(calc(var(--cx, 960px) - 207px), calc(var(--cy, 540px) - 434px))
+    perspective(2600px) rotateY(var(--cry, 0deg)) scale(var(--cs, 1));
+  transform-origin: 207px 434px;
+  opacity: var(--co, 1);
+}
+
+.rig[data-on='0'],
+.pane[data-on='0'],
+.touch[data-on='0'] {
+  visibility: hidden;
+}
+
+.device {
+  position: absolute;
+  inset: 0;
+  border-radius: 67px;
+  background: var(--dev-glass);
+  box-shadow: 0 0 0 3px var(--dev-body), 0 0 0 4.5px var(--dev-rim),
+    0 60px 110px -40px var(--dev-drop), 0 24px 40px -24px var(--dev-drop);
+}
+
+.device-btn {
+  position: absolute;
+  left: -6.5px;
+  top: 150px;
+  width: 4px;
+  height: 34px;
+  border-radius: 2px;
+  background: var(--dev-body);
+  box-shadow: 0 64px 0 0 var(--dev-body), 0 128px 0 0 var(--dev-body);
+}
+
+.device-btn.right {
+  left: auto;
+  right: -6.5px;
+  top: 230px;
+  height: 92px;
+  box-shadow: none;
+}
+
+.screen {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  width: 390px;
+  height: 844px;
+  overflow: hidden;
+  border-radius: 55px;
+  background: var(--a-timeline);
+  isolation: isolate;
+}
+
+.status {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 59px;
+  z-index: 11;
+  color: var(--a-text);
+}
+
+.veil {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  background: var(--a-timeline);
+  opacity: var(--veil, 0);
+}
+
+.status-time {
+  position: absolute;
+  left: 52px;
+  top: 19px;
+  font: 600 17px/22px -apple-system, system-ui, var(--ui-sans);
+  font-variant-numeric: tabular-nums;
+}
+
+.island {
+  position: absolute;
+  left: 132px;
+  top: 11px;
+  width: 126px;
+  height: 37px;
+  border-radius: 19px;
+  background: var(--dev-glass);
+}
+
+.status-icons {
+  position: absolute;
+  right: 30px;
+  top: 23px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.nav {
+  position: absolute;
+  inset: 55px 0 auto;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 25px;
+  padding-inline: 16px 18px;
+  z-index: 6;
+  font-size: 16px;
+}
+
+.nav .tab {
+  font-weight: 500;
+  color: var(--a-text2);
+}
+
+.nav .tab[data-sel='1'] {
+  font-weight: 700;
+  color: var(--a-text);
+}
+
+.nav .gear {
+  margin-left: auto;
+  font-size: 22px;
+  color: var(--a-text2);
+}
+

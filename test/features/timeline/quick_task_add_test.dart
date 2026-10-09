@@ -1267,17 +1267,17 @@ void main() {
   // (what `_scrollToSavedTask` does once its own sheet has already
   // closed) still leaves it hidden under the sheet.
   testWidgets(
-    'holding a late-evening slot scrolls the draft into the space ABOVE '
-    'the mini sheet, not just into the full viewport',
+    'holding a late-evening slot reveals the draft above the mini sheet '
+    'and closing glides it back into the full viewport',
     (tester) async {
       await pumpTimeline(tester);
 
-      // 22:00 — deep enough into the day that any sane initial scroll
+      // 23:45 — deep enough into the day that any sane initial scroll
       // position (which opens centred on "now") requires scrolling past
       // it, and specifically the kind of slot the report names.
       final tapTime = DateTime.now().copyWith(
-        hour: 22,
-        minute: 0,
+        hour: 23,
+        minute: 45,
         second: 0,
         millisecond: 0,
       );
@@ -1309,7 +1309,7 @@ void main() {
       );
       await tester.pump();
 
-      // Hold, then release, at the now-visible 22:00 row.
+      // Hold, then release, at the now-visible late-evening row.
       final screenY = targetY - position.pixels;
       final gesture = await tester.startGesture(Offset(220, screenY));
       await tester.pump();
@@ -1352,6 +1352,56 @@ void main() {
             'the placeholder must land ABOVE the mini sheet, not hidden '
             'underneath it',
       );
+
+      final draftAt = tester
+          .widget<QuickCreateOverlay>(find.byType(QuickCreateOverlay))
+          .draft
+          .scheduledAt;
+      final shifted = position.pixels;
+      await tester.tap(find.byIcon(Icons.close_rounded));
+      const frame = Duration(milliseconds: 16);
+      var beforeRemoval = shifted;
+      final maxCloseFrames =
+          (TimelineScrollTokens.revealMaxMs / frame.inMilliseconds).ceil();
+      for (var i = 0; i < maxCloseFrames; i++) {
+        beforeRemoval = position.pixels;
+        await tester.pump(frame);
+        expect(
+          (position.pixels - beforeRemoval).abs(),
+          lessThan(20),
+          reason: 'automatic scroll must not jump during sheet dismissal',
+        );
+        if (find.byType(QuickCreateOverlay).evaluate().isEmpty) break;
+      }
+      expect(find.byType(QuickCreateOverlay), findsNothing);
+      final justClosed = position.pixels;
+      expect(
+        (justClosed - beforeRemoval).abs(),
+        lessThan(4),
+        reason: 'removing sheet clearance must not clamp the Timeline at once',
+      );
+      await tester.pump(frame);
+      expect(
+        (position.pixels - justClosed).abs(),
+        lessThan(4),
+        reason: 'the return scroll should begin gently',
+      );
+      var previous = position.pixels;
+      for (var i = 0; i < maxCloseFrames * 2; i++) {
+        await tester.pump(frame);
+        expect(
+          (position.pixels - previous).abs(),
+          lessThan(20),
+          reason: 'the Timeline return must remain a smooth scroll',
+        );
+        previous = position.pixels;
+      }
+      final centeredWithoutSheet =
+          (draftAt.difference(rangeStart).inMinutes * pixelsPerMinute +
+                  TimelineScrollTokens.topClearance -
+                  position.viewportDimension / 2)
+              .clamp(0.0, position.maxScrollExtent);
+      expect(position.pixels, closeTo(centeredWithoutSheet, 1));
     },
   );
 
@@ -1377,6 +1427,9 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
     }
     expect(find.byType(PendingTaskPill), findsOneWidget);
+    expect(position.pixels, before);
+    await tester.tap(find.byIcon(Icons.close_rounded));
+    await tester.pumpAndSettle();
     expect(position.pixels, before);
   });
 

@@ -17,7 +17,7 @@ void main() {
 
   test('seeds an edit from the task and starts unchanged', () {
     final task = plain();
-    final form = TaskSheetForm(allTasks: [task], task: task);
+    final form = TaskSheetForm(task: task);
     addTearDown(form.dispose);
     expect(form.title.text, 'Read');
     expect(form.scheduledAt, DateTime(2026, 9, 30, 9, 15));
@@ -29,7 +29,7 @@ void main() {
   });
 
   test('a fresh create needs a name, a time and a duration to save', () {
-    final form = TaskSheetForm(allTasks: const [], date: DateTime(2026, 9, 30));
+    final form = TaskSheetForm(date: DateTime(2026, 9, 30));
     addTearDown(form.dispose);
     expect(form.canSave, isFalse);
     form.title.text = 'Walk';
@@ -51,7 +51,7 @@ void main() {
         daysOfWeek: const [1, 3],
       ),
     );
-    final form = TaskSheetForm(allTasks: [template], duplicateFrom: template);
+    final form = TaskSheetForm(duplicateFrom: template);
     addTearDown(form.dispose);
     expect(form.task, isNull);
     expect(form.repeats, isFalse);
@@ -71,7 +71,7 @@ void main() {
         daysOfWeek: const [1, 3],
       ),
     );
-    final form = TaskSheetForm(allTasks: [template], task: template);
+    final form = TaskSheetForm(task: template);
     addTearDown(form.dispose);
     expect(form.repeats, isTrue);
     expect(form.selectedDays, {1, 3});

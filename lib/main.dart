@@ -16,6 +16,7 @@ import 'core/revenue_cat_config.dart';
 import 'core/tokens/color_primitives.dart';
 import 'core/tokens/semantic_theme.dart';
 import 'core/tokens/component_tokens.dart';
+import 'core/tokens/desktop_density.dart';
 import 'core/tokens/type_primitives.dart';
 import 'core/widgets/app_context_menu.dart';
 import 'core/widgets/app_bottom_dock.dart';
@@ -24,13 +25,16 @@ import 'core/amble_material_localizations.dart';
 import 'core/widgets/app_time_format.dart';
 import 'core/widgets/app_header_over_content.dart';
 import 'core/widgets/app_shell_header.dart';
+import 'core/widgets/app_side_nav.dart';
 import 'core/widgets/app_top_nav.dart';
 import 'core/widgets/app_view_transition.dart';
 import 'core/widgets/what_matters_motion.dart';
 import 'core/widgets/app_touch_visualizer.dart';
+import 'core/widgets/app_window_insets.dart';
 import 'features/inbox/inbox_screen.dart';
 import 'features/onboarding/onboarding_quiz_screen.dart';
 import 'features/settings/settings_screen.dart';
+import 'features/task_detail/task_inspector_panel.dart';
 import 'features/splash/splash_carousel_screen.dart';
 import 'features/splash/splash_screen.dart';
 import 'features/timeline/selected_date_provider.dart';
@@ -38,6 +42,7 @@ import 'features/timeline/armed_edit_task_provider.dart';
 import 'features/timeline/edit_selection_provider.dart';
 import 'features/timeline/edit_mode_provider.dart';
 import 'features/timeline/pending_task_draft_provider.dart';
+import 'features/calendar/desktop_days_host.dart';
 import 'features/timeline/timeline_screen.dart';
 import 'features/tracked_behavior/tracked_behavior_list_screen.dart';
 import 'features/zone_grid/zone_grid_screen.dart';
@@ -62,6 +67,9 @@ import 'shared/providers/task_providers.dart';
 import 'shared/providers/task_template_providers.dart';
 import 'shared/providers/preferences_providers.dart';
 import 'shared/providers/purchases_providers.dart';
+import 'shared/providers/occurrence_store.dart';
+import 'shared/providers/series_providers.dart';
+import 'shared/models/occurrence_alert.dart';
 import 'shared/providers/tracked_behavior_providers.dart';
 import 'shared/providers/trial_providers.dart';
 import 'shared/providers/zone_providers.dart';
@@ -160,6 +168,7 @@ void main() async {
     'Hive.openBox<SyncedCalendarEvent>',
     () => Hive.openBox<SyncedCalendarEvent>(syncedCalendarEventBoxName),
   );
+  await _step('openSeriesModelBoxes', openSeriesModelBoxes);
 
   final container = ProviderContainer(
     overrides: [
@@ -262,14 +271,6 @@ void main() async {
     () => container.read(taskListProvider.notifier).backfillCreatedAtIfNeeded(),
   );
 
-  // Top up each recurring series' rolling window. Launch-only by design
-  // (see docs/DECISIONS.md) — the Timeline stays a pure reader, and the
-  // 8-week window means a session would have to stay open for weeks before
-  // running dry. Idempotent, so this never duplicates existing instances.
-  await _step(
-    'taskList.materializeDueRecurrences',
-    () => container.read(taskListProvider.notifier).materializeDueRecurrences(),
-  );
   // Collapses duplicate same-titled Zone series into one, and detaches
   // any orphaned series (rows carrying a recurrenceId whose template no
   // longer exists). Runs BEFORE the top-up below, so materialization
@@ -310,6 +311,11 @@ void main() async {
       await container
           .read(zoneListProvider.notifier)
           .refreshScheduledNotifications();
+      // The task refresh cancelled every alert, occurrence alerts included,
+      // so their recorded state is stale — clear it and re-register.
+      await container.read(occurrenceAlertStateRepositoryProvider).clear();
+      await recordDeviceZone(container);
+      await container.read(occurrenceStoreProvider.notifier).reconcileAlerts();
     }),
   );
 
@@ -445,9 +451,11 @@ class AmbleApp extends ConsumerWidget {
           if (app == null) {
             throw StateError('MaterialApp built without a navigator child');
           }
-          return AppTouchVisualizer(
-            enabled: showTouches,
-            child: AppTimeFormat(use24Hour: use24Hour, child: app),
+          return AppWindowInsets(
+            child: AppTouchVisualizer(
+              enabled: showTouches,
+              child: AppTimeFormat(use24Hour: use24Hour, child: app),
+            ),
           );
         },
         // Gate, provider-watched so each CTA's write triggers an immediate
@@ -782,8 +790,13 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
   /// change at runtime via the dev toggle — `ref.watch`ing
   /// `devTrackedTabInCycleProvider` needs a live rebuild, which a
   /// once-computed static list can never give.
-  List<Widget> _screens(bool trackedTabVisible, TimelineDisplayMode mode) => [
-    TimelineScreen(mode: mode),
+  List<Widget> _screens(
+    bool trackedTabVisible,
+    TimelineDisplayMode mode, {
+    required bool wide,
+  }) => [
+    // Wide windows add a Day / Week / Month switch above the Days page.
+    if (wide) DesktopDaysHost(mode: mode) else TimelineScreen(mode: mode),
     const InboxScreen(),
     if (trackedTabVisible) const TrackedBehaviorListScreen(),
     const SettingsScreen(),
@@ -800,6 +813,46 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
     if (trackedTabVisible) 'Patterns',
   ];
 
+  /// A nav destination tap — shared by [AppTopNav] and [AppSideNav].
+  /// Tapping Days (index 0) again while it's already selected toggles
+  /// spatial/Zone view — the nav-tap half of "1 nav item, but when tapped
+  /// again it switches view," mirrored by `AppCalendarHeader`'s own
+  /// switcher button reaching the same provider.
+  void _selectDestination(int index, {required bool zoneViewEnabled}) {
+    if (index == 0 && _selectedIndex == 0) {
+      _clearTimelineSelections();
+      ref.read(zoneViewEnabledSettingProvider.notifier).set(!zoneViewEnabled);
+      return;
+    }
+    if (index != _selectedIndex) _clearTimelineSelections();
+    setState(() {
+      _pageMotionForward = index > _selectedIndex;
+      _selectedIndex = index;
+    });
+  }
+
+  /// The Settings gear — shared by [AppTopNav] and [AppSideNav].
+  void _openSettings(int settingsIndex) {
+    final wasAlreadyOnSettings = _selectedIndex == settingsIndex;
+    if (!wasAlreadyOnSettings) _clearTimelineSelections();
+    setState(() {
+      _pageMotionForward = settingsIndex > _selectedIndex;
+      _selectedIndex = settingsIndex;
+    });
+    // Only on an actual transition INTO Settings, not on a repeated tap
+    // while already there — the gear fires on every tap regardless of the
+    // current tab, unlike a destination's own already-selected check.
+    if (!wasAlreadyOnSettings &&
+        FeatureFlags.subscriptionEnabled &&
+        RevenueCatConfig.isAvailable) {
+      unawaited(
+        ref
+            .read(purchasesRepositoryProvider)
+            .presentPaywallIfNeeded(RevenueCatConfig.pantaProEntitlementId),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
@@ -815,7 +868,12 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
     final timelineMode = zoneViewEnabled
         ? TimelineDisplayMode.zone
         : TimelineDisplayMode.spatial;
-    final screens = _screens(trackedTabVisible, timelineMode);
+    // Wide windows (desktop, web, iPad landscape) swap the top nav for a
+    // left sidebar beside the content — see ShellLayoutTokens.
+    final wide =
+        MediaQuery.sizeOf(context).width >=
+        ShellLayoutTokens.sideNavMinWindowWidth;
+    final screens = _screens(trackedTabVisible, timelineMode, wide: wide);
     final activeIndex = _selectedIndex < screens.length ? _selectedIndex : 0;
     final activeViewId = activeIndex == 0
         ? 'day'
@@ -827,7 +885,10 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
     _publishScene(
       _ShellScene(
         key:
-            '$activeIndex:$activeViewId:${timelineMode.name}:$trackedTabVisible',
+            // `wide`: crossing the breakpoint swaps the Days page itself
+            // (Day / Week / Month host vs. the phone Timeline).
+            '$activeIndex:$activeViewId:${timelineMode.name}:'
+            '$trackedTabVisible:$wide',
         viewId: activeViewId,
         forward: _pageMotionForward,
         child: screens[activeIndex],
@@ -855,8 +916,15 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
 
     ref.listen(notificationTapProvider, (previous, taskId) {
       if (taskId == null) return;
-      final task = ref.read(taskByIdProvider(taskId));
-      final scheduledAt = task?.scheduledAt;
+      // A series-occurrence alert carries its key; open the day it is on
+      // now (it may have been moved).
+      final occurrenceKey = occurrenceKeyFromPayload(taskId);
+      final scheduledAt = occurrenceKey == null
+          ? ref.read(taskByIdProvider(taskId))?.scheduledAt
+          : ref
+                .read(occurrenceStoreProvider.notifier)
+                .currentTask(occurrenceKey)
+                .scheduledAt;
       if (scheduledAt != null) {
         ref.read(selectedDateProvider.notifier).goTo(scheduledAt);
       }
@@ -889,158 +957,148 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
       child: Scaffold(
         resizeToAvoidBottomInset: false,
         body: SafeArea(
+          // The wide layout takes the top inset inside each pane instead,
+          // so the panes' backgrounds reach the window's top edge.
+          top: !wide,
           bottom: false,
           // Header painted after the page, so its floating pane's shadow falls
           // over the page rather than under it.
-          child: AppHeaderOverContent(
-            // No side padding here: the header's elements inset themselves
-            // (the nav text, and the route pane with its own tighter inset).
-            header: Padding(
-              padding: EdgeInsets.only(bottom: theme.spacingSm),
-              child: AppShellHeader(
-                controller: _chromeController,
-                child: AppTopNav(
-                  destinations: _topNavLabels(trackedTabVisible),
-                  // **Real bug, fixed 2026-09-22**: this used to fall back
-                  // to `0` whenever `_selectedIndex` was Settings' own
-                  // index (out of range for `destinations`, which never
-                  // includes it) — which made "Days" light up as active
-                  // while Settings was actually open. `_TopNavLabel`'s own
-                  // `i == selectedIndex` comparison never matches `i`
-                  // against Settings' index anyway (`destinations` only
-                  // ever runs 0..settingsIndex-1), so passing the real
-                  // index through unclamped correctly leaves every label
-                  // unselected — `settingsSelected` below is what now
-                  // carries the "Settings is active" signal instead, onto
-                  // the gear icon.
-                  selectedIndex: _selectedIndex,
-                  settingsSelected: _selectedIndex == screens.length - 1,
-                  // Tapping the Day destination (index 0) again while it's
-                  // already selected toggles spatial/Zone view — the
-                  // nav-tap half of "1 nav item, but when tapped again it
-                  // switches view," mirrored by `AppCalendarHeader`'s own
-                  // switcher button reaching the same provider.
-                  onDestinationSelected: (index) {
-                    if (index == 0 && _selectedIndex == 0) {
-                      _clearTimelineSelections();
-                      ref
-                          .read(zoneViewEnabledSettingProvider.notifier)
-                          .set(!zoneViewEnabled);
-                      return;
-                    }
-                    if (index != _selectedIndex) {
-                      _clearTimelineSelections();
-                    }
-                    setState(() {
-                      _pageMotionForward = index > _selectedIndex;
-                      _selectedIndex = index;
-                    });
-                  },
-                  onSettingsTap: () {
-                    final settingsIndex = screens.length - 1;
-                    final wasAlreadyOnSettings =
-                        _selectedIndex == settingsIndex;
-                    if (!wasAlreadyOnSettings) {
-                      _clearTimelineSelections();
-                    }
-                    setState(() {
-                      _pageMotionForward = settingsIndex > _selectedIndex;
-                      _selectedIndex = settingsIndex;
-                    });
-                    // Only on an actual transition INTO Settings, not on a
-                    // repeated tap while already there — `onSettingsTap` fires
-                    // on every tap regardless of current tab, unlike
-                    // `onDestinationSelected`'s own already-selected check
-                    // above.
-                    if (!wasAlreadyOnSettings &&
-                        FeatureFlags.subscriptionEnabled &&
-                        RevenueCatConfig.isAvailable) {
-                      unawaited(
-                        ref
-                            .read(purchasesRepositoryProvider)
-                            .presentPaywallIfNeeded(
-                              RevenueCatConfig.pantaProEntitlementId,
-                            ),
-                      );
-                    }
-                  },
+          child: _withSideNav(
+            wide: wide,
+            sideNav: AppSideNav(
+              destinations: _topNavLabels(trackedTabVisible),
+              selectedIndex: _selectedIndex,
+              settingsSelected: _selectedIndex == screens.length - 1,
+              onDestinationSelected: (index) =>
+                  _selectDestination(index, zoneViewEnabled: zoneViewEnabled),
+              onSettingsTap: () => _openSettings(screens.length - 1),
+            ),
+            child: AppHeaderOverContent(
+              // No side padding here: the header's elements inset themselves
+              // (the nav text, and the route pane with its own tighter inset).
+              header: _wideAwareHeader(
+                wide: wide,
+                header: Padding(
+                  padding: EdgeInsets.only(bottom: theme.spacingSm),
+                  child: AppShellHeader(
+                    controller: _chromeController,
+                    child: wide
+                        ? const SizedBox.shrink()
+                        : AppTopNav(
+                            destinations: _topNavLabels(trackedTabVisible),
+                            // **Real bug, fixed 2026-09-22**: this used to fall back
+                            // to `0` whenever `_selectedIndex` was Settings' own
+                            // index (out of range for `destinations`, which never
+                            // includes it) — which made "Days" light up as active
+                            // while Settings was actually open. `_TopNavLabel`'s own
+                            // `i == selectedIndex` comparison never matches `i`
+                            // against Settings' index anyway (`destinations` only
+                            // ever runs 0..settingsIndex-1), so passing the real
+                            // index through unclamped correctly leaves every label
+                            // unselected — `settingsSelected` below is what now
+                            // carries the "Settings is active" signal instead, onto
+                            // the gear icon.
+                            selectedIndex: _selectedIndex,
+                            settingsSelected:
+                                _selectedIndex == screens.length - 1,
+                            onDestinationSelected: (index) =>
+                                _selectDestination(
+                                  index,
+                                  zoneViewEnabled: zoneViewEnabled,
+                                ),
+                            onSettingsTap: () =>
+                                _openSettings(screens.length - 1),
+                          ),
+                  ),
                 ),
               ),
-            ),
-            content: AppShellChromeScope(
-              controller: _chromeController,
-              child: Stack(
-                children: [
-                  Navigator(
-                    key: _contentNavigatorKey,
-                    observers: [_contentContextMenuNavigatorObserver],
-                    onGenerateRoute: (_) => PageRouteBuilder<void>(
-                      pageBuilder: (context, animation, secondaryAnimation) =>
-                          ValueListenableBuilder<_ShellScene?>(
-                            valueListenable: _sceneNotifier,
-                            builder: (context, scene, child) => scene == null
-                                ? const SizedBox.shrink()
-                                : AppViewTransition(
-                                    viewId: scene.viewId,
-                                    slide: true,
-                                    forward: scene.forward,
-                                    child: scene.child,
-                                  ),
-                          ),
-                      transitionDuration: Duration.zero,
-                      reverseTransitionDuration: Duration.zero,
+              content: AppShellChromeScope(
+                controller: _chromeController,
+                child: Stack(
+                  children: [
+                    Navigator(
+                      key: _contentNavigatorKey,
+                      observers: [_contentContextMenuNavigatorObserver],
+                      onGenerateRoute: (_) => PageRouteBuilder<void>(
+                        pageBuilder: (context, animation, secondaryAnimation) =>
+                            ValueListenableBuilder<_ShellScene?>(
+                              valueListenable: _sceneNotifier,
+                              builder: (context, scene, child) => scene == null
+                                  ? const SizedBox.shrink()
+                                  : AppViewTransition(
+                                      viewId: scene.viewId,
+                                      // Fade by default; the slide (with
+                                      // trailing items) is a dev toggle.
+                                      slide: ref.watch(
+                                        devPageSlideMotionProvider,
+                                      ),
+                                      forward: scene.forward,
+                                      child: scene.child,
+                                    ),
+                            ),
+                        transitionDuration: Duration.zero,
+                        reverseTransitionDuration: Duration.zero,
+                      ),
                     ),
-                  ),
-                  SafeArea(
-                    top: false,
-                    child: Align(
-                      alignment: Alignment.bottomLeft,
-                      child: Padding(
-                        // Sides match the bottom gap (safe area + clearance).
-                        padding: EdgeInsets.only(
-                          left: DockTokens.edgeInset(theme, MediaQuery.viewPaddingOf(context)),
-                          right: DockTokens.edgeInset(theme, MediaQuery.viewPaddingOf(context)),
-                          bottom: theme.spacingBottomClearance,
-                        ),
-                        child: AppBottomDock(
-                          activeView: zoneViewEnabled
-                              ? AppBottomDockView.list
-                              : AppBottomDockView.timeline,
-                          onSelectView: (view) {
-                            _clearTimelineSelections();
-                            ref
-                                .read(zoneViewEnabledSettingProvider.notifier)
-                                .set(view == AppBottomDockView.list);
-                          },
-                          onEditTap: () {
-                            _clearTimelineSelections();
-                            showEditScreen(
-                              context,
-                              navigator: _contentNavigatorKey.currentState,
-                            );
-                          },
-                          whatMattersEnabled: ref.watch(
-                            whatMattersEnabledSettingProvider,
+                    SafeArea(
+                      top: false,
+                      child: Align(
+                        alignment: Alignment.bottomLeft,
+                        child: Padding(
+                          // Sides match the bottom gap (safe area + clearance).
+                          padding: EdgeInsets.only(
+                            left: DockTokens.edgeInset(
+                              theme,
+                              MediaQuery.viewPaddingOf(context),
+                            ),
+                            right: DockTokens.edgeInset(
+                              theme,
+                              MediaQuery.viewPaddingOf(context),
+                            ),
+                            bottom: theme.spacingBottomClearance,
                           ),
-                          onWhatMattersTap: () {
-                            _clearTimelineSelections();
-                            ref
-                                .read(
-                                  whatMattersEnabledSettingProvider.notifier,
-                                )
-                                .set(
-                                  !ref.read(whatMattersEnabledSettingProvider),
-                                );
-                          },
-                          visible:
-                              activeIndex == 0 &&
-                              ref.watch(pendingTaskDraftProvider) == null &&
-                              !ref.watch(editModeEnabledProvider),
+                          child: AppBottomDock(
+                            activeView: zoneViewEnabled
+                                ? AppBottomDockView.list
+                                : AppBottomDockView.timeline,
+                            onSelectView: (view) {
+                              _clearTimelineSelections();
+                              ref
+                                  .read(zoneViewEnabledSettingProvider.notifier)
+                                  .set(view == AppBottomDockView.list);
+                            },
+                            onEditTap: () {
+                              _clearTimelineSelections();
+                              showEditScreen(
+                                context,
+                                navigator: _contentNavigatorKey.currentState,
+                              );
+                            },
+                            whatMattersEnabled: ref.watch(
+                              whatMattersEnabledSettingProvider,
+                            ),
+                            onWhatMattersTap: () {
+                              _clearTimelineSelections();
+                              ref
+                                  .read(
+                                    whatMattersEnabledSettingProvider.notifier,
+                                  )
+                                  .set(
+                                    !ref.read(
+                                      whatMattersEnabledSettingProvider,
+                                    ),
+                                  );
+                            },
+                            visible:
+                                activeIndex == 0 &&
+                                ref.watch(pendingTaskDraftProvider) == null &&
+                                !ref.watch(editModeEnabledProvider),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -1048,4 +1106,47 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
       ),
     );
   }
+
+  /// The shell header. In the wide layout the nav lives in the sidebar, so
+  /// the header only takes space while a screen has claimed it (e.g. the
+  /// Edit screen's Things | Zones switch) — otherwise the content starts at
+  /// the top instead of under an empty nav-height band.
+  Widget _wideAwareHeader({required bool wide, required Widget header}) => wide
+      ? ListenableBuilder(
+          listenable: _chromeController,
+          builder: (context, _) => _chromeController.header == null
+              ? const SizedBox.shrink()
+              : header,
+        )
+      : header;
+
+  /// The wide layout puts [sideNav] left of the shell and the create/edit
+  /// panel ([TaskInspectorPanel], zero-width while closed) right of it;
+  /// narrower windows keep the phone layout ([child] alone, with its own
+  /// top nav, and tasks open in bottom sheets).
+  Widget _withSideNav({
+    required bool wide,
+    required Widget sideNav,
+    required Widget child,
+  }) => wide
+      // Pointer-sized controls: every button rung one step smaller.
+      ? DesktopDensity.apply(
+          context,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              sideNav,
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    top: MediaQuery.paddingOf(context).top,
+                  ),
+                  child: child,
+                ),
+              ),
+              const TaskInspectorPanel(),
+            ],
+          ),
+        )
+      : child;
 }

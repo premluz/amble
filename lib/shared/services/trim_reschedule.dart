@@ -74,9 +74,8 @@ List<TaskTrim>? computeTrimMoves({
   var frontier = newStart.add(draggedDuration);
   if (newStart.isBefore(dayStart) || frontier.isAfter(dayEnd)) return null;
 
-  final candidates =
-      sameDayTasks.where((t) => t.id != draggedTask.id).toList()
-        ..sort((a, b) => a.scheduledAt!.compareTo(b.scheduledAt!));
+  final candidates = sameDayTasks.where((t) => t.id != draggedTask.id).toList()
+    ..sort((a, b) => a.scheduledAt!.compareTo(b.scheduledAt!));
 
   final trims = <String, TaskTrim>{};
   final slotStart = <String, DateTime>{

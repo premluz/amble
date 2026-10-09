@@ -107,34 +107,57 @@ class AppTopNav extends StatelessWidget {
                     2,
                 0,
               ),
-              child: AppNavPress(
+              child: AppNavSettingsGear(
+                selected: settingsSelected,
                 onTap: onSettingsTap,
-                borderRadius: BorderRadius.circular(theme.radiusSm),
-                builder: (context, pressed) => SizedBox(
-                  width: appButtonHeightFor(theme, AppButtonSize.md),
-                  height: appButtonHeightFor(theme, AppButtonSize.md),
-                  child: Center(
-                    child: AppNavWash(
-                      visible: pressed,
-                      child: Icon(
-                        Icons.settings_outlined,
-                        // Same active/inactive contrast a selected destination
-                        // label uses. Inactive state uses colorForegroundTertiary,
-                        // not colorTextTertiary — same resting tone as the main
-                        // nav's own inactive label, but named for a non-text
-                        // element since this is an icon, not text.
-                        color: settingsSelected
-                            ? theme.colorTextPrimary
-                            : theme.colorForegroundTertiary,
-                        size: TopNavTokens.settingsIconSize,
-                      ),
-                    ),
-                  ),
-                ),
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The main nav's Settings control — a gear icon in a nav-sized tap box,
+/// shared by [AppTopNav] (phone) and `AppSideNav` (wide layout) so the two
+/// navs can't drift into two different Settings buttons.
+class AppNavSettingsGear extends StatelessWidget {
+  const AppNavSettingsGear({
+    super.key,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context).extension<AmbleTheme>()!;
+    final size = appButtonHeightFor(theme, AppButtonSize.md);
+    return AppNavPress(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(theme.radiusSm),
+      builder: (context, pressed) => SizedBox(
+        width: size,
+        height: size,
+        child: Center(
+          child: AppNavWash(
+            visible: pressed,
+            child: Icon(
+              Icons.settings_outlined,
+              // Same active/inactive contrast a selected destination label
+              // uses. Inactive is colorForegroundTertiary, not
+              // colorTextTertiary — the same resting tone as an inactive
+              // label, named for a non-text element.
+              color: selected
+                  ? theme.colorTextPrimary
+                  : theme.colorForegroundTertiary,
+              size: TopNavTokens.settingsIconSize,
+            ),
+          ),
+        ),
       ),
     );
   }

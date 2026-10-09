@@ -24,6 +24,7 @@ import 'task_state_style.dart';
 import 'duration_label.dart';
 import 'external_event_block.dart' show showExternalCalendarEventInfo;
 import 'external_event_capsule_block.dart' show DashedPillRail;
+import 'list_current_time_marker.dart';
 import 'resize_handle.dart';
 
 /// The minimum height a [ZoneContainerBlock] renders at even when its own
@@ -296,10 +297,19 @@ class ZoneContainerBlock extends StatelessWidget {
     this.onHeaderTap,
     this.flatStyle = false,
     this.whatMattersEnabled = false,
+    this.currentTime,
   });
 
   final AmbleTheme theme;
   final Zone zone;
+
+  /// When set, the List view's "now" marker renders inside this zone,
+  /// between the member rows that have started and those that haven't —
+  /// confirmed via AskUserQuestion: "inside the zone, between its tasks."
+  /// The caller (`ZoneDayTimeline`) passes it only to the one zone that is
+  /// in progress at [currentTime]; null everywhere else, including the
+  /// spatial view, which draws its own minute-exact indicator instead.
+  final DateTime? currentTime;
 
   /// Read-only device-calendar events whose time falls inside this zone's
   /// window (see `ZoneContainment.externalEvents`/`resolveZoneContainment`)
@@ -505,6 +515,31 @@ class ZoneContainerBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final durationMinutes = zone.endMinutes - zone.startMinutes;
+    final memberRows = _mergedRows();
+    final now = currentTime;
+    final nowIndex = now == null
+        ? null
+        : nowMarkerIndex<Object>(
+            memberRows,
+            (row) => switch (row) {
+              Task(:final scheduledAt) => scheduledAt,
+              ExternalCalendarEvent(:final start) => start,
+              _ => null,
+            },
+            now,
+          );
+    final nowMarker = now == null
+        ? null
+        : ListCurrentTimeMarker(
+            key: const ValueKey('now-marker'),
+            time: now,
+            // Pulled out of the list inset AND this card's own left
+            // padding (zero in flat style), into the hour-label column.
+            labelShift:
+                zoneRowTimeLabelEdgeInset -
+                zoneContentLeftInset(theme, context) -
+                (flatStyle ? 0 : ZoneInsetTokens.side(theme)),
+          );
 
     // Wrapped in a Stack (a genuinely new, always-present ancestor, same
     // discipline as TaskCapsuleBlock's own resize-handle wrap) so the two
@@ -619,8 +654,13 @@ class ZoneContainerBlock extends StatelessWidget {
                   ),
                 ),
                 SizedBox(height: theme.spacingSm),
-                for (final (index, row) in _mergedRows().indexed) ...[
-                  if (index > 0) SizedBox(height: theme.spacingXs),
+                for (final (index, row) in memberRows.indexed) ...[
+                  if (index == nowIndex) ...[
+                    if (index > 0) SizedBox(height: theme.spacingXs),
+                    nowMarker!,
+                  ],
+                  if (index > 0 || index == nowIndex)
+                    SizedBox(height: theme.spacingXs),
                   if (row is Task)
                     // Keyed by task id (moved onto this outer
                     // WhatMattersRow wrapper, above _ZoneTaskRow) so a
@@ -689,6 +729,10 @@ class ZoneContainerBlock extends StatelessWidget {
                         startTimeOnlyVisible: startTimeOnlyVisible,
                       ),
                     ),
+                ],
+                if (nowIndex == memberRows.length) ...[
+                  if (memberRows.isNotEmpty) SizedBox(height: theme.spacingXs),
+                  nowMarker!,
                 ],
               ],
             ),
@@ -1312,7 +1356,7 @@ class _ZoneTaskRow extends StatelessWidget {
                       // `textTaskTitleZone` itself documents.
                       style: state.title(
                         theme.textTaskTitle.copyWith(
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                       maxLines: 1,

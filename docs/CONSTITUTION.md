@@ -32,7 +32,7 @@ These apply to every persisted entity (Task, TrackedBehavior, and anything added
 
 **Visual treatment stays calm, never alarm-coded** — a marker glyph in `colorTextSecondary` at the title's own optical size, rendered as a zero-width `WidgetSpan` that hangs in the margin *before* the title so a marked and an unmarked task's titles start at the identical x ("with negative margin so the task name remains aligned with all other tasks"). Never red, never a filled badge: per design principle 1, making a few tasks legible must not make every other task read as failing to matter. The alignment property is load-bearing — a marker that displaced its own title would break the shared text column every row lines up against — and is covered by a test asserting rendered x-positions.
 
-**Per-instance for recurring tasks**, like every other ordinary field edit: marking one materialized occurrence important does not mark its series, per the single-instance rule above. Toggled from the task action sheet via the plain `TaskList.updateTask`, so there is no "affect future instances" choice to offer.
+**Per-instance for recurring tasks**, like every other ordinary field edit: marking one occurrence important does not mark its series, per the single-instance rule above. Toggled from the task action sheet via the plain `TaskList.updateTask`, so there is no "affect future instances" choice to offer.
 
 Orthogonal to `TrackedBehavior` — a tracked task can independently also be important, composing the same way every other independent dimension on `Task` already does.
 
@@ -43,16 +43,40 @@ Easy to conflate; must stay architecturally separate:
 - **Recurring** is a scheduling property of an ordinary `Task` — "this repeats every Monday." It does not imply tracking, history, or a target, and stays a lightweight rule on `Task` itself, never its own entity.
 - **`TrackedBehavior`** is a genuinely different, persistent object — see below. A recurring task and a tracked behavior are independent concepts that often co-occur, but neither implies the other.
 
-## Recurring tasks — materialized instances, not virtual expansion
+## Recurring tasks — series with computed occurrences (2026-10-02)
 
-A recurring task is implemented as **real, persisted `Task` records, one per occurrence** ("materialized instances") — not a single rule row with occurrences computed on the fly for display. This is a deliberate choice: notifications, completion tracking, reschedule, export/import, and the Inbox already operate on the assumption that every `Task` visible in the app is a real Hive record. Virtual/on-the-fly expansion would require every one of those systems to learn to handle non-persisted tasks — a much larger, more invasive change than the extra storage cost of materialized rows.
+**Supersedes "materialized instances, not virtual expansion"** (the original
+MVP model: one stored `Task` row per occurrence, an 8-week rolling window,
+the first row owning the rule). Replaced on direct request once the
+behavioral contract was settled; existing data was cleared rather than
+migrated (staging data only). History in docs/DECISIONS.md (2026-10-02
+entries). The full behavioral rules live in **docs/RECURRENCE_CONTRACT.md**,
+which is authoritative for repeating-task behavior.
 
-Model shape:
-- `RecurrenceRule` — not a persisted entity of its own for MVP, just a value object embedded on the originating `Task`: `frequency` (`daily | weekly`), `interval` (int, e.g. every 2 weeks), optional `daysOfWeek` (for weekly), optional `endDate`. Kept deliberately small — no monthly/yearly, no complex RRULE-style patterns, for MVP.
-- Every `Task` generated from a rule carries `recurrenceId` (the UUID of the originating rule/series) and `recurrenceRule` only on the first ("template") instance — later instances reference `recurrenceId` but don't repeat the full rule.
-- Generation is a **rolling window**: instances are materialized some fixed distance ahead (e.g. 8 weeks) whenever the app opens or a relevant screen loads, not all at once to `endDate`. This avoids generating years of rows for an open-ended recurrence.
-- **Editing scope (reversed 2026-09-06, confirmed directly)**: a recurring instance's start time/duration edit now asks — via an "Affect future instances" toggle, off by default — whether the change is "just this occurrence" (`TaskList.updateTaskThisInstanceOnly`, isolates the write, marks `originalScheduledAt` so later regeneration passes spare it) or "this and all future occurrences" (`TaskList.updateTaskWithChangedRecurrence`'s prune-and-regenerate cascade, which every recurring field edit already ran before this reversal — there was no prior "just this one" path at all for a plain time/duration change). **Amended 2026-09-07, confirmed directly**: "this and all future occurrences" now RE-ANCHORS the series — it rewrites the template's own time-of-day and duration and realigns every occurrence from the edited day forward, *including ones the user had previously moved individually* ("each day ocurrence could be changed indivudally unless any change is with 'change all future' then they'd align with that"). An individual move is therefore no longer permanent protection: it holds until an explicit "all future" edit overrides it, which is the later and stronger instruction. `completed`/`skipped` occurrences are still never realigned — those are a record of what happened, not part of the plan forward. Before this amendment the template's `scheduledAt` was never updated at all, so an "all future" time change silently failed to reach the series and instead produced a duplicate parallel generation — see docs/ERROR_LOG.md. Deleting a materialized instance already had its own separate scope choice before this reversal ("this occurrence" vs. "the whole series," via `removeTask`) and is unaffected by it. ~~The original MVP lock (editing/deleting only ever affects that single instance, "this one," never the series — "Edit all future occurrences" deferred, not built in the first pass) is superseded by the above.~~
-- A recurring task can independently also be linked to a `TrackedBehavior` via `behaviorId` (each materialized instance carries its own `behaviorId`/`actualAmount`, same as any task) — the two systems compose without special-casing.
+- A **`Series`** (`shared/models/series.dart`) owns the rule, independently of
+  any occurrence — deleting an occurrence can never orphan or delete it. It
+  holds **effective-dated revisions** (rule + default fields from a date), so
+  a series edit never changes past days.
+- **Occurrences are computed** (`shared/services/occurrence_resolver.dart`),
+  never stored as rows. Identity is series id + original date + same-day
+  ordinal — not start time, and never the current date after a move.
+- An **`OccurrenceRecord`** is stored only when an occurrence differs or
+  something happened: per-field overrides (inherited / set / cleared — a
+  note never freezes anything), outcome (done / skipped / cancelled;
+  omitted and upcoming are computed), measured value, note, completion date.
+- **All writes are typed commands** (`RecurrenceCommandService`): retry-safe
+  via command ids, version-checked, with aspect-level undo.
+- **The existing `Task` UI shows occurrences as unsaved tasks**; one routing
+  repository (`SeriesRoutingTaskRepository`) turns every `TaskList` write on
+  them into commands. Occurrences are never stored as tasks and never appear
+  in `taskListProvider` / `getTasks()`; screens that need them read the
+  occurrence store for their date range.
+- `RecurrenceRule` is unchanged (daily/weekly, interval, days, end date).
+  `Task.recurrenceId` / `recurrenceRule` stay as Hive fields for index
+  stability; on an occurrence task they carry the series id and that date's
+  rule.
+- Repeat alerts are planned for a 14-day window with a 48-alert budget and
+  reconciled, never blanket-cancelled.
 
 ## TrackedBehavior — persistent tracked objects (feature-flaggable)
 

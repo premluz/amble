@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../tokens/semantic_theme.dart';
 import 'app_button.dart';
+import 'app_sheet_presentation.dart';
 
 /// The small horizontal grip bar shown at the top of a draggable sheet —
 /// the "this can be dragged/tapped" affordance, visually distinct from
@@ -55,12 +56,16 @@ class AppSheetTopHandle extends StatelessWidget {
 
   final AmbleTheme theme;
 
+  /// None in a popover: it can't be dragged, so the bar would mislead.
   @override
-  Widget build(BuildContext context) => Align(
-    alignment: Alignment.topCenter,
-    child: Padding(
-      padding: EdgeInsets.only(top: theme.spacingSm),
-      child: AppSheetHandle(theme: theme),
-    ),
-  );
+  Widget build(BuildContext context) =>
+      AppSheetPresentationScope.of(context) == AppSheetPresentation.popover
+      ? const SizedBox.shrink()
+      : Align(
+          alignment: Alignment.topCenter,
+          child: Padding(
+            padding: EdgeInsets.only(top: theme.spacingSm),
+            child: AppSheetHandle(theme: theme),
+          ),
+        );
 }

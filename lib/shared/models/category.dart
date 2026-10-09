@@ -28,10 +28,12 @@ abstract final class BuiltInCategoryIds {
   static const String general = '00000000-0000-4000-8000-000000000001';
   static const String health = '00000000-0000-4000-8000-000000000002';
   static const String work = '00000000-0000-4000-8000-000000000003';
+
   /// The renamed "Home" category (was "Personal", home icon) — SAME id as
   /// before the rename. See this class's own doc comment.
   static const String personal = '00000000-0000-4000-8000-000000000004';
   static const String admin = '00000000-0000-4000-8000-000000000005';
+
   /// The NEW "Personal" category (user icon) — distinct from [personal]
   /// above, which is now "Home." Named `personalNew` rather than
   /// reusing/renumbering to keep every existing id constant's own name

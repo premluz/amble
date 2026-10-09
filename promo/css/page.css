@@ -1,0 +1,180 @@
+/* Page chrome around the film. Layout: one centred column — eyebrow, the 16:9
+   stage, a control row. The stage itself is fixed artwork (see film.css). */
+:root {
+  --page-bg: oklch(0.954 0.0045 85);
+  --page-fg: oklch(0.217 0.002 247.9);
+  --page-muted: oklch(0.525 0.011 252.9);
+  --page-line: oklch(0.872 0.005 106.5);
+  --page-control: oklch(1 0 0);
+  --page-accent: oklch(0.519 0.149 287.5);
+  --page-frame: oklch(0.185 0.003 145.5);
+  --page-on-accent: oklch(0.974 0.006 84.6);
+  --font-sans: 'DM Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-num: 'IBM Plex Sans Condensed', 'Arial Narrow', ui-sans-serif, sans-serif;
+  --page-max: 1280px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --page-bg: oklch(0.185 0.003 145.5);
+    --page-fg: oklch(0.955 0.005 95.1);
+    --page-muted: oklch(0.76 0.013 91.6);
+    --page-line: oklch(0.338 0.007 118.2);
+    --page-control: oklch(0.279 0.006 121.8);
+    --page-accent: oklch(0.821 0.098 292.6);
+    --page-frame: oklch(0.12 0.003 145.5);
+    --page-on-accent: oklch(0.185 0.003 145.5);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --page-bg: oklch(0.185 0.003 145.5);
+  --page-fg: oklch(0.955 0.005 95.1);
+  --page-muted: oklch(0.76 0.013 91.6);
+  --page-line: oklch(0.338 0.007 118.2);
+  --page-control: oklch(0.279 0.006 121.8);
+  --page-accent: oklch(0.821 0.098 292.6);
+  --page-frame: oklch(0.12 0.003 145.5);
+  --page-on-accent: oklch(0.185 0.003 145.5);
+  color-scheme: dark;
+}
+
+body {
+  background: var(--page-bg);
+  color: var(--page-fg);
+  font-family: var(--font-sans);
+  padding-inline: 16px;
+  padding-block: 24px;
+}
+
+.wrap {
+  max-width: var(--page-max);
+  margin-inline: auto;
+  display: grid;
+  gap: 14px;
+}
+
+.eyebrow {
+  margin: 0;
+  font-family: var(--font-num);
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  color: var(--page-muted);
+}
+
+.frame {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--page-frame);
+}
+
+#stage {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  transform: scale(var(--fit, 0.5));
+  transform-origin: 0 0;
+}
+
+.poster-play {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.poster-play[data-on='0'] {
+  display: none;
+}
+
+.poster-play span {
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: var(--page-accent);
+  color: var(--page-on-accent);
+  box-shadow: 0 10px 30px oklch(0.217 0.002 247.9 / 0.25);
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.ctl {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding-inline: 14px;
+  border: 1px solid var(--page-line);
+  border-radius: 999px;
+  background: var(--page-control);
+  color: var(--page-fg);
+  font: 600 14px/1 var(--font-sans);
+  cursor: pointer;
+}
+
+.ctl:focus-visible,
+.poster-play:focus-visible,
+#scrub:focus-visible {
+  outline: 2px solid var(--page-accent);
+  outline-offset: 2px;
+}
+
+.ctl .when-playing,
+.is-playing .ctl .when-paused {
+  display: none;
+}
+
+.is-playing .ctl .when-playing {
+  display: inline;
+}
+
+#scrub {
+  flex: 1 1 220px;
+  min-width: 0;
+  accent-color: var(--page-accent);
+}
+
+.time {
+  font-family: var(--font-num);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--page-muted);
+}
+
+body.capture {
+  padding: 0;
+}
+
+body.capture .wrap {
+  max-width: none;
+  display: block;
+}
+
+body.capture .frame {
+  width: 1920px;
+  height: 1080px;
+  border-radius: 0;
+}
+
+body.capture .eyebrow,
+body.capture .controls,
+body.capture .poster-play {
+  display: none;
+}

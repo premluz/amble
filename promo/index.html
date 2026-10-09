@@ -1,0 +1,65 @@
+<meta charset="utf-8">
+<title>Amble Promo Film</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400..700&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="css/page.css">
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/film.css">
+<link rel="stylesheet" href="css/copy.css">
+<link rel="stylesheet" href="css/grid.css">
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/dock.css">
+<link rel="stylesheet" href="css/timeline.css">
+<link rel="stylesheet" href="css/task.css">
+<link rel="stylesheet" href="css/list.css">
+<link rel="stylesheet" href="css/voice.css">
+<link rel="stylesheet" href="css/overlays.css">
+
+<main class="wrap">
+  <p class="eyebrow">Amble · promo film · 1:04 · 16:9</p>
+  <div class="frame">
+    <div id="stage" role="img" aria-label="Amble promo film: one day, from a rigid calendar to a plan that moves with it."></div>
+    <button id="poster-play" class="poster-play" type="button" aria-label="Play film">
+      <span><svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg></span>
+    </button>
+  </div>
+  <div class="controls">
+    <button id="play" class="ctl" type="button" aria-label="Play">
+      <svg class="when-paused" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>
+      <svg class="when-playing" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5h3.5v14H7zm6.5 0H17v14h-3.5z"/></svg>
+      <span class="when-paused">Play</span>
+      <span class="when-playing">Pause</span>
+    </button>
+    <input id="scrub" type="range" min="0" max="64" step="0.01" value="0" aria-label="Film position">
+    <span id="time" class="time">0:00 / 1:04</span>
+    <button id="restart" class="ctl" type="button">Restart</button>
+  </div>
+</main>
+
+<script src="js/motion.js"></script>
+<script src="js/data.js"></script>
+<script src="js/dom.js"></script>
+<script src="js/film.js"></script>
+<script src="js/ui/stage.js"></script>
+<script src="js/ui/copy.js"></script>
+<script src="js/ui/phone.js"></script>
+<script src="js/ui/dock.js"></script>
+<script src="js/ui/day.js"></script>
+<script src="js/ui/listview.js"></script>
+<script src="js/ui/things.js"></script>
+<script src="js/ui/patterns.js"></script>
+<script src="js/ui/effects.js"></script>
+<script src="js/ui/mark.js"></script>
+<script src="js/scenes/common.js"></script>
+<script src="js/scenes/s01_dawn.js"></script>
+<script src="js/scenes/s02_grid.js"></script>
+<script src="js/scenes/s03_reveal.js"></script>
+<script src="js/scenes/s04_push.js"></script>
+<script src="js/scenes/s05_zones.js"></script>
+<script src="js/scenes/s06_done.js"></script>
+<script src="js/scenes/s07_voice.js"></script>
+<script src="js/scenes/s08_matters.js"></script>
+<script src="js/scenes/s09_patterns.js"></script>
+<script src="js/scenes/s10_close.js"></script>
+<script src="js/main.js"></script>

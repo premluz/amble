@@ -154,7 +154,7 @@ class _ProfileCard extends StatelessWidget {
                     profile.title,
                     style: theme.textBody.copyWith(
                       color: theme.colorTextPrimary,
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                   SizedBox(height: theme.spacingXs),

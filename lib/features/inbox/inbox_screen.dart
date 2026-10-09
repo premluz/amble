@@ -505,7 +505,13 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
             // it sat one rung smaller right next to the "+" it's meant to
             // match.
             Positioned(
-              right: DockTokens.edgeInset(theme, MediaQuery.viewPaddingOf(context)) + theme.sizeButtonLg + theme.spacingMd,
+              right:
+                  DockTokens.edgeInset(
+                    theme,
+                    MediaQuery.viewPaddingOf(context),
+                  ) +
+                  theme.sizeButtonLg +
+                  theme.spacingMd,
               bottom: theme.spacingBottomClearance,
               child: SafeArea(
                 top: false,

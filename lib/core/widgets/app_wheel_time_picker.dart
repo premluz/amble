@@ -158,7 +158,7 @@ class _AppWheelPickerState extends State<AppWheelPicker> {
           ':',
           style: theme.textTitle.copyWith(
             color: theme.colorTextPrimary,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w600,
           ),
         ),
         Expanded(
@@ -255,7 +255,7 @@ class _AppWheelTimePickerState extends State<AppWheelTimePicker> {
             textAlign: TextAlign.center,
             style: theme.textTitle.copyWith(
               color: theme.colorTextPrimary,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
             ),
           ),
           SizedBox(height: theme.spacingLg),

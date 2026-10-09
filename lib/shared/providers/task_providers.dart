@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:uuid/uuid.dart';
 
 import '../models/category.dart';
 import '../models/recurrence_rule.dart';
+import '../models/series_revision.dart';
 import '../models/task.dart';
 import '../models/task_status.dart';
 import '../repositories/hive_task_repository.dart';
@@ -14,59 +14,15 @@ import '../repositories/task_repository.dart';
 import '../repositories/preferences_repository.dart';
 import '../services/cascade_reschedule.dart';
 import '../services/trim_reschedule.dart';
-import '../services/recurrence_generator.dart';
 import 'notification_providers.dart';
+import 'occurrence_store.dart';
 import 'preferences_providers.dart';
+import 'series_routing_task_repository.dart';
 import 'trial_providers.dart';
 
 part 'task_providers.g.dart';
 
 const taskBoxName = 'tasks';
-
-const _uuid = Uuid();
-
-/// Finds the template task (the one row carrying [Task.recurrenceRule])
-/// for whichever series [instance] belongs to, searching [allTasks]. A
-/// plain top-level function (not a provider method) so both
-/// [TaskList._findSeriesTemplate] and Task Detail's edit-schedule UI can
-/// resolve "which row actually owns this series' rule" against a list
-/// they already have, without a second repository read.
-///
-/// Throws (via `firstWhere`'s default) if [instance] isn't recurring or
-/// its series has no template — callers only reach this after confirming
-/// `instance.isRecurring`, so that's a real invariant violation, not a
-/// normal control-flow case to swallow.
-Task findSeriesTemplate(Task instance, List<Task> allTasks) {
-  final seriesId = instance.recurrenceId;
-  return allTasks.firstWhere(
-    (task) => task.recurrenceId == seriesId && task.isRecurrenceTemplate,
-  );
-}
-
-/// The ids of every task in [allTasks] that is "bad state": recurring
-/// (`recurrenceId != null`) but belonging to a series with NO template row
-/// (no task sharing that `recurrenceId` has `isRecurrenceTemplate == true`)
-/// — exactly the shape `findSeriesTemplate`'s `firstWhere` throws `Bad
-/// state: No element` on. `deleteTask` now prevents this going forward (see
-/// its own doc comment — deleting a template promotes a successor first),
-/// but pre-existing data from before that fix (or any other path that
-/// could orphan a series) can still have rows in this state, permanently
-/// unopenable until removed. Pure and dev-tool-only — the real app has no
-/// "repair" affordance for this by design; the fix is not creating the
-/// orphan in the first place, not silently patching one back together.
-List<String> findOrphanedRecurringTaskIds(List<Task> allTasks) {
-  final templatedSeriesIds = <String>{
-    for (final task in allTasks)
-      if (task.isRecurrenceTemplate && task.recurrenceId != null)
-        task.recurrenceId!,
-  };
-  return [
-    for (final task in allTasks)
-      if (task.recurrenceId != null &&
-          !templatedSeriesIds.contains(task.recurrenceId))
-        task.id,
-  ];
-}
 
 /// Outcome of [TaskList.importTasks] — per-task counts so the caller can
 /// show a summary without needing to inspect individual tasks. See
@@ -96,7 +52,12 @@ class ImportResult {
 @Riverpod(keepAlive: true)
 TaskRepository taskRepository(Ref ref) {
   final box = Hive.box<Task>(taskBoxName);
-  return HiveTaskRepository(box);
+  // Series occurrences shown as tasks are routed to the series model; real
+  // tasks are untouched — see the class's own doc.
+  return SeriesRoutingTaskRepository(
+    HiveTaskRepository(box),
+    () => ref.read(occurrenceStoreProvider.notifier),
+  );
 }
 
 @Riverpod(keepAlive: true)
@@ -106,11 +67,10 @@ class TaskList extends _$TaskList {
     return ref.watch(taskRepositoryProvider).getTasks();
   }
 
-  /// Creates a task. Passing [recurrenceRule] makes it the template of a
-  /// new recurring series: the template is saved, then the rest of the
-  /// rolling window is materialized immediately so the series is visible
-  /// on the Timeline right away rather than only after the next launch.
-  /// Returns the saved task, so a caller can refer to it afterwards
+  /// Creates a task. Passing [recurrenceRule] creates a repeating series
+  /// instead (docs/RECURRENCE_CONTRACT.md) and returns its first occurrence,
+  /// shown as a task. Returns the saved task, so a caller can refer to it
+  /// afterwards
   /// without a second lookup — the Timeline uses this to know which block
   /// to animate in (see `recently_saved_task_provider.dart`). Callers with
   /// no such need simply ignore the value.
@@ -142,6 +102,23 @@ class TaskList extends _$TaskList {
     if (!ref.read(canCreateTaskProvider)) {
       throw const TrialExpiredException();
     }
+    if (recurrenceRule != null) {
+      return ref
+          .read(occurrenceStoreProvider.notifier)
+          .createSeries(
+            rule: recurrenceRule,
+            startAt: scheduledAt,
+            durationMinutes: durationMinutes,
+            defaults: SeriesDefaults(
+              title: title,
+              description: description,
+              categoryId: categoryId,
+              behaviorId: behaviorId,
+              notificationsEnabled: notificationsEnabled,
+              isImportant: isImportant,
+            ),
+          );
+    }
     final task = Task.create(
       title: title,
       notes: notes,
@@ -149,70 +126,14 @@ class TaskList extends _$TaskList {
       scheduledAt: scheduledAt,
       durationMinutes: durationMinutes,
       categoryId: categoryId,
-      // A series is identified by its template's own id — no second
-      // identifier to keep in sync, and the template is trivially findable.
-      recurrenceId: recurrenceRule == null ? null : _uuid.v4(),
-      recurrenceRule: recurrenceRule,
       notificationsEnabled: notificationsEnabled,
       isImportant: isImportant,
       templateId: templateId,
     )..behaviorId = behaviorId;
     await ref.read(taskRepositoryProvider).saveTask(task);
     _syncNotificationInBackground(task);
-
-    if (recurrenceRule != null) {
-      await _materializeSeries(task);
-    }
     _refresh();
     return task;
-  }
-
-  /// Generates and persists any missing instances for [template]'s series.
-  /// Writes go through [TaskRepository] like every other mutation — the
-  /// generator itself only computes, it never persists.
-  Future<void> _materializeSeries(Task template) async {
-    final repository = ref.read(taskRepositoryProvider);
-    final seriesId = template.recurrenceId;
-    if (seriesId == null) return;
-
-    final existing = repository
-        .getTasks()
-        .where((task) => task.recurrenceId == seriesId)
-        .toList();
-
-    final generated = generateRecurrenceInstances(
-      template: template,
-      existingInstances: existing,
-      now: DateTime.now(),
-    );
-
-    for (final instance in generated) {
-      await repository.saveTask(instance);
-      // Deliberately NOT synced per instance. Materialization writes up to
-      // 8 weeks of rows at once, and scheduling an OS alarm for each one is
-      // what drove this app past Android's 500-alarm cap (see
-      // docs/ERROR_LOG.md). Instances inside the notification horizon get
-      // their alarm from `refreshScheduled` at launch instead — which is
-      // also where an instance that later moves *into* the horizon picks
-      // one up.
-    }
-  }
-
-  /// Tops up every recurring series' rolling window. Called once at app
-  /// launch (see main.dart) — deliberately not on every Timeline build, so
-  /// day-swiping stays a pure read. Idempotent: instances already covering
-  /// an occurrence are skipped, so repeat calls create no duplicates.
-  Future<void> materializeDueRecurrences() async {
-    final templates = ref
-        .read(taskRepositoryProvider)
-        .getTasks()
-        .where((task) => task.isRecurrenceTemplate)
-        .toList();
-
-    for (final template in templates) {
-      await _materializeSeries(template);
-    }
-    if (templates.isNotEmpty) _refresh();
   }
 
   /// One-time migration, gated exactly like `CategoryList
@@ -343,450 +264,12 @@ class TaskList extends _$TaskList {
     _refresh();
   }
 
-  /// Applies [instance]'s CURRENT [Task.behaviorId] (and the paired
-  /// `actualAmount` reset when unlinking) to every OTHER instance of its
-  /// recurring series. Confirmed via AskUserQuestion: a tracked-behaviour
-  /// link, unlike every other per-instance field (title, notes, category,
-  /// isImportant — see `Task.isImportant`'s own doc comment), is meant to
-  /// describe the whole repeated task rather than one occurrence of it, so
-  /// setting or clearing it from any single instance's edit sheet is meant
-  /// to apply series-wide rather than stay scoped to that one row.
-  ///
-  /// A no-op for a non-recurring task, or one whose `behaviorId` didn't
-  /// actually change this save — callers pass [instance] AFTER their own
-  /// `updateTask`/`updateTaskThisInstanceOnly`/etc. call already persisted
-  /// it, so this only needs to fan the same value out to its siblings, not
-  /// save [instance] itself again.
-  Future<void> propagateBehaviorLinkToSeries(Task instance) async {
-    final seriesId = instance.recurrenceId;
-    if (seriesId == null) return;
-
-    final repository = ref.read(taskRepositoryProvider);
-    final siblings = repository
-        .getTasks()
-        .where(
-          (task) => task.recurrenceId == seriesId && task.id != instance.id,
-        )
-        .toList();
-    if (siblings.isEmpty) return;
-
-    for (final sibling in siblings) {
-      // Same orphaned-data guard as every other behaviorId-editing save
-      // site: an amount recorded against a behavior this task no longer
-      // belongs to would be meaningless data left behind.
-      if (instance.behaviorId == null) sibling.actualAmount = null;
-      sibling.behaviorId = instance.behaviorId;
-      await repository.saveTask(sibling);
-    }
-    _refresh();
-  }
-
-  /// Saves [task]'s other field changes AND turns it into a new recurring
-  /// series' template in one call — the edit-flow equivalent of
-  /// [createTask]'s own `recurrenceRule` parameter, for a task that was
-  /// plain (never recurring) when editing began. Requested directly: the
-  /// "Repeats" panel is now also reachable from Task Detail's edit-schedule
-  /// step, not just the create form.
-  ///
-  /// Deliberately a SEPARATE method from [updateTask], not an added
-  /// optional parameter there — every other [updateTask] caller (a plain
-  /// reschedule/retitle/etc.) must never accidentally materialize a
-  /// series, and a method that only sometimes does something this
-  /// consequential based on whether an argument happened to be null would
-  /// be an easy future bug to introduce by omission.
-  ///
-  /// [task] must not already be recurring (`task.isRecurring == false`) —
-  /// changing/cancelling an EXISTING series' rule is
-  /// [updateTaskWithChangedRecurrence]/[disableTaskRecurrence] instead
-  /// (a separate follow-up, since it needs a template lookup and a
-  /// future-instances policy this method never had to consider). This is
-  /// an assertion, not a runtime branch, so calling the wrong one fails
-  /// loudly in debug rather than silently doing the wrong thing.
-  Future<void> updateTaskWithNewRecurrence(
-    Task task,
-    RecurrenceRule recurrenceRule,
-  ) async {
-    assert(
-      !task.isRecurring,
-      'updateTaskWithNewRecurrence is for turning Repeats on for a '
-      'previously-plain task only — task is already part of a series.',
-    );
-    task.recurrenceId = _uuid.v4();
-    task.recurrenceRule = recurrenceRule;
-    await ref.read(taskRepositoryProvider).saveTask(task);
-    _syncNotificationInBackground(task);
-    await _materializeSeries(task);
-    _refresh();
-  }
-
-  /// See the top-level [findSeriesTemplate] — this just supplies the
-  /// current task list from the repository.
-  Task _findSeriesTemplate(Task instance) {
-    return findSeriesTemplate(
-      instance,
-      ref.read(taskRepositoryProvider).getTasks(),
-    );
-  }
-
-  /// Deletes every future instance of [template]'s series that the user
-  /// hasn't touched — confirmed via AskUserQuestion as the safe default
-  /// for both a rule change and a disable: "untouched" is still `pending`,
-  /// was never individually rescheduled (`originalScheduledAt` is null,
-  /// so it's still sitting at the slot the series itself generated it
-  /// for), and is scheduled today or later. Anything the user completed,
-  /// skipped, or moved is a real action on that specific occurrence and is
-  /// never deleted just because the series rule changed underneath it.
-  /// The template itself is never a candidate (it's the row being edited,
-  /// not one of its own generated instances).
-  ///
-  /// [alsoSpare] is the instance the CALLER is editing right now, if it's
-  /// not the template — real bug, reported directly: a future instance's
-  /// own field edit (category, duration, ...) is saved just before this
-  /// runs (see [updateTaskWithChangedRecurrence]), but that instance is
-  /// itself "untouched" by this method's own definition (still `pending`,
-  /// `originalScheduledAt` still null — editing a plain field sets
-  /// neither), so it was deleted and immediately replaced by a fresh copy
-  /// regenerated from the template's OLD field values, silently discarding
-  /// the very edit that was just saved.
-  Future<void> _deleteUntouchedFutureInstances(
-    Task template, {
-    Task? alsoSpare,
-  }) async {
-    final repository = ref.read(taskRepositoryProvider);
-    final seriesId = template.recurrenceId;
-    final now = DateTime.now();
-    final todayStart = DateTime(now.year, now.month, now.day);
-
-    final toDelete = repository
-        .getTasks()
-        .where(
-          (task) =>
-              task.recurrenceId == seriesId &&
-              task.id != template.id &&
-              task.id != alsoSpare?.id &&
-              task.status == TaskStatus.pending &&
-              task.originalScheduledAt == null &&
-              task.scheduledAt != null &&
-              !task.scheduledAt!.isBefore(todayStart),
-        )
-        .toList();
-
-    for (final task in toDelete) {
-      await repository.deleteTask(task.id);
-    }
-  }
-
-  /// The "all future occurrences" counterpart to
-  /// [_deleteUntouchedFutureInstances] — prunes every PENDING instance of
-  /// [template]'s series dated [from] or later, **including ones the user
-  /// previously moved individually**, so the series can be re-materialized
-  /// wholesale at its new time/duration.
-  ///
-  /// Confirmed directly (2026-09-07), reversing CONSTITUTION.md's earlier
-  /// "an individually-moved occurrence is never realigned by a series
-  /// edit" rule: "each day ocurrence could be changed indivudally unless
-  /// any change is with 'change all future' then they'd align with that."
-  /// So an individual move is no longer permanent protection — an explicit
-  /// "all future" edit is the stronger, later instruction and wins.
-  ///
-  /// `completed`/`skipped` instances are still spared, deliberately and
-  /// unlike moved ones (confirmed directly): those are a record of what
-  /// actually happened, not part of the plan going forward, and rewriting
-  /// their time would be rewriting history.
-  ///
-  /// [from] is the DATE of the occurrence the user actually edited, not
-  /// today — "this and all future occurrences" realigns from the edited
-  /// day forward and leaves the days between now and it alone (confirmed
-  /// directly, matching how the phrase reads in other calendar apps).
-  Future<void> _deleteFutureInstancesForRealign(
-    Task template, {
-    required DateTime from,
-    Task? alsoSpare,
-  }) async {
-    final repository = ref.read(taskRepositoryProvider);
-    final seriesId = template.recurrenceId;
-    final fromDay = DateTime(from.year, from.month, from.day);
-
-    final toDelete = repository
-        .getTasks()
-        .where(
-          (task) =>
-              task.recurrenceId == seriesId &&
-              task.id != template.id &&
-              task.id != alsoSpare?.id &&
-              // Pending only: completed/skipped occurrences are history.
-              task.status != TaskStatus.completed &&
-              task.status != TaskStatus.skipped &&
-              task.scheduledAt != null &&
-              !task.scheduledAt!.isBefore(fromDay),
-        )
-        .toList();
-
-    for (final task in toDelete) {
-      await repository.deleteTask(task.id);
-      await _cancelNotificationSafely(task.id);
-    }
-  }
-
-  /// Changes an EXISTING series' rule (e.g. different days) from any of
-  /// its instances — requested directly as the follow-up to
-  /// [updateTaskWithNewRecurrence]. Resolves to the series' template
-  /// (see [_findSeriesTemplate]) regardless of which instance [task] is,
-  /// saves [task]'s own other field changes first, prunes untouched
-  /// future instances under the OLD rule (see
-  /// [_deleteUntouchedFutureInstances]), then re-materializes under the
-  /// new one so the Timeline reflects the change immediately rather than
-  /// only after the next rolling-window top-up.
-  Future<void> updateTaskWithChangedRecurrence(
-    Task task,
-    RecurrenceRule recurrenceRule,
-  ) async {
-    assert(
-      task.isRecurring,
-      'updateTaskWithChangedRecurrence is for a task already part of a '
-      'series — use updateTaskWithNewRecurrence to start one.',
-    );
-
-    await ref.read(taskRepositoryProvider).saveTask(task);
-    _syncNotificationInBackground(task);
-
-    final template = _findSeriesTemplate(task);
-
-    // `description` is a template-level field — same rung as title/
-    // duration/category conceptually ("what the task IS," not a per-day
-    // fact) — requested directly: editing it should change every future
-    // instance the same way a duration/time change already re-anchors
-    // the template below. NOTE: unlike duration/time, this is NOT
-    // gated behind [_showFutureInstancesToggle]/`_affectFutureInstances`
-    // — same as category (see `task_providers_test.dart`'s own confirmed
-    // "category stays LOCAL to the edited instance" case), a plain
-    // field-only edit here always reaches this method rather than
-    // `updateTaskThisInstanceOnly`. Deliberately NOT copying
-    // `categoryId` here too: that field is confirmed (by an existing,
-    // explicit test) to stay local to the edited instance under "all
-    // future occurrences" — description is a separate, new field with
-    // its own explicitly-requested propagation semantics, not a
-    // license to change category's already-settled behavior.
-    template.description = task.description;
-
-    // Did the edited instance move to a different time-of-day, or change
-    // duration, relative to what the series itself generates? That's a
-    // RE-ANCHOR, not just a rule change.
-    //
-    // Real bug, reported directly ("see duplicates, sometimes even 2") and
-    // confirmed from an exported backup: this method used to update only
-    // `template.recurrenceRule` and never `template.scheduledAt`, so an
-    // "all future occurrences" TIME edit left the template anchored at its
-    // old time. `_materializeSeries` then regenerated the whole window
-    // back at that old time while the edited instance stayed stranded at
-    // the new one — and because the generator matched exact `DateTime`s,
-    // none of the old rows looked occupied, so a complete parallel series
-    // was created. Three stacked generations of one daily series (56 rows
-    // each) were found in real data, 232 stranded rows total.
-    // Detected by comparing [task] against the series' OTHER untouched
-    // instances, not against the template's own stored fields: the
-    // repository hands back the same live object the caller already
-    // mutated (Hive `get` is not a copy), and [task] is very often the
-    // template itself, so any before/after comparison against it would
-    // trivially read "unchanged" and the realign would never fire.
-    // Sibling instances are the reliable witness of what the series
-    // currently generates.
-    final edited = task.scheduledAt;
-    final siblings = ref
-        .read(taskRepositoryProvider)
-        .getTasks()
-        .where(
-          (other) =>
-              other.recurrenceId == template.recurrenceId &&
-              other.id != task.id &&
-              other.status == TaskStatus.pending &&
-              other.originalScheduledAt == null &&
-              other.scheduledAt != null,
-        )
-        .toList();
-    final witness = siblings.isEmpty ? null : siblings.first;
-    final timeChanged =
-        witness != null &&
-        edited != null &&
-        (witness.scheduledAt!.hour != edited.hour ||
-            witness.scheduledAt!.minute != edited.minute);
-    final durationChanged =
-        witness != null &&
-        task.durationMinutes != null &&
-        witness.durationMinutes != task.durationMinutes;
-    final isRealign = timeChanged || durationChanged;
-
-    if (isRealign && edited != null) {
-      // Everything from the EDITED occurrence's day forward is rebuilt at
-      // the new time/duration — including instances the user had moved
-      // individually, per the confirmed "'change all future' wins" rule
-      // (see [_deleteFutureInstancesForRealign]).
-      await _deleteFutureInstancesForRealign(
-        template,
-        from: edited,
-        alsoSpare: task,
-      );
-
-      // Re-anchor the template's own time-of-day and duration, keeping its
-      // own DATE — the template is the series' start, and "all future"
-      // changes when occurrences happen, never which day the series began.
-      final templateDate = template.scheduledAt;
-      if (templateDate != null && timeChanged) {
-        template.scheduledAt = DateTime(
-          templateDate.year,
-          templateDate.month,
-          templateDate.day,
-          edited.hour,
-          edited.minute,
-        );
-      }
-      if (durationChanged) template.durationMinutes = task.durationMinutes;
-
-      // The edited instance now sits exactly where the series generates
-      // it, so any `originalScheduledAt`/`rescheduled` marker left over
-      // from an earlier individual move is stale — clearing it keeps it
-      // eligible for a future prune (and stops it rendering as "moved"
-      // when it no longer is). Only cleared when it genuinely realigns:
-      // an edit that moved it to a time the series does NOT generate is
-      // still a real individual move.
-      if (task.id != template.id && task.originalScheduledAt != null) {
-        task.originalScheduledAt = null;
-        if (task.status == TaskStatus.rescheduled) {
-          task.status = TaskStatus.pending;
-        }
-        await ref.read(taskRepositoryProvider).saveTask(task);
-      }
-    } else {
-      // Rule-only change (e.g. different days): keep the long-standing
-      // conservative prune, which spares anything the user completed,
-      // skipped, or moved.
-      await _deleteUntouchedFutureInstances(template, alsoSpare: task);
-    }
-
-    template.recurrenceRule = recurrenceRule;
-    await ref.read(taskRepositoryProvider).saveTask(template);
-    _syncNotificationInBackground(template);
-    await _materializeSeries(template);
-    await _reanchorTemplateIfExcludedByRule(template);
-    _refresh();
-  }
-
-  /// If [template]'s own `recurrenceRule` no longer generates an occurrence
-  /// on the weekday [template] itself sits on (e.g. narrowing a daily
-  /// series to weekdays-only when the template happened to be created on a
-  /// Saturday), promotes the earliest surviving sibling to take over as the
-  /// series' template and deletes the stale one — mirroring
-  /// [_promoteSuccessorTemplate]'s "hand the rule to a successor" shape,
-  /// but triggered by a rule CHANGE excluding the template's own day rather
-  /// than an explicit delete.
-  ///
-  /// Real bug, found and logged 2026-09-19, fixed here: the template row
-  /// is deliberately exempt from [_deleteUntouchedFutureInstances] (it's
-  /// the row being edited, not one of its own generated instances) and
-  /// from [generateRecurrenceInstances]'s own day-occupancy check (its day
-  /// reads as already "taken" regardless of whether the NEW rule would
-  /// still generate it) — so narrowing the rule away from the template's
-  /// own day left it stranded as a visible instance the new rule would
-  /// never have produced on its own.
-  ///
-  /// A no-op when the template's day still matches (the overwhelmingly
-  /// common case — most rule edits don't relocate the anchor) or when no
-  /// sibling exists yet to promote (nothing generated in the window, e.g.
-  /// an `endDate` in the past — leaving the lone stray template is still
-  /// better than deleting the series' only remaining row).
-  Future<void> _reanchorTemplateIfExcludedByRule(Task template) async {
-    final anchor = template.scheduledAt;
-    final rule = template.recurrenceRule;
-    if (anchor == null || rule == null) return;
-
-    final stillIncluded = recurrenceRuleIncludesWeekday(
-      rule,
-      weekday: anchor.weekday,
-      anchorWeekday: anchor.weekday,
-    );
-    if (stillIncluded) return;
-
-    final repository = ref.read(taskRepositoryProvider);
-    final candidates =
-        repository
-            .getTasks()
-            .where(
-              (task) =>
-                  task.recurrenceId == template.recurrenceId &&
-                  task.id != template.id &&
-                  task.scheduledAt != null,
-            )
-            .toList()
-          ..sort((a, b) => a.scheduledAt!.compareTo(b.scheduledAt!));
-    if (candidates.isEmpty) return;
-
-    final successor = candidates.first;
-    successor.recurrenceRule = rule;
-    await repository.saveTask(successor);
-    await repository.deleteTask(template.id);
-    await _cancelNotificationSafely(template.id);
-  }
-
-  /// Saves [task]'s own field changes — including a moved `scheduledAt`
-  /// or a changed `durationMinutes` — without touching any other instance
-  /// in its series or the series' own template/rule. The "just this
-  /// occurrence" half of the recurring-edit scope choice requested
-  /// directly (the "this and all future occurrences" half is
-  /// [updateTaskWithChangedRecurrence], which already ran this exact
-  /// cascade for every recurring edit before this method existed).
-  ///
-  /// Sets `originalScheduledAt` the same way a drag-reschedule
-  /// ([rescheduleTask]) already does, if not already set — this is the
-  /// single signal [_deleteUntouchedFutureInstances] uses to tell an
-  /// intentionally-touched instance apart from one still sitting where
-  /// the series generated it; without it, the next rule change or rolling
-  /// materialization pass would treat this instance as untouched and
-  /// silently delete/regenerate over the very edit this method just made.
-  Future<void> updateTaskThisInstanceOnly(Task task) async {
-    assert(
-      task.isRecurring,
-      'updateTaskThisInstanceOnly is for a single instance of an existing '
-      'series — a plain task has no series to isolate the edit from, so '
-      'use updateTask instead.',
-    );
-    task.originalScheduledAt ??= task.scheduledAt;
-    await ref.read(taskRepositoryProvider).saveTask(task);
-    _syncNotificationInBackground(task);
-    _refresh();
-  }
-
-  /// Turns off an EXISTING series from any of its instances — requested
-  /// directly, "which would remove future instances." Saves [task]'s own
-  /// other field changes, prunes untouched future instances (see
-  /// [_deleteUntouchedFutureInstances]), then clears the TEMPLATE's own
-  /// `recurrenceId`/`recurrenceRule` — confirmed via AskUserQuestion: the
-  /// template becomes an ordinary task (same as one that never repeated),
-  /// not a "was recurring" husk that keeps `recurrenceId` for history.
-  /// Past/touched instances keep their own `recurrenceId` untouched, so
-  /// they still show as having been part of a series — only the template
-  /// detaches.
-  Future<void> disableTaskRecurrence(Task task) async {
-    assert(
-      task.isRecurring,
-      'disableTaskRecurrence is for a task already part of a series.',
-    );
-    await ref.read(taskRepositoryProvider).saveTask(task);
-    _syncNotificationInBackground(task);
-
-    final template = _findSeriesTemplate(task);
-    await _deleteUntouchedFutureInstances(template);
-    template.recurrenceId = null;
-    template.recurrenceRule = null;
-    await ref.read(taskRepositoryProvider).saveTask(template);
-    _refresh();
-  }
-
   /// Creates a standalone copy of [source] — same title/category/
   /// description/schedule as the original, but a fresh UUID (via
-  /// [Task.create]) and no link to the original's recurrence series: a
-  /// duplicate is a new, independent task, not another instance of that
-  /// series. Status/completion are deliberately not copied either — a
-  /// duplicate starts fresh as `pending`, matching [Task.create]'s own
+  /// [Task.create]) and no link to any series: a duplicate is a new,
+  /// independent task, not another occurrence. Status/completion are
+  /// deliberately not copied either — a duplicate starts fresh as
+  /// `pending`, matching [Task.create]'s own
   /// defaults. [notes] is also deliberately NOT copied — it's a snapshot
   /// of that specific day (see its own doc comment), which a new,
   /// independent task shouldn't inherit; [description] (what the task
@@ -1038,32 +521,10 @@ class TaskList extends _$TaskList {
     _refresh();
   }
 
-  /// Deletes one task by id. When that task is a series TEMPLATE (the one
-  /// row carrying the rule), the rule is handed to the earliest surviving
-  /// instance first, so the series keeps exactly one template instead of
-  /// being orphaned.
-  ///
-  /// Real bug, reported directly ("I removed the original as a single
-  /// instance and have a read error, but state no element"): removing a
-  /// template via the "Remove this occurrence" branch left every other
-  /// instance still carrying the series' `recurrenceId` — so each still
-  /// reported `isRecurring == true` — with NO row carrying the rule at
-  /// all. `findSeriesTemplate`'s `firstWhere` then threw `Bad state: No
-  /// element` on the next open/edit of ANY of them, including from the
-  /// detail sheet's own `initState`, which made those tasks impossible to
-  /// open at all. Reproduced directly: deleting the template of a daily
-  /// series left 56 orphaned instances and threw on the first edit.
-  ///
-  /// Promotion (rather than detaching every instance, or refusing the
-  /// delete) keeps the user's actual intent — "remove just this
-  /// occurrence" — while preserving the series' own invariant that
-  /// exactly one row carries the rule.
+  /// Deletes one task by id. For a series occurrence the repository
+  /// routes this to a cancellation (see `SeriesRoutingTaskRepository`).
   Future<void> deleteTask(String id) async {
     final repository = ref.read(taskRepositoryProvider);
-    final deleted = repository.getTaskById(id);
-    if (deleted != null && deleted.isRecurrenceTemplate) {
-      await _promoteSuccessorTemplate(deleted);
-    }
     await repository.deleteTask(id);
     await _cancelNotificationSafely(id);
     _refresh();
@@ -1078,9 +539,9 @@ class TaskList extends _$TaskList {
   /// over the raw repository call, one `_refresh()` after the loop) —
   /// same fix, same established pattern, applied to delete.
   ///
-  /// Preserves [deleteTask]'s own per-row side effects (recurrence-
-  /// template promotion, notification cancellation) for every row —
-  /// this is NOT a naive `repository.deleteTask` loop, it's the same
+  /// Preserves [deleteTask]'s own per-row side effect (notification
+  /// cancellation) for every row — this is NOT a naive
+  /// `repository.deleteTask` loop, it's the same
   /// logic [deleteTask] runs, just sharing one `_refresh()` at the end.
   /// **Notification cancellation is deliberately NOT awaited here**, unlike
   /// [deleteTask]'s own single-row path. `cancelForTask` is a real
@@ -1099,10 +560,6 @@ class TaskList extends _$TaskList {
     final repository = ref.read(taskRepositoryProvider);
     final deletedIds = <String>[];
     for (final id in ids) {
-      final deleted = repository.getTaskById(id);
-      if (deleted != null && deleted.isRecurrenceTemplate) {
-        await _promoteSuccessorTemplate(deleted);
-      }
       await repository.deleteTask(id);
       deletedIds.add(id);
     }
@@ -1120,127 +577,23 @@ class TaskList extends _$TaskList {
     }
   }
 
-  /// Hands [outgoing]'s recurrence rule to the earliest other instance of
-  /// its series, so deleting [outgoing] doesn't leave the series without a
-  /// template. No-op when it's the series' last remaining row — nothing is
-  /// left to carry the rule, and the series ceases to exist along with it.
-  ///
-  /// The successor keeps its own `scheduledAt`, so it becomes the series'
-  /// new anchor. That genuinely re-anchors future generation (a weekly
-  /// rule with no explicit `daysOfWeek` follows the anchor's own weekday),
-  /// which is the correct reading of "the first occurrence was removed" —
-  /// and for a rule with explicit days, generation is unchanged.
-  Future<void> _promoteSuccessorTemplate(Task outgoing) async {
-    final repository = ref.read(taskRepositoryProvider);
-    final seriesId = outgoing.recurrenceId;
-    if (seriesId == null) return;
+  /// "Delete series": ends [instance]'s series from today, keeping its
+  /// history (docs/RECURRENCE_CONTRACT.md §8). Returns the command id so the
+  /// caller's Undo can reverse exactly this change.
+  Future<String> deleteTaskSeries(Task instance) =>
+      ref.read(occurrenceStoreProvider.notifier).endSeriesOf(instance);
 
-    final candidates =
-        repository
-            .getTasks()
-            .where(
-              (task) =>
-                  task.recurrenceId == seriesId &&
-                  task.id != outgoing.id &&
-                  task.scheduledAt != null,
-            )
-            .toList()
-          ..sort((a, b) => a.scheduledAt!.compareTo(b.scheduledAt!));
-    if (candidates.isEmpty) return;
+  /// "Remove this occurrence" of a series: a cancellation, not a deletion
+  /// (docs/RECURRENCE_CONTRACT.md §5). Returns the command id for Undo.
+  Future<String> cancelOccurrence(Task occurrence) => ref
+      .read(occurrenceStoreProvider.notifier)
+      .cancelOccurrence(occurrence.id);
 
-    final successor = candidates.first;
-    successor.recurrenceRule = outgoing.recurrenceRule;
-    await repository.saveTask(successor);
-  }
-
-  /// Every row belonging to [instance]'s own recurring series — the exact
-  /// candidate set [deleteTaskSeries] below queries, exposed so a caller
-  /// (`removeTask`'s own undo snapshot) can capture every row THAT method
-  /// might touch, including ones it only mutates rather than deletes
-  /// (the surviving template, if any — see [deleteTaskSeries]'s own doc
-  /// comment), before calling it. Read-only; never used by
-  /// [deleteTaskSeries] itself, which keeps its own inline query so the
-  /// two can't silently drift apart from having only one still reading
-  /// the repository directly.
-  List<Task> tasksInSeries(Task instance) {
-    final seriesId = instance.recurrenceId;
-    return ref
-        .read(taskRepositoryProvider)
-        .getTasks()
-        .where((task) => task.recurrenceId == seriesId)
-        .toList();
-  }
-
-  /// Removes [instance] and every OTHER instance of its series scheduled
-  /// today or later, then clears the template's recurrence fields so no
-  /// further instances generate. Requested directly: removing a recurring
-  /// task now asks "this one or all", and this is the "all" branch.
-  ///
-  /// Past instances are deliberately kept — same reasoning as
-  /// [disableTaskRecurrence]: they're a record of work that actually
-  /// happened, and "remove this repeating task" reads as "stop it from
-  /// here on," not "erase its history." Confirmed via AskUserQuestion.
-  ///
-  /// Unlike [_deleteUntouchedFutureInstances], this does NOT spare future
-  /// instances the user has completed/skipped/rescheduled. That protection
-  /// exists so a *rule change* can't silently erase deliberate work; an
-  /// explicit delete is the opposite — leaving a rescheduled future
-  /// instance behind would look like the delete had failed. Also confirmed
-  /// via AskUserQuestion rather than assumed.
-  ///
-  /// The template row itself is deleted too when it falls today or later.
-  /// When it's in the past it survives (as history) but is stripped of its
-  /// recurrence fields, so it stops being a template and generates
-  /// nothing further.
-  Future<void> deleteTaskSeries(Task instance) async {
-    assert(
-      instance.isRecurring,
-      'deleteTaskSeries is for a task that belongs to a series — use '
-      'deleteTask for a plain one.',
-    );
-    final repository = ref.read(taskRepositoryProvider);
-    final seriesId = instance.recurrenceId;
-    final now = DateTime.now();
-    final todayStart = DateTime(now.year, now.month, now.day);
-
-    final seriesTasks = repository
-        .getTasks()
-        .where((task) => task.recurrenceId == seriesId)
-        .toList();
-
-    // Resolved before any deletion, since the template may itself be one
-    // of the rows about to be removed.
-    final template = seriesTasks.firstWhere(
-      (task) => task.isRecurrenceTemplate,
-      orElse: () => instance,
-    );
-
-    for (final task in seriesTasks) {
-      final isFuture =
-          task.scheduledAt != null && !task.scheduledAt!.isBefore(todayStart);
-      // The tapped instance goes regardless of when it falls — the user
-      // asked for it directly.
-      if (isFuture || task.id == instance.id) {
-        await repository.deleteTask(task.id);
-        await _cancelNotificationSafely(task.id);
-      }
-    }
-
-    // A past template survives as history, so detach it explicitly or it
-    // would keep generating new instances on the next rolling-window
-    // top-up.
-    final templateSurvived =
-        template.scheduledAt != null &&
-        template.scheduledAt!.isBefore(todayStart) &&
-        template.id != instance.id;
-    if (templateSurvived) {
-      template.recurrenceId = null;
-      template.recurrenceRule = null;
-      await repository.saveTask(template);
-    }
-
-    _refresh();
-  }
+  /// Undo for a series change ([deleteTaskSeries], [cancelOccurrence], or a
+  /// series created via [createTask]). Throws `UndoConflictException` if
+  /// what it changed has changed since.
+  Future<void> undoSeriesChange(String commandId) =>
+      ref.read(occurrenceStoreProvider.notifier).undo(commandId);
 
   /// Cancels [id]'s notification without letting a platform failure block
   /// the delete that prompted it — mirrors [_syncNotificationSafely].
@@ -1341,21 +694,6 @@ class TaskList extends _$TaskList {
       await _cancelNotificationSafely(task.id);
     }
     _refresh();
-  }
-
-  /// Dev-only: deletes every "bad state" orphaned-recurring task (see
-  /// [findOrphanedRecurringTaskIds]) — the rows that throw `Bad state: No
-  /// element` on open because their series has no template. Returns the
-  /// count removed, so the Settings button can report what it did.
-  Future<int> clearBadStateTasks() async {
-    final repository = ref.read(taskRepositoryProvider);
-    final orphanedIds = findOrphanedRecurringTaskIds(repository.getTasks());
-    for (final id in orphanedIds) {
-      await repository.deleteTask(id);
-      await _cancelNotificationSafely(id);
-    }
-    _refresh();
-    return orphanedIds.length;
   }
 
   void _refresh() {

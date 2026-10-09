@@ -93,6 +93,11 @@ abstract final class PreferenceKeys {
   /// regardless of this display preference. See [ShowZonesSetting].
   static const String showZones = 'showZones';
 
+  /// Whether the wide layout's week and month grids draw their faint day
+  /// and hour lines. Absent (null) defaults to true. See
+  /// [CalendarGridLinesSetting].
+  static const String calendarGridLines = 'calendarGridLines';
+
   /// Whether the "What Matters" lens is on — hides every [Task] with
   /// `isImportant == false` entirely, in both Timeline display modes.
   /// Absent (null) defaults to false. See [WhatMattersEnabledSetting].

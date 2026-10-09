@@ -190,7 +190,7 @@ class AppBadgeChip extends StatelessWidget {
                 ],
                 Text(
                   label,
-                  style: _textStyle().copyWith(fontWeight: FontWeight.w700),
+                  style: _textStyle().copyWith(fontWeight: FontWeight.w600),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),

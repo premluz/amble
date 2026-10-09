@@ -356,7 +356,7 @@ void main() {
             );
             expect(
               chipText.style!.fontWeight,
-              FontWeight.w700,
+              FontWeight.w600,
               reason: 'size=$size selected=$selected',
             );
           }

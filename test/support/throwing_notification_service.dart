@@ -1,3 +1,4 @@
+import 'package:amble/shared/models/occurrence_alert.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:amble/shared/models/task.dart';
 import 'package:amble/shared/services/notification_service.dart';
@@ -25,4 +26,12 @@ class ThrowingNotificationService extends NotificationService {
 
   @override
   Future<bool> openNotificationSettings() async => true;
+
+  // Occurrence alerts are out of scope for this double; a no-op keeps them
+  // off the real platform channel.
+  @override
+  Future<void> scheduleOccurrenceAlert(OccurrenceAlert alert) async {}
+
+  @override
+  Future<void> cancelNotification(int notificationId) async {}
 }

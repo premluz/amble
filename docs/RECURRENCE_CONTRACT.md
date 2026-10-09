@@ -1,9 +1,9 @@
 # Recurrence & Occurrence — Behavioral Contract
 
-**Status: specification only — revision 2 (2026-10-02).** Nothing here is
-implemented. `CONSTITUTION.md`'s "materialized instances" section stays
-authoritative for current code until a storage option is approved against
-this contract.
+**Status: revision 2 (2026-10-02). Implemented as the only repeating-task
+model (2026-10-02)** — Option B, live in the app. `CONSTITUTION.md`'s
+"Recurring tasks — series with computed occurrences" section points here;
+this contract is authoritative for repeating-task behavior.
 
 **Purpose.** Define what repeating tasks must *do*, independent of storage.
 Two candidate designs will be compared against it:
@@ -176,13 +176,14 @@ mixes the two and is not an outcome in the new model.
   effect from today, not from that past date — anything else would be a
   historical correction (D4b).
 
-**Time zones and history — Proposed.**
-- Once an occurrence's omission deadline (D9) has passed, its date, omitted
-  state and credit are fixed in the time zone that applied then. Travelling
-  later never turns an omitted occurrence back into upcoming, nor moves a past
-  occurrence to another date.
-- Future occurrences float (D2). How the zone per past day is known is per
-  option (e.g. recorded once per day of use).
+**Time zones and history — Proposed, implemented in the data model.**
+- **A day keeps the zone it began in; a zone change applies from the next
+  day.** Travelling never turns an omitted occurrence back into upcoming, nor
+  moves a past occurrence to another date. (Flying west can make "today"
+  Monday again in the new zone — without this rule Monday's omitted
+  occurrences would revive. Found while testing S24.)
+- Days after today float to the current zone (D2). The zone per day is kept
+  as a small history recorded on use.
 
 ---
 
@@ -245,9 +246,11 @@ explicit expansion limit.
 ## 11. Time
 
 - **Confirmed (D2):** future occurrences use floating local time.
-- **Proposed — spring-forward gap** (02:30 doesn't exist): starts at the first
-  valid time after the gap.
-- **Proposed — fall-back repeat** (01:30 twice): the earlier one.
+- **Proposed — spring-forward gap** (02:30 doesn't exist): shifts forward by
+  the gap length (→ 03:30), per RFC 5545. Revised from "first valid time
+  after the gap" (03:00), which no standard uses.
+- **Proposed — fall-back repeat** (01:30 twice): the first one, per RFC 5545.
+  (The `timezone` package picks the second; the data model corrects it.)
 - **Proposed — duration** is elapsed minutes.
 - **Proposed — all-day items** are a date range, not start + minutes. Not
   built; the model must not prevent them.
@@ -321,14 +324,15 @@ explicit expansion limit.
   done Wednesday → Monday judged against 60.
 - **S23** Rename series "Run" → "Morning run" (all occurrences) → past
   occurrences still titled "Run".
-- **S24** Travel east after an omitted day → it stays omitted, same date.
+- **S24** Fly west so it is "Monday" again locally → Monday's omitted
+  occurrence stays omitted, same date.
 
 **Edit scopes**
 - **S25** Every-other-week series, time changed from week 5 → cadence
   unchanged.
 
 **Time (D2)**
-- **S26** 02:30 on a spring-forward day → first valid time after the gap.
+- **S26** 02:30 on a spring-forward day → 03:30 (shifted by the gap).
 - **S27** Travel → future 07:00 occurrences show at 07:00 local.
 
 **Failure & concurrency**

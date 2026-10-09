@@ -32,7 +32,7 @@ class VoiceCaptureHint extends StatelessWidget {
             textAlign: TextAlign.center,
             style: theme.textTitle.copyWith(
               color: theme.colorTextSecondary,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
             ),
           ),
           SizedBox(height: theme.spacingSm),
@@ -188,7 +188,7 @@ class VoiceCaptureUnavailableCard extends StatelessWidget {
               'Can\'t listen',
               style: theme.textBody.copyWith(
                 color: theme.colorTextPrimary,
-                fontWeight: FontWeight.w700,
+                fontWeight: FontWeight.w600,
               ),
             ),
             SizedBox(height: theme.spacingXs / 2),

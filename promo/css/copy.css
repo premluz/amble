@@ -1,0 +1,59 @@
+/* Headlines: word-staggered blocks in DM Sans, one hero size, a lead and a
+   sub size, plus the wordmark. */
+.copy {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.copy-block {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--w, 760px);
+  text-align: var(--align, left);
+  opacity: var(--o, 1);
+  transform: translateY(var(--dy, 0));
+  text-wrap: balance;
+}
+
+.copy-block .ln {
+  display: block;
+}
+
+.copy-block .wd {
+  display: inline-block;
+  opacity: var(--wo, 1);
+  transform: translateY(var(--wy, 0));
+  filter: blur(var(--wb, 0));
+}
+
+.t-hero {
+  font: 700 92px/1.04 var(--font-sans);
+  letter-spacing: -0.035em;
+  color: var(--f-ink);
+}
+
+.t-lead {
+  font: 600 44px/1.1 var(--font-sans);
+  letter-spacing: -0.02em;
+  color: var(--f-muted);
+}
+
+.t-sub {
+  font: 500 40px/1.2 var(--font-sans);
+  letter-spacing: -0.015em;
+  color: var(--f-muted);
+}
+
+.t-word {
+  font: 700 168px/1.04 var(--font-sans);
+  letter-spacing: -0.045em;
+  color: var(--f-ink);
+}
+
+.on-dark.t-hero,
+.on-dark.t-word {
+  color: var(--f-on-dark);
+}
+

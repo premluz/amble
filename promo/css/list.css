@@ -1,0 +1,146 @@
+/* List (zone) view and Patterns. */
+.tl-list {
+  position: absolute;
+  inset: 0;
+  transform: translateX(var(--vx, 0));
+}
+
+.tl-list .now {
+  right: 16px;
+}
+
+.lt {
+  position: absolute;
+  left: 16px;
+  top: var(--y);
+  transform: translateY(-50%);
+  font: 400 12px/1.3 var(--ui-num);
+  color: var(--a-text2);
+  opacity: var(--o, 1);
+}
+
+.zcard {
+  position: absolute;
+  left: 100px;
+  width: 274px;
+  top: var(--y);
+  height: var(--h);
+  border-radius: 20px;
+  background: var(--a-zone);
+  opacity: var(--o, 1);
+}
+
+.zcard .zhead {
+  position: absolute;
+  left: 18px;
+  top: 10px;
+  font: 400 12px/18px var(--ui-num);
+  color: var(--a-text3);
+}
+
+.lrow {
+  position: absolute;
+  left: 0;
+  width: 390px;
+  top: var(--y);
+  height: 0;
+  opacity: var(--o, 1);
+  transform: translate(var(--dx, 0px), var(--fy, 0px));
+  /* Clipped to the zone card (screen x 100–374) while the row slides. */
+  clip-path: inset(-40px calc(16px + var(--dx, 0px)) -40px calc(100px - var(--dx, 0px)));
+}
+
+.badge {
+  position: absolute;
+  left: 118px;
+  top: -12px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--fill);
+  color: var(--glyph);
+  font-size: 15px;
+  transform: scale(var(--sx, 1), var(--sy, 1));
+}
+
+.badge .star,
+.idot .star {
+  position: absolute;
+  left: 15.6px;
+  top: -1.8px;
+  width: 12px;
+  height: 12px;
+}
+
+.lrow .ltitle {
+  position: absolute;
+  left: 150px;
+  top: -8px;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 16px;
+  color: var(--title, var(--a-text));
+  text-decoration: var(--strike, none);
+  text-decoration-thickness: 1.6px;
+}
+
+.swipe-act {
+  position: absolute;
+  right: 16px;
+  top: -22px;
+  width: var(--aw, 0);
+  height: 44px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--a-accent);
+  color: var(--a-timeline);
+  /* Uncovered in place: cancels the row's slide. */
+  transform: translateX(calc(var(--dx, 0px) * -1));
+}
+
+.swipe-act .ic {
+  position: absolute;
+  right: 16px;
+  top: 10px;
+  font-size: 24px;
+  transform: scale(var(--arm, 1));
+}
+
+.week {
+  position: absolute;
+  left: 16px;
+  top: 107px;
+  font-size: 16px;
+}
+
+.hcard {
+  position: absolute;
+  left: 16px;
+  width: 358px;
+  top: var(--y);
+  height: 103px;
+  border-radius: 20px;
+  background: var(--a-secondary);
+}
+
+.hcard b {
+  position: absolute;
+  left: 16px;
+  top: 16px;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.hcard i {
+  position: absolute;
+  left: var(--x);
+  top: 48px;
+  width: 40px;
+  height: 40px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--a-accent) var(--fillp, 0%), var(--a-field));
+  transform: scale(var(--sx, 1), var(--sy, 1));
+}

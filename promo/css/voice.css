@@ -1,0 +1,140 @@
+/* Things (Inbox) and voice mode: rows, the speaking ring, layered glow,
+   waveform keys and the submit button. */
+.subtabs {
+  position: absolute;
+  inset: 107px 16px auto;
+  display: flex;
+  gap: 24px;
+  font-size: 16px;
+  color: var(--a-text2);
+  opacity: var(--o, 1);
+}
+
+.subtabs b {
+  font-weight: 400;
+  color: var(--a-text);
+}
+
+.subtabs .ic {
+  margin-left: auto;
+  font-size: 22px;
+}
+
+.isection {
+  position: absolute;
+  left: 16px;
+  top: 176px;
+  font-size: 12px;
+  color: var(--a-text3);
+  opacity: var(--o, 1);
+}
+
+.irow {
+  position: absolute;
+  left: 16px;
+  top: var(--y);
+  height: 0;
+  opacity: var(--o, 1);
+  transform: translate(var(--dx, 0), var(--dy, 0));
+}
+
+.idot {
+  position: absolute;
+  left: 0;
+  top: -12px;
+  width: 24px;
+  height: 24px;
+  border-radius: 12px;
+  background: var(--a-mist);
+  transform: scale(var(--ds, 1));
+}
+
+.iring {
+  position: absolute;
+  left: -4px;
+  top: -16px;
+  width: 32px;
+  height: 32px;
+  border-radius: 16px;
+  background: conic-gradient(var(--a-accent) var(--rp, 0%), var(--a-border) 0);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 4px), black calc(100% - 4px));
+  opacity: var(--ring, 0);
+  transform: scale(calc(0.75 + 0.25 * var(--ring, 0)));
+}
+
+.irow .ititle {
+  position: absolute;
+  left: 32px;
+  top: -8px;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 16px;
+}
+
+.voice {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  pointer-events: none;
+}
+
+.voice .v-page {
+  position: absolute;
+  inset: 0;
+  background: var(--a-timeline);
+  opacity: var(--vp, 0);
+}
+
+.voice .v-glow {
+  position: absolute;
+  inset: 0;
+  opacity: var(--vg, 0);
+  transform: translateY(var(--gy, 0));
+  mask-image: linear-gradient(to top, black 0, black 55%, transparent 75%);
+  background:
+    radial-gradient(195px 270px at 50% 100%, color-mix(in srgb, white 40%, var(--a-accent) 60%), transparent),
+    radial-gradient(254px 591px at calc(76% + var(--drift, 0px)) 100%, color-mix(in srgb, white 40%, transparent), transparent),
+    radial-gradient(292px 717px at calc(26% - var(--drift, 0px)) 100%, color-mix(in srgb, var(--a-accent) 50%, transparent), transparent),
+    radial-gradient(429px 844px at 50% 100%, color-mix(in srgb, var(--a-accent) 45%, var(--a-text) 25%), transparent);
+}
+
+.v-hint {
+  position: absolute;
+  inset: 300px 0 auto;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  text-align: center;
+  opacity: var(--o, 0);
+  transform: scale(var(--s, 1));
+}
+
+.v-hint small { font-size: 12px; color: var(--a-text3); }
+.v-hint strong { font-size: 20px; font-weight: 700; color: var(--a-text2); }
+.v-hint span { font-size: 16px; color: var(--a-text2); }
+
+.wave {
+  position: absolute;
+  left: 60px;
+  right: 60px;
+  top: 4px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.wave i {
+  width: 6px;
+  height: var(--bh, 4px);
+  border-radius: 3px;
+  background: var(--a-accent);
+  transform: scaleY(var(--k, 0));
+}
+
+.dbtn.accent {
+  background: var(--a-accent);
+  color: var(--a-timeline);
+}
+

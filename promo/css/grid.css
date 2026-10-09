@@ -1,0 +1,91 @@
+/* Scene 2's generic calendar: system font, tinted blocks with a colour bar,
+   side-by-side columns when things collide. Deliberately not Amble. */
+.grid-scene {
+  position: absolute;
+  inset: 0;
+  opacity: var(--o, 1);
+  transform: translate(var(--shx, 0), 0);
+  font-family: -apple-system, system-ui, var(--font-sans);
+}
+
+.g-bg {
+  position: absolute;
+  inset: 0;
+  background: var(--g-bg);
+  opacity: var(--bo, 1);
+}
+
+.g-rules {
+  position: absolute;
+  inset: 0;
+}
+
+.g-rules path {
+  fill: none;
+  stroke: var(--g-line);
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: var(--ro, 1);
+}
+
+.g-hour {
+  position: absolute;
+  left: 0;
+  width: 830px;
+  top: var(--y);
+  transform: translateY(-50%);
+  text-align: right;
+  font-size: 22px;
+  color: var(--g-text);
+  opacity: var(--o, 1);
+}
+
+.gblock {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--w);
+  height: var(--h);
+  overflow: hidden;
+  padding: 10px 12px 0 20px;
+  border-radius: var(--r, 10px);
+  background: color-mix(in srgb, var(--c) 16%, var(--g-bg));
+  box-shadow: inset 5px 0 0 var(--c), inset 0 0 0 var(--alarm, 0) var(--g-red);
+  opacity: var(--o, 1);
+  transform: translate(var(--tx, 0), var(--dy, 0)) scale(var(--s, 1));
+}
+
+.gblock b,
+.gblock span {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.gblock b {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--g-ink);
+}
+
+.gblock span {
+  font-size: 16px;
+  color: var(--g-text);
+}
+
+.gbadge {
+  position: absolute;
+  left: 1572px;
+  top: 104px;
+  height: 44px;
+  padding-inline: 20px;
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--g-red) 14%, var(--g-bg));
+  color: var(--g-red);
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 44px;
+  opacity: var(--o, 0);
+  transform: scale(var(--s, 1));
+}

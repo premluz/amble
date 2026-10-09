@@ -100,7 +100,10 @@ The persistent Days/Things/Habits navigation and Timeline date selector use
 `theme.spacingMd` for their icon size. Keep the navigation row and Settings
 tap target at `AppButtonSize.md` (40px); compact the visible content without
 shrinking the interaction area. The expanded week strip keeps its existing
-cell padding and hit-area sizing.
+cell padding and hit-area sizing. While swiping between weeks, the visible
+gap from one week's Sunday to the next week's Monday must equal the gap
+between adjacent day cells in that same strip, in either direction and at
+every supported width.
 
 ---
 
@@ -151,7 +154,116 @@ layout and do not apply them to the non-spatial zone list.
 the top inset, so remembered times and newly created tasks remain aligned with
 the rendered time axis as clearance changes.
 
+### Visible, automatic Timeline shifts
+
+When the app moves an already visible spatial Timeline or Zones grid to reveal
+an item, use a distance-aware, eased scroll (`TimelineScrollTokens.revealDuration`
+and the theme's `curveStandard`). Opening a quick-create sheet may shift its
+draft above the sheet; closing it returns that time to the unobscured viewport
+with the same calm motion. A saved task's reveal follows this rule too.
+
+Changing sheet or dock chrome must not make the scroll position snap to a new
+extent. Keep enough scrollable clearance during the return, then release it
+once the view fits; retarget after the new viewport has laid out if its size
+or scroll extent changes. Leave an already visible item alone when no movement
+is needed.
+
+Finger-driven panning and pinch zoom follow the gesture immediately. Initial
+positioning before a page becomes visible may set its offset directly.
+
+Changing the selected day is a content replacement, not a scroll or a task
+arrival. Carry the viewed clock hour into the new day, resolve its scroll
+position before revealing it, and render every task at its final position on
+the first visible frame. Do not run task entrance or position-settle motion
+solely because the date changed; reserve those effects for changes within a
+day, such as a newly created task or a drag commit.
+
 ---
+
+## Surfaces and separators — quiet steps (2026-10-08)
+
+Requested directly, against Notion Calendar, Linear, Devin and cmux: "very,
+very subtle color steps... and very, very, very subtle separator lines",
+in both themes. Measured in those references: neutral greys, surface steps
+of a few RGB units (1.03–1.10× luminance contrast), and 1px separators only
+1.14–1.23× the surface beneath them.
+
+| Role (token) | Light | Dark |
+| --- | --- | --- |
+| Base (`colorSurfaceBase`) | `#F3F2F1` | `#171716` |
+| Card / timeline (`colorSurfacePrimary`, `colorSurfaceTimeline`) | `#FAFAF9` | `#1A1A19` |
+| Nested row / group (`colorSurfaceSecondary`) | `#F0F0EF` | `#20201F` |
+| Floating overlay (`colorSurfaceOverlay`) | `#FFFFFF` | `#262625` |
+| Field / active field | `#F1F1F0` / `#E6E6E4` | `#2C2C2B` / `#363635` |
+| Separator (`colorBorder`) | `#E6E6E4` (1.20× on cards) | `#292928` (1.20× on cards) |
+
+- **Warmth is a trace, not a cast**: every neutral is hue 90 at chroma
+  ≤ .003, keeping the "paper" direction without the cream/olive tint.
+- **Separate with steps or hairlines, not both strongly.** A new divider
+  uses `colorBorder` at `borderWidthHairline`; never darken a surface to
+  make a boundary visible.
+- **Order is fixed and tested** (`elevation_direction_test.dart`): base →
+  card → overlay, one direction per theme; the light base stays below
+  luminance 0.90 so surfaces have room above it.
+- Category swatches, the zone lavender and the accent are unchanged.
+
+**Desktop density.** In the wide layout (`DesktopDensity`, applied once
+around the wide shell in `main.dart`) every button-height rung is one step
+smaller: xl 56→48, lg 48→40, md 40→32, sm 32→28, xs 28→24. Shapes are
+unchanged (pills stay pills); requested directly: "size of buttons on
+desktop, not shape". Everything aligned to the button scale (tab switches,
+chips, the dock, nav rows, the panel) follows. Phones never see it.
+Pinned by `wide_shell_layout_test.dart`.
+
+**Desktop type.** Same scope, measured against the references (cap height
+→ size, stroke ÷ cap height → weight, line pitch → rows): UI text ~13–14pt,
+regular to medium; small labels 10–12pt; page titles ~22pt bold; rows
+26–32pt apart. So inside the wide shell: body 16→14 (`size2`), label 14→13
+(`size1Point5`), title 20→18 (`size3Point5`), headline 32→24 (`size5`).
+Caption, task-title and time sizes (11–12) already match and stay. The
+task panel's inset is `spacingMd` (16), as in Notion Calendar's. **Weights, both platforms: semibold is the heaviest.** Bold (w700) was
+retired 2026-10-08, requested directly: "soften everything bold to
+semibold, on phone and desktop". Every former bold (task pill titles,
+edge-time labels, the selected day, nav and chip selection, settings
+headings, headlines) is now w600, and `TypePrimitives.weightBold` is
+removed. Use `weightSemibold` for emphasis, `weightMedium` for selected
+or quiet emphasis, `weightRegular` for reading text. **Never** w700+.
+
+## Week and month grids (wide layout)
+
+`features/calendar/`, tokens in `CalendarGridTokens`. A task in either grid
+resolves its colors through `calendarTaskStyle` → `TaskStateStyle`, so done,
+skipped, important and unlabeled read as they do on the Day screen.
+
+- **Week task**: the app's own pill (`WeekTaskPill` → `TaskCapsuleBlock`
+  in its pill-only `splitLayout`, read-only), length shown by height
+  (`weekHourHeight` 48 per hour). Overlapping pills sit side by side at pill
+  width, as on the Day screen. **Every** task's title (`WeekTaskText`, the
+  Day screen's `TaskCapsuleTextRow`, title only) sits in one text column
+  after the widest pill group, at its own time; a row that would cover the
+  one above moves down by `weekTextRowHeight`. No time column: the pill's
+  place on the hour grid shows it. Hour labels in the `weekGutterWidth`
+  (56) column. Zone bands: `colorZoneBackground`, `radiusMd` (the narrow
+  weekday-lane exception, as in the zone grid), name in `textZoneName`.
+- **Grid lines** (Settings → Appearance → "Calendar grid lines", default on,
+  `CalendarGridLinesSetting`): a line per hour and per day in the week, and
+  between month cells, 1 point wide, in `colorBorder` at `hourLineAlpha` (.4)
+  for hours and `dayLineAlpha` (.6) for days — matched to Notion Calendar's
+  measured +6 / +9 steps. Off: no lines at all.
+- **Month row**: rail, time (mono, secondary), title — like Notion
+  Calendar's month. Today's date sits in an accent circle. Cells are
+  separated by hairlines; days outside the month use tertiary text.
+
+## Shell dividers and grid lines — 1 point, Notion-quiet
+
+Requested directly: "interface shell lines too thick and too strong... see
+reference Notion Calendar". Measured there: every line 1 point (2 physical
+pixels on Retina); on a #191919 canvas, hour lines +6, day lines +9, the
+panel divider +13. Ours were 2 points (`borderWidthHairline`) at one +8 /
++15 strength. Now `AppHairline` draws the shell dividers and calendar grid
+at `ShellLayoutTokens.lineWidth` (1), in `colorBorder` at `dividerAlpha`
+(.85), `CalendarGridTokens.dayLineAlpha` (.6) and `hourLineAlpha` (.4).
+Other borders (cards, fields, chips, selection) keep `borderWidthHairline`.
 
 ## Two-font system — condensed numeric font for values, DM Sans for prose
 
@@ -912,6 +1024,29 @@ the same element the vertical anchor is computed against — that
 combination is exactly what caused both bugs this fix corrects (dot
 before the time, and misalignment with the hour column).
 
+**One marker, two views (2026-10-07).** The `[pill] [dot] [line]` row is
+`CurrentTimeMarker` (same file), drawn by both views — never re-built
+per view:
+- **Timeline (spatial)** — `CurrentTimeIndicator` positions it at the
+  exact minute. `pillSizesRow: false`: the row measures only the dot and
+  the pill overflows it (see above for why).
+- **List (non-spatial, `ZoneDayTimeline`)** — `ListCurrentTimeMarker`
+  (`list_current_time_marker.dart`) makes it its own row BETWEEN rows,
+  never overlapping a task. Requested directly: "it will always be
+  between the tasks. It will never overlap a task." `pillSizesRow: true`
+  — no minute-exact y to protect, so the pill sizes the row. The pill
+  escapes left into the list's hour-label column
+  (`zoneRowTimeLabelEdgeInset`), the same way `ZoneRowTimeLabel` does,
+  so "now" reads as one more entry in that column.
+
+**List-view placement** (confirmed via AskUserQuestion), one rule in
+`nowMarkerIndex`: the marker goes after every row that has STARTED — an
+in-progress task stays above the line. If the last started row is a zone
+still in progress, the marker goes INSIDE that zone, between its own
+member rows (`ZoneContainerBlock.currentTime`), by the same rule. Today
+only; nothing on an empty day; a zone collapsed by What Matters can't
+hold it (the marker stays a list row instead).
+
 ---
 
 ## Selected zone z-order — `selectedZonesLast`
@@ -1090,6 +1225,42 @@ systematized component. Revisit if a second horizontal-scroll chip row
 shows up.
 
 ---
+
+## Pickers in the wide layout — popover, not sheet (`AppSheetPresentation`)
+
+Added 2026-10-08, requested against Notion Calendar's event panel: in the
+wide layout's right-hand task panel, settings sit one per line and each
+picker opens beside the panel, not as a bottom sheet.
+
+- **One switch point.** `AppSheetPresentationScope(presentation: popover)`
+  around a subtree makes every `AppSheet.show` below it open an
+  `AppPopoverRoute` instead of a sheet. `TaskInspectorPanel` provides it.
+  Pickers don't know which they are in. Outside a scope nothing changes.
+- **Placement** (`popoverOrigin`): level with the tapped control, beside
+  the scoped area (the panel). Left of it first, then right, then below;
+  always on screen. Width `PopoverTokens.width` (320); height fits the
+  content (measured off stage first, then resized in place as it grows).
+- **Material**: `AppFloatingSurface` glass + menu shadow at `radiusXxl`,
+  like anchored context menus; grows out of the control with
+  `AppLiquidMorph`, fades out. No scrim; a tap outside closes it, through
+  the same `PopScope` checks as a sheet's scrim.
+- **No drag bar**: `AppSheetTopHandle` draws nothing in a popover. The
+  content keeps its `AppSheetHeader` (× / title / Done) and sheet padding.
+- **Date**: `showAppDatePicker` is the platform dialog on phones and a
+  month calendar (`CalendarDatePicker`) in a popover; picking a day closes it.
+- **Rows**: `AppFieldRow` / `AppFieldValue` (`core/widgets/app_field_row.dart`):
+  `spacingMd` icon in `colorTextSecondary`, `textBody` values,
+  `colorTextTertiary` while unset, row min height `sizeButtonMd`. On/off
+  settings take a trailing `AppSwitch`; tapping the name flips it too.
+  The panel's form is `TaskPanelFields` + `TaskPanelDetailRows`.
+
+**Never**: call `showModalBottomSheet`/`showDatePicker` from a picker that
+can open in the panel (use `AppSheet.show` / `showAppDatePicker`), or pass a
+form-wide context as the anchor (pass the value's own, as `AppFieldValue`
+does). Not yet covered: Escape to close, hover states, keyboard focus order.
+
+Verification: `flutter test test/core/widgets/app_sheet_popover_test.dart
+test/features/task_detail/task_panel_fields_test.dart`.
 
 ## Sheets — components and interaction pattern
 
@@ -1753,6 +1924,24 @@ Changing Edit tabs updates the retained tab control without another header
 crossfade. Edit bodies paint an opaque base under their content transitions.
 
 ## Page slide follow-through — `AppFollowThrough`
+
+**2026-10-09 — behind a developer toggle, off by default.** Requested
+directly: "gate it behind dev toggle... as default it's fade in not slide
+in." Settings → Developer → Motion → "Page slide motion"
+(`devPageSlideMotionProvider`, in memory). Off: top-level pages crossfade
+(`AppViewTransition(slide: false)`, 140ms) and every follower is inert. On:
+everything below applies unchanged.
+
+**The one stagger kept either way — Patterns' completed days colour in**
+(`AppStaggeredFill`): each completed day fills from its "not done" colour to
+the accent, one after another by its place in the grid, all starting within
+`MotionPrimitives.durationFillStaggerMs` (240ms) and each taking
+`durationFastMs` (150ms), so a week and a six-month heatmap both finish in
+under 0.4s. It plays when Patterns first appears and each time the page
+arrives (`AppViewArrival`, set by `AppViewTransition` in both modes).
+Reduced motion shows the colour at once. Verification:
+`flutter test test/core/widgets/app_staggered_fill_test.dart`.
+
 
 When the top-nav pages slide (`AppViewTransition(slide: true)`), the page's
 KEY items (things the user adds on that page) follow through: they trail

@@ -54,7 +54,7 @@ class AppNavLabel extends StatelessWidget {
     return switch (variant) {
       AppNavLabelVariant.main => theme.textBody.copyWith(
         color: color,
-        fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+        fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
       ),
       AppNavLabelVariant.sub => PageHeadingTokens.text(
         theme,

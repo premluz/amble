@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:purchases_ui_flutter/purchases_ui_flutter.dart' show PaywallResult;
+import 'package:purchases_ui_flutter/purchases_ui_flutter.dart'
+    show PaywallResult;
 
 import '../../core/revenue_cat_config.dart';
 import '../../core/tokens/semantic_theme.dart';

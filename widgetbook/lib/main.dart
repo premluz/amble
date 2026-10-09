@@ -29,6 +29,7 @@ import 'package:amble/core/widgets/app_sheet_header.dart';
 import 'package:amble/core/widgets/app_tab_switch.dart';
 import 'package:amble/core/widgets/app_undo_toast.dart';
 import 'package:amble/core/widgets/app_voice_waveform.dart';
+import 'package:amble/core/widgets/app_side_nav.dart';
 import 'package:amble/core/widgets/app_top_nav.dart';
 import 'package:flutter/material.dart';
 import 'package:widgetbook/widgetbook.dart';
@@ -315,8 +316,17 @@ class AmbleWidgetbookApp extends StatelessWidget {
               name: 'AppTopNav',
               useCases: [
                 WidgetbookUseCase(
-                  name: 'Day / Inbox / Tracked',
-                  builder: (context) => const _TopNavDemo(),
+                  name: 'Days / Things / Patterns',
+                  builder: (context) => const _NavDemo(sidebar: false),
+                ),
+              ],
+            ),
+            WidgetbookComponent(
+              name: 'AppSideNav',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Wide layout sidebar',
+                  builder: (context) => const _NavDemo(sidebar: true),
                 ),
               ],
             ),
@@ -1101,18 +1111,20 @@ class _DateAccordionDemoState extends State<_DateAccordionDemo> {
   }
 }
 
-/// Wraps a stateful demo around [AppTopNav] — a use case needs a real,
-/// changeable selected index (tapping a different destination must
-/// visibly move the highlight), the same shape `AmbleHome` itself drives
-/// it with.
-class _TopNavDemo extends StatefulWidget {
-  const _TopNavDemo();
+/// Wraps a stateful demo around [AppTopNav] or, with [sidebar], the wide
+/// layout's [AppSideNav] — a use case needs a real, changeable selected
+/// index (tapping a different destination must visibly move the
+/// highlight), the same shape `AmbleHome` itself drives both with.
+class _NavDemo extends StatefulWidget {
+  const _NavDemo({required this.sidebar});
+
+  final bool sidebar;
 
   @override
-  State<_TopNavDemo> createState() => _TopNavDemoState();
+  State<_NavDemo> createState() => _NavDemoState();
 }
 
-class _TopNavDemoState extends State<_TopNavDemo> {
+class _NavDemoState extends State<_NavDemo> {
   int _selectedIndex = 0;
   // Mirrors AmbleHome's own "Settings is a separate index outside the
   // destination row" shape — tapping the gear here deselects every
@@ -1122,17 +1134,37 @@ class _TopNavDemoState extends State<_TopNavDemo> {
 
   @override
   Widget build(BuildContext context) {
+    const destinations = ['Days', 'Things', 'Patterns'];
+    final selectedIndex = _settingsSelected ? -1 : _selectedIndex;
+    void select(int index) => setState(() {
+      _settingsSelected = false;
+      _selectedIndex = index;
+    });
+    void openSettings() => setState(() => _settingsSelected = true);
+    if (widget.sidebar) {
+      // A desktop-window-height box: the sidebar's gear sits at its foot.
+      return Align(
+        alignment: Alignment.topLeft,
+        child: SizedBox(
+          height: 560,
+          child: AppSideNav(
+            destinations: destinations,
+            selectedIndex: selectedIndex,
+            settingsSelected: _settingsSelected,
+            onDestinationSelected: select,
+            onSettingsTap: openSettings,
+          ),
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.all(24),
       child: AppTopNav(
-        destinations: const ['Day', 'Inbox', 'Tracked'],
-        selectedIndex: _settingsSelected ? -1 : _selectedIndex,
+        destinations: destinations,
+        selectedIndex: selectedIndex,
         settingsSelected: _settingsSelected,
-        onDestinationSelected: (index) => setState(() {
-          _settingsSelected = false;
-          _selectedIndex = index;
-        }),
-        onSettingsTap: () => setState(() => _settingsSelected = true),
+        onDestinationSelected: select,
+        onSettingsTap: openSettings,
       ),
     );
   }

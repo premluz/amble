@@ -9345,3 +9345,417 @@ shared widgets, canonical design rules, focused accessibility coverage, and
 Widgetbook stories. Linked it from `CLAUDE.md` for UI work and replaced the
 Widgetbook starter README with project-specific run and catalog guidance. No
 app code changed.
+
+## [2026-10-02] Recurrence data model built (inert)
+
+Built the Option B data model from `docs/RECURRENCE_CONTRACT.md` as new files
+with no migration and no wiring: `LocalDate`, `OccurrenceKey`, typed field
+overrides, `Series`/`SeriesRevision`, `OccurrenceRecord`,
+`ResolvedOccurrence`, `ZoneHistory`, `BehaviorTargetRevision`, series
+expansion, occurrence timing and `resolveOccurrences`, plus four JSON-map Hive
+repositories with stale-write rejection. 38 new tests cover contract
+scenarios S1, S2, S5–S15, S21–S27, S29. Testing changed two time rules (DST
+repeat → first occurrence; a day keeps the zone it began in) — contract and
+DECISIONS.md updated. `flutter analyze`: no issues in new files. Full suite:
+18 failures, all in pre-existing UI test files untouched by this work; the new
+model is imported by no app code. Next: command layer (command ids,
+conflict-safe undo), then wiring/migration as separate steps.
+
+## [2026-10-02] Recurrence command layer (inert)
+
+Added the command layer on top of the inert recurrence model: typed commands,
+a persisted command log for retry safety, version-checked writes, and
+aspect-level undo that refuses on conflict. 15 new tests (S16–S20, S28, S29,
+retry, reset-to-series, series end, log pruning); a deliberate break of the
+undo conflict check was caught by S19, confirming the tests can fail. All 53
+recurrence tests pass; `flutter analyze` shows no issues in new files. Not
+wired into the app.
+
+## [2026-10-02] Occurrence alerts (inert)
+
+Added the alert planner (14-day window, 48-alert budget), a diff-based
+reconciler with per-alert retry, alert state storage, and key-carrying
+payloads. 7 new tests; all 60 recurrence tests pass, no analyzer issues in new
+files. Not wired: `NotificationService` untouched.
+
+## [2026-10-02] Series model wired behind a developer toggle
+
+Settings → Developer → "Series model for new repeating tasks". With it on,
+new repeating tasks are created as series; occurrences show on the Timeline
+as unsaved tasks, and complete, drag, delete, notes and sheet edits route to
+series commands through one repository wrapper. Occurrence alerts are
+reconciled after commands, toggle changes and at launch. No migration —
+existing repeating tasks are untouched. 9 new integration tests through the
+real `TaskList` (a deliberate break of the routing failed 5 of them). Two
+task-sheet tests needed the toggle stubbed off (no preferences store in that
+harness). Logged a `dart format`-on-a-directory slip in ERROR_LOG.md.
+
+## [2026-10-02] Series is the only repeating-task model
+
+No migration (staging data, wiped by reinstall). Every creation path now
+makes a series via `createTask`; the materialized generator, template
+bookkeeping, orphan repair and the developer toggle are removed. Readers of
+the task list that would have silently missed repeating tasks (Siri, Slack
+summaries, behavior progress, Timeline overlap/multi-select checks,
+move/resize undo) now include occurrences. CONSTITUTION.md and SCOPE.md
+updated; RECURRENCE_CONTRACT.md is authoritative. Bugs found by rewritten
+tests: all-seven-days read as a rule change; racing alert reconciles. Known
+gaps: calendar sync and zone-resize task shifting don't see occurrences.
+
+## [2026-10-03] Quick-create Timeline return motion
+
+Closing a long-press quick-create sheet now keeps its bottom scroll clearance
+through an eased return, then adjusts to the final scroll extent after layout.
+The saved-task reveal and weekly Zones grid pending-zone reveal share the
+distance-aware motion rule, documented in DESIGN_SYSTEM.md. Quick-add tests:
+38 passed, including a frame-by-frame late-day close and an already-visible
+draft that stays put. `flutter analyze --no-pub`: 15 existing lint findings;
+full `flutter test --no-pub`: 18 failures outside the quick-add suite. The
+Zones grid's three failures also occur with its original scroll timing.
+
+## [2026-10-03] Day navigation retains viewed hour without pill replay
+
+The spatial Timeline now mounts a date-keyed day view, captures the viewed
+clock time before the swap, and suppresses intermediate scroll reports until
+the new day is positioned. Tasks render at their destination positions on
+its first visible frame; within-day task motion is unchanged. Documented the
+day-switch exception in DESIGN_SYSTEM.md. The new day-navigation test and
+affected Timeline suites pass (50 tests). Changed Dart files analyze clean;
+repository-wide `flutter analyze --no-pub` still reports 15 existing lints,
+and `flutter test --no-pub` still has 18 failures outside the affected suites.
+
+## [2026-10-03] Calendar week-swipe boundary spacing
+
+The expanded calendar now uses one day-cell gap between adjacent week rows
+during a swipe, in both directions, rather than letting Sunday touch the next
+Monday. The same page extent drives drag bounds, commit threshold, and settle.
+Forward/backward gap regressions were red before the fix and pass at 430px and
+800px; all 20 calendar-header tests pass. Repository-wide analysis retains
+15 existing findings and the full test suite retains 18 unrelated failures.
+
+## [2026-10-04] Promo film "Hold what matters" (video only, no app code changed)
+
+30 s film starring the Rios Brand coral mascot, driven through the brand portal's own WebGL engine:
+`~/Rios Reel/mascot/entry.mjs` imports `~/Rios Brand/src/tools/mascot/` read-only and is bundled with the
+portal's pinned esbuild/three (`tools/bundle-mascot.cjs`). One idea: it catches one dot, the day piles dots
+on its head until the tower sways, it lets go, each dot arcs to its time in a Rios day and becomes a pill,
+and it keeps the first dot (starred, "Dinner with Ana"). Output `~/Movies/Rios/rios-hold-what-matters.mp4`;
+source `hold.html`, `js/hold/`, documented in the Reel's SYSTEM.md. Finding: at film scale the engine's
+`happy` (lidded) and `concerned` (angled brows) presets read as smug/angry, so the film avoids them. No
+change to the brand portal; 9:42 reel render fingerprint unchanged.
+
+## [2026-10-04] "Hold what matters": planted feet in the closing rock (video only)
+
+End-of-film rock now turns only the body: both leg steps counter the engine's Tilt and the box shifts by the
+hips' projected drift. Measured in rendered frames (world coords): feet within ~1.5 px across both rock
+extremes, soles ±~5 px. Re-rendered and republished `~/Movies/Rios/rios-hold-what-matters.mp4`.
+
+## [2026-10-04] "Hold what matters" app cut (video only, no app code changed)
+
+Second cut of the mascot film: after the dots land, the day is the real Rios interface from the 9:42 reel
+(pills, now-line, dock). A finger presses What matters (WhatMattersTokens timing, dock glow), the other
+tasks fall away, and only then does the star appear, on Dinner with Ana and on the held dot together.
+Output `~/Movies/Rios/rios-hold-what-matters-app.mp4`; source `hold-app.html` + `js/hold/hold-app-*.js`.
+Hooks added to the shared hold modules default to off; the original cut verified pixel-identical by frame hashes.
+
+## [2026-10-04] "Hold what matters" app cut, revised (video only, no app code changed)
+
+Per review: no captions until the end card ("You hold what matters. / Let Rios hold the rest."); character
+centred in the left half, the real Rios day on the right; dock arrives on AppContextDock's spec (200 ms fade,
+spring from 0.3, 35 ms stagger); What matters button white until pressed; the press runs WhatMattersTokens'
+wash ring with each task released as the ring reaches it; Dinner with Ana then comes forward at 2x in the right
+half and is starred with the held dot. Republished `~/Movies/Rios/rios-hold-what-matters-app.mp4`. The
+rectangles in the review screenshot were not in the capture or the MP4 (checked at full resolution with
+contrast stretched). Original cut verified pixel-identical. Not fixed, outside scope: in the 9:42 reel's
+`ui.dock` the inactive What matters button has a transparent background instead of white.
+
+## [2026-10-07] "Now" marker in the List view
+
+Added the current-time marker to the non-spatial List view
+(`ZoneDayTimeline`), as its own row between rows — never overlapping a
+task. In-progress tasks stay above it; inside a running zone it sits
+between that zone's member tasks (both confirmed via AskUserQuestion).
+Today only, refreshed each minute via the same `WallClockWatcher` the
+spatial line uses. The spatial line's marker row was extracted into a
+shared `CurrentTimeMarker`, with no visual change there.
+
+Files: `current_time_indicator.dart`, new `list_current_time_marker.dart`,
+`zone_day_timeline.dart`, `zone_container_block.dart`, `timeline_screen.dart`
+(passes the clock). New `test/features/timeline/list_current_time_marker_test.dart`
+(11 tests), each behaviour mutation-checked: an off-by-one placement failed
+5 tests; a missing label shift failed the alignment test.
+
+`flutter analyze`: 15 issues, none in touched files. Full `flutter test`:
+18 failures, none in touched files — the long-standing set plus two on the
+Edit screen/zone grid (`AppTabSwitch<ZoneGridTab>` missing, dock button
+still present), which another session currently has modified; neither
+depends on this change. Existing spatial-indicator, resize-anchored-edge
+and List-view tests (43) all pass. Not checked on a device — visual review
+still open.
+
+## [2026-10-07] Day rollover: today dot moves; new day opens on today at "now"
+
+Reported directly: on a new day the today dot didn't move and the app
+reopened on the old day. Added `core/current_day_provider.dart` and
+`features/timeline/day_rollover_watcher.dart`, which is mounted at the
+root of `TimelineScreen`. `AppDateAccordion` gained an optional `today`,
+which `AppCalendarHeader` feeds from the provider. `ViewedTimeNotifier`
+gained `clear()`. On a new day, detected on mount, at a minute boundary,
+or on resume, the screen selects today and re-centers on the current
+hour. A same-day return keeps the user's place.
+
+New `test/features/timeline/day_rollover_watcher_test.dart` (5 tests),
+mutation-checked: disabling the rollover failed 3 tests; making the
+accordion ignore `today` failed the dot test. `flutter analyze`: no issues
+in touched files. Full suite: 19 failures, the same pre-existing set plus
+`quick_task_add_test` "defaults to a 15-minute duration". That test passes
+4/4 in isolation, and both it and `quick_create_overlay.dart` are being
+edited by another session. Not checked on a device.
+
+## [2026-10-07] Product explainer "Days that change", 40 s (video only, no app code changed)
+
+New film format: a three.js world. The Rios Brand portal's tools are used read-only — Mascot Studio's rig
+re-lit as a 3D character (Prop Extruder's clay material and lights), Background Studio's `sampleSky` for a
+dawn-to-night sky, Prop Extruder for the 3D Rios mark from `assets/branding/Logo_on_dark.svg` — with the
+real interface (the Reel's pill/menu/dock renderers) placed in 3D via CSS3D. Five chapters: problem (a rigid
+plan jams), what you've got (time sweeps past), Rios (built for changing one), how it works (Push all, Quick
+capture, What matters, Patterns), why it's different. Output `~/Movies/Rios/rios-days-that-change.mp4`;
+source `~/Rios Reel/explain.html` + `explain/*.mjs`, documented in the Reel's SYSTEM.md.
+Findings: the mascot's eye discs need healed centre normals once lit; this pipeline's frames are not
+bit-deterministic (software WebGL soft shadows), so its regression checks need a tolerance.
+Open: pricing kept off screen — BRAND.md says "Pay once. Yours forever." while SCOPE.md's RevenueCat setup
+lists lifetime, yearly and monthly products; needs a product decision before any pricing claim in film.
+
+## [2026-10-08] Wide layout phase 1 — sidebar shell
+
+New `AppSideNav` (`core/widgets/app_side_nav.dart`). In windows ≥ 840 wide,
+`AmbleHome` shows it beside the content instead of the top nav, and the
+phone layout is unchanged below that. The Settings gear was extracted from
+`AppTopNav` into a shared `AppNavSettingsGear`, and the nav handlers moved
+into shared methods. New `ShellLayoutTokens`. A Widgetbook story for
+`AppSideNav` (shares one demo with `AppTopNav`). COMPONENT_GUIDE updated.
+
+One render of the wide shell (real fonts, temporary golden, deleted after)
+caught two bugs before they shipped: the labels were centred (`AppNavLabel`'s
+`Center` spans a Column's full width), and an empty 48px header band remained.
+Both are fixed and pinned by tests.
+
+New `test/wide_shell_layout_test.dart` (6 tests, real fonts): phone width
+keeps the top nav; wide shows the sidebar at the correct width; sidebar
+navigation works; labels are left-aligned; no empty header band; a claimed
+header still shows. Mutation-checked: forcing the phone layout failed 2;
+never showing the header failed 1; un-wrapping the labels failed 1. The
+`AppTopNav` tests (11) still pass. `flutter analyze` is clean in touched
+files. Full suite: the same 18 pre-existing failures.
+
+Open: the date row now sits flush at the top in the wide layout (should it
+align with "Days"?) and the sidebar styling are taste calls for review.
+Not yet run as the real macOS/web app.
+
+## [2026-10-08] Wide layout phase 2 — right-hand task editor panel
+
+`_TaskSheet` was refactored into a presentation-agnostic `TaskEditor`, with
+its header buttons split into `task_editor_actions.dart` to stay under 200
+lines. New `task_inspector.dart` holds the request, the notifier with a
+leave guard, and `TaskInspectorPanel`. `showTaskSheet` routes to the panel
+when it is mounted. `AmbleHome`'s wide Row ends with the panel. New
+`ShellLayoutTokens.inspectorWidth` (360). COMPONENT_GUIDE row added.
+
+Tests: new `task_inspector_test.dart` (6) covers opening in the panel
+rather than a sheet, no drag handle, Save writes and closes, a silent close
+with no edits, and opening another task over unsaved edits (both Keep
+editing and Discard). `wide_shell_layout_test.dart` gained an end-to-end
+case: tapping a pill on the wide timeline edits it in the panel. All 7
+existing task-sheet test files pass, so the phone path is unchanged.
+Mutation-checked: ignoring the panel failed 4; skipping the leave guard
+failed 2; showing the handle failed 1. One render (temporary, deleted)
+caught the sheet drag handle showing in the panel; fixed. Full suite: the
+usual 18 pre-existing failures plus `splash_carousel` "tapping Skip" and
+`quick_task_add`. Both pass alone (45/45), and both are real-I/O timing
+tests.
+
+Next: move the timeline's in-place quick-create into the panel.
+
+## [2026-10-08] Wide layout — quick-create in the right panel
+
+Timeline drafts open in the panel in the wide layout, with the pill and
+fields linked both ways (`DraftFormLink`). The overlay is not mounted when
+the panel is present. A draft started over unsaved edits asks first, and
+Keep editing cancels it. An untouched draft closes silently. File splits are
+recorded in DECISIONS.md. Removed a dead re-entrancy guard in
+`DraftFormLink`: `follow()` records the pill's position before updating the
+form, so an echo is impossible. Its test only appeared to check that.
+
+Tests: `draft_form_link_test.dart` (4) and 5 new draft cases in
+`task_inspector_test.dart`. Mutation-checked: opening while the pill is
+held failed 2; Keep editing not cancelling failed 1. Dropping `draftId`
+from save survives by design, because the panel also clears the draft on
+finish. Phone quick-create tests (`quick_task_add`, `pending_task_pill`)
+pass. `flutter analyze` is clean in touched files. Full suite: exactly the
+18 pre-existing failures.
+
+## 2026-10-08 — Desktop/wide layout handover doc
+
+Wrote `docs/DESKTOP_HANDOVER.md`, which pulls together the wide-layout work
+(phases 1–2 done; phase 3 week grid not started), how it is wired, how to
+run it on macOS and web, its tests, and the open items. Docs only: no code
+changed.
+
+## 2026-10-08 — Promo film, built in code (1:04)
+
+Built a 64-second launch film in `promo/` (HTML/CSS/JS, no dependencies;
+nothing under `lib/` changed). The story: dawn; a rigid calendar that
+breaks; "Amble is built for changing one."; Push all; Zones; swipe to done;
+voice capture; What Matters; Patterns; evening, when the three starred pills
+become the ≋ mark. The phone screens are rebuilt from the real tokens and
+were checked against renders of the real `AmbleHome` from a temporary
+widget test (deleted afterwards). The approach and the name question are in
+DECISIONS.md.
+
+Rendered `promo/out/amble-promo.mp4` (1920×1080, 30 fps, H.264, 64 s;
+git-ignored) with `promo/render/capture.mjs` (installed playwright-core and
+cached Chromium) and `promo/render/encode.swift` (AVFoundation). Capture
+fails on any page error, and none occurred.
+
+Verification: stills at key moments and every scene boundary were reviewed
+against the reference renders. That review found and fixed overlapping
+scene windows (two phone states at once), a clash with the DOM `title`
+property that blanked the spoken lines, a swipe action that slid away with
+its row, and a lifted task painting under its neighbour. `flutter analyze`
+reports 15 issues, all in files this work didn't touch. `flutter test`:
+2085 passed, with the usual 18 pre-existing failures.
+
+Open: no soundtrack yet (cuts land on even beats, so music can go in at
+edit). The film says "Amble" while `assets/branding/` says "Rios". There is
+no vertical 9:16 cut.
+
+## [2026-10-08] Wide layout 2b — panel settings one per line; pickers as popovers
+
+Against Notion Calendar's event panel: in the wide layout's task panel the
+settings sit one per line (`TaskPanelFields`, `TaskPanelDetailRows`, core
+`AppFieldRow`/`AppFieldValue`), and every picker opens as a glass popover
+beside the panel, level with its row, instead of a bottom sheet. One switch
+point: `AppSheetPresentationScope` (set by `TaskInspectorPanel`) makes
+`AppSheet.show` hand off to `showSheetAsPopover` → `AppPopoverRoute`
+(`popoverOrigin` placement, `PopoverTokens.width`). The date becomes a month
+calendar in the popover (`showAppDatePicker`). Phones are unchanged.
+
+A test caught the first placement (beside the tapped value) putting the
+popover over the panel; it now anchors to the panel's edge. The panel test
+harness moved to `test/support/task_inspector_host.dart`, shared by
+`task_inspector_test.dart` (10, all pass) and the new
+`task_panel_fields_test.dart` (4). New `app_sheet_popover_test.dart` (9).
+Mutation-checked: disabling the popover branch failed 4; giving the panel
+the chip layout failed 2. `flutter analyze`: 15 issues, none in touched
+files. Full suite (excluding the known `list_mode_clustering` hang): 2098
+pass, 18 fail — the pre-existing count; none in touched areas.
+
+Not run as the real macOS/web app; visual review (row spacing, icons,
+popover position) is open. Not done: Escape to close, hover states, focus
+order. Also wrote `/Users/przemek/Memento/docs/AGENT_RECOMMENDATIONS.md`
+(Memento returned no context for my first, overly specific query. Rios does
+have these docs imported, but as a snapshot older than today's wide-layout
+entries, and it has no subjects yet).
+
+## [2026-10-08] Neutral surfaces, finer steps, quieter separators (both themes)
+
+Against Notion Calendar, Linear, Devin and cmux screenshots: measured their
+surfaces and hairlines (pixel sampling), then re-solved Amble's neutral
+primitives in OKLCH. Dark: `#171716 → #1A1A19 → #20201F → #262625`,
+separator `#292928`. Light: `#F3F2F1 / #FAFAF9 / #F0F0EF / #FFFFFF`,
+separator `#E6E6E4`. Both separators now sit at about 1.2× the card
+surface (were 1.49× dark, 1.37× light). Olive/cream casts reduced to a trace
+of warmth (hue 90, chroma ≤ .003). Only `color_primitives.dart` changed;
+roles are untouched. Rule written into DESIGN_SYSTEM.md "Surfaces and
+separators — quiet steps".
+
+Verification: token tests 78/78 (a first light base of `#F4F4F3` failed the
+"base not effectively white" test and was lowered, not the test loosened).
+Full suite: 2097 pass, 19 fail = the 18 pre-existing failures + the
+`timeline_capsule_preview` golden, regenerated for the intentional change
+and inspected once (colors only, layout identical). Not checked on a device
+or in the running app: the overall look is a taste call for review.
+Open: button shape (small rounded rectangles on desktop, as in the
+references) needs a decision; not changed.
+Follow-up, same day: desktop button density. `DesktopDensity` (new,
+`core/tokens/desktop_density.dart`) overrides the button-height rungs one
+step smaller around the wide shell (`main.dart`); pills unchanged. New
+test in `wide_shell_layout_test.dart` (phone 40, wide 32), mutation-checked
+(fails without the wrapper).
+Follow-up, same day: desktop typography. Measured type in the references
+by pixel scans (cap height, stroke ratio, line pitch). `DesktopDensity`
+adds body 16→14, label 14→13, title 20→18, headline 32→24 in the wide
+shell; new `TypePrimitives.size1Point5` (13) and `size3Point5` (18); task
+panel padding 24→16. `wide_shell_layout_test.dart` now also pins text
+sizes (phone 16, wide 14/13; captions unchanged). Weights untouched; the
+~40 bold call-site overrides are open for a decision.
+Follow-up, same day: no bold anywhere. Every bold (79 uses, 37 files:
+task pill titles, edge-time labels, selected day, nav/chip selection,
+settings headings, the headline style) is now semibold (w600), phone and
+desktop; `TypePrimitives.weightBold` removed. The five tests that measure
+the painted weight moved to w600 with it. `flutter analyze`: 15 issues,
+none new. Full suite: 2099 pass, the same 18 pre-existing failures.
+Fourteen of the touched files also carry another session's uncommitted
+edits; only the weight constant changed in them. Not viewed on a device.
+
+## [2026-10-08] Wide layout phase 3 — Day / Week / Month
+
+New `lib/features/calendar/`: toolbar (month title, Day | Week | Month,
+Today, ‹ ›), `WeekView` (7 spatial columns with zones and lane-split
+overlaps), `MonthView` (task lists per day, "+N more"), `DesktopDaysHost`
+shown on Days in the wide layout. Shared `tasksOnDayProvider`; the Day
+screen's provider now uses the same function. `CalendarGridTokens`.
+Found and fixed: crossing the 840 breakpoint didn't swap the Days page
+(scene key lacked the layout; ERROR_LOG).
+
+Tests: `calendar_span_test.dart` (4), `desktop_calendar_test.dart` (6:
+week placement, overlap lanes, open task, header → Day, month "+N more",
+toolbar stepping), and a real-app case in `wide_shell_layout_test.dart`
+(switch swaps the page; phones have no toolbar), which failed before the
+scene-key fix. Not run as the real macOS/web app; visual review open.
+Follow-up, same day: the week now shows the app's own pills (read-only
+`TaskCapsuleBlock`), overlaps packed like the Day screen; faint day/hour
+grid lines (week) and cell lines (month) behind Settings → Appearance →
+"Calendar grid lines" (default on). Checked once with a real-font render:
+the first version hid titles (compact inline layout) and starved overlapped
+titles to 12px; both fixed before finishing. New test: lines follow the
+toggle in week and month. Calendar tests 11/11.
+Follow-up, same day: overlapped week tasks now show their titles
+(reported: "not seeing label of others"). `WeekTaskPill` (pill only) +
+`WeekTaskText` (title row) in a shared text column, rows stacked when they
+would collide; time dropped from the row after a render showed it starving
+titles. Test asserts both overlapping titles show, after the pills, not
+overlapping; a probe confirmed three overlapping titles render in full.
+
+## [2026-10-08] macOS full-bleed window
+
+Transparent, full-size-content title bar (`MainFlutterWindow.swift`); the
+bar's height is a macOS-only top safe area (`AppWindowInsets`); in the wide
+layout the sidebar, centre and panel backgrounds reach the top edge with
+their content below the window buttons. `flutter build macos --debug`
+builds. Tests: `app_window_insets_test.dart` (macOS vs iOS/Android/Windows
+variants) and a wide-shell case with a 28px top inset (sidebar background
+at y=0, labels and toolbar below 28). Not checked in the running app.
+
+## [2026-10-08] Shell dividers and grid lines: one pixel, softer
+
+`AppHairline` draws the sidebar/panel dividers and calendar grid lines one
+physical pixel wide (were 2 on Retina), dividers at `colorBorder` × .7.
+Test: on a 2× window the sidebar divider is 0.5pt and lighter than
+`colorBorder`. Floating-pane window idea parked in the handover.
+Correction, 2026-10-09: shell and grid lines are now 1 point (Notion
+Calendar's measured width), not one physical pixel; the "thick" lines came
+from `borderWidthHairline` being 2 points. Hour/day/divider strengths
+matched to Notion's measured +6/+9/+13 (dark). Tests updated (divider is
+`lineWidth`, thinner than `borderWidthHairline`).
+
+## [2026-10-09] Page slide → dev toggle (fade by default); Patterns fill stagger
+
+`DevPageSlideMotion` (default off) drives `AppViewTransition.slide` in the
+shell; new `DevPageMotionPanel` in Settings → Developer. New
+`AppStaggeredFill` + `AppViewArrival`: completed Patterns days colour in by
+order (week, month, six-month) on each arrival. Tests:
+`app_staggered_fill_test.dart` (3: order, replay on arrival, reduced
+motion), wide-shell "fade by default; slide is a dev toggle", and the
+Patterns view tests now let the fill finish before reading cell colours.
+Not checked on a device.

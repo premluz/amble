@@ -6,6 +6,7 @@
 // deleted.
 // ignore_for_file: unused_import, unused_element
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -273,6 +274,44 @@ void main() {
     },
   );
 
+  for (final (forward, width) in [(true, 430.0), (false, 800.0)]) {
+    testWidgets('swiping ${forward ? 'forward' : 'back'} keeps the week '
+        'boundary gap equal to a day gap at ${width.toInt()}px', (
+      tester,
+    ) async {
+      tester.view.physicalSize = Size(width, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await pumpHeader(tester, initialDate: DateTime(2026, 9, 10));
+      await tester.tap(find.byIcon(Icons.keyboard_arrow_down_rounded));
+      await tester.pumpAndSettle();
+
+      final swipeArea = find.byWidgetPredicate(
+        (widget) =>
+            widget is GestureDetector && widget.onHorizontalDragEnd != null,
+      );
+      final gesture = await tester.startGesture(tester.getCenter(swipeArea));
+      final distance = tester.getSize(swipeArea).width * .75;
+      final direction = forward ? -1.0 : 1.0;
+      const dragStart = kTouchSlop * 2;
+      await gesture.moveBy(Offset(direction * dragStart, 0));
+      await tester.pump();
+      await gesture.moveBy(Offset(direction * (distance - dragStart), 0));
+      await tester.pump();
+
+      final withinWeek = forward
+          ? _dayCellRect(tester, '13').left - _dayCellRect(tester, '12').right
+          : _dayCellRect(tester, '8').left - _dayCellRect(tester, '7').right;
+      final acrossWeeks = forward
+          ? _dayCellRect(tester, '14').left - _dayCellRect(tester, '13').right
+          : _dayCellRect(tester, '7').left - _dayCellRect(tester, '6').right;
+      expect(withinWeek, greaterThan(0));
+      expect(acrossWeeks, closeTo(withinWeek, .5));
+      await gesture.up();
+      await tester.pumpAndSettle();
+    });
+  }
+
   testWidgets(
     'tapping a day cell after swiping to another week selects a day IN '
     'that viewed week, not the originally-selected week',
@@ -397,7 +436,7 @@ void main() {
     // The selected day (the 6th) still reads as selected via weight alone.
     final selectedDay = dayTexts.firstWhere((t) => t.data == '6');
     final unselectedDay = dayTexts.firstWhere((t) => t.data != '6');
-    expect(selectedDay.style?.fontWeight, FontWeight.w700);
+    expect(selectedDay.style?.fontWeight, FontWeight.w600);
     expect(unselectedDay.style?.fontWeight, FontWeight.w500);
   });
 
@@ -677,6 +716,12 @@ void main() {
 }
 
 DateTime _dateOnly(DateTime date) => DateTime(date.year, date.month, date.day);
+
+Rect _dayCellRect(WidgetTester tester, String day) => tester.getRect(
+  find
+      .ancestor(of: find.text(day), matching: find.byType(AppPressFeedback))
+      .first,
+);
 
 class _FixedSelectedDate extends SelectedDate {
   _FixedSelectedDate(this._initial);

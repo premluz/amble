@@ -10,6 +10,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/current_day_provider.dart';
 import '../../core/feature_flags.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_button.dart';
@@ -67,6 +68,7 @@ class AppCalendarHeader extends ConsumerWidget {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     final editModeEnabled = ref.watch(editModeEnabledProvider);
     final selectedDate = ref.watch(selectedDateProvider);
+    final today = ref.watch(currentDayProvider);
     // **2026-09-20 — shared across every AppCalendarHeader mount.**
     // Requested directly: "the calendar opened state should persist
     // across views... if days opened on timeline view they should
@@ -130,6 +132,7 @@ class AppCalendarHeader extends ConsumerWidget {
             // utility icons, not sharing their Row.
             AppDateAccordion(
               selectedDate: selectedDate,
+              today: today,
               onDateSelected: (date) =>
                   ref.read(selectedDateProvider.notifier).goTo(date),
               expanded: accordionExpanded,
@@ -209,6 +212,7 @@ class AppCalendarHeader extends ConsumerWidget {
           // comment above).
           AppDateAccordion(
             selectedDate: selectedDate,
+            today: today,
             onDateSelected: (date) =>
                 ref.read(selectedDateProvider.notifier).goTo(date),
             expanded: accordionExpanded,
@@ -243,7 +247,7 @@ class _TodayButton extends ConsumerWidget {
         // textCaptionMono — a day number, not a name.
         style: theme.textCaptionMono.copyWith(
           color: theme.colorTextPrimary,
-          fontWeight: FontWeight.w700,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );

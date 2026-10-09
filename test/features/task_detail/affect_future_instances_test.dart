@@ -9,6 +9,10 @@ import 'package:amble/hive_registrar.g.dart';
 import 'package:amble/core/widgets/app_value_chip.dart';
 import 'package:amble/features/task_detail/task_sheet.dart';
 import 'package:amble/features/task_detail/task_sheet_fields.dart';
+import 'package:amble/shared/models/local_date.dart';
+import 'package:amble/shared/providers/occurrence_store.dart';
+import 'package:amble/shared/repositories/occurrence_record_repository.dart';
+import 'package:amble/shared/repositories/series_repository.dart';
 import 'package:amble/shared/models/recurrence_frequency.dart';
 import 'package:amble/shared/models/recurrence_rule.dart';
 import 'package:amble/shared/models/category.dart';
@@ -118,6 +122,32 @@ DateTime _daysFromToday(int days, {int hour = 9, int minute = 0}) {
   final now = DateTime.now();
   return DateTime(now.year, now.month, now.day + days, hour, minute);
 }
+
+/// A daily "Standup" series at 9:00 from today, through the real
+/// `createTask`.
+Future<void> _seedDailySeries(
+  WidgetTester tester,
+  GlobalKey<NavigatorState> key,
+) async {
+  final container = ProviderScope.containerOf(key.currentContext!);
+  await tester.runAsync(
+    () => container
+        .read(taskListProvider.notifier)
+        .createTask(
+          title: 'Standup',
+          scheduledAt: _daysFromToday(0),
+          durationMinutes: 30,
+          categoryId: BuiltInCategoryIds.work,
+          recurrenceRule: RecurrenceRule(frequency: RecurrenceFrequency.daily),
+        ),
+  );
+}
+
+Task _occurrenceOn(GlobalKey<NavigatorState> key, DateTime day) =>
+    ProviderScope.containerOf(key.currentContext!)
+        .read(occurrenceStoreProvider.notifier)
+        .tasksOn(LocalDate.fromDateTime(day))
+        .single;
 
 void main() {
   late Box<Task> box;
@@ -241,19 +271,9 @@ void main() {
   );
 
   testWidgets(
-    'leaving the toggle off and saving a moved TEMPLATE instance isolates '
-    'the edit — the series keeps its rule and every other instance',
+    'leaving the toggle off and saving a moved occurrence moves only that '
+    'occurrence — the series and every other day are unchanged',
     (tester) async {
-      final template = Task.create(
-        title: 'Standup',
-        scheduledAt: _daysFromToday(0),
-        durationMinutes: 30,
-        categoryId: BuiltInCategoryIds.work,
-        recurrenceId: 'series-1',
-        recurrenceRule: RecurrenceRule(frequency: RecurrenceFrequency.daily),
-      );
-      await tester.runAsync(() => box.put(template.id, template));
-
       final navigatorKey = await _pumpHost(
         tester,
         box: box,
@@ -261,47 +281,33 @@ void main() {
         trackedBehaviorBox: trackedBehaviorBox,
         templateBox: templateBox,
       );
-      final beforeSaveOtherIds = box.values
-          .where((t) => t.id != template.id)
-          .map((t) => t.id)
-          .toSet();
-
-      showTaskSheet(navigatorKey.currentContext!, task: template);
+      await _seedDailySeries(tester, navigatorKey);
+      showTaskSheet(
+        navigatorKey.currentContext!,
+        task: _occurrenceOn(navigatorKey, _daysFromToday(0)),
+      );
       await tester.pumpAndSettle();
 
       await _setStartHour(tester, 14);
-
       // Toggle left off (default) — "just this occurrence".
       await _tapAndSettle(tester, find.text('Save'));
 
-      final saved = box.get(template.id)!;
-      expect(saved.scheduledAt, _daysFromToday(0, hour: 14));
-      // The rule is untouched — still on the template, not cleared or
-      // regenerated under a "same rule" round trip.
-      expect(saved.recurrenceRule?.frequency, RecurrenceFrequency.daily);
-      expect(saved.originalScheduledAt, isNotNull);
-
-      // Every other pre-existing instance survives under its own id — no
-      // prune/regenerate cascade ran.
-      final afterSaveIds = box.values.map((t) => t.id).toSet();
-      expect(afterSaveIds.containsAll(beforeSaveOtherIds), isTrue);
+      expect(
+        _occurrenceOn(navigatorKey, _daysFromToday(0)).scheduledAt,
+        _daysFromToday(0, hour: 14),
+      );
+      expect(
+        _occurrenceOn(navigatorKey, _daysFromToday(1)).scheduledAt,
+        _daysFromToday(1),
+      );
+      expect(HiveSeriesRepository.opened().getAll().single.version, 1);
     },
   );
 
   testWidgets(
-    'turning the toggle on and saving a moved TEMPLATE instance runs the '
-    'existing cascade — future instances regenerate under the same rule',
+    'turning the toggle on and saving a moved occurrence moves it and every '
+    'later day — a new revision from this date',
     (tester) async {
-      final template = Task.create(
-        title: 'Standup',
-        scheduledAt: _daysFromToday(0),
-        durationMinutes: 30,
-        categoryId: BuiltInCategoryIds.work,
-        recurrenceId: 'series-1',
-        recurrenceRule: RecurrenceRule(frequency: RecurrenceFrequency.daily),
-      );
-      await tester.runAsync(() => box.put(template.id, template));
-
       final navigatorKey = await _pumpHost(
         tester,
         box: box,
@@ -309,30 +315,25 @@ void main() {
         trackedBehaviorBox: trackedBehaviorBox,
         templateBox: templateBox,
       );
-      showTaskSheet(navigatorKey.currentContext!, task: template);
+      await _seedDailySeries(tester, navigatorKey);
+      showTaskSheet(
+        navigatorKey.currentContext!,
+        task: _occurrenceOn(navigatorKey, _daysFromToday(0)),
+      );
       await tester.pumpAndSettle();
 
       await _setStartHour(tester, 14);
-
       await _tapAndSettle(tester, find.byType(AppSwitch).last);
       await _tapAndSettle(tester, find.text('Save'));
 
-      final saved = box.get(template.id)!;
-      expect(saved.scheduledAt, _daysFromToday(0, hour: 14));
-      expect(saved.isRecurrenceTemplate, isTrue);
-
-      // Regenerated future instances exist, sharing the same series. The
-      // regeneration is real Hive I/O that can outlast the tap helper's
-      // short wait under the full suite's load — wait for it in real time.
-      Iterable<Task> regenerated() => box.values.where(
-        (t) => t.recurrenceId == 'series-1' && t.id != template.id,
-      );
-      await tester.runAsync(() async {
-        for (var i = 0; i < 60 && regenerated().isEmpty; i++) {
-          await Future<void>.delayed(const Duration(milliseconds: 50));
-        }
-      });
-      expect(regenerated(), isNotEmpty);
+      for (final day in [0, 1, 7]) {
+        expect(
+          _occurrenceOn(navigatorKey, _daysFromToday(day)).scheduledAt,
+          _daysFromToday(day, hour: 14),
+        );
+      }
+      // Changed by the series, not by per-day overrides.
+      expect(HiveOccurrenceRecordRepository.opened().getAll(), isEmpty);
     },
   );
 }
