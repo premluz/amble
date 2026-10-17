@@ -115,6 +115,54 @@ final class CalendarPermissionServiceProvider
 String _$calendarPermissionServiceHash() =>
     r'60f24777a97525d4be3cac4ccf20b0b94de08822';
 
+@ProviderFor(systemSettingsService)
+final systemSettingsServiceProvider = SystemSettingsServiceProvider._();
+
+final class SystemSettingsServiceProvider
+    extends
+        $FunctionalProvider<
+          SystemSettingsService,
+          SystemSettingsService,
+          SystemSettingsService
+        >
+    with $Provider<SystemSettingsService> {
+  SystemSettingsServiceProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'systemSettingsServiceProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$systemSettingsServiceHash();
+
+  @$internal
+  @override
+  $ProviderElement<SystemSettingsService> $createElement(
+    $ProviderPointer pointer,
+  ) => $ProviderElement(pointer);
+
+  @override
+  SystemSettingsService create(Ref ref) {
+    return systemSettingsService(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(SystemSettingsService value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<SystemSettingsService>(value),
+    );
+  }
+}
+
+String _$systemSettingsServiceHash() =>
+    r'bce1c6daae7d9dda6ffd2f1aa9f1387912ffd631';
+
 @ProviderFor(syncedCalendarEventRepository)
 final syncedCalendarEventRepositoryProvider =
     SyncedCalendarEventRepositoryProvider._();
@@ -262,6 +310,81 @@ final class CalendarSyncServiceProvider
 String _$calendarSyncServiceHash() =>
     r'6b982e418cd281ef40c6d44952305be718b64f29';
 
+/// Bumped by "Refresh events" (Settings › Calendars). Every calendar event
+/// fetch watches it, so one press re-reads the device calendars for every
+/// open view. Without it a fetch made earlier (before access was granted,
+/// or before an event was added in the Calendar app) stays on screen until
+/// the day changes or the app restarts.
+
+@ProviderFor(ExternalCalendarRefresh)
+final externalCalendarRefreshProvider = ExternalCalendarRefreshProvider._();
+
+/// Bumped by "Refresh events" (Settings › Calendars). Every calendar event
+/// fetch watches it, so one press re-reads the device calendars for every
+/// open view. Without it a fetch made earlier (before access was granted,
+/// or before an event was added in the Calendar app) stays on screen until
+/// the day changes or the app restarts.
+final class ExternalCalendarRefreshProvider
+    extends $NotifierProvider<ExternalCalendarRefresh, int> {
+  /// Bumped by "Refresh events" (Settings › Calendars). Every calendar event
+  /// fetch watches it, so one press re-reads the device calendars for every
+  /// open view. Without it a fetch made earlier (before access was granted,
+  /// or before an event was added in the Calendar app) stays on screen until
+  /// the day changes or the app restarts.
+  ExternalCalendarRefreshProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'externalCalendarRefreshProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$externalCalendarRefreshHash();
+
+  @$internal
+  @override
+  ExternalCalendarRefresh create() => ExternalCalendarRefresh();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(int value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<int>(value),
+    );
+  }
+}
+
+String _$externalCalendarRefreshHash() =>
+    r'5aebd5b2db9201c3b65ed3a593b2893f9e7a33a1';
+
+/// Bumped by "Refresh events" (Settings › Calendars). Every calendar event
+/// fetch watches it, so one press re-reads the device calendars for every
+/// open view. Without it a fetch made earlier (before access was granted,
+/// or before an event was added in the Calendar app) stays on screen until
+/// the day changes or the app restarts.
+
+abstract class _$ExternalCalendarRefresh extends $Notifier<int> {
+  int build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<int, int>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<int, int>,
+              int,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
+
 /// Every calendar on the device, for the two Settings pickers (display
 /// multi-select, sync-target single-select) — a plain `autoDispose` future
 /// provider, not `keepAlive`: this is Settings-screen-scoped lookup data,
@@ -280,13 +403,13 @@ final availableDeviceCalendarsProvider = AvailableDeviceCalendarsProvider._();
 final class AvailableDeviceCalendarsProvider
     extends
         $FunctionalProvider<
-          AsyncValue<List<dc.Calendar>>,
-          List<dc.Calendar>,
-          FutureOr<List<dc.Calendar>>
+          AsyncValue<DeviceCalendarsState>,
+          DeviceCalendarsState,
+          FutureOr<DeviceCalendarsState>
         >
     with
-        $FutureModifier<List<dc.Calendar>>,
-        $FutureProvider<List<dc.Calendar>> {
+        $FutureModifier<DeviceCalendarsState>,
+        $FutureProvider<DeviceCalendarsState> {
   /// Every calendar on the device, for the two Settings pickers (display
   /// multi-select, sync-target single-select) — a plain `autoDispose` future
   /// provider, not `keepAlive`: this is Settings-screen-scoped lookup data,
@@ -308,18 +431,18 @@ final class AvailableDeviceCalendarsProvider
 
   @$internal
   @override
-  $FutureProviderElement<List<dc.Calendar>> $createElement(
+  $FutureProviderElement<DeviceCalendarsState> $createElement(
     $ProviderPointer pointer,
   ) => $FutureProviderElement(pointer);
 
   @override
-  FutureOr<List<dc.Calendar>> create(Ref ref) {
+  FutureOr<DeviceCalendarsState> create(Ref ref) {
     return availableDeviceCalendars(ref);
   }
 }
 
 String _$availableDeviceCalendarsHash() =>
-    r'bbd371a8db66122cd0e56e38aa679ee56d736775';
+    r'ab63511d04a268e331f9b38af01b0077c59b1874';
 
 /// Fetches [ExternalCalendarEvent]s for the given day range from whichever
 /// calendars [CalendarDisplayIdsSetting] selects — the Timeline's own
@@ -428,7 +551,7 @@ final class ExternalCalendarEventsForRangeProvider
 }
 
 String _$externalCalendarEventsForRangeHash() =>
-    r'bb537e1aaaa8b9e8d7a9307b0a145dd3687702cf';
+    r'd32a3ae87475b77adb0b9445d23c5cb14abf9f41';
 
 /// Fetches [ExternalCalendarEvent]s for the given day range from whichever
 /// calendars [CalendarDisplayIdsSetting] selects — the Timeline's own

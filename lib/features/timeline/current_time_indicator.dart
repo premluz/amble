@@ -190,17 +190,23 @@ class CurrentTimeMarker extends StatelessWidget {
             ),
           ),
         ),
-        Expanded(
-          child: SizedBox(
-            height: theme.spacingSm,
-            child: Center(
-              child: Container(
-                height: theme.borderWidthHairline,
-                color: theme.colorTaskAlert,
+        // The line across the day used to continue here — hidden for now
+        // (requested directly), dot and time pill only. The List view's own
+        // marker (`ListCurrentTimeMarker`) keeps its full-width line; that
+        // one separates in-progress rows from upcoming ones in a plain
+        // list with no time axis, a different job from this one.
+        if (pillSizesRow)
+          Expanded(
+            child: SizedBox(
+              height: theme.spacingSm,
+              child: Center(
+                child: Container(
+                  height: theme.borderWidthHairline,
+                  color: theme.colorTaskAlert,
+                ),
               ),
             ),
           ),
-        ),
       ],
     );
   }

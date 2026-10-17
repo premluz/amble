@@ -16,6 +16,10 @@ class FakeDeviceCalendarPlugin extends dc.DeviceCalendarPlugin {
   FakeDeviceCalendarPlugin() : super.private();
 
   bool permissionGranted = true;
+
+  /// False models a platform with no calendar support: the real plugin
+  /// reports that as an error result, not as a `false`.
+  bool platformSupported = true;
   List<dc.Calendar> calendars = [];
 
   /// Keyed by calendar id, then by event id.
@@ -25,13 +29,19 @@ class FakeDeviceCalendarPlugin extends dc.DeviceCalendarPlugin {
 
   @override
   Future<dc.Result<bool>> hasPermissions() async {
+    if (!platformSupported) return _unsupported();
     return dc.Result<bool>()..data = permissionGranted;
   }
 
   @override
   Future<dc.Result<bool>> requestPermissions() async {
+    if (!platformSupported) return _unsupported();
     return dc.Result<bool>()..data = permissionGranted;
   }
+
+  dc.Result<bool> _unsupported() =>
+      dc.Result<bool>()
+        ..errors.add(const dc.ResultError(500, 'No calendar on this platform'));
 
   @override
   Future<dc.Result<UnmodifiableListView<dc.Calendar>>>

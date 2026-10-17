@@ -3,9 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/tokens/component_tokens.dart';
+import '../../shared/models/external_calendar_event.dart';
 import '../../shared/providers/calendar_grid_lines_setting.dart';
 import '../timeline/selected_date_provider.dart';
 import 'calendar_span.dart';
+import 'events_on_day.dart';
 import 'month_day_cell.dart';
 import '../../core/widgets/app_hairline.dart';
 
@@ -19,6 +21,7 @@ class MonthView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final selected = ref.watch(selectedDateProvider);
     final days = monthGridOf(selected);
+    final events = watchEventsBetween(ref, days.first, days.last);
     final rows = days.length ~/ DateTime.daysPerWeek;
     final line = ref.watch(calendarGridLinesSettingProvider)
         ? AppHairline.side(context, CalendarGridTokens.dayLineAlpha)
@@ -43,6 +46,7 @@ class MonthView extends ConsumerWidget {
                         child: _cell(
                           days[row * DateTime.daysPerWeek + col],
                           selected,
+                          events,
                         ),
                       ),
                     ),
@@ -54,8 +58,16 @@ class MonthView extends ConsumerWidget {
     );
   }
 
-  Widget _cell(DateTime day, DateTime selected) => ClipRect(
-    child: MonthDayCell(day: day, inMonth: day.month == selected.month),
+  Widget _cell(
+    DateTime day,
+    DateTime selected,
+    List<ExternalCalendarEvent> events,
+  ) => ClipRect(
+    child: MonthDayCell(
+      day: day,
+      inMonth: day.month == selected.month,
+      events: events,
+    ),
   );
 }
 

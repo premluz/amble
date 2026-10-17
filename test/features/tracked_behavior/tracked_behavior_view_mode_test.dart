@@ -15,7 +15,6 @@ import 'package:amble/shared/providers/tracked_behavior_providers.dart';
 import 'package:amble/shared/repositories/hive_preferences_repository.dart';
 import 'package:amble/shared/repositories/hive_task_repository.dart';
 import 'package:amble/shared/repositories/hive_tracked_behavior_repository.dart';
-import 'package:amble/core/tokens/motion_primitives.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -73,6 +72,7 @@ void main() {
     AmbleTheme? theme,
     bool showCalendarLabels = false,
     bool showDemoData = false,
+    bool settle = true,
   }) async {
     final resolvedTheme = theme ?? AmbleTheme.light;
     await tester.runAsync(() async {
@@ -112,15 +112,10 @@ void main() {
         ),
       ),
     );
-    await tester.pump();
-    // Let completed days finish colouring in (AppStaggeredFill).
-    await tester.pump(
-      const Duration(
-        milliseconds:
-            MotionPrimitives.durationFillStaggerMs +
-            MotionPrimitives.durationFastMs,
-      ),
-    );
+    // Completed days are computed after the first frame (the empty grid
+    // paints first; behaviorCompletedDaysProvider), then colour in
+    // (AppStaggeredFill); settle covers both.
+    if (settle) await tester.pumpAndSettle();
   }
 
   TrackedBehavior makeBehavior() => TrackedBehavior.create(
@@ -312,6 +307,42 @@ void main() {
       expect(anyCellFilled(), isFalse);
 
       await pumpList(tester, behaviors: [behavior], tasks: [completedTask]);
+      expect(anyCellFilled(), isTrue);
+    },
+  );
+
+  testWidgets(
+    'the empty grid paints on the first frame; completed days fill in after',
+    (tester) async {
+      final behavior = makeBehavior();
+      final today = DateTime.now();
+      final completedTask = Task.create(
+        title: 'Exercise',
+        scheduledAt: DateTime(today.year, today.month, today.day, 9),
+        durationMinutes: 30,
+        categoryId: BuiltInCategoryIds.health,
+      )..behaviorId = behavior.id;
+      completedTask.status = TaskStatus.completed;
+      final accent = AmbleTheme.light.colorAccent;
+      bool anyCellFilled() => tester
+          .widgetList<Container>(
+            find.descendant(
+              of: find.byType(TrackedBehaviorRow),
+              matching: find.byType(Container),
+            ),
+          )
+          .any((c) => (c.decoration as BoxDecoration?)?.color == accent);
+
+      await pumpList(
+        tester,
+        behaviors: [behavior],
+        tasks: [completedTask],
+        settle: false,
+      );
+      expect(find.byType(TrackedBehaviorRow), findsOneWidget);
+      expect(anyCellFilled(), isFalse, reason: 'first frame: dots only');
+
+      await tester.pumpAndSettle();
       expect(anyCellFilled(), isTrue);
     },
   );

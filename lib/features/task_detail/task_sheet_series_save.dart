@@ -40,10 +40,11 @@ Future<void> saveOccurrenceFromSheet(
   final behaviorChanged = form.behaviorId != form.initialBehaviorId;
   if (ruleChanged || behaviorChanged || form.affectFutureInstances) {
     final slot = localSlotOf(scheduledAt);
-    return store.reviseFrom(
+    await store.reviseFrom(
       occurrence,
       _draftFrom(form, title, description, slot.minutes, durationMinutes),
     );
+    return;
   }
 
   occurrence

@@ -22,6 +22,7 @@ import 'core/widgets/app_context_menu.dart';
 import 'core/widgets/app_bottom_dock.dart';
 import 'core/widgets/app_shell_chrome.dart';
 import 'core/amble_material_localizations.dart';
+import 'core/layout_width.dart';
 import 'core/widgets/app_time_format.dart';
 import 'core/widgets/app_header_over_content.dart';
 import 'core/widgets/app_shell_header.dart';
@@ -47,6 +48,9 @@ import 'features/timeline/timeline_screen.dart';
 import 'features/tracked_behavior/tracked_behavior_list_screen.dart';
 import 'features/zone_grid/zone_grid_screen.dart';
 import 'hive_registrar.g.dart';
+import 'features/calendar/calendar_auto_refresh.dart';
+import 'features/assistant/assistant_undo_toaster.dart';
+import 'shared/providers/assistant_providers.dart';
 import 'shared/models/app_theme_mode.dart';
 import 'shared/models/category.dart';
 import 'shared/models/synced_calendar_event.dart';
@@ -369,6 +373,10 @@ class AmbleApp extends ConsumerWidget {
     final themeMode = ref.watch(themeModeSettingProvider);
     final use24Hour = ref.watch(timeFormatSettingProvider).use24Hour;
     final hasSeenSplash = ref.watch(hasSeenSplashProvider);
+    // Keeps Claude's local endpoint running for the session while an
+    // assistant is connected (Settings › Claude); listening, not watching,
+    // so a status change never rebuilds the app.
+    ref.listen(assistantServerProvider, (_, _) {});
     // A separate step from the splash/carousel above, not folded into it
     // — confirmed directly: "we need to keep carousel and separately
     // onboarding slides." Only consulted once hasSeenSplash is already
@@ -465,12 +473,18 @@ class AmbleApp extends ConsumerWidget {
         // `hasCompletedOnboarding` as their own "already shown" state, so
         // toggling a dev switch never re-shows something already seen —
         // only what a fresh, unseen install would reach.
-        home: _loggedHome(
-          hasSeenSplash: hasSeenSplash,
-          newSplashEnabled: newSplashEnabled,
-          legacyCarouselEnabled: legacyCarouselEnabled,
-          hasCompletedOnboarding: hasCompletedOnboarding,
-          onboardingQuizEnabled: onboardingQuizEnabled,
+        // Under the Navigator so its "Claude added … · Undo" toast has an
+        // overlay to show in.
+        home: CalendarAutoRefresh(
+          child: AssistantUndoToaster(
+            child: _loggedHome(
+              hasSeenSplash: hasSeenSplash,
+              newSplashEnabled: newSplashEnabled,
+              legacyCarouselEnabled: legacyCarouselEnabled,
+              hasCompletedOnboarding: hasCompletedOnboarding,
+              onboardingQuizEnabled: onboardingQuizEnabled,
+            ),
+          ),
         ),
       ),
     );
@@ -870,9 +884,7 @@ class _AmbleHomeState extends ConsumerState<AmbleHome> {
         : TimelineDisplayMode.spatial;
     // Wide windows (desktop, web, iPad landscape) swap the top nav for a
     // left sidebar beside the content — see ShellLayoutTokens.
-    final wide =
-        MediaQuery.sizeOf(context).width >=
-        ShellLayoutTokens.sideNavMinWindowWidth;
+    final wide = isWideLayout(context);
     final screens = _screens(trackedTabVisible, timelineMode, wide: wide);
     final activeIndex = _selectedIndex < screens.length ? _selectedIndex : 0;
     final activeViewId = activeIndex == 0

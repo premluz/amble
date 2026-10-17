@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Amble preview 393 × 852</title>
+  <!--
+    The web app in a 393 × 852 frame (iPhone 15 / 16 logical size), so it
+    runs with the phone layout. Open it over HTTP, not file://.
+    With Settings > Developer (debug build, hot reload):
+      flutter run -d web-server --web-port 8765 --web-hostname localhost
+    Without it (release build, no Developer section):
+      flutter build web --release --no-tree-shake-icons
+      cd build/web && python3 -m http.server 8765
+    then http://localhost:8765/preview.html
+    Change --w and --h below to try another size.
+  -->
+  <style>
+    :root {
+      --w: 393px;
+      --h: 852px;
+      --page: #e9e9ec;
+      --bezel-colour: #c9c9ce;
+      --label: #6b6b70;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --page: #141416; --bezel-colour: #3a3a3e; --label: #9a9aa0; }
+    }
+    html, body { margin: 0; }
+    body {
+      box-sizing: border-box;
+      min-height: 100vh;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      background: var(--page);
+      font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--label);
+    }
+    .device {
+      outline: 1px solid var(--bezel-colour);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+    }
+    iframe {
+      display: block;
+      width: var(--w);
+      height: var(--h);
+      border: 0;
+      background: #fff;
+    }
+  </style>
+</head>
+<body>
+  <div class="device">
+    <iframe src="index.html" title="Amble" allow="clipboard-read; clipboard-write"></iframe>
+  </div>
+  <div>393 × 852</div>
+</body>
+</html>

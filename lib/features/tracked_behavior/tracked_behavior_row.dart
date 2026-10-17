@@ -6,12 +6,9 @@ import '../../core/widgets/app_follow_through.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_press_feedback.dart';
 import '../../core/widgets/app_staggered_fill.dart';
-import '../../shared/models/task.dart';
 import '../../shared/models/tracked_behavior.dart';
 import '../../shared/models/tracked_behavior_view_mode.dart';
-import '../../shared/providers/task_providers.dart';
-import '../../shared/models/local_date.dart';
-import '../../shared/providers/occurrence_store.dart';
+import 'behavior_completed_days.dart';
 import 'behavior_completion.dart';
 import 'tracked_behavior_form.dart' show unitLabelFor;
 import 'tracked_calendar_period.dart';
@@ -37,7 +34,6 @@ double _weeklyDaySpacing(double availableWidth, AmbleTheme theme) {
 /// Public so a widget test can target it directly.
 
 /// Days of history read for progress — the longest period a row shows.
-const _progressLookbackDays = 366;
 
 class TrackedBehaviorRow extends ConsumerWidget {
   const TrackedBehaviorRow({
@@ -62,16 +58,11 @@ class TrackedBehaviorRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final today = DateTime.now();
-    // Repeating tracked tasks are series occurrences, not stored tasks; the
-    // look-back covers the longest progress period shown (a year).
-    ref.watch(occurrenceStoreProvider);
-    final todayDate = LocalDate.fromDateTime(today);
-    final tasks = [
-      ...ref.watch(taskListProvider),
-      ...ref
-          .read(occurrenceStoreProvider.notifier)
-          .tasksBetween(todayDate.addDays(-_progressLookbackDays), todayDate),
-    ];
+    // Empty until the shared projection lands after the first frame; the
+    // completed days then fill in (see behaviorCompletedDaysProvider).
+    final completed =
+        ref.watch(behaviorCompletedDaysProvider).value?[behavior.id] ??
+        const <DateTime>{};
     final showDemoData =
         isDevConfigAvailable && ref.watch(devTrackedPatternDemoDataProvider);
 
@@ -107,7 +98,7 @@ class TrackedBehaviorRow extends ConsumerWidget {
                 TrackedBehaviorViewMode.weekly => _WeeklyRow(
                   theme: theme,
                   behavior: behavior,
-                  tasks: tasks,
+                  completedDays: completed,
                   showDemoData: showDemoData,
                   demoPatternIndex: demoPatternIndex,
                   today: today,
@@ -117,7 +108,7 @@ class TrackedBehaviorRow extends ConsumerWidget {
                 TrackedBehaviorViewMode.monthly => _MonthlyGrid(
                   theme: theme,
                   behavior: behavior,
-                  tasks: tasks,
+                  completedDays: completed,
                   showDemoData: showDemoData,
                   demoPatternIndex: demoPatternIndex,
                   today: today,
@@ -127,7 +118,7 @@ class TrackedBehaviorRow extends ConsumerWidget {
                 TrackedBehaviorViewMode.sixMonthly => _SixMonthlyHeatmap(
                   theme: theme,
                   behavior: behavior,
-                  tasks: tasks,
+                  completedDays: completed,
                   showDemoData: showDemoData,
                   demoPatternIndex: demoPatternIndex,
                   today: today,
@@ -229,7 +220,7 @@ class _WeeklyRow extends StatelessWidget {
   const _WeeklyRow({
     required this.theme,
     required this.behavior,
-    required this.tasks,
+    required this.completedDays,
     required this.showDemoData,
     required this.demoPatternIndex,
     required this.today,
@@ -239,7 +230,9 @@ class _WeeklyRow extends StatelessWidget {
 
   final AmbleTheme theme;
   final TrackedBehavior behavior;
-  final List<Task> tasks;
+
+  /// Every completed day of this behavior (any period); empty while loading.
+  final Set<DateTime> completedDays;
   final bool showDemoData;
   final int demoPatternIndex;
   final DateTime today;
@@ -259,13 +252,13 @@ class _WeeklyRow extends StatelessWidget {
       periodDate,
       TrackedBehaviorViewMode.weekly,
     );
-    final completedDays = showDemoData
+    final shown = showDemoData
         ? demoCompletedDaysFor(
             patternIndex: demoPatternIndex,
             start: monday,
             end: end,
           )
-        : completedDaysFor(behavior, tasks: tasks, start: monday, end: end);
+        : completedDays;
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -278,10 +271,7 @@ class _WeeklyRow extends StatelessWidget {
           // components rather than the same one labelled differently.
           _DayCell(
             theme: theme,
-            completed: isDayCompleted(
-              completedDays,
-              monday.add(Duration(days: i)),
-            ),
+            completed: isDayCompleted(shown, monday.add(Duration(days: i))),
             isToday: isToday(monday.add(Duration(days: i)), todayDay),
             size: theme.spacingXl,
             label: showCalendarLabels ? _weekdayInitials[i] : null,
@@ -301,7 +291,7 @@ class _MonthlyGrid extends StatelessWidget {
   const _MonthlyGrid({
     required this.theme,
     required this.behavior,
-    required this.tasks,
+    required this.completedDays,
     required this.showDemoData,
     required this.demoPatternIndex,
     required this.today,
@@ -311,7 +301,9 @@ class _MonthlyGrid extends StatelessWidget {
 
   final AmbleTheme theme;
   final TrackedBehavior behavior;
-  final List<Task> tasks;
+
+  /// Every completed day of this behavior (any period); empty while loading.
+  final Set<DateTime> completedDays;
   final bool showDemoData;
   final int demoPatternIndex;
   final DateTime today;
@@ -329,18 +321,13 @@ class _MonthlyGrid extends StatelessWidget {
       periodDate,
       TrackedBehaviorViewMode.monthly,
     );
-    final completedDays = showDemoData
+    final shown = showDemoData
         ? demoCompletedDaysFor(
             patternIndex: demoPatternIndex,
             start: firstOfMonth,
             end: lastOfMonth,
           )
-        : completedDaysFor(
-            behavior,
-            tasks: tasks,
-            start: firstOfMonth,
-            end: lastOfMonth,
-          );
+        : completedDays;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -353,7 +340,7 @@ class _MonthlyGrid extends StatelessWidget {
               _DayCell(
                 theme: theme,
                 completed: isDayCompleted(
-                  completedDays,
+                  shown,
                   DateTime(periodDate.year, periodDate.month, d),
                 ),
                 isToday: isToday(
@@ -383,7 +370,7 @@ class _SixMonthlyHeatmap extends StatelessWidget {
   const _SixMonthlyHeatmap({
     required this.theme,
     required this.behavior,
-    required this.tasks,
+    required this.completedDays,
     required this.showDemoData,
     required this.demoPatternIndex,
     required this.today,
@@ -393,7 +380,9 @@ class _SixMonthlyHeatmap extends StatelessWidget {
 
   final AmbleTheme theme;
   final TrackedBehavior behavior;
-  final List<Task> tasks;
+
+  /// Every completed day of this behavior (any period); empty while loading.
+  final Set<DateTime> completedDays;
   final bool showDemoData;
   final int demoPatternIndex;
   final DateTime today;
@@ -427,13 +416,13 @@ class _SixMonthlyHeatmap extends StatelessWidget {
       TrackedBehaviorViewMode.sixMonthly,
     );
     final dayCount = end.difference(start).inDays + 1;
-    final completedDays = showDemoData
+    final shown = showDemoData
         ? demoCompletedDaysFor(
             patternIndex: demoPatternIndex,
             start: start,
             end: end,
           )
-        : completedDaysFor(behavior, tasks: tasks, start: start, end: end);
+        : completedDays;
     final days = [
       for (var i = 0; i < dayCount; i++) start.add(Duration(days: i)),
     ];
@@ -483,7 +472,7 @@ class _SixMonthlyHeatmap extends StatelessWidget {
               for (final (i, day) in days.indexed)
                 _DayCell(
                   theme: theme,
-                  completed: isDayCompleted(completedDays, day),
+                  completed: isDayCompleted(shown, day),
                   isToday: isToday(day, todayDay),
                   size: _sixMonthlyCellSize,
                   order: days.length < 2 ? 0 : i / (days.length - 1),

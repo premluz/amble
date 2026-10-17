@@ -325,9 +325,9 @@ class ZoneContainerBlock extends StatelessWidget {
   /// see that widget's own doc comment for the full contract.
   final bool durationVisible;
 
-  /// The List view "Show time (from-to)" dev toggle
-  /// (`DevTimelineTaskTimeRangeVisible`) — requested directly: "Hide/show
-  /// start end should also affect zone view." Independent of
+  /// Whether start-end ranges show. Since 2026-10-10 the "Show time
+  /// (from-to)" dev toggle no longer feeds this (it is Timeline-only), so
+  /// the app passes false. Independent of
   /// [durationVisible] (either, both, or neither can be on), threaded
   /// through to this container's own [_Header] and to every
   /// [_ZoneTaskRow]/[_ZoneExternalEventRow] it renders.
@@ -805,9 +805,8 @@ class _Header extends StatelessWidget {
   final Zone zone;
   final int durationMinutes;
 
-  /// The List view "Show time (from-to)" dev toggle
-  /// (`DevTimelineTaskTimeRangeVisible`) — requested directly: "Hide/show
-  /// start end should also affect zone view." Hides ONLY this header's own
+  /// Whether this header shows its time range (the app passes false since
+  /// 2026-10-10 — the "Show time (from-to)" toggle is Timeline-only). Hides ONLY this header's own
   /// `start - end` time range; the title's own `(duration)` suffix is a
   /// separate concept and stays regardless, unaffected by this toggle
   /// (same split [_ZoneTaskRow]/[_ZoneExternalEventRow] make between their
@@ -959,9 +958,8 @@ class _ZoneTaskRow extends StatelessWidget {
   /// unchanged from before this parameter existed.
   final bool durationVisible;
 
-  /// The "Show time (from-to)" dev toggle
-  /// (`DevTimelineTaskTimeRangeVisibleProvider`) — requested directly:
-  /// "Hide/show start end should also affect zone view." Independent of
+  /// Whether start-end ranges show; the "Show time (from-to)" dev toggle
+  /// no longer feeds this (Timeline-only since 2026-10-10). Independent of
   /// [durationVisible], same contract as `TaskCapsuleTextRow.timeRangeVisible`.
   /// Defaults true so a caller that doesn't wire it up renders unchanged
   /// from before this parameter existed.
@@ -1025,7 +1023,7 @@ class _ZoneTaskRow extends StatelessWidget {
           : resolveCategoryVisual(
               theme: theme,
               category: resolvedLabel,
-            ).iconColor,
+            ).pillColor,
     );
 
     // Matches TaskCapsuleBlock's own "start - end (duration)" format
@@ -1259,6 +1257,18 @@ class _ZoneTaskRow extends StatelessWidget {
                         // across the closure below.
                         final resolvedCategory = category;
                         final badgeColor = state.fill;
+                        // The accent step of the badge's hue (a skipped task's grey
+                        // fill is not the category's tint, so it keeps black/white).
+                        final glyphBase =
+                            resolvedCategory == null ||
+                                task.status == TaskStatus.skipped
+                            ? glyphColorOn(badgeColor)
+                            : glyphColorFor(
+                                resolveCategoryVisual(
+                                  theme: theme,
+                                  category: resolvedCategory,
+                                ),
+                              );
                         final star = TaskImportantStar(
                           theme: theme,
                           pillWidth: badgeSize,
@@ -1290,11 +1300,8 @@ class _ZoneTaskRow extends StatelessWidget {
                                       theme.radiusPill,
                                     ),
                                   ),
-                                  // Tabler icon via CategoryGlyph — glyphColorOn
-                                  // rather than this badge's own `iconColor`
-                                  // directly, matching TaskCapsuleBlock's identical
-                                  // reasoning: a CUSTOM category's iconColor is the
-                                  // same swatch as this badge's own fill.
+                                  // Tabler icon via CategoryGlyph, in the category's
+                                  // accent, as on TaskCapsuleBlock's pill.
                                   // No glyph for "no category" — see
                                   // CategoryBadge's own 2026-09-23 comment on the
                                   // same change.
@@ -1302,13 +1309,11 @@ class _ZoneTaskRow extends StatelessWidget {
                                       ? null
                                       : CategoryGlyph(
                                           category: resolvedCategory,
-                                          color: glyphColorOn(badgeColor)
-                                              .withValues(
-                                                alpha: state.isDone
-                                                    ? TaskStateTokens
-                                                          .doneGlyphAlpha
-                                                    : 1,
-                                              ),
+                                          color: glyphBase.withValues(
+                                            alpha: state.isDone
+                                                ? TaskStateTokens.doneGlyphAlpha
+                                                : 1,
+                                          ),
                                           size: badgeSize * 0.55,
                                         ),
                                 ),
@@ -1356,7 +1361,7 @@ class _ZoneTaskRow extends StatelessWidget {
                       // `textTaskTitleZone` itself documents.
                       style: state.title(
                         theme.textTaskTitle.copyWith(
-                          fontWeight: FontWeight.w600,
+                          fontWeight: TaskStateTokens.titleWeight,
                         ),
                       ),
                       maxLines: 1,

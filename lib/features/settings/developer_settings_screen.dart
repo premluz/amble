@@ -1007,10 +1007,7 @@ class _DeveloperSettingsScreenState
                         SizedBox(height: theme.spacingXs),
                         Text(
                           'A zone\'s own member task rows show just their '
-                          'start time (e.g. "9:00 AM"), instead of the '
-                          'start - end range above. A separate toggle from '
-                          '"Show time (from-to)" — if both are on, this one '
-                          'wins.',
+                          'start time (e.g. "9:00 AM").',
                           style: theme.textBody.copyWith(
                             color: theme.colorTextSecondary,
                           ),
@@ -1161,7 +1158,7 @@ class _DeveloperSettingsScreenState
                   children: [
                     Expanded(
                       child: Text(
-                        'Show time (from-to)',
+                        'Show time (from-to) (Timeline view)',
                         style: theme.textBody.copyWith(
                           color: theme.colorTextPrimary,
                           fontWeight: FontWeight.w600,

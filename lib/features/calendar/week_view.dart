@@ -2,16 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/current_day_provider.dart';
-import '../../core/timeline_clock.dart';
 import '../../core/tokens/component_tokens.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/tokens/type_primitives.dart';
 import '../../core/widgets/app_press_feedback.dart';
 import '../../shared/providers/calendar_grid_lines_setting.dart';
+import '../../shared/providers/week_hour_height_setting.dart';
 import '../timeline/selected_date_provider.dart';
 import 'calendar_span.dart';
+import 'events_on_day.dart';
 import 'week_day_column.dart';
-import '../../core/widgets/app_hairline.dart';
+import 'week_grid_paint.dart';
+import 'week_zoom.dart';
+import 'week_zone_bands.dart';
 
 const _hoursPerDay = Duration.hoursPerDay;
 
@@ -25,10 +28,10 @@ class WeekView extends ConsumerStatefulWidget {
 }
 
 class _WeekViewState extends ConsumerState<WeekView> {
-  final _scroll = ScrollController(
+  late final _scroll = ScrollController(
     initialScrollOffset:
         CalendarGridTokens.weekFirstVisibleHour *
-        CalendarGridTokens.weekHourHeight,
+        ref.read(weekHourHeightSettingProvider),
   );
 
   @override
@@ -41,34 +44,57 @@ class _WeekViewState extends ConsumerState<WeekView> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context).extension<AmbleTheme>()!;
     final days = weekDaysOf(ref.watch(selectedDateProvider));
+    final hourHeight = ref.watch(weekHourHeightSettingProvider);
+    // Whole-day events have no hour to sit at; Month shows them.
+    final events = watchEventsBetween(
+      ref,
+      days.first,
+      days.last,
+    ).where((e) => !isAllDay(e)).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _WeekHeader(days: days),
         Expanded(
-          child: SingleChildScrollView(
-            controller: _scroll,
-            child: SizedBox(
-              height: _hoursPerDay * CalendarGridTokens.weekHourHeight,
-              child: CustomPaint(
-                painter: ref.watch(calendarGridLinesSettingProvider)
-                    ? _GridLines(
-                        hour: theme.colorBorder.withValues(
-                          alpha: CalendarGridTokens.hourLineAlpha,
-                        ),
-                        day: theme.colorBorder.withValues(
-                          alpha: CalendarGridTokens.dayLineAlpha,
-                        ),
-                        dayCount: days.length,
-                      )
-                    : null,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const _HourAxis(),
-                    for (final day in days)
-                      Expanded(child: WeekDayColumn(day: day)),
-                  ],
+          child: WeekZoom(
+            scroll: _scroll,
+            child: SingleChildScrollView(
+              controller: _scroll,
+              child: SizedBox(
+                height: _hoursPerDay * hourHeight,
+                child: CustomPaint(
+                  painter: ref.watch(calendarGridLinesSettingProvider)
+                      ? WeekGridLines(
+                          hour: theme.colorBorder.withValues(
+                            alpha: CalendarGridTokens.hourLineAlpha,
+                          ),
+                          day: theme.colorBorder.withValues(
+                            alpha: CalendarGridTokens.dayLineAlpha,
+                          ),
+                          dayCount: days.length,
+                          hourHeight: hourHeight,
+                        )
+                      : null,
+                  child: Stack(
+                    children: [
+                      // Zones behind the tasks, one band per run of days.
+                      Positioned.fill(child: WeekZoneBands(days: days)),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          WeekHourAxis(hourHeight: hourHeight),
+                          for (final day in days)
+                            Expanded(
+                              child: WeekDayColumn(
+                                day: day,
+                                days: days,
+                                events: events,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -122,76 +148,4 @@ class _WeekHeader extends ConsumerWidget {
 void openDay(WidgetRef ref, DateTime day) {
   ref.read(selectedDateProvider.notifier).goTo(day);
   ref.read(calendarSpanProvider.notifier).set(CalendarSpan.day);
-}
-
-class _HourAxis extends StatelessWidget {
-  const _HourAxis();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context).extension<AmbleTheme>()!;
-    final style = theme.textCaptionMono.copyWith(
-      color: theme.colorTextSecondary,
-    );
-    return SizedBox(
-      width: CalendarGridTokens.weekGutterWidth,
-      child: Stack(
-        children: [
-          for (var hour = 1; hour < _hoursPerDay; hour++)
-            Positioned(
-              top: hour * CalendarGridTokens.weekHourHeight,
-              right: theme.spacingSm,
-              child: FractionalTranslation(
-                translation: const Offset(0, -.5),
-                child: Text(
-                  timelineClock(context, TimeOfDay(hour: hour, minute: 0)),
-                  style: style,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// The faint grid behind the week: a line per hour and a slightly stronger
-/// one per day, across the day columns (not the hour axis).
-class _GridLines extends CustomPainter {
-  const _GridLines({
-    required this.hour,
-    required this.day,
-    required this.dayCount,
-  });
-
-  final Color hour;
-  final Color day;
-  final int dayCount;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const left = CalendarGridTokens.weekGutterWidth;
-    final hourPaint = Paint()
-      ..color = hour
-      ..strokeWidth = AppHairline.width;
-    for (var h = 1; h < _hoursPerDay; h++) {
-      final y = h * CalendarGridTokens.weekHourHeight;
-      canvas.drawLine(Offset(left, y), Offset(size.width, y), hourPaint);
-    }
-    final dayPaint = Paint()
-      ..color = day
-      ..strokeWidth = AppHairline.width;
-    final dayWidth = (size.width - left) / dayCount;
-    for (var d = 0; d < dayCount; d++) {
-      final x = left + d * dayWidth;
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), dayPaint);
-    }
-  }
-
-  @override
-  bool hitTest(Offset position) => false;
-
-  @override
-  bool shouldRepaint(_GridLines old) =>
-      old.hour != hour || old.day != day || old.dayCount != dayCount;
 }

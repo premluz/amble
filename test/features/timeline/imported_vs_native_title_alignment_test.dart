@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:amble/core/dev_config.dart' show TimelineTaskTextLayout;
 import 'package:amble/core/tokens/semantic_theme.dart';
+import 'package:amble/core/tokens/task_state_tokens.dart';
 import 'package:amble/features/timeline/external_event_capsule_block.dart';
 import 'package:amble/features/timeline/task_capsule_block.dart';
 import 'package:amble/shared/models/category.dart';
@@ -71,12 +72,13 @@ void main() {
             // its TITLE above centre, which would make this test chase a
             // difference that is not the reported one.
             textLayout: TimelineTaskTextLayout.inline,
-            // Production defaults: `DevTimelineTaskDurationVisible` and
-            // `DevTimelineTaskTimeRangeVisible` both build() to false, and
-            // `timeline_screen.dart` passes them straight through — so the
-            // real spatial view renders a TITLE-ONLY row for both block
-            // kinds. Both constructors default these to true, which would
-            // otherwise measure a row production never shows.
+            // `DevTimelineTaskDurationVisible` builds to false in production,
+            // so the spatial row carries no duration. The range is not part
+            // of this measured row: since 2026-10-10 the Timeline's
+            // under-title range is its own line (`timeUnderTitleVisible`),
+            // which this test does not build. Both constructors default
+            // these to true, which would otherwise measure a row production
+            // never shows.
             durationVisible: false,
             timeRangeVisible: false,
             task: Task.create(
@@ -182,9 +184,9 @@ void main() {
 
     expect(
       span.style?.fontWeight,
-      FontWeight.w600,
+      TaskStateTokens.titleWeight,
       reason:
-          'the imported title must carry the same w600 a native task\'s '
+          'the imported title must carry the same weight a native task\'s '
           'does — a lighter weight sits differently in the line box and '
           'reads as misaligned beside it',
     );

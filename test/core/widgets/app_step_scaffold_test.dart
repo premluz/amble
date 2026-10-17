@@ -21,6 +21,7 @@ void main() {
     String? modalTitle,
     Widget? headerContent,
     VoidCallback? onClose,
+    VoidCallback? onBack,
   }) {
     return tester.pumpWidget(
       MaterialApp(
@@ -30,7 +31,7 @@ void main() {
           headerColor: theme.colorAccent,
           modalTitle: modalTitle,
           headerContent: headerContent,
-          onBack: null,
+          onBack: onBack,
           onClose: onClose ?? () {},
           primaryLabel: 'Done',
           onPrimaryPressed: () {},
@@ -199,4 +200,47 @@ void main() {
     await tester.pump();
     expect(closes, 1);
   });
+
+  // Requested directly against a screenshot: "the sheets side padding
+  // match top padding so the circular buttons on left and right are
+  // precisely same padding top and left" — ratified for every
+  // `HeaderCircleButton` sited at a fixed-height header's own edge (see
+  // docs/DESIGN_SYSTEM.md's "Sheet header circle buttons" section). Both
+  // close and back already sit at `left`/`right: spacingLg`; only their
+  // top inset (previously `Center`-derived) needed the same value.
+  testWidgets(
+    "close and back's top inset equals their own LEFT/RIGHT inset exactly",
+    (tester) async {
+      await pump(tester, modalTitle: 'New task', onBack: () {});
+
+      // `StepScaffold`'s own top edge is the scrim strip above the
+      // sheet (`spacingXl` tall) — the header row the buttons are
+      // actually inset against starts below that. Found the same way
+      // the "tall" header-height test above does: the one `Container`
+      // whose height is fixed by the header formula.
+      final headerTop = tester
+          .widgetList<Container>(find.byType(Container))
+          .firstWhere((c) => c.constraints?.maxHeight != null);
+      final headerRect = tester.getRect(
+        find.byWidgetPredicate((w) => identical(w, headerTop)),
+      );
+      final buttons = tester
+          .widgetList<HeaderCircleButton>(find.byType(HeaderCircleButton))
+          .toList();
+      expect(buttons, hasLength(2), reason: 'back and close');
+
+      for (final icon in [Icons.arrow_back_rounded, Icons.close_rounded]) {
+        final rect = tester.getRect(
+          find.byWidgetPredicate(
+            (w) => w is HeaderCircleButton && w.icon == icon,
+          ),
+        );
+        expect(
+          rect.top - headerRect.top,
+          theme.spacingLg,
+          reason: '$icon top inset',
+        );
+      }
+    },
+  );
 }

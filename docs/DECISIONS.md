@@ -6085,3 +6085,286 @@ in... what then remains is only the stagger in Patterns colouring the
   existed before (days were instantly accent). It replays on each arrival
   at Patterns through a new `AppViewArrival` signal from `AppViewTransition`
   (judgment call: replay on every visit, not only first load).
+
+## 2026-10-09 — Desktop zones: one band across the week; name in the corner
+
+Requested directly: "on week view zones should have the same component as
+day view, and 1 zone across the whole week, not individual zones per day; in
+both views on desktop (day, week) the title of the zone should be in the top
+right corner instead of vertical text (only desktop, mobile as is); monthly
+view no zones."
+
+- **Same component:** the week uses `ZoneBackgroundBlock` and `ZoneNameLabel`
+  (previously its own tinted box). `WeekZoneBands` draws them in one layer
+  behind the day columns.
+- **"1 zone across the week", interpreted** (judgment call, flagged): a zone
+  that is the same on consecutive days (same facet, else title; same start
+  and end) is ONE band across those days' columns. Different hours on a day,
+  or a gap day, make a separate band; non-adjacent days are not joined.
+- **Title:** horizontal, top-right of the band, in both desktop Day and Week
+  (`isWideLayout`); phones keep vertical. In a busy zone the title can sit
+  over a task row at the top of the band — it is decorative and never takes a
+  tap.
+- **Month:** already drew no zones; now pinned by a test.
+- New `isWideLayout(context)` is the one phone / wide check; the shell uses it.
+- **Update, 2026-10-09: title top-LEFT, not top-right** (corrected directly:
+  "label on top left not top right"). Same corner in Day and Week on
+  desktop; `ZoneNameLabel` takes the band's own `leftInset` (and a List-mode
+  `listBandLeft`) to find the band's left edge.
+
+## 2026-10-09 — Cmd/Ctrl + scroll zooms the timeline (desktop)
+
+Requested directly. Implemented in `TimelinePinchZoom` (shared by the Day
+timeline and the zone-edit grid): Cmd on Apple platforms, Ctrl elsewhere;
+mouse-wheel `PointerScrollEvent` and trackpad `PointerPanZoomUpdate` both
+handled; zoom around the pointer via the same anchor maths as the simulated
+pinch (`timelineAnchoredScrollOffset`, extracted). **Mechanism, and why:** a
+scroll view claims the wheel before any ancestor listener, so while the
+modifier is held the wrapped child sits in `IgnorePointer`; a hover re-sync
+heals a missed key-up. Cmd+click on tasks is therefore also ignored while
+held (nothing used it). Judgment calls, flagged: scroll up zooms in;
+~22% per wheel notch; the week grid is not zoomable (fixed hour height);
+a native trackpad pinch is left for later.
+
+
+## 2026-10-09 — Atlas embeds the existing Widgetbook story
+
+Amble was selected as Atlas's first real component pilot. Atlas embeds the standalone Widgetbook project over its own Flutter web origin and selects a use case through Widgetbook's fragment route; it does not duplicate the component or apply Atlas's theme inside Amble. A small `widgetbook/web/index.html` bridge posts the project/item/session readiness identity to the parent origin after Flutter's first frame. Atlas still validates the expected origin, active frame, and identity. This changes only the development gallery; the shipped app entrypoint, Hive stores, and dependencies stay untouched.
+
+For full app screens, add a separate synthetic-data setup and reset through the repository/provider boundary before exposing a screen. Never use the user's ordinary Hive boxes as Atlas fixtures. The handshake has been exercised with Flutter's current JavaScript web-server mode; this does not establish Wasm timing or native platform fidelity.
+
+
+## 2026-10-09 — Atlas Inbox fixture entrypoint
+
+Added an Atlas-only Flutter entrypoint and fixture host for the production Inbox screen. It overrides task, section, and category repositories with seeded in-memory implementations; it does not initialize or mutate Amble's ordinary Hive stores. The fixture app is separate from the normal app startup, so the shipped entrypoint remains unchanged. Atlas ends a preview by unmounting its frame; activating it again seeds a fresh instance. This first adapter is Inbox-specific; inspect each later screen's data and navigation needs before generalizing it. Flutter web rendering does not establish native fidelity or the full app shell.
+
+
+Verification limitation: the two Atlas Playwright screen checks stub the preview readiness message; they do not launch this Flutter build inside the iframe. A live Inbox iframe smoke test remains the next step.
+
+
+## 2026-10-09 — Live Atlas Inbox iframe verified
+
+The first live attempt on port 4175 loaded the older Widgetbook welcome entrypoint. Leave that server untouched; serve the Atlas fixture entrypoint on port 4176 and point Atlas at that origin. The production Inbox then reached READY in the actual Atlas iframe. Selecting Personal changed the seeded task from Review launch checklist to Plan a weekend walk. Ending and reactivating remounted the Inbox with seeded defaults. This confirms one Flutter web screen and interaction path, not the full app shell, every screen, or native fidelity. The Atlas canvas currently presents a compact cropped viewport.
+
+
+## 2026-10-10 — Rios palette shift: warm paper/charcoal, soft Rios-led pills
+
+Requested directly with a brand reference (paper #F7F4EF, text #1F1C1A, lavender #B79AE8, periwinkle #AFC3EE, teal #78D2CB, moss/sand/blush supporting; night #171616/#23211F/#35312D). The reference sets the feel, not the values; everything stays OKLCH.
+
+- **Neutrals warmed in place.** Primitive names and semantic wiring are unchanged; values move to hue ~78 (light) / ~70 (dark). This deliberately partly reverses 2026-10-08's near-neutral greys (chroma .002) to the reference's warmer paper. The step sizes and quiet separators (~1.2×) from that decision still hold. The light base stays at luminance 0.891, slightly deeper than the reference (#F7F4EF is 0.907), to keep the `elevation_direction_test` rule.
+- **The `slate` text rungs (900/500/400) became warm.** The name now under-describes them. Renaming would only churn the code, so they kept their names.
+- **Light pills no longer clear 4.5:1 against the page.** This reverses 2026-09-12's choice. The user found those pills too strong. The legibility contract moves to the glyph and label drawn on the fill: charcoal at 7:1 or better in light, paper at 3:1 or better in dark (icons are non-text). Dark swatches still clear 4.5:1 on the base.
+- **Emphasis, not a smaller set.** All 16 indices stay, so stored `colorToken`s keep their hue family. Lavender, periwinkle and teal carry the most chroma, and the rest are quieter. Remapping the categories by meaning (e.g. Work → Lavender) is a separate decision.
+- **Category chip label** now uses `glyphColorOn(fill)` like its glyph. A fixed paper label vanishes on pastel. `TaskStateTokens.categoryLabelText` was removed.
+
+
+## 2026-10-10 — "Show time (from-to)" is Timeline-only, as a greyed line under the title
+
+Requested directly: the dev switch "should only affect timeline (spatial view) and under title show greyed out start end hour." Taking "short start end switch" to mean "Show time (from-to)" (the only start-end switch).
+
+- **Scope reversed.** The switch fed List-style rows and Zone view (and explicitly not the spatial view). It now feeds only the spatial view. Zone view and List rows are wired to `false` — their default with the switch off — so they look the same as before for anyone who had it off. Their widget parameters (`timeRangeVisible`) stay, since they are tested and still valid widget API.
+- **A new `TaskCapsuleTextRow.timeUnderTitleVisible` (default false)** carries the spatial line, instead of reusing `timeRangeVisible`: the latter defaults to true, and the desktop week's `WeekTaskText` would have grown a second line.
+- **Label collision grows by the line's height.** `_slotLabelHeight` adds `timeUnderTitleExtent` for task slots only, since imported events keep a one-line label.
+- **Not decided: duplicate with "Show duration".** That switch's left time+duration columns still print the range, so with both on the range shows twice.
+- **Also edited:** the "Show start time" help text no longer mentions "if both are on, this one wins", since the two can't collide any more.
+
+
+## 2026-10-10 — Task titles one weight step lighter (semibold to medium)
+
+Requested directly: "font weight for task label names one step less." Reading "task label names" as the task title text on pills and rows (the codebase's own "label" for it), not category chip labels. The weights are regular 400, medium 500, semibold 600, so one step down from semibold is medium.
+
+- **One token, seven sites.** `TaskStateTokens.titleWeight` replaces the hard-coded `FontWeight.w600` on the Timeline text row, the combined-layout title (stacked and inline), List cluster rows, Zone rows, the draft pill and imported-event titles. Imported titles stay equal to native ones, which `imported_vs_native_title_alignment_test` pins.
+- **Left semibold on purpose:** time labels, the hour axis, edge-time pills, headings and the category chip labels.
+
+
+## 2026-10-10 — The start-end line under the title also shows in the desktop week
+
+Requested directly: "should also show on week view." Taking "it" to be the greyed start-end line under the title (the "Show time (from-to)" dev switch); the lighter title weight already applied to the week through the shared text row. The week has no separate switch: it reads the same `DevTimelineTaskTimeRangeVisible`, so the scope is now Timeline plus week. `WeekTaskText` takes `timeUnderTitleVisible` from `WeekDayColumn`, which also grows its stacked-row spacing by `TaskCapsuleTextRow.timeUnderTitleExtent` so rows don't print over each other. Day view in the wide layout is the Timeline, so it is covered. Month cells and Zone view are untouched.
+
+
+## 2026-10-10 — The under-title time is one size rung and one weight step lower
+
+Requested directly: "font size and weight of time both one scale lower." Taking "time" to be the greyed start-end line under the title, not the hour axis or edge-time pills. It was the title's size at regular weight. It is now `TaskStateTokens.timeUnderTitleStyle`: the title size stepped down one rung on the new `TypePrimitives.sizeScale` (11 / 12 / 13 / 14 / 16 ...; it stays at 11 at the smallest), and weight light (new `TypePrimitives.weightLight`, w300), which the condensed numeric font ships and DM Sans does not. The title is medium, so this keeps the step under it. `timeUnderTitleExtent` is derived from the same style, so collision spacing follows. Risk: light 11–12px grey text may be faint; if so, the fix is `weightRegular` in that one style.
+
+
+## 2026-10-10 — Week task style option: pills or standard calendar blocks (desktop only)
+
+Requested directly: bring back the standard calendar-block week as an option, controlled in Appearance on desktop only. The earlier tinted-block week (2026-10-08) was rebuilt rather than recovered: it was never committed.
+
+- **Setting:** `WeekTaskStyleSetting` (`pills` default, `blocks`), stored by enum name under `PreferenceKeys.weekTaskStyle`, so reordering the enum can't change a saved choice and no Hive adapter is needed. An unknown stored value falls back to pills.
+- **Desktop only:** the Appearance panel is built only when `isWideLayout(context)` is true. A phone can never reach the week, so the setting there would do nothing.
+- **Block:** reuses `calendarTaskStyle` and `CalendarTaskRail` from the month view. `blockTintAlpha` (.22) was re-added as a token. The dev from-to switch doesn't apply to blocks, which always show their range.
+- **Not done:** blocks in the Day view, drag or resize, or a done-task look beyond what `TaskStateStyle` already gives.
+
+
+## 2026-10-10 — "Show time (from-to)" is on by default
+
+Requested directly: "show hour start and end should be on as default." `DevTimelineTaskTimeRangeVisible` now builds to `true`, so every Timeline task shows its greyed start-end line under the title until the switch is turned off. Zone and List views still don't read it. Tests that pinned the off default now assert on-by-default and toggle explicitly. The imported-title alignment test does not build the under-title line, so its widget arguments are unchanged.
+
+
+## 2026-10-10 — One hue, two steps: pill fill = block background (tint), pill icon = block rail (accent)
+
+Requested directly: pills use the same colour as a block's background, the block background is a scale of the pill's colour, and the pill's icon is the colour of the block's stronger left border. Read as one tint and one accent per category, shared by pill and block.
+
+- **Tint** = `TaskStateTokens.categoryTint(theme, swatch)`. The light swatches are already the pastel the pills were, so they pass through whole (mix 1.0). Dark swatches are mid-tones that a light title would not read on, so they are diluted to 30% over the card surface. This replaces the week block's old 22% alpha tint (`blockTintAlpha`, removed): blocks were much paler than pills, now they match.
+- **Accent** = new Tier 2 token `AmbleTheme.categoryAccents`, backed by `ColorPrimitives.categoryAccentsLight/Dark`, solved offline in OKLCH like the swatches. It is a ramp rather than a runtime darken so every value is inspectable and exported (`categoryAccent`, `categoryTint` in the token JSON).
+- **Central, not per-widget:** `resolveCategoryVisual` now returns the tint as `pillColor` and the accent as `iconColor`, so the Timeline pill, zone rows, category chips and badges, the week pills and the week blocks all follow. `glyphColorFor(visual)` picks the accent, or black/white for General and unresolved categories.
+- **Side effect to check:** the iconOnly label style's badge circle (dev setting) is now the accent colour rather than the swatch. The category colour pickers still show the swatch.
+- **Skipped tasks** keep the grey fill and a black/white glyph, because that fill is not the category's tint.
+
+
+## 2026-10-10 — Week block background is a lighter step of the pill fill (light mode)
+
+Requested directly after seeing the previous change: the current pastel is right for the darker step, and the block needs a lighter shade for its background. So the pill keeps its fill and the block background becomes `TaskStateTokens.blockBackground(theme, pillTint)`: the pill tint at `blockBackgroundMixLight` (.45) over the card in light mode. Dark mode is unchanged (mix 1.0, the block equals the pill), because the user spoke about light mode only. This supersedes the "same colour" line in the entry above for blocks; pills, accents and rails are as before. Title text reads at 7:1 or better on every light block background, pinned in `palette_contrast_test.dart`.
+
+Process note: a `dart format` over the whole `test/` directory reformatted 34 unrelated files; they were restored from git (none had prior edits) and `category_visual_test.dart` was re-applied minimally. Format named files only.
+
+
+## 2026-10-10 — The Mac's Calendar feeds the desktop app (read-only EventKit bridge)
+
+Requested directly: the desktop app should detect the macOS Calendar and Google Calendar; mobile already does. `device_calendar` ships only Android and iOS code, so on macOS every call hit a missing plugin and the display degraded to "no external events".
+
+- **Native bridge, no new dependency.** `macos/Runner/CalendarReadBridge.swift` answers the same method channel `device_calendar` uses (`plugins.builttoroam.com/device_calendar`) with the same JSON, for `hasPermissions`, `requestPermissions`, `retrieveCalendars` and `retrieveEvents`. The Dart code (`ExternalCalendarService`, the Settings > Calendars screen, the Timeline providers) is unchanged and has no macOS branch. Registered in `MainFlutterWindow.swift`; added to the Xcode project.
+- **Read-only by construction.** Create, update, delete and the iOS event modal return `FlutterMethodNotImplemented`, so the desktop app cannot write to the user's calendars (CONSTITUTION.md, Feature 1). Consequence: Feature 2 (manual sync-out of tasks) does not work on macOS yet; it fails quietly like any plugin error.
+- **Google on the Mac comes through the system.** EventKit lists every account in System Settings > Internet Accounts, so a Google account added there appears with its calendars and no Google sign-in of our own.
+- **Permission:** a calendar entitlement (`com.apple.security.personal-information.calendars`, both entitlement files) and the two usage strings in `Info.plist`. The prompt appears the first time the calendars are needed, as on iOS. macOS 14+ asks for full access; older systems use the classic request.
+- **NOT done: Google Calendar through the browser's logged-in accounts.** A page's login can't be read from the desktop app (and shouldn't be). It needs Google sign-in (OAuth) and the Google Calendar API: a new dependency (a Google sign-in/API package or an OAuth flow we write), an OAuth client ID from the user's Google Cloud project, and Google's app verification for the calendar scope. That is a "stop and ask" under the project rules; the bridge above covers Google accounts the Mac already has.
+
+
+## 2026-10-10 — Calendars settings: "Enable permission" instead of "no calendar detected" when access is off
+
+Requested directly: when calendar access is the problem, say so and offer a button that opens the system settings, instead of "no calendars found".
+
+- **Detectable, so detected.** `device_calendar` reports a platform with no calendar support (or a failed call) as an error result, and an honest "no" as a successful `false`. `CalendarPermissionService.access()` maps these to `CalendarAccess.granted / denied / unavailable`. `denied` shows "Calendar access is off for Amble" and an **Enable permission** button, with no "no calendar detected" text. `unavailable` and granted-but-empty both show "No calendar detected on this device."
+- **Limit:** the plugin can't tell "never asked" from "refused". The screen asks on opening, so by the time `false` comes back the system has either just been refused or won't ask again; both mean settings is the only way forward.
+- **Deep link without a new dependency.** `url_launcher` / `permission_handler` / `app_settings` are not in `pubspec.yaml`, and adding one is a stop-and-ask. Instead `SystemSettingsService` calls a tiny native handler on `com.amble/system_settings`: iOS opens Amble's page in Settings (`openSettingsURLString`), Android opens App Info (`ACTION_APPLICATION_DETAILS_SETTINGS`), macOS opens Privacy > Calendars (`x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars`). If the call fails the screen says where to go.
+- **Refresh on return.** The screen re-checks when the app resumes, so granting the permission in settings updates it without leaving the screen.
+- **Not verified at runtime:** opening settings and the live permission states need a person on each device. All three runners compile (macOS, iOS `--no-codesign`, Android debug APK).
+
+
+## 2026-10-10 — Connect to Claude, Phase 0–1: spike findings and the pure tool core
+
+Executing `docs/WORK_ORDER_CLAUDE_CONNECTION.md` ("Execute" taken as approval of D1 scope and the recommended D2–D4; D5, the real bundle id, is still open).
+
+- **Phase 0:** Claude Desktop 2.31226.1 (`com.anthropic.claudefordesktop`) registers `.mcpb` / `.dxt`. MCPB manifest 0.3 supports a `binary` server with literal `env` and `${__dirname}`. The Gatekeeper check is blocked: there is no Developer ID certificate on this Mac. Loopback and background launch move to Phases 2–3. Details are in the work order's spike table.
+- **Phase 1 shape:** `lib/shared/services/availability.dart` (pure free-time maths) and `lib/shared/services/assistant/` (tool types, `AssistantBackend` interface, read tools, write tools, toolbox, activity log). The tools know nothing about MCP or HTTP; Phase 2 puts a transport on `AssistantToolbox`.
+- **Permission enforced per call**, not only in the tool list, because an assistant may call a tool it saw before the user switched back to read-only.
+- **Times are local, with no time zone.** A suffix such as `Z` or `+02:00` is refused rather than converted, since everything in Amble is local wall-clock time.
+- **Free time** treats tasks (except skipped) and imported calendar events as busy, inside planning hours of 07:00–22:00 by default (no app setting exists for this yet). `zone_name` clips windows to that zone's hours.
+- **Writes are narrow:** add one task, or move one non-repeating task. Repeating tasks are refused with a plain reason. There is no delete; undo exists only in the activity log, for the assistant's own changes.
+- **Activity log is session-only** (capped at 50); persisting it is a later decision.
+
+
+## 2026-10-10 — Connect to Claude, Phase 2: the in-app loopback endpoint
+
+- **Spec checked:** MCP revision 2026-07-28 (modelcontextprotocol.io, read 2026-10-10). It drops the `initialize` handshake and sessions, and puts metadata in every request plus mirrored headers. Claude Desktop's own version wasn't verifiable here, so the endpoint is **dual-era**, which the spec allows. A request carrying `_meta.io.modelcontextprotocol/protocolVersion` is served as 2026-07-28 (`server/discover`, header checks `MCP-Protocol-Version` / `Mcp-Method` / `Mcp-Name` with base64 decoding, `-32020` / `-32022`, 404 for unknown methods). `initialize` and unmarked requests are served as legacy 2025-11-25 / 06-18 / 03-26. It is stateless in both eras, with no session ids; GET and DELETE return 405.
+- **Tool errors versus protocol errors** follow the spec. An unknown tool is `-32602`. A refused or invalid call is a tool result with `isError`, so the assistant can recover. Tools carry `readOnlyHint` / `destructiveHint: false` annotations.
+- **Security, in order:** `/mcp` only; POST only; `Host` must be `127.0.0.1` or `localhost` on the server's port (against DNS rebinding); any `Origin` header is refused (browsers send one, the helper does not); then a bearer secret compared in constant time; bodies over 64 KB are refused. It is bound to 127.0.0.1 only.
+- **Secret storage:** 32 random bytes (`Random.secure`), kept in the preferences box inside the app's sandbox container and rotated on Disconnect. The Keychain would be stronger but needs native code or a dependency; this is acceptable for a local-only, revocable, read-only-by-default secret. Revisit with D2.
+- **Lifecycle:** `assistantServerProvider` (FutureProvider) runs the server only while connected and only on macOS. It is listened to from `AmbleApp` (listen, not watch, so status changes never rebuild the app). A taken port is reported as `AssistantServerPortBusy` for Settings to offer Reconnect; it never moves silently, because Claude's extension has the old port baked in.
+- **The app backend** (`AppAssistantBackend`) goes through `TaskList.createTask` / `rescheduleTask` / `deleteTask` (undo only), `tasksOnDayProvider`, zones via `zonesForDay`, and imported events via `externalCalendarEventsForRangeProvider`. `TrialExpiredException` becomes a plain tool error.
+- `macos/Runner/Release.entitlements` gains `com.apple.security.network.server`; the debug build already had it.
+
+
+## 2026-10-10 — Connect to Claude, Phase 3: bundle id, Node helper, one-click extension
+
+- **D5 answered: macOS bundle id `com.panta.panta`** (was `com.example.amble`), in `macos/Runner/Configs/AppInfo.xcconfig` only. iOS, Android and the RunnerTests ids are untouched. **Consequence:** a sandboxed Mac app's data lives in a container named after its id, so data saved by earlier Mac builds stays in `~/Library/Containers/com.example.amble` and the new build starts empty. Nothing was deleted. A one-time copy is possible if that data matters.
+- **Change from the work order: the helper is a Node script, not a Swift CLI.** Claude Desktop runs `server.type: "node"` extensions on its own built-in Node (`isUsingBuiltInNodeForMcp` in its app bundle, 2.31226.1). A ~160-line script using only Node built-ins (`assets/claude/amble-mcp.js`) needs no Xcode target, no signing or notarisation of its own and no Gatekeeper exception, and works for Windows later. The "Gatekeeper" spike item no longer applies to the helper.
+- **The helper** forwards each stdin line as a POST with the bearer secret and mirrors `MCP-Protocol-Version` (from `_meta`, or the version negotiated by `initialize`), `Mcp-Method` and `Mcp-Name` (base64 sentinel when not plain ASCII). If Amble isn't answering it runs `open -g -j -b <bundle id>` and retries for 10 s. A 401 becomes "Reconnect Claude in Amble"; anything else becomes "Amble isn't running…". Messages are handled in order.
+- **Bundle building is pure Dart.** `ClaudeBundle.build` writes manifest 0.3 (node server, literal env `AMBLE_PORT` / `AMBLE_SECRET` / `AMBLE_BUNDLE_ID`, tools for the current permission, `platforms: darwin`) and zips it with a small stored-zip writer (`stored_zip.dart`, CRC-32 included). This avoids a zip dependency, and `NSFileCoordinator`'s zip nests a folder, which MCPB doesn't allow.
+- **The file goes to the real ~/Downloads** (new `com.apple.security.files.downloads.read-write` entitlement), not the app's container. A container path would make Claude reach into another app's data, which macOS may prompt about. **The file holds the secret,** so `AssistantServer.onFirstAuthorisedRequest` deletes it the first time Claude connects, and Disconnect deletes any leftover.
+- **Native bridge** `ClaudeConnectBridge.swift` (`com.amble/claude_connect`): `isClaudeInstalled` (by bundle id), `downloadsDirectory` (symlink resolved), `openInClaude` (opens the file with Claude via `NSWorkspace`).
+
+
+## 2026-10-10 — Connect to Claude, Phase 4: Settings › Claude
+
+- **One screen, states in plain words:** Not connected (permission choice and **Connect to Claude**), Claude missing (**Get Claude**, **I've installed it**), Couldn't open Claude (**Try again**), Almost there (waiting for Install; moves on by itself), Claude lost its connection (port taken, **Reconnect** moves to a free port and rebuilds the extension), Connected (permission, "Try asking" chips that copy, the activity list with Undo, **Disconnect**, **Advanced** with the Claude Code command). The not-connected state is tested to show no "MCP", "localhost", "token", "server" or "port".
+- **"Waiting" versus "Connected"** is a persisted flag (`assistantClaudeSeen`), set by the server's first authorised request and cleared on Connect and Disconnect. The server provider now watches only connected/port/secret (`select`), so changing the permission or this flag never restarts it mid-conversation.
+- **The Settings row** (`ClaudeSettingsLink`) appears only where the endpoint can run (the Mac app); elsewhere it takes no space.
+- **Undo toast:** `AssistantUndoToaster` wraps `MaterialApp.home` (below the Navigator, where `AppUndoToast` finds its overlay) and shows "Claude: Added … · Undo" for every assistant change.
+- **Change summaries read naturally** ("Added "Deep work", Tue 13 Oct, 10:00."), with fixed English names like the rest of the app's copy. Tool data stays in `YYYY-MM-DDTHH:MM`.
+- **"Get Claude"** opens https://claude.ai/download through the native bridge (no url_launcher).
+
+
+## 2026-10-10 — Claude's "access to everything" install warning
+
+Claude Desktop shows the same warning for every local extension that isn't from its directory: the extension's server runs as an ordinary process with the person's own permissions, and the developer is unverified. It is not something the manifest can narrow. What Amble's extension actually does is limited by its code (`assets/claude/amble-mcp.js`, Node built-ins only): it talks only to `127.0.0.1:<port>` and runs `open -g -j -b com.panta.panta`. It reads no files and makes no other network calls; all data access happens inside the sandboxed Amble app, behind the permission the person chose. Options, not yet decided: sign the bundle (MCPB supports signing with a code-signing certificate, which should change "not verified"; to be tested once a Developer ID exists, D2), or submit to Anthropic's extension directory for a public release. Plain-language reassurance in Settings › Claude before Connect is a cheap first step.
+
+
+## 2026-10-10 — Claude can edit tasks, including repeats (`edit_task`); still no deleting
+
+Requested directly: "We need edit task e.g. setting repeat etc.. all edit actions." This widens the work order, which excluded series edits. Delete stays excluded: it wasn't asked for, and it is the one action the plan promised Claude can't take.
+
+- **One tool, every editor field:** title, start, duration, category, important, notes (empty clears), reminder, done, and repeat ("never" / "daily" / "weekdays" / "weekends" / day list), plus `scope` ("this" or "this_and_following") for repeating tasks.
+- **Same save paths as the task sheet** (`AssistantTaskEditor`, mirroring `task_sheet_save.dart` / `task_sheet_series_save.dart`):
+  - One-off task: fields go through `updateTask`.
+  - Repeat turned on: `createTask` with the rule, then `deleteTask` on the original.
+  - Occurrence, repeat off: `endSeriesOf`.
+  - Occurrence, new days or "this and following": `reviseFrom` (a revision from this date; past occurrences keep their history, RECURRENCE_CONTRACT §8).
+  - Otherwise: a "this occurrence" override via `updateTask` → `applyTaskEdit`.
+  - "Done" always applies to this occurrence only.
+- **Undo for every edit:** one-off edits restore a snapshot; series changes use `undoSeriesChange`. `OccurrenceStore.reviseFrom` now returns its command id, like `endSeriesOf` already did; its one caller in the task sheet now awaits it.
+- **Repeating occurrences are findable:** `taskById` decodes occurrence ids and asks the series store, so get_day's ids work for edits. The task JSON gains `repeat_days`.
+- `move_task` stays for one-off tasks; for repeating ones it points to `edit_task`.
+
+
+## 2026-10-10 — "Refresh events" in Settings › Calendars
+
+Requested directly ("calendars from mac detected, enabled but can't see tasks, can we add button to sync"). Diagnosis first: the Mac calendar bridge works. Through the running app, Mon 12 and Tue 13 Oct each return 5 events (Standup, Daily sync, Lunch…), while today, a Saturday, has none. Two real gaps explain "can't see":
+- **No re-fetch:** each view keeps its first answer (for example from before access was granted) until the day changes or the app restarts. **Fixed:** `ExternalCalendarRefresh` (a counter) is watched by every event fetch, and **Refresh events** bumps it, so every open view re-reads the device calendars at once.
+- **The desktop Week view never shows calendar events;** it draws Amble tasks only. **Not built yet;** it needs a decision on how imported events look in the week (pill versus block).
+
+The button is "Refresh events", not "Sync": this is display-only, and "Sync to calendar" already names the separate write-out feature on the same screen.
+
+## 2026-10-10 — Calendar events in Week and Month; automatic refresh; week zoom
+
+- **Events follow the Week task style.** Pills style: a neutral (imported-tone) capsule plus a title; blocks style: a neutral block with the calendar's colour as its rail. Events share overlap lanes with tasks. They are read-only; a tap shows the existing event details sheet.
+- **Whole-day events (a day or longer) are listed in Month only.** The week is an hour grid, and a 24-hour block would bury the day's tasks. Multi-day timed events are clipped to each day they cover.
+- **Month lists events and tasks together by time**, and both count toward "+N more".
+- **Calendars refresh by themselves:** when the app returns to the front, on macOS's own Calendar-changed signal (new channel `com.amble/calendar_changes`, debounced 1 s), and every 5 minutes. Display-only; nothing is written back.
+- **Week zoom** is a persisted hour height (0.5×–2.5× of the default 48), changed by trackpad pinch, Cmd (macOS) / Ctrl + scroll, or the toolbar's − / + (Week only). It keeps the time under the pointer still. The Day timeline's zoom setting is separate.
+
+## 2026-10-11 — Editing in the desktop Week
+
+Requested directly: "edit on week view on desktop, same features as day view, plus move between days".
+- **Gestures are mouse-first.** A mouse drag moves at once, and a task's top or bottom edge (6 pt, resize cursor) resizes it. The Day screen arms a task with a long press instead, which suits touch, not a pointer. Touch (iPad landscape) holds, then drags, so a swipe still scrolls the week.
+- **Same rules as the Day screen:** the same 5-minute snap (`timeline_drag_math.dart`), the Overlap / Push all / Trim choice when landing on a task, an Undo toast for every write, and repeating tasks changing "this occurrence" only (through the existing series routing; the contract allows moving an occurrence to another date). A move stays inside the visible week and inside one day.
+- **Create:** click-drag on empty space sweeps the new task's span, as in desktop calendars. A hold gives the Day screen's 15-minute draft, stretched by dragging. Both open the draft in the right panel, and it can be dragged or resized there until saved. A plain click creates nothing, so clicking to dismiss can't make tasks.
+- **Shared, not copied:** `commitTaskMove` (new, `timeline/task_move_overlap.dart`) holds the drop contract; the Day screen still has its own inline copy in `timeline_screen.dart`, which is a candidate to switch over. `commitTaskResize` takes the day's tasks, and `completeTask` moved out of `timeline_screen.dart` so the week's checkbox uses it.
+- **Not done:** multi-select / group move (dev-gated on Day), swipe actions (touch), and editing in Month.
+
+## 2026-10-11 — Desktop panel uses the phone's chips again
+
+Requested directly: the New thing form on desktop "should use the same badges as mobile": Preset, Date, Time, Duration and the icon toggles (Important, label, tracked, notify, repeat, note). **This reverses the 2026-10-08 "one setting per line" panel**, which had been requested against Notion Calendar.
+- `TaskEditorBody` always shows `TaskSheetFields`; `inPanel` now only hides the sheet's drag handle. Pickers still open as popovers beside the panel (the adaptive `AppSheet` is unchanged).
+- Not deleted: `TaskPanelFields`, `TaskPanelDetailRows`, `task_panel_labels.dart` and the `AppFieldRow` family remain in the tree, unused by the panel. Deleting them is a separate call.
+- Lost on desktop: the time row's "start → end" summary, the repeat summary text ("Every day"), the label name and the note's first line. The chips show only that a value is set.
+
+## 2026-10-12 — App icon from one Icon Composer source
+
+The new Mac icon (`Mac Icon/Untitled.icon`, an Icon Composer bundle) becomes the app icon on macOS, iOS and Android.
+- **One source:** `assets/branding/AppIcon.icon` (copied from the drop; `Mac Icon/` can be deleted). macOS and iOS Xcode projects reference it, so Xcode 26+ compiles the Liquid Glass icon and generates the older-OS renditions itself. Verified: both builds use it, and the old `AppIcon.appiconset` PNGs are ignored while it exists.
+- **Generated, not hand-made:** `tool/brand_assets.py` writes the PNG fallbacks (macOS from Icon Composer's `ictool`; iOS, Android and store files from a flat redraw of the same layout), the Android adaptive icon (vector foreground, solid background, monochrome), and `store/` listing icons. Its constants repeat the `.icon`'s geometry, so editing the `.icon` means editing `tool/brand_spec.py` too.
+- **Android mark is a little smaller than on Apple** (about 58 dp of a 108 dp canvas) to stay in the adaptive safe circle.
+- **Not done, needs the new assets:** logo mark and wordmark lockups (`Logo_on_*`), the splash that shows them, and the iOS/Android launch images. See `docs/BRANDING_ASSETS.md`.
+
+## 2026-10-13 — Patterns: dots first, completed days after
+
+Reported directly: switching to Patterns is slower than the other tabs, and agreed earlier that it "should load fast without the calculation layers, the matrix of dots first, then the completed days stagger in very fast."
+- **Cause, measured:** every Patterns row, on every build, projected a whole year of repeating-task occurrences (`OccurrenceStore.tasksBetween`) before the first frame. That was about 57 ms per row on the Mac for 8 daily series, so 5 rows took about 285 ms.
+- **Now:** `behaviorCompletedDaysProvider` (`features/tracked_behavior/behavior_completed_days.dart`) projects once for all behaviors, after the first frame (it waits one event-loop turn), and stays cached until tasks or series change. Rows paint the empty grid immediately and read their days from it.
+- **Fill:** `AppStaggeredFill` also plays when a cell first becomes filled, so late data colours in with the same 240 ms stagger. It creates its animation controller only for cells that fill.
+- Stored tasks still count however far back Patterns is browsed; only occurrences are bounded (a year), as before.
+- **Not done:** the projection still runs on the UI thread, once, in a single frame. Moving it to an isolate would need the time-zone data there too.
+- **Update, same day** (reported: "still jank, and when it opens all are already filled; perhaps they filled during the jank"): two more causes, both fixed.
+  - The fill started inside the slow frame. A Flutter animation started mid-frame counts from that frame's start, so the slow build used up the 390 ms stagger before it was ever drawn. `AppStaggeredFill` now starts its clock after the frame (post-frame callback).
+  - The provider now projects only series that name a behavior. An occurrence can't carry its own behavior (it is not a record aspect), so this is exact. Measured warm: 22 ms for 8 daily series, 3 ms with 1 tracked.
+
+## 2026-10-14 — Current-time line hidden (spatial view); edit-mode labels raised to one shared top layer; web-mobile safe-area stand-in
+
+Three requests from one screenshot (spatial Timeline during a resize, with the now-line crossing "New thing").
+
+- **Current-time line hidden on the spatial view, dot and time pill kept.** Requested directly: "current hour should not have line, hide it for now, keep just dot and hour." `CurrentTimeMarker`'s trailing hairline is now built only when `pillSizesRow: true` — the List view's own marker (`ListCurrentTimeMarker`), which has a genuinely different job (separating in-progress rows from upcoming ones in a plain list with no time axis — its own doc comment says so), is unaffected and keeps its full-width line.
+- **Every task's resting edit-mode edge-time label now paints in one shared layer above every task pill**, not inside each task's own block. Before, a task's label could only ever paint as high as its own position among its siblings in the Stack — in plain (non-multi-task) Edit Mode every visible task shows this label at once, so a later-painted neighbour's pill could cover an earlier task's label, exactly as reported. New `_DayTimelineState._editAffordanceLabels` reconstructs the same "armed/selected" condition each block's own (now-removed) `editAffordanceActive` used, and renders every qualifying task's label last, right before the drag-to-multi-select marquee. The one task actually being dragged or resized is untouched — it already paints last via the existing `_dragLastOrder`, and keeps its LIVE label inline (its geometry depends on live, per-widget gesture state that genuinely can't move to the parent without duplicating it).
+- **Web, at phone width only, reserves a top and bottom safe-area inset.** A browser tab reports zero `MediaQuery.padding` — there is no real status bar or home indicator to measure — so content sat flush against the browser's own UI in the phone-width web preview. `AppWindowInsets` (already the established seam for platform-specific chrome insets — see its macOS title-bar case) now also applies `ShellLayoutTokens.webMobileTopInset`/`webMobileBottomInset` (24 each) when `kIsWeb && !isWideLayout(context)`. Explicitly NOT applied to native iOS/Android (they report real insets already) or to wide/desktop web (that's the desktop experience, left alone) — confirmed as the exact scope requested: "ONLY in web render, DO NOT change for iOS or android view or DESKTOP, only web mobile."
+  - The actual decision (which inset for which platform/width combination) was pulled into a pure function, `windowInsetFor`, specifically because `flutter test`'s VM always reports `kIsWeb == false` — the widget's own real web code path can never execute under test, so the decision table takes `isWeb` as a parameter instead of reading the real constant, and is unit-tested directly.

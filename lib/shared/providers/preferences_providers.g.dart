@@ -156,8 +156,8 @@ abstract class _$ThemeModeSetting extends $Notifier<AppThemeMode> {
 }
 
 /// 12-hour ("9:00 PM") or 24-hour ("21:00") time across the app, or the
-/// device's own choice (the default). `main.dart` applies it once, at the
-/// root, as `MediaQuery.alwaysUse24HourFormat`, which every
+/// device's own choice. 12-hour is the default. `main.dart` applies it once,
+/// at the root, as `MediaQuery.alwaysUse24HourFormat`, which every
 /// `TimeOfDay.format` reads. `keepAlive` for the same reason as
 /// [ThemeModeSetting]: the root widget is its reader.
 
@@ -165,15 +165,15 @@ abstract class _$ThemeModeSetting extends $Notifier<AppThemeMode> {
 final timeFormatSettingProvider = TimeFormatSettingProvider._();
 
 /// 12-hour ("9:00 PM") or 24-hour ("21:00") time across the app, or the
-/// device's own choice (the default). `main.dart` applies it once, at the
-/// root, as `MediaQuery.alwaysUse24HourFormat`, which every
+/// device's own choice. 12-hour is the default. `main.dart` applies it once,
+/// at the root, as `MediaQuery.alwaysUse24HourFormat`, which every
 /// `TimeOfDay.format` reads. `keepAlive` for the same reason as
 /// [ThemeModeSetting]: the root widget is its reader.
 final class TimeFormatSettingProvider
     extends $NotifierProvider<TimeFormatSetting, TimeFormatPreference> {
   /// 12-hour ("9:00 PM") or 24-hour ("21:00") time across the app, or the
-  /// device's own choice (the default). `main.dart` applies it once, at the
-  /// root, as `MediaQuery.alwaysUse24HourFormat`, which every
+  /// device's own choice. 12-hour is the default. `main.dart` applies it once,
+  /// at the root, as `MediaQuery.alwaysUse24HourFormat`, which every
   /// `TimeOfDay.format` reads. `keepAlive` for the same reason as
   /// [ThemeModeSetting]: the root widget is its reader.
   TimeFormatSettingProvider._()
@@ -206,8 +206,8 @@ final class TimeFormatSettingProvider
 String _$timeFormatSettingHash() => r'4acb20c535c4ce91125b2d98036b3f9c6d2c5f9f';
 
 /// 12-hour ("9:00 PM") or 24-hour ("21:00") time across the app, or the
-/// device's own choice (the default). `main.dart` applies it once, at the
-/// root, as `MediaQuery.alwaysUse24HourFormat`, which every
+/// device's own choice. 12-hour is the default. `main.dart` applies it once,
+/// at the root, as `MediaQuery.alwaysUse24HourFormat`, which every
 /// `TimeOfDay.format` reads. `keepAlive` for the same reason as
 /// [ThemeModeSetting]: the root widget is its reader.
 
@@ -486,8 +486,8 @@ abstract class _$PreventOverlappingTasksSetting extends $Notifier<bool> {
 /// `PreferenceKeys.dualFontEnabled`'s own doc comment. `keepAlive: true` for
 /// the same reason as the other settings here: read once per app start (via
 /// `main.dart`'s own "resolve once, before MaterialApp" pass), not
-/// screen-scoped state. Defaults to **false** so a fresh install uses the
-/// app's unified DM Sans typography; turning it on opts into the mono split.
+/// screen-scoped state. Defaults to **true** so a fresh install uses the
+/// app's dual-font typography; turning it off opts into DM Sans only.
 
 @ProviderFor(DualFontSetting)
 final dualFontSettingProvider = DualFontSettingProvider._();
@@ -496,16 +496,16 @@ final dualFontSettingProvider = DualFontSettingProvider._();
 /// `PreferenceKeys.dualFontEnabled`'s own doc comment. `keepAlive: true` for
 /// the same reason as the other settings here: read once per app start (via
 /// `main.dart`'s own "resolve once, before MaterialApp" pass), not
-/// screen-scoped state. Defaults to **false** so a fresh install uses the
-/// app's unified DM Sans typography; turning it on opts into the mono split.
+/// screen-scoped state. Defaults to **true** so a fresh install uses the
+/// app's dual-font typography; turning it off opts into DM Sans only.
 final class DualFontSettingProvider
     extends $NotifierProvider<DualFontSetting, bool> {
   /// Whether the app's dual-font system is active — see
   /// `PreferenceKeys.dualFontEnabled`'s own doc comment. `keepAlive: true` for
   /// the same reason as the other settings here: read once per app start (via
   /// `main.dart`'s own "resolve once, before MaterialApp" pass), not
-  /// screen-scoped state. Defaults to **false** so a fresh install uses the
-  /// app's unified DM Sans typography; turning it on opts into the mono split.
+  /// screen-scoped state. Defaults to **true** so a fresh install uses the
+  /// app's dual-font typography; turning it off opts into DM Sans only.
   DualFontSettingProvider._()
     : super(
         from: null,
@@ -533,14 +533,14 @@ final class DualFontSettingProvider
   }
 }
 
-String _$dualFontSettingHash() => r'13d637bf42bd8a28cc98320e3d5074b8fe1faa72';
+String _$dualFontSettingHash() => r'00701425ca89be49b35fde2db9d5c073db37b7ab';
 
 /// Whether the app's dual-font system is active — see
 /// `PreferenceKeys.dualFontEnabled`'s own doc comment. `keepAlive: true` for
 /// the same reason as the other settings here: read once per app start (via
 /// `main.dart`'s own "resolve once, before MaterialApp" pass), not
-/// screen-scoped state. Defaults to **false** so a fresh install uses the
-/// app's unified DM Sans typography; turning it on opts into the mono split.
+/// screen-scoped state. Defaults to **true** so a fresh install uses the
+/// app's dual-font typography; turning it off opts into DM Sans only.
 
 abstract class _$DualFontSetting extends $Notifier<bool> {
   bool build();
@@ -819,7 +819,7 @@ final class TimelinePixelsPerMinuteSettingProvider
 }
 
 String _$timelinePixelsPerMinuteSettingHash() =>
-    r'fe3b2c9400c2f4265cf47854e8bdede8263d81f9';
+    r'6f222bcd4f9bf5438dd5e050f5ccdd83cf2dce22';
 
 /// The Timeline's own vertical time scale — pixels per minute — shared by
 /// BOTH the spatial Task view and the Zone Grid/Edit screen. Requested

@@ -8,6 +8,7 @@ import '../../core/widgets/app_tab_switch.dart';
 import '../../core/widgets/app_option_switch_option.dart';
 import '../timeline/selected_date_provider.dart';
 import 'calendar_span.dart';
+import 'week_zoom_buttons.dart';
 
 /// The wide layout's Days toolbar, after Notion Calendar's: the month and
 /// year, then how many days to show (Day / Week / Month), Today, and
@@ -51,6 +52,10 @@ class DesktopCalendarToolbar extends ConsumerWidget {
               onChanged: ref.read(calendarSpanProvider.notifier).set,
             ),
           ),
+          if (span == CalendarSpan.week) ...[
+            SizedBox(width: theme.spacingSm),
+            const WeekZoomButtons(),
+          ],
           SizedBox(width: theme.spacingSm),
           AppButton(
             label: 'Today',

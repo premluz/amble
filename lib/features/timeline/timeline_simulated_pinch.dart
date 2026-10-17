@@ -28,13 +28,29 @@ class SimulatedPinch {
     return startScale + (target - startScale) * progress;
   }
 
-  double scrollAt(double scale) =>
-      (scrollOffset + center.dy - TimelineScrollTokens.topClearance) *
-          scale /
-          startScale +
-      TimelineScrollTokens.topClearance -
-      center.dy;
+  double scrollAt(double scale) => timelineAnchoredScrollOffset(
+    scrollOffset: scrollOffset,
+    anchorY: center.dy,
+    fromScale: startScale,
+    toScale: scale,
+  );
 }
+
+/// The scroll offset that keeps the time under [anchorY] (a y in the
+/// viewport) where it is on screen as the scale goes from [fromScale] to
+/// [toScale]: zoom around the pointer, not the top of the day. Shared by
+/// the simulated pinch and scroll-wheel zoom.
+double timelineAnchoredScrollOffset({
+  required double scrollOffset,
+  required double anchorY,
+  required double fromScale,
+  required double toScale,
+}) =>
+    (scrollOffset + anchorY - TimelineScrollTokens.topClearance) *
+        toScale /
+        fromScale +
+    TimelineScrollTokens.topClearance -
+    anchorY;
 
 /// Shares the recording dots' tokens, but exists only during a keyboard pinch.
 class SimulatedPinchPainter extends CustomPainter {

@@ -31,17 +31,21 @@ const int generalCategoryColorToken = 0;
 /// color-resolution path now: [Category.colorToken] indexes
 /// [AmbleTheme.categorySwatches] for every row, same swatch for both fill
 /// and icon-ring color (matching how a custom category already worked).
+///
+/// **Two steps of one hue (2026-10-10, requested directly).** [pillColor]
+/// is the light tint a pill is filled with and a week block's background
+/// (`TaskStateTokens.categoryTint`); [iconColor] is the strong accent of the
+/// same hue: a pill's icon and a week block's left rail
+/// ([AmbleTheme.categoryAccents]).
 class CategoryVisual {
   const CategoryVisual({required this.pillColor, required this.iconColor});
 
   final Color pillColor;
   final Color iconColor;
 
-  /// The tag's own full-saturation color. `pillColor`/`iconColor` are now
-  /// always the same single swatch (see this class's own doc comment), so
-  /// this simply returns it — kept as its own getter for
-  /// [railColorFor]'s `TagColorStyle.iconOnly` mode, which was written
-  /// against "the true color, however `CategoryVisual` happens to
+  /// The tag's own full-saturation color: the accent. Kept as its own
+  /// getter for [railColorFor]'s `TagColorStyle.iconOnly` mode, which was
+  /// written against "the true color, however `CategoryVisual` happens to
   /// represent it" rather than assuming which field held it.
   Color get trueColor => iconColor;
 }
@@ -58,7 +62,10 @@ CategoryVisual resolveCategoryVisual({
     return CategoryVisual(pillColor: blank, iconColor: blank);
   }
   final swatch = theme.categorySwatches[category.colorToken];
-  return CategoryVisual(pillColor: swatch, iconColor: swatch);
+  return CategoryVisual(
+    pillColor: TaskStateTokens.categoryTint(theme, swatch),
+    iconColor: theme.categoryAccents[category.colorToken],
+  );
 }
 
 /// How much of [TagColorStyle.iconOnly]'s full-saturation
@@ -94,6 +101,15 @@ Color railColorFor(CategoryVisual visual, TagColorStyle style) =>
         alpha: iconOnlyRailOpacity,
       ),
     };
+
+/// The colour of a glyph drawn on [CategoryVisual.pillColor]: the accent,
+/// or, when the category has no accent step of its own (General, a
+/// category that has not resolved yet), the black or white that reads on
+/// the fill.
+Color glyphColorFor(CategoryVisual visual) =>
+    visual.iconColor == visual.pillColor
+    ? glyphColorOn(visual.pillColor)
+    : visual.iconColor;
 
 /// A curated set of Tabler glyphs offered in the new/edit-category picker
 /// — hand-picked, not the full ~6,250-icon set, matching how the old
@@ -448,12 +464,11 @@ class CategoryBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final resolvedCategory = category;
-    final badgeColor = resolvedCategory == null
-        ? theme.categorySwatches[generalCategoryColorToken]
-        : resolveCategoryVisual(
-            theme: theme,
-            category: resolvedCategory,
-          ).pillColor;
+    final visual = resolvedCategory == null
+        ? null
+        : resolveCategoryVisual(theme: theme, category: resolvedCategory);
+    final badgeColor =
+        visual?.pillColor ?? theme.categorySwatches[generalCategoryColorToken];
 
     return Container(
       width: size,
@@ -472,11 +487,11 @@ class CategoryBadge extends StatelessWidget {
       // own, same reasoning as the emoji already being empty for this
       // case (see `TaskCategoryTokenMapping.emoji`'s own comment) — the
       // whole point is the absence of a glyph, not a neutral one.
-      child: resolvedCategory == null
+      child: resolvedCategory == null || visual == null
           ? null
           : CategoryGlyph(
               category: resolvedCategory,
-              color: glyphColorOn(badgeColor),
+              color: glyphColorFor(visual),
               size: size * glyphSizeRatio,
             ),
     );

@@ -84,7 +84,11 @@ void main() {
     expect(find.byType(Text), findsNothing);
   });
 
-  testWidgets('category label text stays light in both themes', (tester) async {
+  // Light-mode swatches are pastel since 2026-10-10, so a fixed light
+  // label would vanish; the label follows the glyph's own on-fill choice.
+  testWidgets('category label text reads against its pill in both themes', (
+    tester,
+  ) async {
     final health = Category(
       id: BuiltInCategoryIds.health,
       name: 'Health',
@@ -92,7 +96,10 @@ void main() {
       emoji: '',
     );
 
-    for (final theme in [AmbleTheme.light, AmbleTheme.dark]) {
+    for (final (theme, expected) in [
+      (AmbleTheme.light, TaskStateTokens.glyphOnLight),
+      (AmbleTheme.dark, TaskStateTokens.glyphOnDark),
+    ]) {
       await tester.pumpWidget(
         MaterialApp(
           theme: ThemeData(useMaterial3: true, extensions: [theme]),
@@ -106,8 +113,11 @@ void main() {
         ),
       );
 
+      // MaterialApp animates between themes; let the switch finish.
+      await tester.pumpAndSettle();
+
       final label = tester.widget<Text>(find.text('Health'));
-      expect(label.style?.color, TaskStateTokens.categoryLabelText);
+      expect(label.style?.color, expected);
     }
   });
 }

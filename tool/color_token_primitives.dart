@@ -88,6 +88,8 @@ Map<String, Object?> buildPrimitiveColorTokens() => {
   'category': {
     'dark': namedColors(ColorPrimitives.categoryPalette12),
     'light': namedColors(ColorPrimitives.categoryPalette12Light),
+    'accentDark': namedColors(ColorPrimitives.categoryAccentsDark),
+    'accentLight': namedColors(ColorPrimitives.categoryAccentsLight),
   },
   'special': colorEntries({
     'zoneBackground': ColorPrimitives.zoneBackground,

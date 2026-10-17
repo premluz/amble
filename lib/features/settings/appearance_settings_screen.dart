@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/layout_width.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_selectable_chip.dart';
 import '../../shared/models/task_size.dart';
@@ -10,6 +11,7 @@ import 'settings_detail_scaffold.dart';
 import 'settings_panel.dart';
 import 'theme_mode_selector.dart';
 import 'calendar_grid_lines_panel.dart';
+import 'week_task_style_panel.dart';
 
 Future<void> showAppearanceSettingsScreen(BuildContext context) {
   return pushSettingsDetailRoute<void>(
@@ -190,6 +192,10 @@ class AppearanceSettingsScreen extends ConsumerWidget {
           ),
           SizedBox(height: theme.spacingSm),
           const CalendarGridLinesPanel(),
+          if (isWideLayout(context)) ...[
+            SizedBox(height: theme.spacingSm),
+            const WeekTaskStylePanel(),
+          ],
         ],
       ),
     );

@@ -7,6 +7,7 @@ import '../../core/widgets/app_selectable_chip.dart';
 import '../../core/widgets/app_switch.dart';
 import '../../shared/providers/calendar_providers.dart';
 import '../../shared/providers/preferences_providers.dart';
+import '../../shared/services/calendar_permission_service.dart';
 import 'settings_detail_scaffold.dart';
 import 'settings_panel.dart';
 
@@ -26,7 +27,49 @@ class CalendarsSettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _CalendarsSettingsScreenState
-    extends ConsumerState<CalendarsSettingsScreen> {
+    extends ConsumerState<CalendarsSettingsScreen>
+    with WidgetsBindingObserver {
+  /// Set when the system settings page could not be opened, so the user is
+  /// told where to go instead.
+  bool _settingsUnavailable = false;
+
+  /// Shown under "Refresh events" after a press, so it visibly did something.
+  bool _refreshed = false;
+
+  void _refreshEvents() {
+    ref.read(externalCalendarRefreshProvider.notifier).refresh();
+    ref.invalidate(availableDeviceCalendarsProvider);
+    setState(() => _refreshed = true);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Coming back from system settings is when a permission may have just
+  /// been granted, so look again.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      ref.invalidate(availableDeviceCalendarsProvider);
+    }
+  }
+
+  Future<void> _openSettings() async {
+    final opened = await ref
+        .read(systemSettingsServiceProvider)
+        .openCalendarSettings();
+    if (mounted) setState(() => _settingsUnavailable = !opened);
+  }
+
   // Calendar sync-out (Feature 2) — see _syncToCalendar below. Same
   // busy/status shape as Slack's own test-send fields.
   String? _syncStatusMessage;
@@ -82,12 +125,19 @@ class _CalendarsSettingsScreenState
             'Could not load device calendars: $error',
             style: theme.textBody.copyWith(color: theme.colorTaskAlert),
           ),
-          data: (calendars) {
+          data: (state) {
+            final calendars = state.calendars;
+            if (state.access == CalendarAccess.denied) {
+              return _AccessOff(
+                theme: theme,
+                settingsUnavailable: _settingsUnavailable,
+                onEnable: _openSettings,
+              );
+            }
             if (calendars.isEmpty) {
               return Text(
-                'No calendars found on this device, or calendar permission '
-                'was denied. Neither Calendar feature can activate without '
-                'at least one device calendar.',
+                'No calendar detected on this device. Neither Calendar '
+                'feature can activate without at least one device calendar.',
                 style: theme.textBody.copyWith(color: theme.colorTextSecondary),
               );
             }
@@ -109,6 +159,25 @@ class _CalendarsSettingsScreenState
                   style: theme.textBody.copyWith(
                     color: theme.colorTextSecondary,
                   ),
+                ),
+                SizedBox(height: theme.spacingSm),
+                Row(
+                  children: [
+                    AppButton(
+                      label: 'Refresh events',
+                      variant: AppButtonVariant.secondary,
+                      onPressed: _refreshEvents,
+                    ),
+                    if (_refreshed) ...[
+                      SizedBox(width: theme.spacingSm),
+                      Text(
+                        'Events re-read from your calendars.',
+                        style: theme.textCaption.copyWith(
+                          color: theme.colorTextSecondary,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 SizedBox(height: theme.spacingSm),
                 Consumer(
@@ -239,6 +308,56 @@ class _CalendarsSettingsScreenState
           },
         ),
       ),
+    );
+  }
+}
+
+/// Shown instead of "no calendar detected" when the calendars exist but the
+/// user has not allowed Amble to read them.
+class _AccessOff extends StatelessWidget {
+  const _AccessOff({
+    required this.theme,
+    required this.settingsUnavailable,
+    required this.onEnable,
+  });
+
+  final AmbleTheme theme;
+  final bool settingsUnavailable;
+  final VoidCallback onEnable;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Calendar access is off for Amble',
+          style: theme.textBody.copyWith(
+            color: theme.colorTextPrimary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        SizedBox(height: theme.spacingXs),
+        Text(
+          'Allow Amble to read your calendars to show their events on the '
+          'Timeline. Amble never edits them.',
+          style: theme.textBody.copyWith(color: theme.colorTextSecondary),
+        ),
+        SizedBox(height: theme.spacingSm),
+        AppButton(
+          label: 'Enable permission',
+          variant: AppButtonVariant.secondary,
+          onPressed: onEnable,
+        ),
+        if (settingsUnavailable) ...[
+          SizedBox(height: theme.spacingSm),
+          Text(
+            'Could not open settings. Allow Calendars for Amble in your '
+            'system settings.',
+            style: theme.textBody.copyWith(color: theme.colorTaskAlert),
+          ),
+        ],
+      ],
     );
   }
 }

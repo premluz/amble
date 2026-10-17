@@ -3,6 +3,8 @@ import 'dart:ui';
 
 import 'package:amble/core/tokens/color_primitives.dart';
 import 'package:amble/core/tokens/semantic_theme.dart';
+import 'package:amble/core/tokens/task_state_tokens.dart';
+import 'package:amble/features/task_detail/category_visual.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// WCAG 2.1 relative luminance, per the spec's own formula.
@@ -37,7 +39,6 @@ void main() {
   /// `surface0` while the light theme's real base had moved to `cream0`,
   /// which is precisely the "measured against the wrong background" error
   /// these tests exist to catch.
-  final lightBase = AmbleTheme.light.colorSurfaceBase;
   final darkBase = AmbleTheme.dark.colorSurfaceBase;
 
   const aa = 4.5;
@@ -62,18 +63,42 @@ void main() {
   ];
 
   group('category palette', () {
-    test('the light ramp clears AA against the LIGHT base', () {
+    // Since 2026-10-10 light swatches are pastel fills (requested
+    // directly: the AA-against-the-page ramp read too strong). Their
+    // legibility contract moved onto the glyph and label drawn ON them.
+    test('every light swatch carries its glyph at AA', () {
       final failures = <String>[];
       for (var i = 0; i < ColorPrimitives.categoryPalette12Light.length; i++) {
-        final ratio = contrastRatio(
-          ColorPrimitives.categoryPalette12Light[i],
-          lightBase,
-        );
+        final swatch = ColorPrimitives.categoryPalette12Light[i];
+        final ratio = contrastRatio(glyphColorOn(swatch), swatch);
         if (ratio < aa) {
           failures.add('${hueNames[i]} ${ratio.toStringAsFixed(2)}:1');
         }
       }
-      expect(failures, isEmpty, reason: 'below $aa:1 on light: $failures');
+      expect(failures, isEmpty, reason: 'glyph below $aa:1: $failures');
+    });
+
+    test('light swatches stay soft: a charcoal glyph, never a light one', () {
+      for (var i = 0; i < ColorPrimitives.categoryPalette12Light.length; i++) {
+        expect(
+          glyphColorOn(ColorPrimitives.categoryPalette12Light[i]),
+          TaskStateTokens.glyphOnLight,
+          reason: '${hueNames[i]} is dark enough to flip its glyph',
+        );
+      }
+    });
+
+    /// Icons are non-text graphics, so WCAG's 3:1 is the floor here.
+    test('every dark swatch carries its glyph at 3:1', () {
+      final failures = <String>[];
+      for (var i = 0; i < ColorPrimitives.categoryPalette12.length; i++) {
+        final swatch = ColorPrimitives.categoryPalette12[i];
+        final ratio = contrastRatio(glyphColorOn(swatch), swatch);
+        if (ratio < 3) {
+          failures.add('${hueNames[i]} ${ratio.toStringAsFixed(2)}:1');
+        }
+      }
+      expect(failures, isEmpty, reason: 'glyph below 3:1: $failures');
     });
 
     test('the dark ramp clears AA against the DARK base', () {
@@ -110,28 +135,80 @@ void main() {
       },
     );
 
+    // 2026-10-10: a pill is the swatch's tint with the accent as its icon,
+    // and a week block is the same tint with the accent as its rail.
+    for (final (name, theme) in [
+      ('light', AmbleTheme.light),
+      ('dark', AmbleTheme.dark),
+    ]) {
+      test('$name: every accent carries its icon on the tint at 3:1', () {
+        final failures = <String>[];
+        for (var i = 0; i < hueNames.length; i++) {
+          final tint = TaskStateTokens.categoryTint(
+            theme,
+            theme.categorySwatches[i],
+          );
+          final ratio = contrastRatio(theme.categoryAccents[i], tint);
+          if (ratio < 3) {
+            failures.add('${hueNames[i]} ${ratio.toStringAsFixed(2)}:1');
+          }
+        }
+        expect(failures, isEmpty, reason: 'icon below 3:1: $failures');
+      });
+
+      test('$name: the title reads on every tint at 7:1', () {
+        final failures = <String>[];
+        for (var i = 0; i < hueNames.length; i++) {
+          final tint = TaskStateTokens.categoryTint(
+            theme,
+            theme.categorySwatches[i],
+          );
+          final ratio = contrastRatio(theme.colorTextPrimary, tint);
+          if (ratio < 7) {
+            failures.add('${hueNames[i]} ${ratio.toStringAsFixed(2)}:1');
+          }
+        }
+        expect(failures, isEmpty, reason: 'title below 7:1: $failures');
+      });
+
+      test('$name: the title reads on every week block background at 7:1', () {
+        for (var i = 0; i < hueNames.length; i++) {
+          final bg = TaskStateTokens.blockBackground(
+            theme,
+            TaskStateTokens.categoryTint(theme, theme.categorySwatches[i]),
+          );
+          expect(
+            contrastRatio(theme.colorTextPrimary, bg),
+            greaterThanOrEqualTo(7),
+            reason: '${hueNames[i]} on its block background',
+          );
+        }
+      });
+
+      test('$name: the accent is stronger than its tint', () {
+        for (var i = 0; i < hueNames.length; i++) {
+          final tint = TaskStateTokens.categoryTint(
+            theme,
+            theme.categorySwatches[i],
+          );
+          expect(
+            (theme.categoryAccents[i].computeLuminance() -
+                    tint.computeLuminance())
+                .abs(),
+            greaterThan(.1),
+            reason: '${hueNames[i]} accent is too close to its tint',
+          );
+        }
+      });
+    }
+
     // 16 since 2026-09-30 (four appended). The name keeps its old "12"
     // so no CONSTITUTION/DECISIONS cross-reference goes stale.
     test('both ramps carry all 16 hues, so a stored colorToken still maps', () {
       expect(ColorPrimitives.categoryPalette12, hasLength(16));
       expect(ColorPrimitives.categoryPalette12Light, hasLength(16));
-    });
-
-    /// Pins the specific case reported as illegible, so it cannot regress
-    /// back to a value that merely looks fine on a dark screenshot.
-    test('teal — the reported failure — now clears AA on light', () {
-      const tealIndex = 5;
-      final before = contrastRatio(
-        ColorPrimitives.categoryPalette12[tealIndex],
-        lightBase,
-      );
-      final after = contrastRatio(
-        ColorPrimitives.categoryPalette12Light[tealIndex],
-        lightBase,
-      );
-
-      expect(before, lessThan(aa), reason: 'the old shared teal should fail');
-      expect(after, greaterThanOrEqualTo(aa));
+      expect(ColorPrimitives.categoryAccentsLight, hasLength(16));
+      expect(ColorPrimitives.categoryAccentsDark, hasLength(16));
     });
   });
 

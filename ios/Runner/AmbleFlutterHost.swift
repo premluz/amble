@@ -12,6 +12,7 @@ final class AmbleFlutterHost {
   private var started = false
   private var ready = false
   private var channel: FlutterMethodChannel?
+  private var settingsChannel: FlutterMethodChannel?
 
   @discardableResult
   func start() -> Bool {
@@ -25,6 +26,23 @@ final class AmbleFlutterHost {
     let channel = FlutterMethodChannel(
       name: "com.amble/app_intents", binaryMessenger: engine.binaryMessenger)
     self.channel = channel
+    // Opens Amble's page in Settings, where Calendars can be switched on;
+    // for the Dart side's `SystemSettingsService`.
+    let settingsChannel = FlutterMethodChannel(
+      name: "com.amble/system_settings", binaryMessenger: engine.binaryMessenger)
+    self.settingsChannel = settingsChannel
+    settingsChannel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "openCalendarSettings":
+        guard let url = URL(string: UIApplication.openSettingsURLString) else {
+          result(false)
+          return
+        }
+        UIApplication.shared.open(url) { opened in result(opened) }
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
     channel.setMethodCallHandler { [weak self] call, result in
       switch call.method {
       case "ready":

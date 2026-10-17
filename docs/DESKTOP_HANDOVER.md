@@ -27,8 +27,8 @@ app. They mentioned web-first as a possibility, but it isn't decided. See
 |---|-------|-------|
 | 1 | Shell: sidebar replaces top nav at ≥ 840 wide | **Done** |
 | 2 | Right-panel task editor (edit, duplicate, create, Timeline quick-create) | **Done** |
-| 2b | Panel settings one per line; pickers open as popovers beside the panel (adaptive `AppSheet`) | **Done** |
-| 3 | Day / Week / Month switch; week grid (spatial, zones); month grid (task lists) | **Done** (read and open; no cross-day drag yet) |
+| 2b | Pickers open as popovers beside the panel (adaptive `AppSheet`); panel settings are the phone's chips again (2026-10-11, replacing one-per-line) | **Done** |
+| 3 | Day / Week / Month switch; week grid (spatial, zones); month grid (task lists) | **Done** (week editable: move across days, resize, create) |
 | 4 | Mini month in sidebar; keyboard shortcuts | Not started |
 | — | Web-safe startup; backend/sync for shared data | Not started, needs decisions |
 
@@ -119,9 +119,10 @@ new editor's guard.
 
 ### Phase 2b: one setting per line, popovers (`core/widgets/`, `task_detail/`)
 
-- `TaskEditorBody` shows `TaskPanelFields` (+ `TaskPanelDetailRows`) when
-  `inPanel`, else the phone's `TaskSheetFields` chips. Rows are the core
-  `AppFieldRow` / `AppFieldValue`.
+- `TaskEditorBody` shows the phone's `TaskSheetFields` chips in the sheet and
+  the panel alike (2026-10-11). It showed `TaskPanelFields` (+
+  `TaskPanelDetailRows`, core `AppFieldRow` / `AppFieldValue`) one setting per
+  line until then; those files are unused.
 - `TaskInspectorPanel` wraps the editor in
   `AppSheetPresentationScope(popover)`. `AppSheet.show` checks the scope and
   hands off to `showSheetAsPopover` → `AppPopoverRoute`, placed by
@@ -146,17 +147,33 @@ crosses 840 and gets the smaller controls; revisit if that proves too small.
 - The span is `calendarSpanProvider` (in memory, defaults to Day); dates stay
   on `selectedDateProvider`, so all three views share the selected date.
 - **Week**: Monday–Sunday columns on one hour axis (`CalendarGridTokens`),
-  zones as bands (respects "Show zones"), tasks as the app's own pills
-  (`TaskCapsuleBlock`, read-only) placed by time; overlapping pills side by
-  side at pill width, as on the Day screen. Faint day/hour lines behind an
-  Appearance toggle (`CalendarGridLinesSetting`).
+  zones as the Day view's own band (`WeekZoneBands`: one band across each
+  run of days with the same zone; name in the top-left corner; respects
+  "Show zones"), tasks as the app's own pills (`TaskCapsuleBlock`) or
+  standard blocks (Appearance › Week task style) placed by time; overlapping
+  items side by side, as on the Day screen. Device-calendar events too
+  (read-only). Faint day/hour lines behind an Appearance toggle
+  (`CalendarGridLinesSetting`).
+- **Week editing** (as on the Day screen, mouse-first): drag a task to a new
+  time or another day (`WeekItemGestures` → `weekDragProvider`, a faded
+  ghost where it rests and a preview where it lands); its top or bottom edge
+  resizes it; landing on a task asks Overlap / Push all / Trim
+  (`commitTaskMove`, `commitTaskResize`), each one undo step. Click-drag on
+  empty space (or a hold) draws a draft that opens in the panel
+  (`WeekCreateLayer`, the Day screen's `pendingTaskDraftProvider`). The
+  pills' completion checkbox follows the Day screen's setting. Touch: hold,
+  then drag.
 - **Month**: whole weeks covering the month, each day listing up to 4 tasks
   then "+N more"; no zones, no time axis.
+- Cmd/Ctrl + scroll zooms the Day timeline around the pointer
+  (`TimelinePinchZoom`); the week zooms the same way (`WeekZoom`, plus the
+  toolbar's − / +).
 - A task opens in the panel (`showTaskSheet`); a day header, date number or
   "+N more" opens that day in Day view. Day tasks come from the shared
   `tasksOnDayProvider` (stored tasks + series occurrences).
-- Not yet: drag tasks between days, click-to-create in week/month, a
-  current-time line in the week, persisting the chosen span.
+- Not yet: dragging past the week's edge into the next week, auto-scroll
+  while dragging near the top or bottom, multi-select in the week, editing
+  in Month, a current-time line in the week, persisting the chosen span.
 
 ### Full-bleed macOS window
 
@@ -211,7 +228,7 @@ picked up:
 | `test/wide_shell_layout_test.dart` (7) | Sidebar vs top nav at the breakpoint, no header band, a pill tap opens the panel |
 | `test/features/task_detail/task_inspector_test.dart` (~11) | Open/close, leave guard (Save/Discard/Keep), draft group |
 | `test/features/task_detail/draft_form_link_test.dart` (4) | Pill ↔ form sync, default name |
-| `test/features/task_detail/task_panel_fields_test.dart` (4) | One setting per line, picker beside the panel, value shows on its line, switch rows |
+| `test/features/task_detail/task_panel_fields_test.dart` (4) | The phone's chips in the panel, picker beside the panel, value shows on its chip, Important chip |
 | `test/core/widgets/app_sheet_popover_test.dart` (9) | Sheet vs popover, placement, outside tap, growth, date calendar, `popoverOrigin` |
 
 The panel tests share `test/support/task_inspector_host.dart`.

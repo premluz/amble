@@ -50,9 +50,9 @@ class DevTimelineTaskIconsVisible extends _$DevTimelineTaskIconsVisible {
   void set(bool value) => state = value;
 }
 
-/// List view only — a standalone `1h`-style duration label per row (see
-/// [DevTimelineTaskTimeRangeVisible] for the separate from-to time
-/// setting). The two are independent: either, both, or neither can be on.
+/// List view only — a standalone `1h`-style duration label per row. It is
+/// independent of [DevTimelineTaskTimeRangeVisible], which is now a
+/// Timeline-only setting.
 ///
 /// Task view's own split-layout duration column
 /// (`TaskCapsuleTextRow.durationVisible`'s non-`compactInlineLayout`
@@ -73,31 +73,28 @@ class DevTimelineTaskDurationVisible extends _$DevTimelineTaskDurationVisible {
   void set(bool value) => state = value;
 }
 
-/// List view only — the `04:20 - 05:20`-style time range per row.
-/// Independent of [DevTimelineTaskDurationVisible] — see that provider's
-/// own doc comment. Requested directly: "we should add setting show time
-/// from to (should then show time)... these should affect list view only
-/// and should not affect task spatial view."
+/// Timeline (spatial) view ONLY — when on, each task shows its
+/// `4:20 AM - 5:20 AM` start-end range as a greyed-out second line under
+/// its title. Requested directly: the "Show time (from-to)" switch "should
+/// only affect timeline (spatial view) and under title show greyed out
+/// start end hour."
 ///
-/// **Default flipped to OFF as of 2026-09-10** (confirmed directly —
-/// "show time off as default"), reversing its original launch default
-/// (which matched List view's previous always-shown time range before
-/// this toggle existed).
+/// **Scope changed 2026-10-10.** It used to govern List view's inline
+/// range and Zone view's rows and headers (and explicitly NOT the spatial
+/// view). Those views no longer read it; both keep what they showed with
+/// this switch off, which was its default. Independent of
+/// [DevTimelineTaskDurationVisible] (the Timeline's left time+duration
+/// columns), so with both on the range appears twice.
 ///
-/// **Briefly flipped to ON on 2026-09-20**, then reverted back to OFF the
-/// same day (confirmed directly — "should be disabled as default"). The
-/// actual gap that prompted the earlier flip — an imported calendar
-/// event's own start time never showing at all in Zone/List view — was a
-/// real bug, but the fix for it was alignment, not this toggle: imported
-/// events weren't sharing native tasks' own left-escaping
-/// [ZoneRowTimeLabel] position at all (see that fix's own entry). This
-/// toggle's default going back to OFF is unrelated to that fix and does
-/// not reopen it.
+/// On by default, as of 2026-10-10 (requested directly: "show hour start
+/// and end should be on as default"). History of the default: flipped off
+/// 2026-09-10 ("show time off as default"), briefly on 2026-09-20, back off
+/// the same day, now on again.
 @Riverpod(keepAlive: true)
 class DevTimelineTaskTimeRangeVisible
     extends _$DevTimelineTaskTimeRangeVisible {
   @override
-  bool build() => false;
+  bool build() => true;
 
   void set(bool value) => state = value;
 }
@@ -211,7 +208,9 @@ class DevDynamicZoneWidth extends _$DevDynamicZoneWidth {
 /// — confirmed via AskUserQuestion — rather than a third value replacing
 /// that boolean. If a caller somehow has both on at once, start-time-only
 /// WINS (confirmed via AskUserQuestion): it is the more specific request,
-/// and [_ZoneTaskRow]'s own branch order enforces this.
+/// and [_ZoneTaskRow]'s own branch order enforces this. (Since 2026-10-10
+/// [DevTimelineTaskTimeRangeVisible] is Timeline-only and no longer reaches
+/// Zone view, so the two can't collide in the app.)
 ///
 /// The zone HEADER's own time range is unaffected (confirmed via
 /// AskUserQuestion) — this only touches each member task's row, never

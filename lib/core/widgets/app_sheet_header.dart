@@ -115,18 +115,28 @@ class AppSheetHeader extends StatelessWidget {
                 ),
               ),
             ),
+          // Top-anchored at `spacingLg`, matching the sheet's own side
+          // inset exactly (`AppSheet.show`'s `EdgeInsets.symmetric(
+          // horizontal: spacingLg)`) — not vertically centered in this
+          // row. The row is taller than the button for other reasons (the
+          // drag handle sits above the button's own centre line — see
+          // this class's own 2026-09-23 doc comment), so centering the
+          // button left a visibly smaller top gap than the side gap:
+          // reported directly against a screenshot, "the sheets side
+          // padding match top padding so the circular buttons on left and
+          // right are precisely same padding top and left." See
+          // docs/DESIGN_SYSTEM.md's "Sheet header circle buttons" section
+          // — every `HeaderCircleButton` sited at a fixed-height header's
+          // own edge follows this same rule.
           Positioned(
-            top: 0,
-            bottom: 0,
+            top: theme.spacingLg,
             left: 0,
-            child: Center(
-              child: HeaderCircleButton(
-                theme: theme,
-                icon: back
-                    ? Icons.arrow_back_ios_new_rounded
-                    : Icons.close_rounded,
-                onTap: onClose,
-              ),
+            child: HeaderCircleButton(
+              theme: theme,
+              icon: back
+                  ? Icons.arrow_back_ios_new_rounded
+                  : Icons.close_rounded,
+              onTap: onClose,
             ),
           ),
           if (trailing != null)

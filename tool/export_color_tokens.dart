@@ -75,6 +75,11 @@ Map<String, Object?> _semanticTokens(AmbleTheme theme) => {
     'destructive': theme.colorDestructive,
   }),
   'category': namedColors(theme.categorySwatches),
+  'categoryAccent': namedColors(theme.categoryAccents),
+  'categoryTint': namedColors([
+    for (final swatch in theme.categorySwatches)
+      TaskStateTokens.categoryTint(theme, swatch),
+  ]),
   'elevation': {
     'paneShadow': indexedColors(theme.shadowPane.map((shadow) => shadow.color)),
     'liftShadow': indexedColors(theme.shadowLift.map((shadow) => shadow.color)),

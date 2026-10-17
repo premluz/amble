@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/feature_flags.dart';
 import '../../core/tokens/semantic_theme.dart';
+import '../assistant/claude_settings_screen.dart';
 import '../inbox/template_list_screen.dart';
 import '../onboarding/onboarding_profile_browse_screen.dart';
 import '../task_detail/category_list_screen.dart';
@@ -133,6 +134,7 @@ class SettingsScreen extends StatelessWidget {
                       label: 'Slack',
                       onTap: () => showSlackSettingsScreen(context),
                     ),
+                    const ClaudeSettingsLink(),
                   ],
                 ),
               ),

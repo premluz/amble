@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="Amble Widgetbook component gallery">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Amble Widgetbook</title>
+</head>
+<body>
+  <script>
+    (() => {
+      const params = new URLSearchParams(window.location.search);
+      const projectId = params.get("atlasProject");
+      const itemId = params.get("atlasItem");
+      const sessionId = params.get("atlasSession");
+      const contractVersion = Number(params.get("atlasContract"));
+      const parentOrigin = document.referrer ? new URL(document.referrer).origin : "";
+
+      if (!projectId || !itemId || !sessionId || !Number.isInteger(contractVersion) || contractVersion < 1) {
+        return;
+      }
+
+      window.addEventListener("flutter-first-frame", () => {
+        if (!parentOrigin || parentOrigin === window.location.origin) return;
+        window.parent.postMessage({
+          type: "atlas.preview.ready",
+          contractVersion,
+          projectId,
+          itemId,
+          sessionId,
+        }, parentOrigin);
+      }, { once: true });
+    })();
+  </script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

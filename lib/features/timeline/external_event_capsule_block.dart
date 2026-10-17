@@ -519,7 +519,9 @@ class _ExternalEventTextRow extends StatelessWidget {
     // Scoped to the title alone: the time/duration columns below keep
     // [textStyle]'s regular weight, exactly as a native task's own
     // time line does.
-    final titleStyle = textStyle.copyWith(fontWeight: FontWeight.w600);
+    final titleStyle = textStyle.copyWith(
+      fontWeight: TaskStateTokens.titleWeight,
+    );
     final titleSpan = TextSpan(text: event.title, style: titleStyle);
     final showTime = !alwaysShowTime && durationVisible;
 

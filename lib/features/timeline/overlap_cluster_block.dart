@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/dev_config.dart' show TimelineTaskTextLayout;
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/tokens/task_state_tokens.dart';
 import '../../shared/models/external_calendar_event.dart';
 import '../../shared/models/task.dart';
 import '../../shared/models/task_status.dart';
@@ -261,7 +262,7 @@ class _ClusterTaskRow extends StatelessWidget {
       theme: theme,
       task: task,
       labelColor: theme.colorTextSecondary,
-    ).title(titleTextStyle.copyWith(fontWeight: FontWeight.w600));
+    ).title(titleTextStyle.copyWith(fontWeight: TaskStateTokens.titleWeight));
     // `alwaysShowTime` (List mode only — see its own doc comment) is what
     // distinguishes this row's two real callers: Task view's own cluster
     // row (alwaysShowTime: false), where `durationVisible` alone still

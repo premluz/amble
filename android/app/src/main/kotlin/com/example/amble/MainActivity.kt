@@ -20,6 +20,7 @@ class MainActivity : FlutterFragmentActivity() {
         keyboardAnimation = AndroidKeyboardAnimation(
             window.decorView, AmbleFlutterHost.engine(this).dartExecutor.binaryMessenger
         )
+        SystemSettingsChannel(this, AmbleFlutterHost.engine(this).dartExecutor.binaryMessenger)
         assistant = AssistantActions(this)
         if (savedInstanceState == null) assistant.handle(intent)
     }

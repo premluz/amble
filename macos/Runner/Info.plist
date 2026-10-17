@@ -22,6 +22,10 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Amble shows the events from your calendars next to your tasks. It only reads them and never changes them.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Amble shows the events from your calendars next to your tasks. It only reads them and never changes them.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSMainNibFile</key>

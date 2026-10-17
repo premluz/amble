@@ -686,4 +686,49 @@ void _zoneNameLabelTests() {
     expect(text.style?.fontSize, AmbleTheme.light.textZoneName.fontSize);
     expect(text.style?.fontFamily, AmbleTheme.light.textZoneName.fontFamily);
   });
+
+  // Desktop: horizontal text in the band's top-left corner; phones above
+  // keep the vertical text.
+  Future<void> pumpWide(WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(useMaterial3: true, extensions: [AmbleTheme.light]),
+        home: Scaffold(
+          body: Stack(
+            children: [
+              ZoneNameLabel(
+                theme: AmbleTheme.light,
+                zone: zone,
+                day: day,
+                rangeStart: rangeStart,
+                pixelsPerMinute: pixelsPerMinute,
+                width: 28,
+                insideBandLeft: 56,
+                insideBandWidth: 400,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  testWidgets('desktop: horizontal, top-left corner of its band, not '
+      'rotated', (tester) async {
+    await pumpWide(tester);
+
+    expect(find.byType(RotatedBox), findsNothing);
+    final text = tester.getRect(find.text('Morning ritual'));
+    // The band starts at x 56 - leftInset (the default 4px) and at y 90
+    // (its 07:00 start); the title sits just inside that corner.
+    expect(
+      text.left,
+      closeTo(56 - zoneBackgroundOffset + AmbleTheme.light.spacingSm, 1),
+    );
+    expect(text.top, closeTo(90 + AmbleTheme.light.spacingXs, 1));
+    expect(text.width, greaterThan(text.height), reason: 'reads horizontally');
+  });
 }

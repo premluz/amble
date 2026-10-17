@@ -45,19 +45,19 @@
           "description": "1"
         },
         "2": {
-          "value": "#F6F5F1",
+          "value": "#F2EEE9",
           "type": "color",
           "description": "2"
         },
         "3": {
-          "value": "#D5D5D1",
+          "value": "#E8E3DB",
           "type": "color",
           "description": "3"
         }
       },
       "paper": {
         "default": {
-          "value": "#F1F0EC",
+          "value": "#F5F2EE",
           "type": "color",
           "description": "default"
         }
@@ -69,12 +69,12 @@
           "description": "0"
         },
         "1": {
-          "value": "#EFEDE8",
+          "value": "#F2EFEA",
           "type": "color",
           "description": "1"
         },
         "2": {
-          "value": "#F8F6F2",
+          "value": "#FBF9F6",
           "type": "color",
           "description": "2"
         },
@@ -96,7 +96,7 @@
           "description": "100"
         },
         "200": {
-          "value": "#F1F0EC",
+          "value": "#F4F0EA",
           "type": "color",
           "description": "200"
         },
@@ -106,12 +106,12 @@
           "description": "300"
         },
         "350": {
-          "value": "#77746C",
+          "value": "#79736B",
           "type": "color",
           "description": "350"
         },
         "400": {
-          "value": "#B4B1A8",
+          "value": "#B6AEA3",
           "type": "color",
           "description": "400"
         },
@@ -143,12 +143,12 @@
           "description": "300"
         },
         "400": {
-          "value": "#7F858B",
+          "value": "#8A847B",
           "type": "color",
           "description": "400"
         },
         "500": {
-          "value": "#666B71",
+          "value": "#6F6A63",
           "type": "color",
           "description": "500"
         },
@@ -158,7 +158,7 @@
           "description": "700"
         },
         "900": {
-          "value": "#191A1B",
+          "value": "#1F1C1A",
           "type": "color",
           "description": "900"
         }
@@ -206,37 +206,37 @@
       },
       "ink": {
         "900": {
-          "value": "#121312",
+          "value": "#181615",
           "type": "color",
           "description": "900"
         },
         "800": {
-          "value": "#181917",
+          "value": "#1B1A18",
           "type": "color",
           "description": "800"
         },
         "700": {
-          "value": "#20211F",
+          "value": "#22201E",
           "type": "color",
           "description": "700"
         },
         "650": {
-          "value": "#282926",
+          "value": "#282623",
           "type": "color",
           "description": "650"
         },
         "600": {
-          "value": "#373834",
+          "value": "#2E2B28",
           "type": "color",
           "description": "600"
         },
         "field": {
-          "value": "#33342F",
+          "value": "#302D2B",
           "type": "color",
           "description": "field"
         },
         "fieldActive": {
-          "value": "#45463F",
+          "value": "#3A3734",
           "type": "color",
           "description": "fieldActive"
         }
@@ -245,126 +245,330 @@
     "category": {
       "dark": {
         "red": {
-          "value": "#C5747D",
+          "value": "#9F7777",
           "type": "color",
           "description": "Category swatch index 0."
         },
         "orange": {
-          "value": "#C47C59",
+          "value": "#9D7B69",
           "type": "color",
           "description": "Category swatch index 1."
         },
         "amber": {
-          "value": "#BA8C4F",
+          "value": "#96856D",
           "type": "color",
           "description": "Category swatch index 2."
         },
         "yellowGreen": {
-          "value": "#9A955B",
+          "value": "#89886C",
           "type": "color",
           "description": "Category swatch index 3."
         },
         "green": {
-          "value": "#73916D",
+          "value": "#768871",
           "type": "color",
           "description": "Category swatch index 4."
         },
         "teal": {
-          "value": "#609488",
+          "value": "#4E9188",
           "type": "color",
           "description": "Category swatch index 5."
         },
         "cyan": {
-          "value": "#5F9094",
+          "value": "#638C8E",
           "type": "color",
           "description": "Category swatch index 6."
         },
         "skyBlue": {
-          "value": "#648CA4",
+          "value": "#68889F",
           "type": "color",
           "description": "Category swatch index 7."
         },
         "blue": {
-          "value": "#7188AD",
+          "value": "#6A82A4",
           "type": "color",
           "description": "Category swatch index 8."
         },
         "violet": {
-          "value": "#857DAE",
+          "value": "#8D76B4",
           "type": "color",
           "description": "Category swatch index 9."
         },
         "magenta": {
-          "value": "#9A759F",
+          "value": "#947895",
           "type": "color",
           "description": "Category swatch index 10."
         },
         "pinkRose": {
-          "value": "#AD758F",
+          "value": "#9B7683",
           "type": "color",
           "description": "Category swatch index 11."
+        },
+        "goldenYellow": {
+          "value": "#9A8B62",
+          "type": "color",
+          "description": "Category swatch index 12."
+        },
+        "lime": {
+          "value": "#848E6D",
+          "type": "color",
+          "description": "Category swatch index 13."
+        },
+        "ocean": {
+          "value": "#5B84AB",
+          "type": "color",
+          "description": "Category swatch index 14."
+        },
+        "periwinkle": {
+          "value": "#7885AB",
+          "type": "color",
+          "description": "Category swatch index 15."
         }
       },
       "light": {
         "red": {
-          "value": "#9D505C",
+          "value": "#EABEBE",
           "type": "color",
           "description": "Category swatch index 0."
         },
         "orange": {
-          "value": "#975837",
+          "value": "#EAC5B1",
           "type": "color",
           "description": "Category swatch index 1."
         },
         "amber": {
-          "value": "#866134",
+          "value": "#E7D4BB",
           "type": "color",
           "description": "Category swatch index 2."
         },
         "yellowGreen": {
-          "value": "#6E6A39",
+          "value": "#D8D6B8",
           "type": "color",
           "description": "Category swatch index 3."
         },
         "green": {
-          "value": "#556F52",
+          "value": "#B8CBB2",
           "type": "color",
           "description": "Category swatch index 4."
         },
         "teal": {
-          "value": "#457067",
+          "value": "#80CFC3",
           "type": "color",
           "description": "Category swatch index 5."
         },
         "cyan": {
-          "value": "#466F73",
+          "value": "#A6D1D3",
           "type": "color",
           "description": "Category swatch index 6."
         },
         "skyBlue": {
-          "value": "#4C6D82",
+          "value": "#ABCCE5",
           "type": "color",
           "description": "Category swatch index 7."
         },
         "blue": {
-          "value": "#506991",
+          "value": "#A0B9DE",
           "type": "color",
           "description": "Category swatch index 8."
         },
         "violet": {
-          "value": "#655E8F",
+          "value": "#B89FE7",
           "type": "color",
           "description": "Category swatch index 9."
         },
         "magenta": {
-          "value": "#76597B",
+          "value": "#D2B1D3",
           "type": "color",
           "description": "Category swatch index 10."
         },
         "pinkRose": {
-          "value": "#875970",
+          "value": "#E6BECC",
           "type": "color",
           "description": "Category swatch index 11."
+        },
+        "goldenYellow": {
+          "value": "#E3D3A8",
+          "type": "color",
+          "description": "Category swatch index 12."
+        },
+        "lime": {
+          "value": "#C8D3B0",
+          "type": "color",
+          "description": "Category swatch index 13."
+        },
+        "ocean": {
+          "value": "#7FADD8",
+          "type": "color",
+          "description": "Category swatch index 14."
+        },
+        "periwinkle": {
+          "value": "#B3C3EF",
+          "type": "color",
+          "description": "Category swatch index 15."
+        }
+      },
+      "accentDark": {
+        "red": {
+          "value": "#F7A3A5",
+          "type": "color",
+          "description": "Category swatch index 0."
+        },
+        "orange": {
+          "value": "#F2AB83",
+          "type": "color",
+          "description": "Category swatch index 1."
+        },
+        "amber": {
+          "value": "#E4B572",
+          "type": "color",
+          "description": "Category swatch index 2."
+        },
+        "yellowGreen": {
+          "value": "#C7C274",
+          "type": "color",
+          "description": "Category swatch index 3."
+        },
+        "green": {
+          "value": "#9ECD8E",
+          "type": "color",
+          "description": "Category swatch index 4."
+        },
+        "teal": {
+          "value": "#11DAC8",
+          "type": "color",
+          "description": "Category swatch index 5."
+        },
+        "cyan": {
+          "value": "#64D1D7",
+          "type": "color",
+          "description": "Category swatch index 6."
+        },
+        "skyBlue": {
+          "value": "#80C7F8",
+          "type": "color",
+          "description": "Category swatch index 7."
+        },
+        "blue": {
+          "value": "#96C0FE",
+          "type": "color",
+          "description": "Category swatch index 8."
+        },
+        "violet": {
+          "value": "#C9ACFF",
+          "type": "color",
+          "description": "Category swatch index 9."
+        },
+        "magenta": {
+          "value": "#E2A5E5",
+          "type": "color",
+          "description": "Category swatch index 10."
+        },
+        "pinkRose": {
+          "value": "#F2A3C1",
+          "type": "color",
+          "description": "Category swatch index 11."
+        },
+        "goldenYellow": {
+          "value": "#DCBA5C",
+          "type": "color",
+          "description": "Category swatch index 12."
+        },
+        "lime": {
+          "value": "#B3C87F",
+          "type": "color",
+          "description": "Category swatch index 13."
+        },
+        "ocean": {
+          "value": "#85C4FF",
+          "type": "color",
+          "description": "Category swatch index 14."
+        },
+        "periwinkle": {
+          "value": "#A4BBFF",
+          "type": "color",
+          "description": "Category swatch index 15."
+        }
+      },
+      "accentLight": {
+        "red": {
+          "value": "#A24F53",
+          "type": "color",
+          "description": "Category swatch index 0."
+        },
+        "orange": {
+          "value": "#9D562B",
+          "type": "color",
+          "description": "Category swatch index 1."
+        },
+        "amber": {
+          "value": "#906106",
+          "type": "color",
+          "description": "Category swatch index 2."
+        },
+        "yellowGreen": {
+          "value": "#766F08",
+          "type": "color",
+          "description": "Category swatch index 3."
+        },
+        "green": {
+          "value": "#447433",
+          "type": "color",
+          "description": "Category swatch index 4."
+        },
+        "teal": {
+          "value": "#027369",
+          "type": "color",
+          "description": "Category swatch index 5."
+        },
+        "cyan": {
+          "value": "#02787D",
+          "type": "color",
+          "description": "Category swatch index 6."
+        },
+        "skyBlue": {
+          "value": "#1870A1",
+          "type": "color",
+          "description": "Category swatch index 7."
+        },
+        "blue": {
+          "value": "#3260A3",
+          "type": "color",
+          "description": "Category swatch index 8."
+        },
+        "violet": {
+          "value": "#6A3EA5",
+          "type": "color",
+          "description": "Category swatch index 9."
+        },
+        "magenta": {
+          "value": "#884B8B",
+          "type": "color",
+          "description": "Category swatch index 10."
+        },
+        "pinkRose": {
+          "value": "#9C4E6F",
+          "type": "color",
+          "description": "Category swatch index 11."
+        },
+        "goldenYellow": {
+          "value": "#846801",
+          "type": "color",
+          "description": "Category swatch index 12."
+        },
+        "lime": {
+          "value": "#617522",
+          "type": "color",
+          "description": "Category swatch index 13."
+        },
+        "ocean": {
+          "value": "#025894",
+          "type": "color",
+          "description": "Category swatch index 14."
+        },
+        "periwinkle": {
+          "value": "#4C62B3",
+          "type": "color",
+          "description": "Category swatch index 15."
         }
       }
     },
@@ -400,22 +604,22 @@
     "light": {
       "surface": {
         "base": {
-          "value": "#F1F0EC",
+          "value": "#F5F2EE",
           "type": "color",
           "description": "base"
         },
         "primary": {
-          "value": "#F8F6F2",
+          "value": "#FBF9F6",
           "type": "color",
           "description": "primary"
         },
         "secondary": {
-          "value": "#EFEDE8",
+          "value": "#F2EFEA",
           "type": "color",
           "description": "secondary"
         },
         "timeline": {
-          "value": "#F8F6F2",
+          "value": "#FBF9F6",
           "type": "color",
           "description": "timeline"
         },
@@ -425,12 +629,12 @@
           "description": "overlay"
         },
         "field": {
-          "value": "#F6F5F1",
+          "value": "#F2EEE9",
           "type": "color",
           "description": "field"
         },
         "fieldActive": {
-          "value": "#D5D5D1",
+          "value": "#E8E3DB",
           "type": "color",
           "description": "fieldActive"
         },
@@ -440,12 +644,12 @@
           "description": "scrim"
         },
         "blurOverlay": {
-          "value": "#5CF8F6F2",
+          "value": "#5CFBF9F6",
           "type": "color",
           "description": "blurOverlay"
         },
         "freeWindow": {
-          "value": "#80D5D5D1",
+          "value": "#80E8E3DB",
           "type": "color",
           "description": "freeWindow"
         },
@@ -455,38 +659,38 @@
           "description": "zoneBackground"
         },
         "whatMatters": {
-          "value": "#DBD6E6",
+          "value": "#DDD8EA",
           "type": "color",
           "description": "whatMatters"
         }
       },
       "text": {
         "primary": {
-          "value": "#191A1B",
+          "value": "#1F1C1A",
           "type": "color",
           "description": "primary"
         },
         "secondary": {
-          "value": "#666B71",
+          "value": "#6F6A63",
           "type": "color",
           "description": "secondary"
         },
         "tertiary": {
-          "value": "#7F858B",
+          "value": "#8A847B",
           "type": "color",
           "description": "tertiary"
         }
       },
       "foreground": {
         "tertiary": {
-          "value": "#7F858B",
+          "value": "#8A847B",
           "type": "color",
           "description": "tertiary"
         }
       },
       "border": {
         "default": {
-          "value": "#D5D5D1",
+          "value": "#E8E3DB",
           "type": "color",
           "description": "default"
         }
@@ -522,64 +726,248 @@
       },
       "category": {
         "red": {
-          "value": "#9D505C",
+          "value": "#EABEBE",
           "type": "color",
           "description": "Category swatch index 0."
         },
         "orange": {
-          "value": "#975837",
+          "value": "#EAC5B1",
           "type": "color",
           "description": "Category swatch index 1."
         },
         "amber": {
-          "value": "#866134",
+          "value": "#E7D4BB",
           "type": "color",
           "description": "Category swatch index 2."
         },
         "yellowGreen": {
-          "value": "#6E6A39",
+          "value": "#D8D6B8",
           "type": "color",
           "description": "Category swatch index 3."
         },
         "green": {
-          "value": "#556F52",
+          "value": "#B8CBB2",
           "type": "color",
           "description": "Category swatch index 4."
         },
         "teal": {
-          "value": "#457067",
+          "value": "#80CFC3",
           "type": "color",
           "description": "Category swatch index 5."
         },
         "cyan": {
-          "value": "#466F73",
+          "value": "#A6D1D3",
           "type": "color",
           "description": "Category swatch index 6."
         },
         "skyBlue": {
-          "value": "#4C6D82",
+          "value": "#ABCCE5",
           "type": "color",
           "description": "Category swatch index 7."
         },
         "blue": {
-          "value": "#506991",
+          "value": "#A0B9DE",
           "type": "color",
           "description": "Category swatch index 8."
         },
         "violet": {
-          "value": "#655E8F",
+          "value": "#B89FE7",
           "type": "color",
           "description": "Category swatch index 9."
         },
         "magenta": {
-          "value": "#76597B",
+          "value": "#D2B1D3",
           "type": "color",
           "description": "Category swatch index 10."
         },
         "pinkRose": {
-          "value": "#875970",
+          "value": "#E6BECC",
           "type": "color",
           "description": "Category swatch index 11."
+        },
+        "goldenYellow": {
+          "value": "#E3D3A8",
+          "type": "color",
+          "description": "Category swatch index 12."
+        },
+        "lime": {
+          "value": "#C8D3B0",
+          "type": "color",
+          "description": "Category swatch index 13."
+        },
+        "ocean": {
+          "value": "#7FADD8",
+          "type": "color",
+          "description": "Category swatch index 14."
+        },
+        "periwinkle": {
+          "value": "#B3C3EF",
+          "type": "color",
+          "description": "Category swatch index 15."
+        }
+      },
+      "categoryAccent": {
+        "red": {
+          "value": "#A24F53",
+          "type": "color",
+          "description": "Category swatch index 0."
+        },
+        "orange": {
+          "value": "#9D562B",
+          "type": "color",
+          "description": "Category swatch index 1."
+        },
+        "amber": {
+          "value": "#906106",
+          "type": "color",
+          "description": "Category swatch index 2."
+        },
+        "yellowGreen": {
+          "value": "#766F08",
+          "type": "color",
+          "description": "Category swatch index 3."
+        },
+        "green": {
+          "value": "#447433",
+          "type": "color",
+          "description": "Category swatch index 4."
+        },
+        "teal": {
+          "value": "#027369",
+          "type": "color",
+          "description": "Category swatch index 5."
+        },
+        "cyan": {
+          "value": "#02787D",
+          "type": "color",
+          "description": "Category swatch index 6."
+        },
+        "skyBlue": {
+          "value": "#1870A1",
+          "type": "color",
+          "description": "Category swatch index 7."
+        },
+        "blue": {
+          "value": "#3260A3",
+          "type": "color",
+          "description": "Category swatch index 8."
+        },
+        "violet": {
+          "value": "#6A3EA5",
+          "type": "color",
+          "description": "Category swatch index 9."
+        },
+        "magenta": {
+          "value": "#884B8B",
+          "type": "color",
+          "description": "Category swatch index 10."
+        },
+        "pinkRose": {
+          "value": "#9C4E6F",
+          "type": "color",
+          "description": "Category swatch index 11."
+        },
+        "goldenYellow": {
+          "value": "#846801",
+          "type": "color",
+          "description": "Category swatch index 12."
+        },
+        "lime": {
+          "value": "#617522",
+          "type": "color",
+          "description": "Category swatch index 13."
+        },
+        "ocean": {
+          "value": "#025894",
+          "type": "color",
+          "description": "Category swatch index 14."
+        },
+        "periwinkle": {
+          "value": "#4C62B3",
+          "type": "color",
+          "description": "Category swatch index 15."
+        }
+      },
+      "categoryTint": {
+        "red": {
+          "value": "#EABEBE",
+          "type": "color",
+          "description": "Category swatch index 0."
+        },
+        "orange": {
+          "value": "#EAC5B1",
+          "type": "color",
+          "description": "Category swatch index 1."
+        },
+        "amber": {
+          "value": "#E7D4BB",
+          "type": "color",
+          "description": "Category swatch index 2."
+        },
+        "yellowGreen": {
+          "value": "#D8D6B8",
+          "type": "color",
+          "description": "Category swatch index 3."
+        },
+        "green": {
+          "value": "#B8CBB2",
+          "type": "color",
+          "description": "Category swatch index 4."
+        },
+        "teal": {
+          "value": "#80CFC3",
+          "type": "color",
+          "description": "Category swatch index 5."
+        },
+        "cyan": {
+          "value": "#A6D1D3",
+          "type": "color",
+          "description": "Category swatch index 6."
+        },
+        "skyBlue": {
+          "value": "#ABCCE5",
+          "type": "color",
+          "description": "Category swatch index 7."
+        },
+        "blue": {
+          "value": "#A0B9DE",
+          "type": "color",
+          "description": "Category swatch index 8."
+        },
+        "violet": {
+          "value": "#B89FE7",
+          "type": "color",
+          "description": "Category swatch index 9."
+        },
+        "magenta": {
+          "value": "#D2B1D3",
+          "type": "color",
+          "description": "Category swatch index 10."
+        },
+        "pinkRose": {
+          "value": "#E6BECC",
+          "type": "color",
+          "description": "Category swatch index 11."
+        },
+        "goldenYellow": {
+          "value": "#E3D3A8",
+          "type": "color",
+          "description": "Category swatch index 12."
+        },
+        "lime": {
+          "value": "#C8D3B0",
+          "type": "color",
+          "description": "Category swatch index 13."
+        },
+        "ocean": {
+          "value": "#7FADD8",
+          "type": "color",
+          "description": "Category swatch index 14."
+        },
+        "periwinkle": {
+          "value": "#B3C3EF",
+          "type": "color",
+          "description": "Category swatch index 15."
         }
       },
       "elevation": {
@@ -592,12 +980,12 @@
         },
         "liftShadow": {
           "layer1": {
-            "value": "#4D191A1B",
+            "value": "#4D1F1C1A",
             "type": "color",
             "description": "Shadow layer 1."
           },
           "layer2": {
-            "value": "#38191A1B",
+            "value": "#381F1C1A",
             "type": "color",
             "description": "Shadow layer 2."
           }
@@ -607,37 +995,37 @@
     "dark": {
       "surface": {
         "base": {
-          "value": "#121312",
+          "value": "#181615",
           "type": "color",
           "description": "base"
         },
         "primary": {
-          "value": "#181917",
+          "value": "#1B1A18",
           "type": "color",
           "description": "primary"
         },
         "secondary": {
-          "value": "#20211F",
+          "value": "#22201E",
           "type": "color",
           "description": "secondary"
         },
         "timeline": {
-          "value": "#181917",
+          "value": "#1B1A18",
           "type": "color",
           "description": "timeline"
         },
         "overlay": {
-          "value": "#282926",
+          "value": "#282623",
           "type": "color",
           "description": "overlay"
         },
         "field": {
-          "value": "#33342F",
+          "value": "#302D2B",
           "type": "color",
           "description": "field"
         },
         "fieldActive": {
-          "value": "#45463F",
+          "value": "#3A3734",
           "type": "color",
           "description": "fieldActive"
         },
@@ -647,12 +1035,12 @@
           "description": "scrim"
         },
         "blurOverlay": {
-          "value": "#5C121312",
+          "value": "#5C181615",
           "type": "color",
           "description": "blurOverlay"
         },
         "freeWindow": {
-          "value": "#80373834",
+          "value": "#802E2B28",
           "type": "color",
           "description": "freeWindow"
         },
@@ -662,38 +1050,38 @@
           "description": "zoneBackground"
         },
         "whatMatters": {
-          "value": "#28272C",
+          "value": "#2A282D",
           "type": "color",
           "description": "whatMatters"
         }
       },
       "text": {
         "primary": {
-          "value": "#F1F0EC",
+          "value": "#F4F0EA",
           "type": "color",
           "description": "primary"
         },
         "secondary": {
-          "value": "#B4B1A8",
+          "value": "#B6AEA3",
           "type": "color",
           "description": "secondary"
         },
         "tertiary": {
-          "value": "#77746C",
+          "value": "#79736B",
           "type": "color",
           "description": "tertiary"
         }
       },
       "foreground": {
         "tertiary": {
-          "value": "#77746C",
+          "value": "#79736B",
           "type": "color",
           "description": "tertiary"
         }
       },
       "border": {
         "default": {
-          "value": "#373834",
+          "value": "#2E2B28",
           "type": "color",
           "description": "default"
         }
@@ -712,7 +1100,7 @@
           "description": "completed"
         },
         "skipped": {
-          "value": "#666B71",
+          "value": "#6F6A63",
           "type": "color",
           "description": "skipped"
         },
@@ -729,64 +1117,248 @@
       },
       "category": {
         "red": {
-          "value": "#C5747D",
+          "value": "#9F7777",
           "type": "color",
           "description": "Category swatch index 0."
         },
         "orange": {
-          "value": "#C47C59",
+          "value": "#9D7B69",
           "type": "color",
           "description": "Category swatch index 1."
         },
         "amber": {
-          "value": "#BA8C4F",
+          "value": "#96856D",
           "type": "color",
           "description": "Category swatch index 2."
         },
         "yellowGreen": {
-          "value": "#9A955B",
+          "value": "#89886C",
           "type": "color",
           "description": "Category swatch index 3."
         },
         "green": {
-          "value": "#73916D",
+          "value": "#768871",
           "type": "color",
           "description": "Category swatch index 4."
         },
         "teal": {
-          "value": "#609488",
+          "value": "#4E9188",
           "type": "color",
           "description": "Category swatch index 5."
         },
         "cyan": {
-          "value": "#5F9094",
+          "value": "#638C8E",
           "type": "color",
           "description": "Category swatch index 6."
         },
         "skyBlue": {
-          "value": "#648CA4",
+          "value": "#68889F",
           "type": "color",
           "description": "Category swatch index 7."
         },
         "blue": {
-          "value": "#7188AD",
+          "value": "#6A82A4",
           "type": "color",
           "description": "Category swatch index 8."
         },
         "violet": {
-          "value": "#857DAE",
+          "value": "#8D76B4",
           "type": "color",
           "description": "Category swatch index 9."
         },
         "magenta": {
-          "value": "#9A759F",
+          "value": "#947895",
           "type": "color",
           "description": "Category swatch index 10."
         },
         "pinkRose": {
-          "value": "#AD758F",
+          "value": "#9B7683",
           "type": "color",
           "description": "Category swatch index 11."
+        },
+        "goldenYellow": {
+          "value": "#9A8B62",
+          "type": "color",
+          "description": "Category swatch index 12."
+        },
+        "lime": {
+          "value": "#848E6D",
+          "type": "color",
+          "description": "Category swatch index 13."
+        },
+        "ocean": {
+          "value": "#5B84AB",
+          "type": "color",
+          "description": "Category swatch index 14."
+        },
+        "periwinkle": {
+          "value": "#7885AB",
+          "type": "color",
+          "description": "Category swatch index 15."
+        }
+      },
+      "categoryAccent": {
+        "red": {
+          "value": "#F7A3A5",
+          "type": "color",
+          "description": "Category swatch index 0."
+        },
+        "orange": {
+          "value": "#F2AB83",
+          "type": "color",
+          "description": "Category swatch index 1."
+        },
+        "amber": {
+          "value": "#E4B572",
+          "type": "color",
+          "description": "Category swatch index 2."
+        },
+        "yellowGreen": {
+          "value": "#C7C274",
+          "type": "color",
+          "description": "Category swatch index 3."
+        },
+        "green": {
+          "value": "#9ECD8E",
+          "type": "color",
+          "description": "Category swatch index 4."
+        },
+        "teal": {
+          "value": "#11DAC8",
+          "type": "color",
+          "description": "Category swatch index 5."
+        },
+        "cyan": {
+          "value": "#64D1D7",
+          "type": "color",
+          "description": "Category swatch index 6."
+        },
+        "skyBlue": {
+          "value": "#80C7F8",
+          "type": "color",
+          "description": "Category swatch index 7."
+        },
+        "blue": {
+          "value": "#96C0FE",
+          "type": "color",
+          "description": "Category swatch index 8."
+        },
+        "violet": {
+          "value": "#C9ACFF",
+          "type": "color",
+          "description": "Category swatch index 9."
+        },
+        "magenta": {
+          "value": "#E2A5E5",
+          "type": "color",
+          "description": "Category swatch index 10."
+        },
+        "pinkRose": {
+          "value": "#F2A3C1",
+          "type": "color",
+          "description": "Category swatch index 11."
+        },
+        "goldenYellow": {
+          "value": "#DCBA5C",
+          "type": "color",
+          "description": "Category swatch index 12."
+        },
+        "lime": {
+          "value": "#B3C87F",
+          "type": "color",
+          "description": "Category swatch index 13."
+        },
+        "ocean": {
+          "value": "#85C4FF",
+          "type": "color",
+          "description": "Category swatch index 14."
+        },
+        "periwinkle": {
+          "value": "#A4BBFF",
+          "type": "color",
+          "description": "Category swatch index 15."
+        }
+      },
+      "categoryTint": {
+        "red": {
+          "value": "#433635",
+          "type": "color",
+          "description": "Category swatch index 0."
+        },
+        "orange": {
+          "value": "#423730",
+          "type": "color",
+          "description": "Category swatch index 1."
+        },
+        "amber": {
+          "value": "#403A31",
+          "type": "color",
+          "description": "Category swatch index 2."
+        },
+        "yellowGreen": {
+          "value": "#3C3B31",
+          "type": "color",
+          "description": "Category swatch index 3."
+        },
+        "green": {
+          "value": "#363B33",
+          "type": "color",
+          "description": "Category swatch index 4."
+        },
+        "teal": {
+          "value": "#2A3E3A",
+          "type": "color",
+          "description": "Category swatch index 5."
+        },
+        "cyan": {
+          "value": "#313C3B",
+          "type": "color",
+          "description": "Category swatch index 6."
+        },
+        "skyBlue": {
+          "value": "#323B41",
+          "type": "color",
+          "description": "Category swatch index 7."
+        },
+        "blue": {
+          "value": "#333942",
+          "type": "color",
+          "description": "Category swatch index 8."
+        },
+        "violet": {
+          "value": "#3D3647",
+          "type": "color",
+          "description": "Category swatch index 9."
+        },
+        "magenta": {
+          "value": "#3F363D",
+          "type": "color",
+          "description": "Category swatch index 10."
+        },
+        "pinkRose": {
+          "value": "#413638",
+          "type": "color",
+          "description": "Category swatch index 11."
+        },
+        "goldenYellow": {
+          "value": "#413C2E",
+          "type": "color",
+          "description": "Category swatch index 12."
+        },
+        "lime": {
+          "value": "#3B3D31",
+          "type": "color",
+          "description": "Category swatch index 13."
+        },
+        "ocean": {
+          "value": "#2E3A44",
+          "type": "color",
+          "description": "Category swatch index 14."
+        },
+        "periwinkle": {
+          "value": "#373A44",
+          "type": "color",
+          "description": "Category swatch index 15."
         }
       },
       "elevation": {
@@ -821,12 +1393,12 @@
           "description": "glassFill"
         },
         "border": {
-          "value": "#0F191A1B",
+          "value": "#091F1C1A",
           "type": "color",
           "description": "border"
         },
         "topHighlight": {
-          "value": "#3ACECECE",
+          "value": "#24CECDCC",
           "type": "color",
           "description": "topHighlight"
         },
@@ -836,44 +1408,44 @@
           "description": "selectedFill"
         },
         "menuShadow": {
-          "value": "#1A191A1B",
+          "value": "#1A1F1C1A",
           "type": "color",
           "description": "menuShadow"
         },
         "dragShadow": {
-          "value": "#29191A1B",
+          "value": "#291F1C1A",
           "type": "color",
           "description": "dragShadow"
         }
       },
       "dark": {
         "glassFill": {
-          "value": "#EB282926",
+          "value": "#EB282623",
           "type": "color",
           "description": "glassFill"
         },
         "border": {
-          "value": "#1AF1F0EC",
+          "value": "#0FF4F0EA",
           "type": "color",
           "description": "border"
         },
         "topHighlight": {
-          "value": "#3EFAFAF8",
+          "value": "#27FBFAF8",
           "type": "color",
           "description": "topHighlight"
         },
         "selectedFill": {
-          "value": "#38373C",
+          "value": "#383539",
           "type": "color",
           "description": "selectedFill"
         },
         "menuShadow": {
-          "value": "#47121312",
+          "value": "#47181615",
           "type": "color",
           "description": "menuShadow"
         },
         "dragShadow": {
-          "value": "#66121312",
+          "value": "#66181615",
           "type": "color",
           "description": "dragShadow"
         }
@@ -882,12 +1454,12 @@
     "taskState": {
       "shared": {
         "glyphOnDark": {
-          "value": "#F1F0EC",
+          "value": "#F5F2EE",
           "type": "color",
           "description": "glyphOnDark"
         },
         "glyphOnLight": {
-          "value": "#191A1B",
+          "value": "#1F1C1A",
           "type": "color",
           "description": "glyphOnLight"
         }
@@ -895,93 +1467,113 @@
       "light": {
         "doneFill": {
           "red": {
-            "value": "#D9C3C4",
+            "value": "#F2E3E1",
             "type": "color",
             "description": "Category swatch index 0."
           },
           "orange": {
-            "value": "#D8C5B9",
+            "value": "#F2E5DD",
             "type": "color",
             "description": "Category swatch index 1."
           },
           "amber": {
-            "value": "#D3C8B8",
+            "value": "#F1EAE0",
             "type": "color",
             "description": "Category swatch index 2."
           },
           "yellowGreen": {
-            "value": "#CCCABA",
+            "value": "#EDEADF",
             "type": "color",
             "description": "Category swatch index 3."
           },
           "green": {
-            "value": "#C5CCC1",
+            "value": "#E4E7DD",
             "type": "color",
             "description": "Category swatch index 4."
           },
           "teal": {
-            "value": "#C1CCC7",
+            "value": "#D4E8E2",
             "type": "color",
             "description": "Category swatch index 5."
           },
           "cyan": {
-            "value": "#C1CCCA",
+            "value": "#DFE9E6",
             "type": "color",
             "description": "Category swatch index 6."
           },
           "skyBlue": {
-            "value": "#C3CBCE",
+            "value": "#E0E7EB",
             "type": "color",
             "description": "Category swatch index 7."
           },
           "blue": {
-            "value": "#C4CAD3",
+            "value": "#DDE2EA",
             "type": "color",
             "description": "Category swatch index 8."
           },
           "violet": {
-            "value": "#CAC7D2",
+            "value": "#E4DBEC",
             "type": "color",
             "description": "Category swatch index 9."
           },
           "magenta": {
-            "value": "#CFC6CC",
+            "value": "#EBE0E6",
             "type": "color",
             "description": "Category swatch index 10."
           },
           "pinkRose": {
-            "value": "#D3C6C9",
+            "value": "#F1E3E4",
             "type": "color",
             "description": "Category swatch index 11."
+          },
+          "goldenYellow": {
+            "value": "#F0E9DA",
+            "type": "color",
+            "description": "Category swatch index 12."
+          },
+          "lime": {
+            "value": "#E8E9DD",
+            "type": "color",
+            "description": "Category swatch index 13."
+          },
+          "ocean": {
+            "value": "#D4DFE8",
+            "type": "color",
+            "description": "Category swatch index 14."
+          },
+          "periwinkle": {
+            "value": "#E3E5EE",
+            "type": "color",
+            "description": "Category swatch index 15."
           }
         },
         "doneTitle": {
-          "value": "#6B191A1B",
+          "value": "#6B1F1C1A",
           "type": "color",
           "description": "doneTitle"
         },
         "unlabeledFill": {
-          "value": "#D7D6D3",
+          "value": "#B3D6E1",
           "type": "color",
           "description": "unlabeledFill"
         },
         "importedHatch": {
-          "value": "#1A191A1B",
+          "value": "#1A1F1C1A",
           "type": "color",
           "description": "importedHatch"
         },
         "importantTitle": {
-          "value": "#342F52",
+          "value": "#383051",
           "type": "color",
           "description": "importantTitle"
         },
         "importantStarStart": {
-          "value": "#494949",
+          "value": "#4E4B49",
           "type": "color",
           "description": "importantStarStart"
         },
         "importantStarEnd": {
-          "value": "#575080",
+          "value": "#5A5180",
           "type": "color",
           "description": "importantStarEnd"
         }
@@ -989,93 +1581,113 @@
       "dark": {
         "doneFill": {
           "red": {
-            "value": "#442E30",
+            "value": "#3E3130",
             "type": "color",
             "description": "Category swatch index 0."
           },
           "orange": {
-            "value": "#443026",
+            "value": "#3D322D",
             "type": "color",
             "description": "Category swatch index 1."
           },
           "amber": {
-            "value": "#413523",
+            "value": "#3B352E",
             "type": "color",
             "description": "Category swatch index 2."
           },
           "yellowGreen": {
-            "value": "#383726",
+            "value": "#38362D",
             "type": "color",
             "description": "Category swatch index 3."
           },
           "green": {
-            "value": "#2D362B",
+            "value": "#32362F",
             "type": "color",
             "description": "Category swatch index 4."
           },
           "teal": {
-            "value": "#283733",
+            "value": "#273835",
             "type": "color",
             "description": "Category swatch index 5."
           },
           "cyan": {
-            "value": "#283636",
+            "value": "#2D3737",
             "type": "color",
             "description": "Category swatch index 6."
           },
           "skyBlue": {
-            "value": "#29353B",
+            "value": "#2E363C",
             "type": "color",
             "description": "Category swatch index 7."
           },
           "blue": {
-            "value": "#2D343D",
+            "value": "#2F343D",
             "type": "color",
             "description": "Category swatch index 8."
           },
           "violet": {
-            "value": "#32313E",
+            "value": "#393142",
             "type": "color",
             "description": "Category swatch index 9."
           },
           "magenta": {
-            "value": "#382E39",
+            "value": "#3B3139",
             "type": "color",
             "description": "Category swatch index 10."
           },
           "pinkRose": {
-            "value": "#3D2E35",
+            "value": "#3D3134",
             "type": "color",
             "description": "Category swatch index 11."
+          },
+          "goldenYellow": {
+            "value": "#3C372B",
+            "type": "color",
+            "description": "Category swatch index 12."
+          },
+          "lime": {
+            "value": "#36382E",
+            "type": "color",
+            "description": "Category swatch index 13."
+          },
+          "ocean": {
+            "value": "#2B353F",
+            "type": "color",
+            "description": "Category swatch index 14."
+          },
+          "periwinkle": {
+            "value": "#33353F",
+            "type": "color",
+            "description": "Category swatch index 15."
           }
         },
         "doneTitle": {
-          "value": "#6BF1F0EC",
+          "value": "#6BF4F0EA",
           "type": "color",
           "description": "doneTitle"
         },
         "unlabeledFill": {
-          "value": "#3A3B39",
+          "value": "#33535C",
           "type": "color",
           "description": "unlabeledFill"
         },
         "importedHatch": {
-          "value": "#24F1F0EC",
+          "value": "#24F4F0EA",
           "type": "color",
           "description": "importedHatch"
         },
         "importantTitle": {
-          "value": "#E2DDF3",
+          "value": "#E4DDF1",
           "type": "color",
           "description": "importantTitle"
         },
         "importantStarStart": {
-          "value": "#C0BFBC",
+          "value": "#C4C0BB",
           "type": "color",
           "description": "importantStarStart"
         },
         "importantStarEnd": {
-          "value": "#C3BCDE",
+          "value": "#C5BDDD",
           "type": "color",
           "description": "importantStarEnd"
         }

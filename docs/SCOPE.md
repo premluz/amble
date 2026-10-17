@@ -140,7 +140,16 @@ required per platform, distinct from most of the app's Dart-only build so
 far.
 
 
-## MCP server — deferred, depends on the (still undecided) desktop build
+## MCP server — in scope as "Connect to Claude" (macOS, Claude Desktop first), 2026-10-10
+
+Approved directly ("Execute" on `docs/WORK_ORDER_CLAUDE_CONNECTION.md`). The desktop
+build now exists, which was the blocker below. Local only: an in-app loopback
+endpoint plus a one-click Claude extension. Phone, web and remote assistants stay
+out of scope (they need the deferred cloud backend). The original note is kept below
+as a record.
+
+### Original note (superseded)
+
 
 Not scoped for implementation. MCP doesn't strictly require a hosted cloud
 backend — it supports a local stdio transport — but it does need a

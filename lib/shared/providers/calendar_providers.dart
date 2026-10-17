@@ -9,6 +9,7 @@ import '../repositories/synced_calendar_event_repository.dart';
 import '../services/calendar_permission_service.dart';
 import '../services/calendar_sync_service.dart';
 import '../services/external_calendar_service.dart';
+import '../services/system_settings_service.dart';
 import 'preferences_providers.dart';
 import 'task_providers.dart';
 
@@ -27,6 +28,11 @@ dc.DeviceCalendarPlugin deviceCalendarPlugin(Ref ref) {
 @Riverpod(keepAlive: true)
 CalendarPermissionService calendarPermissionService(Ref ref) {
   return CalendarPermissionService(ref.watch(deviceCalendarPluginProvider));
+}
+
+@Riverpod(keepAlive: true)
+SystemSettingsService systemSettingsService(Ref ref) {
+  return const SystemSettingsService();
 }
 
 @Riverpod(keepAlive: true)
@@ -53,20 +59,47 @@ CalendarSyncService calendarSyncService(Ref ref) {
   );
 }
 
+/// Bumped by "Refresh events" (Settings › Calendars). Every calendar event
+/// fetch watches it, so one press re-reads the device calendars for every
+/// open view. Without it a fetch made earlier (before access was granted,
+/// or before an event was added in the Calendar app) stays on screen until
+/// the day changes or the app restarts.
+@Riverpod(keepAlive: true)
+class ExternalCalendarRefresh extends _$ExternalCalendarRefresh {
+  @override
+  int build() => 0;
+
+  void refresh() => state++;
+}
+
+/// What the Calendars settings screen needs to know: whether Amble may read
+/// the device's calendars and, when it may, which ones exist.
+class DeviceCalendarsState {
+  const DeviceCalendarsState(this.access, this.calendars);
+
+  final CalendarAccess access;
+  final List<dc.Calendar> calendars;
+}
+
 /// Every calendar on the device, for the two Settings pickers (display
 /// multi-select, sync-target single-select) — a plain `autoDispose` future
 /// provider, not `keepAlive`: this is Settings-screen-scoped lookup data,
 /// re-fetched fresh each time Settings is opened, unlike the session-long
 /// state the other providers in this file hold.
 @riverpod
-Future<List<dc.Calendar>> availableDeviceCalendars(Ref ref) async {
+Future<DeviceCalendarsState> availableDeviceCalendars(Ref ref) async {
   final permissions = ref.watch(calendarPermissionServiceProvider);
-  if (!await permissions.requestPermission()) return const [];
+  final access = await permissions.access();
+  if (access != CalendarAccess.granted) {
+    return DeviceCalendarsState(access, const []);
+  }
 
   final plugin = ref.watch(deviceCalendarPluginProvider);
   final result = await plugin.retrieveCalendars();
-  if (!result.isSuccess || result.data == null) return const [];
-  return result.data!.toList();
+  if (!result.isSuccess || result.data == null) {
+    return const DeviceCalendarsState(CalendarAccess.granted, []);
+  }
+  return DeviceCalendarsState(CalendarAccess.granted, result.data!.toList());
 }
 
 /// Fetches [ExternalCalendarEvent]s for the given day range from whichever
@@ -90,6 +123,7 @@ Future<List<ExternalCalendarEvent>> externalCalendarEventsForRange(
   DateTime rangeStart,
   DateTime rangeEnd,
 ) async {
+  ref.watch(externalCalendarRefreshProvider);
   final calendarIds = ref.watch(calendarDisplayIdsSettingProvider);
   final service = ref.watch(externalCalendarServiceProvider);
   final syncedEventIds = ref

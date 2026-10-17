@@ -9,6 +9,9 @@ class MainFlutterWindow: NSWindow {
     self.setFrame(windowFrame, display: true)
 
     RegisterGeneratedPlugins(registry: flutterViewController)
+    CalendarReadBridge.register(with: flutterViewController.engine.binaryMessenger)
+    SystemSettingsBridge.register(with: flutterViewController.engine.binaryMessenger)
+    ClaudeConnectBridge.register(with: flutterViewController.engine.binaryMessenger)
 
     // Full-bleed window: the app paints to the top edge and the window
     // buttons float over its sidebar, as in Notion Calendar. The bar stays

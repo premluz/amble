@@ -5,16 +5,18 @@ import 'package:amble/core/widgets/app_floating_surface.dart';
 import 'package:amble/core/widgets/app_sheet_surface.dart';
 import 'package:amble/core/widgets/app_value_chip.dart';
 import 'package:amble/features/task_detail/task_inspector_panel.dart';
-import 'package:amble/features/task_detail/task_panel_fields.dart';
+import 'package:amble/features/task_detail/task_sheet_fields.dart';
 import 'package:amble/features/task_detail/task_sheet.dart';
 import 'package:amble/shared/models/category.dart';
 import 'package:amble/shared/models/task.dart';
 
 import '../../support/task_inspector_host.dart';
 
-/// In the wide layout's panel the task's settings sit one per line, and
-/// each opens its picker as a popover beside the panel, not as a bottom
-/// sheet — requested directly against Notion Calendar's event panel.
+/// In the wide layout's panel the task's settings are the phone's chips
+/// (Preset, Date, Time, Duration and the icon toggles), and each opens its
+/// picker as a popover beside the panel, not as a bottom sheet. Requested
+/// 2026-10-11: "should use same badges as mobile" (the earlier one-per-line
+/// panel, 2026-10-08, was replaced).
 
 void main() {
   final boxes = TaskInspectorBoxes();
@@ -28,8 +30,7 @@ void main() {
   tearDown(boxes.close);
 
   final panel = find.byType(TaskInspectorPanel);
-  Finder inPanel(Finder finder) =>
-      find.descendant(of: panel, matching: finder);
+  Finder inPanel(Finder finder) => find.descendant(of: panel, matching: finder);
 
   Future<Task> openTask(WidgetTester tester) async {
     final task = Task.create(
@@ -45,17 +46,24 @@ void main() {
     return task;
   }
 
-  testWidgets('settings sit one per line, not as chips', (tester) async {
+  testWidgets('settings are the phone\'s chips, not lines', (tester) async {
     await openTask(tester);
 
-    expect(inPanel(find.byType(TaskPanelFields)), findsOneWidget);
-    expect(inPanel(find.byType(AppValueChip)), findsNothing);
-    for (final line in ['Work', 'Repeat', 'Important', 'Notify at start']) {
-      expect(inPanel(find.text(line)), findsOneWidget, reason: line);
+    expect(inPanel(find.byType(TaskSheetFields)), findsOneWidget);
+    // Date, Time, Duration; the icon toggles come after (Important,
+    // label, tracked, notify, repeat, note).
+    expect(inPanel(find.byType(AppValueChip)), findsNWidgets(3 + 6));
+    expect(inPanel(find.text('30m')), findsOneWidget);
+    for (final icon in [
+      Icons.star_rounded,
+      Icons.fingerprint_rounded,
+      Icons.notifications_rounded,
+      Icons.repeat_rounded,
+      Icons.notes_rounded,
+    ]) {
+      expect(inPanel(find.byIcon(icon)), findsOneWidget, reason: '$icon');
     }
-    final label = tester.getRect(inPanel(find.text('Work')));
-    final repeat = tester.getRect(inPanel(find.text('Repeat')));
-    expect(label.top, greaterThan(repeat.bottom));
+    expect(inPanel(find.text('Notify at start')), findsNothing);
   });
 
   testWidgets('a value opens its picker beside the panel, not a sheet', (
@@ -89,12 +97,18 @@ void main() {
     expect(inPanel(find.text('60m')), findsOneWidget);
   });
 
-  testWidgets('tapping a switch line\'s name flips it', (tester) async {
+  testWidgets('tapping the Important chip flips it', (tester) async {
     await openTask(tester);
-    expect(inPanel(find.byIcon(Icons.star_rounded)), findsNothing);
+    final important = inPanel(
+      find.ancestor(
+        of: find.byIcon(Icons.star_rounded),
+        matching: find.byType(AppValueChip),
+      ),
+    );
+    expect(tester.widget<AppValueChip>(important).hasValue, isFalse);
 
-    await tapAndSettle(tester, inPanel(find.text('Important')));
+    await tapAndSettle(tester, important);
 
-    expect(inPanel(find.byIcon(Icons.star_rounded)), findsOneWidget);
+    expect(tester.widget<AppValueChip>(important).hasValue, isTrue);
   });
 }

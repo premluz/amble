@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/tokens/liquid_morph_spec.dart';
 import '../../core/tokens/semantic_theme.dart';
+import '../../core/tokens/task_state_tokens.dart';
 import '../../core/widgets/app_liquid_morph.dart';
 import '../../core/widgets/glass_pill_surface.dart';
 import '../../core/widgets/selected_pill_border.dart';
@@ -159,7 +160,7 @@ class PendingTaskPill extends StatelessWidget {
                 title,
                 style: theme.textBody.copyWith(
                   color: theme.colorTextSecondary,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: TaskStateTokens.titleWeight,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,

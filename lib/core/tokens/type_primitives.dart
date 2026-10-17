@@ -64,12 +64,34 @@ abstract final class TypePrimitives {
   static const size6 = 32.0;
   static const size7 = 40.0;
 
+  /// The condensed numeric font ships a Light cut; DM Sans does not, so use
+  /// this with [fontFamily] only.
+  static const weightLight = FontWeight.w300;
   static const weightRegular = FontWeight.w400;
   static const weightMedium = FontWeight.w500;
+
   /// The heaviest weight in the app. Bold (w700) was retired 2026-10-08,
   /// requested directly: "soften everything bold to semibold, on phone and
   /// desktop", after the calmer weights of Notion Calendar and Linear.
   static const weightSemibold = FontWeight.w600;
+
+  /// Every size rung, smallest first, for stepping "one scale lower".
+  static const sizeScale = [
+    size0,
+    size1,
+    size1Point5,
+    size2,
+    size3,
+    size3Point5,
+    size4,
+    size5,
+    size6,
+    size7,
+  ];
+
+  /// The rung just under [size]; the smallest rung when none is lower.
+  static double sizeBelow(double size) =>
+      sizeScale.lastWhere((rung) => rung < size, orElse: () => sizeScale.first);
 
   static const lineHeightTight = 1.1;
   static const lineHeightNormal = 1.3;

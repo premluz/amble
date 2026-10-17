@@ -1,8 +1,16 @@
+import 'dart:math' as math;
+
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HardwareKeyboard;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/tokens/component_tokens.dart';
 import '../../shared/providers/preferences_providers.dart';
 import 'timeline_debug_zoom_controls.dart';
+import 'timeline_simulated_pinch.dart';
 
 /// Detects a two-finger pinch anywhere within [child]'s bounds and adjusts
 /// [TimelinePixelsPerMinuteSetting] live — the Timeline's own vertical
@@ -35,6 +43,14 @@ import 'timeline_debug_zoom_controls.dart';
 /// original pointers lifting, ends the pinch (the next 2-pointer state
 /// starts a fresh baseline distance rather than continuing the old one).
 ///
+/// **Scroll-wheel zoom (desktop), 2026-10-09 — requested directly: "cmd +
+/// scroll should be zoom in/out timeline on desktop."** While Cmd (macOS)
+/// or Ctrl (elsewhere) is held, a mouse wheel or a two-finger trackpad
+/// scroll zooms the scale around the pointer instead of scrolling. The
+/// scroll view would otherwise claim the scroll first, so while the key is
+/// held the wrapped child ignores pointers (this widget's listener, above
+/// it, still receives them). Scroll up zooms in.
+///
 /// Single-finger interactions (scroll, drag-to-reschedule, long-press-to-
 /// create, zone paint) are untouched in every mode — Task view's normal
 /// state, Task view's Edit Mode (no structural difference at the level
@@ -66,13 +82,97 @@ class TimelinePinchZoom extends ConsumerStatefulWidget {
 class _TimelinePinchZoomState extends ConsumerState<TimelinePinchZoom> {
   final Map<int, Offset> _positions = {};
 
+  /// Cmd (macOS / iOS) or Ctrl (elsewhere) is held: scrolling zooms.
+  bool _zoomModifierHeld = false;
+
+  /// The scroll offset the latest scroll-wheel zoom wants, applied after
+  /// the frame that rescales the content (several events can land in one
+  /// frame); null when none is waiting.
+  double? _pendingOffset;
+
+  static bool _modifierPressed() {
+    final keyboard = HardwareKeyboard.instance;
+    return switch (defaultTargetPlatform) {
+      TargetPlatform.macOS || TargetPlatform.iOS => keyboard.isMetaPressed,
+      _ => keyboard.isControlPressed,
+    };
+  }
+
+  /// Follows the modifier. Also called on hover, so a key-up missed while
+  /// the window was in the background can't leave the timeline ignoring
+  /// pointers.
+  bool _syncModifier([Object? _]) {
+    final held = _modifierPressed();
+    if (held != _zoomModifierHeld && mounted) {
+      setState(() => _zoomModifierHeld = held);
+    }
+    return false;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    HardwareKeyboard.instance.addHandler(_syncModifier);
+  }
+
   late final ValueNotifier<bool> _ownMultiTouch = ValueNotifier(false);
   ValueNotifier<bool> get _multiTouch => widget.multiTouch ?? _ownMultiTouch;
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_syncModifier);
     _ownMultiTouch.dispose();
     super.dispose();
+  }
+
+  void _handlePointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent || !_modifierPressed()) return;
+    final scrolled = event.scrollDelta.dy;
+    final anchor = event.localPosition;
+    GestureBinding.instance.pointerSignalResolver.register(
+      event,
+      (_) => _zoomBy(scrolled, anchor),
+    );
+  }
+
+  /// A trackpad's two-finger scroll arrives as pan/zoom updates; content
+  /// follows the fingers, so fingers moving down is scrolling up.
+  void _handlePanZoom(PointerPanZoomUpdateEvent event) {
+    if (_modifierPressed()) _zoomBy(-event.panDelta.dy, event.localPosition);
+  }
+
+  /// Zooms by [scrolled] (positive: scrolling down, zooming out), keeping
+  /// the time under [anchor] still.
+  void _zoomBy(double scrolled, Offset anchor) {
+    if (scrolled == 0) return;
+    final from = ref.read(timelinePixelsPerMinuteSettingProvider);
+    final to =
+        (from * math.exp(-scrolled / TimelineScrollTokens.scrollZoomDivisor))
+            .clamp(
+              TimelinePixelsPerMinuteSetting.minPixelsPerMinute,
+              TimelinePixelsPerMinuteSetting.maxPixelsPerMinute,
+            );
+    if (to == from) return;
+    ref.read(timelinePixelsPerMinuteSettingProvider.notifier).set(to);
+    final scroll = widget.scrollController;
+    if (scroll == null || !scroll.hasClients) return;
+    final scheduled = _pendingOffset != null;
+    _pendingOffset = timelineAnchoredScrollOffset(
+      scrollOffset: _pendingOffset ?? scroll.offset,
+      anchorY: anchor.dy,
+      fromScale: from,
+      toScale: to,
+    );
+    if (scheduled) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final target = _pendingOffset;
+      _pendingOffset = null;
+      if (target == null || !mounted || !scroll.hasClients) return;
+      final position = scroll.position;
+      scroll.jumpTo(
+        target.clamp(position.minScrollExtent, position.maxScrollExtent),
+      );
+    });
   }
 
   /// The distance between the two tracked pointers when the current pinch
@@ -150,6 +250,9 @@ class _TimelinePinchZoomState extends ConsumerState<TimelinePinchZoom> {
       // must never intercept a single-finger gesture underneath, only
       // watch alongside it.
       behavior: HitTestBehavior.translucent,
+      onPointerHover: _syncModifier,
+      onPointerSignal: _handlePointerSignal,
+      onPointerPanZoomUpdate: _handlePanZoom,
       onPointerDown: _handlePointerDown,
       onPointerMove: _handlePointerMove,
       onPointerUp: _handlePointerUp,
@@ -159,7 +262,12 @@ class _TimelinePinchZoomState extends ConsumerState<TimelinePinchZoom> {
         child: TimelineDebugZoomControls(
           multiTouch: _multiTouch,
           scrollController: widget.scrollController,
-          child: widget.child,
+          // While Cmd/Ctrl is held the child ignores pointers so the scroll
+          // view can't claim the wheel; this listener, above, still hears it.
+          child: IgnorePointer(
+            ignoring: _zoomModifierHeld,
+            child: widget.child,
+          ),
         ),
       ),
     );

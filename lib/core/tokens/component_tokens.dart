@@ -21,6 +21,13 @@ abstract final class TimelineScrollTokens {
   static const double topClearance = 60.0;
   static const double bottomClearance = 200.0;
 
+  /// Scroll-wheel / trackpad zoom (Cmd+scroll on macOS, Ctrl+scroll
+  /// elsewhere): the timeline's scale is multiplied by
+  /// `exp(-scrolled / scrollZoomDivisor)`, so one mouse-wheel notch (~100)
+  /// is about a 22% step, and a long trackpad swipe covers the 1×–4× range
+  /// in a few strokes.
+  static const double scrollZoomDivisor = 400;
+
   /// Bringing a new quick-add draft into view: a calm glide, not a jump —
   /// requested directly ("needs to be smoother, calmer, at the moment too
   /// abrupt"). Longer the further it goes, within these bounds.
@@ -80,6 +87,21 @@ abstract final class ShellLayoutTokens {
   /// clickable (the bar itself keeps dragging the window).
   static const double macTitleBarHeight = 28;
 
+  /// A browser tab on a phone reports NO status bar / home indicator
+  /// inset at all (`MediaQuery.padding` is zero) — there genuinely is no
+  /// native chrome to measure, unlike a real iOS/Android app. Content
+  /// therefore sat flush against the browser's own UI, reported directly
+  /// against the web preview: "add top bottom padding, because I think OS
+  /// UI is not accounted for and looks too close to edge." These stand in
+  /// for a typical phone's reserved top (status bar / notch) and bottom
+  /// (home indicator) space — not any one real device's exact value,
+  /// since the web build has no actual device to read it from. Web only
+  /// (`AppWindowInsets`), and only below [sideNavMinWindowWidth] — a wide
+  /// browser window is the desktop experience and keeps its own chrome
+  /// handling untouched.
+  static const double webMobileTopInset = 24;
+  static const double webMobileBottomInset = 24;
+
   /// The shell's pane dividers (sidebar, side panel): [AmbleTheme.colorBorder]
   /// at this alpha (Notion Calendar's panel divider: +13 of +15), 1 point
   /// wide (`AppHairline`) — requested directly: "interface shell lines too
@@ -98,6 +120,15 @@ abstract final class CalendarGridTokens {
   /// with room for its title and time, as in Notion Calendar's week.
   static const double weekHourHeight = SpacingPrimitives.space9Point5;
 
+  /// How far the week can zoom out and in: an hour's height, as multiples
+  /// of [weekHourHeight].
+  static const double weekZoomMin = 0.5;
+  static const double weekZoomMax = 2.5;
+
+  /// One press of the toolbar's zoom buttons multiplies the hour height by
+  /// this (or divides by it).
+  static const double weekZoomStep = 1.25;
+
   /// The week grid's hour-label column.
   static const double weekGutterWidth = SpacingPrimitives.space10;
 
@@ -106,6 +137,11 @@ abstract final class CalendarGridTokens {
 
   /// The colored rail on the left of a week block or month row.
   static const double railWidth = 3;
+
+  /// The strip at a week item's top and bottom edge that resizes it
+  /// (resize cursor on hover). Items shorter than three strips keep only
+  /// the bottom one, so there is always room left to grab and move.
+  static const double weekResizeEdge = 6;
 
   /// The Day / Week / Month switch: three equal segments, each with room
   /// for "Month" at the desktop body size. A fixed width because the
@@ -123,6 +159,13 @@ abstract final class CalendarGridTokens {
   /// tasks that start close together stack their rows at least this far
   /// apart instead of printing over each other.
   static const double weekTextRowHeight = SpacingPrimitives.space7;
+
+  /// A week block never gets shorter than this, so a 5-minute task is still
+  /// a tappable sliver with its title readable beside the rail.
+  static const double weekBlockMinHeight = SpacingPrimitives.space7;
+
+  /// Space left between a week block and the block or edge beside it.
+  static const double weekBlockGap = SpacingPrimitives.space1;
 
   /// Tasks listed in a month cell before "+N more".
   static const int monthVisibleTasks = 4;

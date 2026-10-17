@@ -844,3 +844,7 @@ And the simplest external expression remains:
 # **Rios**
 
 ### **Less time planning. More time living.**
+
+---
+
+Where each brand asset lives, which files are generated from which, and what to update when the logo or icon changes: [`docs/BRANDING_ASSETS.md`](BRANDING_ASSETS.md).

@@ -9,32 +9,35 @@ import 'package:amble/core/widgets/app_staggered_fill.dart';
 const _rest = Color(0xFF000000);
 const _done = Color(0xFFFFFFFF);
 
-Widget _cells({required int arrival, bool reduceMotion = false}) =>
-    MaterialApp(
-      theme: ThemeData(extensions: [AmbleTheme.light]),
-      home: MediaQuery(
-        data: MediaQueryData(disableAnimations: reduceMotion),
-        child: AppViewArrival(
-          arrival: arrival,
-          child: Row(
-            children: [
-              for (final (i, order) in [0.0, 1.0, .5].indexed)
-                AppStaggeredFill(
-                  key: ValueKey(i),
-                  rest: _rest,
-                  color: i == 2 ? _rest : _done,
-                  order: order,
-                  builder: (context, fill) => ColoredBox(
-                    key: ValueKey('cell-$i'),
-                    color: fill,
-                    child: const SizedBox.square(dimension: 10),
-                  ),
-                ),
-            ],
-          ),
-        ),
+Widget _cells({
+  required int arrival,
+  bool reduceMotion = false,
+  bool loaded = true,
+}) => MaterialApp(
+  theme: ThemeData(extensions: [AmbleTheme.light]),
+  home: MediaQuery(
+    data: MediaQueryData(disableAnimations: reduceMotion),
+    child: AppViewArrival(
+      arrival: arrival,
+      child: Row(
+        children: [
+          for (final (i, order) in [0.0, 1.0, .5].indexed)
+            AppStaggeredFill(
+              key: ValueKey(i),
+              rest: _rest,
+              color: i == 2 || !loaded ? _rest : _done,
+              order: order,
+              builder: (context, fill) => ColoredBox(
+                key: ValueKey('cell-$i'),
+                color: fill,
+                child: const SizedBox.square(dimension: 10),
+              ),
+            ),
+        ],
       ),
-    );
+    ),
+  ),
+);
 
 Color _fill(WidgetTester tester, int i) =>
     tester.widget<ColoredBox>(find.byKey(ValueKey('cell-$i'))).color;
@@ -49,6 +52,7 @@ void main() {
     await tester.pumpWidget(_cells(arrival: 0));
     expect(_fill(tester, 0), _rest);
     expect(_fill(tester, 1), _rest);
+    await tester.pump(); // the clock starts on the frame after arrival
 
     await tester.pump(fast);
     expect(_fill(tester, 0), _done, reason: 'first in order: done');
@@ -74,6 +78,37 @@ void main() {
   testWidgets('reduced motion shows the colour at once', (tester) async {
     await tester.pumpWidget(_cells(arrival: 0, reduceMotion: true));
     await tester.pump();
+    expect(_fill(tester, 1), _done);
+  });
+
+  testWidgets('data that lands after the page arrived colours in with the '
+      'same stagger', (tester) async {
+    // Patterns paints its empty grid first and computes completed days
+    // after that frame.
+    await tester.pumpWidget(_cells(arrival: 0, loaded: false));
+    await tester.pumpAndSettle();
+    expect(_fill(tester, 0), _rest);
+
+    await tester.pumpWidget(_cells(arrival: 0));
+    expect(_fill(tester, 0), _rest, reason: 'starts from rest, not snapped');
+    await tester.pump();
+    await tester.pump(fast);
+    expect(_fill(tester, 0), _done, reason: 'first in order: done');
+    expect(_fill(tester, 1), _rest, reason: 'last in order: not started');
+    await tester.pump(spread);
+    expect(_fill(tester, 1), _done);
+  });
+
+  testWidgets('a slow frame when the page arrives does not use up the '
+      'stagger', (tester) async {
+    await tester.pumpWidget(_cells(arrival: 0));
+    // The next frame comes a second late, as after a slow first build.
+    await tester.pump(const Duration(seconds: 1));
+    expect(_fill(tester, 1), _rest, reason: 'the stagger is still to come');
+    await tester.pump(fast);
+    expect(_fill(tester, 0), _done);
+    expect(_fill(tester, 1), _rest);
+    await tester.pumpAndSettle();
     expect(_fill(tester, 1), _done);
   });
 }

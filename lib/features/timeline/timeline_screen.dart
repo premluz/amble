@@ -27,7 +27,6 @@ import '../../shared/models/category.dart';
 import '../../shared/models/external_calendar_event.dart';
 import '../../shared/models/scheduled_block.dart';
 import '../../shared/models/task.dart';
-import '../../shared/models/task_status.dart';
 import '../../shared/models/zone.dart';
 import '../../shared/services/weekly_zone_schedule.dart';
 import '../../shared/providers/calendar_providers.dart';
@@ -35,7 +34,6 @@ import '../../shared/providers/category_providers.dart';
 import '../../shared/models/tag_color_style.dart';
 import '../../shared/providers/preferences_providers.dart';
 import '../../shared/providers/task_providers.dart';
-import '../../shared/providers/tracked_behavior_providers.dart';
 import '../../shared/providers/zone_providers.dart';
 import '../../shared/services/cascade_reschedule.dart';
 import '../../shared/services/group_reschedule.dart';
@@ -46,10 +44,10 @@ import '../../shared/services/zone_containment.dart';
 import '../../shared/services/zone_selection_order.dart';
 import '../../shared/services/move_resize_undo.dart';
 import '../../shared/services/trim_reschedule.dart';
-import '../tracked_behavior/behavior_outcome_prompt.dart';
 import '../task_detail/category_visual.dart' show resolveCategoryVisual;
 import '../task_detail/task_sheet.dart';
 import 'app_calendar_header.dart';
+import 'complete_task.dart';
 import 'timeline_pinch_zoom.dart';
 import 'collapsed_stack_layout.dart';
 import 'current_time_indicator.dart';
@@ -643,14 +641,11 @@ class TimelineScreen extends ConsumerWidget {
                                             devDurationVisible: ref.watch(
                                               devTimelineTaskDurationVisibleProvider,
                                             ),
-                                            // Same threading, same reason — List
-                                            // view's own "Show time (from-to)"
-                                            // toggle now also applies to Zone view,
-                                            // requested directly: "Hide/show start
-                                            // end should also affect zone view."
-                                            devTimeRangeVisible: ref.watch(
-                                              devTimelineTaskTimeRangeVisibleProvider,
-                                            ),
+                                            // "Show time (from-to)" governs the
+                                            // Timeline (spatial) view only —
+                                            // requested directly — so Zone view
+                                            // keeps the switch's old off state.
+                                            devTimeRangeVisible: false,
                                             // Strips each zone's own card
                                             // background/padding, leaving just its
                                             // title/duration header above a bare row
@@ -681,7 +676,7 @@ class TimelineScreen extends ConsumerWidget {
                                               task: task,
                                             ),
                                             onToggleComplete: (task) =>
-                                                _completeTask(
+                                                completeTask(
                                                   context,
                                                   ref,
                                                   task,
@@ -773,7 +768,7 @@ class TimelineScreen extends ConsumerWidget {
                                               task: task,
                                             ),
                                             onToggleComplete: (task) =>
-                                                _completeTask(
+                                                completeTask(
                                                   context,
                                                   ref,
                                                   task,
@@ -975,9 +970,9 @@ class TimelineScreen extends ConsumerWidget {
                                             devDurationVisible: ref.watch(
                                               devTimelineTaskDurationVisibleProvider,
                                             ),
-                                            // Same threading, same reason — List
-                                            // view's own from-to time range,
-                                            // independent of duration. See
+                                            // Same threading, same reason — the
+                                            // Timeline's own from-to line under
+                                            // each title. See
                                             // DevTimelineTaskTimeRangeVisible's own
                                             // doc comment.
                                             devTimeRangeVisible: ref.watch(
@@ -1177,47 +1172,6 @@ class TimelineScreen extends ConsumerWidget {
   }
 }
 
-/// Completes (or un-completes) [task], asking for an outcome amount first
-/// when it's linked to a tracked behavior.
-///
-/// **Ordinary tasks are untouched.** Every guard below fails fast for a
-/// task with no `behaviorId`, so the ordinary path is exactly the single
-/// `toggleComplete(task)` call it has always been — no prompt, no extra
-/// await, no added friction (design principle 2). The prompt also never
-/// appears when *un*-completing, or for a binary behavior, which has
-/// nothing to quantify.
-Future<void> _completeTask(
-  BuildContext context,
-  WidgetRef ref,
-  Task task,
-) async {
-  final notifier = ref.read(taskListProvider.notifier);
-
-  final isCompleting = task.status != TaskStatus.completed;
-  final behaviorId = task.behaviorId;
-  if (!FeatureFlags.trackedBehaviorEnabled ||
-      !isCompleting ||
-      behaviorId == null) {
-    await notifier.toggleComplete(task);
-    return;
-  }
-
-  final behavior = ref
-      .read(trackedBehaviorListProvider)
-      .where((candidate) => candidate.id == behaviorId)
-      .firstOrNull;
-  // A dangling link (behavior deleted) must not block completing the task.
-  if (behavior == null || !behaviorNeedsOutcomePrompt(behavior)) {
-    await notifier.toggleComplete(task);
-    return;
-  }
-
-  final amount = await showBehaviorOutcomePrompt(context, behavior: behavior);
-  // A dismissed prompt still completes the task — `actualAmount` just stays
-  // null. Declining to quantify is not declining to finish.
-  await notifier.toggleComplete(task, actualAmount: amount);
-}
-
 typedef _TaskCallback = void Function(Task task);
 typedef _RescheduleCallback = Future<void> Function(
   Task task,
@@ -1389,10 +1343,10 @@ class _DayTimeline extends ConsumerStatefulWidget {
   final bool devDurationVisible;
 
   /// The dev scratch toggle (`DevTimelineTaskTimeRangeVisibleProvider`) —
-  /// List view's own from-to time range, threaded down for the same
-  /// reason as [devDurationVisible]. The two are independent settings —
-  /// see that provider's own doc comment. Defaults to true (current
-  /// shipped behavior: List view always showed its time range).
+  /// Timeline (spatial) view's greyed-out from-to line under each title,
+  /// threaded down for the same reason as [devDurationVisible]. Also sizes
+  /// each task's label in the collision sweep. Defaults to true; the
+  /// provider itself is off out of the box.
   final bool devTimeRangeVisible;
 
   /// The dev scratch toggle (`DevHideImportedTasksProvider`) — List view
@@ -2382,7 +2336,7 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
                       (blockTops[slot.block.id] ??
                           _blockPreferredTop(slot.block, rangeStart)) +
                       _labelBaseOffset(theme),
-                  height: _labelHeight(theme),
+                  height: _slotLabelHeight(theme, slot),
                 ),
             ],
             // spacingSm, not spacingXs — requested directly: "slight
@@ -2765,6 +2719,11 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
                                           bandWidth -
                                           zoneBackgroundGap -
                                           zoneBackgroundOffset,
+                                      // The band's own inset, for the desktop
+                                      // corner title's left edge.
+                                      leftInset: dynamicWidth
+                                          ? zoneBackgroundOffset
+                                          : ZoneInsetTokens.side(theme),
                                     ),
                                 ],
                               );
@@ -2801,6 +2760,7 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
                               width: theme.spacingLg,
                               collapsedTop: band.top,
                               collapsedHeight: band.height,
+                              listBandLeft: hourGutterWidth,
                             ),
                         // Read-only external calendar events (Feature 1) no
                         // longer render in a separate loop here — **2026-09-07**
@@ -3333,7 +3293,9 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
                                   // — always true here, matching the non-clustered
                                   // row's own `alwaysShowTime: widget.compactText`.
                                   alwaysShowTime: true,
-                                  timeRangeVisible: widget.devTimeRangeVisible,
+                                  // List view's range is off: the switch is
+                                  // Timeline-only now.
+                                  timeRangeVisible: false,
                                   textLayout: widget.devTextLayout,
                                   showCompletionCheckbox:
                                       widget.showCompletionCheckbox,
@@ -3359,6 +3321,20 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
                         //     pixelsPerMinute: widget.pixelsPerMinute,
                         //     controller: _placeLineController,
                         //   ),
+                        // Every armed/selected task's own RESTING edge-time
+                        // label, in one shared layer above every task pill
+                        // — see `_editAffordanceLabels`'s own doc comment.
+                        // Timeline mode only: List mode has no hour gutter
+                        // for these to sit over (same reasoning as
+                        // `TaskBoundaryMarkers` above).
+                        if (widget.showHourLabels)
+                          ..._editAffordanceLabels(
+                            slots,
+                            blockTops,
+                            theme,
+                            hourGutterWidth,
+                            pixelsPerMinute,
+                          ),
                         // The live drag-to-multi-select marquee — LAST in
                         // this list, so it paints above every task, the
                         // zone bands, the now-line and the placement line
@@ -4019,6 +3995,15 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
   double _labelHeight(AmbleTheme theme) =>
       theme.textTaskTitle.fontSize! * theme.textTaskTitle.height!;
 
+  /// [_labelHeight] plus the from-to line a TASK's label carries when the
+  /// Timeline switch is on, so a taller label is pushed clear of the next
+  /// one. Imported events render a one-line label either way.
+  double _slotLabelHeight(AmbleTheme theme, TaskLayoutSlot slot) =>
+      _labelHeight(theme) +
+      (widget.devTimeRangeVisible && slot.task != null
+          ? TaskCapsuleTextRow.timeUnderTitleExtent(theme)
+          : 0);
+
   /// How far below the pill's own top edge the label's FIRST LINE needs to
   /// start so its own vertical center lines up with the icon's — reported
   /// directly ("label of task on spatial view is higher than middle of
@@ -4159,6 +4144,71 @@ class _DayTimelineState extends ConsumerState<_DayTimeline> {
     final reordered = [...slots];
     reordered.add(reordered.removeAt(index));
     return reordered;
+  }
+
+  /// Every task's own RESTING start/end edge-time badge, for every task
+  /// currently showing its edit affordances (mirrors each block's own
+  /// `_editActive`/`editAffordanceActive`: the whole-day Edit Mode toggle,
+  /// a single long-press-armed task outside it, or — in multi-task mode —
+  /// every selected task) — one shared top-most layer above every task
+  /// pill, rather than each task drawing its own (see
+  /// `_DraggableTaskBlockState._buildSplit`'s own leading comment for why
+  /// that used to let a later-painted neighbour's pill cover an earlier
+  /// task's label). Reported directly against a screenshot: "edit mode
+  /// hours or resize should always be on top."
+  ///
+  /// Excludes whichever task is actively being dragged or resized — that
+  /// one shows a LIVE label instead (`_liveEdgeTimeLabels`, still drawn
+  /// inside its own block, since it already paints last via
+  /// [_dragLastOrder]).
+  List<Widget> _editAffordanceLabels(
+    List<TaskLayoutSlot> slots,
+    Map<String, double> blockTops,
+    AmbleTheme theme,
+    double hourGutterWidth,
+    double pixelsPerMinute,
+  ) {
+    // Arming is disabled while multi-task mode is on (see
+    // `_effectiveOnLongPress`), so an armed task and a multi-task
+    // selection never need to be considered at once.
+    final multiTaskEditMode =
+        widget.editModeEnabled && ref.watch(devMultiTaskEditModeProvider);
+    final armedId = ref.watch(armedEditTaskProvider);
+    final selected = multiTaskEditMode
+        ? ref.watch(editSelectionProvider)
+        : const <String>{};
+    bool isActive(String taskId) => multiTaskEditMode
+        ? selected.contains(taskId)
+        : widget.editModeEnabled || armedId == taskId;
+
+    final liveId = _draggingTaskId ?? _resizingTaskId;
+    final leftOffset = hourGutterWidth + theme.spacingSm;
+
+    Widget label(double top, TimeOfDay time) => Positioned(
+      top: top,
+      left: leftOffset,
+      child: FractionalTranslation(
+        translation: const Offset(0, -0.5),
+        child: TaskEdgeTimeLabel(theme: theme, time: time, showLine: false),
+      ),
+    );
+
+    return [
+      for (final slot in slots)
+        if (slot.task case final task?)
+          if (task.id != liveId && isActive(task.id)) ...[
+            label(
+              blockTops[task.id]!,
+              TimeOfDay.fromDateTime(task.scheduledAt!),
+            ),
+            label(
+              blockTops[task.id]! + task.durationMinutes! * pixelsPerMinute,
+              TimeOfDay.fromDateTime(
+                task.scheduledAt!.add(Duration(minutes: task.durationMinutes!)),
+              ),
+            ),
+          ],
+    ];
   }
 }
 
@@ -4310,8 +4360,9 @@ class _DraggableZoneBlockState extends ConsumerState<_DraggableZoneBlock> {
       ref.watch(zoneEditSelectionProvider).contains(widget.zone.id);
 
   /// Whether the selection ring/handles/the move-header actually render
-  /// right now — mirrors `_DraggableTaskBlockState`'s own
-  /// `editAffordanceActive` exactly: multi-task mode flips what "active"
+  /// right now — mirrors the same rule `_DayTimelineState
+  /// ._editAffordanceLabels` and `_DraggableTaskBlockState` apply to a
+  /// task's own edit affordances: multi-task mode flips what "active"
   /// means from "Edit Mode is on" (every zone) to "this zone is selected"
   /// (only the selected one), since otherwise Edit Mode's own active-state
   /// signal would be indistinguishable from the selection signal if both
@@ -5659,7 +5710,9 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
           textLayout: devTextLayout,
           iconsVisible: devIconsVisible,
           durationVisible: devDurationVisible,
-          timeRangeVisible: devTimeRangeVisible,
+          // The combined layout's List-mode range; the switch governs
+          // only the Timeline's split text row (see `_buildSplit`).
+          timeRangeVisible: false,
           compactText: widget.compactText,
           showCompletionCheckbox: widget.showCompletionCheckbox,
           splitLayout: widget.splitLayout,
@@ -6279,29 +6332,18 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
       },
     );
 
-    // Whether this block should show its edit affordances (its own
-    // start/end edge time labels). Suppressed while THIS block is actively
-    // being manipulated (dragged or resized) — a block tracking the finger
-    // already shows LIVE edge labels instead, and rendering both at once
-    // would double them up.
-    //
-    // **Task wiggle is gone** — requested directly: "instead of wiggle
-    // should be same accent color border as on zones used here."
-    // SELECTION now reads as an accent ring on the pill's own rail (see
-    // `TaskCapsuleBlock.isSelected`), matching `ZoneGridBlock` exactly.
-    //
-    // This flag survives the removal because it never only meant "wiggle":
-    // it also gates this block's own start/end edge labels below (see the
-    // `else if (editAffordanceActive)` branches in both layouts). Deleting
-    // it outright would have silently taken those labels with it.
-    //
-    // Multi-task mode (`DevMultiTaskEditMode`) still flips what it MEANS —
-    // with it on, the affordance belongs to a SELECTED block only; with it
-    // off, to every block while Edit Mode is active. `multiTaskEditMode`
-    // itself is computed once, up top in `build()`, not redeclared here.
-    final editAffordanceActive = multiTaskEditMode
-        ? (_isSelected && !_isDragging && !_isResizing && !_isResizingTop)
-        : (_editActive && !_isDragging && !_isResizing && !_isResizingTop);
+    // This block's own RESTING start/end edge labels (shown while armed/
+    // selected for edit but not actively dragged or resized) are no longer
+    // rendered here — `_DayTimelineState` now draws one for every such
+    // task in a single top-most layer instead (`_editAffordanceLabels`),
+    // painted after every task pill in `slots`. A label rendered inline
+    // here could only ever be as high in paint order as this block's own
+    // position among its siblings, so a later-painted neighbour's pill
+    // could cover it — reported directly against a screenshot: "edit mode
+    // hours or resize should always be on top." The LIVE label
+    // (`_liveEdgeTimeLabels`, below) is untouched: only one block is ever
+    // actively dragging/resizing at a time, and it is already the one
+    // `_dragLastOrder` raises to the end of `slots`.
     final capsule = capsuleCore;
 
     if (widget.splitLayout) {
@@ -6311,7 +6353,6 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
         pillContent: capsule,
         devDurationVisible: devDurationVisible,
         devTimeRangeVisible: devTimeRangeVisible,
-        editAffordanceActive: editAffordanceActive,
       );
     }
 
@@ -6343,7 +6384,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
           clipBehavior: Clip.none,
           children: [
             capsule,
-            if (!widget.compactText) ...[
+            if (!widget.compactText)
               if (_isDragging || _isResizing || _isResizingTop)
                 ..._liveEdgeTimeLabels(
                   height: _pillHeight(
@@ -6360,90 +6401,19 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                   // of the gutter entirely without it).
                   leftOffset:
                       -(widget.left + columnOffset) + widget.theme.spacingSm,
-                )
-              else if (editAffordanceActive)
-                ..._edgeTimeLabels(
-                  height: _pillHeight(
-                    widget.theme,
-                    widget.task,
-                    widget.pixelsPerMinute,
-                  ),
-                  leftOffset:
-                      -(widget.left + columnOffset) + widget.theme.spacingSm,
                 ),
-            ],
+            // The resting (armed-but-not-dragging) edge labels are drawn
+            // by `_DayTimelineState._editAffordanceLabels` instead — see
+            // this method's own leading comment.
           ],
         ),
       ),
     );
   }
 
-  /// The task's own live start/end, shown via the same accent "time"
-  /// treatment the long-press placement line and the pending draft pill
-  /// use — requested directly: "also in edit mode for selected (wiggly
-  /// tasks) we need to show it," then corrected to always sit on the
-  /// LEFT, over the hour gutter, like every other edge-time use: "when
-  /// wiggling on left generally all cases on left side." Corrected a
-  /// second time, more precisely: "the blue time from to, should not be
-  /// on top and bottom of task but on the left timeline where we [see]
-  /// hours of day" — the earlier fix walked the label back only to the
-  /// day column's own x=0 (the gutter's RIGHT edge, immediately beside
-  /// the task pill), which still read as hugging the task's own top/
-  /// bottom edge rather than genuinely sitting inside the hour-label
-  /// column. `leftOffset` now lands the label at [gutterLabelX] — the
-  /// SAME x `TaskBoundaryMarkers`' own hour ticks use
-  /// (`timeline_screen.dart`'s `TaskBoundaryMarkers(leftInset:
-  /// theme.spacingSm)` call) — so a task's start/end pill sits at the
-  /// exact same horizontal position as the hour grid it's replacing/
-  /// augmenting, just at the task's own y instead of a clock-hour y.
-  ///
-  /// `height` is this block's own resting pill height (real duration ×
-  /// pixelsPerMinute, not `top`-adjusted) since the block itself is what
-  /// is positioned by the caller — these two labels only need to know
-  /// how tall it is to hang correctly off its top and bottom edges.
-  /// [leftOffset] is the caller's own local-to-gutter conversion (see
-  /// [_leftEdgeLabel]'s own doc comment for why the combined and split
-  /// layouts pass different values here).
-  List<Widget> _edgeTimeLabels({
-    required double height,
-    required double leftOffset,
-  }) {
-    final start = widget.task.scheduledAt!;
-    final end = start.add(Duration(minutes: widget.task.durationMinutes!));
-    return [
-      Positioned(
-        top: 0,
-        left: leftOffset,
-        child: FractionalTranslation(
-          translation: const Offset(0, -0.5),
-          // showLine: false — reported directly: unlike the long-press
-          // placement line (marking a drop point on empty background),
-          // this sits ON an already-visible task pill, so a second
-          // full-width line reads as noise. Just the accent time badge.
-          child: TaskEdgeTimeLabel(
-            theme: widget.theme,
-            time: TimeOfDay.fromDateTime(start),
-            showLine: false,
-          ),
-        ),
-      ),
-      Positioned(
-        top: height,
-        left: leftOffset,
-        child: FractionalTranslation(
-          translation: const Offset(0, -0.5),
-          child: TaskEdgeTimeLabel(
-            theme: widget.theme,
-            time: TimeOfDay.fromDateTime(end),
-            showLine: false,
-          ),
-        ),
-      ),
-    ];
-  }
-
-  /// The live-updating counterpart of [_edgeTimeLabels] — shown instead
-  /// of it while actually moving or resizing, since the task's own
+  /// The live-updating counterpart of the resting edge labels
+  /// (`_editAffordanceLabels`, drawn by the parent) — shown instead of
+  /// them while actually moving or resizing, since the task's own
   /// `scheduledAt`/`durationMinutes` are stale mid-gesture (the commit
   /// hasn't happened yet). Always left-pinned, same as the resting
   /// labels: "the time in accent color bg when moving or rezising,
@@ -6454,11 +6424,10 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
   ///
   /// **2026-09-12 — both edges now shown during EITHER resize too**,
   /// reversing the original "only the edge that's actually moving"
-  /// design. Reported directly as wrong: the anchored edge's own RESTING
-  /// label (`_edgeTimeLabels`) doesn't render during an active gesture —
-  /// `editAffordanceActive`'s branch and this one are mutually exclusive in the
-  /// caller (`if (_isDragging || _isResizing || _isResizingTop) ... else
-  /// if (editAffordanceActive) ...`) — so a resize was leaving the OTHER edge
+  /// design. Reported directly as wrong: the anchored edge's own resting
+  /// label does not render during an active gesture (it is this block's
+  /// own `_isDragging || _isResizing || _isResizingTop` check above that
+  /// decides live vs. resting) — so a resize was leaving the OTHER edge
   /// with no visible time label at all, not merely deferring to an
   /// already-shown one.
   ///
@@ -6536,9 +6505,8 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
   }
 
   /// [leftOffset] converts this block's own LOCAL x=0 to the shared
-  /// gutter label x — see [_edgeTimeLabels]'s own doc comment for why
-  /// this must be passed in rather than derived from `widget.left`
-  /// directly: the combined layout's local x=0 is `widget.left +
+  /// gutter label x — passed in rather than derived from `widget.left`
+  /// directly because the combined layout's local x=0 is `widget.left +
   /// columnOffset` (an overlap-lane task sits further right, so simply
   /// negating `widget.left` alone landed left of the true gutter x for
   /// any lane past the first — a real, latent bug the old fixed
@@ -6587,13 +6555,20 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
     child: AppFollowThrough(child: child),
   );
 
+  /// Like [build]'s own combined layout below it, this block renders only
+  /// its LIVE drag/resize edge label inline, if any. Its resting (armed-
+  /// but-not-dragging) edge label is drawn by `_DayTimelineState
+  /// ._editAffordanceLabels` in one top-most layer shared by every task —
+  /// see that method's own doc comment for why a label rendered inside
+  /// each task's own block (as it was before 2026-10-14) could end up
+  /// under a neighbouring task's pill, since a block's paint order is
+  /// only ever as high as its own position among its siblings.
   Widget _buildSplit({
     required double top,
     required double columnOffset,
     required Widget pillContent,
     required bool devDurationVisible,
     required bool devTimeRangeVisible,
-    required bool editAffordanceActive,
   }) {
     final primaryControls =
         widget.primaryTaskId == widget.task.id && _editActive;
@@ -6717,7 +6692,11 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                 onLongPress: _effectiveOnLongPress,
                 onToggleComplete: widget.onToggleComplete,
                 durationVisible: devDurationVisible,
-                timeRangeVisible: devTimeRangeVisible,
+                timeRangeVisible: false,
+                // Timeline only: List mode (`compactText`) has no hour
+                // axis and never shows the from-to line.
+                timeUnderTitleVisible:
+                    devTimeRangeVisible && !widget.compactText,
                 // List mode has no timeline axis at all, so the time is the
                 // only place a task's schedule reads — requested directly
                 // ("we always show the time in front of the task because we
@@ -6767,12 +6746,16 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
             // the gutter), then move corrected to show both edges, not
             // just the start ("when moving also end should be shown...
             // atm only beginning start time"). Task view only (List mode
-            // has no hour gutter for this to sit over). Live labels
-            // ([_liveEdgeTimeLabels]) take over from the resting ones
-            // ([_edgeTimeLabels]) during an actual drag/resize, since the
-            // task's own `scheduledAt`/`durationMinutes` are stale until
-            // the gesture commits.
-            if (!widget.compactText) ...[
+            // has no hour gutter for this to sit over).
+            //
+            // Only the LIVE label (an actual drag/resize in progress)
+            // renders here. The resting (armed-but-not-dragging) label is
+            // drawn by `_DayTimelineState._editAffordanceLabels` in a
+            // single top-most layer instead, so no task's resting label
+            // can ever sit under a neighbour's pill — reported directly
+            // against a screenshot: "edit mode hours or resize should
+            // always be on top." See `_buildSplit`'s own leading comment.
+            if (!widget.compactText)
               if (_isDragging || _isResizing || _isResizingTop)
                 ..._liveEdgeTimeLabels(
                   height: _pillHeight(
@@ -6787,17 +6770,7 @@ class _DraggableTaskBlockState extends ConsumerState<_DraggableTaskBlock> {
                   // whole box, so no `columnOffset` term is needed here
                   // unlike the combined layout's own call.
                   leftOffset: -widget.left + widget.theme.spacingSm,
-                )
-              else if (editAffordanceActive)
-                ..._edgeTimeLabels(
-                  height: _pillHeight(
-                    widget.theme,
-                    widget.task,
-                    widget.pixelsPerMinute,
-                  ),
-                  leftOffset: -widget.left + widget.theme.spacingSm,
                 ),
-            ],
           ],
         ),
       ),

@@ -148,19 +148,22 @@ class OccurrenceStore extends Notifier<OccurrenceSnapshot> {
   }
 
   /// "This and following" / "all" — a new revision from [occurrence]'s date
-  /// (or today, if that is past).
-  Future<void> reviseFrom(Task occurrence, SeriesRevisionDraft draft) {
+  /// (or today, if that is past). Returns the command id, so Undo can
+  /// reverse exactly this.
+  Future<String> reviseFrom(Task occurrence, SeriesRevisionDraft draft) async {
     final key = occurrenceKeyOfTask(occurrence);
     final series = _series(key.seriesId);
-    return run(
+    final commandId = _uuid.v4();
+    await run(
       ReviseSeries(
-        _uuid.v4(),
+        commandId,
         seriesId: series.id,
         expectedVersion: series.version,
         fromDate: key.date,
         draft: draft,
       ),
     );
+    return commandId;
   }
 
   /// The occurrence as it stands now, shown as a task.

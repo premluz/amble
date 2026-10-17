@@ -4,7 +4,6 @@ import '../../core/tokens/component_tokens.dart';
 import '../../core/tokens/semantic_theme.dart';
 import '../../core/widgets/app_sheet_header.dart';
 import 'task_editor_actions.dart';
-import 'task_panel_fields.dart';
 import 'task_sheet_fields.dart';
 import 'task_sheet_form.dart';
 
@@ -38,7 +37,7 @@ class TaskEditorBody extends StatelessWidget {
   final bool creating;
 
   /// In the wide layout's panel: no "drag down to close" bar, which
-  /// belongs to a sheet, and one setting per line instead of chips.
+  /// belongs to a sheet. The settings are the same chips as the phone's.
   final bool inPanel;
 
   final bool autofocusName;
@@ -74,22 +73,13 @@ class TaskEditorBody extends StatelessWidget {
           ),
         ),
         SizedBox(height: SheetTokens.headerToFieldGap(theme)),
-        if (inPanel)
-          TaskPanelFields(
-            form: form,
-            showPreset: !editing,
-            autofocusName: autofocusName,
-            titlePlaceholder: placeholder,
-            onNameFocusChanged: onNameFocusChanged,
-          )
-        else
-          TaskSheetFields(
-            form: form,
-            showPreset: !editing,
-            autofocusName: autofocusName,
-            titlePlaceholder: placeholder,
-            onNameFocusChanged: onNameFocusChanged,
-          ),
+        TaskSheetFields(
+          form: form,
+          showPreset: !editing,
+          autofocusName: autofocusName,
+          titlePlaceholder: placeholder,
+          onNameFocusChanged: onNameFocusChanged,
+        ),
       ],
     );
     final canPop = canPopSilently;

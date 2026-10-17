@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'color_primitives.dart';
 import 'semantic_theme.dart';
+import 'type_primitives.dart';
 
 /// Colours for the task state grammar (BRAND.md §17): normal, important,
 /// done, and the reserved "no label yet" neutral. Derived from each theme's
@@ -9,6 +10,60 @@ import 'semantic_theme.dart';
 /// read correctly rather than one grey that is too dark in light mode and
 /// too bright in dark mode.
 abstract final class TaskStateTokens {
+  /// Weight of a task's title on every pill and row (Timeline, Zone, List,
+  /// the draft pill and imported events). One step under semibold,
+  /// requested directly 2026-10-10: "font weight for task label names one
+  /// step less."
+  static const titleWeight = TypePrimitives.weightMedium;
+
+  /// How much of a category swatch survives in a pill's fill and a week
+  /// block's background, over the card surface. The same function feeds both
+  /// so they can never drift (requested directly 2026-10-10: the pill uses
+  /// the block's colour). Light swatches are already pastel, so they pass
+  /// through whole; dark swatches are mid-tones, so they are diluted until
+  /// the light title reads on them (9.7:1 or better).
+  static const categoryTintMixLight = 1.0;
+  static const categoryTintMixDark = .30;
+
+  /// The pill fill / block background for a category [swatch].
+  static Color categoryTint(AmbleTheme theme, Color swatch) => Color.alphaBlend(
+    swatch.withValues(
+      alpha: _isDark(theme) ? categoryTintMixDark : categoryTintMixLight,
+    ),
+    theme.colorSurfacePrimary,
+  );
+
+  /// How much of a pill's colour a week block's background keeps, over the
+  /// card surface. A block is a large area, so in light mode it takes a
+  /// lighter step of the pill's pastel (requested directly 2026-10-10); in
+  /// dark mode the pill's tint is already dark, so the block uses it whole.
+  static const blockBackgroundMixLight = .45;
+  static const blockBackgroundMixDark = 1.0;
+
+  /// A week block's background for a pill whose fill is [pillTint]: a
+  /// lighter scale of the same colour in light mode.
+  static Color blockBackground(AmbleTheme theme, Color pillTint) =>
+      Color.alphaBlend(
+        pillTint.withValues(
+          alpha: _isDark(theme)
+              ? blockBackgroundMixDark
+              : blockBackgroundMixLight,
+        ),
+        theme.colorSurfacePrimary,
+      );
+
+  /// The greyed start-end line under a title: the condensed numeric font,
+  /// one size rung and one weight step under the title it sits below
+  /// (requested directly 2026-10-10: "font size and weight of time both
+  /// one scale lower"). The title is [titleWeight] medium, so this is light.
+  static TextStyle timeUnderTitleStyle(AmbleTheme theme) =>
+      theme.textTaskTitle.copyWith(
+        color: theme.colorTextSecondary,
+        fontFamily: TypePrimitives.fontFamily,
+        fontSize: TypePrimitives.sizeBelow(theme.textTaskTitle.fontSize!),
+        fontWeight: TypePrimitives.weightLight,
+      );
+
   /// Share of the page colour mixed into a done task's label colour: the
   /// pill recedes to a pale tint of its own label, never a flat grey that
   /// could be mistaken for an unlabeled task.
@@ -21,11 +76,6 @@ abstract final class TaskStateTokens {
   /// light one — never pure white or black.
   static final glyphOnDark = ColorPrimitives.paper;
   static final glyphOnLight = ColorPrimitives.slate900;
-
-  /// Category names rendered directly on their colored label fill. This is
-  /// intentionally light in both themes so the label reads as one colored
-  /// object instead of switching its foreground with the app surface.
-  static final categoryLabelText = ColorPrimitives.paper;
 
   /// Opacity of a done task's glyph: barely there, so the icon recedes well
   /// past its pill's own pale tint.

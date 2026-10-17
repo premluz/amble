@@ -914,6 +914,7 @@ class TaskCapsuleBlock extends StatelessWidget {
                                                     iconOnlyBadgeColor,
                                                 hidden: glyphHidden,
                                                 faded: state.isDone,
+                                                accentGlyph: !isSkipped,
                                               ),
                                             ),
                                           ),
@@ -937,6 +938,7 @@ class TaskCapsuleBlock extends StatelessWidget {
                                               iconOnlyBadgeColor,
                                           hidden: glyphHidden,
                                           faded: state.isDone,
+                                          accentGlyph: !isSkipped,
                                         ),
                                       ),
                               ),
@@ -1062,7 +1064,7 @@ class TaskCapsuleBlock extends StatelessWidget {
                               task.title,
                               style: state.title(
                                 titleTextStyle.copyWith(
-                                  fontWeight: FontWeight.w600,
+                                  fontWeight: TaskStateTokens.titleWeight,
                                 ),
                               ),
                               maxLines: 1,
@@ -1111,7 +1113,7 @@ class TaskCapsuleBlock extends StatelessWidget {
                                     text: task.title,
                                     style: state.title(
                                       titleTextStyle.copyWith(
-                                        fontWeight: FontWeight.w600,
+                                        fontWeight: TaskStateTokens.titleWeight,
                                       ),
                                     ),
                                   ),
@@ -1464,6 +1466,7 @@ class TaskCapsuleTextRow extends StatelessWidget {
     this.durationVisible = true,
     this.alwaysShowTime = false,
     this.timeRangeVisible = true,
+    this.timeUnderTitleVisible = false,
     this.showCompletionCheckbox = true,
     this.isFaded = false,
     this.whatMattersFaded = false,
@@ -1520,7 +1523,23 @@ class TaskCapsuleTextRow extends StatelessWidget {
   /// own time column via [alwaysShowTime]/[durationVisible], per that
   /// field's own doc comment on the non-`compactInlineLayout` branch).
   final bool timeRangeVisible;
+
+  /// Task view's (spatial) own start-end range, as a greyed-out second line
+  /// under the title (`DevTimelineTaskTimeRangeVisible`). Distinct from
+  /// [timeRangeVisible], which is List mode's inline range and has no
+  /// effect here: Task view's fixed-column branch never read it, and this
+  /// flag defaults to false so other callers (the desktop week) are
+  /// unchanged. Ignored when [compactInlineLayout] is on.
+  final bool timeUnderTitleVisible;
   final bool showCompletionCheckbox;
+
+  /// Height the [timeUnderTitleVisible] line adds below the title: its gap
+  /// plus one line of [TaskStateTokens.timeUnderTitleStyle]. Public so the Timeline's
+  /// label-collision sweep reserves exactly what this row occupies.
+  static double timeUnderTitleExtent(AmbleTheme theme) {
+    final style = TaskStateTokens.timeUnderTitleStyle(theme);
+    return theme.spacingXs + style.fontSize! * style.height!;
+  }
 
   /// Fades this row out while its own pill is lifted, matching how the
   /// combined layout fades its text region mid-drag.
@@ -1571,11 +1590,14 @@ class TaskCapsuleTextRow extends StatelessWidget {
         : null;
     final timeLabel = [?timeRange, ?durationLabel].join(' ');
 
-    final titleStyle = TaskStateStyle.resolve(
-      theme: theme,
-      task: task,
-      labelColor: labelColor ?? theme.colorTextSecondary,
-    ).title(theme.textTaskTitle.copyWith(fontWeight: FontWeight.w600));
+    final titleStyle =
+        TaskStateStyle.resolve(
+          theme: theme,
+          task: task,
+          labelColor: labelColor ?? theme.colorTextSecondary,
+        ).title(
+          theme.textTaskTitle.copyWith(fontWeight: TaskStateTokens.titleWeight),
+        );
     // One rendered line of the title, derived from the type tokens rather
     // than hardcoded — the trailing completion checkbox centres itself on
     // this so it lines up with the text instead of with the row.
@@ -1679,11 +1701,33 @@ class TaskCapsuleTextRow extends StatelessWidget {
                     onTap: onTap,
                     onLongPress: onLongPress,
                     behavior: HitTestBehavior.opaque,
-                    child: Text.rich(
-                      titleSpan,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    child: timeUnderTitleVisible
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text.rich(
+                                titleSpan,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              SizedBox(height: theme.spacingXs),
+                              Text(
+                                '${start.format(context)} - '
+                                '${end.format(context)}',
+                                style: TaskStateTokens.timeUnderTitleStyle(
+                                  theme,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          )
+                        : Text.rich(
+                            titleSpan,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                   ),
                 ),
               ],
@@ -1759,10 +1803,17 @@ class _PillGlyph extends StatelessWidget {
     required this.iconOnlyBadgeColor,
     required this.hidden,
     required this.faded,
+    required this.accentGlyph,
   });
 
   /// A done task's glyph recedes with its pill.
   final bool faded;
+
+  /// Whether the glyph takes the category's accent (the stronger step of
+  /// the pill's hue). False on a skipped task, whose grey fill is not the
+  /// category's tint, so the glyph falls back to the black or white that
+  /// reads on it.
+  final bool accentGlyph;
 
   final _CapsuleCategoryVisual categoryVisual;
   final double badgeSize;
@@ -1777,12 +1828,19 @@ class _PillGlyph extends StatelessWidget {
     // directly otherwise — so `glyphColorOn` picks contrast against the
     // right background in both modes.
     final glyphBackground = iconOnlyBadgeColor ?? railColor;
+    final glyphColor =
+        iconOnlyBadgeColor == null &&
+            accentGlyph &&
+            categoryVisual.iconColor != categoryVisual.pillColor
+        ? categoryVisual.iconColor
+        : glyphColorOn(glyphBackground);
     final glyph = categoryVisual.icon != null
         ? Icon(
             categoryVisual.icon,
             size: badgeSize * 0.55,
-            color: glyphColorOn(glyphBackground)
-                .withValues(alpha: faded ? TaskStateTokens.doneGlyphAlpha : 1),
+            color: glyphColor.withValues(
+              alpha: faded ? TaskStateTokens.doneGlyphAlpha : 1,
+            ),
           )
         : Text(
             categoryVisual.emoji,
@@ -1889,10 +1947,12 @@ class _CapsuleCategoryVisual {
           icon: null,
         );
       }
-      final legacySwatch = theme.categorySwatches[legacyCategory.colorToken];
       return _CapsuleCategoryVisual(
-        pillColor: legacySwatch,
-        iconColor: legacySwatch,
+        pillColor: TaskStateTokens.categoryTint(
+          theme,
+          theme.categorySwatches[legacyCategory.colorToken],
+        ),
+        iconColor: theme.categoryAccents[legacyCategory.colorToken],
         emoji: legacyCategory.emoji,
         icon: null,
       );

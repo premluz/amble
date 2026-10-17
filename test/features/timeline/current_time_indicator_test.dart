@@ -74,7 +74,15 @@ void main() {
     );
   });
 
-  testWidgets('the line still extends to the right, filling the row', (
+  // 2026-10-14 — the line across the day was reported directly as hiding
+  // the row under it ("current hour should not have line, hide it for
+  // now, keep just dot and hour"), so the spatial view's marker no longer
+  // draws one. The List view's own marker still asks for it
+  // (`ListCurrentTimeMarker` passes `pillSizesRow: true` — see
+  // `CurrentTimeMarker`'s own doc comment for why that one keeps its
+  // line: a different job, separating in-progress rows from upcoming
+  // ones in a plain list with no time axis).
+  testWidgets('the spatial marker shows the dot and time pill, no line', (
     tester,
   ) async {
     await tester.runAsync(() async {
@@ -82,6 +90,6 @@ void main() {
     });
     await tester.pump();
 
-    expect(find.byType(Expanded), findsOneWidget);
+    expect(find.byType(Expanded), findsNothing);
   });
 }

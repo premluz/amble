@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/layout_width.dart';
 import '../../core/tokens/liquid_pulse_spec.dart';
 import '../../core/tokens/component_tokens.dart';
 import '../../core/tokens/semantic_theme.dart';
@@ -504,6 +505,10 @@ class ZoneBackgroundBlock extends StatelessWidget {
 ///
 /// Purely decorative, like the block itself — `IgnorePointer`ed so it can
 /// never take a tap meant for a task.
+///
+/// **Desktop (wide layout) draws it differently**: horizontal text in the
+/// band's top-left corner, not vertical down the right edge. Phones are
+/// unchanged.
 class ZoneNameLabel extends StatelessWidget {
   const ZoneNameLabel({
     super.key,
@@ -517,6 +522,8 @@ class ZoneNameLabel extends StatelessWidget {
     this.collapsedHeight,
     this.insideBandLeft,
     this.insideBandWidth,
+    this.leftInset = zoneBackgroundOffset,
+    this.listBandLeft,
   });
 
   final AmbleTheme theme;
@@ -557,6 +564,15 @@ class ZoneNameLabel extends StatelessWidget {
   final double? insideBandLeft;
   final double? insideBandWidth;
 
+  /// The same [ZoneBackgroundBlock.leftInset] given to this zone's band, so
+  /// the desktop corner title can find the band's real left edge
+  /// (`left - leftInset`).
+  final double leftInset;
+
+  /// The band's `left` where [insideBandLeft] is not given (List mode):
+  /// only the desktop corner title uses it. Null means the column's left.
+  final double? listBandLeft;
+
   @override
   Widget build(BuildContext context) {
     final dayStart = DateTime(day.year, day.month, day.day);
@@ -573,6 +589,32 @@ class ZoneNameLabel extends StatelessWidget {
     final bandLeft = insideBandLeft;
     final bandWidth = insideBandWidth;
     final insideBand = bandLeft != null && bandWidth != null;
+
+    // Desktop (wide layout): the name is horizontal text in the band's
+    // top-LEFT corner instead of the phone's vertical text down its right
+    // edge. Requested directly: "title of zone should be... top left (not
+    // right)... only desktop view, mobile as is".
+    if (isWideLayout(context)) {
+      final left =
+          (listBandLeft ?? insideBandLeft ?? 0) - leftInset + theme.spacingSm;
+      return Positioned(
+        top: top + theme.spacingXs,
+        left: left,
+        width: insideBand
+            ? (bandLeft + bandWidth) - left - theme.spacingSm
+            : null,
+        right: insideBand ? null : 0,
+        child: IgnorePointer(
+          child: Text(
+            zone.title,
+            textAlign: TextAlign.left,
+            style: theme.textZoneName.copyWith(color: theme.colorTextTertiary),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      );
+    }
 
     return Positioned(
       top: top,

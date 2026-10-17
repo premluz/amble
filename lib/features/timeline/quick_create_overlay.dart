@@ -457,34 +457,58 @@ class _QuickCreateOverlayState extends ConsumerState<QuickCreateOverlay>
                                                   ),
                                                 if (!_heightController
                                                     .minimised)
+                                                  // Top-anchored, not
+                                                  // vertically centered, so
+                                                  // this button's top inset
+                                                  // from the SHEET'S OWN edge
+                                                  // (`AppSheetSurface`) is
+                                                  // exactly `spacingLg` —
+                                                  // matching its `spacingLg`
+                                                  // side inset — the same as
+                                                  // every other sheet header
+                                                  // (docs/DESIGN_SYSTEM.md's
+                                                  // "Sheet header circle
+                                                  // buttons" section).
+                                                  // `theme.spacingLg -
+                                                  // theme.spacingSm`, not
+                                                  // `spacingLg` outright,
+                                                  // because the `spacingSm`
+                                                  // gap above this row (see
+                                                  // "A small top gap before
+                                                  // the header row" above)
+                                                  // already supplies part of
+                                                  // that distance — pinned
+                                                  // by `quick_task_add_test
+                                                  // .dart`'s own geometry
+                                                  // assertion.
                                                   Positioned(
-                                                    top: 0,
-                                                    bottom: 0,
+                                                    top:
+                                                        theme.spacingLg -
+                                                        theme.spacingSm,
                                                     left: 0,
-                                                    child: Center(
-                                                      // No `backgroundColor` override any
-                                                      // more (2026-09-23). This used to pass
-                                                      // `colorSurfaceSecondary` explicitly,
-                                                      // because HeaderCircleButton's own
-                                                      // default was then the flat, darker
-                                                      // `colorSurfaceField` and read as too
-                                                      // low-contrast against this panel's
-                                                      // nav-matched ground — requested
-                                                      // directly at the time ("the style of
-                                                      // close button should be same as in big
-                                                      // sheet"). That default is now the
-                                                      // translucent secondary glass tint
-                                                      // every other secondary control uses,
-                                                      // so the override would make THIS the
-                                                      // odd one out instead.
-                                                      child: HeaderCircleButton(
-                                                        theme: theme,
-                                                        icon:
-                                                            Icons.close_rounded,
-                                                        onTap:
-                                                            _onCloseRequested,
-                                                      ),
-                                                    ),
+                                                    child:
+                                                        // No `backgroundColor` override any
+                                                        // more (2026-09-23). This used to pass
+                                                        // `colorSurfaceSecondary` explicitly,
+                                                        // because HeaderCircleButton's own
+                                                        // default was then the flat, darker
+                                                        // `colorSurfaceField` and read as too
+                                                        // low-contrast against this panel's
+                                                        // nav-matched ground — requested
+                                                        // directly at the time ("the style of
+                                                        // close button should be same as in big
+                                                        // sheet"). That default is now the
+                                                        // translucent secondary glass tint
+                                                        // every other secondary control uses,
+                                                        // so the override would make THIS the
+                                                        // odd one out instead.
+                                                        HeaderCircleButton(
+                                                          theme: theme,
+                                                          icon: Icons
+                                                              .close_rounded,
+                                                          onTap:
+                                                              _onCloseRequested,
+                                                        ),
                                                   ),
                                                 // MINIMISED: the title alone, where the
                                                 // header row sits in the open sheet —

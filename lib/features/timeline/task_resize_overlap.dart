@@ -49,6 +49,9 @@ List<AppContextMenuAction> taskOverlapMenuActions({
 /// the live task, so the caller can drop its drag preview then. Released
 /// any earlier, the pill snaps back while the menu is open. Released any
 /// later, the preview stacks on the already-updated duration.
+///
+/// [dayTasks] are the tasks on the resized task's day, occurrences
+/// included; omitted, the Day screen's selected day is used.
 Future<void> commitTaskResize(
   BuildContext context,
   WidgetRef ref, {
@@ -57,9 +60,9 @@ Future<void> commitTaskResize(
   required int newDuration,
   required Offset anchor,
   required VoidCallback onApplied,
+  List<Task>? dayTasks,
 }) async {
-  // The day being shown, occurrences included.
-  final tasks = ref.read(tasksForSelectedDayProvider);
+  final List<Task> tasks = dayTasks ?? ref.read(tasksForSelectedDayProvider);
   final notifier = ref.read(taskListProvider.notifier);
   final message = "Resized '${task.title}'";
 

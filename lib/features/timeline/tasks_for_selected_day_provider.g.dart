@@ -59,4 +59,4 @@ final class TasksForSelectedDayProvider
 }
 
 String _$tasksForSelectedDayHash() =>
-    r'8dc40ea665192e4a0815cb2acac7fc88fd4ae467';
+    r'7b3ef8073daf82f08c8ee90eb7306fbdb006469f';

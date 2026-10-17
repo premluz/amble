@@ -23,6 +23,19 @@ TaskStateStyle calendarTaskStyle(WidgetRef ref, AmbleTheme theme, Task task) {
   return TaskStateStyle.resolve(theme: theme, task: task, labelColor: label);
 }
 
+/// A task's accent: the stronger step of its label colour, for a week
+/// block's rail and a month row's rail. Unlabeled tasks use the reserved
+/// unassigned tone.
+Color calendarTaskAccent(WidgetRef ref, AmbleTheme theme, Task task) {
+  final category = ref
+      .watch(categoryListProvider)
+      .where((c) => c.id == task.categoryId)
+      .firstOrNull;
+  return category == null
+      ? TaskStateTokens.unlabeledFill(theme)
+      : resolveCategoryVisual(theme: theme, category: category).iconColor;
+}
+
 /// The thin rounded label rail at the left of a week block or month row.
 class CalendarTaskRail extends StatelessWidget {
   const CalendarTaskRail({super.key, required this.color, this.height});

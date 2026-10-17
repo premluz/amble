@@ -9759,3 +9759,225 @@ order (week, month, six-month) on each arrival. Tests:
 motion), wide-shell "fade by default; slide is a dev toggle", and the
 Patterns view tests now let the fill finish before reading cell colours.
 Not checked on a device.
+
+## [2026-10-09] Desktop zones: Day-view component in the week, one band across days, corner title
+
+`WeekZoneBands` + `weekZoneRuns` (new): the week's zones are the Day view's
+`ZoneBackgroundBlock`/`ZoneNameLabel`, merged into one band per run of
+identical consecutive days. On desktop the zone name is horizontal in the
+band's top-right corner (Day and Week); phones unchanged. New
+`isWideLayout`. Tests: `week_zone_runs_test.dart` (5), three week/month
+cases in `desktop_calendar_test.dart`, a wide-label case in
+`zone_background_block_test.dart`. Mutation-checked (merge key made per-day:
+6 tests failed). One render checked. Not run as the real app.
+
+## [2026-10-09] Zone title top-left; Cmd/Ctrl + scroll timeline zoom
+
+Desktop zone titles moved to the band's top-left corner (Day and Week).
+`TimelinePinchZoom` now zooms on Cmd/Ctrl + scroll (wheel and trackpad),
+anchored on the pointer; anchor maths extracted to
+`timelineAnchoredScrollOffset`. Tests: 5 zoom cases in
+`timeline_pinch_zoom_test.dart` (scroll without the key, zoom in/out with
+no wheel-scroll, limits, anchored time under the pointer, key release);
+mutation-checked (gate removed: 2 failed). First version of those tests
+stalled at teardown on real Hive writes; they now use the in-memory
+preferences repository. Not tried on a real trackpad/mouse.
+
+
+## [2026-10-09] Atlas pilot — Widgetbook web preview
+
+Added `widgetbook/web/index.html` as the standalone gallery's Flutter web entrypoint. When Atlas supplies project, item, session, and contract query values, it posts the readiness identity to the embedding origin after the Flutter first-frame event. The owner selected Amble's real `Selection primitives → AppButton → Label` story. No production app code, dependency, or Hive data path changed.
+
+Checks: `flutter analyze --no-pub` reported no issues; `flutter test --no-pub` passed all 4 Widgetbook tests; `flutter build web --no-pub --no-tree-shake-icons -o /private/tmp/atlas-amble-widgetbook-build -t lib/main.dart` passed. The default release build rejected a non-constant `IconData` at `lib/features/task_detail/category_visual.dart:359`; Flutter's suggested `--no-tree-shake-icons` was used for this preview build. Atlas embedded the actual Flutter development server on port 4175, accepted its readiness identity, and mounted the Flutter canvas.
+
+Still open: expose a real app screen with synthetic fixture data and repeatable reset through Amble's repository/provider seam. Keep the user's ordinary local Hive data outside preview fixtures; native fidelity remains unverified.
+
+
+## [2026-10-09] Atlas pilot — production Inbox with synthetic data
+
+Added lib/atlas_fixture_entrypoint.dart, lib/atlas_fixture_app.dart, lib/atlas_fixture_data.dart, and lib/atlas_in_memory_repositories.dart, plus widgetbook/lib/atlas_main.dart as the Flutter launch shim. Atlas now exposes Amble's real InboxScreen as a named screen. The fixture seeds deterministic tasks, sections, and categories via in-memory provider overrides; no Hive startup or user task store is used. End preview and reactivate to reset by creating a new fixture instance. The host is minimal and omits Amble's complete production shell.
+
+Checks: Widgetbook flutter analyze --no-pub passed; all 6 Widgetbook tests passed, including Inbox rendering and fresh-repository reset. flutter build web --no-pub --no-tree-shake-icons -o /private/tmp/atlas-amble-inbox-web -t lib/atlas_main.dart passed. Atlas proof check, 8 unit tests, production build, and 2 targeted preview lifecycle browser tests passed. Amble root analysis still reports 15 existing findings outside these new files; the full root test suite reports 18 failures in untouched tests, and an isolated swipe-actions rerun also fails. Native behavior and the full shell were not checked.
+
+
+Verification limitation: the two Atlas Playwright screen checks stub the preview readiness message; they do not launch this Flutter build inside the iframe. A live Inbox iframe smoke test remains the next step.
+
+
+## [2026-10-09] Atlas pilot — live Inbox iframe smoke
+
+Port 4175 was still serving the prior Widgetbook entrypoint, so I launched the existing Atlas-only Flutter target lib/atlas_main.dart on port 4176 without stopping the old process. Atlas was pointed at port 4176. The real Inbox iframe reached READY; clicking Personal changed the synthetic task to Plan a weekend walk. Ending and reactivating returned to a fresh seeded Inbox. This verified the actual browser iframe and one task filter interaction.
+
+Atlas typecheck passed, its 8 unit tests passed, both Vite builds passed, and the two targeted Playwright cases passed under Node 22.22.2. The browser tests stub readiness; the real iframe smoke was checked separately in the open Atlas tab. The canvas tile crops the screen to a compact viewport, so screen sizing remains the next UI issue. The full Amble test/analyzer limitations remain as recorded above; native fidelity and the full shell are unverified.
+
+## [2026-10-10] Rios palette shift — warm neutrals, softer pills, both themes
+
+Shifted the light and dark palettes toward the supplied Rios reference in OKLCH. Light-mode pills were too strong; they are now soft pastels led by lavender, periwinkle and teal, with a charcoal glyph and label. Dark mode got the matching muted families and warmer charcoal surfaces. `palette_contrast_test` now checks glyph-on-fill legibility instead of light fill-on-page contrast. The category chip label follows its fill. `rios-color-tokens.json` was regenerated.
+
+Verification: token and task_detail tests pass (172). `flutter analyze` returns 15 issues, all of which predate this change. Full `flutter test` has 18–19 failures. The same failing files fail identically with the HEAD palette (nav pill, view transition, swipe actions, zone grid, stale capsule golden), so none come from this change. The count varies with run order.
+
+Open:
+- Pastel cyan and sky blue now share the reserved mist tone's lightness. Unlabeled and imported pills may read close to them. The reference's separate imported-event styling (a neutral block plus an accent line) is not built.
+- The day-atmosphere/sky tokens are not built.
+- The category→meaning mapping is not applied.
+- No visual check on device yet.
+
+## [2026-10-10] "Show time (from-to)" now Timeline-only, greyed range under the title
+
+The dev switch no longer affects Zone view or List rows. In the spatial Timeline it adds a greyed-out `start - end` line under each task's title, and the label collision sweep reserves its height. New `time_under_title_test.dart` (5 tests); a mutation check showed the collision test fails without the sweep change. Verification: new + token + task_detail tests pass; `flutter analyze` 15 issues, all existing; full `flutter test` 2140 pass / 19 fail, the same 8 test files that failed before (nav pill, view transition, swipe actions, zone grid, capsule golden, nav consolidation, spatial label). Not checked on a device. Open: the range appears twice if "Show duration" is also on.
+
+## [2026-10-10] Task titles one weight step lighter
+
+Task titles went from semibold (w600) to medium (w500) on every pill and row, through a single `TaskStateTokens.titleWeight`. New `task_title_weight_test.dart` (a mutation check confirmed it fails at w600). Verification: see the Memento report; the full suite has the same pre-existing failures as before. Not looked at on a device. Open: if "task label names" meant the category chip labels, those are untouched.
+
+## [2026-10-10] Start-end line under the title also on the week view
+
+The same dev switch now adds the greyed range under titles in the desktop week, with stacked rows spaced to clear it. New test in `desktop_calendar_test.dart` (a mutation check on the spacing fails it). Full suite 2144 pass / 19 fail, the same 8 pre-existing failing files; analyze 15 existing issues. Not looked at on a device.
+
+## [2026-10-10] Under-title time one size and weight lower
+
+The greyed start-end line now uses `TaskStateTokens.timeUnderTitleStyle` (one size rung down, light weight). Spacing in the Timeline and week follows the new height. Tests extended; not looked at on a device.
+
+## [2026-10-10] Week task style option (pills or blocks), Appearance, desktop only
+
+New `WeekTaskStyle` setting, panel and `WeekTaskCard`; the week column branches on it. New tests for the setting (default, persistence, fallback, wide-only panel) and for the block layout (heights, shared lanes, tap). Mutation check on the wide-only gate. Full suite 2149 pass / 19 fail (same 8 files); analyze 15 existing. Not looked at on a device.
+
+## [2026-10-10] "Show time (from-to)" on by default
+
+Flipped `DevTimelineTaskTimeRangeVisible` to true, so the greyed start-end line under titles shows by default in the Timeline and desktop week. Updated the tests that pinned the old off default. Full suite 2149 pass / 19 fail, the same 8 files as before. analyze 15 existing issues. Not looked at on a device.
+
+## [2026-10-10] Pills and blocks share one tint; pill icon and block rail share one accent
+
+New `categoryAccents` token and `categoryTint` function; `resolveCategoryVisual` returns tint and accent, so pills, zone rows, chips, week pills and week blocks agree. Removed `blockTintAlpha`. New contrast tests (accent 3:1 on tint, title 7:1, accent stronger than tint, both themes) and week tests that the block bg/rail and pill fill/icon use the same two colours; mutation checks on both. Full suite 2156 pass / 19 fail (same 8 files); analyze 15 existing. Token JSON regenerated. Not looked at on a device.
+
+## [2026-10-10] Lighter week block background in light mode
+
+Blocks now use a lighter scale (45%) of the pill fill in light mode; the pill is unchanged. New contrast test for the title on block backgrounds, plus a mutation-checked week test. A too-broad `dart format` touched 34 unrelated test files; restored from git. Full suite 2158 pass / 19 fail (same 8 files); analyze 15 existing. Not looked at on screen.
+
+## [2026-10-10] Mac Calendar on the desktop app (EventKit bridge)
+
+Added a read-only Swift EventKit bridge on `device_calendar`'s channel, the calendar entitlement and usage strings, and the project entries. No Dart changes, no new dependency. Verification: `flutter build macos --debug` succeeds; the built app carries the calendar entitlement and the usage string. Not verified at runtime: the permission prompt and real events need a person at the Mac. Sync-out is unavailable on macOS. Google through the browser is not built (needs OAuth and a dependency; decision recorded).
+
+## [2026-10-10] Calendars settings: Enable permission
+
+Permission-off now shows "Calendar access is off for Amble" and an Enable permission button that opens the system settings; no calendar at all shows "No calendar detected". New `CalendarAccess` states, `SystemSettingsService` and native openers for iOS, Android and macOS (no new dependency); provider and generated files regenerated. 10 new tests, mutation-checked. Full suite 2168 pass / 19 fail (same 8 files); analyze 15 existing; macOS, iOS and Android builds succeed. Settings deep links and live permission states not tried on devices.
+
+## [2026-10-10] Work order: "Connect to Claude" (planning only)
+
+Reassessed the local AI-access design for non-technical users and wrote `docs/WORK_ORDER_CLAUDE_CONNECTION.md`. Key changes from the first sketch: setup is a one-click Claude extension (`.mcpb`) that Amble generates with the secret inside (no token copying, no config files), a helper that starts Amble in the background, plain-language Settings states, an activity list with Undo, and read-only by default. Six phases, with a Phase 0 spike on a real Mac as a gate and five open decisions for the user (scope, distribution, default permission, extra confirmation, real bundle id). No code changed.
+
+## [2026-10-10] Connect to Claude — Phase 0 (spike) and Phase 1 (pure core)
+
+Phase 0: static checks on this Mac (Claude Desktop registers `.mcpb`; manifest 0.3 fits the plan; no Developer ID certificate, so the Gatekeeper check is blocked). Recorded in the work order. SCOPE.md now lists "Connect to Claude" as in scope. Phase 1: free-time function and transport-free assistant tools (get_day, list_tasks, get_availability, list_zones, list_categories, add_task, move_task) with permission checks, plain error messages and an undoable activity log. 24 new tests; mutation checks on permission enforcement (caught). Full suite 2192 pass / 19 fail (same 8 files); analyze 15 existing. No UI or networking yet. Next: Phase 2 (in-app loopback endpoint plus the app's AssistantBackend implementation).
+
+## [2026-10-10] Connect to Claude — Phase 2 (in-app endpoint)
+
+Dual-era MCP protocol layer (2026-07-28 plus legacy), a loopback HTTP server with Host, Origin and secret checks, the persisted connection settings, an app backend over the real providers, a server lifecycle listened to from the app root, the Release `network.server` entitlement, and `tool/assistant_smoke.dart`. 27 new tests (protocol 16, server 7, connection 4); mutation checks on the Origin and Host gates fail them. `flutter build macos --debug` succeeds with the entitlement embedded. Full suite 2218 pass / 20 fail. The extra failure is `wide_shell_layout_test` "tapping a task on the wide timeline": its task sits at a fixed 10:00 and the Timeline scrolls to now. It passes with the task at the current hour, the test file is unchanged from HEAD, and removing this session's `main.dart` line doesn't fix it, so it is a time-of-day flake, not this change. analyze 15 existing. Not verified live: a sandboxed run with Claude connecting (needs Phase 3's helper or a manual curl with the secret).
+
+## [2026-10-10] Connect to Claude — Phase 3 (one-click extension)
+
+Bundle id `com.panta.panta` (macOS). Node helper on Claude's built-in Node instead of a Swift CLI. Pure-Dart `.mcpb` builder with a stored-zip writer. Native bridge to find Claude, locate Downloads and open the file in Claude. `ClaudeConnector.connect` / `disconnect` / `removeBundleFile`. The bundle file is deleted on Claude's first authorised request. Downloads entitlement. Tests: zip (CRC, structure, read back by `unzip`), manifest contents, the **real Node helper against a real endpoint** (legacy session, modern headers, wrong secret, Amble not running), connector (Claude missing, connect writes and opens, disconnect cleans up), the one-time hook. Full suite 2230 pass / 20 fail (the same 9 files incl. the known `wide_shell_layout_test` time-of-day flake); analyze 15. macOS build carries the new id, entitlements and helper asset. Not yet done live: Claude's Install dialog and a real Claude conversation, which need the Settings screen (Phase 4) to press Connect.
+
+## [2026-10-10] Connect to Claude — Phase 4 (Settings › Claude)
+
+New `lib/features/assistant/`: the Claude settings screen (all states), the setup and connected panels, the Undo toaster, and the Mac-only Settings row. Connection gains a "Claude seen" flag and port changes; the connector gains `claudeConnected` and `reconnect`; the bridge gains "Get Claude". 7 widget tests (no technical words when not connected; Connect, then waiting, then connected; Claude missing then retry; Disconnect; Undo toast; row hidden and shown); a mutation on the waiting state fails them. Full suite 2237 pass / 20 fail (same 9 files incl. the known `wide_shell_layout_test` time-of-day flake); analyze 15; macOS build succeeds. **Live test with Claude Desktop not yet done:** it needs a person at the Mac (runbook in the work order's Phase 5).
+
+## [2026-10-10] Connect to Claude — first live run: install warning and a tools/list fix
+
+First live install in Claude Desktop. (1) Claude shows its standard install warning for local extensions ("access to everything on your computer… not verified by Anthropic"); see the chat answer and DECISIONS for what it means and the options. (2) Cowork and Code sessions rejected `tools/list` (missing the required `ttlMs`/`cacheScope`). Fixed and regression-tested; see ERROR_LOG. The connection secret was pasted into the chat during debugging; rotate it with Disconnect + Connect. Full suite 2239 pass / 20 fail (same 9 files); analyze 15; macOS build succeeds.
+
+## [2026-10-10] Connect to Claude — old extension copy after Reconnect
+
+Second live run: Claude kept the previously installed extension (same name and version), so its secret no longer matched (401). Diagnosed from Claude's log and by replaying the installed helper. The earlier `ttlMs` errors were from before the fixed build. Fixes: unique bundle version per build, wrong-secret detection, and an "old copy, Update Claude" state in Settings. Tests added (version rule, wrong versus missing secret, the Update state); full suite 2242 pass / 20 fail (same 9 files); analyze 15; macOS build succeeds. Whether Claude offers "Update" for a newer version of the same extension is still to be seen live.
+
+## [2026-10-10] Connect to Claude — verified through Claude's installed copy
+
+After Update, Claude's installed extension (version 1.0.29860876) talks to the running Amble: Claude's log shows the 2026-07-28 era ("sibling answered server/discover") and a successful `tools/list`. Replaying the installed helper returns all 7 tools with `ttlMs`/`cacheScope`, and `get_day` returns the day's 19 tasks. The newer-version rule made Claude replace its old copy. The remaining "tools not loading" in a chat is on the chat side (a chat opened before the connection, or Amble switched off in that chat's tools menu); confirming in a fresh chat.
+
+## [2026-10-10] Connect to Claude — all tools offered, permission per call
+
+Claude showed only the 5 read tools after the person switched to "See and update" (the list had been fixed at install time). The tool list now always holds all 7 tools; the permission is enforced per call with a plain refusal. Tests updated (the tool list no longer depends on the permission; writes are still refused while read-only). Full suite 2242 pass / 20 fail (same 9 files); analyze 15; macOS build succeeds.
+
+## [2026-10-10] Connect to Claude — `edit_task` (all edits incl. repeats)
+
+New `edit_task` tool (8 tools in total), the app-side `AssistantTaskEditor` reusing the task sheet's save paths, occurrence lookup, `repeat_days` in task JSON, and `reviseFrom` returning its command id. Tests: tool argument handling (fake backend) and **real-path tests against the series store**: one-off edit and undo; repeat on, then undo; "this" only; "this and following"; new days; repeat off, then undo; done on one occurrence; occurrence lookup. A mutation sending every repeating edit to the whole series fails them. Full suite 2255 pass / 20 fail (same 9 files); analyze 15; macOS build succeeds. Claude needs to restart the extension (or Update) to see the new tool.
+
+## [2026-10-10] Calendars: Refresh events
+
+The Mac calendar read path was confirmed working by querying the running app (5 events on each weekday, none on Saturday). Added a refresh signal watched by every calendar event fetch, and a **Refresh events** button in Settings › Calendars. Tests: a refresh re-reads an already-loaded range (a mutation removing the watch fails it); the button bumps the signal and confirms. Full suite 2257 pass / 20 fail (same 9 files); analyze 15; macOS build succeeds. Open: calendar events in the desktop Week view.
+
+## [2026-10-10] Calendar events in Week and Month, auto-refresh, week zoom
+
+- **Events:** device-calendar events now show in the desktop Week (pills or blocks, sharing lanes with tasks; whole-day events left to Month) and in Month (listed with tasks, counted in "+N more"). Tap shows the event details.
+- **Auto-refresh:** `CalendarAutoRefresh` (wraps the app home) bumps the refresh signal on resume, on macOS's EventKit change notification (`CalendarReadBridge.swift` → channel `com.amble/calendar_changes`, debounced) and every 5 minutes.
+- **Week zoom:** persisted hour height; pinch, Cmd/Ctrl+scroll, toolbar − / + (Week only); anchored on the pointer. Grid painting moved out of `week_view.dart` to `week_grid_paint.dart`; `week_day_column.dart` rewritten to lay out tasks and events together.
+- **Tests:** `calendar_events_zoom_test.dart` (9): week pill/block events and lane sharing, month rows and "+N more", day clipping, anchored offset, toolbar zoom and limits and persistence, Ctrl+scroll, resume / change signal (debounced) / timer refresh. The scroll test caught a real hit-test bug (see ERROR_LOG).
+- **Open:** not seen on screen by me (no visual check); Google/Outlook calendars refresh on their own sync schedule, so a change made elsewhere can take minutes to reach Calendar.app and so Amble.
+
+## [2026-10-11] Editing in the desktop Week
+
+- **Move:** drag a task to a new time or another day of the week. A faded ghost stays where the task rests, and a preview shows where it lands. Landing on a task asks Overlap / Push all / Trim. Every write has Undo. Pills move by the pill or by the title.
+- **Resize:** drag a task's top or bottom edge (resize cursor).
+- **Create:** click-drag on empty space, or hold, draws a draft that opens in the right panel. The draft can be moved and resized before saving.
+- **Complete:** the pills checkbox, behind the same setting as the Day screen.
+- **Code:** new in `features/calendar/`: `week_drag`, `week_item_gestures`, `week_create_layer`, `week_day_layout`, `week_items`, `week_draft_block`. New in `features/timeline/`: `task_move_overlap` and `complete_task` (moved out of `timeline_screen.dart`, call sites only). `commitTaskResize` gained `dayTasks`. Token `weekResizeEdge`.
+- **Tests:** `week_edit_test.dart` (12): move down, across days, pills by title, ghost and preview mid-drag, overlap menu and Push all, events don't drag, bottom and top resize, click-drag create, checkbox, and the target maths. A mutation disabling cross-day moves fails 4 of them. One finding fixed during testing: drags were measured from where they passed the slop (about 15 minutes off), so they now use the press point. Full suite 2278 pass / 20 fail (same 9 files); analyze 15; macOS build succeeds.
+- **Open:** not checked on screen by me. Still missing: dragging into the next week, auto-scroll near the edges while dragging, multi-select, and Month editing. The Day screen's inline drop could switch to `commitTaskMove`.
+
+## [2026-10-11] Week draft pill, and the desktop panel back to the phone's chips
+
+- **Week draft pill:** the Week's new-task draft in pills style now uses the Day screen's glass pill with the selected border, and a secondary-coloured "New thing".
+- **Panel chips:** the desktop task panel's settings are the phone's chips again (Preset, Date, Time, Duration, plus the Important / label / tracked / notify / repeat / note icons), replacing the one-per-line rows. Pickers still open beside the panel. See DECISIONS 2026-10-11.
+- **Tests:** `task_panel_fields_test.dart` rewritten for chips (4). Full suite 2278 pass / 20 fail (same 9 files); analyze 15.
+- **Open:** `TaskPanelFields`, `TaskPanelDetailRows`, `task_panel_labels.dart` are now unused (kept, not deleted). The panel no longer shows the repeat/label/note text summaries.
+
+## [2026-10-12] New app icon (macOS, iOS, Android) and the branding doc
+
+- The Mac icon (`Mac Icon/Untitled.icon`) is now the app icon everywhere Apple and Android use one. Source: `assets/branding/AppIcon.icon`; referenced by the macOS and iOS Xcode projects; everything else generated by `tool/brand_assets.py` (+ `brand_spec.py`, `brand_android.py`): macOS and iOS PNG fallbacks, the 1024 master, Android adaptive icon (foreground, monochrome, background) and legacy mipmaps, and `store/appstore-1024.png`, `store/playstore-512.png`. `--verify` checks the outputs.
+- New doc `docs/BRANDING_ASSETS.md`: sources, what produces what, where the logo appears in the app, what is not covered, and the checklist for the logo/wordmark update.
+- **Verified:** macOS, iOS (no codesign) and Android debug builds succeed and use the new icon (macOS Assets.car matches a standalone compile; iOS fallback PNG sampled; APK resolves the adaptive icon). Full suite 2279 pass / 19 fail (pre-existing files; the time-of-day flake passed this run); analyze 15.
+- **Not done (blocked):** the updated logo mark and wordmark files were not in the repo (`assets/branding/Logo_on_*` still dated 28 Sep), so the splash and launch screens still show the old mark. Web, Windows and `promo/` icons are also unchanged.
+
+## [2026-10-12] Logo lockups and launch screens (provisional), after "still the old logo on the iPhone"
+
+- The loader (iOS `LaunchImage`, Android `launch_image`) and the "Start now" landing (`SplashLogo`) still showed the old mark. No designed lockup was supplied, so `tool/brand_logo.py` (called from `brand_assets.py`) now builds `Logo_on_light/dark.svg|png` from the icon's mark + the stroked wordmark (`assets/branding/source/wordmark.svg`, copied from `~/Downloads/logorios.svg`), and the launch images from the new icon tile.
+- `SplashLogo` width `spacingXl * 6` -> `* 4` (the new viewBox is tight; the old one was a padded square), comment updated. `--verify` now also checks launch images and lockups.
+- **Verified:** splash tests pass (12); `brand_assets.py --verify`; analyze unchanged. **Not seen on a device.** iOS caches launch screens, so reinstall the app to see the new loader.
+- **Open:** the lockups are my assembly (mark left, wordmark right, 96-unit gap); replace with the designed lockup when it exists.
+
+## [2026-10-12] Version bump for App Store Connect
+
+Upload rejected: `1.0` is not higher than the approved `1.0.0` (train closed). `pubspec.yaml` `1.0.0+6` -> `1.0.1+7`; `ios/Flutter/Generated.xcconfig` now shows `1.0.1` / `7`. See ERROR_LOG. Not re-uploaded by me. A `flutter build ios --release --no-codesign` failed in this environment with an opaque Xcode error after the build step (not investigated; the debug build works); archive from Xcode or `flutter build ipa` with signing.
+
+## [2026-10-12] Release archive built; wrong Xcode project found
+
+Old icon and `1.0 (1)` in Organizer came from archiving the SwiftUI stub `Amble/Rios.xcodeproj`, not the Flutter app (see ERROR_LOG). Built the real one: `flutter build ipa --release --no-tree-shake-icons` -> `build/ios/archive/Runner.xcarchive` and `build/ios/ipa/Rios.ipa`, verified `com.pantaapp.panta`, `1.0.1 (7)` and the new icon. Not uploaded. Without `--no-tree-shake-icons` a release build fails on the non-constant `IconData` (known, documented in `category_visual.dart`).
+
+## [2026-10-13] Patterns opens with the grid at once; completed days fill in after
+
+Measured the slow tab switch: a year of occurrence projection per row, before the first frame (~57 ms per row on the Mac). New `behaviorCompletedDaysProvider` computes once for all rows, after the first frame, cached; `AppStaggeredFill` plays when a cell becomes filled and only makes controllers for filled cells. Tests: late-data stagger (fails with the rule removed), "empty grid on the first frame, fills after", view-mode helper now settles. Analyze 15. Full suite 2278 pass / 22 fail: the usual 20 plus two (`claude_settings_screen_test`, `resize_overlap_menu_test`) that pass alone, so they are load flakes; that run was slow (about 6 minutes, web dev server running). Not seen on a device.
+
+## [2026-10-13] Patterns follow-up: stagger survives a slow frame; tracked series only
+
+Still janky with all days already filled on arrival. Fill clock now starts after the arrival frame (see ERROR_LOG). The provider projects only tracked series (22 ms to 3 ms, warm, 8 series with 1 tracked). New test pins the slow-frame case (mutation-checked); fill tests updated for the one-frame later start. Analyze 15; full suite 2281 pass / 20 fail (baseline files). Web preview restarted. Not seen on a device.
+
+## [2026-10-14] Current-time line hidden (spatial), edit-mode labels raised, web-mobile safe-area padding
+
+Three asks off one screenshot of a resize in progress.
+
+- **Current-time line:** hidden on the spatial Timeline (`CurrentTimeMarker`'s trailing hairline only builds for `pillSizesRow: true` now); dot and time pill kept. List view's own marker is untouched (different job — see its doc comment).
+- **Edit-mode edge labels always on top:** every task's resting start/end label (shown while armed/selected, not actively dragged) now paints in one shared layer above every task pill (`_DayTimelineState._editAffordanceLabels`), instead of inside each task's own block — a later-painted neighbour's pill could cover an earlier task's label before. The now-dead `editAffordanceActive`/`_edgeTimeLabels` were removed from `_DraggableTaskBlockState`; the LIVE drag/resize label is untouched (stays inline, already paints last via the existing `_dragLastOrder`).
+- **Web-mobile safe-area:** `AppWindowInsets` now also reserves `ShellLayoutTokens.webMobileTopInset`/`webMobileBottomInset` (24/24) on web at phone width only (`kIsWeb && !isWideLayout`) — native apps and wide/desktop web are untouched. The branch logic was pulled into a pure `windowInsetFor` function since `flutter test` can never actually exercise `kIsWeb == true` (see ERROR_LOG).
+- **Tests:** `current_time_indicator_test.dart`'s line-assertion test updated to assert the opposite (line gone). `app_window_insets_test.dart` gained 4 tests on `windowInsetFor`, mutation-checked. The full timeline suite (617+ tests) passes clean except the two already-known, confirmed-unrelated flakes (`spatial_label_icon_alignment_test.dart`, `timeline_capsule_preview_test.dart`, both reproduced failing on unmodified `main` too). A full-repo run on a heavily loaded machine (~1/8 its usual speed) showed only previously-documented pre-existing/load-flake names through 730/2300+ tests (9 failures, all matching this session.s own earlier-confirmed set) before being left running rather than blocking further on it; `timeline_nav_consolidation_test.dart` separately reproduced failing on unmodified `main` in isolation.
+- Analyze clean on every touched file.
+- **Not seen on a device or in a real web/mobile browser** — only in the widget-test harness and the earlier local web preview (before this change).
+
+## [2026-10-15] Sheet header circle buttons: top inset now matches side inset (ratified layout law)
+
+Reported directly against a screenshot: "the sheets side padding match top padding so the circular buttons on left and right are precisely same padding top and left." Measured the real gap first — `AppSheetHeader` had 16px top vs 24px side, `StepScaffold` 12px vs 24px, `QuickCreateOverlay` 16px vs 24px — all from the same root cause: the leading circle button was vertically CENTRED in a header row that's taller than the button for other, documented reasons (a drag handle sitting above its centre line; a centred title), so the top gap was whatever that centring math happened to leave, never actually equal to the side inset by construction.
+
+- **Swept every `HeaderCircleButton` call site** (per the layout-law-ratification procedure): `AppSheetHeader`'s leading ×/‹, both of `StepScaffold`'s (‹ and ×), `QuickCreateOverlay`'s own close button. All four top-anchored at `spacingLg` now — `QuickCreateOverlay` at `spacingLg - spacingSm` specifically, since it has an extra leading gap the other two don't (see ERROR_LOG for how a first pass got this one wrong and a pre-existing test caught it).
+- **Explicitly excluded `AppSheetHeader.trailing`** (Add/Save, a trash+pill Row, the mic button): mixed, caller-varying shapes, not a single circle matching the leading button's own geometry — stays centred.
+- **Verified by geometry, not screenshots**, per the ratification skill's own rule: new `tester.getRect`/`getTopLeft` assertions in `app_sheet_header_test.dart` and `app_step_scaffold_test.dart`, both mutation-checked (reverting the top-anchor fails them). `quick_create_overlay.dart`'s own geometry was already covered by a pre-existing, already-passing assertion in `quick_task_add_test.dart` that caught my own first wrong attempt.
+- **Registered the law** in `docs/DESIGN_SYSTEM.md`'s "Sheets" section as rule 3b, with the exact token relationship and which widget is the deliberate exception.
+- **Verified:** analyze clean on all 5 touched files. `app_sheet_header_test.dart` (3), `app_step_scaffold_test.dart` (9), `task_detail` + `quick_capture_sheet_test.dart` + `quick_task_add_test.dart` (163 total) all pass. The 4 `zone_grid` failures seen in a broader run reproduce identically on unmodified `main` — confirmed pre-existing, unrelated (stashed/popped to check; no conflicts).
+- Not seen on a device or in a real browser — widget-test geometry only, since the Chrome extension wasn't reachable from this environment this session.

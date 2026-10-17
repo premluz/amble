@@ -190,22 +190,45 @@ of a few RGB units (1.03–1.10× luminance contrast), and 1px separators only
 
 | Role (token) | Light | Dark |
 | --- | --- | --- |
-| Base (`colorSurfaceBase`) | `#F3F2F1` | `#171716` |
-| Card / timeline (`colorSurfacePrimary`, `colorSurfaceTimeline`) | `#FAFAF9` | `#1A1A19` |
-| Nested row / group (`colorSurfaceSecondary`) | `#F0F0EF` | `#20201F` |
-| Floating overlay (`colorSurfaceOverlay`) | `#FFFFFF` | `#262625` |
-| Field / active field | `#F1F1F0` / `#E6E6E4` | `#2C2C2B` / `#363635` |
-| Separator (`colorBorder`) | `#E6E6E4` (1.20× on cards) | `#292928` (1.20× on cards) |
+| Base (`colorSurfaceBase`) | `#F5F2EE` | `#181615` |
+| Card / timeline (`colorSurfacePrimary`, `colorSurfaceTimeline`) | `#FBF9F6` | `#1B1A18` |
+| Nested row / group (`colorSurfaceSecondary`) | `#F2EFEA` | `#22201E` |
+| Floating overlay (`colorSurfaceOverlay`) | `#FFFFFF` | `#282623` |
+| Field / active field | `#F2EEE9` / `#E8E3DB` | `#302D2B` / `#3A3734` |
+| Separator (`colorBorder`) | `#E8E3DB` (1.22× on cards) | `#2E2B28` (1.24× on cards) |
+| Text primary / secondary / tertiary | `#1F1C1A` / `#6F6A63` / `#8A847B` | `#F4F0EA` / `#B6AEA3` / `#79736B` |
 
-- **Warmth is a trace, not a cast**: every neutral is hue 90 at chroma
-  ≤ .003, keeping the "paper" direction without the cream/olive tint.
+- **Warm paper and charcoal (2026-10-10).** Matched to the Rios brand
+  reference: neutrals sit at hue ~78 (light) / ~70 (dark), chroma
+  .003–.015 — warmer than the 2026-10-08 greys, still no olive or cream
+  cast. Hex values above are the OKLCH primitives' sRGB output.
 - **Separate with steps or hairlines, not both strongly.** A new divider
   uses `colorBorder` at `borderWidthHairline`; never darken a surface to
   make a boundary visible.
 - **Order is fixed and tested** (`elevation_direction_test.dart`): base →
   card → overlay, one direction per theme; the light base stays below
   luminance 0.90 so surfaces have room above it.
-- Category swatches, the zone lavender and the accent are unchanged.
+- **Pill swatches (2026-10-10).** Light mode: soft pastel fills
+  (L .73–.88) carrying a charcoal glyph and label at 7:1 or better —
+  legibility is glyph-on-fill, not fill-on-page. Lavender (9),
+  periwinkle (15) and teal (5) lead with the most chroma; every other
+  hue is a quieter supporting tone (moss, sand, blush and neighbours).
+  Dark mode: the same families, muted (L ≈ .60–.64), each ≥ 4.5:1 on the
+  base and carrying a paper glyph at ≥ 3:1. Indices are unchanged.
+  Pinned by `palette_contrast_test.dart`. Category chip labels use
+  `glyphColorOn(fill)`, like the glyph.
+- **Tint and accent (2026-10-10).** Every category is one hue in two
+  steps. The tint (`TaskStateTokens.categoryTint`: the swatch over
+  `colorSurfacePrimary`, whole in light, `categoryTintMixDark` .30 in dark)
+  is a pill's fill, and a week block's background is a lighter scale of it
+  in light mode (the same colour in dark). The
+  accent (`AmbleTheme.categoryAccents`, `ColorPrimitives.categoryAccentsLight`
+  / `Dark`) is a pill's icon and a week block's left rail, the same colour.
+  Light accents sit at 3.1:1 or better on their tint (icons), dark ones
+  at about 6:1; titles read at 7:1 or better on every tint. A skipped task
+  keeps its grey fill and a black/white glyph. Pinned by
+  `palette_contrast_test.dart`.
+- The zone lavender and the accent are unchanged.
 
 **Desktop density.** In the wide layout (`DesktopDensity`, applied once
 around the wide shell in `main.dart`) every button-height rung is one step
@@ -228,6 +251,12 @@ edge-time labels, the selected day, nav and chip selection, settings
 headings, headlines) is now w600, and `TypePrimitives.weightBold` is
 removed. Use `weightSemibold` for emphasis, `weightMedium` for selected
 or quiet emphasis, `weightRegular` for reading text. **Never** w700+.
+
+**Task titles are medium (2026-10-10).** One step under the semibold above,
+requested directly. `TaskStateTokens.titleWeight` (= `weightMedium`) is the
+one place it is set, used for the title on every pill and row: Timeline,
+Zone, List clusters, the draft pill and imported events. Times and edge
+labels stay semibold. Pinned by `task_title_weight_test.dart`.
 
 ## Week and month grids (wide layout)
 
@@ -253,6 +282,19 @@ skipped, important and unlabeled read as they do on the Day screen.
 - **Month row**: rail, time (mono, secondary), title — like Notion
   Calendar's month. Today's date sits in an accent circle. Cells are
   separated by hairlines; days outside the month use tertiary text.
+
+**Week task style (2026-10-10).** Settings > Appearance > "Week task style",
+shown on the wide layout only, picks how the week draws a task:
+`WeekTaskStyle.pills` (default, the app's own pill plus a text row) or
+`WeekTaskStyle.blocks` (`WeekTaskCard`). A block is as tall as the task
+(never under `weekBlockMinHeight`, `weekBlockGap` between neighbours), tinted
+with a lighter scale of its label's tint (`TaskStateTokens.blockBackground`:
+the pill's fill at `blockBackgroundMixLight` .45 over the card in light mode,
+whole in dark), with an
+accent-colour `railWidth` rail on the left (the colour of a pill's icon), the title (`titleWeight`) and the
+start-end range (`timeUnderTitleStyle`). Overlapping tasks share the column's
+width equally. The block always shows its range; the dev "Show time (from-to)"
+switch only applies to pills. A tap opens the task in the side panel.
 
 ## Shell dividers and grid lines — 1 point, Notion-quiet
 
@@ -467,6 +509,21 @@ its glass material and the same accent/theme-surface selection rings as zones.
 Imported calendar pills use `GlassPillMaterial.flat` without blur; they are real
 calendar entries, not ghosts. Zone ghosts remain flat translucent panes rather
 than adopting the task pill's glass material.
+
+**Start-end line under the title (Timeline view only, 2026-10-10).** A dev
+switch (Settings > Developer > "Show time (from-to) (Timeline view)", off by
+default) adds a second line under each task's title in the spatial view: the
+range (`9:00 AM - 10:00 AM`) in `colorTextSecondary`, same type as the title,
+`spacingXs` below it. `TaskCapsuleTextRow.timeUnderTitleVisible` draws it and
+`TaskCapsuleTextRow.timeUnderTitleExtent` is the height it adds; the label
+collision sweep adds that extent to a task's label height so a taller label
+pushes the next one down. Zone view and List-style rows do not read this
+switch. The line is one size rung and one weight step under the title
+(`TaskStateTokens.timeUnderTitleStyle`: condensed numeric font, light w300,
+`TypePrimitives.sizeBelow` the title's size), added 2026-10-10 on request.
+The desktop week (`WeekTaskText`) shows the same line under its
+titles when the switch is on, and its stacked text rows grow by the same
+extent. Pinned by `time_under_title_test.dart` and `desktop_calendar_test.dart`.
 
 ---
 
@@ -944,10 +1001,11 @@ you don't need a full-width hairline: it's simpler and needs no parameter.
 Reach for `pillAlignment` only if you genuinely need `showLine: true`'s
 full-width line alongside a left-pinned pill.
 
-**Current call sites** (as of 2026-09-19):
+**Current call sites** (as of 2026-10-14):
 - `lib/features/timeline/place_task_line.dart` — the long-press placement line (`showLine: true`, `pillAlignment: start`).
 - `lib/features/timeline/pending_task_pill.dart` — two labels (start/end), `showLine: false`, left via mechanism 1.
-- `lib/features/timeline/timeline_screen.dart` (`_leftEdgeLabel`) — Edit Mode's selected/wiggling task, `showLine: false`, left via mechanism 1.
+- `lib/features/timeline/timeline_screen.dart` (`_leftEdgeLabel`) — a task's LIVE start/end while actually being dragged or resized, `showLine: false`, left via mechanism 1. Rendered inline, inside the dragged/resized task's own block, which already paints last among its siblings (`_dragLastOrder`).
+- `lib/features/timeline/timeline_screen.dart` (`_DayTimelineState._editAffordanceLabels`) — every task's RESTING edit-mode start/end labels (armed/selected, not actively dragged), `showLine: false`. Drawn in one shared top-most layer above every task pill, not inside each task's own block — reported directly against a screenshot: "edit mode hours or resize should always be on top." A label drawn inside its own block could only ever paint as high as that block's own position among its siblings, so a later-painted neighbour's pill could cover an earlier task's label.
 - `lib/features/zone_grid/zone_grid_block.dart` — zone move/resize inside the Weekly Zone Authoring Grid, `showLine: false`, left via mechanism 1.
 - `lib/features/timeline/zone_background_block.dart` — zone move/resize on the Timeline's own Zone background, `showLine: false`, left via mechanism 1.
 - `lib/features/zone_grid/zone_grid_screen.dart` — the tap-and-drag-to-create-zone preview's own start/end labels (two separate `TaskEdgeTimeLabel`s, `showLine: false`) — added 2026-09-19; this was previously a plain accent-colored `Text` with no background pill at all, the one remaining gap once zone move/resize already used the shared widget correctly.
@@ -1001,10 +1059,10 @@ red dot should not be close to screen edge, instead... 09:00 / 09:31
 o-------- / 10:00" (i.e. NOT "09:00 / o-- 09:31------ / 10:00" — dot
 before the time, misaligned with the hour column).
 
-**Exact shape, left to right**: `[time pill] [gap] [dot] [line, filling the rest of the row]`.
+**Exact shape, left to right, on the spatial Task view**: `[time pill] [gap] [dot]` — no line (`pillSizesRow: false`; see "One marker, two views" below). Hidden 2026-10-14, requested directly: "current hour should not have line, hide it for now, keep just dot and hour" — it crossed task pills and read as noise. `CurrentTimeMarker`'s own trailing `Expanded` line is still built, just conditionally (`if (pillSizesRow) ...`), so the List view's own marker (which still wants it — see below) needed no change.
 - Time pill: `theme.colorSurfaceTimeline` fill (masks whatever's underneath, so "now" never clashes with an hour label it's overlapping), `theme.radiusSm` corners, text `theme.textCaption` weight 700 in `theme.colorTextPrimary`.
 - Dot: `theme.spacingSm` square, `theme.colorTaskAlert`, circular.
-- Line: `theme.borderWidthHairline` tall, `theme.colorTaskAlert`, `Expanded` to fill the row.
+- Line (List view only — see below): `theme.borderWidthHairline` tall, `theme.colorTaskAlert`, `Expanded` to fill the row.
 - Whole row starts at `leftInset` — the SAME x [TaskEdgeTimeLabel]/`TaskBoundaryMarkers` use on this screen (`theme.spacingSm` at the Timeline's own call site), so "now" reads as the emphasised member of the same hour column, not a separate element starting at a different x.
 
 **Why not `FractionalTranslation` on the whole row** (the previous
@@ -1229,8 +1287,9 @@ shows up.
 ## Pickers in the wide layout — popover, not sheet (`AppSheetPresentation`)
 
 Added 2026-10-08, requested against Notion Calendar's event panel: in the
-wide layout's right-hand task panel, settings sit one per line and each
-picker opens beside the panel, not as a bottom sheet.
+wide layout's right-hand task panel, each picker opens beside the panel, not
+as a bottom sheet. (The panel's settings are the phone's chips again since
+2026-10-11; the one-per-line rows below are no longer used by the task panel.)
 
 - **One switch point.** `AppSheetPresentationScope(presentation: popover)`
   around a subtree makes every `AppSheet.show` below it open an
@@ -1252,7 +1311,8 @@ picker opens beside the panel, not as a bottom sheet.
   `spacingMd` icon in `colorTextSecondary`, `textBody` values,
   `colorTextTertiary` while unset, row min height `sizeButtonMd`. On/off
   settings take a trailing `AppSwitch`; tapping the name flips it too.
-  The panel's form is `TaskPanelFields` + `TaskPanelDetailRows`.
+  `TaskPanelFields` + `TaskPanelDetailRows` built the panel's form this way
+  until 2026-10-11; nothing shows them now.
 
 **Never**: call `showModalBottomSheet`/`showDatePicker` from a picker that
 can open in the panel (use `AppSheet.show` / `showAppDatePicker`), or pass a
@@ -1284,6 +1344,44 @@ contract; the components enforce most of them.
 3. **Header: × or ‹ left · title centre · primary action right.** The
    first page of a sheet closes (×); a deeper page goes back (‹). The
    title lives in the header row, never as a big heading in the body.
+3b. **A header's circular button (×, ‹) sits `spacingLg` from the header
+   row's own top edge — the same `spacingLg` it already sits from the
+   sheet's LEFT/RIGHT edge, never vertically centred in the row.** Law,
+   ratified 2026-10-14 against a screenshot: "the sheets side padding
+   match top padding so the circular buttons on left and right are
+   precisely same padding top and left." The header row is taller than
+   the button for OTHER, unrelated reasons (`AppSheetHeader`'s own drag
+   handle sits above the button's centre line by design — see that
+   class's 2026-09-23 doc comment; `StepScaffold`'s title-bearing case
+   reserves room for a centred title), so a `Center`-positioned button
+   silently inherited whatever smaller gap the row's own height formula
+   happened to leave above it — visibly less than the side inset, since
+   none of those row-height decisions were ever made with the button's
+   OWN top inset in mind. Top-anchoring at the exact same token the side
+   inset already uses is what actually guarantees the two match,
+   regardless of how tall the row is for other reasons.
+   - Applies to every `HeaderCircleButton` sited directly at a header's
+     fixed edge: `AppSheetHeader`'s leading ×/‹ (NOT its `trailing` slot
+     — see below), `StepScaffold`'s ‹ and ×, `QuickCreateOverlay`'s own
+     header close button. The INTENT is always `spacingLg` from the
+     sheet's own outer surface (`AppSheetSurface`), matching the side
+     inset exactly — `QuickCreateOverlay` subtracts its own
+     `theme.spacingSm` leading gap (`SizedBox(height: spacingSm)` before
+     its header row) from the button's own top-anchor to land on that
+     same outer-surface distance, since that gap sits ABOVE the row the
+     button is otherwise positioned within; a file with no such gap (the
+     other two) anchors at `spacingLg` directly. Verified by geometry
+     (`tester.getRect`), not a screenshot — see each file's own test,
+     and `quick_task_add_test.dart`'s pre-existing "× sits one inset
+     from its top and side" assertion, which is what caught the first
+     attempt at this fix measuring from the wrong local frame.
+   - **Does NOT apply to `AppSheetHeader.trailing`** (Add/Save, a trash
+     + pill `Row`, a mic button): that slot's own content varies in
+     height and shape per caller and is not a single circle matching the
+     leading button's geometry, so it stays vertically centred — moving
+     it to the same fixed top offset would risk misaligning it against
+     a leading button of a different height, the opposite of this rule's
+     own goal.
 4. **Height fits the content** (`AppSheetSize.small`, capped at the
    viewport). No fixed half-height sheets with empty space. Moving between
    pages animates the height. Exception by choice: a short picker opened
@@ -1686,6 +1784,16 @@ only extends the band's own LEFT edge further out — `width` is adjusted
 by the same amount so the band's right edge, and every task pill's own
 position, are completely unaffected; this block never repositions a
 task, only its own decorative edge.
+
+**Desktop (wide layout), 2026-10-09 — requested directly.** The zone's name
+is horizontal text in the band's top-LEFT corner (`ZoneNameLabel`, switched
+by `isWideLayout`), not vertical down its right edge — in the Day view and
+the Week view alike. Phones keep the vertical text. The week draws zones
+with this same `ZoneBackgroundBlock` + `ZoneNameLabel` (`WeekZoneBands`),
+**one band per run of consecutive days with the same zone** (same facet or
+title, same hours): a zone on Mon–Fri is one band across five columns; a day
+with different hours, or a gap day, starts another band. The month shows no
+zones.
 
 **Never**: a bare `theme.radiusMd` on a new zone-pane `BoxDecoration`, a
 zone block with no `zoneBackgroundGap` trim on at least one shared edge,
@@ -2115,6 +2223,21 @@ It shows while pressed, and on a sub-nav tab while a drag hovers it. That
 is the same subtle step as the week strip's selected day.
 `AppNavLabel` moved to `app_nav_label.dart` (re-exported by
 `app_top_nav.dart`).
+
+## Timeline zoom on desktop — Cmd/Ctrl + scroll
+
+Requested directly: "cmd + scroll should be zoom in/out timeline on desktop."
+While **Cmd** (macOS / iOS) or **Ctrl** (elsewhere) is held, a mouse wheel or
+a two-finger trackpad scroll zooms the timeline's scale instead of scrolling,
+around the pointer (the time under it stays put): scroll up zooms in, down
+zooms out, within the same 1×–4× limits as the pinch
+(`TimelinePixelsPerMinuteSetting`). One step per ~100 of scroll
+(`TimelineScrollTokens.scrollZoomDivisor`). Lives in `TimelinePinchZoom`, so
+the Day timeline and the zone-edit grid both get it. While the key is held
+the wrapped scroll view ignores pointers, otherwise it would claim the wheel
+first; hover re-checks the key so a missed key-up can't leave it ignoring.
+Not covered: the week grid (a fixed hour height) and a trackpad pinch.
+Verification: `flutter test test/features/timeline/timeline_pinch_zoom_test.dart`.
 
 ## Pinch vs. marquee — `TimelineMultiTouch`
 

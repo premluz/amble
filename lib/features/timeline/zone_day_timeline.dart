@@ -116,9 +116,9 @@ class ZoneDayTimeline extends StatelessWidget {
   final bool devIconsVisible;
   final bool devDurationVisible;
 
-  /// The "Show time (from-to)" dev toggle
-  /// (`DevTimelineTaskTimeRangeVisibleProvider`) — requested directly:
-  /// "Hide/show start end should also affect zone view." Threaded to every
+  /// Whether Zone view shows start-end ranges. Since 2026-10-10 the "Show
+  /// time (from-to)" dev toggle no longer feeds this (it is Timeline-only),
+  /// so the app passes false. Threaded to every
   /// row this view renders: each zone's own [ZoneContainerBlock] (header
   /// and in-container rows), unzoned tasks' [TaskCapsuleBlock]s, and
   /// unmatched events' [_UnzonedEventRow]s. Independent of

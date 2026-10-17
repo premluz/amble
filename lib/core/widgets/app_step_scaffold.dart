@@ -266,29 +266,28 @@ class StepScaffold extends StatelessWidget {
                                   ),
                                   child: headerContent,
                                 ),
+                              // Top-anchored at `spacingLg`, matching the
+                              // LEFT/RIGHT inset here exactly (both already
+                              // `spacingLg`) — not vertically centered.
+                              // See docs/DESIGN_SYSTEM.md's "Sheet header
+                              // circle buttons" section.
                               if (onBack != null)
                                 Positioned(
-                                  top: 0,
-                                  bottom: 0,
+                                  top: theme.spacingLg,
                                   left: theme.spacingLg,
-                                  child: Center(
-                                    child: HeaderCircleButton(
-                                      theme: theme,
-                                      icon: Icons.arrow_back_rounded,
-                                      onTap: onBack!,
-                                    ),
+                                  child: HeaderCircleButton(
+                                    theme: theme,
+                                    icon: Icons.arrow_back_rounded,
+                                    onTap: onBack!,
                                   ),
                                 ),
                               Positioned(
-                                top: 0,
-                                bottom: 0,
+                                top: theme.spacingLg,
                                 right: theme.spacingLg,
-                                child: Center(
-                                  child: HeaderCircleButton(
-                                    theme: theme,
-                                    icon: Icons.close_rounded,
-                                    onTap: onClose,
-                                  ),
+                                child: HeaderCircleButton(
+                                  theme: theme,
+                                  icon: Icons.close_rounded,
+                                  onTap: onClose,
                                 ),
                               ),
                             ],

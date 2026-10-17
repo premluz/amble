@@ -133,7 +133,7 @@ class _SplashCarouselScreenState extends ConsumerState<SplashCarouselScreen> {
 /// `ColorFilter`** — requested directly ("2 svg used per mode light
 /// dark"): `Logo_on_light.svg` (dark `#20211F` letterforms, for a light
 /// surface) and `Logo_on_dark.svg` (light `#E7E7E7` letterforms, for a
-/// dark surface). The three colored wave strokes are identical in both —
+/// dark surface). The three colored mark shapes are identical in both —
 /// only the letterform fill differs — but a shared source with a
 /// `ColorFilter` swap was rejected in favor of the two files actually
 /// provided, since they're what was dropped and there's no guarantee a
@@ -153,12 +153,11 @@ class SplashLogo extends StatelessWidget {
         isDark
             ? 'assets/branding/Logo_on_dark.svg'
             : 'assets/branding/Logo_on_light.svg',
-        // The source SVGs' own viewBox is a 512x512 square, but their
-        // glyph content is a short, wide horizontal lockup within it —
-        // sized by width (not `BrandMark`'s old square `size`) so it
-        // reads at a natural wordmark scale rather than leaving a large
-        // empty square around it.
-        width: theme.spacingXl * 6,
+        // The lockup's viewBox is tight around the mark and wordmark (the
+        // pre-2026-10-12 files were a padded 512 square, drawn at
+        // `spacingXl * 6`, of which the lockup filled ~60%), so this width
+        // keeps the same visual size.
+        width: theme.spacingXl * 4,
       ),
     );
   }

@@ -60,6 +60,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     required this.colorTaskAlert,
     required this.colorDestructive,
     required this.categorySwatches,
+    required this.categoryAccents,
     required this.spacingXs,
     required this.spacingSm,
     required this.spacingIconTop,
@@ -278,6 +279,13 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
   /// `resolveCategoryVisual` for the single resolution path this replaced
   /// both maps with.
   final List<Color> categorySwatches;
+
+  /// The strong counterpart of each [categorySwatches] entry, same index:
+  /// the colour of a week block's left rail and of a pill's icon. The
+  /// swatch (through `TaskStateTokens.categoryTint`) is the pill's fill and
+  /// the block's background; this is the one stronger step of the same hue
+  /// (2026-10-10, requested directly).
+  final List<Color> categoryAccents;
 
   // Spacing
   final double spacingXs;
@@ -769,6 +777,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     // hue. Same 12 hues in the same order, so a stored
     // `Category.colorToken` index is unaffected by the switch.
     categorySwatches: ColorPrimitives.categoryPalette12Light,
+    categoryAccents: ColorPrimitives.categoryAccentsLight,
     spacingXs: SpacingPrimitives.space2,
     spacingSm: SpacingPrimitives.space3,
     spacingIconTop: SpacingPrimitives.space4,
@@ -1049,6 +1058,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     // Same 16-swatch list as the light palette — deliberately not a
     // separate dark-mode set, see the field's own doc comment above.
     categorySwatches: ColorPrimitives.categoryPalette12,
+    categoryAccents: ColorPrimitives.categoryAccentsDark,
     spacingXs: SpacingPrimitives.space2,
     spacingSm: SpacingPrimitives.space3,
     spacingIconTop: SpacingPrimitives.space4,
@@ -1279,6 +1289,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
     Color? colorTaskAlert,
     Color? colorDestructive,
     List<Color>? categorySwatches,
+    List<Color>? categoryAccents,
     double? spacingXs,
     double? spacingSm,
     double? spacingIconTop,
@@ -1373,6 +1384,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
       colorTaskAlert: colorTaskAlert ?? this.colorTaskAlert,
       colorDestructive: colorDestructive ?? this.colorDestructive,
       categorySwatches: categorySwatches ?? this.categorySwatches,
+      categoryAccents: categoryAccents ?? this.categoryAccents,
       spacingXs: spacingXs ?? this.spacingXs,
       spacingSm: spacingSm ?? this.spacingSm,
       spacingIconTop: spacingIconTop ?? this.spacingIconTop,
@@ -1541,6 +1553,7 @@ class AmbleTheme extends ThemeExtension<AmbleTheme> {
         t,
       )!,
       categorySwatches: t < 0.5 ? categorySwatches : other.categorySwatches,
+      categoryAccents: t < 0.5 ? categoryAccents : other.categoryAccents,
       spacingXs: _lerpDouble(spacingXs, other.spacingXs, t),
       spacingSm: _lerpDouble(spacingSm, other.spacingSm, t),
       spacingIconTop: _lerpDouble(spacingIconTop, other.spacingIconTop, t),

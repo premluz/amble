@@ -36,8 +36,8 @@ abstract final class ColorPrimitives {
   // off this ramp entirely rather than kept here.
   static final surface0 = oklch(0.933, 0.004, 106.5); // #E9E9E6
   static final surface1 = oklch(1.000, 0.000, 0); // #FFFFFF
-  static final surface2 = oklch(0.958, 0.002, 90.0); // #F1F1F0 — inset field
-  static final surface3 = oklch(0.924, 0.003, 90.0); // #E6E6E4 — border
+  static final surface2 = oklch(0.951, 0.008, 78.0); // #F2EEE9 — inset field
+  static final surface3 = oklch(0.918, 0.012, 78.0); // #E8E3DB — border
 
   /// **2026-09-20 — the light-mode app background (`colorSurfaceBase`).**
   /// Confirmed directly: "the website's warm paper background... feels
@@ -47,7 +47,13 @@ abstract final class ColorPrimitives {
   ///
   /// **2026-10-08 — near-neutral, finer steps** (see the Ink note below):
   /// the warmth is kept as a trace (hue 90, chroma .002), not a cream cast.
-  static final paper = oklch(0.962, 0.002, 90.0); // #F3F2F1
+  ///
+  /// **2026-10-10 — warm paper, matched to the Rios reference** (#F7F4EF
+  /// paper, #FBF9F6 panel, #E8E2D9 rule, #1F1C1A/#6F6A63 text). The paper,
+  /// cream, surface and slate text rungs move to hue ~78 at chroma
+  /// .005-.015. The base stays a touch deeper than the reference so it
+  /// remains below luminance 0.90 (`elevation_direction_test.dart`).
+  static final paper = oklch(0.963, 0.007, 78.0); // #F5F2EE
 
   // Cream — nested-row/content-card surface. `cream2` is
   // `colorSurfacePrimary` (cards/content) as of 2026-09-20 — confirmed
@@ -57,8 +63,8 @@ abstract final class ColorPrimitives {
   // `paper`. cream0/cream1 keep their own steps in the ramp for whatever
   // future role needs them; only cream2 is wired to a live token today.
   static final cream0 = oklch(0.913, 0.009, 84.6); // #E5E2DC
-  static final cream1 = oklch(0.955, 0.002, 90.0); // #F0F0EF
-  static final cream2 = oklch(0.985, 0.002, 90.0); // #FAFAF9 — cards/content
+  static final cream1 = oklch(0.953, 0.007, 78.0); // #F2EFEA
+  static final cream2 = oklch(0.983, 0.005, 78.0); // #FBF9F6 — cards/content
 
   /// The light-mode floating overlay (nav + its adjacent day-strip pane).
   /// Pure white, the lightest step in the ramp — confirmed directly:
@@ -97,10 +103,10 @@ abstract final class ColorPrimitives {
   // The "even subtler" rung between slate500 and slate300, ~3.35:1 —
   // just past WCAG's 3:1 floor for large/decorative text. See git
   // history for the original request this rung answers.
-  static final slate400 = oklch(0.614, 0.012, 248.0); // #7F858B
-  static final slate500 = oklch(0.525, 0.011, 252.9); // #666B71
+  static final slate400 = oklch(0.615, 0.015, 77.0); // #8A847B
+  static final slate500 = oklch(0.527, 0.012, 76.0); // #6F6A63
   static final slate700 = oklch(0.359, 0.008, 255.5); // #3A3D41
-  static final slate900 = oklch(0.217, 0.002, 247.9); // #191A1B
+  static final slate900 = oklch(0.229, 0.006, 56.0); // #1F1C1A
 
   // Mist — the "unassigned" tone: new tasks with no label yet and imported
   // calendar events. It is reserved for those, so it must not be reused for
@@ -178,79 +184,112 @@ abstract final class ColorPrimitives {
   // supplied hex) rather than held uniform at 0.62/0.15 — see the
   // `test/core/tokens/palette_contrast_test.dart` result for whether this
   // still clears the same AA floor the prior uniform ramp targeted.
+  // **2026-10-10 — Rios palette shift, dark set.** Same families and
+  // emphasis as [categoryPalette12Light]: muted, warm-leaning, led by
+  // lavender (9), periwinkle (15) and teal (5). Lightness sits where a
+  // swatch clears 4.5:1 against `ink900` and still carries a paper glyph
+  // at 3:1 or better.
   static final categoryPalette12 = [
-    oklch(0.650, 0.102, 13.2), // 0  red          #C5747D
-    oklch(0.654, 0.103, 46.4), // 1  orange       #C47C59
-    oklch(0.672, 0.096, 72.7), // 2  amber        #BA8C4F
-    oklch(0.660, 0.079, 104.1), // 3  yellow-green #9A955B
-    oklch(0.624, 0.063, 140.4), // 4  green        #73916D
-    oklch(0.626, 0.059, 178.1), // 5  teal         #609488
-    oklch(0.620, 0.053, 202.4), // 6  cyan         #5F9094
-    oklch(0.620, 0.057, 235.3), // 7  sky blue     #648CA4
-    oklch(0.623, 0.062, 259.8), // 8  blue         #7188AD
-    oklch(0.615, 0.074, 291.6), // 9  violet       #857DAE
-    oklch(0.613, 0.075, 322.4), // 10 magenta      #9A759F
-    oklch(0.628, 0.078, 350.2), // 11 pink/rose    #AD758F
+    oklch(0.608, 0.050, 18.0), // 0  red / rose   #9F7777
+    oklch(0.610, 0.050, 50.0), // 1  orange/peach #9D7B69
+    oklch(0.625, 0.040, 75.0), // 2  amber / sand #96856D
+    oklch(0.620, 0.040, 105.0), // 3  yellow-green #89886C
+    oklch(0.605, 0.040, 138.0), // 4  green / moss #768871
+    oklch(0.610, 0.070, 184.0), // 5  teal         #4E9188
+    oklch(0.610, 0.045, 200.0), // 6  cyan         #638C8E
+    oklch(0.610, 0.050, 240.0), // 7  sky blue     #68889F
+    oklch(0.600, 0.060, 258.0), // 8  blue         #6A82A4
+    oklch(0.612, 0.095, 300.0), // 9  lavender     #8D76B4
+    oklch(0.608, 0.055, 325.0), // 10 magenta      #947895
+    oklch(0.605, 0.050, 355.0), // 11 pink / blush #9B7683
     // **2026-09-30 — four more, appended** (requested directly: "4 more,
     // yellowish, bluish"). Appended rather than slotted by hue so every
-    // stored `colorToken` keeps its colour. Dark: same lightness band as
-    // their neighbours; ocean carries more chroma to stay distinct from
-    // sky blue and blue.
-    oklch(0.675, 0.110, 92.0), // 12 golden yellow #AF943E
-    oklch(0.675, 0.075, 122.0), // 13 lime          #8F9E6A
-    oklch(0.620, 0.100, 250.0), // 14 ocean         #558AC0
-    oklch(0.620, 0.070, 275.0), // 15 periwinkle    #7A83B1
+    // stored `colorToken` keeps its colour.
+    oklch(0.640, 0.060, 90.0), // 12 golden yellow #9A8B62
+    oklch(0.630, 0.050, 122.0), // 13 lime          #848E6D
+    oklch(0.598, 0.075, 248.0), // 14 ocean         #5B84AB
+    oklch(0.620, 0.060, 270.0), // 15 periwinkle    #7885AB
   ];
 
   /// The light-mode counterpart to [categoryPalette12] — same 12 hues, in
   /// the same order, so a stored [Category.colorToken] index keeps its
   /// meaning across a theme switch and no migration is needed.
   ///
-  /// Solved, not eyeballed: for each hue, lightness was walked down from
-  /// the dark ramp's 0.62 until the swatch cleared 4.6:1 against
-  /// `surface0` (targeting just over the 4.5 AA floor so sRGB rounding
-  /// can't drop it under), holding chroma at the dark ramp's 0.15 wherever
-  /// that stays in gamut. Five hues (amber, yellow-green, teal, cyan, sky
-  /// blue) sit below 0.15 because 0.15 is outside sRGB at their required
-  /// lightness — backed off to the highest in-gamut chroma rather than
-  /// shifting hue, since hue is what distinguishes the swatches.
+  /// **2026-10-10 — soft pastels, Rios-led.** Requested directly: the
+  /// AA-against-the-page ramp (L≈0.52) made light-mode pills too strong.
+  /// Pills are now light, solid fills whose legibility comes from the
+  /// charcoal glyph and text drawn on them (7:1 or better, via
+  /// `glyphColorOn`), not from contrast with the page. Emphasis follows the
+  /// brand reference: lavender (9), periwinkle (15) and teal (5) carry the
+  /// most chroma; every other hue is a quieter supporting tone (moss, sand,
+  /// blush and their neighbours). Indices and hue families are unchanged,
+  /// so stored `colorToken`s keep their colour.
   ///
-  /// Chroma is deliberately NOT maximized per hue. An earlier solve that
-  /// took the most saturated in-gamut chroma at each lightness hit the
-  /// target too, but produced a visibly incoherent set (magenta #B602E9,
-  /// violet #724EFE) that no longer read as one family — the uniform-
-  /// chroma constraint is what keeps the ramp looking like a palette
-  /// rather than twelve unrelated colors.
-  ///
-  /// Every value here is verified in `test/core/tokens/palette_contrast_test.dart`,
-  /// which checks BOTH ramps against BOTH backgrounds — the point being
-  /// that a swatch is only ever asserted against the background it
-  /// actually renders on.
-  // **2026-09-20 — 6 of 12 nudged down from the as-specified lightness**
-  // (orange, amber, yellow-green, green, teal, blue) after the
-  // `surface0` base move left them at 4.12-4.50:1, just under the 4.5:1
-  // AA floor — hue/chroma untouched. Re-measured at 4.56-4.58:1. red,
-  // cyan, sky blue, violet, magenta, pink/rose already cleared AA as
-  // specified and are unchanged.
+  /// Verified in `test/core/tokens/palette_contrast_test.dart`.
   static final categoryPalette12Light = [
-    oklch(0.528, 0.103, 11.4), // 0  red          #9D505C
-    oklch(0.526, 0.095, 47.6), // 1  orange       #975837
-    oklch(0.522, 0.078, 70.9), // 2  amber        #866134
-    oklch(0.517, 0.070, 104.5), // 3  yellow-green #6E6A39
-    oklch(0.513, 0.054, 142.1), // 4  green        #556F52
-    oklch(0.512, 0.050, 179.5), // 5  teal         #457067
-    oklch(0.513, 0.046, 203.7), // 6  cyan         #466F73
-    oklch(0.518, 0.051, 237.0), // 7  sky blue     #4C6D82
-    oklch(0.519, 0.069, 259.1), // 8  blue         #506991
-    oklch(0.509, 0.077, 289.9), // 9  violet       #655E8F
-    oklch(0.506, 0.063, 321.4), // 10 magenta      #76597B
-    oklch(0.521, 0.068, 348.3), // 11 pink/rose    #875970
-    // Solved like the rest: lightness walked down until each cleared
-    // 4.56:1 against `paper` (the light base).
-    oklch(0.533, 0.085, 92.0), // 12 golden yellow #7E6B2C
-    oklch(0.529, 0.062, 122.0), // 13 lime          #657149
-    oklch(0.532, 0.095, 250.0), // 14 ocean         #3E70A1
-    oklch(0.537, 0.072, 275.0), // 15 periwinkle    #616A98
+    oklch(0.840, 0.050, 18.0), // 0  red / rose   #EABEBE
+    oklch(0.850, 0.050, 50.0), // 1  orange/peach #EAC5B1
+    oklch(0.880, 0.040, 75.0), // 2  amber / sand #E7D4BB
+    oklch(0.870, 0.040, 105.0), // 3  yellow-green #D8D6B8
+    oklch(0.820, 0.040, 138.0), // 4  green / moss #B8CBB2
+    oklch(0.800, 0.080, 184.0), // 5  teal         #80CFC3
+    oklch(0.830, 0.045, 200.0), // 6  cyan         #A6D1D3
+    oklch(0.830, 0.050, 240.0), // 7  sky blue     #ABCCE5
+    oklch(0.780, 0.060, 258.0), // 8  blue         #A0B9DE
+    oklch(0.750, 0.105, 300.0), // 9  lavender     #B89FE7
+    oklch(0.800, 0.060, 325.0), // 10 magenta      #D2B1D3
+    oklch(0.840, 0.050, 355.0), // 11 pink / blush #E6BECC
+    oklch(0.870, 0.060, 90.0), // 12 golden yellow #E3D3A8
+    oklch(0.850, 0.050, 122.0), // 13 lime          #C8D3B0
+    oklch(0.730, 0.080, 248.0), // 14 ocean         #7FADD8
+    oklch(0.820, 0.065, 270.0), // 15 periwinkle    #B3C3EF
+  ];
+
+  /// The strong step of each [categoryPalette12Light] hue, same index: a
+  /// week block's rail and a pill's icon colour. Solved, not eyeballed: each
+  /// accent's lightness walks down from .53 until it reaches 3.1:1 against
+  /// its own swatch (WCAG's 3:1 floor for icons), at the swatch's hue with
+  /// chroma twice the swatch's, kept in gamut and between .11 and .16.
+  static final categoryAccentsLight = [
+    oklch(0.530, 0.110, 18.0), // 0  red / rose   #A24F53
+    oklch(0.530, 0.110, 50.0), // 1  orange/peach #9D562B
+    oklch(0.530, 0.110, 75.0), // 2  amber / sand #906106
+    oklch(0.530, 0.110, 105.0), // 3  yellow-green #766F08
+    oklch(0.510, 0.110, 138.0), // 4  green / moss #447433
+    oklch(0.500, 0.088, 184.0), // 5  teal         #027369
+    oklch(0.520, 0.088, 200.0), // 6  cyan         #02787D
+    oklch(0.520, 0.110, 240.0), // 7  sky blue     #1870A1
+    oklch(0.490, 0.120, 258.0), // 8  blue         #3260A3
+    oklch(0.470, 0.160, 300.0), // 9  lavender     #6A3EA5
+    oklch(0.510, 0.120, 325.0), // 10 magenta      #884B8B
+    oklch(0.530, 0.110, 355.0), // 11 pink / blush #9C4E6F
+    oklch(0.530, 0.108, 90.0), // 12 golden yellow #846801
+    oklch(0.530, 0.110, 122.0), // 13 lime          #617522
+    oklch(0.450, 0.120, 248.0), // 14 ocean         #025894
+    oklch(0.520, 0.130, 270.0), // 15 periwinkle    #4C62B3
+  ];
+
+  /// The dark-mode counterpart: every accent at L .80, the swatch's hue,
+  /// chroma .10 (a little more for teal, lavender, golden yellow and ocean).
+  /// A dark pill or block fills with a dark tint of its swatch, so the
+  /// accent reads as the light, saturated step of that hue (5.9–6.4:1).
+  static final categoryAccentsDark = [
+    oklch(0.800, 0.100, 18.0), // 0  red / rose   #F7A3A5
+    oklch(0.800, 0.100, 50.0), // 1  orange/peach #F2AB83
+    oklch(0.800, 0.100, 75.0), // 2  amber / sand #E4B572
+    oklch(0.800, 0.100, 105.0), // 3  yellow-green #C7C274
+    oklch(0.800, 0.100, 138.0), // 4  green / moss #9ECD8E
+    oklch(0.800, 0.140, 184.0), // 5  teal         #11DAC8
+    oklch(0.800, 0.100, 200.0), // 6  cyan         #64D1D7
+    oklch(0.800, 0.100, 240.0), // 7  sky blue     #80C7F8
+    oklch(0.800, 0.100, 258.0), // 8  blue         #96C0FE
+    oklch(0.800, 0.118, 300.0), // 9  lavender     #C9ACFF
+    oklch(0.800, 0.110, 325.0), // 10 magenta      #E2A5E5
+    oklch(0.800, 0.100, 355.0), // 11 pink / blush #F2A3C1
+    oklch(0.800, 0.120, 90.0), // 12 golden yellow #DCBA5C
+    oklch(0.800, 0.100, 122.0), // 13 lime          #B3C87F
+    oklch(0.800, 0.106, 248.0), // 14 ocean         #85C4FF
+    oklch(0.800, 0.100, 270.0), // 15 periwinkle    #A4BBFF
   ];
 
   // Ink — dark-mode surface ramp.
@@ -270,29 +309,34 @@ abstract final class ColorPrimitives {
   // #171717/#191919/#202020/#262626 (Notion Calendar), separators 1.14-1.23x
   // the surface beneath them (ours were 1.49x). The olive cast (chroma
   // up to .009) becomes a trace of warmth (hue 90, chroma .002).
-  static final ink900 = oklch(0.205, 0.002, 90.0); // #171716 body/base
-  static final ink800 = oklch(0.218, 0.002, 90.0); // #1A1A19 zone/card
-  static final ink700 = oklch(0.244, 0.002, 90.0); // #20201F raised panel
-  static final ink600 = oklch(0.281, 0.002, 90.0); // #292928 border/hairline
+  //
+  // **2026-10-10 — warm charcoal, matched to the Rios reference** (night
+  // system #171616/#23211F/#35312D). Hue ~70, chroma .003-.007: warmer
+  // than the 2026-10-08 greys, still far from the old olive cast. Steps
+  // stay a few RGB units; the hairline is 1.24x the card.
+  static final ink900 = oklch(0.203, 0.003, 60.0); // #181615 body/base
+  static final ink800 = oklch(0.217, 0.004, 70.0); // #1B1A18 zone/card
+  static final ink700 = oklch(0.245, 0.005, 70.0); // #22201E raised panel
+  static final ink600 = oklch(0.292, 0.007, 70.0); // #2E2B28 border/hairline
 
   /// The floating-overlay surface (nav + its adjacent day-strip pane) —
   /// the lightest step in the dark ramp, one above [ink700]. Its own rung
   /// rather than a reuse of [ink600]: that value is the hairline/border
   /// tone and is deliberately lighter than any surface should be.
-  static final ink650 = oklch(0.269, 0.002, 90.0); // #262625 nav/overlay
+  static final ink650 = oklch(0.269, 0.006, 70.0); // #282623 nav/overlay
 
   // Dark-mode form-field fills — the counterparts to surface2/surface3.
-  static final inkField = oklch(0.293, 0.002, 90.0); // #2C2C2B field, rest
+  static final inkField = oklch(0.300, 0.006, 70.0); // #302D2B field, rest
   static final inkFieldActive = oklch(
-    0.333,
-    0.002,
-    90.0,
-  ); // #363635 field, active
+    0.338,
+    0.007,
+    70.0,
+  ); // #3A3734 field, active
 
   // Sand additions for dark-mode text.
-  static final sand200 = oklch(0.955, 0.005, 95.1); // #F1F0EC dark primary
-  static final sand400 = oklch(0.760, 0.013, 91.6); // #B4B1A8 dark secondary
-  static final sand350 = oklch(0.559, 0.013, 89.8); // #77746C dark tertiary
+  static final sand200 = oklch(0.957, 0.009, 78.0); // #F4F0EA dark primary
+  static final sand400 = oklch(0.754, 0.018, 76.0); // #B6AEA3 dark secondary
+  static final sand350 = oklch(0.559, 0.015, 76.0); // #79736B dark tertiary
 
   // Zone background — a light, low-chroma "this is Zone territory"
   // rendering-only backdrop for the Spatial Task View (Timeline), NOT a

@@ -98,6 +98,31 @@ abstract final class PreferenceKeys {
   /// [CalendarGridLinesSetting].
   static const String calendarGridLines = 'calendarGridLines';
 
+  /// The desktop week's task look, stored as a [WeekTaskStyle] name. Absent
+  /// (null) or unrecognised defaults to pills. See [WeekTaskStyleSetting].
+  static const String weekTaskStyle = 'weekTaskStyle';
+
+  /// The desktop week's hour height in points (a double), set by zooming.
+  /// Absent defaults to [CalendarGridTokens.weekHourHeight]. See
+  /// [WeekHourHeightSetting].
+  static const String weekHourHeight = 'weekHourHeight';
+
+  /// Settings › Claude: whether an assistant is connected, what it may do
+  /// (an [AssistantPermission] name), the loopback port Amble listens on and
+  /// the shared secret its extension presents. See [AssistantConnection].
+  static const String assistantConnected = 'assistantConnected';
+  static const String assistantPermission = 'assistantPermission';
+  static const String assistantPort = 'assistantPort';
+  static const String assistantSecret = 'assistantSecret';
+
+  /// Where the last Claude extension file was written, so it can be
+  /// deleted once Claude has connected (it carries the secret).
+  static const String assistantBundlePath = 'assistantBundlePath';
+
+  /// Whether Claude has reached Amble since the last Connect (Settings
+  /// shows "waiting for Install" until it has).
+  static const String assistantClaudeSeen = 'assistantClaudeSeen';
+
   /// Whether the "What Matters" lens is on — hides every [Task] with
   /// `isImportant == false` entirely, in both Timeline display modes.
   /// Absent (null) defaults to false. See [WhatMattersEnabledSetting].
